@@ -12,6 +12,7 @@ function input(chunks: string[] = []): AgentRunInput {
 afterEach(() => {
   delete process.env.FAKE_CLAUDE_MODE;
   delete process.env.FAKE_CLAUDE_LIMIT_TEXT;
+  delete process.env.FAKE_CLAUDE_TEXT;
 });
 
 describe("claudeAdapter", () => {
@@ -74,6 +75,17 @@ describe("claudeAdapter", () => {
     if (r.status !== "error") throw new Error("expected error");
     expect(r.kind).toBe("failed");
     expect(r.message).toContain("boom: something exploded");
+  });
+
+  test("a crash is a failure even when the agent was talking about rate limits or logins", async () => {
+    process.env.FAKE_CLAUDE_MODE = "crash_after_text";
+    for (const text of ["I'll add rate limiting to the API.", "Building the login page now."]) {
+      process.env.FAKE_CLAUDE_TEXT = text;
+      const r = await claudeAdapter(FAKE).run(input());
+      if (r.status !== "error") throw new Error("expected error");
+      expect(r.kind).toBe("failed");
+      expect(r.message).toContain("boom: something exploded");
+    }
   });
 
   test("always passes .env and .git deny rules and project/local settings only", async () => {

@@ -15,6 +15,7 @@ import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
+const MAX_LIMIT_RETRIES = 3;
 
 const SYSTEM_PROMPT = [
   "You are working for Nakul through Atrium.",
@@ -55,6 +56,8 @@ export function createRunner(deps: {
   const maxConcurrent = deps.maxConcurrent ?? 1;
   const active = new Map<string, { done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
+  // Consecutive usage-limit outcomes per task, so a misread limit can't requeue a task forever.
+  const limitHits = new Map<string, number>();
   let running = false;
   let scheduled = false;
   let busy = false;
@@ -308,6 +311,7 @@ export function createRunner(deps: {
       if (repo) leftRepo = await settleRepo(repo);
     }
 
+    if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
     try {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
@@ -324,10 +328,17 @@ export function createRunner(deps: {
         createApproval(db, { spaceId: space.id, taskId: task.id, kind: "review", title: task.title, detail: lines.join("\n\n") });
         logActivity(db, space.id, task.agent, `Ready for review: ${task.title}`);
       } else if (result.kind === "rate_limited") {
-        // The task did nothing wrong; it goes back in line and runs when the limit resets.
         setSetting(db, "runner.pausedUntil", String(result.retryAfter ?? Date.now() + 30 * 60_000));
-        setTaskStatus(db, task.id, "queued");
-        logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.`);
+        const hits = (limitHits.get(task.id) ?? 0) + 1;
+        if (hits >= MAX_LIMIT_RETRIES) {
+          limitHits.delete(task.id);
+          block(task, "Claude kept reporting a usage limit for this task; retry when you're ready.");
+        } else {
+          limitHits.set(task.id, hits);
+          // The task did nothing wrong; it goes back in line and runs when the limit resets.
+          setTaskStatus(db, task.id, "queued");
+          logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.`);
+        }
       } else {
         block(task, result.message);
       }

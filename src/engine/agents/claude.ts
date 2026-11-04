@@ -35,11 +35,13 @@ function parseRetryAfter(text: string): number {
   return Date.now() + FALLBACK_WAIT_MS;
 }
 
+// Only the CLI's own words (stderr and the result line) are classified. The agent's text
+// talks about the user's code, where "rate limiting" or "login page" mean nothing about the run.
 function classify(text: string, stderr: string, exitCode: number): AgentRunResult {
   if (/usage limit|rate limit|limit reached/i.test(text)) {
     return { status: "error", kind: "rate_limited", message: "Claude Code hit its usage limit.", retryAfter: parseRetryAfter(text) };
   }
-  if (/log ?in|logged out|authenticat|invalid api key|unauthorized|credentials/i.test(text)) {
+  if (/not logged in|logged out|please run \/login|invalid api key|authentication/i.test(text)) {
     return { status: "error", kind: "not_logged_in", message: "Claude Code is logged out. Run `claude` once to log in." };
   }
   const tail = stderr.trim().split("\n").slice(-20).join("\n");
@@ -84,7 +86,6 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       let limitResetsAt: number | undefined;
       let limitRejected = false;
       let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number } | undefined;
-      let lastText = "";
 
       const handle = (line: string) => {
         let msg: any;
@@ -96,7 +97,6 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         if (msg.type === "assistant") {
           for (const block of msg.message?.content ?? []) {
             if (block.type === "text" && block.text) {
-              lastText = block.text;
               input.onChunk(block.text);
             } else if (block.type === "tool_use") {
               input.onChunk(`→ ${block.name} ${shortInput(block.input)}`.trimEnd());
@@ -155,7 +155,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       if (succeeded && final) {
         return { status: "ok", summary: final.result, inputTokens: final.inputTokens, outputTokens: final.outputTokens };
       }
-      return classify(`${final?.result ?? lastText}\n${stderr}`, stderr, exitCode);
+      return classify(`${final?.result ?? ""}\n${stderr}`, stderr, exitCode);
     },
   };
 }

@@ -17,6 +17,11 @@ function result(text: string, isError = false) {
   });
 }
 
+if (mode === "crash_after_text") {
+  out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: process.env.FAKE_CLAUDE_TEXT ?? "" }] } });
+  console.error("boom: something exploded");
+  process.exit(2);
+}
 if (mode === "crash") {
   console.error("line 1\nboom: something exploded");
   process.exit(2);

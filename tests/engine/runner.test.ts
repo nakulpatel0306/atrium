@@ -762,3 +762,35 @@ test("agent leftovers on the task's own branch block with the agent message", as
   expect(getTask(db, t.id)!.blockedReason).toBe(`The agent left uncommitted changes on atrium/${t.id} in ${path}`);
   expect(calls).toHaveLength(0);
 });
+
+test("a task that keeps hitting the usage limit is blocked after three tries", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Limited" });
+  // A reset time already past lets the runner retry straight away.
+  const { adapter, calls } = fakeAdapter(() => ({
+    status: "error",
+    kind: "rate_limited",
+    message: "Claude usage limit reached",
+    retryAfter: Date.now() - 1000,
+  }));
+  start({ adapter });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(calls).toHaveLength(3);
+  expect(getTask(db, t.id)!.blockedReason).toBe(
+    "Claude kept reporting a usage limit for this task; retry when you're ready.",
+  );
+});
+
+test("a run that ends another way resets the usage-limit count", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Flaky" });
+  const outcomes: AgentRunResult[] = [
+    { status: "error", kind: "rate_limited", message: "limit", retryAfter: Date.now() - 1000 },
+    { status: "error", kind: "rate_limited", message: "limit", retryAfter: Date.now() - 1000 },
+    ok(),
+  ];
+  const { adapter, calls } = fakeAdapter(() => outcomes.shift()!);
+  start({ adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect(calls).toHaveLength(3);
+});
