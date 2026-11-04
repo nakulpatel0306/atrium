@@ -1,7 +1,15 @@
 import { config } from "../config";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./types";
 
-const DENY = ["Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)", "Bash(cat *.env*)"];
+const DENY = [
+  "Read(**/.env*)",
+  "Edit(**/.env*)",
+  "Write(**/.env*)",
+  "Bash(cat *.env*)",
+  // Planted hooks or config in .git could run code outside the agent's tool limits.
+  "Edit(**/.git/**)",
+  "Write(**/.git/**)",
+];
 const FALLBACK_WAIT_MS = 30 * 60_000;
 
 function shortInput(input: Record<string, unknown> | undefined): string {

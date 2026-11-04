@@ -5,12 +5,12 @@ import type { AgentAdapter, AgentRunResult } from "./agents/types";
 import { createApproval } from "./approvals";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
-import { branchSummary, headRef, prepareBranch, pushBranch, repoReady } from "./git";
+import { branchSummary, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "./git";
 import { newId } from "./ids";
 import { canRun, type PowerSource } from "./power";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
-import { listTasks, setTaskStatus, type Task } from "./tasks";
+import { getTask, listTasks, setTaskStatus, type Task } from "./tasks";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -28,8 +28,7 @@ const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
 const REPO_TOOLS = [
   ...BASE_TOOLS,
   "Bash(bun test*)",
-  "Bash(bun run *)",
-  "Bash(bun install*)",
+  "Bash(bun install --ignore-scripts*)",
   "Bash(bunx tsc*)",
   "Bash(git add *)",
   "Bash(git commit *)",
@@ -39,6 +38,9 @@ const REPO_TOOLS = [
 ];
 
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
+
+// The repo as found at task start, so it can be put back after the run.
+type RepoRun = { path: string; start: string; branch: string; url: string | null };
 
 export function createRunner(deps: {
   db: Database;
@@ -80,7 +82,14 @@ export function createRunner(deps: {
     try {
       do {
         again = false;
-        await tick().catch(report);
+        try {
+          await tick();
+        } catch (e) {
+          report(e);
+          // A failure that repeats every tick would otherwise re-arm itself through
+          // report's own `changed` event and spin. The next event or power check retries.
+          again = false;
+        }
       } while (again && running);
     } finally {
       busy = false;
@@ -89,7 +98,11 @@ export function createRunner(deps: {
 
   // An escaped error would be an unhandled rejection and take the whole engine down.
   function report(e: unknown) {
-    logActivity(db, null, "atrium", `Runner error: ${(e as Error).message}`);
+    try {
+      logActivity(db, null, "atrium", `Runner error: ${(e as Error).message}`);
+    } catch {
+      // Nowhere left to record it; staying alive matters more.
+    }
   }
 
   async function readPower(): Promise<PowerSource> {
@@ -150,73 +163,95 @@ export function createRunner(deps: {
     logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`);
   }
 
+  // Puts the repo back on the starting branch; returns a block reason if it can't.
+  async function leaveRepo(repo: RepoRun): Promise<string | null> {
+    try {
+      const res = await returnToBranch(repo.path, repo.start);
+      return res === "dirty" ? `The agent left uncommitted changes on ${repo.branch} in ${repo.path}` : null;
+    } catch (e) {
+      return `${(e as Error).message}. Switch ${repo.path} back to ${repo.start} yourself, then requeue.`;
+    }
+  }
+
   async function launch(task: Task) {
     const space = getSpace(db, task.spaceId)!;
     const adapter = adapters[task.agent];
     if (!adapter) return block(task, `No agent called "${task.agent}" is set up. Pick another agent and requeue.`);
 
-    let cwd: string;
-    let base: string | null = null;
-    let branch: string | undefined;
+    let repo: RepoRun | null = null;
     if (space.kind === "repo") {
       if (!space.repoPath) return block(task, "This space has no repo folder set. Add one in the space settings.");
-      const ready = await repoReady(space.repoPath);
+      const path = space.repoPath;
+      const ready = await repoReady(path);
       if (!ready.ok) return block(task, ready.reason);
       try {
-        const head = await headRef(space.repoPath);
-        branch = await prepareBranch(space.repoPath, task.id);
-        // On a retry the repo is already on the task's branch, so only this run's commits are measurable.
-        base = head.branch && head.branch !== branch ? head.branch : head.sha;
+        const head = await headRef(path);
+        const start = head.branch ?? head.sha;
+        // Branching from a leftover agent branch would stack unreviewed work.
+        if (start.startsWith("atrium/")) return block(task, "Repo is on an Atrium branch; switch back to your branch first");
+        const url = await remoteUrl(path);
+        repo = { path, start, url, branch: await prepareBranch(path, task.id) };
       } catch (e) {
         return block(task, (e as Error).message);
       }
-      cwd = space.repoPath;
-    } else {
-      cwd = join(config().home, "spaces", space.id);
-      mkdirSync(cwd, { recursive: true });
     }
 
-    const runId = newId("run");
-    const transcript = openTranscript(runId);
-    db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run(
-      runId,
-      task.id,
-      adapter.id,
-      Date.now(),
-      transcript.path,
-    );
-    setTaskStatus(db, task.id, "running", branch ? { branch } : {});
+    // The task may have left the queue while git was busy.
+    if (getTask(db, task.id)?.status !== "queued") {
+      if (repo) await leaveRepo(repo);
+      return;
+    }
+    setTaskStatus(db, task.id, "running", repo ? { branch: repo.branch } : {});
+
+    let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript> };
+    try {
+      const cwd = repo ? repo.path : join(config().home, "spaces", space.id);
+      if (!repo) mkdirSync(cwd, { recursive: true });
+      const runId = newId("run");
+      const transcript = openTranscript(runId);
+      db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run(
+        runId,
+        task.id,
+        adapter.id,
+        Date.now(),
+        transcript.path,
+      );
+      started = { cwd, runId, transcript };
+    } catch (e) {
+      // Blocking takes the task out of the queue, so a broken disk can't retry it every tick.
+      const left = repo ? await leaveRepo(repo) : null;
+      return block(task, left ?? `Atrium couldn't start the run: ${(e as Error).message}`);
+    }
     logActivity(db, space.id, task.agent, `Started: ${task.title}`);
 
     activeSpaces.add(space.id);
-    const done = execute({ task, space, adapter, cwd, runId, transcript, base, branch })
+    const done = execute({ task, space, adapter, repo, ...started })
       .catch(report)
       .finally(() => {
-        active.delete(runId);
+        active.delete(started.runId);
         activeSpaces.delete(space.id);
         kick();
       });
-    active.set(runId, done);
+    active.set(started.runId, done);
   }
 
   async function execute(r: {
     task: Task;
     space: Space;
     adapter: AgentAdapter;
+    repo: RepoRun | null;
     cwd: string;
     runId: string;
     transcript: ReturnType<typeof openTranscript>;
-    base: string | null;
-    branch: string | undefined;
   }) {
-    const { task, space, adapter, runId, transcript } = r;
+    const { task, space, adapter, repo, runId, transcript } = r;
     let result: AgentRunResult;
     try {
       result = await adapter.run({
         prompt: buildPrompt(task, space),
         cwd: r.cwd,
         systemPrompt: SYSTEM_PROMPT,
-        allowedTools: space.kind === "repo" ? REPO_TOOLS : BASE_TOOLS,
+        allowedTools: repo ? REPO_TOOLS : BASE_TOOLS,
         onChunk(chunk) {
           transcript.append(`${chunk}\n`);
           bus.emit({ type: "run-output", runId, taskId: task.id, chunk });
@@ -226,30 +261,40 @@ export function createRunner(deps: {
       result = { status: "error", kind: "failed", message: `${adapter.label} could not start: ${(e as Error).message}` };
     }
 
-    transcript.close();
-    const tokens = result.status === "ok" ? [result.inputTokens, result.outputTokens] : [0, 0];
-    db.query("UPDATE runs SET ended_at = ?, exit_code = ?, input_tokens = ?, output_tokens = ? WHERE id = ?").run(
-      Date.now(),
-      result.status === "ok" ? 0 : 1,
-      tokens[0]!,
-      tokens[1]!,
-      runId,
-    );
-    enforceTranscriptCap();
+    let leftRepo: string | null = null;
+    try {
+      transcript.close();
+      const tokens = result.status === "ok" ? [result.inputTokens, result.outputTokens] : [0, 0];
+      db.query("UPDATE runs SET ended_at = ?, exit_code = ?, input_tokens = ?, output_tokens = ? WHERE id = ?").run(
+        Date.now(),
+        result.status === "ok" ? 0 : 1,
+        tokens[0]!,
+        tokens[1]!,
+        runId,
+      );
+    } finally {
+      if (repo) leftRepo = await leaveRepo(repo);
+    }
 
-    if (result.status === "ok") {
-      const lines = [result.summary.trim()];
-      if (space.kind === "repo" && r.branch && r.base) lines.push(...(await repoReport(space.repoPath!, r.branch, r.base)));
-      setTaskStatus(db, task.id, "review");
-      createApproval(db, { spaceId: space.id, taskId: task.id, kind: "review", title: task.title, detail: lines.join("\n\n") });
-      logActivity(db, space.id, task.agent, `Ready for review: ${task.title}`);
-    } else if (result.kind === "rate_limited") {
-      // The task did nothing wrong; it goes back in line and runs when the limit resets.
-      setSetting(db, "runner.pausedUntil", String(result.retryAfter ?? Date.now() + 30 * 60_000));
-      setTaskStatus(db, task.id, "queued");
-      logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.`);
-    } else {
-      block(task, result.message);
+    try {
+      if (leftRepo) {
+        block(task, leftRepo);
+      } else if (result.status === "ok") {
+        const lines = [result.summary.trim()];
+        if (repo) lines.push(...(await repoReport(repo)));
+        setTaskStatus(db, task.id, "review");
+        createApproval(db, { spaceId: space.id, taskId: task.id, kind: "review", title: task.title, detail: lines.join("\n\n") });
+        logActivity(db, space.id, task.agent, `Ready for review: ${task.title}`);
+      } else if (result.kind === "rate_limited") {
+        // The task did nothing wrong; it goes back in line and runs when the limit resets.
+        setSetting(db, "runner.pausedUntil", String(result.retryAfter ?? Date.now() + 30 * 60_000));
+        setTaskStatus(db, task.id, "queued");
+        logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.`);
+      } else {
+        block(task, result.message);
+      }
+    } finally {
+      enforceTranscriptCap();
     }
   }
 
@@ -288,20 +333,21 @@ function buildPrompt(task: Task, space: Space): string {
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // Push and summary failures are reported in the review, not fatal: the work is done and worth reviewing.
-async function repoReport(path: string, branch: string, base: string): Promise<string[]> {
+async function repoReport(repo: RepoRun): Promise<string[]> {
   let pushLine: string;
   try {
-    const push = await pushBranch(path, branch);
-    pushLine = push.pushed ? `Pushed ${branch}.` : `Not pushed: ${push.reason}`;
+    const push = await pushBranch(repo.path, repo.branch, repo.url);
+    pushLine = push.pushed ? `Pushed ${repo.branch}.` : `Not pushed: ${push.reason}`;
   } catch (e) {
-    pushLine = `Couldn't push ${branch}: ${(e as Error).message}`;
+    pushLine = `Couldn't push ${repo.branch}: ${(e as Error).message}`;
   }
   let summaryLine: string;
   try {
-    const s = await branchSummary(path, branch, base);
-    summaryLine = `${plural(s.commits, "commit")}, ${plural(s.filesChanged, "file")} (+${s.insertions} −${s.deletions}) on ${branch}`;
+    // Against the starting branch, so a retry reports all the work on the task branch.
+    const s = await branchSummary(repo.path, repo.branch, repo.start);
+    summaryLine = `${plural(s.commits, "commit")}, ${plural(s.filesChanged, "file")} (+${s.insertions} −${s.deletions}) on ${repo.branch}`;
   } catch (e) {
-    summaryLine = `Couldn't summarise the changes on ${branch}: ${(e as Error).message}`;
+    summaryLine = `Couldn't summarise the changes on ${repo.branch}: ${(e as Error).message}`;
   }
   return [summaryLine, pushLine];
 }

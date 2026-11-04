@@ -2,8 +2,11 @@ import { existsSync, statSync } from "node:fs";
 
 const PROTECTED = new Set(["main", "master"]);
 
+// The agent can write inside the repo, so config it plants must never run with the engine's privileges.
+const SAFE = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=ssh"];
+
 async function git(path: string, args: string[]): Promise<{ code: number; out: string; err: string }> {
-  const proc = Bun.spawn(["git", ...args], { cwd: path, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(["git", ...SAFE, ...args], { cwd: path, stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -51,14 +54,31 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
   return branch;
 }
 
-export async function pushBranch(path: string, branch: string): Promise<{ pushed: boolean; reason?: string }> {
-  if (isProtected(branch)) return { pushed: false, reason: "Refusing to push main" };
+// Read before the agent runs: a remote URL the agent rewrites afterwards must not be where Atrium pushes.
+export async function remoteUrl(path: string): Promise<string | null> {
   const remotes = (await git(path, ["remote"])).out.split("\n").map((r) => r.trim()).filter(Boolean);
-  if (remotes.length === 0) return { pushed: false, reason: "No remote configured" };
+  if (remotes.length === 0) return null;
   const remote = remotes.includes("origin") ? "origin" : remotes[0]!;
-  const res = await git(path, ["push", "-u", remote, `refs/heads/${branch}:refs/heads/${branch}`]);
+  const res = await git(path, ["remote", "get-url", remote]);
+  return res.code === 0 ? res.out.trim() : null;
+}
+
+export async function pushBranch(path: string, branch: string, url: string | null): Promise<{ pushed: boolean; reason?: string }> {
+  if (isProtected(branch)) return { pushed: false, reason: "Refusing to push main" };
+  if (!url) return { pushed: false, reason: "No remote configured" };
+  const res = await git(path, ["push", url, `refs/heads/${branch}:refs/heads/${branch}`]);
   if (res.code !== 0) return { pushed: false, reason: res.err.trim() };
   return { pushed: true };
+}
+
+// Plain checkout (never --force); a dirty tree is reported rather than carried along.
+export async function returnToBranch(path: string, ref: string): Promise<"ok" | "dirty"> {
+  const status = await git(path, ["status", "--porcelain"]);
+  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  if (status.out.trim() !== "") return "dirty";
+  const res = await git(path, ["checkout", ref]);
+  if (res.code !== 0) throw new Error(`Could not switch back to ${ref}: ${res.err.trim()}`);
+  return "ok";
 }
 
 export async function branchSummary(

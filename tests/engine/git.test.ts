@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchSummary, headRef, prepareBranch, pushBranch, repoReady } from "../../src/engine/git";
+import { branchSummary, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -98,24 +98,72 @@ describe("prepareBranch", () => {
 });
 
 describe("pushBranch", () => {
-  test("without remote skips with reason", async () => {
-    expect(await pushBranch(repo(), "atrium/tsk_1")).toEqual({ pushed: false, reason: "No remote configured" });
-  });
-
-  test("never pushes main or master", async () => {
-    const path = repo();
-    expect((await pushBranch(path, "main")).pushed).toBe(false);
-    expect((await pushBranch(path, "master")).pushed).toBe(false);
-  });
-
-  test("pushes a task branch to a local bare remote", async () => {
+  function withRemote() {
     const path = repo();
     const bare = tempDir();
     git(bare, "init", "--bare");
     git(path, "remote", "add", "origin", bare);
+    return { path, bare };
+  }
+
+  test("without remote skips with reason", async () => {
+    const path = repo();
+    expect(await remoteUrl(path)).toBeNull();
+    expect(await pushBranch(path, "atrium/tsk_1", null)).toEqual({ pushed: false, reason: "No remote configured" });
+  });
+
+  test("never pushes main or master", async () => {
+    const { path, bare } = withRemote();
+    expect((await pushBranch(path, "main", bare)).pushed).toBe(false);
+    expect((await pushBranch(path, "master", bare)).pushed).toBe(false);
+  });
+
+  test("pushes a task branch to a local bare remote", async () => {
+    const { path, bare } = withRemote();
     await prepareBranch(path, "tsk_1");
-    expect(await pushBranch(path, "atrium/tsk_1")).toEqual({ pushed: true });
+    expect(await remoteUrl(path)).toBe(bare);
+    expect(await pushBranch(path, "atrium/tsk_1", bare)).toEqual({ pushed: true });
     expect(git(bare, "branch", "--list", "atrium/tsk_1")).toContain("atrium/tsk_1");
+  });
+
+  test("does not run a planted pre-push hook", async () => {
+    const { path, bare } = withRemote();
+    const marker = join(tempDir(), "hook-ran");
+    const hook = join(path, ".git", "hooks", "pre-push");
+    writeFileSync(hook, `#!/bin/sh\ntouch ${marker}\n`);
+    chmodSync(hook, 0o755);
+    await prepareBranch(path, "tsk_1");
+    expect(await pushBranch(path, "atrium/tsk_1", bare)).toEqual({ pushed: true });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("pushes to the URL captured before the run, not a rewritten remote", async () => {
+    const { path, bare } = withRemote();
+    const url = await remoteUrl(path);
+    const other = tempDir();
+    git(other, "init", "--bare");
+    git(path, "remote", "set-url", "origin", other);
+    await prepareBranch(path, "tsk_1");
+    expect(await pushBranch(path, "atrium/tsk_1", url)).toEqual({ pushed: true });
+    expect(git(bare, "branch", "--list", "atrium/tsk_1")).toContain("atrium/tsk_1");
+    expect(git(other, "branch", "--list", "atrium/tsk_1")).toBe("");
+  });
+});
+
+describe("returnToBranch", () => {
+  test("switches back on a clean tree", async () => {
+    const path = repo();
+    await prepareBranch(path, "tsk_1");
+    expect(await returnToBranch(path, "main")).toBe("ok");
+    expect(git(path, "branch", "--show-current")).toBe("main");
+  });
+
+  test("reports a dirty tree and stays put", async () => {
+    const path = repo();
+    await prepareBranch(path, "tsk_1");
+    writeFileSync(join(path, "left.txt"), "x");
+    expect(await returnToBranch(path, "main")).toBe("dirty");
+    expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_1");
   });
 });
 

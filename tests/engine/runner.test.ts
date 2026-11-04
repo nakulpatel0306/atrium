@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
+import * as gitOps from "../../src/engine/git";
 import { bus, listActivity } from "../../src/engine/events";
 import { createRunner, recoverOnBoot } from "../../src/engine/runner";
 import { getSetting, setSetting } from "../../src/engine/settings";
@@ -152,11 +154,12 @@ test("repo task runs on atrium/<taskId> branch", async () => {
 
   const task = getTask(db, t.id)!;
   expect(task.branch).toBe("atrium/" + task.id);
-  expect(git(path, "branch", "--show-current")).toBe("atrium/" + task.id);
+  expect(git(path, "branch", "--list", "atrium/" + task.id)).toContain("atrium/" + task.id);
+  expect(git(path, "branch", "--show-current")).toBe("main");
   expect(calls[0]!.cwd).toBe(path);
   expect(calls[0]!.allowedTools).toEqual([
     "Read", "Edit", "Write", "Glob", "Grep",
-    "Bash(bun test*)", "Bash(bun run *)", "Bash(bun install*)", "Bash(bunx tsc*)",
+    "Bash(bun test*)", "Bash(bun install --ignore-scripts*)", "Bash(bunx tsc*)",
     "Bash(git add *)", "Bash(git commit *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
   ]);
   const [a] = listPending(db);
@@ -198,16 +201,153 @@ test("branch summary failure still moves to review and says so", async () => {
   const path = repo();
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Rename" });
-  // Deleting the starting branch makes branchSummary fail.
-  const { adapter } = fakeAdapter((input) => {
-    git(input.cwd, "branch", "-D", "main");
-    return ok("Renamed things.");
-  });
-  start({ adapter });
+  const spy = spyOn(gitOps, "branchSummary").mockRejectedValue(new Error("Could not count commits: bad revision"));
+  cleanups.push(() => spy.mockRestore());
+  start({ adapter: fakeAdapter(() => ok("Renamed things.")).adapter });
   await waitFor(() => status(t.id) === "review");
   const [a] = listPending(db);
   expect(a!.detail).toContain("Renamed things.");
-  expect(a!.detail).toContain("Couldn't summarise the changes on atrium/");
+  expect(a!.detail).toContain(`Couldn't summarise the changes on atrium/${t.id}: Could not count commits: bad revision`);
+});
+
+test("push failure still moves to review and says so", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Rename" });
+  const spy = spyOn(gitOps, "pushBranch").mockRejectedValue(new Error("network is down"));
+  cleanups.push(() => spy.mockRestore());
+  start({ adapter: fakeAdapter(() => ok("Renamed things.")).adapter });
+  await waitFor(() => status(t.id) === "review");
+  const [a] = listPending(db);
+  expect(a!.detail).toContain("Renamed things.");
+  expect(a!.detail).toContain(`Couldn't push atrium/${t.id}: network is down`);
+});
+
+test("pushes to the remote URL read before the run", async () => {
+  const path = repo();
+  const bare = mkdtempSync(join(tmpdir(), "atrium-bare-"));
+  const other = mkdtempSync(join(tmpdir(), "atrium-bare-"));
+  cleanups.push(() => rmSync(bare, { recursive: true, force: true }), () => rmSync(other, { recursive: true, force: true }));
+  git(bare, "init", "--bare");
+  git(other, "init", "--bare");
+  git(path, "remote", "add", "origin", bare);
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Sneaky" });
+  start({
+    adapter: fakeAdapter((input) => {
+      git(input.cwd, "remote", "set-url", "origin", other);
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  expect(git(bare, "branch", "--list", `atrium/${t.id}`)).toContain(`atrium/${t.id}`);
+  expect(git(other, "branch", "--list", `atrium/${t.id}`)).toBe("");
+  expect(listPending(db)[0]!.detail).toContain(`Pushed atrium/${t.id}.`);
+});
+
+test("adapter error returns the repo to the starting branch", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Fail" });
+  start({ adapter: fakeAdapter(() => ({ status: "error", kind: "failed", message: "boom" })).adapter });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe("boom");
+  expect(git(path, "branch", "--show-current")).toBe("feature");
+});
+
+test("summary counts against the starting branch", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  writeFileSync(join(path, "f.txt"), "f\n");
+  git(path, "add", "f.txt");
+  git(path, "commit", "-m", "feature work");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "On feature" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, "g.txt"), "g\n");
+      git(input.cwd, "add", "g.txt");
+      git(input.cwd, "commit", "-m", "agent work");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  expect(listPending(db)[0]!.detail).toContain(`1 commit, 1 file (+1 −0) on atrium/${t.id}`);
+  expect(git(path, "branch", "--show-current")).toBe("feature");
+});
+
+test("a leftover Atrium branch blocks instead of stacking", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "atrium/tsk_old");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Next" });
+  const { adapter, calls } = fakeAdapter();
+  start({ adapter });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe("Repo is on an Atrium branch; switch back to your branch first");
+  expect(calls).toHaveLength(0);
+  expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_old");
+});
+
+test("uncommitted changes left by the agent block and stay on the task branch", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Messy" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, "half.txt"), "wip");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe(`The agent left uncommitted changes on atrium/${t.id} in ${path}`);
+  expect(git(path, "branch", "--show-current")).toBe(`atrium/${t.id}`);
+  expect(listPending(db)).toHaveLength(0);
+});
+
+test("a run that can't start is blocked once, without spinning", async () => {
+  // A file where the transcripts folder should be makes every openTranscript fail.
+  rmSync(join(home.home, "transcripts"), { recursive: true, force: true });
+  writeFileSync(join(home.home, "transcripts"), "not a folder");
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Doomed" });
+  const { adapter, calls } = fakeAdapter();
+  let ticks = 0;
+  start({
+    adapter,
+    power: async () => {
+      ticks++;
+      return "ac";
+    },
+  });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toStartWith("Atrium couldn't start the run:");
+  await Bun.sleep(100);
+  expect(ticks).toBeLessThanOrEqual(6);
+  expect(calls).toHaveLength(0);
+  expect(db.query("SELECT COUNT(*) AS n FROM runs").get()).toEqual({ n: 0 });
+});
+
+test("a tick that keeps failing does not spin", async () => {
+  const s = generalSpace();
+  createTask(db, { spaceId: s.id, title: "Any" });
+  let ticks = 0;
+  let broken = true;
+  start({
+    adapter: fakeAdapter().adapter,
+    power: async () => {
+      ticks++;
+      // Every settings write in the tick now throws, and report's activity row emits `changed`.
+      if (broken) db.exec("DROP TABLE IF EXISTS settings");
+      return "ac";
+    },
+  });
+  await Bun.sleep(150);
+  expect(ticks).toBeLessThanOrEqual(3);
+  expect(listActivity(db).filter((r) => r.message.startsWith("Runner error:")).length).toBeLessThanOrEqual(3);
+  broken = false;
+  db.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 });
 
 test("heavy task waits on battery and stays queued with reason in runner.waiting", async () => {

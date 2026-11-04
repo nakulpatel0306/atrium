@@ -76,13 +76,20 @@ describe("claudeAdapter", () => {
     expect(r.message).toContain("boom: something exploded");
   });
 
-  test("always passes .env deny rules and project/local settings only", async () => {
+  test("always passes .env and .git deny rules and project/local settings only", async () => {
     process.env.FAKE_CLAUDE_MODE = "argv";
     const r = await claudeAdapter(FAKE).run(input());
     if (r.status !== "ok") throw new Error("expected ok");
     const { argv } = JSON.parse(r.summary) as { argv: string[] };
     const i = argv.indexOf("--disallowedTools");
-    expect(argv.slice(i + 1, i + 5)).toEqual(["Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)", "Bash(cat *.env*)"]);
+    expect(argv.slice(i + 1, i + 7)).toEqual([
+      "Read(**/.env*)",
+      "Edit(**/.env*)",
+      "Write(**/.env*)",
+      "Bash(cat *.env*)",
+      "Edit(**/.git/**)",
+      "Write(**/.git/**)",
+    ]);
     expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
   });
 
