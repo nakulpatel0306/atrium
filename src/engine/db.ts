@@ -1,0 +1,77 @@
+import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { config } from "./config";
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS spaces (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('repo','general')),
+  goal TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL,
+  repo_path TEXT,
+  private INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','review','done','failed','blocked')),
+  blocked_reason TEXT,
+  agent TEXT NOT NULL,
+  weight TEXT NOT NULL CHECK (weight IN ('heavy','light')),
+  allow_on_battery INTEGER NOT NULL DEFAULT 0,
+  branch TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  agent TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  exit_code INTEGER,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  transcript_path TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  task_id TEXT REFERENCES tasks(id),
+  kind TEXT NOT NULL CHECK (kind IN ('review','question')),
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  note TEXT,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS activity (
+  id TEXT PRIMARY KEY,
+  space_id TEXT REFERENCES spaces(id),
+  actor TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`;
+
+export function openDb(path?: string): Database {
+  const c = config();
+  mkdirSync(c.home, { recursive: true });
+  mkdirSync(c.transcriptsDir, { recursive: true });
+  const db = new Database(path ?? c.dbPath);
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec(SCHEMA);
+  return db;
+}
