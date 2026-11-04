@@ -197,12 +197,18 @@ test("transcript is served from the run's stored path only", async () => {
   );
   const res = await fetch(`${base}/api/runs/run_1/transcript`);
   expect(res.headers.get("content-type")).toContain("text/plain");
+  // Agent output must never be sniffed into HTML on the engine's origin.
+  expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   expect(await res.text()).toBe("hello transcript");
   expect((await fetch(`${base}/api/runs/nope/transcript`)).status).toBe(404);
 });
 
 test("server is bound to 127.0.0.1", () => {
   expect(server.hostname).toBe("127.0.0.1");
+});
+
+test("server runs in production mode unless ATRIUM_DEV=1", () => {
+  expect(server.development).toBe(false);
 });
 
 test("dashboard routes serve html", async () => {

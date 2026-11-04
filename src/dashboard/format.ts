@@ -10,6 +10,8 @@ export function relative(ts: number, now = Date.now()): string {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+export const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
 export const absolute = (ts: number) =>
   new Date(ts).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 

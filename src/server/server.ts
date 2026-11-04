@@ -197,7 +197,8 @@ export function startServer(deps: Deps): Server<undefined> {
       } | null;
       const file = row ? Bun.file(row.transcript_path) : null;
       if (!file || !(await file.exists())) throw new HttpError(404, "No transcript for that run.");
-      return new Response(file, { headers: { "content-type": "text/plain; charset=utf-8" } });
+      // Agent output is untrusted; a browser must never sniff it into HTML on the engine's origin.
+      return new Response(file, { headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
     }
 
     throw new HttpError(404, "Not found.");
@@ -206,6 +207,8 @@ export function startServer(deps: Deps): Server<undefined> {
   const server = Bun.serve({
     hostname: config().host,
     port: deps.port ?? config().port,
+    // Dev mode serves unminified bundles with HMR; only wanted while working on the dashboard.
+    development: process.env.ATRIUM_DEV === "1",
     routes: { "/": index, "/space/*": index },
     async fetch(req, srv) {
       const url = new URL(req.url);

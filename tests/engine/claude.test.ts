@@ -88,19 +88,21 @@ describe("claudeAdapter", () => {
     }
   });
 
-  test("always passes .env and .git deny rules and project/local settings only", async () => {
+  test("always passes .env, .git, and .claude deny rules and project/local settings only", async () => {
     process.env.FAKE_CLAUDE_MODE = "argv";
     const r = await claudeAdapter(FAKE).run(input());
     if (r.status !== "ok") throw new Error("expected ok");
     const { argv } = JSON.parse(r.summary) as { argv: string[] };
     const i = argv.indexOf("--disallowedTools");
-    expect(argv.slice(i + 1, i + 7)).toEqual([
+    expect(argv.slice(i + 1)).toEqual([
       "Read(**/.env*)",
       "Edit(**/.env*)",
       "Write(**/.env*)",
       "Bash(cat *.env*)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
+      "Edit(**/.claude/**)",
+      "Write(**/.claude/**)",
     ]);
     expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
     // dontAsk makes allowedTools a strict allowlist; acceptEdits would auto-approve unlisted Edit/Write.

@@ -7,6 +7,7 @@ import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engi
 import { listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import * as gitOps from "../../src/engine/git";
+import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { createRunner, recoverOnBoot } from "../../src/engine/runner";
 import { getSetting, setSetting } from "../../src/engine/settings";
@@ -766,4 +767,25 @@ test("a run that ends another way resets the usage-limit count", async () => {
   start({ adapter });
   await waitFor(() => status(t.id) === "review");
   expect(calls).toHaveLength(3);
+});
+
+test("a transcript write failure doesn't fail the run", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Disk full" });
+  const spy = spyOn(storage, "openTranscript").mockReturnValue({
+    path: join(home.home, "unwritable.log"),
+    append() {
+      throw new Error("ENOSPC: no space left on device");
+    },
+    close() {},
+  });
+  cleanups.push(() => spy.mockRestore());
+  start({
+    adapter: fakeAdapter((input) => {
+      input.onChunk("still working");
+      return ok("Finished anyway.");
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  expect(listPending(db)[0]!.detail).toContain("Finished anyway.");
 });

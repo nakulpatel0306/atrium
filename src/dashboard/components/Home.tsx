@@ -1,5 +1,5 @@
 import type { State } from "../api";
-import { relative } from "../format";
+import { clock, relative } from "../format";
 import { navigate } from "../route";
 import { Activity } from "./Activity";
 import { NeedsYou } from "./NeedsYou";
@@ -9,6 +9,8 @@ type Task = State["tasks"][number];
 
 const OPEN = new Set<Task["status"]>(["queued", "running", "review", "blocked", "failed"]);
 const SHOWN_TASKS = 3;
+
+const pausedText = (until: number) => `Paused: Claude usage limit, resumes at ${clock(until)}`;
 
 function status(space: Space, tasks: Task[], state: State): { text: string; tone?: "blocked" | "waiting" } {
   const running = tasks.find((t) => t.status === "running");
@@ -24,6 +26,7 @@ function status(space: Space, tasks: Task[], state: State): { text: string; tone
   const review = tasks.filter((t) => t.status === "review").length;
   if (review > 0) return { text: `${review} ready for your review` };
   const queued = tasks.filter((t) => t.status === "queued").length;
+  if (queued > 0 && state.power.pausedUntil) return { text: pausedText(state.power.pausedUntil), tone: "waiting" };
   if (queued > 0) return { text: `${queued} ${queued === 1 ? "task" : "tasks"} queued` };
   const last = state.activity.find((a) => a.spaceId === space.id)?.createdAt ?? space.updatedAt;
   return { text: `Idle · last activity ${relative(last)}` };
@@ -93,6 +96,7 @@ function liveStatus(state: State): string {
     parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
   }
   if (state.power.waiting) parts.push("Heavy work is waiting for power");
+  if (state.power.pausedUntil) parts.push(pausedText(state.power.pausedUntil));
   return parts.length ? ` ${parts.join(". ")}.` : "";
 }
 

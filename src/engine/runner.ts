@@ -287,7 +287,11 @@ export function createRunner(deps: {
         allowedTools: repo ? REPO_TOOLS : BASE_TOOLS,
         signal: r.signal,
         onChunk(chunk) {
-          transcript.append(`${chunk}\n`);
+          try {
+            transcript.append(`${chunk}\n`);
+          } catch {
+            // A disk error here would reject the run while the agent keeps working; the live view still gets it.
+          }
           bus.emit({ type: "run-output", runId, taskId: task.id, chunk });
         },
       });

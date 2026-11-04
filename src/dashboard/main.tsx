@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { post, type State, useEngineState, useOnline } from "./api";
+import { activeOnly, post, type State, useEngineState, useOnline } from "./api";
 import { CommandBar } from "./components/CommandBar";
 import { Home } from "./components/Home";
 import { Sidebar } from "./components/Sidebar";
@@ -62,7 +62,7 @@ function App() {
   return (
     <div className="app">
       <Sidebar
-        state={state}
+        state={activeOnly(state)}
         route={route}
         onNewSpace={newSpace}
         onJump={(section) => {
@@ -89,7 +89,7 @@ function App() {
           <span className="k">⌘K</span>
         </div>
         {route.name === "home" ? (
-          <Home state={state} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
+          <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
         ) : (
           <SpaceView key={route.id} state={state} space={space} focusTask={route.task} />
         )}

@@ -9,6 +9,9 @@ const DENY = [
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
   "Write(**/.git/**)",
+  // Project settings in .claude are loaded by later runs (--setting-sources project), so an agent could widen its own permissions.
+  "Edit(**/.claude/**)",
+  "Write(**/.claude/**)",
 ];
 const FALLBACK_WAIT_MS = 30 * 60_000;
 
