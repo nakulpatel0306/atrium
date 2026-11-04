@@ -245,6 +245,23 @@ test("pushes the task branch to the remote and returns to the starting branch", 
   expect(git(path, "branch", "--show-current")).toBe("main");
 });
 
+test("pushes to the origin URL captured before the run", async () => {
+  const path = repo();
+  const bare = mkdtempSync(join(tmpdir(), "atrium-bare-"));
+  cleanups.push(() => rmSync(bare, { recursive: true, force: true }));
+  git(bare, "init", "--bare");
+  git(path, "remote", "add", "origin", bare);
+  const captured = git(path, "remote", "get-url", "origin");
+  const push = spyOn(gitOps, "pushBranch");
+  cleanups.push(() => push.mockRestore());
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Ship" });
+  start({ adapter: fakeAdapter().adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(push.mock.calls[0]).toEqual([path, `atrium/${t.id}`, captured]);
+});
+
 test("an agent rewriting the remote is stopped before anything is pushed", async () => {
   const path = repo();
   const bare = mkdtempSync(join(tmpdir(), "atrium-bare-"));

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 const PROTECTED = new Set(["main", "master"]);
 
@@ -64,20 +64,30 @@ function readOrMissing(file: string): string {
 
 // Hash of everything in the repo that can make a later git command run code or rewrite where it pushes.
 export async function gitSettingsFingerprint(path: string): Promise<string> {
-  const dir = await git(path, ["rev-parse", "--git-dir"]);
-  const top = await git(path, ["rev-parse", "--show-toplevel"]);
-  if (dir.code !== 0 || top.code !== 0) throw new Error(`Not a git repo: ${path}`);
-  const gitDir = resolve(path, dir.out.trim());
-  const hooksDir = join(gitDir, "hooks");
-  const hooks = existsSync(hooksDir)
-    ? (readdirSync(hooksDir, { recursive: true }) as string[]).filter((f) => statSync(join(hooksDir, f)).isFile()).sort()
-    : [];
+  // Absolute: from a subfolder, --git-common-dir is otherwise relative to the repo root, not cwd.
+  const dirs = await git(path, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel"]);
+  const [gitDirPath, commonDir, top] = dirs.out.trim().split("\n");
+  if (dirs.code !== 0 || !gitDirPath || !commonDir || !top) throw new Error(`Not a git repo: ${path}`);
+  // Effective config catches include files, which the raw config file only points at.
+  const local = await git(path, ["config", "--list", "--show-origin", "--includes", "--local"]);
+  // Fails unless extensions.worktreeConfig is on; then there is no worktree config to hash.
+  const worktree = await git(path, ["config", "--list", "--show-origin", "--includes", "--worktree"]);
+
   const hash = createHash("sha256");
   const add = (label: string, content: string) => hash.update(`${label}\0${content.length}\0${content}\0`);
-  add("config", readOrMissing(join(gitDir, "config")));
-  for (const f of hooks) add(`hook:${f}`, readOrMissing(join(hooksDir, f)));
-  add("info/attributes", readOrMissing(join(gitDir, "info", "attributes")));
-  add(".gitattributes", readOrMissing(join(top.out.trim(), ".gitattributes")));
+  add("config --local", local.code === 0 ? local.out : MISSING);
+  add("config --worktree", worktree.code === 0 ? worktree.out : MISSING);
+  // A linked worktree has its own git dir, but hooks and config live in the shared common dir.
+  for (const gitDir of new Set([gitDirPath, commonDir])) {
+    const hooksDir = join(gitDir, "hooks");
+    const hooks = existsSync(hooksDir)
+      ? (readdirSync(hooksDir, { recursive: true }) as string[]).filter((f) => statSync(join(hooksDir, f)).isFile()).sort()
+      : [];
+    add(`${gitDir}:config`, readOrMissing(join(gitDir, "config")));
+    for (const f of hooks) add(`${gitDir}:hook:${f}`, readOrMissing(join(hooksDir, f)));
+    add(`${gitDir}:info/attributes`, readOrMissing(join(gitDir, "info", "attributes")));
+  }
+  add(".gitattributes", readOrMissing(join(top, ".gitattributes")));
   return hash.digest("hex");
 }
 

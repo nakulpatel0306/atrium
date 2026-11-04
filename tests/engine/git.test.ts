@@ -183,6 +183,26 @@ describe("gitSettingsFingerprint", () => {
     await changed();
   });
 
+  test("follows config include files", async () => {
+    const path = repo();
+    const base = await gitSettingsFingerprint(path);
+    writeFileSync(join(path, ".git", "extra.cfg"), "[user]\n\tname = A\n");
+    appendFileSync(join(path, ".git", "config"), "[include]\n\tpath = extra.cfg\n");
+    const included = await gitSettingsFingerprint(path);
+    expect(included).not.toBe(base);
+    writeFileSync(join(path, ".git", "extra.cfg"), '[url "x"]\n\tinsteadOf = y\n');
+    expect(await gitSettingsFingerprint(path)).not.toBe(included);
+  });
+
+  test("a linked worktree sees hooks added to the shared hooks dir", async () => {
+    const path = repo();
+    const wt = join(tempDir(), "wt");
+    git(path, "worktree", "add", "-b", "wt-branch", wt);
+    const before = await gitSettingsFingerprint(wt);
+    writeFileSync(join(path, ".git", "hooks", "pre-push"), "#!/bin/sh\n");
+    expect(await gitSettingsFingerprint(wt)).not.toBe(before);
+  });
+
   test("works from a subfolder", async () => {
     const path = repo();
     mkdirSync(join(path, "sub"));
