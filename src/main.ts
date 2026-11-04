@@ -11,13 +11,23 @@ import { startServer } from "./server/server";
 // Keep launchd's log from growing forever; must run before anything logs.
 trimLog(join(config().home, "engine.log"), 1024 * 1024);
 
+const url = `http://${config().host}:${config().port}`;
 const db = openDb();
-recoverOnBoot(db);
 const runner = createRunner({ db, adapters: { claude: claudeAdapter() }, power: powerSource, keepAwake });
-runner.start();
-const server = startServer({ db, runner, setup: (text) => setupSpace(db, claudeAdapter(), text) });
 
-console.log(`Atrium running at http://${config().host}:${server.port}`);
+// Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
+let server: ReturnType<typeof startServer>;
+try {
+  server = startServer({ db, runner, setup: (text) => setupSpace(db, claudeAdapter(), text) });
+} catch (e) {
+  if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
+  console.error(`Atrium is already running at ${url}`);
+  process.exit(1);
+}
+
+recoverOnBoot(db);
+runner.start();
+console.log(`Atrium running at ${url}`);
 
 const shutdown = async () => {
   await runner.stop();
