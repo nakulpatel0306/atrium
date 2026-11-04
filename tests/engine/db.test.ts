@@ -32,7 +32,7 @@ test("config honors ATRIUM_HOME", () => {
   t.cleanup();
 });
 
-test("openDb adds runs.start_ref to an existing database", () => {
+test("openDb adds runs.start_ref and runs.git_fingerprint to an existing database", () => {
   const t = tempHome();
   const path = join(t.home, "atrium.db");
   const old = new Database(path);
@@ -44,6 +44,7 @@ test("openDb adds runs.start_ref to an existing database", () => {
   const db = openDb(path);
   const cols = (db.query("PRAGMA table_info(runs)").all() as { name: string }[]).map((c) => c.name);
   expect(cols).toContain("start_ref");
+  expect(cols).toContain("git_fingerprint");
   db.close();
   openDb(path).close();
   t.cleanup();

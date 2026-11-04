@@ -181,15 +181,7 @@ export function createRunner(deps: {
   // After a run: refuse to touch a repo whose git settings the agent changed, since the
   // next checkout could run its hooks or filters.
   async function settleRepo(repo: RepoRun): Promise<string | null> {
-    let same: boolean;
-    try {
-      same = (await gitSettingsFingerprint(repo.path)) === repo.fingerprint;
-    } catch {
-      same = false;
-    }
-    if (!same) {
-      return `The agent changed git settings in ${repo.path} (config, hooks, or attributes). Atrium stopped before pushing — check them before retrying.`;
-    }
+    if (!(await settingsUnchanged(repo.path, repo.fingerprint))) return tamperedReason(repo.path);
     return leaveRepo(repo);
   }
 
@@ -215,11 +207,15 @@ export function createRunner(deps: {
         const head = await headRef(path);
         let start = head.branch ?? head.sha;
         // Still on this task's branch after a crash: carry on from where its last run started.
-        const resumeFrom = start === own ? lastStartRef(db, task.id) : null;
-        if (resumeFrom) start = resumeFrom;
+        const last = start === own ? lastRepoRun(db, task.id) : null;
+        if (last) {
+          // A fresh fingerprint would bless whatever the crashed agent planted; compare to the pre-run one.
+          if (!(await settingsUnchanged(path, last.fingerprint))) return block(task, tamperedReason(path));
+          start = last.start;
+        }
         // Branching from a leftover agent branch would stack unreviewed work.
         else if (start.startsWith("atrium/")) return block(task, `Repo is on ${start}; switch back to your branch first.`);
-        const fingerprint = await gitSettingsFingerprint(path);
+        const fingerprint = last?.fingerprint ?? (await gitSettingsFingerprint(path));
         repo = { path, start, fingerprint, branch: await prepareBranch(path, task.id) };
       } catch (e) {
         return block(task, (e as Error).message);
@@ -239,14 +235,9 @@ export function createRunner(deps: {
       if (!repo) mkdirSync(cwd, { recursive: true });
       const runId = newId("run");
       const transcript = openTranscript(runId);
-      db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref) VALUES (?, ?, ?, ?, ?, ?)").run(
-        runId,
-        task.id,
-        adapter.id,
-        Date.now(),
-        transcript.path,
-        repo?.start ?? null,
-      );
+      db.query(
+        "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run(runId, task.id, adapter.id, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null);
       started = { cwd, runId, transcript };
     } catch (e) {
       // Blocking takes the task out of the queue, so a broken disk can't retry it every tick.
@@ -406,28 +397,52 @@ async function repoReport(repo: RepoRun): Promise<string[]> {
   return [summaryLine, `Branch ${repo.branch} is on your machine — push it when you're ready.`];
 }
 
-function lastStartRef(db: Database, taskId: string): string | null {
+const tamperedReason = (path: string) =>
+  `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`;
+
+// The last repo run of a task: where it started and the git settings it started with (null for older rows).
+function lastRepoRun(db: Database, taskId: string): { start: string; fingerprint: string | null } | null {
   const row = db
-    .query("SELECT start_ref FROM runs WHERE task_id = ? AND start_ref IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1")
-    .get(taskId) as { start_ref: string } | null;
-  return row?.start_ref ?? null;
+    .query(
+      "SELECT start_ref, git_fingerprint FROM runs WHERE task_id = ? AND start_ref IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1",
+    )
+    .get(taskId) as { start_ref: string; git_fingerprint: string | null } | null;
+  return row ? { start: row.start_ref, fingerprint: row.git_fingerprint } : null;
+}
+
+// A missing baseline counts as changed: without it there's no telling what the agent did.
+async function settingsUnchanged(path: string, expected: string | null): Promise<boolean> {
+  if (!expected) return false;
+  try {
+    return (await gitSettingsFingerprint(path)) === expected;
+  } catch {
+    return false;
+  }
 }
 
 export async function recoverOnBoot(db: Database): Promise<number> {
   const stuck = listTasks(db, { status: ["running"] });
   for (const task of stuck) {
+    const path = getSpace(db, task.spaceId)?.repoPath;
+    const last = lastRepoRun(db, task.id);
+    if (path && last && (await headRef(path).catch(() => null))?.branch === `atrium/${task.id}`) {
+      // A checkout could run hooks or filters the crashed agent planted, so only a repo with untouched settings is switched.
+      if (!(await settingsUnchanged(path, last.fingerprint))) {
+        const reason = tamperedReason(path);
+        setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
+        logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`);
+        continue;
+      }
+      // A crash mid-run leaves the repo on the task branch. A clean one goes back now; a dirty one
+      // stays put and launch blocks it with the agent's leftovers.
+      try {
+        await returnToBranch(path, last.start);
+      } catch {
+        // Left as found: launch reports a repo it can't switch.
+      }
+    }
     setTaskStatus(db, task.id, "queued");
     logActivity(db, task.spaceId, "atrium", `Engine restarted; requeued ${task.title}`);
-    const path = getSpace(db, task.spaceId)?.repoPath;
-    const start = lastStartRef(db, task.id);
-    if (!path || !start) continue;
-    // A crash mid-run leaves the repo on the task branch. A clean one goes back now; a dirty one
-    // stays put and launch blocks it with the agent's leftovers.
-    try {
-      if ((await headRef(path)).branch === `atrium/${task.id}`) await returnToBranch(path, start);
-    } catch {
-      // Left as found: launch reports a repo it can't read or switch.
-    }
   }
   db.query("UPDATE runs SET ended_at = ?, exit_code = -1 WHERE ended_at IS NULL").run(Date.now());
   return stuck.length;

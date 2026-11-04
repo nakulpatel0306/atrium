@@ -292,7 +292,7 @@ test("summary counts against the starting branch", async () => {
   expect(git(path, "branch", "--show-current")).toBe("feature");
 });
 
-test("git settings changed by the agent stop the run before pushing", async () => {
+test("git settings changed by the agent stop the run before switching branches", async () => {
   const path = repo();
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Tamper" });
@@ -307,7 +307,7 @@ test("git settings changed by the agent stop the run before pushing", async () =
   });
   await waitFor(() => status(t.id) === "blocked");
   expect(getTask(db, t.id)!.blockedReason).toBe(
-    `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before pushing — check them before retrying.`,
+    `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`,
   );
   expect(push).not.toHaveBeenCalled();
   expect(back).not.toHaveBeenCalled();
@@ -675,33 +675,42 @@ test("stop gives up waiting on a run that ignores the abort", async () => {
   await Bun.sleep(30);
 });
 
-test("a repo run records the branch it started from", async () => {
+test("a repo run records the branch it started from and its git settings", async () => {
   const path = repo();
   git(path, "checkout", "-b", "feature");
+  const before = await gitOps.gitSettingsFingerprint(path);
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Record" });
   start({ adapter: fakeAdapter().adapter });
   await waitFor(() => status(t.id) === "review");
-  expect(db.query("SELECT start_ref FROM runs WHERE task_id = ?").get(t.id)).toEqual({ start_ref: "feature" });
+  expect(db.query("SELECT start_ref, git_fingerprint FROM runs WHERE task_id = ?").get(t.id)).toEqual({
+    start_ref: "feature",
+    git_fingerprint: before,
+  });
 });
 
-function crashedRun(path: string, startRef: string) {
+const tampered = (path: string) =>
+  `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`;
+
+// Mirrors what launch records: the starting branch and the git settings as they were before the run.
+async function crashedRun(path: string, startRef: string, opts: { fingerprint?: boolean } = {}) {
+  const fingerprint = opts.fingerprint === false ? null : await gitOps.gitSettingsFingerprint(path);
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Crashed" });
   git(path, "checkout", "-b", `atrium/${t.id}`);
   writeFileSync(join(path, "early.txt"), "early\n");
   git(path, "add", "early.txt");
   git(path, "commit", "-m", "early agent work");
-  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref) VALUES (?, ?, ?, ?, ?, ?)").run(
-    "run_crashed", t.id, "claude", Date.now(), "/tmp/x.log", startRef,
-  );
+  db.query(
+    "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run("run_crashed", t.id, "claude", Date.now(), "/tmp/x.log", startRef, fingerprint);
   return t;
 }
 
 test("recoverOnBoot puts a repo left on the task branch back on its starting branch", async () => {
   const path = repo();
   git(path, "checkout", "-b", "feature");
-  const t = crashedRun(path, "feature");
+  const t = await crashedRun(path, "feature");
   setTaskStatus(db, t.id, "running");
   expect(await recoverOnBoot(db)).toBe(1);
   expect(status(t.id)).toBe("queued");
@@ -711,7 +720,7 @@ test("recoverOnBoot puts a repo left on the task branch back on its starting bra
 test("a task whose repo is still on its own branch resumes from the stored start", async () => {
   const path = repo();
   git(path, "checkout", "-b", "feature");
-  const t = crashedRun(path, "feature");
+  const t = await crashedRun(path, "feature");
   start({
     adapter: fakeAdapter((input) => {
       writeFileSync(join(input.cwd, "late.txt"), "late\n");
@@ -728,7 +737,7 @@ test("a task whose repo is still on its own branch resumes from the stored start
 test("agent leftovers on the task's own branch block with the agent message", async () => {
   const path = repo();
   git(path, "checkout", "-b", "feature");
-  const t = crashedRun(path, "feature");
+  const t = await crashedRun(path, "feature");
   writeFileSync(join(path, "half.txt"), "wip");
   const { adapter, calls } = fakeAdapter();
   start({ adapter });
@@ -788,4 +797,52 @@ test("a transcript write failure doesn't fail the run", async () => {
   });
   await waitFor(() => status(t.id) === "review");
   expect(listPending(db)[0]!.detail).toContain("Finished anyway.");
+});
+
+test("recoverOnBoot leaves a tampered repo on the task branch and blocks the task", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const t = await crashedRun(path, "feature");
+  setTaskStatus(db, t.id, "running");
+  appendFileSync(join(path, ".git", "config"), '[core]\n\tpager = "touch /tmp/pwned"\n');
+  const back = spyOn(gitOps, "returnToBranch");
+  cleanups.push(() => back.mockRestore());
+  expect(await recoverOnBoot(db)).toBe(1);
+  expect(getTask(db, t.id)).toMatchObject({ status: "blocked", blockedReason: tampered(path) });
+  expect(back).not.toHaveBeenCalled();
+  expect(git(path, "branch", "--show-current")).toBe(`atrium/${t.id}`);
+});
+
+test("recoverOnBoot blocks when the crashed run has no stored git settings", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const t = await crashedRun(path, "feature", { fingerprint: false });
+  setTaskStatus(db, t.id, "running");
+  expect(await recoverOnBoot(db)).toBe(1);
+  expect(getTask(db, t.id)).toMatchObject({ status: "blocked", blockedReason: tampered(path) });
+  expect(git(path, "branch", "--show-current")).toBe(`atrium/${t.id}`);
+});
+
+test("a resume on a tampered task branch is blocked instead of run", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const t = await crashedRun(path, "feature");
+  appendFileSync(join(path, ".git", "config"), '[url "x"]\n\tinsteadOf = y\n');
+  const { adapter, calls } = fakeAdapter();
+  start({ adapter });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe(tampered(path));
+  expect(calls).toHaveLength(0);
+  expect(git(path, "branch", "--show-current")).toBe(`atrium/${t.id}`);
+});
+
+test("a resume without stored git settings is blocked", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const t = await crashedRun(path, "feature", { fingerprint: false });
+  const { adapter, calls } = fakeAdapter();
+  start({ adapter });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe(tampered(path));
+  expect(calls).toHaveLength(0);
 });
