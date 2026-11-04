@@ -28,22 +28,17 @@ function seedRun(taskId: string, endedAt: number, exitCode = 0, tokens = 0) {
 }
 
 test("no runs since last seen says nothing ran", () => {
-  const b = briefing(db, Date.now());
-  expect(b.summary).toContain("Nothing ran since you were last here.");
-  expect(b.summary).not.toContain("finished");
+  expect(briefing(db, Date.now()).summary).toBe("Nothing ran since you were last here.");
 });
 
-test("counts finished runs, spaces, and pending approvals", () => {
+test("counts finished runs and spaces", () => {
   const now = Date.now();
   const a = createSpace(db, { name: "A", kind: "general", goal: "" });
   const b = createSpace(db, { name: "B", kind: "general", goal: "" });
   seedRun(createTask(db, { spaceId: a.id, title: "one" }).id, now - 1000);
   seedRun(createTask(db, { spaceId: b.id, title: "two" }).id, now - 500);
   createApproval(db, { spaceId: a.id, kind: "question", title: "q", detail: "" });
-  const { summary } = briefing(db, now);
-  expect(summary).toContain("2 tasks finished across 2 spaces");
-  expect(summary).toContain("1 thing needs you");
-  expect(summary).not.toContain("Nothing ran");
+  expect(briefing(db, now).summary).toBe("2 tasks finished across 2 spaces.");
 });
 
 test("singular and plural wording, runs before lastSeen ignored", () => {
@@ -53,20 +48,17 @@ test("singular and plural wording, runs before lastSeen ignored", () => {
   seedRun(t.id, now - 5000);
   seedRun(t.id, now - 1000);
   markSeen(db, now - 2000);
-  expect(briefing(db, now).summary).toContain("1 task finished across 1 space.");
-  createApproval(db, { spaceId: a.id, kind: "question", title: "q1", detail: "" });
-  createApproval(db, { spaceId: a.id, kind: "question", title: "q2", detail: "" });
-  expect(briefing(db, now).summary).toContain("2 things need you");
+  expect(briefing(db, now).summary).toBe("1 task finished across 1 space.");
 });
 
-test("reports blocked tasks with first reason and heavy work waiting", () => {
+// Live status (needs you, blocked, waiting for power) is composed in the UI so it never goes stale.
+test("summary leaves out live status", () => {
   const a = createSpace(db, { name: "A", kind: "general", goal: "" });
   const t = createTask(db, { spaceId: a.id, title: "one" });
   setTaskStatus(db, t.id, "blocked", { blockedReason: "Needs a login" });
   setSetting(db, "runner.waiting", JSON.stringify({ taskId: t.id, reason: "on battery" }));
-  const { summary } = briefing(db, Date.now());
-  expect(summary).toContain("1 blocked (Needs a login)");
-  expect(summary).toContain("Heavy work is waiting for power");
+  createApproval(db, { spaceId: a.id, kind: "question", title: "q", detail: "" });
+  expect(briefing(db, Date.now()).summary).toBe("Nothing ran since you were last here.");
 });
 
 test("runs that all ended without finishing are described, not a bare period", () => {
@@ -114,4 +106,30 @@ test("snapshot defaults and settings-derived power, usage", () => {
   const s2 = snapshot(db);
   expect(s2.power.waiting).toBeUndefined();
   expect(s2.power.pausedUntil).toBeUndefined();
+});
+
+test("snapshot lists runs newest first, capped at 200", () => {
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  const t = createTask(db, { spaceId: a.id, title: "one" });
+  const now = Date.now();
+  for (let i = 0; i < 205; i++) seedRun(t.id, now - 100_000 + i * 10, 0, i);
+  db.query(
+    "INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES ('run_live', ?, 'claude', ?, '')",
+  ).run(t.id, now);
+  const { runs } = snapshot(db);
+  expect(runs).toHaveLength(200);
+  expect(runs[0]).toEqual({
+    id: "run_live",
+    taskId: t.id,
+    agent: "claude",
+    startedAt: now,
+    endedAt: null,
+    exitCode: null,
+    inputTokens: 0,
+    outputTokens: 0,
+  });
+  expect(runs[1]!.inputTokens).toBe(204);
+  expect(runs[1]!.outputTokens).toBe(204);
+  expect(runs[199]!.inputTokens).toBe(6);
+  expect(Object.keys(runs[1]!)).not.toContain("transcriptPath");
 });

@@ -727,3 +727,244 @@ h2 {
     animation-duration: 3s;
   }
 }
+
+/* space view */
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.space-head .title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.space-head .title-row .sd {
+  width: 10px;
+  height: 10px;
+}
+.space-head .path {
+  font-size: 11px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.head-acts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.head-acts .hint {
+  font-size: 11px;
+  color: var(--faint);
+}
+.private {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.private .toggle {
+  width: auto;
+}
+.btn.danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+.brief.goal {
+  display: block;
+  margin-bottom: 4px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: text;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-left: -4px;
+}
+.brief.goal:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.goal-edit {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 4px;
+  max-width: 680px;
+}
+.goal-edit input {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  padding: 4px 8px;
+  outline: none;
+}
+.space-head .err {
+  margin-top: 4px;
+}
+.cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.live {
+  position: sticky;
+  top: 44px;
+}
+.item.task {
+  cursor: pointer;
+}
+.item.task.done .t {
+  color: var(--faint);
+}
+.item.task .tag {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tag.bad {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 40%, var(--line));
+}
+.stat.done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.detail .reason {
+  margin-bottom: 8px;
+}
+.detail .meta {
+  flex-wrap: wrap;
+}
+.runs {
+  list-style: none;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.runs li {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 14px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.runs-empty {
+  margin-top: 10px;
+  color: var(--faint);
+}
+.agentrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.agentrow .st {
+  color: var(--faint);
+  margin-left: auto;
+  font-size: 11px;
+}
+.agent-task {
+  color: var(--dim);
+  font-size: 12px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term {
+  background: #08080a;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #9aa59a;
+  padding: 10px 12px;
+  height: min(420px, calc(100vh - 260px));
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.term .p {
+  color: var(--faint);
+}
+.idle {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.idle .why {
+  color: var(--faint);
+  margin-top: 4px;
+}
+.idle .why.waiting {
+  color: var(--yellow);
+}
+
+/* transcript overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 10;
+  display: flex;
+  justify-content: flex-end;
+}
+.sheet {
+  width: min(960px, calc(100vw - 220px));
+  height: 100vh;
+  background: var(--panel);
+  border-left: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+}
+.sheet-head {
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.sheet-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.sheet-head b {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet-head .sub {
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.sheet pre {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sheet-note {
+  padding: 14px 16px;
+  color: var(--dim);
+}

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "space"; id: string };
+export type Route = { name: "home" } | { name: "space"; id: string; task: string | null };
 
 const listeners = new Set<() => void>();
 
@@ -19,11 +19,19 @@ export function navigate(path: string): void {
   for (const fn of [...listeners]) fn();
 }
 
+// Includes the query so `?task=` links re-render when only the query changes.
 export function usePath(): string {
-  return useSyncExternalStore(subscribe, () => location.pathname);
+  return useSyncExternalStore(subscribe, () => location.pathname + location.search);
 }
 
 export function parseRoute(path: string): Route {
-  const m = path.match(/^\/space\/([^/]+)$/);
-  return m ? { name: "space", id: decodeURIComponent(m[1]!) } : { name: "home" };
+  const [pathname = "", search = ""] = path.split("?");
+  const m = pathname.match(/^\/space\/([^/]+)$/);
+  if (!m) return { name: "home" };
+  try {
+    return { name: "space", id: decodeURIComponent(m[1]!), task: new URLSearchParams(search).get("task") };
+  } catch {
+    // A hand-typed URL with a stray "%" shouldn't crash the page.
+    return { name: "home" };
+  }
 }

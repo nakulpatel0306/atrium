@@ -26,3 +26,10 @@ export function bytes(n: number): string {
 }
 
 export const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
+
+export function duration(ms: number): string {
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return `${Math.max(0, Math.round(ms / 1000))}s`;
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}

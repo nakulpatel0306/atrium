@@ -16,8 +16,11 @@ function status(space: Space, tasks: Task[], state: State): { text: string; tone
   if (state.power.waiting && tasks.some((t) => t.id === state.power.waiting!.taskId)) {
     return { text: "Waiting for power", tone: "waiting" };
   }
-  const blocked = tasks.find((t) => t.status === "blocked");
-  if (blocked) return { text: `Blocked: ${blocked.blockedReason ?? blocked.title}`, tone: "blocked" };
+  const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
+  if (stuck.length === 1 && stuck[0]!.status === "blocked") {
+    return { text: `Blocked: ${stuck[0]!.blockedReason ?? stuck[0]!.title}`, tone: "blocked" };
+  }
+  if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
   const review = tasks.filter((t) => t.status === "review").length;
   if (review > 0) return { text: `${review} ready for your review` };
   const queued = tasks.filter((t) => t.status === "queued").length;
@@ -79,6 +82,20 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
   );
 }
 
+// Composed from live state on every render so counts never go stale while the page stays open.
+function liveStatus(state: State): string {
+  const parts: string[] = [];
+  const pending = state.approvals.length;
+  if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
+  const blocked = state.tasks.filter((t) => t.status === "blocked");
+  if (blocked.length > 0) {
+    const reason = blocked[0]!.blockedReason;
+    parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
+  }
+  if (state.power.waiting) parts.push("Heavy work is waiting for power");
+  return parts.length ? ` ${parts.join(". ")}.` : "";
+}
+
 type Props = {
   state: State;
   briefing: State["briefing"];
@@ -101,7 +118,10 @@ export function Home({ state, briefing, onNewSpace }: Props) {
   return (
     <div className="wrap">
       <h1>{briefing.greeting}</h1>
-      <p className="brief">{briefing.summary}</p>
+      <p className="brief">
+        {briefing.summary}
+        {liveStatus(state)}
+      </p>
 
       <NeedsYou state={state} />
 

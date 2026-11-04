@@ -4,27 +4,8 @@ import { post, type State, useEngineState, useOnline } from "./api";
 import { CommandBar } from "./components/CommandBar";
 import { Home } from "./components/Home";
 import { Sidebar } from "./components/Sidebar";
+import { SpaceView } from "./components/SpaceView";
 import { navigate, parseRoute, usePath } from "./route";
-
-type Space = State["spaces"][number];
-
-// Placeholder until the space view lands; it only confirms where the user is.
-function SpaceStub({ space }: { space: Space | undefined }) {
-  if (!space) {
-    return (
-      <div className="wrap">
-        <h1>Space not found</h1>
-        <p className="brief">It may have been archived. Pick another space from the sidebar.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="wrap">
-      <h1>{space.name}</h1>
-      <p className="brief">{space.goal}</p>
-    </div>
-  );
-}
 
 function App() {
   const state = useEngineState();
@@ -110,7 +91,7 @@ function App() {
         {route.name === "home" ? (
           <Home state={state} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
         ) : (
-          <SpaceStub space={space} />
+          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} />
         )}
         <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} />
       </main>

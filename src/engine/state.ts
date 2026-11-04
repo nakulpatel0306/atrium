@@ -7,9 +7,21 @@ import { type Space, listSpaces } from "./spaces";
 import { atriumDiskUsage } from "./storage";
 import { type Task, listTasks } from "./tasks";
 
+export type RunSummary = {
+  id: string;
+  taskId: string;
+  agent: string;
+  startedAt: number;
+  endedAt: number | null;
+  exitCode: number | null;
+  inputTokens: number;
+  outputTokens: number;
+};
+
 export type State = {
   spaces: Space[];
   tasks: Task[];
+  runs: RunSummary[];
   approvals: Approval[];
   activity: ActivityRow[];
   briefing: ReturnType<typeof briefing>;
@@ -34,6 +46,14 @@ export function snapshot(db: Database): State {
   return {
     spaces: listSpaces(db),
     tasks: listTasks(db),
+    // rowid breaks ties between runs started in the same millisecond
+    runs: db
+      .query(
+        `SELECT id, task_id AS taskId, agent, started_at AS startedAt, ended_at AS endedAt, exit_code AS exitCode,
+                input_tokens AS inputTokens, output_tokens AS outputTokens
+         FROM runs ORDER BY started_at DESC, rowid DESC LIMIT 200`,
+      )
+      .all() as RunSummary[],
     approvals: listPending(db),
     activity: listActivity(db, { limit: 100 }),
     briefing: briefing(db, now),

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { State } from "../engine/state";
 
 export type { State };
@@ -14,6 +14,7 @@ let started = false;
 let fetching = false;
 let refetch = false;
 const outputs = new Map<string, string>();
+const seeded = new Set<string>();
 const listeners = new Set<() => void>();
 
 const notify = () => {
@@ -56,7 +57,8 @@ function connect(): void {
     if (msg.type === "changed") {
       void refresh();
     } else if (msg.type === "run-output") {
-      outputs.set(msg.runId, ((outputs.get(msg.runId) ?? "") + msg.chunk).slice(-OUTPUT_TAIL));
+      // Chunks are whole lines without their newline, the same as the transcript stores them.
+      outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${msg.chunk}\n`.slice(-OUTPUT_TAIL));
       notify();
     }
   };
@@ -86,16 +88,45 @@ export function useOnline(): boolean {
   return useSyncExternalStore(subscribe, () => online);
 }
 
+// A run that started before this page opened has output only in its transcript, so start from that.
+async function seedOutput(runId: string): Promise<void> {
+  seeded.add(runId);
+  const res = await fetchTranscript(runId);
+  if (!res.ok) return;
+  // Chunks that arrived during the fetch were written to the transcript before they were sent.
+  outputs.set(runId, res.text.slice(-OUTPUT_TAIL));
+  notify();
+}
+
 export function useRunOutput(runId: string): string {
+  useEffect(() => {
+    if (!seeded.has(runId)) void seedOutput(runId);
+  }, [runId]);
   return useSyncExternalStore(subscribe, () => outputs.get(runId) ?? "");
+}
+
+export async function fetchTranscript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/transcript`);
+    if (res.status === 404) {
+      return { ok: false, error: "This transcript isn't stored anymore. Atrium keeps the newest 200 MB of transcripts." };
+    }
+    if (!res.ok) return { ok: false, error: `Atrium answered with an error (${res.status}). Try again.` };
+    return { ok: true, text: await res.text() };
+  } catch {
+    return { ok: false, error: "Can't reach the Atrium engine. Check that it's running, then try again." };
+  }
 }
 
 export type PostResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-export async function post<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>> {
+export const post = <T = unknown>(path: string, body?: unknown) => send<T>("POST", path, body);
+export const patch = <T = unknown>(path: string, body: unknown) => send<T>("PATCH", path, body);
+
+async function send<T>(method: "POST" | "PATCH", path: string, body?: unknown): Promise<PostResult<T>> {
   try {
     const res = await fetch(path, {
-      method: "POST",
+      method,
       ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     });
     const data = (await res.json().catch(() => null)) as (T & { error?: string }) | null;

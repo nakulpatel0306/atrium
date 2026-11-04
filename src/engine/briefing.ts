@@ -1,7 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { listPending } from "./approvals";
 import { getSetting, setSetting } from "./settings";
-import { listTasks } from "./tasks";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -22,28 +20,17 @@ export function briefing(db: Database, now: number): { greeting: string; summary
   const finished = ended.filter((r) => r.exit_code === 0);
   const spaces = new Set(finished.map((r) => r.space_id)).size;
 
-  const parts: string[] = [];
+  let summary: string;
   if (finished.length > 0) {
-    parts.push(`${plural(finished.length, "task", "tasks")} finished across ${plural(spaces, "space", "spaces")}`);
+    summary = `${plural(finished.length, "task", "tasks")} finished across ${plural(spaces, "space", "spaces")}.`;
   } else if (ended.length === 0) {
-    parts.push("Nothing ran since you were last here");
+    summary = "Nothing ran since you were last here.";
   } else {
     // Rate-limited requeues and crash recovery end runs without leaving a blocked task to report.
-    parts.push(`${plural(ended.length, "run", "runs")} ended without finishing since you were last here`);
+    summary = `${plural(ended.length, "run", "runs")} ended without finishing since you were last here.`;
   }
 
-  const pending = listPending(db).length;
-  if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
-
-  const blocked = listTasks(db, { status: ["blocked"] });
-  if (blocked.length > 0) {
-    const reason = blocked[0]!.blockedReason;
-    parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
-  }
-
-  if (getSetting(db, "runner.waiting")) parts.push("Heavy work is waiting for power");
-
-  return { greeting: greetingFor(now), summary: `${parts.join(". ")}.` };
+  return { greeting: greetingFor(now), summary };
 }
 
 export function markSeen(db: Database, now: number): void {
