@@ -5,7 +5,7 @@ import type { AgentAdapter, AgentRunResult } from "./agents/types";
 import { createApproval } from "./approvals";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
-import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "./git";
+import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, repoReady, returnToBranch } from "./git";
 import { newId } from "./ids";
 import { canRun, type PowerSource } from "./power";
 import { getSetting, setSetting } from "./settings";
@@ -42,7 +42,7 @@ const REPO_TOOLS = [
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
 
 // The repo as found at task start, so it can be put back after the run.
-type RepoRun = { path: string; start: string; branch: string; url: string | null; fingerprint: string };
+type RepoRun = { path: string; start: string; branch: string; fingerprint: string };
 
 export function createRunner(deps: {
   db: Database;
@@ -179,7 +179,7 @@ export function createRunner(deps: {
   }
 
   // After a run: refuse to touch a repo whose git settings the agent changed, since the
-  // next push or checkout could run its hooks or follow its rewritten URLs.
+  // next checkout could run its hooks or filters.
   async function settleRepo(repo: RepoRun): Promise<string | null> {
     let same: boolean;
     try {
@@ -219,9 +219,8 @@ export function createRunner(deps: {
         if (resumeFrom) start = resumeFrom;
         // Branching from a leftover agent branch would stack unreviewed work.
         else if (start.startsWith("atrium/")) return block(task, `Repo is on ${start}; switch back to your branch first.`);
-        const url = await remoteUrl(path);
         const fingerprint = await gitSettingsFingerprint(path);
-        repo = { path, start, url, fingerprint, branch: await prepareBranch(path, task.id) };
+        repo = { path, start, fingerprint, branch: await prepareBranch(path, task.id) };
       } catch (e) {
         return block(task, (e as Error).message);
       }
@@ -389,15 +388,8 @@ function buildPrompt(task: Task, space: Space): string {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-// Push and summary failures are reported in the review, not fatal: the work is done and worth reviewing.
+// A summary failure is reported in the review, not fatal: the work is done and worth reviewing.
 async function repoReport(repo: RepoRun): Promise<string[]> {
-  let pushLine: string;
-  try {
-    const push = await pushBranch(repo.path, repo.branch, repo.url);
-    pushLine = push.pushed ? `Pushed ${repo.branch}.` : `Not pushed: ${push.reason}`;
-  } catch (e) {
-    pushLine = `Couldn't push ${repo.branch}: ${(e as Error).message}`;
-  }
   let summaryLine: string;
   try {
     // Against the starting branch, so a retry reports all the work on the task branch.
@@ -406,7 +398,8 @@ async function repoReport(repo: RepoRun): Promise<string[]> {
   } catch (e) {
     summaryLine = `Couldn't summarise the changes on ${repo.branch}: ${(e as Error).message}`;
   }
-  return [summaryLine, pushLine];
+  // Atrium never pushes as Nakul; sharing the branch is his call.
+  return [summaryLine, `Branch ${repo.branch} is on your machine — push it when you're ready.`];
 }
 
 function lastStartRef(db: Database, taskId: string): string | null {

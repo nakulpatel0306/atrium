@@ -167,7 +167,7 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   const [a] = listPending(db);
   expect(a!.detail).toContain("Added new.txt.");
   expect(a!.detail).toContain(`1 commit, 1 file (+1 −0) on atrium/${task.id}`);
-  expect(a!.detail).toContain("No remote configured");
+  expect(a!.detail.endsWith(`Branch atrium/${task.id} is on your machine — push it when you're ready.`)).toBe(true);
 });
 
 test("dirty repo blocks the task without touching files", async () => {
@@ -212,25 +212,14 @@ test("branch summary failure still moves to review and says so", async () => {
   expect(a!.detail).toContain(`Couldn't summarise the changes on atrium/${t.id}: Could not count commits: bad revision`);
 });
 
-test("push failure still moves to review and says so", async () => {
-  const path = repo();
-  const s = repoSpace(path);
-  const t = createTask(db, { spaceId: s.id, title: "Rename" });
-  const spy = spyOn(gitOps, "pushBranch").mockRejectedValue(new Error("network is down"));
-  cleanups.push(() => spy.mockRestore());
-  start({ adapter: fakeAdapter(() => ok("Renamed things.")).adapter });
-  await waitFor(() => status(t.id) === "review");
-  const [a] = listPending(db);
-  expect(a!.detail).toContain("Renamed things.");
-  expect(a!.detail).toContain(`Couldn't push atrium/${t.id}: network is down`);
-});
-
-test("pushes the task branch to the remote and returns to the starting branch", async () => {
+test("never pushes the task branch, even with a remote", async () => {
   const path = repo();
   const bare = mkdtempSync(join(tmpdir(), "atrium-bare-"));
   cleanups.push(() => rmSync(bare, { recursive: true, force: true }));
   git(bare, "init", "--bare");
   git(path, "remote", "add", "origin", bare);
+  const push = spyOn(gitOps, "pushBranch");
+  cleanups.push(() => push.mockRestore());
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Ship" });
   start({
@@ -242,26 +231,10 @@ test("pushes the task branch to the remote and returns to the starting branch", 
     }).adapter,
   });
   await waitFor(() => status(t.id) === "review");
-  expect(git(bare, "branch", "--list", `atrium/${t.id}`)).toContain(`atrium/${t.id}`);
-  expect(listPending(db)[0]!.detail).toContain(`Pushed atrium/${t.id}.`);
+  expect(push).not.toHaveBeenCalled();
+  expect(git(bare, "branch", "--list", `atrium/${t.id}`)).toBe("");
+  expect(listPending(db)[0]!.detail).toContain(`Branch atrium/${t.id} is on your machine — push it when you're ready.`);
   expect(git(path, "branch", "--show-current")).toBe("main");
-});
-
-test("pushes to the origin URL captured before the run", async () => {
-  const path = repo();
-  const bare = mkdtempSync(join(tmpdir(), "atrium-bare-"));
-  cleanups.push(() => rmSync(bare, { recursive: true, force: true }));
-  git(bare, "init", "--bare");
-  git(path, "remote", "add", "origin", bare);
-  const captured = git(path, "remote", "get-url", "origin");
-  const push = spyOn(gitOps, "pushBranch");
-  cleanups.push(() => push.mockRestore());
-  const s = repoSpace(path);
-  const t = createTask(db, { spaceId: s.id, title: "Ship" });
-  start({ adapter: fakeAdapter().adapter });
-  await waitFor(() => status(t.id) === "review");
-  expect(push).toHaveBeenCalledTimes(1);
-  expect(push.mock.calls[0]).toEqual([path, `atrium/${t.id}`, captured]);
 });
 
 test("an agent rewriting the remote is stopped before anything is pushed", async () => {
