@@ -5,7 +5,7 @@ import type { AgentAdapter, AgentRunResult } from "./agents/types";
 import { createApproval } from "./approvals";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
-import { branchSummary, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "./git";
+import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "./git";
 import { newId } from "./ids";
 import { canRun, type PowerSource } from "./power";
 import { getSetting, setSetting } from "./settings";
@@ -40,7 +40,7 @@ const REPO_TOOLS = [
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
 
 // The repo as found at task start, so it can be put back after the run.
-type RepoRun = { path: string; start: string; branch: string; url: string | null };
+type RepoRun = { path: string; start: string; branch: string; url: string | null; fingerprint: string };
 
 export function createRunner(deps: {
   db: Database;
@@ -173,6 +173,21 @@ export function createRunner(deps: {
     }
   }
 
+  // After a run: refuse to touch a repo whose git settings the agent changed, since the
+  // next push or checkout could run its hooks or follow its rewritten URLs.
+  async function settleRepo(repo: RepoRun): Promise<string | null> {
+    let same: boolean;
+    try {
+      same = (await gitSettingsFingerprint(repo.path)) === repo.fingerprint;
+    } catch {
+      same = false;
+    }
+    if (!same) {
+      return `The agent changed git settings in ${repo.path} (config, hooks, or attributes). Atrium stopped before pushing — check them before retrying.`;
+    }
+    return leaveRepo(repo);
+  }
+
   async function launch(task: Task) {
     const space = getSpace(db, task.spaceId)!;
     const adapter = adapters[task.agent];
@@ -190,7 +205,8 @@ export function createRunner(deps: {
         // Branching from a leftover agent branch would stack unreviewed work.
         if (start.startsWith("atrium/")) return block(task, "Repo is on an Atrium branch; switch back to your branch first");
         const url = await remoteUrl(path);
-        repo = { path, start, url, branch: await prepareBranch(path, task.id) };
+        const fingerprint = await gitSettingsFingerprint(path);
+        repo = { path, start, url, fingerprint, branch: await prepareBranch(path, task.id) };
       } catch (e) {
         return block(task, (e as Error).message);
       }
@@ -273,7 +289,7 @@ export function createRunner(deps: {
         runId,
       );
     } finally {
-      if (repo) leftRepo = await leaveRepo(repo);
+      if (repo) leftRepo = await settleRepo(repo);
     }
 
     try {

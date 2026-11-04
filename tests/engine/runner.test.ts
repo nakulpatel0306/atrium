@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
@@ -223,7 +223,29 @@ test("push failure still moves to review and says so", async () => {
   expect(a!.detail).toContain(`Couldn't push atrium/${t.id}: network is down`);
 });
 
-test("pushes to the remote URL read before the run", async () => {
+test("pushes the task branch to the remote and returns to the starting branch", async () => {
+  const path = repo();
+  const bare = mkdtempSync(join(tmpdir(), "atrium-bare-"));
+  cleanups.push(() => rmSync(bare, { recursive: true, force: true }));
+  git(bare, "init", "--bare");
+  git(path, "remote", "add", "origin", bare);
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Ship" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, "x.txt"), "x\n");
+      git(input.cwd, "add", "x.txt");
+      git(input.cwd, "commit", "-m", "x");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  expect(git(bare, "branch", "--list", `atrium/${t.id}`)).toContain(`atrium/${t.id}`);
+  expect(listPending(db)[0]!.detail).toContain(`Pushed atrium/${t.id}.`);
+  expect(git(path, "branch", "--show-current")).toBe("main");
+});
+
+test("an agent rewriting the remote is stopped before anything is pushed", async () => {
   const path = repo();
   const bare = mkdtempSync(join(tmpdir(), "atrium-bare-"));
   const other = mkdtempSync(join(tmpdir(), "atrium-bare-"));
@@ -239,10 +261,10 @@ test("pushes to the remote URL read before the run", async () => {
       return ok();
     }).adapter,
   });
-  await waitFor(() => status(t.id) === "review");
-  expect(git(bare, "branch", "--list", `atrium/${t.id}`)).toContain(`atrium/${t.id}`);
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toStartWith(`The agent changed git settings in ${path}`);
+  expect(git(bare, "branch", "--list", `atrium/${t.id}`)).toBe("");
   expect(git(other, "branch", "--list", `atrium/${t.id}`)).toBe("");
-  expect(listPending(db)[0]!.detail).toContain(`Pushed atrium/${t.id}.`);
 });
 
 test("adapter error returns the repo to the starting branch", async () => {
@@ -275,6 +297,29 @@ test("summary counts against the starting branch", async () => {
   await waitFor(() => status(t.id) === "review");
   expect(listPending(db)[0]!.detail).toContain(`1 commit, 1 file (+1 −0) on atrium/${t.id}`);
   expect(git(path, "branch", "--show-current")).toBe("feature");
+});
+
+test("git settings changed by the agent stop the run before pushing", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Tamper" });
+  const push = spyOn(gitOps, "pushBranch");
+  const back = spyOn(gitOps, "returnToBranch");
+  cleanups.push(() => push.mockRestore(), () => back.mockRestore());
+  start({
+    adapter: fakeAdapter((input) => {
+      appendFileSync(join(input.cwd, ".git", "config"), '[url "x"]\n\tinsteadOf = y\n');
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe(
+    `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before pushing — check them before retrying.`,
+  );
+  expect(push).not.toHaveBeenCalled();
+  expect(back).not.toHaveBeenCalled();
+  expect(git(path, "branch", "--show-current")).toBe(`atrium/${t.id}`);
+  expect(listPending(db)).toHaveLength(0);
 });
 
 test("a leftover Atrium branch blocks instead of stacking", async () => {

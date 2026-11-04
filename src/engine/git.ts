@@ -1,4 +1,6 @@
-import { existsSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 const PROTECTED = new Set(["main", "master"]);
 
@@ -52,6 +54,31 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
   const res = await git(path, exists.code === 0 ? ["checkout", branch] : ["checkout", "-b", branch]);
   if (res.code !== 0) throw new Error(`Could not switch to ${branch}: ${res.err.trim()}`);
   return branch;
+}
+
+const MISSING = "\0missing\0";
+
+function readOrMissing(file: string): string {
+  return existsSync(file) && statSync(file).isFile() ? readFileSync(file, "latin1") : MISSING;
+}
+
+// Hash of everything in the repo that can make a later git command run code or rewrite where it pushes.
+export async function gitSettingsFingerprint(path: string): Promise<string> {
+  const dir = await git(path, ["rev-parse", "--git-dir"]);
+  const top = await git(path, ["rev-parse", "--show-toplevel"]);
+  if (dir.code !== 0 || top.code !== 0) throw new Error(`Not a git repo: ${path}`);
+  const gitDir = resolve(path, dir.out.trim());
+  const hooksDir = join(gitDir, "hooks");
+  const hooks = existsSync(hooksDir)
+    ? (readdirSync(hooksDir, { recursive: true }) as string[]).filter((f) => statSync(join(hooksDir, f)).isFile()).sort()
+    : [];
+  const hash = createHash("sha256");
+  const add = (label: string, content: string) => hash.update(`${label}\0${content.length}\0${content}\0`);
+  add("config", readOrMissing(join(gitDir, "config")));
+  for (const f of hooks) add(`hook:${f}`, readOrMissing(join(hooksDir, f)));
+  add("info/attributes", readOrMissing(join(gitDir, "info", "attributes")));
+  add(".gitattributes", readOrMissing(join(top.out.trim(), ".gitattributes")));
+  return hash.digest("hex");
 }
 
 // Read before the agent runs: a remote URL the agent rewrites afterwards must not be where Atrium pushes.

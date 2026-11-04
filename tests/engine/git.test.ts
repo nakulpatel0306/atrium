@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchSummary, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -147,6 +147,46 @@ describe("pushBranch", () => {
     expect(await pushBranch(path, "atrium/tsk_1", url)).toEqual({ pushed: true });
     expect(git(bare, "branch", "--list", "atrium/tsk_1")).toContain("atrium/tsk_1");
     expect(git(other, "branch", "--list", "atrium/tsk_1")).toBe("");
+  });
+});
+
+describe("gitSettingsFingerprint", () => {
+  test("is stable when nothing relevant changes", async () => {
+    const path = repo();
+    const before = await gitSettingsFingerprint(path);
+    writeFileSync(join(path, "notes.txt"), "work");
+    git(path, "add", "notes.txt");
+    git(path, "commit", "-m", "work");
+    git(path, "checkout", "-b", "other");
+    expect(await gitSettingsFingerprint(path)).toBe(before);
+  });
+
+  test("changes when config, a hook, or attributes change", async () => {
+    const path = repo();
+    const seen = new Set([await gitSettingsFingerprint(path)]);
+    const changed = async () => {
+      const fp = await gitSettingsFingerprint(path);
+      expect(seen.has(fp)).toBe(false);
+      seen.add(fp);
+    };
+    appendFileSync(join(path, ".git", "config"), '[url "x"]\n\tinsteadOf = y\n');
+    await changed();
+    writeFileSync(join(path, ".git", "hooks", "post-checkout"), "#!/bin/sh\n");
+    await changed();
+    mkdirSync(join(path, ".git", "hooks", "nested"), { recursive: true });
+    writeFileSync(join(path, ".git", "hooks", "nested", "x"), "y");
+    await changed();
+    mkdirSync(join(path, ".git", "info"), { recursive: true });
+    writeFileSync(join(path, ".git", "info", "attributes"), "* filter=evil\n");
+    await changed();
+    writeFileSync(join(path, ".gitattributes"), "* diff=evil\n");
+    await changed();
+  });
+
+  test("works from a subfolder", async () => {
+    const path = repo();
+    mkdirSync(join(path, "sub"));
+    expect(await gitSettingsFingerprint(join(path, "sub"))).toBe(await gitSettingsFingerprint(path));
   });
 });
 
