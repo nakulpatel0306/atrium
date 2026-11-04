@@ -161,6 +161,26 @@ test("adapter error creates nothing", async () => {
   expect(listSpaces(db, { includeArchived: true })).toHaveLength(0);
 });
 
+test("adapter setup problems pass the adapter's plain message through", async () => {
+  const cases: Extract<AgentRunResult, { status: "error" }>[] = [
+    { status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" },
+    { status: "error", kind: "not_logged_in", message: "Claude Code is logged out. Run `claude` once to log in." },
+    { status: "error", kind: "rate_limited", message: "Claude usage limit reached; resets at 3:00 PM", retryAfter: 1 },
+  ];
+  for (const bad of cases) {
+    const err = await setupSpace(db, fake(bad), "x", home.home).catch((e) => e);
+    expect(err).toBeInstanceOf(SetupFailed);
+    expect(err.message).toBe(bad.message);
+  }
+  expect(listSpaces(db, { includeArchived: true })).toHaveLength(0);
+});
+
+test("a plain agent failure keeps the try-again message", async () => {
+  const bad: AgentRunResult = { status: "error", kind: "failed", message: "boom" };
+  const err = await setupSpace(db, fake(bad), "x", home.home).catch((e) => e);
+  expect(err.message).toBe("Couldn't set that up. Try describing it again.");
+});
+
 test("a failure while writing tasks rolls back the space", async () => {
   const plan = JSON.stringify({ name: "S", kind: "general", goal: "g", private: true, tasks: [{ title: "t", weight: "light" }] });
   db.run("CREATE TRIGGER no_tasks BEFORE INSERT ON tasks BEGIN SELECT RAISE(ABORT, 'nope'); END");

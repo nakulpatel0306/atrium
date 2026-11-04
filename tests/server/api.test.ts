@@ -92,11 +92,15 @@ test("command without spaceId calls setup; SetupFailed maps to 422 with message"
   expect(seen).toEqual(["set up docs"]);
 
   setupImpl = async () => {
-    throw new SetupFailed("Couldn't plan that one.");
+    throw new SetupFailed("Couldn't plan that one.", new Error("No JSON object in the agent's reply."));
   };
+  const spy = spyOn(console, "error").mockImplementation(() => {});
   const bad = await post("/api/command", { text: "x" });
   expect(bad.status).toBe(422);
   expect(await bad.json()).toEqual({ error: "Couldn't plan that one." });
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(String(spy.mock.calls[0]!.join(" "))).toContain("No JSON object in the agent's reply.");
+  spy.mockRestore();
 });
 
 test("command with spaceId creates a light task in a general space", async () => {

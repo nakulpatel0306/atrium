@@ -31,6 +31,7 @@ export class SetupFailed extends Error {
 
 const PALETTE = ["#7c7cf5", "#4cb782", "#4ea7fc", "#f2c94c", "#b07cf5", "#eb5757"];
 const MAX_TASKS = 8;
+const USER_FIXABLE = new Set(["not_installed", "not_logged_in", "rate_limited"]);
 
 const SYSTEM_PROMPT = `You set up a new "space" in a personal task dashboard from the user's plain description.
 Reply with a single JSON object and nothing else, shaped like:
@@ -137,7 +138,11 @@ export async function setupSpace(
       allowedTools: ["Read", "Glob"],
       onChunk: () => {},
     });
-    if (result.status === "error") throw new Error(result.message);
+    if (result.status === "error") {
+      // These need the user to act (install, log in, wait), so "try again" would mislead.
+      if (USER_FIXABLE.has(result.kind)) throw new SetupFailed(result.message);
+      throw new Error(result.message);
+    }
     const plan = parseSpacePlan(result.summary, projectsRoot);
     const color = PALETTE[listSpaces(db, { includeArchived: true }).length % PALETTE.length];
     return db.transaction(() => {
@@ -153,6 +158,7 @@ export async function setupSpace(
       return { space, tasks };
     })();
   } catch (e) {
+    if (e instanceof SetupFailed) throw e;
     throw new SetupFailed("Couldn't set that up. Try describing it again.", e);
   }
 }

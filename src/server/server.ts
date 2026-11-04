@@ -222,7 +222,11 @@ export function startServer(deps: Deps): Server<undefined> {
         if (e instanceof HttpError) return fail(e.status, e.message);
         if (e instanceof AlreadyResolved) return fail(409, "Already handled");
         if (e instanceof InvalidTransition) return fail(409, e.message);
-        if (e instanceof SetupFailed) return fail(422, e.message);
+        if (e instanceof SetupFailed) {
+          // The user sees the plain message; the log keeps what actually went wrong.
+          console.error("Setup failed:", e.cause instanceof Error ? e.cause.message : e.message);
+          return fail(422, e.message);
+        }
         console.error("Unexpected error:", e);
         return fail(500, "Something went wrong in Atrium. Check the engine log.");
       }
