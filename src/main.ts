@@ -17,7 +17,8 @@ console.log(`Atrium running at http://${config().host}:${server.port}`);
 const shutdown = async () => {
   await runner.stop();
   keepAwake.stop();
-  await server.stop();
+  // Open dashboard sockets would otherwise keep shutdown waiting forever.
+  await server.stop(true);
   process.exit(0);
 };
 process.on("SIGTERM", shutdown);
