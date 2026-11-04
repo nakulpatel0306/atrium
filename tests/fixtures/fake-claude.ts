@@ -47,7 +47,7 @@ if (mode === "argv") {
 
 out({
   type: "rate_limit_event",
-  rate_limit_info: { status: "allowed", resetsAt: 1893456000, rateLimitType: "five_hour" },
+  rate_limit_info: { status: mode === "ok_warning" ? "allowed_warning" : "allowed", resetsAt: 1893456000, rateLimitType: "five_hour" },
 });
 out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Looking at the repo." }] } });
 out({

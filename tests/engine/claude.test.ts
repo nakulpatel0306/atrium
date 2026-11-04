@@ -23,6 +23,12 @@ describe("claudeAdapter", () => {
     expect(r).toEqual({ status: "ok", summary: "All done.", inputTokens: 120, outputTokens: 45 });
   });
 
+  test("successful run near the limit (allowed_warning) still returns ok", async () => {
+    process.env.FAKE_CLAUDE_MODE = "ok_warning";
+    const r = await claudeAdapter(FAKE).run(input());
+    expect(r.status).toBe("ok");
+  });
+
   test("missing binary maps to not_installed", async () => {
     const r = await claudeAdapter("/nonexistent/claude").run(input());
     expect(r).toEqual({ status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" });

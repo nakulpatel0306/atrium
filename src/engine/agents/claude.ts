@@ -74,6 +74,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       stdin.end();
 
       let limitResetsAt: number | undefined;
+      let limitRejected = false;
       let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number } | undefined;
       let lastText = "";
 
@@ -95,7 +96,10 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           }
         } else if (msg.type === "rate_limit_event") {
           const info = msg.rate_limit_info;
-          if (info && info.status !== "allowed") limitResetsAt = Number(info.resetsAt) * 1000;
+          if (info && info.status !== "allowed") {
+            limitResetsAt = Number(info.resetsAt) * 1000;
+            if (info.status === "rejected") limitRejected = true;
+          }
         } else if (msg.type === "result") {
           final = {
             result: String(msg.result ?? ""),
@@ -126,7 +130,9 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         proc.exited,
       ]);
 
-      if (limitResetsAt !== undefined) {
+      // Warning-style statuses ("allowed_warning") only count if the run actually failed.
+      const succeeded = exitCode === 0 && final !== undefined && !final.isError;
+      if (limitResetsAt !== undefined && (limitRejected || !succeeded)) {
         const when = Number.isFinite(limitResetsAt) ? limitResetsAt : Date.now() + FALLBACK_WAIT_MS;
         return {
           status: "error",
@@ -135,7 +141,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           retryAfter: when,
         };
       }
-      if (exitCode === 0 && final && !final.isError) {
+      if (succeeded && final) {
         return { status: "ok", summary: final.result, inputTokens: final.inputTokens, outputTokens: final.outputTokens };
       }
       return classify(`${final?.result ?? lastText}\n${stderr}`, stderr, exitCode);
