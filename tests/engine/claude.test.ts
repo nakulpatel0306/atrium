@@ -91,6 +91,8 @@ describe("claudeAdapter", () => {
       "Write(**/.git/**)",
     ]);
     expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
+    // dontAsk makes allowedTools a strict allowlist; acceptEdits would auto-approve unlisted Edit/Write.
+    expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
   });
 
   test("prompt goes over stdin, never argv", async () => {

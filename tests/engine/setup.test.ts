@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { openDb } from "../../src/engine/db";
 import { BadPlan, parseSpacePlan, setupSpace, SetupFailed } from "../../src/engine/setup";
@@ -23,6 +24,8 @@ afterEach(() => {
   repo.cleanup();
   home.cleanup();
 });
+
+const root = () => dirname(repo.path);
 
 const fake = (result: AgentRunResult, seen?: AgentRunInput[]): AgentAdapter => ({
   id: "fake",
@@ -49,7 +52,60 @@ test("parseSpacePlan rejects missing name", () => {
 
 test("parseSpacePlan rejects nonexistent repoPath", () => {
   const text = `{"name":"X","kind":"repo","goal":"g","repoPath":"/no/such/dir-atrium","private":true,"tasks":[]}`;
-  expect(() => parseSpacePlan(text)).toThrow(BadPlan);
+  expect(() => parseSpacePlan(text, root())).toThrow(BadPlan);
+});
+
+const planWith = (repoPath: string) =>
+  JSON.stringify({ name: "X", kind: "repo", goal: "g", repoPath, private: true, tasks: [] });
+
+test("parseSpacePlan stores the realpath of a repo inside the projects root", () => {
+  expect(parseSpacePlan(planWith(repo.path), root()).repoPath).toBe(realpathSync(repo.path));
+});
+
+test("parseSpacePlan rejects a relative repoPath", () => {
+  expect(() => parseSpacePlan(planWith(basename(repo.path)), root())).toThrow(/absolute/);
+});
+
+test("parseSpacePlan rejects a repo outside the projects root", () => {
+  const other = tempRepo();
+  try {
+    expect(() => parseSpacePlan(planWith(other.path), repo.path)).toThrow(/inside/);
+  } finally {
+    other.cleanup();
+  }
+});
+
+test("parseSpacePlan rejects the projects root itself and a file", () => {
+  expect(() => parseSpacePlan(planWith(root()), root())).toThrow(BadPlan);
+  expect(() => parseSpacePlan(planWith(join(repo.path, "README.md")), root())).toThrow(/folder/);
+});
+
+test("parseSpacePlan rejects a folder that is not a git repo", () => {
+  const dir = mkdtempSync(join(tmpdir(), "atrium-plain-"));
+  try {
+    expect(() => parseSpacePlan(planWith(dir), tmpdir())).toThrow(/git/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("parseSpacePlan rejects a symlink inside the root that points outside it", () => {
+  const rootDir = mkdtempSync(join(tmpdir(), "atrium-root-"));
+  try {
+    writeFileSync(join(rootDir, ".keep"), "");
+    mkdirSync(join(rootDir, "sub"));
+    symlinkSync(repo.path, join(rootDir, "sub", "link"));
+    expect(() => parseSpacePlan(planWith(join(rootDir, "sub", "link")), join(rootDir, "sub"))).toThrow(/inside/);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("parseSpacePlan defaults private to true when missing or not a boolean", () => {
+  const base = { name: "X", kind: "general", goal: "g", tasks: [] };
+  expect(parseSpacePlan(JSON.stringify(base)).private).toBe(true);
+  expect(parseSpacePlan(JSON.stringify({ ...base, private: "no" })).private).toBe(true);
+  expect(parseSpacePlan(JSON.stringify({ ...base, private: false })).private).toBe(false);
 });
 
 test("parseSpacePlan rejects bad kind, long name, too many tasks, and no JSON", () => {
@@ -59,11 +115,6 @@ test("parseSpacePlan rejects bad kind, long name, too many tasks, and no JSON", 
   const tasks = Array.from({ length: 9 }, () => ({ title: "t", weight: "light" }));
   expect(() => parseSpacePlan(JSON.stringify({ ...base, tasks }))).toThrow(BadPlan);
   expect(() => parseSpacePlan("no json here")).toThrow(BadPlan);
-});
-
-test("parseSpacePlan expands ~ in repoPath to an absolute path", () => {
-  const plan = parseSpacePlan(`{"name":"H","kind":"repo","goal":"g","repoPath":"~","private":true,"tasks":[]}`);
-  expect(plan.repoPath).toBe(homedir());
 });
 
 test("setupSpace creates space and tasks from a fake adapter", async () => {
@@ -76,9 +127,9 @@ test("setupSpace creates space and tasks from a fake adapter", async () => {
     private: true,
     tasks: [{ title: "Fix lint", detail: "run it", weight: "light" }, { title: "Write docs", weight: "heavy" }],
   };
-  const out = await setupSpace(db, fake(ok(JSON.stringify(plan)), seen), "my atrium repo", home.home);
+  const out = await setupSpace(db, fake(ok(JSON.stringify(plan)), seen), "my atrium repo", home.home, root());
   expect(out.space.name).toBe("Atrium");
-  expect(out.space.repoPath).toBe(repo.path);
+  expect(out.space.repoPath).toBe(realpathSync(repo.path));
   expect(out.tasks.map((t) => [t.title, t.weight, t.detail])).toEqual([
     ["Fix lint", "light", "run it"],
     ["Write docs", "heavy", ""],

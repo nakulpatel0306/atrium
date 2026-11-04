@@ -62,7 +62,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
             bin, "-p",
             "--setting-sources", "project,local",
             "--output-format", "stream-json", "--verbose",
-            "--permission-mode", "acceptEdits",
+            "--permission-mode", "dontAsk",
             "--append-system-prompt", input.systemPrompt,
             "--allowedTools", ...input.allowedTools,
             "--disallowedTools", ...DENY,

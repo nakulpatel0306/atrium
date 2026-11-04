@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { AgentAdapter } from "./agents/types";
 import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
@@ -61,7 +61,34 @@ function firstJsonObject(text: string): string | null {
 
 const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
 
-export function parseSpacePlan(text: string): SpacePlan {
+const defaultProjectsRoot = () => join(homedir(), "dev-workspace", "projects");
+
+// The agent's repoPath is untrusted text that later becomes a cwd for write-capable runs, so it must resolve
+// (through symlinks) to a git work tree inside the projects root.
+function resolveRepoPath(repoPath: string, projectsRoot: string): string {
+  const expanded = expandHome(repoPath);
+  if (!isAbsolute(expanded)) throw new BadPlan(`repoPath must be an absolute path: ${repoPath}`);
+  let real: string;
+  let root: string;
+  try {
+    real = realpathSync(expanded);
+    root = realpathSync(projectsRoot);
+  } catch {
+    throw new BadPlan(`repoPath does not exist: ${repoPath}`);
+  }
+  if (!statSync(real).isDirectory()) throw new BadPlan(`repoPath is not a folder: ${repoPath}`);
+  const rel = relative(root, real);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new BadPlan(`repoPath must be inside ${projectsRoot}: ${repoPath}`);
+  }
+  const git = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd: real, stdout: "pipe", stderr: "pipe" });
+  if (git.exitCode !== 0 || git.stdout.toString().trim() !== "true") {
+    throw new BadPlan(`repoPath is not a git repository: ${repoPath}`);
+  }
+  return real;
+}
+
+export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot()): SpacePlan {
   const raw = firstJsonObject(text);
   if (!raw) throw new BadPlan("No JSON object in the agent's reply.");
   let obj: Record<string, unknown>;
@@ -79,7 +106,8 @@ export function parseSpacePlan(text: string): SpacePlan {
     name,
     kind,
     goal,
-    private: obj.private === true,
+    // Private is the safe side: only an explicit false makes a space non-private.
+    private: obj.private !== false,
     tasks: tasks.map((t) => {
       if (!t || typeof t.title !== "string" || !t.title) throw new BadPlan("Every task needs a title.");
       if (t.weight !== "heavy" && t.weight !== "light") throw new BadPlan('Task weight must be "heavy" or "light".');
@@ -89,9 +117,7 @@ export function parseSpacePlan(text: string): SpacePlan {
   };
   if (repoPath !== undefined) {
     if (typeof repoPath !== "string") throw new BadPlan("repoPath must be a string.");
-    const abs = expandHome(repoPath);
-    if (!existsSync(abs)) throw new BadPlan(`repoPath does not exist: ${repoPath}`);
-    plan.repoPath = abs;
+    plan.repoPath = resolveRepoPath(repoPath, projectsRoot);
   }
   return plan;
 }
@@ -101,6 +127,7 @@ export async function setupSpace(
   adapter: AgentAdapter,
   description: string,
   cwd = join(homedir(), "dev-workspace"),
+  projectsRoot = defaultProjectsRoot(),
 ): Promise<{ space: Space; tasks: Task[] }> {
   try {
     const result = await adapter.run({
@@ -111,7 +138,7 @@ export async function setupSpace(
       onChunk: () => {},
     });
     if (result.status === "error") throw new Error(result.message);
-    const plan = parseSpacePlan(result.summary);
+    const plan = parseSpacePlan(result.summary, projectsRoot);
     const color = PALETTE[listSpaces(db, { includeArchived: true }).length % PALETTE.length];
     return db.transaction(() => {
       const space = createSpace(db, {
