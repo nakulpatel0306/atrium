@@ -65,7 +65,7 @@ const toTask = (r: TaskRow): Task => ({
   updatedAt: r.updated_at,
 });
 
-function getTask(db: Database, id: string): Task | null {
+export function getTask(db: Database, id: string): Task | null {
   const row = db.query("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | null;
   return row ? toTask(row) : null;
 }
@@ -134,6 +134,14 @@ export function setTaskStatus(
     Date.now(),
     id,
   );
+  bus.emit({ type: "changed" });
+  return getTask(db, id)!;
+}
+
+export function appendTaskDetail(db: Database, id: string, text: string): Task {
+  const cur = getTask(db, id);
+  if (!cur) throw new Error(`No task with id ${id}`);
+  db.query("UPDATE tasks SET detail = ?, updated_at = ? WHERE id = ?").run(cur.detail + text, Date.now(), id);
   bus.emit({ type: "changed" });
   return getTask(db, id)!;
 }
