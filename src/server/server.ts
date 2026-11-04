@@ -209,6 +209,8 @@ export function startServer(deps: Deps): Server<undefined> {
     port: deps.port ?? config().port,
     // Dev mode serves unminified bundles with HMR; only wanted while working on the dashboard.
     development: process.env.ATRIUM_DEV === "1",
+    // Production mode would otherwise share the port, and the port is what keeps a second engine out.
+    reusePort: false,
     routes: { "/": index, "/space/*": index },
     async fetch(req, srv) {
       const url = new URL(req.url);

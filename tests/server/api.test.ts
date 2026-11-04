@@ -211,6 +211,11 @@ test("server runs in production mode unless ATRIUM_DEV=1", () => {
   expect(server.development).toBe(false);
 });
 
+test("a second server on the same port fails instead of sharing it", () => {
+  // Production mode defaults to SO_REUSEPORT, which would let two engines split requests.
+  expect(() => startServer({ db, runner: { kick() {} }, setup: (t) => setupImpl(t), port: server.port as number })).toThrow();
+});
+
 test("dashboard routes serve html", async () => {
   for (const p of ["/", "/space/spc_1"]) {
     const res = await fetch(base + p);
