@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS runs (
   exit_code INTEGER,
   input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0,
-  transcript_path TEXT NOT NULL
+  transcript_path TEXT NOT NULL,
+  start_ref TEXT
 );
 CREATE TABLE IF NOT EXISTS approvals (
   id TEXT PRIMARY KEY,
@@ -73,5 +74,14 @@ export function openDb(path?: string): Database {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Columns added after a table first shipped; CREATE TABLE IF NOT EXISTS skips existing tables.
+function migrate(db: Database) {
+  const has = (table: string, column: string) =>
+    (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+  // The branch a run started from, so a crashed run's repo can be put back on boot.
+  if (!has("runs", "start_ref")) db.exec("ALTER TABLE runs ADD COLUMN start_ref TEXT");
 }

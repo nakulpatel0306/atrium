@@ -7,27 +7,38 @@ const PROTECTED = new Set(["main", "master"]);
 // The agent can write inside the repo, so config it plants must never run with the engine's privileges.
 const SAFE = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=ssh"];
 
-async function git(path: string, args: string[]): Promise<{ code: number; out: string; err: string }> {
-  const proc = Bun.spawn(["git", ...SAFE, ...args], { cwd: path, stdout: "pipe", stderr: "pipe" });
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { code, out, err };
+async function git(
+  path: string,
+  args: string[],
+  timeoutMs?: number,
+): Promise<{ code: number; out: string; err: string; timedOut: boolean }> {
+  const proc = Bun.spawn(["git", ...SAFE, ...args], {
+    cwd: path,
+    stdout: "pipe",
+    stderr: "pipe",
+    // The engine has no terminal; a credential prompt would hang the run instead of failing it.
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    timeout: timeoutMs,
+  });
+  const out = new Response(proc.stdout).text();
+  const err = new Response(proc.stderr).text();
+  const code = await proc.exited;
+  // git's transport helper outlives a killed git and keeps the pipes open, so don't wait on them.
+  if (timeoutMs !== undefined && proc.signalCode !== null) return { code, out: "", err: "", timedOut: true };
+  return { code, out: await out, err: await err, timedOut: false };
 }
 
 function isProtected(branch: string): boolean {
   return PROTECTED.has(branch.replace(/^refs\/heads\//, ""));
 }
 
-export async function repoReady(path: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+export async function repoReady(path: string): Promise<{ ok: true } | { ok: false; reason: string; dirty?: true }> {
   if (!existsSync(path) || !statSync(path).isDirectory()) return { ok: false, reason: `Folder not found: ${path}` };
   const inside = await git(path, ["rev-parse", "--is-inside-work-tree"]);
   if (inside.code !== 0) return { ok: false, reason: `Not a git repo: ${path}` };
   const status = await git(path, ["status", "--porcelain"]);
   if (status.code !== 0) return { ok: false, reason: `Not a git repo: ${path}` };
-  if (status.out.trim() !== "") return { ok: false, reason: `You have uncommitted changes in ${path}` };
+  if (status.out.trim() !== "") return { ok: false, reason: `You have uncommitted changes in ${path}`, dirty: true };
   return { ok: true };
 }
 
@@ -100,10 +111,16 @@ export async function remoteUrl(path: string): Promise<string | null> {
   return res.code === 0 ? res.out.trim() : null;
 }
 
-export async function pushBranch(path: string, branch: string, url: string | null): Promise<{ pushed: boolean; reason?: string }> {
+export async function pushBranch(
+  path: string,
+  branch: string,
+  url: string | null,
+  timeoutMs = 60_000,
+): Promise<{ pushed: boolean; reason?: string }> {
   if (isProtected(branch)) return { pushed: false, reason: "Refusing to push main" };
   if (!url) return { pushed: false, reason: "No remote configured" };
-  const res = await git(path, ["push", url, `refs/heads/${branch}:refs/heads/${branch}`]);
+  const res = await git(path, ["push", url, `refs/heads/${branch}:refs/heads/${branch}`], timeoutMs);
+  if (res.timedOut) return { pushed: false, reason: "The push timed out." };
   if (res.code !== 0) return { pushed: false, reason: res.err.trim() };
   return { pushed: true };
 }

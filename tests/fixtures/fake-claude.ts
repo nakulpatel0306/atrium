@@ -40,6 +40,12 @@ if (mode === "rate_limited_text") {
   result(text, true);
   process.exit(1);
 }
+if (mode === "slow") {
+  out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Starting a long job." }] } });
+  await Bun.sleep(30_000);
+  result("Finished the long job.");
+  process.exit(0);
+}
 if (mode === "argv") {
   result(JSON.stringify({ argv: process.argv.slice(2), stdin: await Bun.stdin.text() }));
   process.exit(0);

@@ -14,6 +14,7 @@ import { getTask, listTasks, setTaskStatus, type Task } from "./tasks";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
+const STOP_TIMEOUT_MS = 10_000;
 
 const SYSTEM_PROMPT = [
   "You are working for Nakul through Atrium.",
@@ -48,10 +49,11 @@ export function createRunner(deps: {
   power: () => Promise<PowerSource>;
   keepAwake: KeepAwake;
   maxConcurrent?: number;
+  stopTimeoutMs?: number;
 }): { start(): void; stop(): Promise<void>; kick(): void } {
   const { db, adapters, keepAwake } = deps;
   const maxConcurrent = deps.maxConcurrent ?? 1;
-  const active = new Map<string, Promise<void>>();
+  const active = new Map<string, { done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
   let running = false;
   let scheduled = false;
@@ -197,13 +199,23 @@ export function createRunner(deps: {
     if (space.kind === "repo") {
       if (!space.repoPath) return block(task, "This space has no repo folder set. Add one in the space settings.");
       const path = space.repoPath;
+      const own = `atrium/${task.id}`;
       const ready = await repoReady(path);
-      if (!ready.ok) return block(task, ready.reason);
+      if (!ready.ok) {
+        // Uncommitted work on this task's own branch is what a killed run leaves behind, not the user's.
+        if (ready.dirty && (await headRef(path).catch(() => null))?.branch === own) {
+          return block(task, `The agent left uncommitted changes on ${own} in ${path}`);
+        }
+        return block(task, ready.reason);
+      }
       try {
         const head = await headRef(path);
-        const start = head.branch ?? head.sha;
+        let start = head.branch ?? head.sha;
+        // Still on this task's branch after a crash: carry on from where its last run started.
+        const resumeFrom = start === own ? lastStartRef(db, task.id) : null;
+        if (resumeFrom) start = resumeFrom;
         // Branching from a leftover agent branch would stack unreviewed work.
-        if (start.startsWith("atrium/")) return block(task, "Repo is on an Atrium branch; switch back to your branch first");
+        else if (start.startsWith("atrium/")) return block(task, `Repo is on ${start}; switch back to your branch first.`);
         const url = await remoteUrl(path);
         const fingerprint = await gitSettingsFingerprint(path);
         repo = { path, start, url, fingerprint, branch: await prepareBranch(path, task.id) };
@@ -212,8 +224,8 @@ export function createRunner(deps: {
       }
     }
 
-    // The task may have left the queue while git was busy.
-    if (getTask(db, task.id)?.status !== "queued") {
+    // The task may have left the queue, or the engine begun stopping, while git was busy.
+    if (!running || getTask(db, task.id)?.status !== "queued") {
       if (repo) await leaveRepo(repo);
       return;
     }
@@ -225,12 +237,13 @@ export function createRunner(deps: {
       if (!repo) mkdirSync(cwd, { recursive: true });
       const runId = newId("run");
       const transcript = openTranscript(runId);
-      db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run(
+      db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref) VALUES (?, ?, ?, ?, ?, ?)").run(
         runId,
         task.id,
         adapter.id,
         Date.now(),
         transcript.path,
+        repo?.start ?? null,
       );
       started = { cwd, runId, transcript };
     } catch (e) {
@@ -241,14 +254,15 @@ export function createRunner(deps: {
     logActivity(db, space.id, task.agent, `Started: ${task.title}`);
 
     activeSpaces.add(space.id);
-    const done = execute({ task, space, adapter, repo, ...started })
+    const controller = new AbortController();
+    const done = execute({ task, space, adapter, repo, signal: controller.signal, ...started })
       .catch(report)
       .finally(() => {
         active.delete(started.runId);
         activeSpaces.delete(space.id);
         kick();
       });
-    active.set(started.runId, done);
+    active.set(started.runId, { done, controller });
   }
 
   async function execute(r: {
@@ -256,6 +270,7 @@ export function createRunner(deps: {
     space: Space;
     adapter: AgentAdapter;
     repo: RepoRun | null;
+    signal: AbortSignal;
     cwd: string;
     runId: string;
     transcript: ReturnType<typeof openTranscript>;
@@ -268,6 +283,7 @@ export function createRunner(deps: {
         cwd: r.cwd,
         systemPrompt: SYSTEM_PROMPT,
         allowedTools: repo ? REPO_TOOLS : BASE_TOOLS,
+        signal: r.signal,
         onChunk(chunk) {
           transcript.append(`${chunk}\n`);
           bus.emit({ type: "run-output", runId, taskId: task.id, chunk });
@@ -298,6 +314,9 @@ export function createRunner(deps: {
         logActivity(db, space.id, "atrium", `Discarded the result for ${task.title}: the task was moved while it ran.`);
       } else if (leftRepo) {
         block(task, leftRepo);
+      } else if (result.status !== "ok" && r.signal.aborted) {
+        setTaskStatus(db, task.id, "queued");
+        logActivity(db, space.id, "atrium", `Engine stopped; requeued ${task.title}`);
       } else if (result.status === "ok") {
         const lines = [result.summary.trim()];
         if (repo) lines.push(...(await repoReport(repo)));
@@ -334,7 +353,15 @@ export function createRunner(deps: {
       if (interval) clearInterval(interval);
       interval = null;
       await draining;
-      await Promise.all(active.values());
+      // Each aborted run requeues its task and puts its repo back as it settles.
+      for (const run of active.values()) run.controller.abort();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      // A run that won't settle stays `running`; recoverOnBoot requeues it on the next start.
+      await Promise.race([
+        Promise.all([...active.values()].map((run) => run.done)),
+        new Promise((resolve) => (timer = setTimeout(resolve, deps.stopTimeoutMs ?? STOP_TIMEOUT_MS))),
+      ]);
+      clearTimeout(timer);
       keepAwake.stop();
       setSetting(db, "power.keepAwake", "false");
     },
@@ -371,11 +398,28 @@ async function repoReport(repo: RepoRun): Promise<string[]> {
   return [summaryLine, pushLine];
 }
 
-export function recoverOnBoot(db: Database): number {
+function lastStartRef(db: Database, taskId: string): string | null {
+  const row = db
+    .query("SELECT start_ref FROM runs WHERE task_id = ? AND start_ref IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1")
+    .get(taskId) as { start_ref: string } | null;
+  return row?.start_ref ?? null;
+}
+
+export async function recoverOnBoot(db: Database): Promise<number> {
   const stuck = listTasks(db, { status: ["running"] });
   for (const task of stuck) {
     setTaskStatus(db, task.id, "queued");
     logActivity(db, task.spaceId, "atrium", `Engine restarted; requeued ${task.title}`);
+    const path = getSpace(db, task.spaceId)?.repoPath;
+    const start = lastStartRef(db, task.id);
+    if (!path || !start) continue;
+    // A crash mid-run leaves the repo on the task branch. A clean one goes back now; a dirty one
+    // stays put and launch blocks it with the agent's leftovers.
+    try {
+      if ((await headRef(path)).branch === `atrium/${task.id}`) await returnToBranch(path, start);
+    } catch {
+      // Left as found: launch reports a repo it can't read or switch.
+    }
   }
   db.query("UPDATE runs SET ended_at = ?, exit_code = -1 WHERE ended_at IS NULL").run(Date.now());
   return stuck.length;

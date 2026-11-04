@@ -138,6 +138,9 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         proc.exited,
       ]);
 
+      // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
+      if (input.signal?.aborted) return { status: "error", kind: "failed", message: "Stopped" };
+
       // Warning-style statuses ("allowed_warning") only count if the run actually failed.
       const succeeded = exitCode === 0 && final !== undefined && !final.isError;
       if (limitResetsAt !== undefined && (limitRejected || !succeeded)) {

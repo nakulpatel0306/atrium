@@ -137,6 +137,32 @@ describe("pushBranch", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  test("a push that hangs times out", async () => {
+    const path = repo();
+    await prepareBranch(path, "tsk_1");
+    // Accepts connections and never answers, like a stalled network.
+    const silent = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+    cleanups.push(() => silent.stop(true));
+    const started = Date.now();
+    const res = await pushBranch(path, "atrium/tsk_1", `http://127.0.0.1:${silent.port}/repo.git`, 500);
+    expect(res).toEqual({ pushed: false, reason: "The push timed out." });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  test("a remote asking for credentials fails instead of prompting", async () => {
+    const path = repo();
+    await prepareBranch(path, "tsk_1");
+    const auth = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("", { status: 401, headers: { "www-authenticate": 'Basic realm="x"' } }),
+    });
+    cleanups.push(() => auth.stop(true));
+    const res = await pushBranch(path, "atrium/tsk_1", `http://127.0.0.1:${auth.port}/repo.git`);
+    expect(res.pushed).toBe(false);
+    expect(res.reason).toContain("terminal prompts disabled");
+  });
+
   test("pushes to the URL captured before the run, not a rewritten remote", async () => {
     const { path, bare } = withRemote();
     const url = await remoteUrl(path);

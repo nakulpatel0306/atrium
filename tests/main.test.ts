@@ -39,20 +39,30 @@ function engine(port: number) {
   return p;
 }
 
-async function waitForLine(stream: ReadableStream<Uint8Array>, text: string) {
-  const decoder = new TextDecoder();
+// Reads the whole stream in the background so output after the first wait isn't lost.
+function collect(stream: ReadableStream<Uint8Array>) {
   let seen = "";
-  for await (const part of stream) {
-    seen += decoder.decode(part, { stream: true });
-    if (seen.includes(text)) return seen;
-  }
-  throw new Error(`stream ended without "${text}": ${seen}`);
+  const done = (async () => {
+    const decoder = new TextDecoder();
+    for await (const part of stream) seen += decoder.decode(part, { stream: true });
+  })();
+  return {
+    done,
+    text: () => seen,
+    async waitFor(text: string) {
+      const until = Date.now() + 10_000;
+      while (!seen.includes(text)) {
+        if (Date.now() > until) throw new Error(`no "${text}" in: ${seen}`);
+        await Bun.sleep(20);
+      }
+    },
+  };
 }
 
 test("a second engine exits without touching task state", async () => {
   const port = freePort();
   const first = engine(port);
-  await waitForLine(first.stdout as ReadableStream<Uint8Array>, "Atrium running at");
+  await collect(first.stdout as ReadableStream<Uint8Array>).waitFor("Atrium running at");
 
   const db = openDb();
   const s = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
@@ -69,4 +79,17 @@ test("a second engine exits without touching task state", async () => {
   expect(`${out}${err}`.trim()).toBe(`Atrium is already running at http://127.0.0.1:${port}`);
   expect(getTask(db, t.id)!.status).toBe("running");
   db.close();
+}, 15_000);
+
+test("SIGTERM shuts down once and exits 0, even with a second signal", async () => {
+  const port = freePort();
+  const p = engine(port);
+  const out = collect(p.stdout as ReadableStream<Uint8Array>);
+  await out.waitFor("Atrium running at");
+  // Two identical pending signals merge into one, so the second stop request is a SIGINT.
+  p.kill("SIGTERM");
+  p.kill("SIGINT");
+  expect(await p.exited).toBe(0);
+  await out.done;
+  expect(out.text().match(/Atrium stopping/g)).toEqual(["Atrium stopping"]);
 }, 15_000);

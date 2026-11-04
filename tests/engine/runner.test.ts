@@ -80,12 +80,14 @@ function start(opts: {
   adapter: AgentAdapter;
   power?: () => Promise<"ac" | "battery">;
   keepAwake?: ReturnType<typeof fakeKeepAwake>;
+  stopTimeoutMs?: number;
 }) {
   runner = createRunner({
     db,
     adapters: { claude: opts.adapter },
     power: opts.power ?? (async () => "ac"),
     keepAwake: opts.keepAwake ?? fakeKeepAwake(),
+    stopTimeoutMs: opts.stopTimeoutMs,
   });
   runner.start();
   return runner;
@@ -347,7 +349,7 @@ test("a leftover Atrium branch blocks instead of stacking", async () => {
   const { adapter, calls } = fakeAdapter();
   start({ adapter });
   await waitFor(() => status(t.id) === "blocked");
-  expect(getTask(db, t.id)!.blockedReason).toBe("Repo is on an Atrium branch; switch back to your branch first");
+  expect(getTask(db, t.id)!.blockedReason).toBe("Repo is on atrium/tsk_old; switch back to your branch first.");
   expect(calls).toHaveLength(0);
   expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_old");
 });
@@ -549,7 +551,7 @@ test("runner resumes once pausedUntil has passed", async () => {
   await waitFor(() => status(t.id) === "review");
 });
 
-test("recoverOnBoot requeues running tasks", () => {
+test("recoverOnBoot requeues running tasks", async () => {
   const s = generalSpace();
   const t = createTask(db, { spaceId: s.id, title: "Interrupted" });
   const idle = createTask(db, { spaceId: s.id, title: "Idle" });
@@ -562,7 +564,7 @@ test("recoverOnBoot requeues running tasks", () => {
     "/tmp/x.log",
   );
 
-  expect(recoverOnBoot(db)).toBe(1);
+  expect(await recoverOnBoot(db)).toBe(1);
   expect(status(t.id)).toBe("queued");
   expect(status(idle.id)).toBe("queued");
   const run = db.query("SELECT * FROM runs WHERE id = 'run_1'").get() as any;
@@ -645,4 +647,118 @@ test("an outcome for a task moved off running mid-run is discarded", async () =>
     "Discarded the result for Moved away: the task was moved while it ran.",
   ]);
   expect(messages.some((m) => m.startsWith("Runner error:"))).toBe(false);
+});
+
+// Resolves when the run is aborted, the way the Claude adapter does after killing its child.
+const untilAborted = (input: AgentRunInput) =>
+  new Promise<AgentRunResult>((resolve) =>
+    input.signal!.addEventListener("abort", () => resolve({ status: "error", kind: "failed", message: "Stopped" })),
+  );
+
+test("stop aborts a running task, requeues it, and puts the repo back", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Long job" });
+  let aborted = false;
+  const r = start({
+    adapter: fakeAdapter(async (input) => {
+      const res = await untilAborted(input);
+      aborted = true;
+      return res;
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "running");
+  const started = Date.now();
+  await r.stop();
+  runner = null;
+  expect(Date.now() - started).toBeLessThan(2000);
+  expect(aborted).toBe(true);
+  expect(status(t.id)).toBe("queued");
+  expect(git(path, "branch", "--show-current")).toBe("feature");
+  expect(listActivity(db).map((a) => a.message)).toContain("Engine stopped; requeued Long job");
+  expect(listActivity(db).some((a) => a.message.startsWith("Blocked"))).toBe(false);
+});
+
+test("stop gives up waiting on a run that ignores the abort", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Stubborn" });
+  let finish!: () => void;
+  const gate = new Promise<void>((res) => (finish = res));
+  const r = start({
+    adapter: fakeAdapter(async () => {
+      await gate;
+      return ok();
+    }).adapter,
+    stopTimeoutMs: 200,
+  });
+  await waitFor(() => status(t.id) === "running");
+  const started = Date.now();
+  await r.stop();
+  runner = null;
+  expect(Date.now() - started).toBeLessThan(1500);
+  finish();
+  await Bun.sleep(30);
+});
+
+test("a repo run records the branch it started from", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Record" });
+  start({ adapter: fakeAdapter().adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect(db.query("SELECT start_ref FROM runs WHERE task_id = ?").get(t.id)).toEqual({ start_ref: "feature" });
+});
+
+function crashedRun(path: string, startRef: string) {
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Crashed" });
+  git(path, "checkout", "-b", `atrium/${t.id}`);
+  writeFileSync(join(path, "early.txt"), "early\n");
+  git(path, "add", "early.txt");
+  git(path, "commit", "-m", "early agent work");
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref) VALUES (?, ?, ?, ?, ?, ?)").run(
+    "run_crashed", t.id, "claude", Date.now(), "/tmp/x.log", startRef,
+  );
+  return t;
+}
+
+test("recoverOnBoot puts a repo left on the task branch back on its starting branch", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const t = crashedRun(path, "feature");
+  setTaskStatus(db, t.id, "running");
+  expect(await recoverOnBoot(db)).toBe(1);
+  expect(status(t.id)).toBe("queued");
+  expect(git(path, "branch", "--show-current")).toBe("feature");
+});
+
+test("a task whose repo is still on its own branch resumes from the stored start", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const t = crashedRun(path, "feature");
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, "late.txt"), "late\n");
+      git(input.cwd, "add", "late.txt");
+      git(input.cwd, "commit", "-m", "late agent work");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  expect(listPending(db)[0]!.detail).toContain(`2 commits, 2 files (+2 −0) on atrium/${t.id}`);
+  expect(git(path, "branch", "--show-current")).toBe("feature");
+});
+
+test("agent leftovers on the task's own branch block with the agent message", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const t = crashedRun(path, "feature");
+  writeFileSync(join(path, "half.txt"), "wip");
+  const { adapter, calls } = fakeAdapter();
+  start({ adapter });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe(`The agent left uncommitted changes on atrium/${t.id} in ${path}`);
+  expect(calls).toHaveLength(0);
 });

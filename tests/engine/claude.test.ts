@@ -104,6 +104,18 @@ describe("claudeAdapter", () => {
     expect(argv).not.toContain("--help");
   });
 
+  test("abort kills the run and reports it as stopped", async () => {
+    process.env.FAKE_CLAUDE_MODE = "slow";
+    const controller = new AbortController();
+    const chunks: string[] = [];
+    const started = Date.now();
+    const running = claudeAdapter(FAKE).run({ ...input(chunks), signal: controller.signal });
+    while (!chunks.length) await Bun.sleep(10);
+    controller.abort();
+    expect(await running).toEqual({ status: "error", kind: "failed", message: "Stopped" });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
   test("rejects flag-like allowedTools entries", async () => {
     await expect(claudeAdapter(FAKE).run({ ...input(), allowedTools: ["Read", "--dangerously-skip-permissions"] })).rejects.toThrow(/allowedTools/);
   });

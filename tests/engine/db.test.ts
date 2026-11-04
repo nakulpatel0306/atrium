@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { config } from "../../src/engine/config";
 import { openDb } from "../../src/engine/db";
@@ -28,5 +29,22 @@ test("config honors ATRIUM_HOME", () => {
   const t = tempHome();
   expect(config().home).toBe(t.home);
   expect(config().dbPath.endsWith("atrium.db")).toBe(true);
+  t.cleanup();
+});
+
+test("openDb adds runs.start_ref to an existing database", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const old = new Database(path);
+  old.exec(`CREATE TABLE runs (
+    id TEXT PRIMARY KEY, task_id TEXT NOT NULL, agent TEXT NOT NULL, started_at INTEGER NOT NULL,
+    ended_at INTEGER, exit_code INTEGER, input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0, transcript_path TEXT NOT NULL)`);
+  old.close();
+  const db = openDb(path);
+  const cols = (db.query("PRAGMA table_info(runs)").all() as { name: string }[]).map((c) => c.name);
+  expect(cols).toContain("start_ref");
+  db.close();
+  openDb(path).close();
   t.cleanup();
 });
