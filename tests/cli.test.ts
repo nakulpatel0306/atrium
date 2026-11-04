@@ -1,0 +1,53 @@
+import { afterEach, expect, test } from "bun:test";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { renderPlist, statusLine } from "../src/cli";
+import { trimLog } from "../src/engine/logfile";
+import type { State } from "../src/engine/state";
+import { tempHome } from "./helpers";
+
+let cleanup: (() => void) | undefined;
+afterEach(() => {
+  cleanup?.();
+  cleanup = undefined;
+});
+
+test("renderPlist includes absolute paths, RunAtLoad, and log path", () => {
+  const plist = renderPlist({
+    bunPath: "/Users/x/.bun/bin/bun",
+    mainPath: "/Users/x/atrium/src/main.ts",
+    logPath: "/Users/x/Library/Application Support/Atrium/engine.log",
+    workingDir: "/Users/x/atrium",
+    pathEnv: "/Users/x/.local/bin:/usr/bin",
+  });
+  expect(plist).toContain("<string>/Users/x/.bun/bin/bun</string>");
+  expect(plist).toContain("<string>/Users/x/atrium/src/main.ts</string>");
+  expect(plist).toContain("<key>RunAtLoad</key>\n  <true/>");
+  expect(plist).toContain("<key>SuccessfulExit</key>\n    <false/>");
+  expect(plist).toContain("<string>/Users/x/Library/Application Support/Atrium/engine.log</string>");
+  expect(plist).toContain("<string>/Users/x/.local/bin:/usr/bin</string>");
+  expect(plist).not.toContain("{{");
+});
+
+test("renderPlist escapes XML characters in paths", () => {
+  const plist = renderPlist({ bunPath: "/a&b/bun", mainPath: "/a/src/main.ts", logPath: "/a/log" });
+  expect(plist).toContain("/a&amp;b/bun");
+});
+
+test("statusLine is plain language", () => {
+  const state = { spaces: [{}, {}], approvals: [{}] } as unknown as State;
+  expect(statusLine(state, "http://127.0.0.1:7420")).toBe("running at http://127.0.0.1:7420 · 2 spaces · 1 needs you");
+  expect(statusLine(null, "http://127.0.0.1:7420")).toBe("not running");
+});
+
+test("trimLog keeps only the last bytes of an oversized log", () => {
+  const h = tempHome();
+  cleanup = h.cleanup;
+  const path = join(h.home, "engine.log");
+  writeFileSync(path, "a".repeat(100) + "b".repeat(50));
+  trimLog(path, 50);
+  expect(readFileSync(path, "utf8")).toBe("b".repeat(50));
+  trimLog(path, 50);
+  expect(statSync(path).size).toBe(50);
+  trimLog(join(h.home, "missing.log"), 50);
+});

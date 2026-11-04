@@ -2,6 +2,7 @@
   "name": "atrium",
   "type": "module",
   "private": true,
+  "bin": { "atrium": "src/cli.ts" },
   "devDependencies": {
     "@types/bun": "^1.4.4",
     "@types/react": "^19.3.0",

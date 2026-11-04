@@ -1,10 +1,15 @@
+import { join } from "node:path";
 import { claudeAdapter } from "./engine/agents/claude";
 import { config } from "./engine/config";
 import { openDb } from "./engine/db";
+import { trimLog } from "./engine/logfile";
 import { keepAwake, powerSource } from "./engine/power";
 import { createRunner, recoverOnBoot } from "./engine/runner";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
+
+// Keep launchd's log from growing forever; must run before anything logs.
+trimLog(join(config().home, "engine.log"), 1024 * 1024);
 
 const db = openDb();
 recoverOnBoot(db);
