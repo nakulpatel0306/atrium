@@ -37,8 +37,16 @@ describe("claudeAdapter", () => {
     expect(r.retryAfter).toBe(1893456000 * 1000);
   });
 
-  test("rate limit without a reset time falls back to ~30 minutes", async () => {
-    process.env.FAKE_CLAUDE_MODE = "rate_limited";
+  test("rate limit text without an event still maps, parsing the epoch", async () => {
+    process.env.FAKE_CLAUDE_MODE = "rate_limited_text";
+    const r = await claudeAdapter(FAKE).run(input());
+    if (r.status !== "error") throw new Error("expected error");
+    expect(r.kind).toBe("rate_limited");
+    expect(r.retryAfter).toBe(1893456000 * 1000);
+  });
+
+  test("rate limit text without a reset time falls back to ~30 minutes", async () => {
+    process.env.FAKE_CLAUDE_MODE = "rate_limited_text";
     process.env.FAKE_CLAUDE_LIMIT_TEXT = "You've hit your usage limit.";
     const before = Date.now();
     const r = await claudeAdapter(FAKE).run(input());
@@ -62,13 +70,26 @@ describe("claudeAdapter", () => {
     expect(r.message).toContain("boom: something exploded");
   });
 
-  test("always passes .env deny rules", async () => {
+  test("always passes .env deny rules and project/local settings only", async () => {
     process.env.FAKE_CLAUDE_MODE = "argv";
     const r = await claudeAdapter(FAKE).run(input());
     if (r.status !== "ok") throw new Error("expected ok");
-    const argv: string[] = JSON.parse(r.summary);
+    const { argv } = JSON.parse(r.summary) as { argv: string[] };
     const i = argv.indexOf("--disallowedTools");
-    expect(argv.slice(i + 1, i + 3)).toEqual(["Read(**/.env*)", "Bash(cat *.env*)"]);
-    expect(argv.slice(0, 2)).toEqual(["-p", "do it"]);
+    expect(argv.slice(i + 1, i + 5)).toEqual(["Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)", "Bash(cat *.env*)"]);
+    expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
+  });
+
+  test("prompt goes over stdin, never argv", async () => {
+    process.env.FAKE_CLAUDE_MODE = "argv";
+    const r = await claudeAdapter(FAKE).run({ ...input(), prompt: "--help" });
+    if (r.status !== "ok") throw new Error("expected ok");
+    const { argv, stdin } = JSON.parse(r.summary) as { argv: string[]; stdin: string };
+    expect(stdin).toBe("--help");
+    expect(argv).not.toContain("--help");
+  });
+
+  test("rejects flag-like allowedTools entries", async () => {
+    await expect(claudeAdapter(FAKE).run({ ...input(), allowedTools: ["Read", "--dangerously-skip-permissions"] })).rejects.toThrow(/allowedTools/);
   });
 });

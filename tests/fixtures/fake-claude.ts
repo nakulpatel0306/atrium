@@ -27,16 +27,28 @@ if (mode === "logged_out") {
   process.exit(1);
 }
 if (mode === "rate_limited") {
+  out({
+    type: "rate_limit_event",
+    rate_limit_info: { status: "rejected", resetsAt: 1893456000, rateLimitType: "five_hour" },
+  });
+  result("Claude AI usage limit reached", true);
+  process.exit(1);
+}
+if (mode === "rate_limited_text") {
   const text = process.env.FAKE_CLAUDE_LIMIT_TEXT ?? "Claude AI usage limit reached|1893456000";
   out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text }] } });
   result(text, true);
   process.exit(1);
 }
 if (mode === "argv") {
-  result(JSON.stringify(process.argv.slice(2)));
+  result(JSON.stringify({ argv: process.argv.slice(2), stdin: await Bun.stdin.text() }));
   process.exit(0);
 }
 
+out({
+  type: "rate_limit_event",
+  rate_limit_info: { status: "allowed", resetsAt: 1893456000, rateLimitType: "five_hour" },
+});
 out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Looking at the repo." }] } });
 out({
   type: "assistant",

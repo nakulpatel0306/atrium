@@ -1,7 +1,7 @@
 import { config } from "../config";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./types";
 
-const DENY = ["Read(**/.env*)", "Bash(cat *.env*)"];
+const DENY = ["Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)", "Bash(cat *.env*)"];
 const FALLBACK_WAIT_MS = 30 * 60_000;
 
 function shortInput(input: Record<string, unknown> | undefined): string {
@@ -43,18 +43,23 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
     id: "claude",
     label: "Claude Code",
     async run(input: AgentRunInput): Promise<AgentRunResult> {
+      // The variadic --allowedTools would swallow a flag-looking entry as another option.
+      const flagLike = input.allowedTools.find((t) => t.startsWith("-"));
+      if (flagLike) throw new Error(`Invalid allowedTools entry: ${flagLike}`);
+
       let proc: ReturnType<typeof Bun.spawn>;
       try {
         proc = Bun.spawn(
           [
-            bin, "-p", input.prompt,
+            bin, "-p",
+            "--setting-sources", "project,local",
             "--output-format", "stream-json", "--verbose",
             "--permission-mode", "acceptEdits",
             "--append-system-prompt", input.systemPrompt,
             "--allowedTools", ...input.allowedTools,
             "--disallowedTools", ...DENY,
           ],
-          { cwd: input.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: process.env, signal: input.signal },
+          { cwd: input.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env, signal: input.signal },
         );
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code === "ENOENT") {
@@ -63,6 +68,12 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         throw e;
       }
 
+      // The prompt goes over stdin so a leading "-" can never be parsed as a flag.
+      const stdin = proc.stdin as import("bun").FileSink;
+      stdin.write(input.prompt);
+      stdin.end();
+
+      let limitResetsAt: number | undefined;
       let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number } | undefined;
       let lastText = "";
 
@@ -82,6 +93,9 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
               input.onChunk(`→ ${block.name} ${shortInput(block.input)}`.trimEnd());
             }
           }
+        } else if (msg.type === "rate_limit_event") {
+          const info = msg.rate_limit_info;
+          if (info && info.status !== "allowed") limitResetsAt = Number(info.resetsAt) * 1000;
         } else if (msg.type === "result") {
           final = {
             result: String(msg.result ?? ""),
@@ -112,6 +126,15 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         proc.exited,
       ]);
 
+      if (limitResetsAt !== undefined) {
+        const when = Number.isFinite(limitResetsAt) ? limitResetsAt : Date.now() + FALLBACK_WAIT_MS;
+        return {
+          status: "error",
+          kind: "rate_limited",
+          message: `Claude usage limit reached; resets at ${new Date(when).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`,
+          retryAfter: when,
+        };
+      }
       if (exitCode === 0 && final && !final.isError) {
         return { status: "ok", summary: final.result, inputTokens: final.inputTokens, outputTokens: final.outputTokens };
       }
