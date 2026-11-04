@@ -293,7 +293,10 @@ export function createRunner(deps: {
     }
 
     try {
-      if (leftRepo) {
+      if (getTask(db, task.id)?.status !== "running") {
+        // Someone moved the task while it ran; its outcome no longer applies.
+        logActivity(db, space.id, "atrium", `Discarded the result for ${task.title}: the task was moved while it ran.`);
+      } else if (leftRepo) {
         block(task, leftRepo);
       } else if (result.status === "ok") {
         const lines = [result.summary.trim()];

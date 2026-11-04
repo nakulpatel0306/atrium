@@ -624,17 +624,25 @@ test("concurrent kicks never run a task twice", async () => {
   expect(calls).toHaveLength(1);
 });
 
-test("an error after a run is logged instead of crashing the engine", async () => {
+test("an outcome for a task moved off running mid-run is discarded", async () => {
   const s = generalSpace();
   const t = createTask(db, { spaceId: s.id, title: "Moved away" });
-  // Requeueing mid-run makes the final running→review move invalid.
   const { adapter } = fakeAdapter(() => {
     setTaskStatus(db, t.id, "queued");
     setTaskStatus(db, t.id, "blocked", { blockedReason: "held" });
     return ok();
   });
   start({ adapter });
-  await waitFor(() => listActivity(db).some((r) => r.message.startsWith("Runner error:")));
+  await waitFor(() => listActivity(db).some((r) => r.message.startsWith("Discarded")));
+  await Bun.sleep(20);
+  expect(getTask(db, t.id)).toMatchObject({ status: "blocked", blockedReason: "held" });
+  expect(listPending(db)).toHaveLength(0);
   const run = db.query("SELECT * FROM runs WHERE task_id = ?").get(t.id) as any;
+  expect(run.ended_at).not.toBeNull();
   expect(run.exit_code).toBe(0);
+  const messages = listActivity(db).map((r) => r.message);
+  expect(messages.filter((m) => m.startsWith("Discarded"))).toEqual([
+    "Discarded the result for Moved away: the task was moved while it ran.",
+  ]);
+  expect(messages.some((m) => m.startsWith("Runner error:"))).toBe(false);
 });

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
-import { createApproval } from "../../src/engine/approvals";
+import { createApproval, listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
+import { createRunner } from "../../src/engine/runner";
 import { SetupFailed } from "../../src/engine/setup";
 import { createSpace } from "../../src/engine/spaces";
 import { getSetting } from "../../src/engine/settings";
@@ -107,17 +108,71 @@ test("command with spaceId creates a light task in a general space", async () =>
   expect(kicks).toBe(1);
 });
 
-test("retry requeues a failed task; invalid transition is 409", async () => {
+test("retry requeues a failed or blocked task; other statuses are 409", async () => {
   const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
   const t = createTask(db, { spaceId: s.id, title: "T" });
   const bad = await post(`/api/tasks/${t.id}/retry`);
   expect(bad.status).toBe(409);
+  expect(await bad.json()).toEqual({ error: "This task isn't blocked or failed, so there's nothing to retry." });
   setTaskStatus(db, t.id, "running");
   setTaskStatus(db, t.id, "failed");
   const ok = await post(`/api/tasks/${t.id}/retry`);
   expect(ok.status).toBe(200);
   expect(getTask(db, t.id)!.status).toBe("queued");
+  setTaskStatus(db, t.id, "blocked", { blockedReason: "stuck" });
+  expect((await post(`/api/tasks/${t.id}/retry`)).status).toBe(200);
+  expect(getTask(db, t.id)!.status).toBe("queued");
   expect((await post("/api/tasks/tsk_nope/retry")).status).toBe(404);
+});
+
+test("retry on a running task is 409 and the agent runs once", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  const t = createTask(db, { spaceId: s.id, title: "T", weight: "light" });
+  let calls = 0;
+  let finish!: () => void;
+  const gate = new Promise<void>((r) => (finish = r));
+  const runner = createRunner({
+    db,
+    adapters: {
+      claude: {
+        id: "claude",
+        label: "Fake",
+        async run() {
+          calls++;
+          await gate;
+          return { status: "ok", summary: "done", inputTokens: 1, outputTokens: 1 };
+        },
+      },
+    },
+    power: async () => "ac",
+    keepAwake: { start() {}, stop() {}, active: () => false },
+  });
+  server.stop(true);
+  server = startServer({ db, runner, setup: (x) => setupImpl(x), port: 0 });
+  base = origin = `http://127.0.0.1:${server.port}`;
+  runner.start();
+  try {
+    while (getTask(db, t.id)!.status !== "running") await Bun.sleep(5);
+    const res = await post(`/api/tasks/${t.id}/retry`);
+    expect(res.status).toBe(409);
+    finish();
+    while (getTask(db, t.id)!.status !== "review") await Bun.sleep(5);
+    await Bun.sleep(30);
+    expect(calls).toBe(1);
+  } finally {
+    await runner.stop();
+  }
+});
+
+test("retry on a task in review is 409 and its approval stays pending", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  const t = createTask(db, { spaceId: s.id, title: "T" });
+  setTaskStatus(db, t.id, "running");
+  setTaskStatus(db, t.id, "review");
+  const a = createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title: "T", detail: "d" });
+  expect((await post(`/api/tasks/${t.id}/retry`)).status).toBe(409);
+  expect(getTask(db, t.id)!.status).toBe("review");
+  expect(listPending(db).map((p) => p.id)).toEqual([a.id]);
 });
 
 test("settings writes overnight as a string and kicks", async () => {

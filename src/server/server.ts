@@ -137,7 +137,12 @@ export function startServer(deps: Deps): Server<undefined> {
     const retryM = hit("POST", /^\/api\/tasks\/([^/]+)\/retry$/);
     if (retryM) {
       const id = retryM[1]!;
-      if (!getTask(db, id)) throw new HttpError(404, "No such task.");
+      const current = getTask(db, id);
+      if (!current) throw new HttpError(404, "No such task.");
+      // Requeueing a running or in-review task would start a second run or orphan its review.
+      if (current.status !== "blocked" && current.status !== "failed") {
+        throw new HttpError(409, "This task isn't blocked or failed, so there's nothing to retry.");
+      }
       const task = setTaskStatus(db, id, "queued");
       runner.kick();
       return json(task);
