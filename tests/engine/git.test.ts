@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchSummary, prepareBranch, pushBranch, repoReady } from "../../src/engine/git";
+import { branchSummary, headRef, prepareBranch, pushBranch, repoReady } from "../../src/engine/git";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -48,6 +48,16 @@ describe("repoReady", () => {
     expect(await repoReady("/nonexistent/atrium-nope")).toEqual({ ok: false, reason: "Folder not found: /nonexistent/atrium-nope" });
     const plain = tempDir();
     expect(await repoReady(plain)).toEqual({ ok: false, reason: `Not a git repo: ${plain}` });
+  });
+});
+
+describe("headRef", () => {
+  test("reports the branch, or null when detached", async () => {
+    const path = repo();
+    const sha = git(path, "rev-parse", "HEAD");
+    expect(await headRef(path)).toEqual({ branch: "main", sha });
+    git(path, "checkout", "--detach");
+    expect(await headRef(path)).toEqual({ branch: null, sha });
   });
 });
 

@@ -37,22 +37,54 @@ describe("canRun", () => {
 });
 
 describe("keepAwake", () => {
-  test("keepAwake start is idempotent and stop kills", () => {
+  function fakeSpawn() {
     const calls: string[][] = [];
+    const exits: Array<() => void> = [];
     let kills = 0;
-    const fake = ((cmd: string[]) => {
+    const spawn = ((cmd: string[]) => {
       calls.push(cmd);
-      return { kill: () => void kills++ };
+      let exit!: () => void;
+      const exited = new Promise<number>((r) => (exit = () => r(0)));
+      exits.push(exit);
+      return { kill: () => void kills++, exited };
     }) as unknown as typeof Bun.spawn;
-    const ka = createKeepAwake(fake);
+    return { spawn, calls, exits, kills: () => kills };
+  }
+
+  test("keepAwake start is idempotent and stop kills", () => {
+    const f = fakeSpawn();
+    const ka = createKeepAwake(f.spawn);
     ka.start();
     ka.start();
-    expect(calls).toEqual([["caffeinate", "-i", "-s"]]);
+    expect(f.calls).toEqual([["caffeinate", "-i", "-s", "-w", String(process.pid)]]);
     expect(ka.active()).toBe(true);
     ka.stop();
-    expect(kills).toBe(1);
+    expect(f.kills()).toBe(1);
     expect(ka.active()).toBe(false);
     ka.stop();
-    expect(kills).toBe(1);
+    expect(f.kills()).toBe(1);
+  });
+
+  test("keepAwake forgets caffeinate when it exits on its own", async () => {
+    const f = fakeSpawn();
+    const ka = createKeepAwake(f.spawn);
+    ka.start();
+    f.exits[0]!();
+    await Bun.sleep(0);
+    expect(ka.active()).toBe(false);
+    ka.start();
+    expect(f.calls).toHaveLength(2);
+    expect(ka.active()).toBe(true);
+  });
+
+  test("an old caffeinate exiting does not clear a newer one", async () => {
+    const f = fakeSpawn();
+    const ka = createKeepAwake(f.spawn);
+    ka.start();
+    ka.stop();
+    ka.start();
+    f.exits[0]!();
+    await Bun.sleep(0);
+    expect(ka.active()).toBe(true);
   });
 });

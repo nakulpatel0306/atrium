@@ -25,11 +25,17 @@ export function canRun(
 }
 
 export function createKeepAwake(spawnFn: typeof Bun.spawn = Bun.spawn) {
-  let proc: { kill(): void } | null = null;
+  let proc: { kill(): void; exited: Promise<number> } | null = null;
   return {
     start() {
       if (proc) return;
-      proc = spawnFn(["caffeinate", "-i", "-s"], { stdout: "ignore", stderr: "ignore" });
+      // -w ties caffeinate to the engine, so a crashed engine never leaves the Mac awake.
+      const child = spawnFn(["caffeinate", "-i", "-s", "-w", String(process.pid)], { stdout: "ignore", stderr: "ignore" });
+      proc = child;
+      // If caffeinate dies on its own, forget it so the next start() respawns it.
+      child.exited.then(() => {
+        if (proc === child) proc = null;
+      });
     },
     stop() {
       proc?.kill();

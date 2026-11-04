@@ -26,6 +26,14 @@ export async function repoReady(path: string): Promise<{ ok: true } | { ok: fals
   return { ok: true };
 }
 
+// The branch name, or null when HEAD is detached; sha is always the current commit.
+export async function headRef(path: string): Promise<{ branch: string | null; sha: string }> {
+  const name = await git(path, ["branch", "--show-current"]);
+  const sha = await git(path, ["rev-parse", "HEAD"]);
+  if (sha.code !== 0) throw new Error(`Could not read HEAD: ${sha.err.trim()}`);
+  return { branch: name.out.trim() || null, sha: sha.out.trim() };
+}
+
 export async function prepareBranch(path: string, taskId: string): Promise<string> {
   if (isProtected(taskId)) throw new Error("Refusing to work on main");
   const branch = `atrium/${taskId}`;
