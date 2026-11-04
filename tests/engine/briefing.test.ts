@@ -69,6 +69,16 @@ test("reports blocked tasks with first reason and heavy work waiting", () => {
   expect(summary).toContain("Heavy work is waiting for power");
 });
 
+test("runs that all ended without finishing are described, not a bare period", () => {
+  const now = Date.now();
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  const t = createTask(db, { spaceId: a.id, title: "one" });
+  seedRun(t.id, now - 1000, -1);
+  expect(briefing(db, now).summary).toBe("1 run ended without finishing since you were last here.");
+  seedRun(t.id, now - 500, 1);
+  expect(briefing(db, now).summary).toBe("2 runs ended without finishing since you were last here.");
+});
+
 test("greeting follows time of day", () => {
   const at = (h: number) => new Date(2026, 10, 4, h, 0).getTime();
   expect(briefing(db, at(9)).greeting).toBe("Good morning, Nakul.");

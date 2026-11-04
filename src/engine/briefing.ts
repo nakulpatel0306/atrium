@@ -27,6 +27,9 @@ export function briefing(db: Database, now: number): { greeting: string; summary
     parts.push(`${plural(finished.length, "task", "tasks")} finished across ${plural(spaces, "space", "spaces")}`);
   } else if (ended.length === 0) {
     parts.push("Nothing ran since you were last here");
+  } else {
+    // Rate-limited requeues and crash recovery end runs without leaving a blocked task to report.
+    parts.push(`${plural(ended.length, "run", "runs")} ended without finishing since you were last here`);
   }
 
   const pending = listPending(db).length;
