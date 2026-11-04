@@ -31,6 +31,10 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
   const branch = `atrium/${taskId}`;
   const valid = await git(path, ["check-ref-format", "--branch", branch]);
   if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
+  // checkout carries non-conflicting uncommitted changes along, which would put the user's WIP on the agent branch.
+  const status = await git(path, ["status", "--porcelain"]);
+  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  if (status.out.trim() !== "") throw new Error(`You have uncommitted changes in ${path}`);
   // A retry after a send-back reuses the existing branch. Plain checkout (never --force)
   // fails rather than overwrite local changes.
   const exists = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
@@ -56,9 +60,11 @@ export async function branchSummary(
 ): Promise<{ commits: number; filesChanged: number; insertions: number; deletions: number }> {
   const count = await git(path, ["rev-list", "--count", `${base}..${branch}`]);
   const stat = await git(path, ["diff", "--shortstat", `${base}...${branch}`]);
+  if (count.code !== 0) throw new Error(`Could not count commits: ${count.err.trim()}`);
+  if (stat.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${stat.err.trim()}`);
   const num = (re: RegExp) => Number(stat.out.match(re)?.[1] ?? 0);
   return {
-    commits: count.code === 0 ? Number(count.out.trim()) : 0,
+    commits: Number(count.out.trim()),
     filesChanged: num(/(\d+) files? changed/),
     insertions: num(/(\d+) insertions?\(\+\)/),
     deletions: num(/(\d+) deletions?\(-\)/),

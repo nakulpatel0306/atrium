@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { branchSummary, prepareBranch, pushBranch, repoReady } from "../../src/engine/git";
@@ -66,6 +66,20 @@ describe("prepareBranch", () => {
     expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_1");
   });
 
+  test("refuses a dirty tree and leaves it untouched", async () => {
+    const path = repo();
+    writeFileSync(join(path, "scratch.txt"), "x");
+    await expect(prepareBranch(path, "tsk_1")).rejects.toThrow("uncommitted changes");
+    expect(git(path, "branch", "--show-current")).toBe("main");
+    expect(readFileSync(join(path, "scratch.txt"), "utf8")).toBe("x");
+
+    rmSync(join(path, "scratch.txt"));
+    writeFileSync(join(path, "README.md"), "edited\n");
+    await expect(prepareBranch(path, "tsk_1")).rejects.toThrow("uncommitted changes");
+    expect(git(path, "branch", "--show-current")).toBe("main");
+    expect(readFileSync(join(path, "README.md"), "utf8")).toBe("edited\n");
+  });
+
   test("refuses main and master", async () => {
     const path = repo();
     await expect(prepareBranch(path, "main")).rejects.toThrow("Refusing to work on main");
@@ -103,5 +117,11 @@ describe("branchSummary", () => {
     git(path, "add", "-A");
     git(path, "commit", "-m", "add a");
     expect(await branchSummary(path, branch, "main")).toEqual({ commits: 1, filesChanged: 1, insertions: 2, deletions: 0 });
+  });
+
+  test("throws on a nonexistent base instead of returning zeros", async () => {
+    const path = repo();
+    const branch = await prepareBranch(path, "tsk_1");
+    await expect(branchSummary(path, branch, "nope")).rejects.toThrow();
   });
 });
