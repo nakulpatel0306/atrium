@@ -1480,6 +1480,8 @@ describe("markets spaces", () => {
     expect(listPending(db)).toHaveLength(0);
     expect(db.query("SELECT COUNT(*) AS n FROM paper_fills").get()).toEqual({ n: 1 });
     expect(listActivity(db).map((a) => a.message)).toContain("Paper strategy run: 1 filled, 0 refused");
+    // What happened to each order stays with the task, since there's no review to carry it.
+    expect(getTask(db, task.id)!.detail).toMatch(/Filled: buy 5 AAPL @ \$[\d.]+ — Above SMA20/);
     expect(calls[0]!.prompt).toContain("Market data as of");
     expect(calls[0]!.systemPrompt).toContain("Analysis, not advice");
   });

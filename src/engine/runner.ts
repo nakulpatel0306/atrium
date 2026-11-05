@@ -31,7 +31,7 @@ import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
-import { getTask, listTasks, setTaskStatus, type Task } from "./tasks";
+import { appendTaskDetail, getTask, listTasks, setTaskStatus, type Task } from "./tasks";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -502,6 +502,7 @@ export function createRunner(deps: {
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
       } else if (result.status === "ok" && (settled = markets ? await settleMarkets(markets, task, space, adapter.id, result.summary) : null)?.done) {
         // A paper strategy run settled its own orders; there is nothing for Nakul to review.
+        if (settled.lines.length) appendTaskDetail(db, task.id, `\n\nThis run:\n${settled.lines.join("\n")}`);
         setTaskStatus(db, task.id, "done");
         logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`);
       } else if (result.status === "ok") {
