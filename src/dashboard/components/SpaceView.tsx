@@ -1,6 +1,6 @@
 import { CornerDownRight, Lock, Play, SearchCheck, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { type AgentChoice, agentName, agentText, needsAction, ranAgent, type Wait, waitFor } from "../agents";
+import { type AgentChoice, agentName, agentText, byPriority, needsAction, ranAgent, type Wait, waitOf } from "../agents";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { navigate } from "../route";
@@ -57,7 +57,7 @@ function reviewHint(reviewBy: Space["reviewBy"]): string {
 }
 
 function ReviewSetting({ space }: { space: Space }) {
-  const reasons = useReviewers(space.id);
+  const reasons = useReviewers(space);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reason = space.reviewBy ? reasons?.[space.reviewBy] : null;
@@ -252,7 +252,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
   const [error, setError] = useState<string | null>(null);
   const stuck = task.status === "blocked" || task.status === "failed";
   const runs = state.runs.filter((r) => r.taskId === task.id);
-  const wait = waitFor(task, state);
+  const wait = waitOf(task, state);
   const parent = task.parentTaskId ? state.tasks.find((t) => t.id === task.parentTaskId) : undefined;
   const agent = agentText(task, state.runs);
 
@@ -274,7 +274,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
         <KindBadge kind={task.kind} />
         <span className="t">{shownTitle(task)}</span>
         {wait ? (
-          <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.text}>
+          <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
             waiting
           </span>
         ) : (
@@ -385,15 +385,14 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
   if (!task || !run) {
     // One line per distinct reason, so three tasks held by the same limit don't repeat it.
     const waits = new Map<string, Wait>();
-    for (const t of tasks) {
-      const wait = waitFor(t, state);
-      if (wait && !waits.has(wait.text)) waits.set(wait.text, wait);
+    for (const wait of tasks.flatMap((t) => waitOf(t, state) ?? []).sort(byPriority)) {
+      if (!waits.has(wait.reason)) waits.set(wait.reason, wait);
     }
     return (
       <div className="idle">
         <p>No agent working right now</p>
         {[...waits.values()].map((w) => (
-          <WaitLine key={w.text} wait={w} />
+          <WaitLine key={w.reason} wait={w} />
         ))}
       </div>
     );

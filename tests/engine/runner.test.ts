@@ -3,6 +3,7 @@ import type { Database } from "bun:sqlite";
 import { appendFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TaskWait } from "../../src/engine/agents/registry";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
@@ -76,6 +77,8 @@ function fakeKeepAwake() {
     active: () => on,
   };
 }
+
+const waits = () => JSON.parse(getSetting(db, "runner.waiting") || "[]") as TaskWait[];
 
 function start(opts: {
   adapter: AgentAdapter;
@@ -416,12 +419,11 @@ test("heavy task waits on battery and stays queued with reason in runner.waiting
   const t = createTask(db, { spaceId: s.id, title: "Big job", weight: "heavy" });
   const { adapter, calls } = fakeAdapter();
   start({ adapter, power: async () => "battery" });
-  await waitFor(() => getSetting(db, "runner.waiting") !== null);
+  await waitFor(() => waits().length > 0);
 
-  expect(JSON.parse(getSetting(db, "runner.waiting")!)).toEqual({
-    taskId: t.id,
-    reason: "Waiting for power: heavy work runs when plugged in",
-  });
+  expect(waits()).toEqual([
+    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power: heavy work runs when plugged in" },
+  ]);
   expect(getSetting(db, "power.source")).toBe("battery");
   expect(status(t.id)).toBe("queued");
   expect(calls).toHaveLength(0);
@@ -449,7 +451,7 @@ test("waiting on power does not spin the runner", async () => {
       return "battery";
     },
   });
-  await waitFor(() => getSetting(db, "runner.waiting") !== null);
+  await waitFor(() => waits().length > 0);
   for (let i = 0; i < 50; i++) {
     r.kick();
     bus.emit({ type: "changed" });
@@ -604,7 +606,7 @@ test("launch re-checks the agent and holds a task the space no longer allows", a
   });
   try {
     start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
-    await waitFor(() => !!getSetting(db, "runner.waiting"));
+    await waitFor(() => waits().length > 0);
   } finally {
     spy.mockRestore();
   }
@@ -612,10 +614,14 @@ test("launch re-checks the agent and holds a task the space no longer allows", a
   expect(codex.calls).toHaveLength(0);
   expect(status(t.id)).toBe("queued");
   expect(git(path, "branch", "--show-current")).toBe("main");
-  expect(JSON.parse(getSetting(db, "runner.waiting")!)).toEqual({
-    taskId: t.id,
-    reason: "Codex can't work here: this space is private, so only Claude works in it.",
-  });
+  expect(waits()).toEqual([
+    {
+      taskId: t.id,
+      agent: "codex",
+      kind: "private_space",
+      reason: "Codex can't work here: this space is private, so only Claude works in it.",
+    },
+  ]);
 });
 
 test("run row records the resolved agent for auto tasks", async () => {
@@ -633,11 +639,15 @@ test("a task the registry holds back shows its reason as the waiting line", asyn
   const codex = fakeAdapter();
   const r = start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
   r.kick();
-  await waitFor(() => !!getSetting(db, "runner.waiting"));
-  expect(JSON.parse(getSetting(db, "runner.waiting")!)).toEqual({
-    taskId: t.id,
-    reason: "Codex can't work here: this space is private, so only Claude works in it.",
-  });
+  await waitFor(() => waits().length > 0);
+  expect(waits()).toEqual([
+    {
+      taskId: t.id,
+      agent: "codex",
+      kind: "private_space",
+      reason: "Codex can't work here: this space is private, so only Claude works in it.",
+    },
+  ]);
   expect(status(t.id)).toBe("queued");
   expect(codex.calls).toHaveLength(0);
 });
@@ -986,4 +996,61 @@ test("a resume without stored git settings is blocked", async () => {
   await waitFor(() => status(t.id) === "blocked");
   expect(getTask(db, t.id)!.blockedReason).toBe(tampered(path));
   expect(calls).toHaveLength(0);
+});
+
+test("every held-back task gets its own wait, with the kind the dashboard shows", async () => {
+  const path = repo();
+  writeFileSync(join(path, ".env"), "X=1\n");
+  const secretRepo = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: path, private: false });
+  const open = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const busyRepo = createSpace(db, { name: "Busy", kind: "repo", goal: "", repoPath: repo(), private: false });
+  const resetsAt = Date.now() + 3600_000;
+  setSetting(db, "usage.claude.fiveHour", JSON.stringify({ utilization: 0.9, resetsAt }));
+  const limit = Date.now() + 600_000;
+  setSetting(db, "agent.codex.limitedUntil", String(limit));
+  // Repo work on auto goes to Claude, so the reserve holds it.
+  const auto = createTask(db, { spaceId: busyRepo.id, title: "Auto repo job", agent: "auto" });
+  const secret = createTask(db, { spaceId: secretRepo.id, title: "Codex in a repo with .env", agent: "codex" });
+  const limited = createTask(db, { spaceId: open.id, title: "Limited codex", agent: "codex" });
+  const signedOut = createTask(db, { spaceId: open.id, title: "Signed-out gemini", agent: "gemini" });
+  const codex = fakeAdapter();
+  const gemini: AgentAdapter = {
+    ...fakeAdapter().adapter,
+    id: "gemini",
+    label: "Gemini",
+    probe: async () => ({ installed: true, loggedIn: false, detail: "Run `agy` once in a terminal to sign in." }),
+  };
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" }, gemini } });
+  await waitFor(() => waits().length === 4);
+
+  const byTask = Object.fromEntries(waits().map((w) => [w.taskId, w]));
+  expect(byTask[auto.id]).toMatchObject({ agent: "claude", kind: "reserve", until: resetsAt });
+  expect(byTask[secret.id]).toMatchObject({ agent: "codex", kind: "env_files" });
+  expect(byTask[limited.id]).toMatchObject({ agent: "codex", kind: "limited", until: limit });
+  expect(byTask[signedOut.id]).toMatchObject({
+    agent: "gemini",
+    kind: "signed_out",
+    reason: "Gemini is signed out. Run `agy` once in a terminal to sign in.",
+  });
+  expect(codex.calls).toHaveLength(0);
+});
+
+test("a task queued behind a running one waits as busy", async () => {
+  const s = generalSpace();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const { adapter } = fakeAdapter(async () => {
+    await gate;
+    return ok();
+  });
+  const first = createTask(db, { spaceId: s.id, title: "First", weight: "light" });
+  const second = createTask(db, { spaceId: s.id, title: "Second", weight: "light" });
+  start({ adapter });
+  await waitFor(() => status(first.id) === "running" && waits().length === 1);
+  expect(waits()).toEqual([
+    { taskId: second.id, agent: "claude", kind: "busy", reason: "Waiting for the task already running in this space to finish." },
+  ]);
+  release();
+  await waitFor(() => status(second.id) === "review");
+  await waitFor(() => waits().length === 0);
 });

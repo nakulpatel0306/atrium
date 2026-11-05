@@ -12,7 +12,7 @@ import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
 import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { snapshot } from "../engine/state";
-import { createTask, getTask, InvalidTransition, setTaskStatus, type Task } from "../engine/tasks";
+import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 
 type Deps = {
   db: Database;
@@ -135,27 +135,7 @@ export function startServer(deps: Deps): Server<undefined> {
     if (reviewersM) {
       const space = getSpace(db, reviewersM[1]!);
       if (!space) throw new HttpError(404, "No such space.");
-      const now = Date.now();
-      // A stand-in review task: refusal only looks at the agent, the kind and the space.
-      const probe = (agent: string): Task => ({
-        id: "",
-        spaceId: space.id,
-        title: "",
-        detail: "",
-        status: "queued",
-        blockedReason: null,
-        agent,
-        weight: "light",
-        allowOnBattery: true,
-        ignoreReserve: false,
-        kind: "review",
-        parentTaskId: null,
-        approvalId: null,
-        branch: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-      return json(Object.fromEntries(REVIEWERS.map((id) => [id, runner.registry?.refusal(probe(id), space) ?? null])));
+      return json(Object.fromEntries(REVIEWERS.map((id) => [id, runner.registry?.refusal(id, "review", space)?.reason ?? null])));
     }
 
     if (hit("POST", /^\/api\/tasks$/)) {

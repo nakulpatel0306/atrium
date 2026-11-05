@@ -1,5 +1,4 @@
 import type { State } from "./api";
-import { clock } from "./format";
 
 type Task = State["tasks"][number];
 type Run = State["runs"][number];
@@ -19,47 +18,34 @@ export function agentText(task: Task, runs: Run[]): string {
   return task.agent === "auto" && ran !== "auto" ? `Auto → ${agentName(ran)}` : agentName(ran);
 }
 
-export type WaitKind = "power" | "reserve" | "limit" | "signed-out" | "missing" | "guard" | "other";
-export type Wait = { kind: WaitKind; text: string };
-
-// The engine words each reason for people, so the kind is read back from that wording for its icon.
-function classify(reason: string): WaitKind {
-  if (reason.startsWith("Waiting for power")) return "power";
-  if (reason.includes("Claude window")) return "reserve";
-  if (reason.includes("signed out")) return "signed-out";
-  if (reason.includes("isn't installed")) return "missing";
-  if (reason.includes("can't work here") || reason.includes("only reviews code")) return "guard";
-  return "other";
-}
+export type Wait = State["waits"][string];
+export type WaitKind = Wait["kind"];
 
 // These need Nakul to act (sign in, install, pick another agent); the rest clear up on their own.
-export const needsAction = (wait: Wait) => wait.kind === "guard" || wait.kind === "signed-out" || wait.kind === "missing";
+const ACTION_KINDS = new Set<WaitKind>(["signed_out", "not_installed", "private_space", "env_files", "gemini_repo"]);
+export const needsAction = (wait: Wait) => ACTION_KINDS.has(wait.kind);
+
+// Most pressing first, for the one-line summaries: what Nakul must fix, then what's simply queued behind something.
+const PRIORITY: WaitKind[] = [
+  "signed_out",
+  "not_installed",
+  "private_space",
+  "env_files",
+  "gemini_repo",
+  "limited",
+  "reserve",
+  "power",
+  "busy",
+];
+export const byPriority = (a: Wait, b: Wait) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind);
+
+// A task that has started since the runner's last pass may still have an entry; it no longer applies.
+export const waitOf = (task: Task, state: State): Wait | null =>
+  task.status === "queued" ? (state.waits[task.id] ?? null) : null;
 
 export function inReserve(state: State): { until: number } | null {
   const w = state.claudeWindow;
   return w && w.utilization >= w.reserve ? { until: w.resetsAt } : null;
-}
-
-const reserveText = (until: number) =>
-  `Saving the rest of your Claude window for you (resets ${clock(until)}). Use “Run now” to override.`;
-
-export function limitText(id: string, until: number): string {
-  return `${agentName(id)} hit its usage limit and picks up again at ${clock(until)}. Pick another agent to run it sooner.`;
-}
-
-// Why a queued task isn't starting. The runner records only the first task it holds back,
-// so the others are explained from the same agent state it decides with.
-export function waitFor(task: Task, state: State): Wait | null {
-  if (task.status !== "queued") return null;
-  const recorded = state.power.waiting;
-  if (recorded?.taskId === task.id) return { kind: classify(recorded.reason), text: recorded.reason };
-  // An auto task that isn't sent to a free agent falls back to Claude.
-  const agent = task.agent === "auto" ? "claude" : task.agent;
-  const until = state.agents[agent]?.limitedUntil;
-  if (until) return { kind: "limit", text: limitText(agent, until) };
-  const reserve = task.agent === "claude" && !task.ignoreReserve ? inReserve(state) : null;
-  if (reserve) return { kind: "reserve", text: reserveText(reserve.until) };
-  return null;
 }
 
 // A reviewer's last line is `VERDICT: approve` or `VERDICT: changes`, the same line the engine acts on.

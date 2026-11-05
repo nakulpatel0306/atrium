@@ -1,15 +1,17 @@
-import { Clock, Gauge, Hourglass, LogIn, type LucideIcon, PackageX, PlugZap, ShieldAlert } from "lucide-react";
+import { Clock, FileKey, Gauge, Hourglass, Lock, LogIn, type LucideIcon, PackageX, PlugZap, ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { needsAction, type Wait, type WaitKind } from "../agents";
 
 export const WAIT_ICONS: Record<WaitKind, LucideIcon> = {
   power: PlugZap,
   reserve: Gauge,
-  limit: Hourglass,
-  "signed-out": LogIn,
-  missing: PackageX,
-  guard: ShieldAlert,
-  other: Clock,
+  limited: Hourglass,
+  signed_out: LogIn,
+  not_installed: PackageX,
+  private_space: Lock,
+  env_files: FileKey,
+  gemini_repo: ShieldAlert,
+  busy: Clock,
 };
 
 // Engine messages quote commands in backticks ("run `codex login`"); show those as code.
@@ -23,7 +25,7 @@ export function WaitLine({ wait, children }: { wait: Wait; children?: ReactNode 
     <p className={`why ${needsAction(wait) ? "bad" : "waiting"}`}>
       <Icon />
       <span>
-        <Plain text={wait.text} />
+        <Plain text={wait.reason} />
       </span>
       {children}
     </p>

@@ -57,7 +57,7 @@ test("summary leaves out live status", () => {
   const a = createSpace(db, { name: "A", kind: "general", goal: "" });
   const t = createTask(db, { spaceId: a.id, title: "one" });
   setTaskStatus(db, t.id, "blocked", { blockedReason: "Needs a login" });
-  setSetting(db, "runner.waiting", JSON.stringify({ taskId: t.id, reason: "on battery" }));
+  setSetting(db, "runner.waiting", JSON.stringify([{ taskId: t.id, agent: "auto", kind: "power", reason: "on battery" }]));
   createApproval(db, { spaceId: a.id, kind: "question", title: "q", detail: "" });
   expect(briefing(db, Date.now()).summary).toBe("Nothing ran since you were last here.");
 });
@@ -83,6 +83,7 @@ test("greeting follows time of day", () => {
 test("snapshot defaults and settings-derived power, usage", () => {
   const s0 = snapshot(db);
   expect(s0.power).toEqual({ source: "ac", overnight: false, keepAwake: false });
+  expect(s0.waits).toEqual({});
   expect(s0.usage.claudeTokens24h).toBe(0);
 
   const a = createSpace(db, { name: "A", kind: "general", goal: "" });
@@ -92,20 +93,23 @@ test("snapshot defaults and settings-derived power, usage", () => {
   setSetting(db, "power.source", "battery");
   setSetting(db, "power.keepAwake", "true");
   setSetting(db, "overnight", "true");
-  setSetting(db, "runner.waiting", JSON.stringify({ taskId: t.id, reason: "on battery" }));
+  setSetting(db, "runner.waiting", JSON.stringify([{ taskId: t.id, agent: "auto", kind: "power", reason: "on battery" }]));
   setSetting(db, "agent.claude.limitedUntil", String(Date.now() + 60_000));
   const s = snapshot(db);
   expect(s.usage.claudeTokens24h).toBe(100);
   expect(s.power.source).toBe("battery");
   expect(s.power.keepAwake).toBe(true);
   expect(s.power.overnight).toBe(true);
-  expect(s.power.waiting).toEqual({ taskId: t.id, reason: "on battery" });
+  expect(s.waits).toEqual({ [t.id]: { taskId: t.id, agent: "auto", kind: "power", reason: "on battery" } });
   expect(s.power.pausedUntil).toBeGreaterThan(Date.now());
 
-  setSetting(db, "runner.waiting", "");
+  setSetting(db, "runner.waiting", "[]");
   setSetting(db, "agent.claude.limitedUntil", String(Date.now() - 1));
   const s2 = snapshot(db);
-  expect(s2.power.waiting).toBeUndefined();
+  expect(s2.waits).toEqual({});
+  // The single object an older engine left behind reads as no waits until the runner's next pass.
+  setSetting(db, "runner.waiting", JSON.stringify({ taskId: t.id, reason: "on battery" }));
+  expect(snapshot(db).waits).toEqual({});
   expect(s2.power.pausedUntil).toBeUndefined();
 });
 

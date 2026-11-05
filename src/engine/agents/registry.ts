@@ -12,7 +12,21 @@ const DEFAULT_RESERVE = 0.5;
 // Preference order for `auto`: the free agents, before spending Claude.
 const FREE_AGENTS = ["codex", "gemini"];
 
-export type Resolution = { agent: string } | { wait: string };
+// Every reason a queued task can be held back, so the dashboard can show each one without parsing its wording.
+export type WaitKind =
+  | "power"
+  | "reserve"
+  | "limited"
+  | "signed_out"
+  | "not_installed"
+  | "private_space"
+  | "env_files"
+  | "gemini_repo"
+  | "busy";
+// `agent` is the one the task is waiting on; `until` is when the wait ends on its own, if it does.
+export type Wait = { agent: string; kind: WaitKind; reason: string; until?: number };
+export type TaskWait = Wait & { taskId: string };
+export type Resolution = { agent: string } | { wait: Wait };
 export type AgentView = AgentStatus & { limitedUntil: number | null };
 
 export type Registry = {
@@ -24,11 +38,11 @@ export type Registry = {
   recordUsage(id: string, usage: AgentUsage): void;
   inReserve(): { until: number } | null;
   resolve(task: Task, space: Space): Resolution;
-  // Why this space shuts out the task's explicitly chosen free agent for good (privacy, .env files), or null.
-  refusal(task: Task, space: Space): string | null;
+  // Why this space shuts out a free agent for this kind of task for good (privacy, .env files), or null.
+  refusal(agent: string, kind: Task["kind"], space: Space): Wait | null;
 };
 
-const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+export const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 const isEnvFile = (file: string) => /^\.env/.test(basename(file)) || /\.env$/.test(basename(file));
 
@@ -95,32 +109,38 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
   }
 
   // Why this agent can't be started at all, or null.
-  function unavailable(id: string): string | null {
+  function unavailable(id: string): Wait | null {
     const s = status(id);
-    if (!s.installed) return `${label(id)} isn't installed. Install it, or pick another agent for this task.`;
-    if (s.loggedIn === false) return `${label(id)} is signed out. ${s.detail}`;
+    if (!s.installed) {
+      return { agent: id, kind: "not_installed", reason: `${label(id)} isn't installed. Install it, or pick another agent for this task.` };
+    }
+    if (s.loggedIn === false) return { agent: id, kind: "signed_out", reason: `${label(id)} is signed out. ${s.detail}` };
     return null;
   }
 
   // Codex and Gemini reads aren't sandboxed like Claude's, so they stay away from secrets and private spaces.
-  function freeAgentBlock(id: string, task: Task, space: Space): string | null {
-    if (space.private) return `${label(id)} can't work here: this space is private, so only Claude works in it.`;
+  function freeAgentBlock(id: string, kind: Task["kind"], space: Space): Wait | null {
+    if (space.private) {
+      return { agent: id, kind: "private_space", reason: `${label(id)} can't work here: this space is private, so only Claude works in it.` };
+    }
     if (space.kind === "repo" && space.repoPath && envFiles(space.repoPath)) {
-      return `${label(id)} can't work here: this repo has .env files ${label(id)} could read. Use Claude for this task.`;
+      const reason = `${label(id)} can't work here: this repo has .env files ${label(id)} could read. Use Claude for this task.`;
+      return { agent: id, kind: "env_files", reason };
     }
     // Its search tool can't be turned off and it can't run tests headless, so repo edits are out.
-    if (id === "gemini" && space.kind === "repo" && task.kind !== "review") {
-      return "Gemini only reviews code; pick Claude or Codex for repo work.";
+    if (id === "gemini" && space.kind === "repo" && kind !== "review") {
+      return { agent: id, kind: "gemini_repo", reason: "Gemini only reviews code; pick Claude or Codex for repo work." };
     }
     return null;
   }
 
   function claude(task: Task): Resolution {
-    const reason = unavailable("claude");
-    if (reason) return { wait: reason };
+    const missing = unavailable("claude");
+    if (missing) return { wait: missing };
     const reserve = inReserve();
     if (reserve && !task.ignoreReserve) {
-      return { wait: `Saving the rest of your Claude window for you (resets ${clock(reserve.until)}). Use “Run now” to override.` };
+      const reason = `Saving the rest of your Claude window for you (resets ${clock(reserve.until)}). Use “Run now” to override.`;
+      return { wait: { agent: "claude", kind: "reserve", reason, until: reserve.until } };
     }
     return { agent: "claude" };
   }
@@ -128,11 +148,13 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
   function resolve(task: Task, space: Space): Resolution {
     if (task.agent === "claude") return claude(task);
     if (task.agent !== "auto") {
-      const reason = freeAgentBlock(task.agent, task, space) ?? unavailable(task.agent);
-      return reason ? { wait: reason } : { agent: task.agent };
+      const held = freeAgentBlock(task.agent, task.kind, space) ?? unavailable(task.agent);
+      return held ? { wait: held } : { agent: task.agent };
     }
     const free = () =>
-      FREE_AGENTS.find((id) => adapters[id] && !unavailable(id) && limitedUntil(id) <= Date.now() && !freeAgentBlock(id, task, space));
+      FREE_AGENTS.find(
+        (id) => adapters[id] && !unavailable(id) && limitedUntil(id) <= Date.now() && !freeAgentBlock(id, task.kind, space),
+      );
     const repoWork = space.kind === "repo" && task.kind !== "review";
     // Free agents only get work Claude's reserve or a review frees up; otherwise Claude does it.
     const wantsFree = !space.private && (task.kind === "review" || (!repoWork && inReserve() !== null));
@@ -179,6 +201,6 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
     },
     inReserve,
     resolve,
-    refusal: (task, space) => (task.agent === "claude" || task.agent === "auto" ? null : freeAgentBlock(task.agent, task, space)),
+    refusal: (agent, kind, space) => (agent === "claude" || agent === "auto" ? null : freeAgentBlock(agent, kind, space)),
   };
 }

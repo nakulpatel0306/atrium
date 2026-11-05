@@ -1,7 +1,7 @@
 import { ArrowDown, Plus } from "lucide-react";
-import { agentName, agentText, needsAction, ranAgent, type Wait, waitFor } from "../agents";
+import { agentText, byPriority, needsAction, ranAgent, type Wait, waitOf } from "../agents";
 import type { State } from "../api";
-import { clock, relative } from "../format";
+import { relative } from "../format";
 import { navigate } from "../route";
 import { Activity } from "./Activity";
 import { Avatar } from "./Avatar";
@@ -18,21 +18,15 @@ const SHOWN_TASKS = 3;
 
 type Status = { text: string; tone?: "blocked" | "waiting"; wait?: Wait };
 
-// The first queued task that's held back, and why; the runner's own record comes first.
-function firstWait(tasks: Task[], state: State): Wait | null {
-  const recorded = tasks.find((t) => t.id === state.power.waiting?.taskId);
-  for (const t of recorded ? [recorded, ...tasks] : tasks) {
-    const wait = waitFor(t, state);
-    if (wait) return wait;
-  }
-  return null;
-}
+// Every held-back task's wait, most pressing first.
+const waitsOf = (tasks: Task[], state: State): Wait[] =>
+  tasks.flatMap((t) => waitOf(t, state) ?? []).sort(byPriority);
 
 function status(space: Space, tasks: Task[], state: State): Status {
   const running = tasks.find((t) => t.status === "running");
   if (running) return { text: `${agentText(running, state.runs)} running · ${running.title}` };
-  const wait = firstWait(tasks, state);
-  if (wait) return { text: wait.text, tone: needsAction(wait) ? "blocked" : "waiting", wait };
+  const [wait] = waitsOf(tasks, state);
+  if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait };
   const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
   if (stuck.length === 1 && stuck[0]!.status === "blocked") {
     return { text: `Blocked: ${stuck[0]!.blockedReason ?? stuck[0]!.title}`, tone: "blocked" };
@@ -108,11 +102,11 @@ function liveStatus(state: State): string {
     const reason = blocked[0]!.blockedReason;
     parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
   }
-  if (state.power.waiting) parts.push(state.power.waiting.reason.replace(/\.$/, ""));
-  // Limits on agents with nothing waiting for them don't need mentioning.
-  const limited = new Set(state.tasks.filter((t) => waitFor(t, state)?.kind === "limit").map((t) => (t.agent === "auto" ? "claude" : t.agent)));
-  for (const id of limited) {
-    parts.push(`${agentName(id)} is at its usage limit until ${clock(state.agents[id]!.limitedUntil!)}`);
+  // Queueing behind a running task is the normal case, not news.
+  const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy");
+  if (waits.length > 0) {
+    const more = waits.length - 1;
+    parts.push(`${waits[0]!.reason.replace(/\.$/, "")}${more > 0 ? ` (${more} more ${more === 1 ? "task" : "tasks"} waiting)` : ""}`);
   }
   return parts.length ? ` ${parts.join(". ")}.` : "";
 }

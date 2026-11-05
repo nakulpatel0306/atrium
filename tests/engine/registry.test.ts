@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentAdapter, AgentStatus } from "../../src/engine/agents/types";
 import { openDb } from "../../src/engine/db";
-import { createRegistry } from "../../src/engine/agents/registry";
+import { createRegistry, type Resolution } from "../../src/engine/agents/registry";
 import { createSpace, getSpace } from "../../src/engine/spaces";
 import { createTask } from "../../src/engine/tasks";
 import { tempHome, tempRepo } from "../helpers";
@@ -120,9 +120,7 @@ test("explicit codex in a repo with .env waits with the secret reason", async ()
   const { space, path } = repoSpace();
   writeFileSync(join(path, ".gitignore"), ".env\n");
   writeFileSync(join(path, ".env"), "X=1\n");
-  expect(resolveFor(r, task(space.id, { agent: "codex" }), space.id)).toEqual({
-    wait: "Codex can't work here: this repo has .env files Codex could read. Use Claude for this task.",
-  });
+  expect(resolveFor(r, task(space.id, { agent: "codex" }), space.id)).toEqual(SECRET_WAIT);
 });
 
 test("an untracked .env that git doesn't ignore also counts", async () => {
@@ -131,7 +129,11 @@ test("an untracked .env that git doesn't ignore also counts", async () => {
   writeFileSync(join(path, "pkg.env.example"), "");
   writeFileSync(join(path, ".env.local"), "X=1\n");
   expect(resolveFor(r, task(space.id, { agent: "gemini", kind: "review" }), space.id)).toEqual({
-    wait: "Gemini can't work here: this repo has .env files Gemini could read. Use Claude for this task.",
+    wait: {
+      agent: "gemini",
+      kind: "env_files",
+      reason: "Gemini can't work here: this repo has .env files Gemini could read. Use Claude for this task.",
+    },
   });
 });
 
@@ -144,7 +146,13 @@ const git = (cwd: string, ...args: string[]) => {
   if (r.exitCode !== 0) throw new Error(r.stderr.toString());
   return r.stdout.toString().trim();
 };
-const SECRET_WAIT = { wait: "Codex can't work here: this repo has .env files Codex could read. Use Claude for this task." };
+const SECRET_WAIT: Resolution = {
+  wait: {
+    agent: "codex",
+    kind: "env_files",
+    reason: "Codex can't work here: this repo has .env files Codex could read. Use Claude for this task.",
+  },
+};
 
 test("a .env under a different name pattern or in a subfolder counts", () => {
   const { space, path } = repoSpace();
@@ -185,7 +193,7 @@ test("explicit codex in a private space waits", async () => {
   const r = await registry();
   const s = privateSpace();
   expect(resolveFor(r, task(s.id, { agent: "codex" }), s.id)).toEqual({
-    wait: "Codex can't work here: this space is private, so only Claude works in it.",
+    wait: { agent: "codex", kind: "private_space", reason: "Codex can't work here: this space is private, so only Claude works in it." },
   });
 });
 
@@ -193,7 +201,9 @@ test("explicit gemini never does repo work", async () => {
   const r = await registry();
   const { space } = repoSpace();
   const msg = "Gemini only reviews code; pick Claude or Codex for repo work.";
-  expect(resolveFor(r, task(space.id, { agent: "gemini" }), space.id)).toEqual({ wait: msg });
+  expect(resolveFor(r, task(space.id, { agent: "gemini" }), space.id)).toEqual({
+    wait: { agent: "gemini", kind: "gemini_repo", reason: msg },
+  });
   expect(resolveFor(r, task(space.id, { agent: "gemini", kind: "review" }), space.id)).toEqual({ agent: "gemini" });
   const s = openSpace();
   expect(resolveFor(r, task(s.id, { agent: "gemini" }), s.id)).toEqual({ agent: "gemini" });
@@ -202,9 +212,11 @@ test("explicit gemini never does repo work", async () => {
 test("an explicit agent that is logged out or missing waits with the fix", async () => {
   const r = await registry({ codex: LOGGED_OUT, gemini: MISSING });
   const s = openSpace();
-  expect(resolveFor(r, task(s.id, { agent: "codex" }), s.id)).toEqual({ wait: "Codex is signed out. Sign in first." });
+  expect(resolveFor(r, task(s.id, { agent: "codex" }), s.id)).toEqual({
+    wait: { agent: "codex", kind: "signed_out", reason: "Codex is signed out. Sign in first." },
+  });
   expect(resolveFor(r, task(s.id, { agent: "gemini" }), s.id)).toEqual({
-    wait: "Gemini isn't installed. Install it, or pick another agent for this task.",
+    wait: { agent: "gemini", kind: "not_installed", reason: "Gemini isn't installed. Install it, or pick another agent for this task." },
   });
 });
 
@@ -216,7 +228,12 @@ test("claude in reserve waits; ignore_reserve runs", async () => {
   expect(r.inReserve()).toEqual({ until: resetsAt });
   const time = new Date(resetsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   expect(resolveFor(r, task(s.id), s.id)).toEqual({
-    wait: `Saving the rest of your Claude window for you (resets ${time}). Use “Run now” to override.`,
+    wait: {
+      agent: "claude",
+      kind: "reserve",
+      reason: `Saving the rest of your Claude window for you (resets ${time}). Use “Run now” to override.`,
+      until: resetsAt,
+    },
   });
   expect(resolveFor(r, task(s.id, { ignoreReserve: true }), s.id)).toEqual({ agent: "claude" });
 });
@@ -268,4 +285,14 @@ test("an adapter with no probe counts as available", () => {
   const r = createRegistry(db, { claude: bare });
   const s = privateSpace();
   expect(resolveFor(r, task(s.id), s.id)).toEqual({ agent: "claude" });
+});
+
+test("refusal names the reason a free agent can't take a kind of task in a space", async () => {
+  const r = await registry();
+  const s = privateSpace();
+  expect(r.refusal("codex", "review", getSpace(db, s.id)!)).toMatchObject({ kind: "private_space" });
+  expect(r.refusal("claude", "review", getSpace(db, s.id)!)).toBeNull();
+  const { space } = repoSpace();
+  expect(r.refusal("gemini", "work", getSpace(db, space.id)!)).toMatchObject({ kind: "gemini_repo" });
+  expect(r.refusal("gemini", "review", getSpace(db, space.id)!)).toBeNull();
 });

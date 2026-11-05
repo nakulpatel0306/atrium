@@ -116,9 +116,8 @@ export function useRunOutput(runId: string): string {
   return useSyncExternalStore(subscribe, () => outputs.get(runId) ?? "");
 }
 
-// Threads and reviewer checks aren't part of the pushed state, so each change re-reads the ones on screen.
-function useFetched<T>(path: string | null): T | null {
-  const version = useEngineState();
+// Reads data that isn't part of the pushed state, again whenever `version` changes.
+function useFetched<T>(path: string | null, version: unknown): T | null {
   const [data, setData] = useState<{ path: string; value: T } | null>(null);
   useEffect(() => {
     if (!path) return;
@@ -135,12 +134,14 @@ function useFetched<T>(path: string | null): T | null {
   return data && data.path === path ? data.value : null;
 }
 
+// A thread grows as agents hand work back and forth, which any state push can mean.
 export const useMessages = (taskId: string | null) =>
-  useFetched<Message[]>(taskId ? `/api/tasks/${encodeURIComponent(taskId)}/messages` : null);
+  useFetched<Message[]>(taskId ? `/api/tasks/${encodeURIComponent(taskId)}/messages` : null, useEngineState());
 
-// Why each agent would be skipped as this space's reviewer, or null where it can review.
-export const useReviewers = (spaceId: string) =>
-  useFetched<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`);
+// Why each agent would be skipped as this space's reviewer, or null where it can review. Only the space's own
+// settings change the answer, so it's read again when the space is saved rather than on every push.
+export const useReviewers = (space: { id: string; updatedAt: number }) =>
+  useFetched<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(space.id)}/reviewers`, space.updatedAt);
 
 export async function fetchTranscript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   try {

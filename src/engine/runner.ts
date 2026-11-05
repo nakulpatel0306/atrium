@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRegistry, type Registry } from "./agents/registry";
+import { clock, createRegistry, type Registry, type TaskWait } from "./agents/registry";
 import type { AgentAdapter, AgentRunResult } from "./agents/types";
 import { correctBranchHead, createApproval, getApproval } from "./approvals";
 import { config } from "./config";
@@ -142,32 +142,44 @@ export function createRunner(deps: {
   }
 
   // Queued tasks in active spaces that power and the registry allow, each with the agent it resolved to,
-  // plus the first one held back and why. A limited agent's tasks stay in `runnable` so the queue counts as work.
-  function candidates(source: PowerSource): {
-    runnable: { task: Task; agent: string }[];
-    waiting: { taskId: string; reason: string } | null;
-  } {
+  // plus every task held back and why. A limited agent's tasks stay in `runnable` so the queue counts as work.
+  function candidates(source: PowerSource): { runnable: { task: Task; agent: string }[]; waits: TaskWait[] } {
     const runnable: { task: Task; agent: string }[] = [];
-    let waiting: { taskId: string; reason: string } | null = null;
+    const waits: TaskWait[] = [];
     for (const task of listTasks(db, { status: ["queued"] })) {
       const space = getSpace(db, task.spaceId);
       if (space?.status !== "active") continue;
       const check = canRun(task, source);
       if (!check.ok) {
-        waiting ??= { taskId: task.id, reason: check.reason };
+        waits.push({ taskId: task.id, agent: task.agent, kind: "power", reason: check.reason });
         continue;
       }
       const pick = registry.resolve(task, space);
       if ("wait" in pick) {
         // A reviewer the space shuts out would wait forever, so the review is skipped and Nakul decides alone.
-        const refused = task.kind === "review" ? registry.refusal(task, space) : null;
-        if (refused) skipReview(task, refused);
-        else waiting ??= { taskId: task.id, reason: pick.wait };
+        const refused = task.kind === "review" ? registry.refusal(task.agent, task.kind, space) : null;
+        if (refused) skipReview(task, refused.reason);
+        else waits.push({ taskId: task.id, ...pick.wait });
         continue;
+      }
+      const until = registry.limitedUntil(pick.agent);
+      if (until > Date.now()) {
+        const name = adapters[pick.agent]?.label ?? pick.agent;
+        const reason = `${name} hit its usage limit and picks up again at ${clock(until)}. Pick another agent to run it sooner.`;
+        waits.push({ taskId: task.id, agent: pick.agent, kind: "limited", reason, until });
       }
       runnable.push({ task, agent: pick.agent });
     }
-    return { runnable, waiting };
+    return { runnable, waits };
+  }
+
+  function busyWait(task: Task, agent: string): TaskWait {
+    const reason = activeSpaces.has(task.spaceId)
+      ? "Waiting for the task already running in this space to finish."
+      : maxConcurrent === 1
+        ? "Waiting for the running task to finish: Atrium runs one task at a time."
+        : `Waiting for a free slot: Atrium runs ${maxConcurrent} tasks at once.`;
+    return { taskId: task.id, agent, kind: "busy", reason };
   }
 
   async function tick() {
@@ -181,17 +193,21 @@ export function createRunner(deps: {
     await registry.refresh();
     if (!running) return;
 
-    const { runnable, waiting } = candidates(source);
-    setSetting(db, "runner.waiting", waiting ? JSON.stringify(waiting) : "");
-
+    const { runnable, waits } = candidates(source);
     for (const { task, agent } of runnable) {
-      if (!running || active.size >= maxConcurrent) break;
-      // One agent at its limit leaves the others free to run.
+      if (!running) break;
+      // One agent at its limit leaves the others free to run; its tasks already carry the limit as their wait.
       if (registry.limitedUntil(agent) > Date.now()) continue;
       // Two runs in one space would share a working tree.
-      if (activeSpaces.has(task.spaceId)) continue;
-      await launch(task, agent);
+      if (active.size >= maxConcurrent || activeSpaces.has(task.spaceId)) {
+        waits.push(busyWait(task, agent));
+        continue;
+      }
+      const held = await launch(task, agent);
+      if (held) waits.push(held);
     }
+    // Written once per tick: a second, different write would emit `changed` and wake the runner into a loop.
+    setSetting(db, "runner.waiting", JSON.stringify(waits));
 
     // A limited agent's queue still counts as work: overnight mode should be awake when the limit resets.
     const hasWork = active.size > 0 || candidates(source).runnable.length > 0;
@@ -230,7 +246,8 @@ export function createRunner(deps: {
     return leaveRepo(repo);
   }
 
-  async function launch(task: Task, agent: string) {
+  // Returns why the task went back to waiting when it was resolved again just before starting.
+  async function launch(task: Task, agent: string): Promise<TaskWait | void> {
     const space = getSpace(db, task.spaceId)!;
     const adapter = adapters[agent];
     if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
@@ -277,8 +294,7 @@ export function createRunner(deps: {
       running && current?.status === "queued" && fresh?.status === "active" ? registry.resolve(current, fresh) : null;
     if (!recheck || !("agent" in recheck) || recheck.agent !== agent) {
       if (repo) await leaveRepo(repo);
-      if (recheck && "wait" in recheck) setSetting(db, "runner.waiting", JSON.stringify({ taskId: task.id, reason: recheck.wait }));
-      return;
+      return recheck && "wait" in recheck ? { taskId: task.id, ...recheck.wait } : undefined;
     }
     setTaskStatus(db, task.id, "running", repo ? { branch: repo.branch } : {});
 

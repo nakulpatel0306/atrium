@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { type Approval, listPending } from "./approvals";
-import type { Registry } from "./agents/registry";
+import type { Registry, TaskWait } from "./agents/registry";
 import { briefing } from "./briefing";
 import { type ActivityRow, listActivity } from "./events";
 import { getSetting } from "./settings";
@@ -39,9 +39,10 @@ export type State = {
     source: "ac" | "battery";
     overnight: boolean;
     keepAwake: boolean;
-    waiting?: { taskId: string; reason: string };
     pausedUntil?: number;
   };
+  // Why each queued task the runner held back on its last pass isn't starting, by task id.
+  waits: Record<string, TaskWait>;
   usage: { claudeTokens24h: number; claudeReserve: number };
   agents: Record<string, AgentInfo>;
   // The last five-hour reading while its window is still open; null when unknown or already reset.
@@ -51,7 +52,7 @@ export type State = {
 
 export function snapshot(db: Database, registry?: Registry): State {
   const now = Date.now();
-  const waitingRaw = getSetting(db, "runner.waiting");
+  const waitsRaw = JSON.parse(getSetting(db, "runner.waiting") || "[]") as unknown;
   const pausedUntil = Number(getSetting(db, "agent.claude.limitedUntil") ?? 0);
   const midnight = new Date(now).setHours(0, 0, 0, 0);
   const todayTokens = new Map(
@@ -92,9 +93,10 @@ export function snapshot(db: Database, registry?: Registry): State {
       overnight: getSetting(db, "overnight") === "true",
       keepAwake: getSetting(db, "power.keepAwake") === "true",
       // A limit's time stays stored after it resets, so only a future one means paused.
-      ...(waitingRaw ? { waiting: JSON.parse(waitingRaw) as { taskId: string; reason: string } } : {}),
       ...(pausedUntil > now ? { pausedUntil } : {}),
     },
+    // An engine from before per-task waits stored a single object here until its first pass rewrites it.
+    waits: Object.fromEntries((Array.isArray(waitsRaw) ? (waitsRaw as TaskWait[]) : []).map((w) => [w.taskId, w])),
     usage: { claudeTokens24h: tokens.n, claudeReserve: reserve },
     agents,
     claudeWindow:
