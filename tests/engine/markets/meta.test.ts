@@ -10,7 +10,9 @@ import { parseSsga } from "../../../src/engine/markets/funds/parse-ssga";
 import { saveFundFile } from "../../../src/engine/markets/funds/store";
 import { getMeta, metaFromFunds, metaJob } from "../../../src/engine/markets/meta";
 import type { MarketProvider } from "../../../src/engine/markets/providers/types";
+import { setSetting } from "../../../src/engine/settings";
 import { tempHome } from "../../helpers";
+import { fixture, jsonResponse, stubFetch } from "./fakes";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
@@ -58,7 +60,8 @@ test("the meta job marks ETFs and fetches profile and metrics for US stocks only
     },
   } as unknown as MarketProvider;
   const data = { research: () => research, prepare: async () => {} } as unknown as MarketData;
-  const job = metaJob(db, { data, now: () => NOW });
+  const edgar = stubFetch((url) => jsonResponse(fixture(url.host === "www.sec.gov" ? "investing/edgar-tickers.json" : "investing/edgar-facts-now.json")));
+  const job = metaJob(db, { data, now: () => NOW, fetch: edgar.fetch, sleep: async () => {} });
   expect(job).toMatchObject({ name: "meta", slot: { at: "10:00", days: [6] } });
   await job.run(NOW);
   expect(asked.sort()).toEqual(["metric ABCX", "metric NOW", "metric RKLB", "profile ABCX", "profile NOW", "profile RKLB"]);
@@ -68,7 +71,18 @@ test("the meta job marks ETFs and fetches profile and metrics for US stocks only
   // A fund file's GICS sector wins over Finnhub's industry; a stock in no fund file gets the industry.
   expect(m.get("RKLB")).toMatchObject({ name: "RKLB Inc", sector: "Industrials", sectorSource: "iShares holdings file · Nov 4" });
   expect(m.get("ABCX")).toMatchObject({ name: "ABCX Inc", sector: "Aerospace & Defense", sectorSource: "Finnhub industry" });
+  // EDGAR: the ticker list, then NOW and RKLB (ABCX has no CIK in the fixture).
+  expect(edgar.calls.map((c) => c.url.pathname)).toEqual(["/files/company_tickers_exchange.json", "/api/xbrl/companyfacts/CIK0001373715.json", "/api/xbrl/companyfacts/CIK0001819994.json"]);
   asked.length = 0;
   await job.run(NOW + 86_400_000);
   expect(asked).toEqual([]);
+  expect(edgar.calls).toHaveLength(3);
+});
+
+test("with EDGAR off the meta job never asks it", async () => {
+  setSetting(db, "markets.edgar", "off");
+  const edgar = stubFetch(() => jsonResponse({}));
+  const data = { research: () => null, prepare: async () => {} } as unknown as MarketData;
+  await metaJob(db, { data, now: () => NOW, fetch: edgar.fetch }).run(NOW);
+  expect(edgar.calls).toHaveLength(0);
 });

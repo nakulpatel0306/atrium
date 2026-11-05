@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { MarketData } from "./data";
+import { refreshEdgar } from "./edgar";
 import { trackedInstruments } from "./feed";
 import { fileSource } from "./funds/lookthrough";
 import { isFund } from "./funds/sources";
@@ -100,7 +101,7 @@ export function metaFromFunds(db: Database): number {
 }
 
 // Weekly: sectors from fund files, then Finnhub profiles (monthly) and metrics (weekly) for US stocks.
-export function metaJob(db: Database, deps: { data: MarketData; now: () => number }): Job {
+export function metaJob(db: Database, deps: { data: MarketData; now: () => number; fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> }): Job {
   return {
     name: "meta",
     slot: { at: "10:00", days: [6] },
@@ -111,6 +112,11 @@ export function metaJob(db: Database, deps: { data: MarketData; now: () => numbe
         db.query("UPDATE instrument_meta SET kind = ? WHERE key = ?").run(isFund(key) ? "etf" : "stock", key);
       }
       metaFromFunds(db);
+      try {
+        await refreshEdgar(db, deps);
+      } catch (e) {
+        console.error(`SEC EDGAR cross-check: ${e instanceof Error ? e.message : String(e)}`);
+      }
       await deps.data.prepare?.();
       const p = deps.data.research?.();
       if (!p) return;
