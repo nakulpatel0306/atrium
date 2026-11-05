@@ -104,7 +104,8 @@ export function codexAdapter(bin: string = config().codexBin, sandboxExec: strin
       let stdout = "";
       const proc = await runAgentProcess([bin, "login", "status"], { cwd: process.cwd(), stdin: "", onLine: (l) => (stdout += `${l}\n`) });
       if (proc.notInstalled) return { installed: false, loggedIn: null, detail: "Codex isn't installed or not on PATH" };
-      if (proc.exitCode === 0 && stdout.includes("Logged in")) return { installed: true, loggedIn: true, detail: "Signed in" };
+      // Codex 0.147 prints this line to stderr, so both streams are read.
+      if (proc.exitCode === 0 && `${stdout}\n${proc.stderr}`.includes("Logged in")) return { installed: true, loggedIn: true, detail: "Signed in" };
       return { installed: true, loggedIn: false, detail: "Run `codex login` once in a terminal to sign in." };
     },
   };
