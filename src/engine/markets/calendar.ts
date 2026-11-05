@@ -150,3 +150,14 @@ export function marketNow(provider: string): number {
   const at = Date.parse(shifted);
   return Number.isNaN(at) ? Date.now() : Date.now() + (at - loadedAt);
 }
+
+// The most recent session whose close has passed: its date and closing instant.
+export function lastCompletedSession(now: number): { date: string; closesAt: number } {
+  let date = etDate(now);
+  for (let i = 0; i < 12; i++) {
+    const s = usSession(etInstant(date, "12:00"));
+    if (s.closesAt !== null && s.closesAt <= now) return { date, closesAt: s.closesAt };
+    date = new Date(Date.parse(`${date}T12:00:00Z`) - DAY_MS).toISOString().slice(0, 10);
+  }
+  return { date, closesAt: etInstant(date, "16:00") };
+}

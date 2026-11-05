@@ -1,0 +1,153 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import type { Database } from "bun:sqlite";
+import { openDb } from "../../../src/engine/db";
+import { setSetting } from "../../../src/engine/settings";
+import { cachedQuotes, saveQuotes } from "../../../src/engine/markets/cache";
+import { createMarketData } from "../../../src/engine/markets/data";
+import { instrumentKey, type Instrument } from "../../../src/engine/markets/instrument";
+import type { Keychain } from "../../../src/engine/markets/keychain";
+import { demoProvider } from "../../../src/engine/markets/providers/demo";
+import { ProviderError, type Bar, type MarketProvider, type Quote } from "../../../src/engine/markets/providers/types";
+import { tempHome } from "../../helpers";
+
+let home: ReturnType<typeof tempHome>;
+let db: Database;
+let now = Date.parse("2026-11-05T16:00:00Z");
+
+beforeEach(() => {
+  home = tempHome();
+  db = openDb();
+  now = Date.parse("2026-11-05T16:00:00Z");
+});
+afterEach(() => {
+  db.close();
+  home.cleanup();
+});
+
+const fakeKeychain = (keys: Record<string, string>): Keychain => ({
+  get: async (a) => keys[a] ?? null,
+  set: async (a, s) => {
+    keys[a] = s;
+  },
+  remove: async (a) => {
+    delete keys[a];
+  },
+});
+
+const ALL_KEYS = { "alpaca.keyId": "PKTEST12345", "alpaca.secret": "SKTEST67890", "finnhub.token": "FHTEST12345", "alphavantage.key": "AVTEST12345" };
+
+function stub(id: "alpaca" | "alphavantage", opts: { fail?: string; bars?: (from: number, to: number) => Bar[] } = {}) {
+  const calls: { method: string; list?: Instrument[]; from?: number; to?: number }[] = [];
+  const p: MarketProvider = {
+    id,
+    label: id,
+    covers: (i) => (id === "alpaca" ? i.exchange === "US" : i.exchange === "TSX" || i.exchange === "TSXV"),
+    async quotes(list) {
+      calls.push({ method: "quotes", list });
+      if (opts.fail) throw new ProviderError("unavailable", opts.fail);
+      return list.map((i): Quote => ({ key: instrumentKey(i), price: 100, prevClose: 99, at: now, source: id, freshness: id === "alpaca" ? "live" : "eod" }));
+    },
+    async bars(_i, _tf, from, to) {
+      calls.push({ method: "bars", from, to });
+      return opts.bars ? opts.bars(from, to) : [];
+    },
+    async validate() {},
+  };
+  return { p, calls };
+}
+
+test("NEO CDR is never priced from the US feed", async () => {
+  const us = stub("alpaca");
+  const data = createMarketData({ db, keychain: fakeKeychain({ ...ALL_KEYS }), now: () => now, providers: { alpaca: us.p } });
+  const r = await data.quotes([{ symbol: "AAPL", exchange: "NEO" }, { symbol: "AAPL", exchange: "US" }]);
+  expect(r.quotes.map((q) => q.key)).toEqual(["AAPL"]);
+  expect(r.missing).toEqual([{ key: "AAPL.NE", reason: "No free source covers NEO-listed CDRs." }]);
+  expect(us.calls[0]!.list).toEqual([{ symbol: "AAPL", exchange: "US" }]);
+  expect(data.providerFor({ symbol: "AAPL", exchange: "NEO" })).toBeNull();
+  expect(cachedQuotes(db, ["AAPL"]).get("AAPL")!.price).toBe(100);
+});
+
+test("no keys → every instrument missing with its reason", async () => {
+  const data = createMarketData({ db, keychain: fakeKeychain({}), now: () => now, providers: { alpaca: stub("alpaca").p } });
+  const r = await data.quotes([
+    { symbol: "AAPL", exchange: "US" },
+    { symbol: "SHOP", exchange: "TSX" },
+    { symbol: "AAPL", exchange: "NEO" },
+    { symbol: "GBTC", exchange: "OTC" },
+  ]);
+  expect(r.quotes).toEqual([]);
+  expect(r.missing).toEqual([
+    { key: "AAPL", reason: "Add your Alpaca key in Settings → Market data." },
+    { key: "SHOP.TO", reason: "Canadian prices need a free Alpha Vantage key (Settings → Market data)." },
+    { key: "AAPL.NE", reason: "No free source covers NEO-listed CDRs." },
+    { key: "GBTC:OTC", reason: "Alpaca's free plan doesn't include OTC stocks." },
+  ]);
+  const s = await data.status();
+  expect(s.us.ready).toBe(false);
+  expect(s.keys).toEqual({ alpaca: false, finnhub: false, alphavantage: false });
+  setSetting(db, "markets.provider", "finnhub");
+  expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).missing[0]!.reason).toBe("Add your Finnhub key in Settings → Market data.");
+});
+
+test("demo covers TSX and NEO", async () => {
+  setSetting(db, "markets.provider", "demo");
+  const data = createMarketData({ db, keychain: fakeKeychain({}), now: () => now, providers: { demo: demoProvider({ now: () => now }) } });
+  const r = await data.quotes([{ symbol: "SHOP", exchange: "TSX" }, { symbol: "AAPL", exchange: "NEO" }]);
+  expect(r.missing).toEqual([]);
+  expect(r.quotes.map((q) => q.freshness)).toEqual(["demo", "demo"]);
+  expect((await data.status()).us.ready).toBe(true);
+  expect(data.streamer()?.id).toBe("demo");
+});
+
+test("provider error keeps the cached quote", async () => {
+  saveQuotes(db, [{ key: "AAPL", price: 150, prevClose: 149, at: now - 60_000, source: "alpaca", freshness: "live" }]);
+  const us = stub("alpaca", { fail: "Couldn't reach Alpaca. Check your internet connection; Atrium will try again." });
+  const data = createMarketData({ db, keychain: fakeKeychain({ ...ALL_KEYS }), now: () => now, providers: { alpaca: us.p } });
+  const r = await data.quotes([{ symbol: "AAPL", exchange: "US" }]);
+  expect(r.missing).toEqual([{ key: "AAPL", reason: "Couldn't reach Alpaca. Check your internet connection; Atrium will try again." }]);
+  expect(cachedQuotes(db, ["AAPL"]).get("AAPL")!.price).toBe(150);
+});
+
+test("daily bars are cached", async () => {
+  const day = (d: string, c: number): Bar => ({ t: Date.parse(`${d}T05:00:00Z`) / 1000, o: c, h: c + 1, l: c - 1, c, v: 10 });
+  const us = stub("alpaca", {
+    bars: (from) => [day("2026-11-03", 10), day("2026-11-04", 11), day("2026-11-05", 12)].filter((b) => b.t * 1000 >= from - 86_400_000 && b.t * 1000 + 16 * 3_600_000 <= now),
+  });
+  const data = createMarketData({ db, keychain: fakeKeychain({ ...ALL_KEYS }), now: () => now, providers: { alpaca: us.p } });
+  const AAPL = { symbol: "AAPL", exchange: "US" as const };
+  const first = await data.bars(AAPL, "1Y");
+  expect(first.timeframe).toBe("1Day");
+  expect(first.bars.map((b) => b.c)).toEqual([10, 11]);
+  expect(first.source).toBe("alpaca");
+  expect(first.freshness).toBe("live");
+  await data.bars(AAPL, "1Y");
+  expect(us.calls.filter((c) => c.method === "bars")).toHaveLength(1);
+  now = Date.parse("2026-11-06T16:00:00Z");
+  const next = await data.bars(AAPL, "1Y");
+  const barCalls = us.calls.filter((c) => c.method === "bars");
+  expect(barCalls).toHaveLength(2);
+  expect(barCalls[1]!.from).toBe(Date.parse("2026-11-04T05:00:00Z"));
+  expect(next.bars.map((b) => b.c)).toEqual([10, 11, 12]);
+  const five = await data.bars(AAPL, "5D");
+  expect(five.timeframe).toBe("5Min");
+  await data.bars(AAPL, "5D");
+  expect(us.calls.filter((c) => c.method === "bars")).toHaveLength(4);
+});
+
+test("bars for an uncovered instrument explain why", async () => {
+  const data = createMarketData({ db, keychain: fakeKeychain({}), now: () => now });
+  const r = await data.bars({ symbol: "AAPL", exchange: "NEO" }, "1M");
+  expect(r.bars).toEqual([]);
+  expect(r.source).toBeNull();
+  expect(r.note).toBe("No free source covers NEO-listed CDRs.");
+});
+
+test("secrets() lists loaded keys and reload() re-reads them", async () => {
+  const keys: Record<string, string> = {};
+  const data = createMarketData({ db, keychain: fakeKeychain(keys), now: () => now });
+  expect(data.secrets()).toEqual([]);
+  keys["finnhub.token"] = "FHTEST12345";
+  await data.reload();
+  expect(data.secrets()).toEqual(["FHTEST12345"]);
+  expect((await data.status()).keys.finnhub).toBe(true);
+});
