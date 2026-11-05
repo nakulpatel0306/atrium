@@ -79,6 +79,8 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     // LaunchServices and Apple Events start apps (Terminal, Finder) outside the sandbox, which would escape it.
     "(deny lsopen)",
     "(deny appleevent-send)",
+    // The Keychain CLI would hand an agent Atrium's market data keys; agents only ever get prices.
+    '(deny process-exec (literal "/usr/bin/security"))',
     // Atrium's API listens on loopback, and a forged Host/Origin from inside a run could approve its own drafts.
     // "localhost" covers 127.0.0.1, ::1, 0.0.0.0 and ::ffff:127.0.0.1; the CLIs only need the internet.
     '(deny network-outbound (remote ip "localhost:*"))',

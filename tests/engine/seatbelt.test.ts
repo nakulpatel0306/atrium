@@ -51,6 +51,14 @@ describe("ENV_FILE_PATTERN", () => {
 });
 
 describe("seatbeltProfile", () => {
+  test("security CLI can't run under the profile", () => {
+    if (process.platform !== "darwin") return;
+    const profile = seatbeltProfile({ cwd, writable: [cwd] });
+    expect(profile).toContain('(deny process-exec (literal "/usr/bin/security"))');
+    const r = sandboxed(profile, "/usr/bin/security help");
+    expect(r.exitCode).not.toBe(0);
+  });
+
   test("profile denies credential paths and .env names", () => {
     const home = realpathSync(homedir());
     const profile = seatbeltProfile({ cwd, writable: [] });
