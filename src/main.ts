@@ -69,7 +69,7 @@ try {
     runner,
     setup: (text) => setupSpace(db, claudeAdapter(), text),
     onViewers: (n) => void feed.setViewers(n),
-    markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock },
+    markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs },
   });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;

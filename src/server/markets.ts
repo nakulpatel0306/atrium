@@ -17,6 +17,10 @@ import { finnhubProvider } from "../engine/markets/providers/finnhub";
 import { tiingoProvider, tiingoSymbols } from "../engine/markets/providers/tiingo";
 import type { MarketProvider, Quote } from "../engine/markets/providers/types";
 import { redact } from "../engine/markets/redact";
+import { estimateFor, ESTIMATED } from "../engine/markets/estimate";
+import type { Jobs } from "../engine/markets/jobs";
+import { portfolioDay, type PortfolioDay } from "../engine/markets/portfolio";
+import type { Sourced } from "../engine/markets/sourced";
 import { listStrategies, proposeStrategy, setStrategyPaused, type Strategy, type StrategyInput } from "../engine/markets/strategies";
 import { addToWatchlist, listWatchlist, removeFromWatchlist, type WatchItem } from "../engine/markets/watchlist";
 import { setSetting } from "../engine/settings";
@@ -32,6 +36,8 @@ export type MarketsDeps = {
   now?: () => number;
   // For the throwaway providers that check a key before it's saved; tests stub it.
   fetch?: typeof fetch;
+  // The daily and weekly market jobs, for the data budget page.
+  jobs?: Jobs;
 };
 
 type Priced<T> = T & { quote: Quote | null; missing: string | null };
@@ -44,6 +50,10 @@ export type MarketsView = {
   strategies: Strategy[];
   feed: FeedStatus;
   data: DataStatus;
+  // The portfolio's day across its holdings, cached prices only.
+  portfolio: PortfolioDay | null;
+  // Labelled display-only estimates (VFV.TO from SPY and USD/CAD), never used in totals or alerts.
+  estimates: Record<string, Sourced>;
 };
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
@@ -404,7 +414,20 @@ async function view(db: Database, m: MarketsDeps, spaceId: string, at: number): 
     strategies: listStrategies(db, spaceId),
     feed: m.feed.status(),
     data: await m.data.status(),
+    portfolio: portfolioDay(db, m.data, spaceId),
+    estimates: estimates(db, m, [...all.keys()], at),
   };
+}
+
+function estimates(db: Database, m: MarketsDeps, keys: string[], at: number): Record<string, Sourced> {
+  const out: Record<string, Sourced> = {};
+  for (const key of keys) {
+    const cfg = ESTIMATED[key];
+    if (!cfg) continue;
+    const e = estimateFor(db, key, currentQuote(db, m, parseInstrumentKey(cfg.proxy)!), at);
+    if (e) out[key] = e;
+  }
+  return out;
 }
 
 // Shape check, then a live check with a provider that's thrown away, then the Keychain. Neither the key nor
