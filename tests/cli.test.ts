@@ -51,3 +51,16 @@ test("trimLog keeps only the last bytes of an oversized log", () => {
   expect(statSync(path).size).toBe(50);
   trimLog(join(h.home, "missing.log"), 50);
 });
+
+test("usage lists tui", async () => {
+  const { main } = await import("../src/cli");
+  const lines: string[] = [];
+  const err = console.error;
+  console.error = (m: string) => void lines.push(m);
+  try {
+    expect(await main("bogus")).toBe(1);
+  } finally {
+    console.error = err;
+  }
+  expect(lines).toEqual(["Usage: atrium [tui|start|status|open|install|uninstall]"]);
+});

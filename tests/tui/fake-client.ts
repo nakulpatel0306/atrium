@@ -1,0 +1,80 @@
+import type { PostResult } from "../../src/dashboard/api";
+import type { Message } from "../../src/engine/messages";
+import type { State } from "../../src/engine/state";
+import type { EngineClient } from "../../src/tui/client";
+
+type Call = { method: string; path: string; body?: unknown };
+
+export type FakeClient = EngineClient & {
+  calls: Call[];
+  push(state: State | null): void;
+  setOnline(v: boolean): void;
+  emitOutput(runId: string, text: string): void;
+  respond(path: string, result: PostResult<unknown>): void;
+};
+
+// An in-memory engine for component tests: state is whatever the test pushes, and every request is recorded.
+export function fakeClient(initial: State | null, opts: { online?: boolean } = {}): FakeClient {
+  let state = initial;
+  let online = opts.online ?? true;
+  const outputs = new Map<string, string>();
+  const responses = new Map<string, PostResult<unknown>>();
+  const listeners = new Set<() => void>();
+  const calls: Call[] = [];
+  const notify = () => {
+    for (const fn of [...listeners]) fn();
+  };
+  const answer = <T>(method: string, path: string, body?: unknown): Promise<PostResult<T>> => {
+    calls.push(body === undefined ? { method, path } : { method, path, body });
+    return Promise.resolve((responses.get(path) ?? { ok: true, data: {} }) as PostResult<T>);
+  };
+
+  return {
+    base: "http://127.0.0.1:7499",
+    calls,
+    state: () => state,
+    online: () => online,
+    output: (runId) => outputs.get(runId) ?? "",
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    async messages(taskId) {
+      const path = `/api/tasks/${taskId}/messages`;
+      calls.push({ method: "GET", path });
+      const r = responses.get(path);
+      return r?.ok ? (r.data as Message[]) : null;
+    },
+    async reviewers(spaceId) {
+      const path = `/api/spaces/${spaceId}/reviewers`;
+      calls.push({ method: "GET", path });
+      const r = responses.get(path);
+      return r?.ok ? (r.data as Record<string, string | null>) : null;
+    },
+    async transcript(runId) {
+      const path = `/api/runs/${runId}/transcript`;
+      calls.push({ method: "GET", path });
+      const r = responses.get(path);
+      if (!r) return { ok: true, text: "" };
+      return r.ok ? { ok: true, text: String(r.data) } : r;
+    },
+    post: (path, body) => answer("POST", path, body),
+    patch: (path, body) => answer("PATCH", path, body),
+    close: () => listeners.clear(),
+    push(next) {
+      state = next;
+      notify();
+    },
+    setOnline(v) {
+      online = v;
+      notify();
+    },
+    emitOutput(runId, text) {
+      outputs.set(runId, `${outputs.get(runId) ?? ""}${text}\n`);
+      notify();
+    },
+    respond(path, result) {
+      responses.set(path, result);
+    },
+  };
+}
