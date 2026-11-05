@@ -81,3 +81,10 @@ test("select picks a row by id, even before the engine lists it", () => {
   expect(ui.selected.spaces).toEqual({ id: ids.jobHunt, index: 1 });
   expect(run([{ type: "select", pane: "spaces", id: "spc_new" }]).selected.spaces).toEqual({ id: "spc_new", index: 0 });
 });
+
+test("Detail starts at the top when the left pane it follows changes", () => {
+  const scrolled: Ui = { ...initialUi, focus: "detail", lastLeft: "tasks", detailScroll: 12 };
+  expect(run([{ type: "focus", pane: "needs" }], scrolled).detailScroll).toBe(0);
+  expect(run([{ type: "focus", pane: "tasks" }], scrolled).detailScroll).toBe(12);
+  expect(run([{ type: "focus", pane: "live" }], scrolled).detailScroll).toBe(12);
+});

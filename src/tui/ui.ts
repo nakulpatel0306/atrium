@@ -67,7 +67,9 @@ const ORDER: Pane[] = ["spaces", "tasks", "needs", "activity", "detail", "live"]
 const isList = (p: Pane): p is ListPane => p !== "detail" && p !== "live";
 
 function focus(ui: Ui, pane: Pane): Ui {
-  return isList(pane) ? { ...ui, focus: pane, lastLeft: pane } : { ...ui, focus: pane, lastRight: pane };
+  if (!isList(pane)) return { ...ui, focus: pane, lastRight: pane };
+  // Detail follows the left pane last used, so a new one means new content, read from the top.
+  return { ...ui, focus: pane, lastLeft: pane, detailScroll: pane === ui.lastLeft ? ui.detailScroll : 0 };
 }
 
 // Selecting another space shows different tasks and output, so their selection and scroll start over.
