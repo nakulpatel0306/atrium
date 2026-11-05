@@ -81,3 +81,18 @@ test("a malformed reply leaves the table alone", async () => {
   expect(fxSeries(db, "2000-01-01")).toEqual([{ date: "2026-11-03", rate: 1.3994 }]);
   expect(dataBudget(db, NOW).find((r) => r.source === "boc")!.lastError).toBe("Bank of Canada sent a reply Atrium couldn't read; it will try again.");
 });
+
+test("a reply bigger than the cap is cut off while it streams, not after", async () => {
+  const { fetchBytes } = await import("../../../src/engine/markets/providers/http");
+  let pulls = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(c) {
+      pulls++;
+      if (pulls > 1000) return c.close();
+      c.enqueue(new Uint8Array(1024));
+    },
+  });
+  const f = (async () => new Response(body)) as unknown as typeof fetch;
+  await expect(fetchBytes("https://www.ssga.com/x.xlsx", { fetch: f, name: "SSGA", now: () => NOW, maxBytes: 4096 })).rejects.toThrow("SSGA sent a reply Atrium couldn't read; it will try again.");
+  expect(pulls).toBeLessThan(10);
+});

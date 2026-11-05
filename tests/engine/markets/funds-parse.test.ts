@@ -179,3 +179,13 @@ test("parseNdxMembers reads the components table", () => {
   expect(m).toContain("NVDA");
   expect(() => parseNdxMembers("{}")).toThrow(FundFileError);
 });
+
+test("a zip bomb is refused before it's inflated, and other parts of the file are never unpacked", () => {
+  const zeros = new Uint8Array(51 * 1024 * 1024);
+  const bomb = zipSync({ "xl/worksheets/sheet1.xml": zeros }, { level: 9 });
+  expect(bomb.length).toBeLessThan(1024 * 1024);
+  expect(() => readXlsxRows(bomb)).toThrow(new FundFileError("That holdings file is too large to be a holdings spreadsheet."));
+  const sheet = strToU8('<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>ok</t></is></c></row></sheetData></worksheet>');
+  const withJunk = zipSync({ "xl/worksheets/sheet1.xml": sheet, "xl/media/huge.bin": zeros }, { level: 9 });
+  expect(readXlsxRows(withJunk)).toEqual([["ok"]]);
+});

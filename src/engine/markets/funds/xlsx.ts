@@ -2,6 +2,9 @@ import { strFromU8, unzipSync } from "fflate";
 import { FundFileError } from "./types";
 
 const UNREADABLE = "That holdings file isn't a spreadsheet Atrium can read.";
+const TOO_LARGE = "That holdings file is too large to be a holdings spreadsheet.";
+// A real SPY sheet inflates to well under 1 MB; anything near this is a zip bomb, refused before inflating.
+const MAX_PART_BYTES = 50 * 1024 * 1024;
 
 const decode = (s: string) =>
   s
@@ -26,12 +29,25 @@ const columnIndex = (ref: string) => {
 // One sheet of an .xlsx as a grid of strings: shared, inline and numeric cells, blanks kept in place. Enough for
 // one issuer file; anything fancier isn't needed.
 export function readXlsxRows(bytes: Uint8Array, sheet = 0): string[][] {
+  const wanted = new Set(["xl/sharedStrings.xml", `xl/worksheets/sheet${sheet + 1}.xml`]);
+  let tooLarge = false;
   let files: Record<string, Uint8Array>;
   try {
-    files = unzipSync(bytes);
+    // Only the two parts Atrium reads are inflated, and only when their declared size is sane.
+    files = unzipSync(bytes, {
+      filter: (f) => {
+        if (!wanted.has(f.name)) return false;
+        if (f.originalSize >= MAX_PART_BYTES) {
+          tooLarge = true;
+          return false;
+        }
+        return true;
+      },
+    });
   } catch {
     throw new FundFileError(UNREADABLE);
   }
+  if (tooLarge) throw new FundFileError(TOO_LARGE);
   const sheetXml = files[`xl/worksheets/sheet${sheet + 1}.xml`];
   if (!sheetXml) throw new FundFileError(UNREADABLE);
   try {

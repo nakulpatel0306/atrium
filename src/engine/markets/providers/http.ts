@@ -49,10 +49,29 @@ export async function fetchBytes(
     throw new ProviderError("rate_limited", `${opts.name} says too many requests; Atrium will try again later.`, opts.now() + 60_000);
   }
   if (!res.ok) throw new ProviderError("unavailable", `${opts.name} returned an error (HTTP ${res.status}); Atrium will try again.`);
+  // Read with a running count, so an endless or oversized body is cut off as it streams, not after it's in memory.
   try {
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (bytes.length > maxBytes) throw new Error("too big");
-    return bytes;
+    if (!res.body) return new Uint8Array(0);
+    const reader = res.body.getReader();
+    const parts: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error("too big");
+      }
+      parts.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
   } catch {
     throw new ProviderError("unavailable", `${opts.name} sent a reply Atrium couldn't read; it will try again.`);
   }
