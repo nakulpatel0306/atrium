@@ -3,7 +3,9 @@ import { AV_RESERVE, dailyBudget, noteSourceResult, planAlphaVantage } from "./b
 import { etDate } from "./calendar";
 import { recordCloses } from "./closes";
 import { AV_DAILY_LIMIT, type MarketData } from "./data";
+import { fetchNews, saveEarnings } from "./events";
 import { trackedInstruments } from "./feed";
+import { isFund } from "./funds/sources";
 import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } from "./instrument";
 import type { Job } from "./jobs";
 import type { TiingoProvider } from "./providers/tiingo";
@@ -80,6 +82,23 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
         if (plan.eod.length) await deps.data.quotes(plan.eod.map((k) => parseInstrumentKey(k)!));
       } catch (e) {
         console.error(`End-of-day Canadian closes: ${errorText(e, secrets)}`);
+      }
+
+      try {
+        const research = deps.data.research?.();
+        const stocks = all.filter((i) => i.exchange === "US" && !isFund(instrumentKey(i)));
+        if (research?.earnings && stocks.length) {
+          const rows = await research.earnings(stocks, today, shift(today, 30));
+          saveEarnings(db, rows, "finnhub", { replaceFrom: { keys: stocks.map(instrumentKey), from: today } });
+        }
+      } catch (e) {
+        console.error(`End-of-day earnings dates: ${errorText(e, secrets)}`);
+      }
+
+      try {
+        await fetchNews(db, deps.data, now);
+      } catch (e) {
+        console.error(`End-of-day news: ${errorText(e, secrets)}`);
       }
     },
   };

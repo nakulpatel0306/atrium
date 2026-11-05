@@ -41,6 +41,8 @@ export type MarketData = {
   secrets(): string[];
   // The Tiingo provider for the end-of-day job, or null without a key.
   tiingo?(): TiingoProvider | null;
+  // Where earnings dates, metrics and profiles come from: Finnhub when it has a key, Demo in Demo mode.
+  research?(): MarketProvider | null;
 };
 
 export const AV_DAILY_LIMIT = 25;
@@ -347,6 +349,10 @@ export function createMarketData(deps: {
     secrets,
     tiingo() {
       return has.tiingo() ? (provider("tiingo") as TiingoProvider) : null;
+    },
+    research() {
+      if (mode() === "demo") return provider("demo");
+      return has.finnhub() ? provider("finnhub") : null;
     },
   };
 }

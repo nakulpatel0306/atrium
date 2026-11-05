@@ -148,6 +148,36 @@ export function demoProvider(deps: { now?: () => number; tickMs?: number } = {})
         },
       };
     },
+    async metric(i) {
+      const key = instrumentKey(i);
+      const days = completed(key, now()).slice(-252);
+      const h = hash(`${key}:metric`);
+      return {
+        pe: round(10 + (h % 600) / 10),
+        high52: Math.max(...days.map((d) => d.bar.h)),
+        low52: Math.min(...days.map((d) => d.bar.l)),
+        divYield: h % 3 === 0 ? round((h % 400) / 100) : null,
+      };
+    },
+    async profile(i) {
+      const key = instrumentKey(i);
+      return { name: `${key} (demo)`, country: i.exchange === "US" ? "US" : "CA", currency: i.exchange === "US" ? "USD" : "CAD", industry: "Technology" };
+    },
+    // The first symbol reports three trading days out, so earnings alerts and thesis checks can be shown.
+    async earnings(list, from, to) {
+      const out: { key: string; date: string; hour: string | null; epsEstimate: number | null }[] = [];
+      list.forEach((i, n) => {
+        const key = instrumentKey(i);
+        const h = hash(`${key}:earnings`);
+        let date = etDate(now());
+        for (let left = n === 0 ? 3 : 10 + (h % 40); left > 0; ) {
+          date = nextDate(date);
+          if (isTradingDay(date)) left--;
+        }
+        if (date >= from && date <= to) out.push({ key, date, hour: n === 0 || h % 2 ? "amc" : "bmo", epsEstimate: round((h % 300) / 100 + 0.1) });
+      });
+      return out;
+    },
     maxStreamSymbols: 30,
     async validate() {},
   };

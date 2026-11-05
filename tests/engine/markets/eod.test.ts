@@ -40,6 +40,7 @@ function rig(clock: { now: number }) {
       tsxCalls.push(list.map(instrumentKey));
       return { quotes: [], missing: [] };
     },
+    news: async () => [],
     prepare: async () => {},
   } as unknown as MarketData;
   const now = () => clock.now;
@@ -84,7 +85,29 @@ test("no Tiingo key: TSX still runs", async () => {
   hold("ATZ", "TSX");
   const clock = { now: Date.parse("2026-11-04T21:35:00Z") };
   const tsxCalls: string[][] = [];
-  const data = { quotes: async (l: Instrument[]) => (tsxCalls.push(l.map(instrumentKey)), { quotes: [], missing: [] }), prepare: async () => {} } as unknown as MarketData;
+  const data = { quotes: async (l: Instrument[]) => (tsxCalls.push(l.map(instrumentKey)), { quotes: [], missing: [] }), news: async () => [], prepare: async () => {} } as unknown as MarketData;
   await eodJob(db, { data, tiingo: () => null, now: () => clock.now }).run(clock.now);
   expect(tsxCalls).toEqual([["ATZ.TO", "XEQT.TO"]]);
+});
+
+test("after the close: the next 30 days of earnings for US stocks, and one news fetch", async () => {
+  hold("RKLB", "US");
+  watch("SPY", "US");
+  const clock = { now: Date.parse("2026-11-04T21:35:00Z") };
+  const asked: string[] = [];
+  const research = {
+    earnings: async (list: Instrument[], from: string, to: string) => {
+      asked.push(`${list.map(instrumentKey).join(",")} ${from}..${to}`);
+      return [{ key: "RKLB", date: "2026-11-10", hour: "amc", epsEstimate: 1.23 }];
+    },
+  };
+  const data = {
+    quotes: async () => ({ quotes: [], missing: [] }),
+    news: async (list: Instrument[]) => (asked.push(`news ${list.map(instrumentKey).join(",")}`), []),
+    research: () => research,
+    prepare: async () => {},
+  } as unknown as MarketData;
+  await eodJob(db, { data, tiingo: () => null, now: () => clock.now }).run(clock.now);
+  expect(asked).toEqual(["RKLB 2026-11-04..2026-12-04", "news RKLB"]);
+  expect(db.query("SELECT key, date, source FROM market_earnings").all()).toEqual([{ key: "RKLB", date: "2026-11-10", source: "finnhub" }]);
 });

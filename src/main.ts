@@ -14,10 +14,12 @@ import { marketNow } from "./engine/markets/calendar";
 import { createMarketData } from "./engine/markets/data";
 import { createFeed } from "./engine/markets/feed";
 import { eodJob } from "./engine/markets/eod";
+import { newsJob } from "./engine/markets/events";
 import { fundsJob } from "./engine/markets/funds/refresh";
 import { fxJob } from "./engine/markets/fx";
 import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
+import { metaJob } from "./engine/markets/meta";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
@@ -40,6 +42,8 @@ const jobs = createJobs(
     fxJob(db, { now: marketClock }),
     eodJob(db, { data, tiingo: () => data.tiingo?.() ?? null, now: marketClock }),
     fundsJob(db, { now: marketClock }),
+    metaJob(db, { data, now: marketClock }),
+    newsJob(db, { data, now: marketClock }),
   ],
   marketClock,
 );
