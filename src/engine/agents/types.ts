@@ -30,5 +30,6 @@ export interface AgentAdapter {
   id: string;
   label: string;
   run(input: AgentRunInput): Promise<AgentRunResult>;
-  probe?(): Promise<AgentStatus>;
+  // The signal fires when the check has taken too long; the adapter kills its process then.
+  probe?(signal?: AbortSignal): Promise<AgentStatus>;
 }

@@ -118,12 +118,16 @@ describe("geminiAdapter", () => {
     expect(r).toEqual({ status: "error", kind: "failed", message: "boom" });
   });
 
-  test("an auto-denied action is a failure, not an empty success", async () => {
+  test("an auto-denied action is a plain-language failure, with agy's own words kept in the transcript", async () => {
     process.env.FAKE_AGY_SCENARIO = "denied";
-    const r = await geminiAdapter(FAKE).run(input());
-    if (r.status !== "error") throw new Error("expected error");
-    expect(r.kind).toBe("failed");
-    expect(r.message).toContain("auto-denied");
+    const chunks: string[] = [];
+    const r = await geminiAdapter(FAKE).run(input(chunks));
+    expect(r).toEqual({
+      status: "error",
+      kind: "failed",
+      message: "Gemini finished without an answer, likely because it needed a tool Atrium doesn't allow. Try Claude or Codex for this task.",
+    });
+    expect(chunks.some((c) => c.includes("auto-denied"))).toBe(true);
   });
 
   test("missing binary is not_installed", async () => {
@@ -138,6 +142,13 @@ describe("geminiAdapter", () => {
     const p = geminiAdapter(FAKE).run(input([], { signal: ac.signal }));
     setTimeout(() => ac.abort(), 300);
     expect(await p).toEqual({ status: "error", kind: "failed", message: "Stopped" });
+  });
+
+  test("a probe whose signal fires is killed instead of left running", async () => {
+    process.env.FAKE_AGY_SCENARIO = "slow";
+    const started = Date.now();
+    await geminiAdapter(FAKE).probe!(AbortSignal.timeout(200));
+    expect(Date.now() - started).toBeLessThan(3000);
   });
 
   test("probe: signed in, signed out, no gemini models, missing", async () => {

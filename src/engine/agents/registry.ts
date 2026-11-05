@@ -169,17 +169,18 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
       await Promise.all(
         Object.values(adapters).map(async (a) => {
           if (!a.probe) return;
-          let timer: ReturnType<typeof setTimeout> | undefined;
+          // The adapter kills its process when the signal fires; the race reports the timeout even if it doesn't.
+          const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+          const timeout = new Promise<never>((_, reject) => {
+            signal.addEventListener("abort", () => reject(new Error("the check timed out")), { once: true });
+          });
           try {
-            const timeout = new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new Error("the check timed out")), PROBE_TIMEOUT_MS);
-            });
-            probed.set(a.id, await Promise.race([a.probe(), timeout]));
+            const status = await Promise.race([a.probe(signal), timeout]);
+            if (signal.aborted) throw new Error("the check timed out");
+            probed.set(a.id, status);
           } catch (e) {
             // A failed check says nothing about sign-in; a real run will surface the actual problem.
             probed.set(a.id, { installed: true, loggedIn: null, detail: `Couldn't check ${a.label}: ${(e as Error).message}` });
-          } finally {
-            clearTimeout(timer);
           }
         }),
       );

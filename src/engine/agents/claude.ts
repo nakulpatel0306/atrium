@@ -170,8 +170,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       return classify(`${final?.result ?? ""}\n${stderr}`, stderr, exitCode);
     },
     // `claude` has no cheap sign-in check, so a logged-out CLI shows up when a run fails.
-    async probe(): Promise<AgentStatus> {
-      const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", onLine() {} });
+    async probe(signal?: AbortSignal): Promise<AgentStatus> {
+      const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", signal, onLine() {} });
       if (proc.notInstalled || proc.exitCode !== 0) return { installed: false, loggedIn: null, detail: "Claude Code isn't installed or not on PATH" };
       return { installed: true, loggedIn: null, detail: "Installed" };
     },

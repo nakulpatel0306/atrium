@@ -286,6 +286,20 @@ test("refresh probes only every ten minutes and survives a failing probe", async
   expect(r.statuses().codex!.detail).toContain("boom");
 });
 
+test("each probe gets a timeout signal so a hung check is killed, not just ignored", async () => {
+  let got: AbortSignal | undefined;
+  const watched: AgentAdapter = {
+    ...fake("codex"),
+    probe: async (signal) => {
+      got = signal;
+      return READY;
+    },
+  };
+  await createRegistry(db, { claude: fake("claude"), codex: watched }).refresh();
+  expect(got).toBeInstanceOf(AbortSignal);
+  expect(got!.aborted).toBe(false);
+});
+
 test("an adapter with no probe counts as available", () => {
   const { probe: _, ...bare } = fake("claude");
   const r = createRegistry(db, { claude: bare });

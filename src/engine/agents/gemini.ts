@@ -9,6 +9,7 @@ import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from ".
 
 const MODEL = "gemini-3.8-flash-medium";
 const SIGN_IN = "Run `agy` once in a terminal to sign in.";
+const NO_ANSWER = "Gemini finished without an answer, likely because it needed a tool Atrium doesn't allow. Try Claude or Codex for this task.";
 
 // agy's sign-in goes through the login keychain file, so that one file is reopened inside the denied Keychains dir.
 const LOGIN_KEYCHAIN = join(homedir(), "Library", "Keychains", "login.keychain-db");
@@ -101,16 +102,22 @@ export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: str
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
       if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped" };
 
-      // A tool needing approval is auto-denied in headless mode; agy still exits 0 with an empty response.
       if (proc.exitCode === 0 && status === "SUCCESS" && response?.trim()) {
         return { status: "ok", summary: response.trimEnd(), ...usage };
       }
-      return classify(errorMessage || (status === "SUCCESS" ? proc.stderr.trim() : ""), proc.stderr, proc.exitCode);
+      // A tool needing approval is auto-denied in headless mode; agy still exits 0 with an empty response. Its own
+      // explanation goes to the transcript, and Nakul gets one he can act on.
+      if (proc.exitCode === 0 && status === "SUCCESS") {
+        if (proc.stderr.trim()) input.onChunk(proc.stderr.trim());
+        const known = classify("", proc.stderr, proc.exitCode);
+        return known.status === "error" && known.kind !== "failed" ? known : { status: "error", kind: "failed", message: NO_ANSWER };
+      }
+      return classify(errorMessage, proc.stderr, proc.exitCode);
     },
 
-    async probe(): Promise<AgentStatus> {
+    async probe(signal?: AbortSignal): Promise<AgentStatus> {
       let stdout = "";
-      const proc = await runAgentProcess([bin, "models"], { cwd: process.cwd(), stdin: "", onLine: (l) => (stdout += `${l}\n`) });
+      const proc = await runAgentProcess([bin, "models"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => (stdout += `${l}\n`) });
       if (proc.notInstalled) return { installed: false, loggedIn: null, detail: "Antigravity (agy) isn't installed or not on PATH" };
       if (proc.exitCode === 0 && /^gemini-/m.test(stdout)) return { installed: true, loggedIn: true, detail: "Signed in" };
       if (proc.exitCode !== 0 && /authentication|sign in|not (logged|signed) in/i.test(`${stdout}\n${proc.stderr}`)) {

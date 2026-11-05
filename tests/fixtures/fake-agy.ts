@@ -9,6 +9,7 @@ const args = process.argv.slice(2);
 const prompt = args[args.indexOf("-p") + 1] ?? "";
 
 if (args[0] === "models") {
+  if (scenario === "slow") await Bun.sleep(30_000);
   if (scenario === "auth") {
     console.error("authentication required");
     process.exit(1);
