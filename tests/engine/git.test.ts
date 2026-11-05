@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchOffDirty, branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -267,6 +267,30 @@ describe("branchSummary", () => {
     const path = repo();
     const branch = await prepareBranch(path, "tsk_1");
     await expect(branchSummary(path, branch, "nope")).rejects.toThrow();
+  });
+});
+
+describe("changedFiles", () => {
+  test("changedFiles lists status and line counts without renames", async () => {
+    const path = repo();
+    const branch = await prepareBranch(path, "t");
+    mkdirSync(join(path, "docs"));
+    writeFileSync(join(path, "docs/a.md"), "one\ntwo\nthree\n");
+    git(path, "mv", "README.md", "READ.md");
+    writeFileSync(join(path, "x.bin"), "\0");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "changes");
+    const files = await changedFiles(path, "main", branch);
+    expect(files.sort((a, b) => (a.path < b.path ? -1 : 1))).toEqual([
+      { path: "READ.md", status: "A", added: 1, deleted: 0 },
+      { path: "README.md", status: "D", added: 0, deleted: 1 },
+      { path: "docs/a.md", status: "A", added: 3, deleted: 0 },
+      { path: "x.bin", status: "A", added: null, deleted: null },
+    ]);
+  });
+
+  test("throws when the branch is gone", async () => {
+    await expect(changedFiles(repo(), "main", "atrium/nope")).rejects.toThrow();
   });
 });
 
