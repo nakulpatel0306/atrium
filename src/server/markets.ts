@@ -3,7 +3,6 @@ import { getApproval } from "../engine/approvals";
 import { createAlert, describeRule, listAlerts, removeAlert, setAlertStatus, type Alert, type AlertRule } from "../engine/markets/alerts";
 import { backtest, type BacktestTemplate } from "../engine/markets/backtest";
 import { dailyBudget } from "../engine/markets/budget";
-import { cachedQuotes } from "../engine/markets/cache";
 import { lastCompletedSession } from "../engine/markets/calendar";
 import { AV_DAILY_LIMIT, currentQuote as current, type ChartRange, type DataStatus, type MarketData } from "../engine/markets/data";
 import type { Feed, FeedStatus } from "../engine/markets/feed";

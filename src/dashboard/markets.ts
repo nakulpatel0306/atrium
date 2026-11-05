@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { MarketsBriefing } from "../engine/markets/briefing";
 import type { DataStatus } from "../engine/markets/data";
 import type { FeedStatus } from "../engine/markets/feed";
-import { freshnessText } from "../engine/markets/labels";
+import { currencyOfKey, freshnessText } from "../engine/markets/labels";
 import type { Quote } from "../engine/markets/providers/types";
 import type { MarketsView } from "../server/markets";
 import { onQuotes, useEngineState, useFetched } from "./api";
@@ -69,3 +69,23 @@ export const etClockText = (ms: number) => `${etClockFmt.format(ms)} ET`;
 // Market-clock stamps (fills, alert fires) shown in market time rather than "ago", which reads oddly in demo mode.
 const etDateTimeFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 export const etDateTimeText = (ms: number) => `${etDateTimeFmt.format(ms)} ET`;
+
+type Cur = "CAD" | "USD";
+type Holding = Pick<MarketsView["holdings"][number], "key" | "currency" | "quantity" | "bookValue" | "quote">;
+
+// No FX, so totals are per currency. A price is in the listing's currency (CA$ for .TO/.V/.NE), whatever currency
+// the book value was entered in, so market value and day move are grouped by listing and book value by entry.
+export function holdingTotals(rows: Holding[]): { value: Partial<Record<Cur, number>>; day: Partial<Record<Cur, number>>; book: Partial<Record<Cur, number>> } {
+  const value: Partial<Record<Cur, number>> = {};
+  const day: Partial<Record<Cur, number>> = {};
+  const book: Partial<Record<Cur, number>> = {};
+  for (const h of rows) {
+    const listing = currencyOfKey(h.key);
+    if (h.quote) {
+      value[listing] = (value[listing] ?? 0) + h.quantity * h.quote.price;
+      if (h.quote.prevClose) day[listing] = (day[listing] ?? 0) + h.quantity * (h.quote.price - h.quote.prevClose);
+    }
+    if (h.bookValue !== null) book[h.currency] = (book[h.currency] ?? 0) + h.bookValue;
+  }
+  return { value, day, book };
+}

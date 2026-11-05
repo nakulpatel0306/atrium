@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import type { Server } from "bun";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,7 +25,6 @@ let db: Database;
 let server: ReturnType<typeof startServer>;
 let base: string;
 let now: number;
-let fetchStub: typeof fetch | undefined;
 
 function boot(opts: { demo?: boolean; fetch?: typeof fetch } = {}) {
   if (opts.demo !== false) setSetting(db, "markets.provider", "demo");
@@ -45,7 +43,6 @@ beforeEach(() => {
   process.env.FAKE_SECURITY_STORE = join(keyDir, "store.json");
   db = openDb();
   now = IN_SESSION;
-  fetchStub = undefined;
 });
 afterEach(() => {
   server?.stop(true);

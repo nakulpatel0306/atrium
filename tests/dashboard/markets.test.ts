@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { money, signedPct } from "../../src/dashboard/format";
-import { briefingMarketsLine, dayPct, freshnessLabel } from "../../src/dashboard/markets";
+import { briefingMarketsLine, dayPct, freshnessLabel, holdingTotals } from "../../src/dashboard/markets";
 import { describeRule, type AlertRule } from "../../src/engine/markets/labels";
 import { parseRoute } from "../../src/dashboard/route";
 import type { Quote } from "../../src/engine/markets/providers/types";
@@ -56,4 +56,14 @@ test("describeRule copy for every alert kind", () => {
     [{ kind: "cross_below_sma", period: 20 }, "crosses below SMA 20"],
   ];
   for (const [rule, text] of rules) expect(describeRule(rule)).toBe(text);
+});
+
+test("holding totals keep market value in the listing's currency and book value in the entered one", () => {
+  const h = (key: string, currency: "CAD" | "USD", quantity: number, price: number, bookValue: number) =>
+    ({ key, currency, quantity, bookValue, quote: { key, price, prevClose: price - 1, at: 0, source: "demo", freshness: "demo" } }) as Parameters<typeof holdingTotals>[0][number];
+  // A US stock whose book value was typed in CAD.
+  const totals = holdingTotals([h("AAPL", "CAD", 2, 100, 250), h("SHOP.TO", "CAD", 1, 50, 40)]);
+  expect(totals.value).toEqual({ USD: 200, CAD: 50 });
+  expect(totals.day).toEqual({ USD: 2, CAD: 1 });
+  expect(totals.book).toEqual({ CAD: 290 });
 });

@@ -2,7 +2,8 @@ import { Plus, Upload } from "lucide-react";
 import { useState } from "react";
 import { del, patch, post } from "../../api";
 import { absolute, money, relative, signedPct } from "../../format";
-import { dayPct, type MarketsView } from "../../markets";
+import { currencyOfKey } from "../../../engine/markets/labels";
+import { dayPct, holdingTotals, type MarketsView } from "../../markets";
 import { Freshness } from "./Freshness";
 import { ImportDialog } from "./ImportDialog";
 
@@ -18,27 +19,18 @@ const SOURCE: Record<Row["source"], string> = {
 const value = (h: Row) => (h.quote ? h.quantity * h.quote.price : null);
 const dayMove = (h: Row) => (h.quote?.prevClose ? h.quantity * (h.quote.price - h.quote.prevClose) : null);
 
-// No FX: totals are kept per currency.
-function totals(rows: Row[]): { cur: Cur; value: number; book: number; day: number }[] {
-  const by = new Map<Cur, { cur: Cur; value: number; book: number; day: number }>();
-  for (const h of rows) {
-    const t = by.get(h.currency) ?? { cur: h.currency, value: 0, book: 0, day: 0 };
-    t.value += value(h) ?? 0;
-    t.book += h.bookValue ?? 0;
-    t.day += dayMove(h) ?? 0;
-    by.set(h.currency, t);
-  }
-  return [...by.values()];
-}
-
 function Totals({ rows }: { rows: Row[] }) {
+  const t = holdingTotals(rows);
   return (
     <span className="mk-totals">
-      {totals(rows).map((t) => (
-        <span key={t.cur}>
-          {money(t.value, t.cur)} <span className={t.day >= 0 ? "up" : "down"}>{t.day >= 0 ? "+" : "−"}{money(Math.abs(t.day), t.cur)}</span>
-        </span>
-      ))}
+      {(Object.keys(t.value) as Cur[]).map((cur) => {
+        const day = t.day[cur] ?? 0;
+        return (
+          <span key={cur}>
+            {money(t.value[cur]!, cur)} <span className={day >= 0 ? "up" : "down"}>{day >= 0 ? "+" : "−"}{money(Math.abs(day), cur)}</span>
+          </span>
+        );
+      })}
     </span>
   );
 }
@@ -196,9 +188,9 @@ export function Holdings({ view }: { view: MarketsView }) {
                       <span className="t">{h.name}</span>
                       <span className="num">{h.quantity}</span>
                       <span className="num">{h.bookValue === null ? "—" : money(h.bookValue, h.currency)}</span>
-                      <span className="num">{value(h) === null ? "—" : money(value(h)!, h.currency)}</span>
+                      <span className="num">{value(h) === null ? "—" : money(value(h)!, currencyOfKey(h.key))}</span>
                       <span className={`num day ${day === null ? "faint" : day >= 0 ? "up" : "down"}`}>
-                        {day === null ? "—" : `${day >= 0 ? "+" : "−"}${money(Math.abs(day), h.currency)}`}
+                        {day === null ? "—" : `${day >= 0 ? "+" : "−"}${money(Math.abs(day), currencyOfKey(h.key))}`}
                         {pct !== null && <small> {signedPct(pct)}</small>}
                       </span>
                       <Freshness quote={h.quote} missing={h.missing} />
