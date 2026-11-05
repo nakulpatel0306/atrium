@@ -18,8 +18,11 @@ export type AgentRunResult =
       retryAfter?: number;
     };
 
+export type AgentStatus = { installed: boolean; loggedIn: boolean | null; detail: string };
+
 export interface AgentAdapter {
   id: string;
   label: string;
   run(input: AgentRunInput): Promise<AgentRunResult>;
+  probe?(): Promise<AgentStatus>;
 }
