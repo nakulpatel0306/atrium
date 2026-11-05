@@ -320,30 +320,47 @@ describe("commitAll", () => {
     expect(git(path, "diff", "--cached", "--name-only")).toBe("");
   });
 
-  test("allows git-lfs filters", async () => {
+  test("refuses lfs-style filter config too", async () => {
     const path = repo();
     git(path, "config", "filter.lfs.clean", "git-lfs clean -- %f");
-    git(path, "config", "filter.lfs.smudge", "git-lfs smudge -- %f");
-    git(path, "config", "filter.lfs.process", "git-lfs filter-process");
     writeFileSync(join(path, "a.txt"), "a\n");
-    expect(await commitAll(path, "Lfs")).toEqual({ committed: true, files: 1 });
+    await expect(commitAll(path, "Lfs")).rejects.toThrow('defines a "lfs" filter');
   });
 
-  test("refuses an lfs-named driver that runs something else", async () => {
+  test("refuses a repo whose .gitattributes selects a filter", async () => {
     const path = repo();
-    git(path, "config", "filter.lfs.clean", "sh -c evil");
-    writeFileSync(join(path, "a.txt"), "a\n");
-    await expect(commitAll(path, "Fake lfs")).rejects.toThrow('defines a "lfs" filter');
+    writeFileSync(join(path, ".gitattributes"), "*.bin filter=lfs diff=lfs merge=lfs -text\n");
+    git(path, "add", ".gitattributes");
+    git(path, "commit", "-m", "attrs");
+    writeFileSync(join(path, "big.bin"), "x\n");
+    await expect(commitAll(path, "Bin")).rejects.toThrow(
+      "Refusing to commit: this repo uses git filters (e.g. LFS). Commit these changes yourself.",
+    );
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
   });
 
-  test("refuses an lfs driver with a command chained after git-lfs", async () => {
+  test("refuses a repo whose info/attributes selects a filter", async () => {
+    const path = repo();
+    mkdirSync(join(path, ".git", "info"), { recursive: true });
+    appendFileSync(join(path, ".git", "info", "attributes"), "*.bin filter=lfs\n");
+    writeFileSync(join(path, "big.bin"), "x\n");
+    await expect(commitAll(path, "Bin")).rejects.toThrow("this repo uses git filters");
+  });
+
+  test("a filter planted after the checks does not run", async () => {
     const path = repo();
     const pwned = join(tempDir(), "pwned");
-    git(path, "config", "filter.lfs.clean", `git-lfs clean -- %f; touch ${pwned}`);
-    writeFileSync(join(path, ".gitattributes"), "* filter=lfs\n");
     writeFileSync(join(path, "a.txt"), "a\n");
-    await expect(commitAll(path, "Chained")).rejects.toThrow('defines a "lfs" filter');
+    const plant = () => {
+      git(path, "config", "filter.evil.clean", `touch ${pwned}`);
+      writeFileSync(join(path, ".gitattributes"), "* filter=evil\n");
+    };
+    // The config change is caught afterwards, but the driver must never have run in between.
+    await expect(commitAll(path, "Late", { beforeStage: plant })).rejects.toThrow(
+      "Refusing to commit: git settings changed while committing.",
+    );
     expect(existsSync(pwned)).toBe(false);
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
   });
 
   test("unstages and refuses if settings change during staging", async () => {
@@ -352,7 +369,7 @@ describe("commitAll", () => {
     const head = git(path, "rev-parse", "HEAD");
     // Each call returns a new value, as if config changed between the first read and the one after staging.
     let n = 0;
-    await expect(commitAll(path, "Racy", async () => `fp${n++}`)).rejects.toThrow(
+    await expect(commitAll(path, "Racy", { fingerprint: async () => `fp${n++}` })).rejects.toThrow(
       "Refusing to commit: git settings changed while committing.",
     );
     expect(git(path, "diff", "--cached", "--name-only")).toBe("");

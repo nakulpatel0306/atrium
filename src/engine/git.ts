@@ -67,16 +67,27 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
   return branch;
 }
 
+// Test seams: the fingerprint reader, and a hook that runs after every check and just before staging, where a
+// lingering agent process could still change things.
+type CommitSeams = { fingerprint?: (path: string) => Promise<string>; beforeStage?: () => void | Promise<void> };
+
 // Commits whatever the agent left in the tree. Signing is left to commit.gpgsign in the user's git config:
 // forcing -S would fail in repos and machines where signing isn't set up.
 export async function commitAll(
   path: string,
   message: string,
-  fingerprint: (path: string) => Promise<string> = gitSettingsFingerprint,
+  seams: CommitSeams = {},
 ): Promise<{ committed: boolean; files: number }> {
+  const fingerprint = seams.fingerprint ?? gitSettingsFingerprint;
   const before = await fingerprint(path);
-  await refuseFilterDrivers(path);
-  const status = await git(path, ["status", "--porcelain", "-z", "--untracked-files=all"]);
+  await refuseFilterConfig(path);
+  // Hashed rather than hardcoded so sha256 repos get their own empty tree.
+  const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
+  if (empty.code !== 0) throw new Error(`Could not read git objects: ${empty.err.trim()}`);
+  // Reading attributes from the empty tree means no .gitattributes or info/attributes can select a filter
+  // driver, however late the agent writes one. Config checks alone can't close that window.
+  const noAttrs = `--attr-source=${empty.out.trim()}`;
+  const status = await git(path, [noAttrs, "status", "--porcelain", "-z", "--untracked-files=all"]);
   if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
   const entries = status.out.split("\0").filter(Boolean);
   const paths: string[] = [];
@@ -89,41 +100,54 @@ export async function commitAll(
   const env = paths.find((p) => /^\.env/.test(p.split("/").pop()!));
   if (env) throw new Error(`Refusing to commit a .env file: ${env}`);
   if (paths.length === 0) return { committed: false, files: 0 };
-  const add = await git(path, ["add", "-A"]);
-  // Config can change under a running agent child between the checks above and the add. If it did,
-  // whatever the add just ran is already done, but nothing gets committed.
+  await refuseFilterAttributes(path, paths);
+  await seams.beforeStage?.();
+  const add = await git(path, [noAttrs, "add", "-A"]);
+  // Config can change under a running agent child after the checks above. If it did, nothing gets committed.
+  // reset refreshes the index, which can re-run clean filters on files git can't prove unchanged, so it needs the flag too.
   if ((await fingerprint(path)) !== before) {
-    await git(path, ["reset", "-q"]);
+    await git(path, [noAttrs, "reset", "-q"]);
     throw new Error("Refusing to commit: git settings changed while committing.");
   }
   if (add.code !== 0) throw new Error(`Could not stage changes: ${add.err.trim()}`);
-  const commit = await git(path, ["commit", "-m", message]);
+  const commit = await git(path, [noAttrs, "commit", "-m", message]);
   if (commit.code !== 0) throw new Error(`Could not commit: ${(commit.err || commit.out).trim()}`);
   return { committed: true, files: paths.length };
 }
 
-// git add runs clean/process filter drivers, so a driver the agent planted would run with the engine's privileges.
-// git-lfs is the one driver people install on purpose; it is recognised by its exact installed commands, since a
-// prefix match would let "git-lfs clean -- %f; evil" through the shell git runs filters in.
-const LFS_COMMANDS: Record<string, string> = {
-  clean: "git-lfs clean -- %f",
-  smudge: "git-lfs smudge -- %f",
-  process: "git-lfs filter-process",
-};
+// Staging ignores attributes (see commitAll), so a repo that relies on filters such as LFS would get raw
+// contents committed. Refusing is safer than guessing which filters are trustworthy.
+const FILTERS_REFUSAL = "Refusing to commit: this repo uses git filters (e.g. LFS). Commit these changes yourself.";
 
-async function refuseFilterDrivers(path: string): Promise<void> {
-  const res = await git(path, ["config", "--get-regexp", "^filter\\."]);
+async function refuseFilterAttributes(path: string, changed: string[]): Promise<void> {
+  const tracked = await git(path, ["ls-files", "-z", "--", ".gitattributes", "*.gitattributes"]);
+  if (tracked.code !== 0) throw new Error(`Could not list files: ${tracked.err.trim()}`);
+  const files = new Set([...tracked.out.split("\0"), ...changed].filter((f) => f && f.split("/").pop() === ".gitattributes"));
+  // --attr-source does not cover info/attributes, so it is the one place a filter selection can still arrive from.
+  const info = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "info/attributes"]);
+  if (info.code !== 0) throw new Error(`Could not read git dir: ${info.err.trim()}`);
+  const full = [...[...files].map((f) => join(path, f)), info.out.trim()];
+  for (const file of full) {
+    if (existsSync(file) && statSync(file).isFile() && /(^|\s)filter\s*=/m.test(readFileSync(file, "utf8"))) {
+      throw new Error(FILTERS_REFUSAL);
+    }
+  }
+}
+
+// A configured clean/smudge/process driver is a strong sign the repo expects filters, and one the agent
+// planted would run during staging.
+async function refuseFilterConfig(path: string): Promise<void> {
+  // NUL-separated so a value containing newlines can't pass for several config entries.
+  const res = await git(path, ["config", "--null", "--get-regexp", "^filter\\."]);
   // Exit 1 just means no filter is configured.
   if (res.code > 1) throw new Error(`Could not read git config: ${res.err.trim()}`);
-  for (const line of res.out.split("\n").filter(Boolean)) {
-    const space = line.indexOf(" ");
-    const key = space === -1 ? line : line.slice(0, space);
-    const value = space === -1 ? "" : line.slice(space + 1);
-    // Subsection names may contain dots, so only the first and last dot are structural.
-    const name = key.slice("filter.".length, key.lastIndexOf("."));
-    const variable = key.slice(key.lastIndexOf(".") + 1);
-    if (!["clean", "smudge", "process"].includes(variable)) continue;
-    if (name === "lfs" && value.trim() === LFS_COMMANDS[variable]) continue;
+  for (const record of res.out.split("\0").filter(Boolean)) {
+    const key = record.split("\n")[0]!;
+    const dot = key.lastIndexOf(".");
+    const parsed = key.startsWith("filter.") && dot >= "filter.".length;
+    const variable = parsed ? key.slice(dot + 1) : "";
+    if (parsed && !["clean", "smudge", "process"].includes(variable)) continue;
+    const name = parsed ? key.slice("filter.".length, dot) : key;
     throw new Error(
       `Refusing to commit: this repo's git config defines a "${name}" filter that would run a program during commit. Commit these changes yourself if you trust it.`,
     );
