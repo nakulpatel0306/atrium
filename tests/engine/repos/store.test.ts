@@ -106,3 +106,15 @@ test("recordClone refuses a folder whose .git is a file", () => {
   writeFileSync(join(path, ".git"), "gitdir: /elsewhere\n");
   expect(() => recordClone(db, { spaceId: null, path, github: "fakeuser/wt", origin: "clone" })).toThrow();
 });
+
+test("recording a clone retires a stale row left for the same path", () => {
+  const path = join(gh.projects, "demo");
+  mkdirSync(join(path, ".git"), { recursive: true });
+  const old = recordClone(db, { spaceId: null, path, github: "fakeuser/demo", origin: "new_project" });
+  // The folder went away outside Atrium, and Atrium cloned a fresh one in its place.
+  Bun.spawnSync(["rm", "-rf", path]);
+  mkdirSync(join(path, ".git"), { recursive: true });
+  const fresh = recordClone(db, { spaceId: null, path, github: "fakeuser/demo", origin: "clone" });
+  expect(presentCloneForPath(db, path)!.id).toBe(fresh.id);
+  expect(listClones(db).find((c) => c.id === old.id)!.status).toBe("removed");
+});

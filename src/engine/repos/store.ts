@@ -221,6 +221,9 @@ export function recordClone(
   if (!st.isDirectory()) throw new Error(`${input.path} isn't a plain git checkout.`);
   const id = newId("cln");
   const now = Date.now();
+  // Only called right after Atrium made this folder where none existed, so a row still "present" for the path is
+  // from a folder that went away outside Atrium.
+  db.query("UPDATE repo_clones SET status = 'removed', removed_at = ? WHERE path = ? AND status = 'present'").run(now, input.path);
   db.query(
     "INSERT INTO repo_clones (id, space_id, path, github, origin, git_dev, git_ino, last_used_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(id, input.spaceId, input.path, input.github, input.origin, st.dev, st.ino, now, now);
