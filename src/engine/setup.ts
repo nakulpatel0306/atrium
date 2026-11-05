@@ -3,6 +3,7 @@ import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { AgentAdapter } from "./agents/types";
+import { config } from "./config";
 import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
 
@@ -63,7 +64,7 @@ function firstJsonObject(text: string): string | null {
 
 const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
 
-const defaultProjectsRoot = () => join(homedir(), "dev-workspace", "projects");
+const defaultProjectsRoot = () => config().projectsRoot;
 
 // The agent's repoPath is untrusted text that later becomes a cwd for write-capable runs, so it must resolve
 // (through symlinks) to a git work tree inside the projects root.

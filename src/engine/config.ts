@@ -15,6 +15,10 @@ export function config() {
     geminiBin: process.env.ATRIUM_GEMINI_BIN ?? "agy",
     // The macOS Keychain CLI; tests point this at a fake.
     securityBin: process.env.ATRIUM_SECURITY_BIN ?? "/usr/bin/security",
+    // GitHub CLI; only src/engine/repos/gh.ts runs it. Tests point this at a fake.
+    ghBin: process.env.ATRIUM_GH_BIN ?? "gh",
+    // Where new projects and on-demand clones go.
+    projectsRoot: process.env.ATRIUM_PROJECTS_ROOT ?? join(homedir(), "dev-workspace", "projects"),
     marketNow: process.env.ATRIUM_MARKET_NOW ?? null,
     transcriptCapBytes: 209715200 as const,
     transcriptFileCapBytes: 5242880 as const,

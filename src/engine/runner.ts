@@ -575,7 +575,7 @@ export function createRunner(deps: {
   // has said approve without a fix round; anything that goes wrong here leaves the item waiting for him.
   async function considerRule(approvalId: string, opts: { filesKept?: number; reviewed?: boolean } = {}) {
     const a = getApproval(db, approvalId);
-    if (a?.status !== "pending" || !a.fingerprint || !a.taskId) return;
+    if (a?.status !== "pending" || !a.fingerprint || !a.taskId || !a.spaceId) return;
     try {
       const task = getTask(db, a.taskId);
       const space = getSpace(db, a.spaceId);

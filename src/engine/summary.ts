@@ -18,7 +18,7 @@ const pathFor = (spaceId: string, taskId: string | null) => (taskId ? `/space/${
 export function summary(db: Database): Summary {
   const names = new Map(listSpaces(db).map((s) => [s.id, s.name]));
   const approvals = listPending(db)
-    .filter((a) => names.has(a.spaceId))
+    .flatMap((a) => (a.spaceId !== null && names.has(a.spaceId) ? [{ ...a, spaceId: a.spaceId }] : []))
     .map((a) => ({
       at: a.createdAt,
       need: { id: a.id, kind: a.kind, title: a.title, spaceName: names.get(a.spaceId)!, path: pathFor(a.spaceId, a.taskId) } as Need,

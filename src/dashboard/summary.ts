@@ -16,7 +16,8 @@ export function activeOnly(state: State): State {
   return {
     ...state,
     tasks: state.tasks.filter((t) => ids.has(t.spaceId)),
-    approvals: state.approvals.filter((a) => ids.has(a.spaceId)),
+    // Atrium-wide questions (no space) always stay.
+    approvals: state.approvals.filter((a) => a.spaceId === null || ids.has(a.spaceId)),
     proposals: state.proposals.filter((p) => ids.has(p.spaceId)),
   };
 }

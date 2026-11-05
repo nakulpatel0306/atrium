@@ -17,7 +17,7 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
   const waiting = [...state.approvals, ...state.proposals];
   const pending = waiting.length;
   const pendingBySpace = new Map<string, number>();
-  for (const a of waiting) pendingBySpace.set(a.spaceId, (pendingBySpace.get(a.spaceId) ?? 0) + 1);
+  for (const a of waiting) if (a.spaceId) pendingBySpace.set(a.spaceId, (pendingBySpace.get(a.spaceId) ?? 0) + 1);
   const activeRules = state.rules.filter((r) => r.state === "active").length;
   const battery = state.power.source === "battery";
   // Agents that can't take work right now: missing, signed out, or at a limit.

@@ -156,7 +156,7 @@ export function NeedsYou({ state }: { state: State }) {
               <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
             ))}
             {state.approvals.map((a) => (
-              <Row key={a.id} approval={a} space={spaces.get(a.spaceId)} state={state} />
+              <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />
             ))}
           </>
         )}

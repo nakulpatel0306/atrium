@@ -16,6 +16,8 @@ export type Space = {
   status: "active" | "archived";
   // The agent that reviews finished work here; null means no automatic review.
   reviewBy: ReviewerId | null;
+  // The GitHub repo ("owner/name") a repo space comes from; its local copy is cloned when a task needs it.
+  github: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -30,6 +32,7 @@ type SpaceRow = {
   private: number;
   status: Space["status"];
   review_by: ReviewerId | null;
+  github: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -51,6 +54,7 @@ const toSpace = (r: SpaceRow): Space => ({
   private: r.private === 1,
   status: r.status,
   reviewBy: r.review_by,
+  github: r.github,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -62,13 +66,13 @@ export function getSpace(db: Database, id: string): Space | null {
 
 export function createSpace(
   db: Database,
-  input: { name: string; kind: Space["kind"]; goal: string; color?: string; repoPath?: string; private?: boolean },
+  input: { name: string; kind: Space["kind"]; goal: string; color?: string; repoPath?: string; private?: boolean; github?: string },
 ): Space {
   if (input.kind === "markets" && input.private === false) throw new Error(MARKETS_PRIVATE);
   const id = newId("spc");
   const now = Date.now();
   db.query(
-    "INSERT INTO spaces (id, name, kind, goal, color, repo_path, private, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO spaces (id, name, kind, goal, color, repo_path, private, github, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.name,
@@ -77,6 +81,7 @@ export function createSpace(
     input.color ?? DEFAULT_COLOR,
     input.repoPath ?? null,
     (input.private ?? true) ? 1 : 0,
+    input.github ?? null,
     now,
     now,
   );
@@ -108,6 +113,16 @@ export function updateSpace(
     Date.now(),
     id,
   );
+  bus.emit({ type: "changed" });
+  return getSpace(db, id)!;
+}
+
+// Where the space's local copy lives. Clearing repoPath keeps github unless the patch says otherwise.
+export function setSpaceRepo(db: Database, id: string, patch: { repoPath: string | null; github?: string | null }): Space {
+  const cur = getSpace(db, id);
+  if (!cur) throw new Error(`No space with id ${id}`);
+  const github = patch.github === undefined ? cur.github : patch.github;
+  db.query("UPDATE spaces SET repo_path = ?, github = ?, updated_at = ? WHERE id = ?").run(patch.repoPath, github, Date.now(), id);
   bus.emit({ type: "changed" });
   return getSpace(db, id)!;
 }

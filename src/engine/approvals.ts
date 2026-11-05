@@ -5,11 +5,25 @@ import { branchHeadSync } from "./git";
 import { getSpace } from "./spaces";
 import { appendTaskDetail, getTask, listTasks, setTaskStatus } from "./tasks";
 
-export const ALWAYS_ASK = ["merge_main", "deploy", "first_contact", "delete", "spend", "secrets"] as const;
+export const ALWAYS_ASK = [
+  "merge_main",
+  "deploy",
+  "first_contact",
+  "delete",
+  "spend",
+  "secrets",
+  "create_repo",
+  "push",
+  "remove_clone",
+] as const;
+export type AlwaysAsk = (typeof ALWAYS_ASK)[number];
+
+export const RULE_NEVER_DECIDES = "A rule can never decide this. It always waits for you.";
 
 export type Approval = {
   id: string;
-  spaceId: string;
+  // Null only for Atrium-wide questions, such as creating a GitHub repo.
+  spaceId: string | null;
   taskId: string | null;
   kind: "review" | "question" | "alert";
   title: string;
@@ -23,13 +37,15 @@ export type Approval = {
   decidedBy: "you" | "rule";
   ruleId: string | null;
   undoneAt: number | null;
+  // Set when only Nakul himself may ever decide this; no rule, proposal or auto-approval can.
+  alwaysAsk: AlwaysAsk | null;
   createdAt: number;
   resolvedAt: number | null;
 };
 
 type ApprovalRow = {
   id: string;
-  space_id: string;
+  space_id: string | null;
   task_id: string | null;
   kind: Approval["kind"];
   title: string;
@@ -41,6 +57,7 @@ type ApprovalRow = {
   decided_by: Approval["decidedBy"];
   rule_id: string | null;
   undone_at: number | null;
+  always_ask: AlwaysAsk | null;
   created_at: number;
   resolved_at: number | null;
 };
@@ -66,6 +83,7 @@ const toApproval = (r: ApprovalRow): Approval => ({
   decidedBy: r.decided_by,
   ruleId: r.rule_id,
   undoneAt: r.undone_at,
+  alwaysAsk: r.always_ask,
   createdAt: r.created_at,
   resolvedAt: r.resolved_at,
 });
@@ -77,12 +95,32 @@ export const getApproval = (db: Database, id: string): Approval | null => {
 
 export function createApproval(
   db: Database,
-  input: { spaceId: string; taskId?: string; kind: Approval["kind"]; title: string; detail: string; fingerprint?: string | null },
+  input: {
+    spaceId: string | null;
+    taskId?: string;
+    kind: Approval["kind"];
+    title: string;
+    detail: string;
+    fingerprint?: string | null;
+    alwaysAsk?: AlwaysAsk;
+  },
 ): Approval {
+  if (input.alwaysAsk && input.fingerprint) throw new Error("An always-ask approval can't carry a fingerprint.");
+  if (input.spaceId === null && input.kind !== "question") throw new Error("Only a question can belong to no space.");
   const id = newId("apr");
   db.query(
-    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, input.spaceId, input.taskId ?? null, input.kind, input.title, input.detail, input.fingerprint ?? null, Date.now());
+    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, always_ask, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    id,
+    input.spaceId,
+    input.taskId ?? null,
+    input.kind,
+    input.title,
+    input.detail,
+    input.fingerprint ?? null,
+    input.alwaysAsk ?? null,
+    Date.now(),
+  );
   bus.emit({ type: "changed" });
   return getApproval(db, id)!;
 }
@@ -135,11 +173,12 @@ export function resolveApproval(
   rule?: { id: string; label: string; head?: string },
 ): Approval {
   if (rule && decision !== "approve") throw new Error("A rule can only approve.");
+  if (rule && getApproval(db, id)?.alwaysAsk) throw new Error(RULE_NEVER_DECIDES);
   const head = rule?.head ?? taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
   const resolve = db.transaction((): Approval => {
     const res = db
       .query(
-        "UPDATE approvals SET status = ?, note = ?, branch_head = ?, resolved_at = ?, decided_by = ?, rule_id = ? WHERE id = ? AND status = 'pending'",
+        `UPDATE approvals SET status = ?, note = ?, branch_head = ?, resolved_at = ?, decided_by = ?, rule_id = ? WHERE id = ? AND status = 'pending'${rule ? " AND always_ask IS NULL" : ""}`,
       )
       .run(decision === "approve" ? "approved" : "rejected", note ?? null, head, Date.now(), rule ? "rule" : "you", rule?.id ?? null, id);
     if (res.changes === 0) {
@@ -178,6 +217,10 @@ export function resolveApproval(
   bus.emit({ type: "changed" });
   return a;
 }
+
+// Nakul himself said yes and hasn't undone it: the only decision that may run a repo action.
+export const isOwnYes = (a: Approval): boolean =>
+  a.status === "approved" && a.decidedBy === "you" && a.ruleId === null && a.undoneAt === null;
 
 const resolvedListeners = new Set<(a: Approval, decision: "approve" | "reject") => void>();
 
