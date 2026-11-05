@@ -17,8 +17,9 @@ export type ActionFacts =
 
 export type ForbiddenReason = (typeof ALWAYS_ASK)[number];
 
+// The grammar's second-level words are versioned so a later shape (say, tests) can return without touching old rows.
 type Kind =
-  | { domain: "code"; shape: "docs" | "tests"; size: "small" | "medium"; agent: string }
+  | { domain: "code"; shape: "docs"; size: "small" | "medium"; agent: string }
   | { domain: "general"; agent: string };
 
 const AGENTS = new Set(["claude", "codex", "gemini"]);
@@ -27,10 +28,18 @@ const SECRET =
   /(^|\/)(id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|[^/]*\.(pem|key|p12|pfx|jks|keystore)|\.npmrc|\.netrc|\.pypirc|credentials(\.json)?|secrets?\.(json|ya?ml|toml))$/i;
 const DEPLOY =
   /(^|\/)(\.github\/workflows\/|\.gitlab-ci\.ya?ml$|vercel\.json$|netlify\.toml$|fly\.toml$|wrangler\.toml$|render\.ya?ml$|procfile$|dockerfile[^/]*$|docker-compose[^/]*$)/i;
-// An agent must never get its own instructions approved without Nakul looking.
-const INSTRUCTIONS = /(^|\/)((claude|agents|gemini)\.md$|\.(claude|codex|gemini|cursor)\/)/i;
-const DOCS = /\.(md|mdx|markdown|txt|rst)$/i;
-const TESTS = /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/i;
+// An agent must never get its own instructions (or another tool's) approved without Nakul looking.
+const INSTRUCTIONS = [
+  /(^|\/)(claude|agents?|gemini|copilot|cursor|windsurf)[^/]*$/i,
+  /(^|\/)(\.cursorrules|\.windsurfrules|\.mcp\.json)$/i,
+  /(^|\/)\.(claude|codex|gemini|cursor|agents|github)\//i,
+];
+// Plain prose only. Tests are code (they run whenever Nakul runs the suite), and .txt is too often read by
+// tools (requirements.txt, CMakeLists.txt) to count outside a docs folder.
+const DOCS = [/\.(md|mdx|markdown|rst)$/i, /(^|\/)docs\/(.*\/)?[^/]+\.txt$/i];
+const NOT_DOCS = /(^|\/)(requirements[^/]*\.txt|constraints[^/]*\.txt|cmakelists\.txt|license[^/]*|codeowners)$/i;
+// Only ordinary files: symlinks, gitlinks, executable bits and type changes always go to Nakul.
+const PLAIN_MODES = new Set(["100644", "000000"]);
 
 export function forbiddenFor(facts: ActionFacts): ForbiddenReason[] {
   if (facts.domain !== "code") return [];
@@ -44,10 +53,10 @@ export function forbiddenFor(facts: ActionFacts): ForbiddenReason[] {
   return [...reasons].sort();
 }
 
-function shapeOf(path: string): "docs" | "tests" | "code" {
-  if (INSTRUCTIONS.test(path)) return "code";
-  if (TESTS.test(path)) return "tests";
-  return DOCS.test(path) ? "docs" : "code";
+function isDocs(f: ChangedFile): boolean {
+  if (f.status === "T" || !PLAIN_MODES.has(f.oldMode) || !PLAIN_MODES.has(f.newMode)) return false;
+  if (INSTRUCTIONS.some((re) => re.test(f.path)) || NOT_DOCS.test(f.path)) return false;
+  return DOCS.some((re) => re.test(f.path));
 }
 
 export function fingerprintOf(facts: ActionFacts): string | null {
@@ -59,11 +68,8 @@ export function fingerprintOf(facts: ActionFacts): string | null {
     if (f.added === null || f.deleted === null) return null;
     lines += f.added + f.deleted;
   }
-  if (lines > MEDIUM_LINES) return null;
-  const shapes = new Set(facts.files.map((f) => shapeOf(f.path)));
-  const shape = shapes.size === 1 ? [...shapes][0]! : "code";
-  if (shape === "code") return null;
-  return `v1:code:${shape}:${lines <= SMALL_LINES ? "small" : "medium"}:${facts.agent}`;
+  if (lines > MEDIUM_LINES || !facts.files.every(isDocs)) return null;
+  return `v1:code:docs:${lines <= SMALL_LINES ? "small" : "medium"}:${facts.agent}`;
 }
 
 // Strict on purpose: a rule can only ever cover what this grammar can say, and it has no word for anything on
@@ -73,7 +79,7 @@ export function parseFingerprint(fp: string): Kind | null {
   if (parts[0] !== "v1") return null;
   if (parts.length === 5 && parts[1] === "code") {
     const [, , shape, size, agent] = parts as [string, string, string, string, string];
-    if ((shape === "docs" || shape === "tests") && (size === "small" || size === "medium") && AGENTS.has(agent)) {
+    if (shape === "docs" && (size === "small" || size === "medium") && AGENTS.has(agent)) {
       return { domain: "code", shape, size, agent };
     }
   }
@@ -87,6 +93,5 @@ export function labelOf(fp: string): string {
   const k = parseFingerprint(fp);
   if (!k) return fp;
   if (k.domain === "general") return `text answers with no files from ${agentName(k.agent)}`;
-  const what = k.shape === "docs" ? "docs-only" : "test-only";
-  return `${what} changes under ${k.size === "small" ? SMALL_LINES : MEDIUM_LINES} lines from ${agentName(k.agent)}`;
+  return `docs-only changes under ${k.size === "small" ? SMALL_LINES : MEDIUM_LINES} lines from ${agentName(k.agent)}`;
 }

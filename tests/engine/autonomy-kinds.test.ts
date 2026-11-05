@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { type ActionFacts, fingerprintOf, forbiddenFor, labelOf, parseFingerprint } from "../../src/engine/autonomy/kinds";
 import type { ChangedFile } from "../../src/engine/git";
 
+const MODES: Record<ChangedFile["status"], [string, string]> = { A: ["000000", "100644"], M: ["100644", "100644"], D: ["100644", "000000"], T: ["100644", "120000"] };
 const f = (path: string, added: number | null = 1, deleted: number | null = 0, status: ChangedFile["status"] = "A"): ChangedFile => ({
   path,
   status,
   added,
   deleted,
+  oldMode: MODES[status][0],
+  newMode: MODES[status][1],
 });
 const code = (files: ChangedFile[], agent = "claude", branch = "atrium/tsk_1"): ActionFacts => ({ domain: "code", agent, branch, files });
 
@@ -17,14 +20,29 @@ describe("fingerprintOf", () => {
     expect(labelOf(fp!)).toBe("docs-only changes under 50 lines from Claude");
   });
 
-  test("tests-only medium diff", () => {
-    const fp = fingerprintOf(code([f("tests/x.test.ts", 120, 40, "M")], "codex"));
-    expect(fp).toBe("v1:code:tests:medium:codex");
-    expect(labelOf(fp!)).toBe("test-only changes under 200 lines from Codex");
+  test("medium docs diff", () => {
+    const fp = fingerprintOf(code([f("docs/guide.mdx", 120, 40, "M")], "codex"));
+    expect(fp).toBe("v1:code:docs:medium:codex");
+    expect(labelOf(fp!)).toBe("docs-only changes under 200 lines from Codex");
   });
 
-  test("a .md under tests counts as tests", () => {
-    expect(fingerprintOf(code([f("tests/README.md"), f("src/a.spec.tsx")]))).toBe("v1:code:tests:small:claude");
+  test("tests are code: never eligible", () => {
+    expect(fingerprintOf(code([f("tests/foo.test.ts", 5, 0, "M")]))).toBeNull();
+    expect(fingerprintOf(code([f("src/a.spec.tsx")]))).toBeNull();
+    expect(fingerprintOf(code([f("tests/README.md"), f("tests/x.test.ts")]))).toBeNull();
+  });
+
+  test("plain text counts as docs only under docs/", () => {
+    expect(fingerprintOf(code([f("docs/notes.txt")]))).toBe("v1:code:docs:small:claude");
+    expect(fingerprintOf(code([f("sub/docs/notes.txt")]))).toBe("v1:code:docs:small:claude");
+    expect(fingerprintOf(code([f("notes.txt")]))).toBeNull();
+    expect(fingerprintOf(code([f("README.rst"), f("a/b.markdown")]))).toBe("v1:code:docs:small:claude");
+  });
+
+  test("text files that configure builds or ownership are not docs", () => {
+    for (const p of ["requirements.txt", "docs/requirements-dev.txt", "constraints.txt", "docs/CMakeLists.txt", "LICENSE", "LICENSE.md", "CODEOWNERS", "docs/CODEOWNERS", ".github/README.md", ".github/ISSUE_TEMPLATE/bug.md"]) {
+      expect(fingerprintOf(code([f(p)]))).toBeNull();
+    }
   });
 
   test("mixed or source changes have no kind", () => {
@@ -42,9 +60,38 @@ describe("fingerprintOf", () => {
   });
 
   test("agent instruction files are never eligible", () => {
-    for (const p of ["CLAUDE.md", "sub/AGENTS.md", "GEMINI.md", ".claude/settings.json", ".codex/x.md", ".gemini/notes.md", ".cursor/rules.md"]) {
+    for (const p of [
+      "CLAUDE.md",
+      "CLAUDE.local.md",
+      "sub/AGENTS.md",
+      "agent.md",
+      "GEMINI.md",
+      "copilot-notes.md",
+      "docs/cursor.md",
+      "windsurf.md",
+      ".cursorrules",
+      ".windsurfrules",
+      ".mcp.json",
+      ".github/copilot-instructions.md",
+      ".github/instructions/x.md",
+      ".claude/settings.json",
+      ".codex/x.md",
+      ".gemini/notes.md",
+      ".cursor/rules.md",
+      ".agents/notes.md",
+      "docs/.claude/notes.md",
+    ]) {
       expect(fingerprintOf(code([f(p)]))).toBeNull();
     }
+  });
+
+  test("anything but a plain file is never eligible", () => {
+    const link = { ...f("docs/link.md"), newMode: "120000" };
+    const exec = { ...f("docs/run.md", 1, 0, "M"), newMode: "100755" };
+    const wasExec = { ...f("docs/run.md", 1, 0, "M"), oldMode: "100755" };
+    const gitlink = { ...f("docs/sub.md"), newMode: "160000" };
+    const typeChange = f("docs/a.md", 1, 0, "T");
+    for (const file of [link, exec, wasExec, gitlink, typeChange]) expect(fingerprintOf(code([file]))).toBeNull();
   });
 
   test("only a resolved agent gets a kind", () => {
@@ -102,6 +149,7 @@ describe("parseFingerprint", () => {
   test("parseFingerprint is strict", () => {
     for (const bad of [
       "v1:code:code:small:claude",
+      "v1:code:tests:small:claude",
       "v1:code:docs:large:claude",
       "v1:code:docs:small:auto",
       "v2:code:docs:small:claude",
@@ -117,7 +165,7 @@ describe("parseFingerprint", () => {
 
   test("round-trips every fingerprint the engine produces", () => {
     expect(parseFingerprint("v1:code:docs:small:claude")).toEqual({ domain: "code", shape: "docs", size: "small", agent: "claude" });
-    expect(parseFingerprint("v1:code:tests:medium:codex")).toEqual({ domain: "code", shape: "tests", size: "medium", agent: "codex" });
+    expect(parseFingerprint("v1:code:docs:medium:codex")).toEqual({ domain: "code", shape: "docs", size: "medium", agent: "codex" });
     expect(parseFingerprint("v1:general:text:gemini")).toEqual({ domain: "general", agent: "gemini" });
   });
 });

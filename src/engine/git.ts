@@ -328,13 +328,22 @@ export async function reviewDiff(path: string, base: string, branch: string): Pr
   };
 }
 
-export type ChangedFile = { path: string; status: "A" | "M" | "D" | "T"; added: number | null; deleted: number | null };
+// Modes are git's octal file modes ("100644" plain, "100755" executable, "120000" symlink, "160000" gitlink);
+// "000000" is the missing side of an add or delete.
+export type ChangedFile = {
+  path: string;
+  status: "A" | "M" | "D" | "T";
+  added: number | null;
+  deleted: number | null;
+  oldMode: string;
+  newMode: string;
+};
 
 // Every file the branch changed, for deciding what kind of result it is. Unlike reviewDiff, .env paths stay in:
 // the always-ask check has to see them. Renames show as a delete plus an add, so moving a file counts as deleting one.
 export async function changedFiles(path: string, base: string, branch: string): Promise<ChangedFile[]> {
   const flags = ["-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color"];
-  const names = await git(path, [...flags, "--name-status", "-z", `${base}...${branch}`, "--"]);
+  const names = await git(path, [...flags, "--raw", "-z", `${base}...${branch}`, "--"]);
   if (names.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${names.err.trim()}`);
   const nums = await git(path, [...flags, "--numstat", "-z", `${base}...${branch}`, "--"]);
   if (nums.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${nums.err.trim()}`);
@@ -344,11 +353,19 @@ export async function changedFiles(path: string, base: string, branch: string): 
     // git prints "-" for both counts of a binary file.
     counts.set(rest.join("\t"), { added: added === "-" ? null : Number(added), deleted: deleted === "-" ? null : Number(deleted) });
   }
+  // Each record is ":<old mode> <new mode> <old sha> <new sha> <status>" followed by the path.
   const fields = names.out.split("\0");
   const files: ChangedFile[] = [];
   for (let i = 0; i + 1 < fields.length; i += 2) {
+    const [oldMode, newMode, , , status] = fields[i]!.slice(1).split(" ");
     const file = fields[i + 1]!;
-    files.push({ path: file, status: fields[i] as ChangedFile["status"], ...(counts.get(file) ?? { added: null, deleted: null }) });
+    files.push({
+      path: file,
+      status: status as ChangedFile["status"],
+      ...(counts.get(file) ?? { added: null, deleted: null }),
+      oldMode: oldMode!,
+      newMode: newMode!,
+    });
   }
   return files;
 }
