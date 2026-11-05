@@ -122,3 +122,44 @@ test("a strategy never fills from a price the current provider didn't give", asy
   const r = await hooks().settle(task, space, "claude", block({ orders: [order(1)] }));
   expect(r.lines).toEqual(["Refused: buy 1 AAPL — No live price for AAPL right now."]);
 });
+
+test("an investing digest gets the portfolio and the news, for Claude only", async () => {
+  const { saveNews } = await import("../../../src/engine/markets/events");
+  addHolding(db, space.id, { account: "TFSA", symbol: "RKLB", exchange: "US", name: "Rocket Lab", quantity: 10, bookValue: 400, currency: "USD" });
+  saveNews(db, [{ key: "RKLB", headline: "Rocket Lab wins NASA contract", source: "Reuters", url: "https://x/1", at: NOW - 3_600_000 }], NOW);
+  const { saveFx } = await import("../../../src/engine/markets/fx");
+  saveFx(db, [{ date: "2026-11-04", rate: 1.4 }]);
+  const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", purpose: "digest" });
+  const claude = await hooks().context(task, space, "claude");
+  expect(claude).toContain("Portfolio: CA$");
+  expect(claude).toContain("Rocket Lab wins NASA contract");
+  const codex = await hooks().context(task, space, "codex");
+  expect(codex).not.toContain("Portfolio: CA$");
+  expect(codex).not.toContain("RKLB");
+});
+
+test("a thesis draft gets the subject's facts and the no-advice line", async () => {
+  const { saveNotes } = await import("../../../src/engine/markets/research");
+  addToWatchlist(db, space.id, { symbol: "NOW", exchange: "US" });
+  saveNotes(db, space.id, "NOW", { thesis: "Secret thesis", notes: "Secret notes" });
+  const draft = createTask(db, { spaceId: space.id, title: "Draft a thesis for NOW", agent: "claude", purpose: "thesis_draft", subject: "NOW" });
+  const text = await hooks().context(draft, space, "claude");
+  expect(text).toContain("Write plain prose for Nakul. Do not recommend buying or selling.");
+  expect(text).toContain("About NOW:");
+  expect(text).not.toContain("Secret thesis");
+  const check = createTask(db, { spaceId: space.id, title: "Thesis check before NOW earnings on 2026-11-06", agent: "claude", purpose: "thesis_check", subject: "NOW" });
+  expect(await hooks().context(check, space, "claude")).toContain("Secret thesis");
+});
+
+test("settling a digest stores it as a write-up instead of asking for review", async () => {
+  const { latestWriteups } = await import("../../../src/engine/markets/research");
+  const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", purpose: "digest" });
+  const r = await hooks().settle(task, space, "claude", `RKLB rose on a NASA contract.\n\n\`\`\`atrium-markets\n${JSON.stringify({ flags: [{ symbol: "RKLB", note: "Watch the backlog" }] })}\n\`\`\``);
+  expect(r).toEqual({ done: true, lines: ["Flagged RKLB: Watch the backlog"], activity: "Digest saved" });
+  const w = latestWriteups(db, space.id, { kind: "digest" })[0]!;
+  expect(w.body).toBe("RKLB rose on a NASA contract.\n\nAnalysis, not advice.");
+  expect(w).toMatchObject({ key: null, forDate: "2026-11-05", taskId: task.id });
+  const check = createTask(db, { spaceId: space.id, title: "Thesis check before NOW earnings on 2026-11-06", agent: "claude", purpose: "thesis_check", subject: "NOW" });
+  await hooks().settle(check, space, "claude", "Still holds.\n\nAnalysis, not advice.");
+  expect(latestWriteups(db, space.id, { kind: "thesis_check", key: "NOW" })[0]).toMatchObject({ forDate: "2026-11-06", body: "Still holds.\n\nAnalysis, not advice." });
+});

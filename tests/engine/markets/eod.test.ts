@@ -114,3 +114,18 @@ test("after the close: the next 30 days of earnings for US stocks, and one news 
   expect(db.query("SELECT topic FROM approvals WHERE kind = 'alert'").all()).toEqual([{ topic: "earnings" }]);
   expect(db.query("SELECT key, date, source FROM market_earnings").all()).toEqual([{ key: "RKLB", date: "2026-11-10", source: "finnhub" }]);
 });
+
+test("the end-of-day job queues thesis checks for earnings in the next days", async () => {
+  hold("NOW", "US");
+  const { saveNotes } = await import("../../../src/engine/markets/research");
+  saveNotes(db, spaceId, "NOW", { thesis: "Platform wins." });
+  const clock = { now: Date.parse("2026-11-04T21:35:00Z") };
+  const data = {
+    quotes: async () => ({ quotes: [], missing: [] }),
+    news: async () => [],
+    research: () => ({ earnings: async () => [{ key: "NOW", date: "2026-11-06", hour: "amc", epsEstimate: 1 }] }),
+    prepare: async () => {},
+  } as unknown as MarketData;
+  await eodJob(db, { data, tiingo: () => null, now: () => clock.now }).run(clock.now);
+  expect(db.query("SELECT title, purpose, agent FROM tasks").all()).toEqual([{ title: "Thesis check before NOW earnings on 2026-11-06", purpose: "thesis_check", agent: "claude" }]);
+});

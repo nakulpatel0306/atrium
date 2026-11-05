@@ -12,6 +12,7 @@ import type { Job } from "./jobs";
 import type { TiingoProvider } from "./providers/tiingo";
 import { ProviderError } from "./providers/types";
 import { redact } from "./redact";
+import { thesisChecks } from "./research";
 
 // Compared against in every performance view, so their history is kept even when nobody holds them.
 export const BENCHMARKS = ["SPY", "XEQT.TO"];
@@ -95,6 +96,12 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
         evaluateEvents(db, now);
       } catch (e) {
         console.error(`End-of-day earnings dates: ${errorText(e, secrets)}`);
+      }
+
+      try {
+        thesisChecks(db, now);
+      } catch (e) {
+        console.error(`Thesis checks: ${errorText(e, secrets)}`);
       }
 
       try {

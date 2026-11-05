@@ -20,6 +20,7 @@ import { fxJob } from "./engine/markets/fx";
 import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
 import { metaJob } from "./engine/markets/meta";
+import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
@@ -44,6 +45,7 @@ const jobs = createJobs(
     fundsJob(db, { now: marketClock }),
     metaJob(db, { data, now: marketClock }),
     newsJob(db, { data, now: marketClock }),
+    digestJob(db),
   ],
   marketClock,
 );
