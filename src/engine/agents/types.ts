@@ -3,6 +3,8 @@ export interface AgentRunInput {
   cwd: string;
   systemPrompt: string;
   allowedTools: string[];
+  // Review runs must not write; Claude enforces that through allowedTools, Codex through its sandbox.
+  mode: "work" | "review";
   onChunk(text: string): void;
   signal?: AbortSignal;
 }

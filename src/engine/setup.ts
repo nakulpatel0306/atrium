@@ -136,6 +136,7 @@ export async function setupSpace(
       cwd,
       systemPrompt: SYSTEM_PROMPT,
       allowedTools: ["Read", "Glob"],
+      mode: "work",
       onChunk: () => {},
     });
     if (result.status === "error") {

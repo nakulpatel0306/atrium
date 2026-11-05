@@ -8,7 +8,7 @@ import type { AgentRunInput } from "../../src/engine/agents/types";
 const FAKE = join(import.meta.dir, "..", "fixtures", "fake-claude.ts");
 
 function input(chunks: string[] = []): AgentRunInput {
-  return { prompt: "do it", cwd: process.cwd(), systemPrompt: "be nice", allowedTools: ["Read", "Edit"], onChunk: (t) => chunks.push(t) };
+  return { prompt: "do it", cwd: process.cwd(), systemPrompt: "be nice", allowedTools: ["Read", "Edit"], mode: "work", onChunk: (t) => chunks.push(t) };
 }
 
 afterEach(() => {

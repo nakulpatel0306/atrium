@@ -11,6 +11,7 @@ export function config() {
     port: Number(process.env.ATRIUM_PORT ?? 7420),
     host: "127.0.0.1" as const,
     claudeBin: process.env.ATRIUM_CLAUDE_BIN ?? "claude",
+    codexBin: process.env.ATRIUM_CODEX_BIN ?? "codex",
     transcriptCapBytes: 209715200 as const,
     transcriptFileCapBytes: 5242880 as const,
   };

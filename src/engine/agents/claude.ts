@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./types";
 
 const DENY = [
@@ -18,7 +19,6 @@ const DENY = [
   "Read(~/.gnupg/**)",
   "Read(~/.config/gh/**)",
 ];
-const FALLBACK_WAIT_MS = 30 * 60_000;
 
 // Per-run settings: the sandbox must hard-fail rather than quietly run unconfined.
 export function sandboxSettings(cwd: string): string {
@@ -41,22 +41,6 @@ function shortInput(input: Record<string, unknown> | undefined): string {
   const pick = input.file_path ?? input.command ?? input.pattern ?? input.path ?? input.url ?? JSON.stringify(input);
   const s = String(pick).replace(/\s+/g, " ");
   return s.length > 80 ? `${s.slice(0, 77)}...` : s;
-}
-
-// Reset time as an epoch (ms), from either "|<epoch seconds>" or "resets 2:40pm" (next local occurrence).
-function parseRetryAfter(text: string): number {
-  const epoch = text.match(/\|\s*(\d{10})\b/);
-  if (epoch) return Number(epoch[1]) * 1000;
-  const clock = text.match(/resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-  if (clock) {
-    let hour = Number(clock[1]) % 12;
-    if (clock[3]!.toLowerCase() === "pm") hour += 12;
-    const when = new Date();
-    when.setHours(hour, Number(clock[2] ?? 0), 0, 0);
-    if (when.getTime() <= Date.now()) when.setDate(when.getDate() + 1);
-    return when.getTime();
-  }
-  return Date.now() + FALLBACK_WAIT_MS;
 }
 
 // Only the CLI's own words (stderr and the result line) are classified. The agent's text
