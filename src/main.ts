@@ -62,6 +62,7 @@ try {
     setup: (text) => setupSpace(db, claudeAdapter(), text),
     onViewers: (n) => void feed.setViewers(n),
     markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock },
+    repos,
   });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
