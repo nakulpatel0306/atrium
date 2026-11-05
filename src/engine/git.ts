@@ -349,3 +349,17 @@ export async function branchOffDirty(path: string, taskId: string): Promise<stri
   if (res.code !== 0) throw new Error(`Could not create ${branch}: ${res.err.trim()}`);
   return branch;
 }
+
+// A fix commit that landed just after Nakul decided: the fix keeps it on a branch of its own, and the decided
+// branch goes back to `pre` only if it still points at `post` (update-ref compare-and-swap), so nothing anyone
+// else put there is lost. Switching to the new branch first changes no files and frees the decided branch's ref.
+export async function moveLateCommit(path: string, taskId: string, decided: string, pre: string, post: string): Promise<string> {
+  const branch = `atrium/${taskId}`;
+  const valid = await git(path, ["check-ref-format", "--branch", branch]);
+  if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
+  const res = await git(path, ["checkout", "-b", branch, post]);
+  if (res.code !== 0) throw new Error(`Could not create ${branch}: ${res.err.trim()}`);
+  const back = await git(path, ["update-ref", `refs/heads/${decided}`, pre, post]);
+  if (back.code !== 0) throw new Error(`Could not move ${decided} back to the commit you decided on: ${back.err.trim()}`);
+  return branch;
+}

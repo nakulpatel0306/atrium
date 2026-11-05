@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engi
 import { createApproval, getApproval, listPending, resolveApproval } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { listActivity } from "../../src/engine/events";
+import * as gitOps from "../../src/engine/git";
 import { reviewDiff } from "../../src/engine/git";
 import { afterReview, afterWork } from "../../src/engine/handoff";
 import { listMessages } from "../../src/engine/messages";
@@ -454,4 +455,40 @@ test("a fix that fails says so on the approval and in the thread", async () => {
   const note = "The fix didn't finish: Claude crashed. The branch has only the original work; decide on it as is or retry the fix.";
   expect(listPending(db)[0]!.detail).toContain(note);
   expect(listMessages(db, t.id).at(-1)!.body).toContain("Claude crashed.");
+});
+
+test("a fix commit that lands just as you decide is moved off the branch you decided on", async () => {
+  const path = repo();
+  const s = reviewSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Add file", agent: "claude" });
+  const real = gitOps.commitAll;
+  let pre = "";
+  let approvalId = "";
+  // Nakul clicks after the still-wanted check passed and right after the fix's commit moved the branch.
+  const spy = spyOn(gitOps, "commitAll").mockImplementation(async (repoPath, message, baseline) => {
+    if (!message.startsWith("Fix:")) return real(repoPath, message, baseline);
+    pre = git(repoPath, "rev-parse", "HEAD");
+    const res = await real(repoPath, message, baseline);
+    approvalId = listPending(db)[0]!.id;
+    resolveApproval(db, approvalId, "approve");
+    return res;
+  });
+  try {
+    start({ claude: worker().adapter, codex: fake("codex", "Codex", () => ok("Broken.\nVERDICT: changes")).adapter });
+    await waitFor(() => listActivity(db, { spaceId: s.id }).some((r) => r.message.startsWith("Kept the late fix on")));
+  } finally {
+    spy.mockRestore();
+  }
+  const [fix] = children(t.id, "fix");
+  expect(git(path, "rev-parse", `atrium/${t.id}`)).toBe(pre);
+  expect(getApproval(db, approvalId)!.branchHead).toBe(pre);
+  expect(git(path, "show", `atrium/${fix!.id}:fix.txt`)).toBe("hello");
+  expect(git(path, "rev-parse", `atrium/${fix!.id}~1`)).toBe(pre);
+  expect(git(path, "branch", "--show-current")).toBe("main");
+  expect(git(path, "status", "--porcelain")).toBe("");
+  expect(
+    listActivity(db, { spaceId: s.id }).some(
+      (r) => r.message === `Kept the late fix on atrium/${fix!.id}; the branch you decided on is unchanged.`,
+    ),
+  ).toBe(true);
 });

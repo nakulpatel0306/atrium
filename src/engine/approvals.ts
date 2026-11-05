@@ -85,6 +85,12 @@ export function appendApprovalDetail(db: Database, id: string, text: string): vo
   bus.emit({ type: "changed" });
 }
 
+// After a late fix commit is moved off the branch, the recorded head goes back to what Nakul decided on;
+// only if it recorded that late commit.
+export function correctBranchHead(db: Database, id: string, from: string, to: string): void {
+  db.query("UPDATE approvals SET branch_head = ? WHERE id = ? AND branch_head = ?").run(to, id, from);
+}
+
 export function listPending(db: Database): Approval[] {
   // rowid breaks ties between approvals created in the same millisecond
   const rows = db

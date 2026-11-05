@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRegistry, type Registry } from "./agents/registry";
 import type { AgentAdapter, AgentRunResult } from "./agents/types";
-import { createApproval, getApproval } from "./approvals";
+import { correctBranchHead, createApproval, getApproval } from "./approvals";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
 import {
@@ -13,6 +13,7 @@ import {
   commitAll,
   gitSettingsFingerprint,
   headRef,
+  moveLateCommit,
   prepareBranch,
   repoReady,
   returnToBranch,
@@ -364,7 +365,14 @@ export function createRunner(deps: {
       if (repo && (result.status === "ok" || late) && (await settingsUnchanged(repo.path, repo.fingerprint))) {
         try {
           if (late) lateBranch = await branchOffDirty(repo.path, task.id);
-          if (!late || lateBranch) await commitAll(repo.path, task.title, repo.fingerprint);
+          const pre = task.kind === "fix" && !late ? (await headRef(repo.path)).sha : null;
+          const res = !late || lateBranch ? await commitAll(repo.path, task.title, repo.fingerprint) : null;
+          // Nakul can decide between the check above and the commit landing; that commit is moved off too.
+          if (pre && res?.committed && !fixStillWanted(task)) {
+            const post = (await headRef(repo.path)).sha;
+            lateBranch = await moveLateCommit(repo.path, task.id, repo.branch, pre, post);
+            if (task.approvalId) correctBranchHead(db, task.approvalId, post, pre);
+          }
         } catch (e) {
           commitError = (e as Error).message;
         }
@@ -387,10 +395,11 @@ export function createRunner(deps: {
     try {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
+        const problem = commitError ?? leftRepo;
         const message =
-          lateBranch && !commitError
+          lateBranch && !problem
             ? `Kept the late fix on ${lateBranch}; the branch you decided on is unchanged.`
-            : `Discarded the result for ${task.title}: the task was moved while it ran.${commitError ? ` ${commitError}` : ""}`;
+            : `Discarded the result for ${task.title}: the task was moved while it ran.${problem ? ` ${problem}` : ""}`;
         logActivity(db, space.id, "atrium", message);
       } else if (commitError ?? leftRepo) {
         // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
