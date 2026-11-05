@@ -6,6 +6,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   lazy var web = WebController(port: port)
   lazy var window = MainWindow(content: web.webView)
   lazy var client = EngineClient(port: port)
+  lazy var offline = OfflineView(port: port) { [weak self] in self?.client.reconnectNow() }
+  // The web view is the first content; this keeps a reconnect from reloading a dashboard that is already showing.
+  private var showingWeb = true
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.mainMenu = mainMenu()
@@ -13,9 +16,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     web.load()
     NSApp.activate()
     client.onSummary = { s in NSApp.dockTile.badgeLabel = badgeLabel(s.needsYou) }
-    client.onOnline = { online in
-      if !online { NSApp.dockTile.badgeLabel = nil }
+    client.onOnline = { [weak self] online in
+      if online {
+        self?.showWeb()
+      } else {
+        NSApp.dockTile.badgeLabel = nil
+        self?.showOffline()
+      }
     }
+    web.onLoadFailed = { [weak self] in self?.showOffline() }
     client.start()
   }
 
@@ -26,6 +35,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     false
+  }
+
+  private func showOffline() {
+    showingWeb = false
+    window.setContent(offline)
+  }
+
+  private func showWeb() {
+    guard !showingWeb else { return }
+    showingWeb = true
+    window.setContent(web.webView)
+    web.load()
   }
 
   @objc func reload(_ sender: Any?) {

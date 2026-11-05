@@ -5,6 +5,7 @@ import WebKit
 final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
   let webView: WKWebView
   let port: Int
+  var onLoadFailed: (() -> Void)?
 
   init(port: Int) {
     self.port = port
@@ -27,6 +28,10 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
       let quoted = String(data: data, encoding: .utf8)
     else { return }
     webView.evaluateJavaScript("history.pushState(null,\"\",\(quoted));dispatchEvent(new PopStateEvent(\"popstate\"))")
+  }
+
+  func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    onLoadFailed?()
   }
 
   private func decide(_ action: WKNavigationAction) -> LinkDecision {
