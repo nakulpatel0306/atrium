@@ -28,6 +28,8 @@ export type MarketData = {
   status(): Promise<DataStatus>;
   reload(): Promise<void>;
   providerFor(i: Instrument): MarketProvider | null;
+  // Why nothing prices this instrument right now; null when a provider covers it.
+  reasonFor(i: Instrument): string | null;
   secrets(): string[];
 };
 
@@ -240,6 +242,10 @@ export function createMarketData(deps: {
     },
     providerFor(i) {
       return route(i).provider;
+    },
+    reasonFor(i) {
+      const r = route(i);
+      return r.provider ? null : r.reason;
     },
     secrets,
   };

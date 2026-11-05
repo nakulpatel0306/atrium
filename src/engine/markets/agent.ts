@@ -60,7 +60,7 @@ const BLOCK_HELP = [
   "To act, end your reply with one fenced block whose info string is atrium-markets, holding JSON like:",
   "```atrium-markets",
   '{"orders":[{"symbol":"AAPL","side":"buy","qty":5,"reason":"Closed above SMA20 on rising volume"}],',
-  ' "flags":[{"symbol":"SHOP.TO","note":"RSI under 30 after earnings"}],',
+  ' "flags":[{"symbol":"MSFT","note":"RSI under 30 after earnings"}],',
   ' "backtests":[{"symbol":"AAPL","template":{"kind":"sma_cross","fast":20,"slow":50},"range":"1Y"}],',
   ' "strategies":[{"name":"Momentum","rules":"…","symbols":["AAPL"],"cadence":"open","maxPositionValue":2000,"maxTradesPerDay":3}]}',
   "```",
@@ -87,8 +87,10 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     const watch = listWatchlist(db, space.id);
     const holdings = listHoldings(db, space.id);
     const strategy = task.strategyId ? getStrategy(db, task.strategyId) : null;
+    // Holdings tickers are account data too: only Claude's prompt includes them, even in its price and news lines.
+    const own = agent === "claude" ? holdings : [];
     const instruments = new Map<string, Instrument>();
-    for (const i of [...watch, ...holdings]) instruments.set(instrumentKey(i), { symbol: i.symbol, exchange: i.exchange });
+    for (const i of [...watch, ...own]) instruments.set(instrumentKey(i), { symbol: i.symbol, exchange: i.exchange });
     for (const k of strategy?.symbols ?? []) {
       const i = parseInstrumentKey(k);
       if (i) instruments.set(k, i);

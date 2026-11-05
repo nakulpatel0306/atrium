@@ -75,6 +75,7 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
     }),
     reload: async () => {},
     providerFor: (i) => (i.exchange === "US" ? streamer : i.exchange === "TSX" ? av : null),
+    reasonFor: () => null,
     secrets: () => [],
   };
   return { data, quoteCalls, barCalls, streams };

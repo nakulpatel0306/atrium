@@ -52,6 +52,7 @@ test("context: public prices for everyone, account details only for Claude", asy
   expect(codex).toContain("Market data as of 10:00 AM ET");
   expect(codex).toMatch(/AAPL \$\d+\.\d\d/);
   expect(codex).not.toContain("SecretTFSA");
+  expect(codex).not.toContain("SHOP");
   expect(codex).not.toContain("4,321.50");
   expect(codex).not.toContain("Paper account");
   const claude = await hooks().context(task, space, "claude");

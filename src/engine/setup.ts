@@ -108,8 +108,8 @@ export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot(
     name,
     kind,
     goal,
-    // Private is the safe side: only an explicit false makes a space non-private.
-    private: obj.private !== false,
+    // Private is the safe side: only an explicit false makes a space non-private, and markets spaces always are.
+    private: obj.private !== false || kind === "markets",
     tasks: tasks.map((t) => {
       if (!t || typeof t.title !== "string" || !t.title) throw new BadPlan("Every task needs a title.");
       if (t.weight !== "heavy" && t.weight !== "light") throw new BadPlan('Task weight must be "heavy" or "light".');

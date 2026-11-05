@@ -12,9 +12,11 @@ import type { setupSpace } from "../engine/setup";
 import { SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
-import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
+import { createSpace, getSpace, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { snapshot } from "../engine/state";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
+import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
+import { marketsRoute, type MarketsDeps } from "./markets";
 
 type Deps = {
   db: Database;
@@ -23,31 +25,9 @@ type Deps = {
   port?: number;
   // How many dashboard tabs are visible; the market feed only streams while someone is looking.
   onViewers?: (n: number) => void;
+  markets?: MarketsDeps;
 };
 
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-const json = (body: unknown, status = 200) => Response.json(body, { status });
-const fail = (status: number, message: string) => json({ error: message }, status);
-
-const str = (v: unknown, field: string): string => {
-  if (typeof v !== "string" || !v.trim()) throw new HttpError(400, `${field} is required.`);
-  return v;
-};
-const opt = <T>(v: unknown, ok: (x: unknown) => x is T, field: string): T | undefined => {
-  if (v === undefined) return undefined;
-  if (!ok(v)) throw new HttpError(400, `${field} is not valid.`);
-  return v;
-};
-const isBool = (x: unknown): x is boolean => typeof x === "boolean";
-const isString = (x: unknown): x is string => typeof x === "string";
 
 const AGENTS = ["auto", "claude", "codex", "gemini"];
 const agentField = (v: unknown): string | undefined => {
@@ -71,23 +51,6 @@ export function startServer(deps: Deps): Server<undefined> {
     return null;
   };
 
-  const readBody = async (req: Request): Promise<Record<string, unknown>> => {
-    if (!req.body) return {};
-    if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
-      throw new HttpError(415, "Send the request body as application/json.");
-    }
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      throw new HttpError(400, "The request body isn't valid JSON.");
-    }
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      throw new HttpError(400, "The request body must be a JSON object.");
-    }
-    return body as Record<string, unknown>;
-  };
-
   const route = async (req: Request, url: URL): Promise<Response> => {
     const { pathname } = url;
     const method = req.method;
@@ -99,6 +62,7 @@ export function startServer(deps: Deps): Server<undefined> {
       const b = await readBody(req);
       const kind = b.kind;
       if (kind !== "repo" && kind !== "general" && kind !== "markets") throw new HttpError(400, "kind must be repo, general or markets.");
+      if (kind === "markets" && b.private === false) throw new HttpError(400, MARKETS_PRIVATE);
       return json(
         createSpace(db, {
           name: str(b.name, "name"),
@@ -113,8 +77,10 @@ export function startServer(deps: Deps): Server<undefined> {
     const spaceM = hit("PATCH", /^\/api\/spaces\/([^/]+)$/);
     if (spaceM) {
       const id = spaceM[1]!;
-      if (!getSpace(db, id)) throw new HttpError(404, "No such space.");
+      const current = getSpace(db, id);
+      if (!current) throw new HttpError(404, "No such space.");
       const b = await readBody(req);
+      if (current.kind === "markets" && b.private === false) throw new HttpError(400, MARKETS_PRIVATE);
       const status = b.status;
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
@@ -323,6 +289,11 @@ export function startServer(deps: Deps): Server<undefined> {
       return new Response(file, { headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
     }
 
+    if (deps.markets) {
+      const res = await marketsRoute(db, deps.markets, req, url);
+      if (res) return res;
+    }
+
     throw new HttpError(404, "Not found.");
   };
 
@@ -341,7 +312,7 @@ export function startServer(deps: Deps): Server<undefined> {
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index },
+    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";

@@ -7,6 +7,15 @@ import { openDb } from "./engine/db";
 import { trimLog } from "./engine/logfile";
 import { keepAwake, powerSource } from "./engine/power";
 import { createRunner, recoverOnBoot } from "./engine/runner";
+import { onApprovalResolved } from "./engine/approvals";
+import { createMarketsHooks } from "./engine/markets/agent";
+import { evaluateQuotes } from "./engine/markets/alerts";
+import { marketNow } from "./engine/markets/calendar";
+import { createMarketData } from "./engine/markets/data";
+import { createFeed } from "./engine/markets/feed";
+import { createKeychain } from "./engine/markets/keychain";
+import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
+import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
 
@@ -16,12 +25,31 @@ trimLog(join(config().home, "engine.log"), 1024 * 1024);
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();
 const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: geminiAdapter() };
-const runner = createRunner({ db, adapters, power: powerSource, keepAwake });
+// Market time: the real clock, or the demo clock ATRIUM_MARKET_NOW shifts while the provider is Demo.
+const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "alpaca");
+const keychain = createKeychain();
+const data = createMarketData({ db, keychain, now: marketClock });
+const runner = createRunner({ db, adapters, power: powerSource, keepAwake, markets: createMarketsHooks(db, { data, now: marketClock }) });
+const feed = createFeed({
+  db,
+  data,
+  now: marketClock,
+  onQuotes: (quotes) => evaluateQuotes(db, quotes, marketClock()),
+  strategyActive: () => anyStrategyActive(db),
+  onTick: (now) => enqueueDueStrategies(db, now, () => runner.kick()),
+});
+onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
 let server: ReturnType<typeof startServer>;
 try {
-  server = startServer({ db, runner, setup: (text) => setupSpace(db, claudeAdapter(), text) });
+  server = startServer({
+    db,
+    runner,
+    setup: (text) => setupSpace(db, claudeAdapter(), text),
+    onViewers: (n) => void feed.setViewers(n),
+    markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock },
+  });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
   console.error(`Atrium is already running at ${url}`);
@@ -30,6 +58,7 @@ try {
 
 await recoverOnBoot(db);
 runner.start();
+void feed.start();
 console.log(`Atrium running at ${url}`);
 
 let stopping = false;
@@ -40,6 +69,7 @@ const shutdown = async () => {
   console.log("Atrium stopping");
   let code = 0;
   try {
+    feed.stop();
     await runner.stop();
     keepAwake.stop();
     // Open dashboard sockets would otherwise keep shutdown waiting forever.
