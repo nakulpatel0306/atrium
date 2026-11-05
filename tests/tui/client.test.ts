@@ -137,3 +137,15 @@ test("close stops reconnecting", async () => {
   await settle(200);
   expect(attempts.length).toBe(before);
 });
+
+test("strings from the engine arrive without escape sequences", async () => {
+  createSpace(db, { name: "job\x1b]52;c;Zm9v\x07 hunt\x9b31m", kind: "general", goal: "g\x1b[2J" });
+  await until(() => client.state()?.spaces.length === 1);
+  const space = client.state()!.spaces[0]!;
+  expect(space.name).toBe("job hunt");
+  expect(space.goal).toBe("g");
+  client.output("run_y");
+  bus.emit({ type: "run-output", runId: "run_y", taskId: "t", chunk: "ok\x1b]0;title\x07!" });
+  await until(() => client.output("run_y").includes("ok"));
+  expect(client.output("run_y")).toBe("ok!\n");
+});

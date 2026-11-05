@@ -2,13 +2,18 @@ import { Box, type Key, Text, useApp, useInput, usePaste, useWindowSize } from "
 import { useEffect, useRef, useState } from "react";
 import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
-import { useEngineState, useOnline, useTick } from "../hooks";
+import { activityDetail, approvalDetail, type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../detail";
+import { useEngineState, useMessages, useOnline, useReviewers, useRunOutput, useTick } from "../hooks";
 import { commandsFor, hints, type Intent } from "../keys";
 import { layout } from "../layout";
-import { deriveView } from "../select";
+import { reviewTarget } from "../../dashboard/summary";
+import { deriveView, type View } from "../select";
+import { clean, wrapLines } from "../text";
 import { color } from "../theme";
 import { type Flash, initialUi, reduce, type Rows, type Ui } from "../ui";
 import { ActivityPane } from "./ActivityPane";
+import { DetailPane } from "./DetailPane";
+import { LivePane } from "./LivePane";
 import { Header } from "./Header";
 import { NeedsPane } from "./NeedsPane";
 import { Pane } from "./Pane";
@@ -20,6 +25,20 @@ const NO_KEY = {} as Key;
 const inPrompt = (u: Ui) => u.overlay?.kind === "prompt";
 
 type Size = { columns: number; rows: number };
+
+// The agent thread a subject needs: a work task's own, or an approval's once its review has finished.
+function threadOf(view: View): string | null {
+  if (view.subject === "task") return view.task?.kind === "work" ? view.task.id : null;
+  if (view.subject === "approval" && view.approval) return reviewTarget(view.approval, view.state);
+  return null;
+}
+
+function detailOf(view: View, messages: ReturnType<typeof useMessages>, reviewers: ReturnType<typeof useReviewers>): DetailLine[] {
+  if (view.subject === "task") return taskDetail(view, messages);
+  if (view.subject === "approval") return approvalDetail(view, messages);
+  if (view.subject === "activity") return activityDetail(view);
+  return spaceDetail(view, reviewers);
+}
 
 export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const win = useWindowSize();
@@ -45,7 +64,18 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   useTick(15_000, state?.tasks.some((t) => t.status === "running") ?? false);
 
   const lay = layout(cols, height, ui.focus, ui.lastLeft);
-  const rows: Rows = "tooSmall" in lay ? { detail: 1, live: 1 } : { detail: lay.detail - 2, live: lay.live - 3 };
+  // Detail and Live keep a column of padding inside each border, for prose rather than a list.
+  const inner = "tooSmall" in lay ? 1 : lay.right - 4;
+  const view = state ? deriveView(state, ui) : null;
+  const messages = useMessages(client, view ? threadOf(view) : null);
+  const reviewers = useReviewers(client, view?.subject === "space" && view.space?.kind === "repo" ? view.space : null);
+  const output = useRunOutput(client, view?.live?.run.id ?? null);
+  const detailLines = view ? detailOf(view, messages, reviewers).flatMap((l) => wrapStyled(l, inner)) : [];
+  const liveLines = output ? wrapLines(clean(output).replace(/\n$/, ""), inner) : [];
+  const rows: Rows =
+    "tooSmall" in lay
+      ? { detail: 1, live: 1 }
+      : { detail: lay.detail - 2, live: lay.live - 3, detailLines: detailLines.length, liveLines: liveLines.length };
 
   const commit = (next: Ui) => {
     uiRef.current = next;
@@ -116,7 +146,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     );
   }
 
-  const view = deriveView(state, ui);
+  if (!view) return null;
   const focused = (p: Ui["focus"]) => ui.focus === p;
   const filterTag = (p: keyof Ui["filters"]) => (ui.filters[p] ? ` · /${ui.filters[p]}` : "");
   const list = (p: keyof Ui["filters"]) => ({ view, ui, cols: lay.left - 2, rows: lay.heights[p] - 2, focused: focused(p) });
@@ -143,8 +173,15 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
           </Pane>
         </Box>
         <Box flexDirection="column" width={lay.right} flexShrink={0}>
-          <Pane n={0} title={`Detail${detailTitle ? ` · ${detailTitle}` : ""}`} focused={focused("detail")} width={lay.right} height={lay.detail} />
-          <Pane n={5} title="Live" focused={focused("live")} width={lay.right} height={lay.live} />
+          <DetailPane
+            title={`Detail${detailTitle ? ` · ${detailTitle}` : ""}`}
+            lines={detailLines}
+            scroll={ui.detailScroll}
+            focused={focused("detail")}
+            width={lay.right}
+            height={lay.detail}
+          />
+          <LivePane view={view} lines={liveLines} scroll={ui.liveScroll} focused={focused("live")} width={lay.right} height={lay.live} />
         </Box>
       </Box>
       <StatusBar state={view.state} cols={cols} hints={hints(ui, view)} flash={ui.flash} online={online} />

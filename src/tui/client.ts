@@ -2,6 +2,7 @@ import type { PostResult } from "../dashboard/api";
 import { config } from "../engine/config";
 import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
+import { clean, scrub } from "./text";
 
 export type EngineClient = {
   readonly base: string;
@@ -68,7 +69,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     try {
       const res = await fetch(`${base}/api/state`);
       if (res.ok && !closed) {
-        state = (await res.json()) as State;
+        state = scrub((await res.json()) as State);
         notify();
       }
     } catch {
@@ -99,7 +100,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
         void refresh();
       } else if (msg.type === "run-output") {
         // Chunks are whole lines without their newline, the same as the transcript stores them.
-        outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${msg.chunk}\n`.slice(-OUTPUT_TAIL));
+        outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${clean(msg.chunk)}\n`.slice(-OUTPUT_TAIL));
         batch ??= setTimeout(() => {
           batch = null;
           notify();
@@ -135,14 +136,14 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     const res = await transcript(runId);
     if (!res.ok || closed) return;
     // Chunks that arrived during the fetch were written to the transcript before they were sent.
-    outputs.set(runId, res.text.slice(-OUTPUT_TAIL));
+    outputs.set(runId, clean(res.text).slice(-OUTPUT_TAIL));
     notify();
   }
 
   async function read<T>(path: string): Promise<T | null> {
     try {
       const res = await fetch(base + path);
-      return res.ok ? ((await res.json()) as T) : null;
+      return res.ok ? scrub((await res.json()) as T) : null;
     } catch {
       return null;
     }
@@ -155,7 +156,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
         headers: { ...origin, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-      const data = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
+      const data = scrub((await res.json().catch(() => null)) as (T & { error?: string }) | null);
       if (!res.ok) return { ok: false, error: data?.error ?? engineError(res.status) };
       return { ok: true, data: data as T };
     } catch {

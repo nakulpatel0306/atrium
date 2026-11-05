@@ -1,5 +1,5 @@
 import { Text } from "ink";
-import { truncate, width } from "../text";
+import { clean, oneLine, truncate, width } from "../text";
 import type { AnsiColor } from "../theme";
 
 export type Segment = { text: string; color?: AnsiColor; bold?: boolean; dim?: boolean };
@@ -11,7 +11,9 @@ export function fit(segments: Segment[], cols: number): Segment[] {
   for (const s of segments) {
     if (used >= cols) break;
     const room = cols - used;
-    const text = width(s.text) > room ? truncate(s.text, room) : s.text;
+    // Defense in depth: the client already scrubs engine text, but a row must never carry a control byte.
+    const plain = oneLine(s.text);
+    const text = width(plain) > room ? truncate(plain, room) : plain;
     out.push({ ...s, text });
     used += width(text);
   }
@@ -37,7 +39,7 @@ export function Row({ segments, cols, selected }: { segments: Segment[]; cols: n
 export function Empty({ text }: { text: string }) {
   return (
     <Text color="gray" wrap="wrap">
-      {text}
+      {clean(text)}
     </Text>
   );
 }

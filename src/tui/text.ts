@@ -12,6 +12,19 @@ export function clean(text: string): string {
     .replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
+// Every string the engine sends may hold agent-written text, so the whole payload is cleaned once on arrival.
+export function scrub<T>(value: T): T {
+  if (typeof value === "string") return clean(value) as T;
+  if (Array.isArray(value)) return value.map(scrub) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrub(v)])) as T;
+  }
+  return value;
+}
+
+// One terminal line: cleaned, with any newlines folded into spaces.
+export const oneLine = (text: string) => clean(text).replace(/\n+/g, " ");
+
 export const width = (s: string) => Bun.stringWidth(s);
 
 const graphemes = (s: string) => Array.from(segmenter.segment(s), (g) => g.segment);
@@ -67,6 +80,6 @@ export function tail(lines: string[], height: number, scroll: number | null): st
 
 // Ink can't put a title in a border, so the top edge is drawn as text.
 export function borderTop(label: string, cols: number): string {
-  const shown = truncate(label, Math.max(0, cols - 4));
+  const shown = truncate(oneLine(label), Math.max(0, cols - 4));
   return `╭─${shown}${"─".repeat(Math.max(0, cols - 3 - width(shown)))}╮`;
 }

@@ -100,3 +100,20 @@ test("each key in a chunk sees the focus the one before it set", async () => {
   await app.type("3a");
   await app.frame((f) => f.includes("Not wired yet."));
 });
+
+test("engine text can't send escape sequences to the terminal", async () => {
+  const evil = "\x1b]52;c;Zm9v\x07\x1b[2J\x9b31m";
+  const state = makeState();
+  state.tasks[1] = { ...state.tasks[1]!, title: `Add the status bar${evil}` };
+  state.activity[0] = { ...state.activity[0]!, message: `finished${evil} it` };
+  state.spaces[1] = { ...state.spaces[1]!, name: `job${evil} hunt` };
+  const app = openApp(fakeClient(state));
+  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.type("2");
+  await app.frame((f) => f.includes("[0] Detail · Add the status bar"));
+  const out = app.frames.join("");
+  expect(out).not.toContain("\x1b]");
+  expect(out).not.toContain("\x1b[2J");
+  expect(out).not.toContain("\x9b");
+  expect(out).toContain("finished it");
+});

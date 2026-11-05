@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { State } from "../../engine/state";
-import { truncate, width } from "../text";
+import { oneLine, truncate, width } from "../text";
 import { color, windowGauge } from "../theme";
 import type { Flash } from "../ui";
 
@@ -19,7 +19,7 @@ export function StatusBar({ state, cols, hints, flash, online }: Props) {
   const offline = online ? "" : "offline · reconnecting · ";
   const right = `${offline}${gauge.text} · ${tail} `;
   const leftCols = Math.max(0, cols - width(right) - 1);
-  const left = truncate(` ${flash ? flash.text : hints}`, leftCols);
+  const left = truncate(oneLine(` ${flash ? flash.text : hints}`), leftCols);
   return (
     <Box width={cols}>
       <Box width={leftCols + 1}>
