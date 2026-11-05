@@ -1874,3 +1874,65 @@ code {
   color: var(--text);
   margin-right: 2px;
 }
+.repo-form {
+  display: grid;
+  grid-template-columns: minmax(0, 520px);
+  gap: 10px;
+  padding-top: 8px;
+}
+.repo-form label,
+.repo-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--dim);
+  margin: 0;
+}
+.repo-form fieldset {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  border: 0;
+  padding: 0;
+}
+.repo-form legend {
+  float: left;
+  margin-right: 4px;
+}
+.repo-form label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text);
+}
+.repo-form label.inline input {
+  accent-color: var(--accent);
+}
+.repo-form .mk-input {
+  font-size: 13px;
+  padding: 5px 8px;
+}
+.repo-form .mk-input[readonly] {
+  color: var(--dim);
+}
+.repo-form p {
+  margin: 0;
+}
+.item .t .err {
+  color: var(--red);
+}
+.storage-row .num {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.storage-row .faint {
+  flex: none;
+  font-size: 12px;
+}
+.detail .reasons {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+}

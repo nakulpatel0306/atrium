@@ -2,6 +2,7 @@ import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "../config";
+import { DESCRIPTION_COPY, descriptionProblem, NAME_COPY, nameProblem } from "./rules";
 import { TEMPLATE_LABELS, type TemplateId } from "./templates";
 
 export class BadDraft extends Error {
@@ -13,17 +14,15 @@ export class BadDraft extends Error {
 
 export type ProjectDraft = { name: string; description: string; visibility: "private" | "public"; template: TemplateId };
 
-const NAME_COPY = 'Repo names use letters, numbers, ".", "-" and "_", start with a letter or number, and are at most 100 characters.';
-const DESCRIPTION_COPY = "Keep the description to one line under 350 characters.";
 
 export const tildePath = (p: string): string => {
   const home = homedir();
   return p === home || p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p;
 };
 
-// The name becomes a gh argument, a folder and part of a URL, so only GitHub's own safe subset passes.
 export function validateRepoName(name: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name) || name.includes("..") || /\.git$/i.test(name)) throw new BadDraft(NAME_COPY);
+  const problem = nameProblem(name);
+  if (problem) throw new BadDraft(problem);
   return name;
 }
 
@@ -40,9 +39,9 @@ export function slugifyName(text: string): string {
 }
 
 export function validateDescription(text: string): string {
-  const t = text.trim();
-  if (t.length > 350 || /[\u0000-\u001f\u007f]/.test(t)) throw new BadDraft(DESCRIPTION_COPY);
-  return t;
+  const problem = descriptionProblem(text);
+  if (problem) throw new BadDraft(problem);
+  return text.trim();
 }
 
 export function validateGithubSlug(slug: string): { owner: string; name: string } {

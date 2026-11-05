@@ -94,4 +94,5 @@ out({
   message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/repo/README.md" } }] },
 });
 out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "# fixture" }] } });
-result("All done.");
+// FAKE_CLAUDE_TEXT stands in for the reply, so a dev engine can drive the setup agent.
+result(process.env.FAKE_CLAUDE_TEXT ?? "All done.");

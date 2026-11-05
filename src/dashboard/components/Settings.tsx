@@ -5,6 +5,7 @@ import { del, post, put } from "../api";
 import { absolute, money } from "../format";
 import { useMarketDataSettings } from "../markets";
 import { Freshness } from "./markets/Freshness";
+import { Storage } from "./Storage";
 
 const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }[] = [
   { id: "alpaca", label: "Alpaca", covers: "US stocks and ETFs. Real-time prices from IEX (a few percent of all trading) and full daily history for charts. Free account." },
@@ -179,6 +180,7 @@ export function Settings() {
           ))}
         </>
       )}
+      <Storage />
     </div>
   );
 }

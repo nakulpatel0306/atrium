@@ -1,9 +1,9 @@
 import { lstatSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
-export type TemplateId = "bun-ts" | "empty";
+import type { TemplateId } from "./rules";
 
-export const TEMPLATE_LABELS: Record<TemplateId, string> = { "bun-ts": "bun + TypeScript", empty: "Empty" };
+export { TEMPLATE_LABELS, type TemplateId } from "./rules";
 
 const GITIGNORE = ["node_modules/", "dist/", ".cache/", "coverage/", ".env*", "*.log", ".DS_Store", ""].join("\n");
 

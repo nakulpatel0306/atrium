@@ -4,7 +4,9 @@ import { post, type State, useMessages } from "../api";
 import { absolute, firstLine, relative } from "../format";
 import { navigate } from "../route";
 import { reviewLine, reviewTarget } from "../summary";
+import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
+import { RemovalRow } from "./RepoRemoval";
 import { AdviceTag } from "./markets/AdviceTag";
 
 type Approval = State["approvals"][number];
@@ -52,7 +54,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
     <div className="entry">
       <div className="item">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
-        <span className="who">{space?.name ?? "Unknown space"}</span>
+        <span className="who">{space?.name ?? (approval.spaceId === null ? "Atrium" : "Unknown space")}</span>
         <span className="t">
           {approval.title}
           {approval.detail && <span>{firstLine(approval.detail)}</span>}
@@ -155,9 +157,12 @@ export function NeedsYou({ state }: { state: State }) {
             {state.proposals.map((p) => (
               <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
             ))}
-            {state.approvals.map((a) => (
-              <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />
-            ))}
+            {state.approvals.map((a) => {
+              const action = state.repoActions.find((r) => r.approvalId === a.id);
+              if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
+              if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
+              return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
+            })}
           </>
         )}
       </div>
