@@ -4,11 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRegistry, type Registry } from "./agents/registry";
 import type { AgentAdapter, AgentRunResult } from "./agents/types";
-import { createApproval } from "./approvals";
+import { createApproval, getApproval } from "./approvals";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
-import { branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, repoReady, returnToBranch, reviewDiff } from "./git";
-import { afterFix, afterReview, afterWork } from "./handoff";
+import {
+  branchOffDirty,
+  branchSummary,
+  commitAll,
+  gitSettingsFingerprint,
+  headRef,
+  prepareBranch,
+  repoReady,
+  returnToBranch,
+  reviewDiff,
+} from "./git";
+import { afterFix, afterReview, afterWork, fixFailed } from "./handoff";
 import { newId } from "./ids";
 import { canRun, type PowerSource } from "./power";
 import { getSetting, setSetting } from "./settings";
@@ -65,7 +75,7 @@ export function createRunner(deps: {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
   const maxConcurrent = deps.maxConcurrent ?? 1;
-  const active = new Map<string, { done: Promise<void>; controller: AbortController }>();
+  const active = new Map<string, { taskId: string; done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
   // Consecutive usage-limit outcomes per task, so a misread limit can't requeue a task forever.
   const limitHits = new Map<string, number>();
@@ -160,6 +170,10 @@ export function createRunner(deps: {
   }
 
   async function tick() {
+    // A run whose task was taken out from under it (Nakul decided on its parent) has nothing left to do.
+    for (const run of active.values()) {
+      if (getTask(db, run.taskId)?.status !== "running") run.controller.abort();
+    }
     const source = await readPower();
     if (!running) return;
     setSetting(db, "power.source", source);
@@ -194,6 +208,8 @@ export function createRunner(deps: {
   function block(task: Task, reason: string) {
     setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
     logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`);
+    if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: reason });
+    if (task.kind === "fix") fixFailed(db, task, reason);
   }
 
   // Puts the repo back on the starting branch; returns a block reason if it can't.
@@ -296,7 +312,7 @@ export function createRunner(deps: {
         activeSpaces.delete(space.id);
         kick();
       });
-    active.set(started.runId, { done, controller });
+    active.set(started.runId, { taskId: task.id, done, controller });
   }
 
   async function execute(r: {
@@ -338,13 +354,17 @@ export function createRunner(deps: {
 
     let leftRepo: string | null = null;
     let commitError: string | null = null;
-    let committed = false;
+    let lateBranch: string | null = null;
     try {
+      // A fix still running after Nakul decided must not add to the branch he decided on; whatever it
+      // did, finished or stopped, is kept on a branch of its own so the repo goes back clean.
+      const late = task.kind === "fix" && !fixStillWanted(task);
       // Before settleRepo switches branches. Skipped when git settings changed: staging can run
       // filter drivers from config the agent planted, and settleRepo reports the tampering.
-      if (repo && result.status === "ok" && (await settingsUnchanged(repo.path, repo.fingerprint))) {
+      if (repo && (result.status === "ok" || late) && (await settingsUnchanged(repo.path, repo.fingerprint))) {
         try {
-          committed = (await commitAll(repo.path, task.title, repo.fingerprint)).committed;
+          if (late) lateBranch = await branchOffDirty(repo.path, task.id);
+          if (!late || lateBranch) await commitAll(repo.path, task.title, repo.fingerprint);
         } catch (e) {
           commitError = (e as Error).message;
         }
@@ -367,9 +387,11 @@ export function createRunner(deps: {
     try {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
-        // A fix cancelled mid-run still commits, so the repo can go back to Nakul's branch clean.
-        const kept = committed && repo ? ` Its changes are committed on ${repo.branch}.` : "";
-        logActivity(db, space.id, "atrium", `Discarded the result for ${task.title}: the task was moved while it ran.${kept}`);
+        const message =
+          lateBranch && !commitError
+            ? `Kept the late fix on ${lateBranch}; the branch you decided on is unchanged.`
+            : `Discarded the result for ${task.title}: the task was moved while it ran.${commitError ? ` ${commitError}` : ""}`;
+        logActivity(db, space.id, "atrium", message);
       } else if (commitError ?? leftRepo) {
         // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
         block(task, (commitError ?? leftRepo)!);
@@ -414,11 +436,15 @@ export function createRunner(deps: {
         }
       } else {
         block(task, result.message);
-        if (task.kind === "review") afterReview(db, task, result);
       }
     } finally {
       enforceTranscriptCap();
     }
+  }
+
+  function fixStillWanted(task: Task): boolean {
+    if (getTask(db, task.id)?.status !== "running" || !task.approvalId) return false;
+    return getApproval(db, task.approvalId)?.status === "pending";
   }
 
   // A review is extra: if it can't be set up, the work still waits for Nakul as usual.
@@ -426,8 +452,7 @@ export function createRunner(deps: {
     const space = getSpace(db, task.spaceId);
     if (!space?.reviewBy) return;
     try {
-      const { diff, files } = await reviewDiff(repo.path, repo.start, repo.branch);
-      afterWork(db, getTask(db, task.id)!, space, approvalId, diff, files);
+      afterWork(db, getTask(db, task.id)!, space, approvalId, await reviewDiff(repo.path, repo.start, repo.branch));
     } catch (e) {
       logActivity(db, space.id, "atrium", `Couldn't send ${task.title} for review: ${(e as Error).message}. Check it yourself as usual.`);
     }

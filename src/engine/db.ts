@@ -105,5 +105,9 @@ function migrate(db: Database) {
   if (!has("tasks", "parent_task_id")) db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id)");
   // Which agent reviews this space's finished work; NULL means no automatic review.
   if (!has("spaces", "review_by")) db.exec("ALTER TABLE spaces ADD COLUMN review_by TEXT");
+  // The approval a review or fix reports to, so a late one can't land on a newer approval.
+  if (!has("tasks", "approval_id")) db.exec("ALTER TABLE tasks ADD COLUMN approval_id TEXT REFERENCES approvals(id)");
+  // The task branch's commit when Nakul decided, so what he approved stays checkable.
+  if (!has("approvals", "branch_head")) db.exec("ALTER TABLE approvals ADD COLUMN branch_head TEXT");
 }
 

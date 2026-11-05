@@ -1,7 +1,9 @@
 import type { Database } from "bun:sqlite";
 import { bus, logActivity } from "./events";
 import { newId } from "./ids";
-import { appendTaskDetail, listTasks, setTaskStatus } from "./tasks";
+import { branchHeadSync } from "./git";
+import { getSpace } from "./spaces";
+import { appendTaskDetail, getTask, listTasks, setTaskStatus } from "./tasks";
 
 export const ALWAYS_ASK = ["merge_main", "deploy", "first_contact", "delete", "spend", "secrets"] as const;
 
@@ -14,6 +16,8 @@ export type Approval = {
   detail: string;
   status: "pending" | "approved" | "rejected";
   note: string | null;
+  // The task branch's commit at the moment Nakul decided; null for non-repo work.
+  branchHead: string | null;
   createdAt: number;
   resolvedAt: number | null;
 };
@@ -27,6 +31,7 @@ type ApprovalRow = {
   detail: string;
   status: Approval["status"];
   note: string | null;
+  branch_head: string | null;
   created_at: number;
   resolved_at: number | null;
 };
@@ -47,11 +52,12 @@ const toApproval = (r: ApprovalRow): Approval => ({
   detail: r.detail,
   status: r.status,
   note: r.note,
+  branchHead: r.branch_head,
   createdAt: r.created_at,
   resolvedAt: r.resolved_at,
 });
 
-const getApproval = (db: Database, id: string): Approval | null => {
+export const getApproval = (db: Database, id: string): Approval | null => {
   const row = db.query("SELECT * FROM approvals WHERE id = ?").get(id) as ApprovalRow | null;
   return row ? toApproval(row) : null;
 };
@@ -73,16 +79,6 @@ export function createApproval(
   return getApproval(db, id)!;
 }
 
-// The open review approval for a task, if Nakul hasn't decided on it yet.
-export function pendingReviewFor(db: Database, taskId: string): Approval | null {
-  const row = db
-    .query(
-      "SELECT * FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'pending' ORDER BY created_at DESC, rowid DESC LIMIT 1",
-    )
-    .get(taskId) as ApprovalRow | null;
-  return row ? toApproval(row) : null;
-}
-
 // Only a pending approval grows: once Nakul has decided, what he decided on stays as it was.
 export function appendApprovalDetail(db: Database, id: string, text: string): void {
   db.query("UPDATE approvals SET detail = detail || ? WHERE id = ? AND status = 'pending'").run(text, id);
@@ -97,11 +93,18 @@ export function listPending(db: Database): Approval[] {
   return rows.map(toApproval);
 }
 
+function taskBranchHead(db: Database, taskId: string | null): string | null {
+  const task = taskId ? getTask(db, taskId) : null;
+  const path = task?.branch ? getSpace(db, task.spaceId)?.repoPath : null;
+  return path && task?.branch ? branchHeadSync(path, task.branch) : null;
+}
+
 export function resolveApproval(db: Database, id: string, decision: "approve" | "reject", note?: string): Approval {
+  const head = taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
   const resolve = db.transaction((): Approval => {
     const res = db
-      .query("UPDATE approvals SET status = ?, note = ?, resolved_at = ? WHERE id = ? AND status = 'pending'")
-      .run(decision === "approve" ? "approved" : "rejected", note ?? null, Date.now(), id);
+      .query("UPDATE approvals SET status = ?, note = ?, branch_head = ?, resolved_at = ? WHERE id = ? AND status = 'pending'")
+      .run(decision === "approve" ? "approved" : "rejected", note ?? null, head, Date.now(), id);
     if (res.changes === 0) {
       if (!getApproval(db, id)) throw new Error(`No approval with id ${id}`);
       throw new AlreadyResolved();

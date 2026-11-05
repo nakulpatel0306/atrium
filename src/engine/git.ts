@@ -297,7 +297,9 @@ const touchesEnv = (header: string) => header.split(/[\s"/]+/).some((seg) => /^\
 
 // The branch's changes for a reviewer who never sees the repo. .env paths are left out twice over: by
 // pathspec, and by dropping any file section whose header still names one (e.g. a `.env.d/` folder).
-export async function reviewDiff(path: string, base: string, branch: string): Promise<{ diff: string; files: number }> {
+export type ReviewDiff = { diff: string; files: number; truncated: boolean };
+
+export async function reviewDiff(path: string, base: string, branch: string): Promise<ReviewDiff> {
   const res = await git(path, [
     "-c", "core.quotePath=false",
     // No external diff programs or textconv filters: repo config must not run code while the engine reads a diff.
@@ -309,9 +311,41 @@ export async function reviewDiff(path: string, base: string, branch: string): Pr
   if (res.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${res.err.trim()}`);
   const sections = res.out.split(/^(?=diff --git )/m).filter((s) => s.startsWith("diff --git ") && !touchesEnv(s.split("\n")[0]!));
   const full = Buffer.from(sections.join(""));
-  if (full.length <= REVIEW_DIFF_CAP) return { diff: full.toString(), files: sections.length };
-  const head = full.subarray(0, REVIEW_DIFF_CAP);
-  // Cut at a line end so no line, or multi-byte character, is left half-written.
-  const cut = head.subarray(0, head.lastIndexOf(10) + 1).toString();
-  return { diff: `${cut}[The rest of the diff was cut at 60 KB to keep the review short.]`, files: sections.length };
+  if (full.length <= REVIEW_DIFF_CAP) return { diff: full.toString(), files: sections.length, truncated: false };
+  // Cut right at the cap, even inside a line: cutting back to a line end can throw away nearly all of a
+  // change made of a few huge lines. Backing off UTF-8 continuation bytes (10xxxxxx) keeps characters whole.
+  let end = REVIEW_DIFF_CAP;
+  while (end > 0 && (full[end]! & 0xc0) === 0x80) end--;
+  const cut = full.subarray(0, end).toString();
+  const sep = cut.endsWith("\n") ? "" : "\n";
+  return {
+    diff: `${cut}${sep}[The rest of the diff was cut at 60 KB to keep the review short.]`,
+    files: sections.length,
+    truncated: true,
+  };
+}
+
+// Synchronous so it can be read inside the approval transaction; null when the branch or repo is gone.
+export function branchHeadSync(path: string, branch: string): string | null {
+  try {
+    const r = Bun.spawnSync(["git", ...SAFE, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: path });
+    return r.exitCode === 0 ? r.stdout.toString().trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Moves a late fix's uncommitted work onto its own new branch at the current commit, so the branch Nakul
+// decided on gets nothing after his decision. Null when there is nothing to move. Creating a branch at
+// HEAD rewrites no files, so nothing in the tree is checked out over.
+export async function branchOffDirty(path: string, taskId: string): Promise<string | null> {
+  const status = await git(path, ["status", "--porcelain"]);
+  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  if (status.out.trim() === "") return null;
+  const branch = `atrium/${taskId}`;
+  const valid = await git(path, ["check-ref-format", "--branch", branch]);
+  if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
+  const res = await git(path, ["checkout", "-b", branch]);
+  if (res.code !== 0) throw new Error(`Could not create ${branch}: ${res.err.trim()}`);
+  return branch;
 }
