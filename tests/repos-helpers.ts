@@ -67,14 +67,14 @@ export function fakeGitHub(mode = "ok"): FakeGitHub {
 }
 
 // A bare repo at fakeuser/<name> with one commit on main, as an existing GitHub repo.
-export function seedRemote(gh: FakeGitHub, name: string, files: Record<string, string> = {}): string {
-  const bare = join(gh.remotes, "fakeuser", `${name}.git`);
+export function seedRemote(gh: FakeGitHub, name: string, files: Record<string, string> = {}, owner = "fakeuser"): string {
+  const bare = join(gh.remotes, owner, `${name}.git`);
   const work = mkdtempSync(join(tmpdir(), "atrium-seed-"));
   const run = (cwd: string, ...args: string[]) => {
     const r = Bun.spawnSync(["git", ...args], { cwd, env: process.env });
     if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
   };
-  mkdirSync(join(gh.remotes, "fakeuser"), { recursive: true });
+  mkdirSync(join(gh.remotes, owner), { recursive: true });
   run(gh.remotes, "init", "-q", "--bare", "-b", "main", bare);
   writeFileSync(join(work, "README.md"), `# ${name}\n`);
   for (const [rel, body] of Object.entries(files)) writeFileSync(join(work, rel), body);

@@ -103,3 +103,43 @@ test("a deleted clone is cloned again", async () => {
   expect(existsSync(join(gh.projects, "demo", "README.md"))).toBe(true);
   expect(listClones(db).filter((x) => x.status === "present")).toHaveLength(1);
 });
+
+test("two spaces on the same repo share one clone", async () => {
+  seedRemote(gh, "demo");
+  const a = attached();
+  const b = createSpace(db, { name: "Demo 2", kind: "repo", goal: "g", github: "fakeuser/demo" });
+  const c = cloner();
+  c.request(a);
+  c.request(b);
+  expect(c.pending(b.id)).toBe(true);
+  await c.settle();
+  c.request(getSpace(db, b.id)!);
+  await c.settle();
+  expect(listClones(db)).toHaveLength(1);
+  expect(listActivity(db).filter((x) => x.message.startsWith("Cloned "))).toHaveLength(1);
+  expect(getSpace(db, a.id)!.repoPath).toBe(join(gh.projects, "demo"));
+  expect(getSpace(db, b.id)!.repoPath).toBe(join(gh.projects, "demo"));
+});
+
+test("two repos with the same name never clobber each other", async () => {
+  seedRemote(gh, "utils", {}, "alice");
+  seedRemote(gh, "utils", {}, "bob");
+  const alice = createSpace(db, { name: "Alice", kind: "repo", goal: "g", github: "alice/utils" });
+  const bob = createSpace(db, { name: "Bob", kind: "repo", goal: "g", github: "bob/utils" });
+  const t = createTask(db, { spaceId: bob.id, title: "Read" });
+  const c = cloner();
+  c.request(alice);
+  c.request(bob);
+  await c.settle();
+  c.request(getSpace(db, bob.id)!);
+  await c.settle();
+  const dest = join(gh.projects, "utils");
+  expect(existsSync(join(dest, "README.md"))).toBe(true);
+  expect(Bun.spawnSync(["git", "config", "--get", "remote.origin.url"], { cwd: dest, env: process.env }).stdout.toString().trim()).toBe(
+    "https://github.com/alice/utils.git",
+  );
+  expect(getTask(db, t.id)!.blockedReason).toBe(
+    `A folder named "utils" already exists in ${gh.projects} and isn't bob/utils. Rename or move it, then retry the task.`,
+  );
+  expect(getSpace(db, bob.id)!.repoPath).toBeNull();
+});
