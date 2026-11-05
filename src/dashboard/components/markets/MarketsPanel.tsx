@@ -3,14 +3,15 @@ import { useState } from "react";
 import { useMarkets } from "../../markets";
 import { AdviceTag } from "./AdviceTag";
 import { Alerts } from "./Alerts";
+import { Health } from "./Health";
 import { Holdings } from "./Holdings";
 import { Paper } from "./Paper";
 import { PriceChart } from "./PriceChart";
 import { Watchlist } from "./Watchlist";
 
-const TABS = ["overview", "chart", "alerts", "paper"] as const;
+const TABS = ["overview", "health", "chart", "alerts", "paper"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_TEXT: Record<Tab, string> = { overview: "Overview", chart: "Chart", alerts: "Alerts", paper: "Paper" };
+const TAB_TEXT: Record<Tab, string> = { overview: "Overview", health: "Health", chart: "Chart", alerts: "Alerts", paper: "Paper" };
 
 export function MarketsPanel({ spaceId }: { spaceId: string }) {
   const view = useMarkets(spaceId);
@@ -53,6 +54,8 @@ export function MarketsPanel({ spaceId }: { spaceId: string }) {
           />
           <Holdings view={view} />
         </>
+      ) : tab === "health" ? (
+        <Health spaceId={spaceId} />
       ) : tab === "chart" ? (
         <PriceChart key={chartKey ?? ""} view={view} initialKey={chartKey} />
       ) : tab === "alerts" ? (

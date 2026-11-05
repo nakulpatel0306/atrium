@@ -81,3 +81,17 @@ test("contribution room from the numbers Nakul enters", () => {
   expect(() => addEntry(db, { date: "Aug 1", kind: "contribution", amount: 5 })).toThrow("Use a date like 2026-08-01.");
   expect(() => setRoom(db, 2026, -1)).toThrow("The room can't be negative.");
 });
+
+test("TFSA and notes edits tell the dashboard to refresh", async () => {
+  const { bus } = await import("../../../src/engine/events");
+  const { saveNotes } = await import("../../../src/engine/markets/research");
+  let changed = 0;
+  const off = bus.on((e) => void (e.type === "changed" && changed++));
+  setRoom(db, 2026, 100);
+  const id = addEntry(db, { date: "2026-01-02", kind: "contribution", amount: 5 });
+  removeEntry(db, id);
+  db.exec("INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_x', 'X', 'markets', 'c', 1, 1)");
+  saveNotes(db, "spc_x", "NOW", { thesis: "t" });
+  off();
+  expect(changed).toBe(4);
+});

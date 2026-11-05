@@ -18,6 +18,7 @@ import { tiingoProvider, tiingoSymbols } from "../engine/markets/providers/tiing
 import type { MarketProvider, Quote } from "../engine/markets/providers/types";
 import { redact } from "../engine/markets/redact";
 import { estimateFor, ESTIMATED } from "../engine/markets/estimate";
+import { latestFx } from "../engine/markets/fx";
 import type { Jobs } from "../engine/markets/jobs";
 import { portfolioDay, type PortfolioDay } from "../engine/markets/portfolio";
 import type { Sourced } from "../engine/markets/sourced";
@@ -54,6 +55,8 @@ export type MarketsView = {
   portfolio: PortfolioDay | null;
   // Labelled display-only estimates (VFV.TO from SPY and USD/CAD), never used in totals or alerts.
   estimates: Record<string, Sourced>;
+  // Bank of Canada USD/CAD for the CAD column; null until the fx job has run.
+  fx: Sourced | null;
 };
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
@@ -416,6 +419,7 @@ async function view(db: Database, m: MarketsDeps, spaceId: string, at: number): 
     data: await m.data.status(),
     portfolio: portfolioDay(db, m.data, spaceId),
     estimates: estimates(db, m, [...all.keys()], at),
+    fx: latestFx(db),
   };
 }
 

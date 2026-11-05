@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { bus } from "../events";
 import { newId } from "../ids";
 import { etDate } from "./calendar";
 import type { Position } from "./health";
@@ -67,6 +68,7 @@ export function setRoom(db: Database, year: number, roomJan1: number): void {
   if (!Number.isInteger(year) || year < 2009 || year > 2100) throw new Error("Pick a year from 2009 on.");
   if (!Number.isFinite(roomJan1) || roomJan1 < 0) throw new Error("The room can't be negative.");
   db.query("INSERT INTO tfsa_room (year, room_jan1, updated_at) VALUES (?, ?, ?) ON CONFLICT(year) DO UPDATE SET room_jan1 = excluded.room_jan1, updated_at = excluded.updated_at").run(year, roomJan1, Date.now());
+  bus.emit({ type: "changed" });
 }
 
 export function addEntry(db: Database, e: { date: string; kind: "contribution" | "withdrawal"; amount: number; note?: string }): string {
@@ -75,11 +77,13 @@ export function addEntry(db: Database, e: { date: string; kind: "contribution" |
   if (!Number.isFinite(e.amount) || e.amount <= 0) throw new Error("The amount must be more than zero.");
   const id = newId("tfs");
   db.query("INSERT INTO tfsa_entries (id, date, kind, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, e.date, e.kind, e.amount, (e.note ?? "").slice(0, 500), Date.now());
+  bus.emit({ type: "changed" });
   return id;
 }
 
 export function removeEntry(db: Database, id: string): void {
   db.query("DELETE FROM tfsa_entries WHERE id = ?").run(id);
+  bus.emit({ type: "changed" });
 }
 
 export type TfsaEntry = { id: string; date: string; kind: "contribution" | "withdrawal"; amount: number; note: string };

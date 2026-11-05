@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { bus } from "../events";
 import { etDate, etInstant } from "./calendar";
 
 // Daily and weekly market jobs. They own no timer: the feed calls runDue at the end of each step, so a job slot
@@ -89,6 +90,8 @@ export function createJobs(db: Database, jobs: Job[], now: () => number = Date.n
           console.error(`Market job ${job.name}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
+      // Pages read what the jobs stored; one change event lets an open dashboard pick it up.
+      if (ran.length) bus.emit({ type: "changed" });
       return ran;
     },
     status(): JobStatus[] {

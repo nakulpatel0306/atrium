@@ -83,3 +83,14 @@ test("failures retry three times then wait", async () => {
   // The next slot starts fresh.
   expect(await jobs.runDue(et("2026-11-05T17:00:00"))).toEqual(["eod", "fx"]);
 });
+
+test("a run that did something tells open dashboards", async () => {
+  const { bus } = await import("../../../src/engine/events");
+  let changed = 0;
+  const off = bus.on((e) => void (e.type === "changed" && changed++));
+  const jobs = createJobs(db, [counting("fx")]);
+  await jobs.runDue(et("2026-11-04T17:05:00"));
+  await jobs.runDue(et("2026-11-04T17:10:00"));
+  off();
+  expect(changed).toBe(1);
+});

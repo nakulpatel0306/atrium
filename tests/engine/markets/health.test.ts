@@ -129,3 +129,12 @@ test("unpriced holdings and a missing rate are left out, and said so", () => {
   expect(noFx.warnings.map((w) => w.text)).toContain("No USD/CAD rate yet, so US holdings aren't in the CAD totals.");
   expect(health({ positions: [] }).totalCad).toBeNull();
 });
+
+test("tiny shares read <0.1%, and a stock's company warning isn't repeated as a holding warning", () => {
+  const big = pos({ key: "SOFI", quantity: 100, price: live(100), kind: "stock" });
+  const tinyFund: FundFile = { fund: "SPY", source: "ssga", asOf: "2026-11-04", note: null, lines: [stock("SOFI", 0.0001), stock("MSFT", 0.9999)] };
+  const h = portfolioHealth({ positions: [big, pos({ key: "SPY", quantity: 10, price: live(500), kind: "etf" })], fx, lookThrough: new Map([["SPY", lookThrough(() => tinyFund, "SPY")]]), meta: new Map() });
+  const texts = h.warnings.map((w) => w.text);
+  expect(texts.find((t) => t.startsWith("SOFI is "))).toContain("through SPY <0.1%");
+  expect(texts.some((t) => t.startsWith("SOFI on its own"))).toBe(false);
+});

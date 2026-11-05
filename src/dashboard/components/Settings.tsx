@@ -4,6 +4,7 @@ import type { DataStatus } from "../../engine/markets/data";
 import { del, post, put } from "../api";
 import { absolute, money } from "../format";
 import { useMarketDataSettings } from "../markets";
+import { DataBudget } from "./DataBudget";
 import { Freshness } from "./markets/Freshness";
 
 const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }[] = [
@@ -12,7 +13,7 @@ const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }
   { id: "demo", label: "Demo", covers: "Made-up prices for every market, to try Atrium out. Every price is labelled Demo data." },
 ];
 
-type KeyProvider = "alpaca" | "finnhub" | "alphavantage";
+type KeyProvider = "alpaca" | "finnhub" | "alphavantage" | "tiingo";
 const KEY_FORMS: { id: KeyProvider; label: string; fields: { name: string; label: string }[]; help: string }[] = [
   {
     id: "alpaca",
@@ -29,6 +30,12 @@ const KEY_FORMS: { id: KeyProvider; label: string; fields: { name: string; label
     label: "Alpha Vantage",
     fields: [{ name: "key", label: "Key" }],
     help: "Canadian prices (TSX and TSX-V), end of day only. The free key allows 25 requests a day, so Canadian prices refresh once after the close.",
+  },
+  {
+    id: "tiingo",
+    label: "Tiingo",
+    fields: [{ name: "token", label: "Token" }],
+    help: "Daily history and dividends for US stocks and ETFs (charts, performance, income). Sign up free at tiingo.com; Atrium stays under the free 1,000 requests a day.",
   },
 ];
 
@@ -141,6 +148,9 @@ export function Settings() {
             <span>
               <b>Canada</b> {s.data.ca.message}
             </span>
+            <span>
+              <b>History</b> {s.data.history.message}
+            </span>
             <span className={`feedline ${s.feed.mode}`}>
               <Radio />
               {s.feed.reason}
@@ -177,6 +187,9 @@ export function Settings() {
           {KEY_FORMS.map((f) => (
             <KeyForm key={f.id} form={f} saved={s.data.keys[f.id]} />
           ))}
+          <h2>Data budget</h2>
+          <p className="brief">Every call Atrium makes, against each free plan's limit. Free tiers only; nothing here costs money.</p>
+          <DataBudget />
         </>
       )}
     </div>

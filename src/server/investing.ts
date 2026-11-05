@@ -25,9 +25,20 @@ import { screenRows } from "../engine/markets/screener";
 import { quoteSourced } from "../engine/markets/sourced";
 import { addEntry, incomeTtm, isTfsa, listEntries, removeEntry, roomStatus, setRoom, ttmDividends, withholdingNote } from "../engine/markets/tfsa";
 import { listWatchlist } from "../engine/markets/watchlist";
-import { getSetting } from "../engine/settings";
+import { getSetting, setSetting } from "../engine/settings";
+import type { JobStatus } from "../engine/markets/jobs";
 import { HttpError, json, readBody } from "./http";
 import type { MarketsDeps } from "./markets";
+
+export type HealthView = ReturnType<typeof healthView>;
+export type ResearchView = ReturnType<typeof researchView>;
+export type BudgetView = {
+  sources: ReturnType<typeof dataBudget>;
+  alphaVantage: { plan: string[]; deferred: string[]; reserve: number; used: number };
+  jobs: JobStatus[];
+  edgar: boolean;
+};
+export type TfsaView = ReturnType<typeof roomStatus> & { entries: ReturnType<typeof listEntries> };
 
 const BAD_SYMBOL = "Type a symbol like AAPL or SHOP.TO.";
 const PERIODS: Period[] = ["1M", "3M", "YTD", "1Y"];
@@ -69,7 +80,18 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
   if (hit("GET", /^\/budget$/)) {
     const read = (k: string) => JSON.parse(getSetting(db, k) ?? "[]") as string[];
     const used = AV_DAILY_LIMIT - dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, () => now).remaining();
-    return json({ sources: dataBudget(db, now), alphaVantage: { plan: read("markets.av.plan"), deferred: read("markets.av.deferred"), reserve: AV_RESERVE, used }, jobs: m.jobs?.status() ?? [] });
+    return json({
+      sources: dataBudget(db, now),
+      alphaVantage: { plan: read("markets.av.plan"), deferred: read("markets.av.deferred"), reserve: AV_RESERVE, used },
+      jobs: m.jobs?.status() ?? [],
+      edgar: getSetting(db, "markets.edgar") !== "off",
+    });
+  }
+  if (hit("PUT", /^\/edgar$/)) {
+    const b = await readBody(req);
+    if (typeof b.on !== "boolean") throw new HttpError(400, "on must be true or false.");
+    setSetting(db, "markets.edgar", b.on ? "on" : "off");
+    return json({ edgar: b.on });
   }
   if (hit("GET", /^\/tfsa$/)) {
     const year = Number(url.searchParams.get("year") ?? etDate(now).slice(0, 4));

@@ -199,3 +199,11 @@ test("the markets view carries the portfolio's day and the VFV estimate", async 
   expect(v).toHaveProperty("portfolio");
   expect(v).toHaveProperty("estimates");
 });
+
+test("the EDGAR cross-check can be turned off and on", async () => {
+  boot();
+  expect((await (await get("/api/investing/budget")).json()).edgar).toBe(true);
+  expect((await call("PUT", "/api/investing/edgar", { on: false })).status).toBe(200);
+  expect((await (await get("/api/investing/budget")).json()).edgar).toBe(false);
+  expect((await call("PUT", "/api/investing/edgar", { on: "yes" })).status).toBe(400);
+});

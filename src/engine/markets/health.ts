@@ -51,7 +51,7 @@ export type Health = {
   lookThroughCoverage: number;
 };
 
-const pct1 = (n: number) => `${(Math.round(n * 10) / 10).toFixed(1)}%`;
+const pct1 = (n: number) => (n > 0 && n < 0.05 ? "<0.1%" : `${(Math.round(n * 10) / 10).toFixed(1)}%`);
 const pct0 = (n: number) => `${Math.round(n)}%`;
 const list = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 const UNKNOWN = "Unknown";
@@ -189,10 +189,11 @@ export function portfolioHealth(i: {
       : `${c.label} is ${pct1(pctOf(c.cad))} of your portfolio through ${list([...c.via.keys()])}.`;
     warnings.push({ kind: "company", text });
   }
-  // A broad fund isn't concentration; a single stock is.
+  // A broad fund isn't concentration; a single stock is, unless its company warning already says so.
   for (const [key, cad] of byHolding) {
     const p = counted.find((x) => x.key === key)!;
-    if (p.kind !== "etf" && cad / total > CONCENTRATION.holding) warnings.push({ kind: "holding", text: `${key} on its own is ${pct1(pctOf(cad))} of your portfolio.` });
+    const said = warnings.some((w) => w.kind === "company" && w.text.startsWith(`${key} is `));
+    if (p.kind !== "etf" && !said && cad / total > CONCENTRATION.holding) warnings.push({ kind: "holding", text: `${key} on its own is ${pct1(pctOf(cad))} of your portfolio.` });
   }
   for (const s of slices(bySector, total)) {
     if (s.label !== UNKNOWN && s.label !== "Cash" && s.pct / 100 > CONCENTRATION.sector) warnings.push({ kind: "sector", text: `${s.label} is ${pct0(s.pct)} of your portfolio.` });

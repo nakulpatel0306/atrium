@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { bus } from "../events";
 import { newId } from "../ids";
 import { createTask, type Task, type TaskPurpose } from "../tasks";
 import { etDate, etInstant } from "./calendar";
@@ -24,6 +25,7 @@ export function saveNotes(db: Database, spaceId: string, key: string, patch: { t
     `INSERT INTO research_notes (space_id, key, thesis, notes, updated_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(space_id, key) DO UPDATE SET thesis = excluded.thesis, notes = excluded.notes, updated_at = excluded.updated_at`,
   ).run(spaceId, key, patch.thesis ?? cur.thesis, patch.notes ?? cur.notes, Date.now());
+  bus.emit({ type: "changed" });
 }
 
 type WriteupRow = { id: string; kind: string; key: string | null; for_date: string; body: string; task_id: string | null; created_at: number };

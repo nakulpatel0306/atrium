@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { bus } from "../events";
 import { newId } from "../ids";
 import { evaluateEvents } from "./alerts";
 import type { MarketData } from "./data";
@@ -31,6 +32,8 @@ export function saveEarnings(db: Database, rows: EarningsDate[], source: "finnhu
       put.run(e.key, e.date, e.hour, e.epsEstimate, source, now);
     }
   })();
+  // Nakul's own date shows straight away; Finnhub's arrive with the end-of-day job's other changes.
+  if (source === "you") bus.emit({ type: "changed" });
 }
 
 export function upcomingEarnings(db: Database, keys: string[], fromDate: string, days: number): Earnings[] {
