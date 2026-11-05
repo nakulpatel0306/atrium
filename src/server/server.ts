@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { Server } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
 import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
@@ -21,6 +21,8 @@ type Deps = {
   runner: { kick(): void; registry?: Registry };
   setup: (text: string) => ReturnType<typeof setupSpace>;
   port?: number;
+  // How many dashboard tabs are visible; the market feed only streams while someone is looking.
+  onViewers?: (n: number) => void;
 };
 
 class HttpError extends Error {
@@ -324,6 +326,14 @@ export function startServer(deps: Deps): Server<undefined> {
     throw new HttpError(404, "Not found.");
   };
 
+  const visible = new Set<ServerWebSocket<undefined>>();
+  const setVisible = (ws: ServerWebSocket<undefined>, on: boolean) => {
+    const before = visible.size;
+    if (on) visible.add(ws);
+    else visible.delete(ws);
+    if (visible.size !== before) deps.onViewers?.(visible.size);
+  };
+
   const server = Bun.serve({
     hostname: config().host,
     port: deps.port ?? config().port,
@@ -359,7 +369,17 @@ export function startServer(deps: Deps): Server<undefined> {
     },
     websocket: {
       open: (ws) => void ws.subscribe("engine"),
-      message: () => {},
+      message: (ws, raw) => {
+        let msg: unknown;
+        try {
+          msg = JSON.parse(String(raw));
+        } catch {
+          return;
+        }
+        const m = msg as { type?: unknown; visible?: unknown } | null;
+        if (m?.type === "visibility" && typeof m.visible === "boolean") setVisible(ws, m.visible);
+      },
+      close: (ws) => setVisible(ws, false),
     },
   });
 

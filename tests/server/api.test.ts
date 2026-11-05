@@ -583,3 +583,23 @@ test("/rules serves html", async () => {
   expect(res.status).toBe(200);
   expect(await res.text()).toContain("<title>Atrium</title>");
 });
+
+test("visibility messages count viewers", async () => {
+  server.stop(true);
+  const seen: number[] = [];
+  server = startServer({ db, runner: { kick: () => {} }, setup: (t) => setupImpl(t), port: 0, onViewers: (n) => seen.push(n) });
+  base = `http://127.0.0.1:${server.port}`;
+  origin = base;
+  const a = await openWs({ origin });
+  const b = await openWs({ origin });
+  a.ws.send("not json");
+  a.ws.send(JSON.stringify({ type: "visibility", visible: true }));
+  await Bun.sleep(30);
+  b.ws.send(JSON.stringify({ type: "visibility", visible: "yes" }));
+  b.ws.send(JSON.stringify({ type: "visibility", visible: true }));
+  await Bun.sleep(30);
+  a.ws.close();
+  await Bun.sleep(50);
+  expect(seen).toEqual([1, 2, 1]);
+  b.ws.close();
+});
