@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ActionFacts, type DocsContent, bodyRuns, enablesDoctest, fingerprintOf, forbiddenFor, hasImport, isAgentConfig, isAgentInstructionFile, isDoctestConfig, isSiteConfig, labelOf, parseFingerprint } from "../../src/engine/autonomy/kinds";
 import { PLAIN_DOCS } from "../helpers";
+import { ALWAYS_ASK } from "../../src/engine/approvals";
 import type { ChangedFile } from "../../src/engine/git";
 
 const MODES: Record<ChangedFile["status"], [string, string]> = { A: ["000000", "100644"], M: ["100644", "100644"], D: ["100644", "000000"], T: ["100644", "120000"] };
@@ -285,4 +286,12 @@ describe("parseFingerprint", () => {
     expect(parseFingerprint("v1:code:docs:medium:codex")).toEqual({ domain: "code", shape: "docs", size: "medium", agent: "codex" });
     expect(parseFingerprint("v1:general:text:gemini")).toEqual({ domain: "general", agent: "gemini" });
   });
+});
+
+test("no fingerprint can name an always-ask kind", () => {
+  for (const w of ALWAYS_ASK) {
+    for (const fp of [`v1:code:${w}:small:claude`, `v1:code:docs:${w}:claude`, `v1:${w}:text:claude`, `v1:general:${w}:claude`, `v1:repo:${w}:claude`]) {
+      expect(parseFingerprint(fp)).toBeNull();
+    }
+  }
 });

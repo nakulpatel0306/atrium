@@ -346,3 +346,15 @@ describe("revoke and undo", () => {
     expect(() => undoAutoApproval(db, a.id)).toThrow(RuleRefused);
   });
 });
+
+test("applyRule never touches an always-ask approval", () => {
+  const { a, facts } = pending();
+  rule();
+  const repoAsk = createApproval(db, { spaceId: null, kind: "question", title: "Create?", detail: "", alwaysAsk: "create_repo" });
+  // The DB refuses a fingerprint on an always-ask row; switch the CHECKs off to prove the code refuses it on its own.
+  db.exec("PRAGMA ignore_check_constraints = ON");
+  db.query("UPDATE approvals SET space_id = ?, kind = 'review', task_id = ?, fingerprint = ? WHERE id = ?").run(space.id, a.taskId, FP, repoAsk.id);
+  db.exec("PRAGMA ignore_check_constraints = OFF");
+  expect(applyRule(db, repoAsk.id, facts)).toBeNull();
+  expect(getApproval(db, repoAsk.id)!.status).toBe("pending");
+});

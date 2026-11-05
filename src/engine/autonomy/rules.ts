@@ -136,6 +136,8 @@ export function applyRule(db: Database, approvalId: string, facts: ActionFacts |
   let capped = false;
   const result = db.transaction((): Approval | null => {
     const a = getApproval(db, approvalId);
+    // Repo creation, pushing and clone removal are Nakul's alone, whatever else the row says.
+    if (a?.alwaysAsk) return null;
     if (a?.status !== "pending" || a.kind !== "review" || !a.fingerprint || !a.spaceId || !facts) return null;
     if (forbiddenFor(facts).length > 0 || fingerprintOf(facts) !== a.fingerprint) return null;
     // Once Nakul has sent a task back, or undone a rule's approval of it, only he decides on it again.
