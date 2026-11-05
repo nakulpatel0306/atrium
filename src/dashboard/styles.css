@@ -67,7 +67,7 @@ aside {
   height: 20px;
   flex: none;
   background: currentColor;
-  mask: url("../../docs/brand/logo-mark.svg") center / contain no-repeat;
+  mask: url("./assets/logo-mark.svg") center / contain no-repeat;
 }
 .logo.big {
   width: 40px;
