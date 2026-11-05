@@ -3,6 +3,7 @@ import type { State } from "../api";
 import { clock, relative } from "../format";
 import { navigate } from "../route";
 import { Activity } from "./Activity";
+import { Logo } from "./Logo";
 import { NeedsYou } from "./NeedsYou";
 import { StatusIcon } from "./StatusIcon";
 
@@ -113,6 +114,7 @@ export function Home({ state, briefing, onNewSpace }: Props) {
     return (
       <div className="wrap">
         <div className="hero-empty">
+          <Logo className="big" />
           <h1>{briefing.greeting}</h1>
           <p>Nothing here yet. Describe your first space below.</p>
           <ArrowDown className="arrow" />

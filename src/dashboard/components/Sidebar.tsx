@@ -2,6 +2,7 @@ import { Activity, BatteryMedium, House, Inbox, Moon, Plug, Plus } from "lucide-
 import { post, type State } from "../api";
 import { bytes, tokens } from "../format";
 import { navigate, type Route } from "../route";
+import { Logo } from "./Logo";
 
 type Props = {
   state: State;
@@ -19,7 +20,7 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
   return (
     <aside>
       <div className="ws">
-        <div className="logo" />
+        <Logo />
         Atrium
       </div>
       <button className={`nav${route.name === "home" ? " on" : ""}`} onClick={() => navigate("/")}>

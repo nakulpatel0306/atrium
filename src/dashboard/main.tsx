@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { activeOnly, post, type State, useEngineState, useOnline } from "./api";
 import { CommandBar } from "./components/CommandBar";
 import { Home } from "./components/Home";
+import { Logo } from "./components/Logo";
 import { Sidebar } from "./components/Sidebar";
 import { SpaceView } from "./components/SpaceView";
 import { navigate, parseRoute, usePath } from "./route";
@@ -56,6 +57,7 @@ function App() {
   if (!state) {
     return (
       <div className="hero-empty" style={{ minHeight: "100vh" }}>
+        <Logo className="big" label="Atrium" />
         {online ? (
           <p>Connecting to Atrium…</p>
         ) : (
