@@ -29,7 +29,7 @@ export function ProposalRow({ proposal, space }: { proposal: Proposal; space: Sp
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
         <span className="who">{space?.name ?? "Unknown space"}</span>
         <Sparkles className="spark" />
-        <span className="t">
+        <span className="t" title={`Stop asking about ${proposal.label}?`}>
           Stop asking about {proposal.label}?<span>You approved the last {proposal.evidence.length} without changes.</span>
         </span>
         <div className="acts">
@@ -50,7 +50,7 @@ export function ProposalRow({ proposal, space }: { proposal: Proposal; space: Sp
       {open && (
         <div className="detail">
           <p className="role">
-            If you say yes, Atrium approves these in {space?.name ?? "this space"} on its own from now on. It never merges or
+            Covers {proposal.label}. If you say yes, Atrium approves these in {space?.name ?? "this space"} on its own from now on. It never merges or
             pushes, each one shows up in Activity, and you can undo any of them or turn the rule off on the Rules page. It
             still always asks before merging, deploying, deleting, messaging someone new, spending money, or touching secrets.
           </p>

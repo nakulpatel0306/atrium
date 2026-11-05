@@ -99,6 +99,7 @@ function RuleHistory({ rule, space }: { rule: Rule; space: Space | undefined }) 
   const titles = new Map(detail.approvals.map((a) => [a.id, a.title]));
   return (
     <>
+      <p className="role">Covers {rule.label}.</p>
       <div className="meta">
         <span title={absolute(rule.createdAt)}>Started {relative(rule.createdAt)}</span>
         {rule.state === "active" && <span title={absolute(rule.expiresAt)}>Ends {absolute(rule.expiresAt)}</span>}
@@ -165,7 +166,7 @@ function RuleRow({ rule, space }: { rule: Rule; space: Space | undefined }) {
         <ChevronRight className={`chev${open ? " open" : ""}`} />
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
         <span className="who">{space?.name ?? "Archived space"}</span>
-        <span className="t">
+        <span className="t" title={rule.label}>
           {rule.label}
           <span>
             {active
