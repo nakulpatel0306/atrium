@@ -23,7 +23,7 @@ const CLOSED = Date.parse("2026-11-07T15:00:00Z");
 let home: ReturnType<typeof tempHome>;
 let keyDir: string;
 let db: Database;
-let server: Server<undefined>;
+let server: ReturnType<typeof startServer>;
 let base: string;
 let now: number;
 let fetchStub: typeof fetch | undefined;

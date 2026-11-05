@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderPlist, statusLine } from "../src/cli";
+import { openArgs, renderPlist, statusLine } from "../src/cli";
 import { trimLog } from "../src/engine/logfile";
 import type { State } from "../src/engine/state";
 import { tempHome } from "./helpers";
@@ -50,4 +50,34 @@ test("trimLog keeps only the last bytes of an oversized log", () => {
   trimLog(path, 50);
   expect(statSync(path).size).toBe(50);
   trimLog(join(h.home, "missing.log"), 50);
+});
+
+test("openArgs picks the app, passes a dev port, and falls back to the browser", () => {
+  const appPath = "/Users/x/Applications/Atrium.app";
+  const url = "http://127.0.0.1:7420";
+  expect(openArgs({ appInstalled: true, appRunning: false, appPath, port: 7420, url })).toEqual(["open", appPath]);
+  expect(openArgs({ appInstalled: true, appRunning: false, appPath, port: 7431, url })).toEqual(["open", "--env", "ATRIUM_PORT=7431", appPath]);
+  expect(openArgs({ appInstalled: false, appRunning: false, appPath, port: 7420, url })).toEqual(["open", url]);
+});
+
+// open --env only reaches a fresh launch; a running copy would just come forward still pointing at its old port.
+test("openArgs refuses a dev port while Atrium is already running", () => {
+  const appPath = "/Users/x/Applications/Atrium.app";
+  expect(openArgs({ appInstalled: true, appRunning: true, appPath, port: 7431, url: "http://127.0.0.1:7431" })).toEqual({
+    error: "Quit Atrium first to open it on port 7431.",
+  });
+  expect(openArgs({ appInstalled: true, appRunning: true, appPath, port: 7420, url: "http://127.0.0.1:7420" })).toEqual(["open", appPath]);
+});
+
+test("usage lists tui", async () => {
+  const { main } = await import("../src/cli");
+  const lines: string[] = [];
+  const err = console.error;
+  console.error = (m: string) => void lines.push(m);
+  try {
+    expect(await main("bogus")).toBe(1);
+  } finally {
+    console.error = err;
+  }
+  expect(lines).toEqual(["Usage: atrium [tui|start|status|open|install|uninstall|app install|app uninstall]"]);
 });

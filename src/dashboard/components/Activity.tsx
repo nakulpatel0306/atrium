@@ -1,10 +1,9 @@
 import { useState } from "react";
 import type { State } from "../api";
 import { absolute, relative } from "../format";
+import { actorName } from "../summary";
 
 type Row = State["activity"][number];
-
-const actorName = (actor: string) => (actor === "you" ? "You" : actor.charAt(0).toUpperCase() + actor.slice(1));
 
 function Item({ row, spaceName }: { row: Row; spaceName: string | undefined }) {
   const [open, setOpen] = useState(false);

@@ -9,16 +9,7 @@ import type { State } from "../engine/state";
 export type { Message, State };
 export type RuleDetail = { rule: Rule; proposal: Proposal | null; approvals: Approval[]; events: RuleEventRow[] };
 
-// Archived spaces leave Home, so their tasks, approvals and suggestions must not linger in its counts and lists.
-export function activeOnly(state: State): State {
-  const ids = new Set(state.spaces.map((s) => s.id));
-  return {
-    ...state,
-    tasks: state.tasks.filter((t) => ids.has(t.spaceId)),
-    approvals: state.approvals.filter((a) => ids.has(a.spaceId)),
-    proposals: state.proposals.filter((p) => ids.has(p.spaceId)),
-  };
-}
+export { activeOnly } from "./summary";
 
 type EngineMessage =
   | { type: "changed" }

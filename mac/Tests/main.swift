@@ -1,0 +1,149 @@
+import Foundation
+
+var passed = 0
+var failed = 0
+
+func check(_ ok: Bool, _ name: String) {
+  if ok {
+    passed += 1
+  } else {
+    failed += 1
+    print("FAIL: \(name)")
+  }
+}
+
+func need(_ id: String, kind: String = "review", title: String = "Fix login") -> Need {
+  Need(id: id, kind: kind, title: title, spaceName: "atrium", path: "/space/spc_1?task=\(id)")
+}
+
+func summary(needs: [Need] = [], stopped: [Stopped] = [], overnight: Bool = false) -> Summary {
+  Summary(needsYou: needs.count, needs: needs, stopped: stopped, overnight: overnight)
+}
+
+// badge
+check(badgeLabel(0) == nil, "badge: 0 is nil")
+check(badgeLabel(3) == "3", "badge: 3")
+check(badgeLabel(120) == "99+", "badge: 120 caps")
+check(statusTitle(nil) == "", "badge: offline title empty")
+check(statusTitle(0) == "", "badge: zero title empty")
+check(statusTitle(2) == "2", "badge: title 2")
+
+// decode
+let json = """
+  {"needsYou":1,"needs":[{"id":"apr_1","kind":"review","title":"Fix login","spaceName":"atrium","path":"/space/spc_1?task=tsk_1"}],"stopped":[{"id":"tsk_2","title":"Ship","spaceName":"atrium","status":"blocked","reason":null,"path":"/space/spc_1?task=tsk_2"}],"overnight":false}
+  """
+let decoded = try? JSONDecoder().decode(Summary.self, from: Data(json.utf8))
+check(decoded != nil, "decode: summary")
+check(decoded?.needs.first?.path == "/space/spc_1?task=tsk_1", "decode: need path")
+check(decoded != nil && decoded!.stopped.first!.reason == nil, "decode: null reason")
+
+// notes
+let s1 = summary(needs: [Need(id: "apr_1", kind: "review", title: "Fix login", spaceName: "atrium", path: "/space/spc_1?task=tsk_1")])
+check(newNotes(previous: nil, next: s1).isEmpty, "notes: first summary seeds")
+check(
+  newNotes(previous: summary(), next: s1)
+    == [Note(id: "apr_1", title: "Ready for review", body: "Fix login · atrium", path: "/space/spc_1?task=tsk_1")],
+  "notes: new review")
+check(newNotes(previous: s1, next: s1).isEmpty, "notes: seen ids don't repeat")
+// A need resolved elsewhere and then raised again (same id) is a new event once a summary without it was seen.
+let gone = summary()
+check(newNotes(previous: s1, next: gone).isEmpty, "notes: a need going away posts nothing")
+check(newNotes(previous: gone, next: s1).map(\.id) == ["apr_1"], "notes: a need that comes back after it was gone is new again")
+let q = summary(needs: [need("apr_9", kind: "question", title: "Which db?")])
+check(newNotes(previous: summary(), next: q).first?.title == "Atrium has a question", "notes: question title")
+let sug = summary(needs: [need("prp_1", kind: "suggestion", title: "Stop asking about docs changes?")])
+check(
+  newNotes(previous: summary(), next: sug)
+    == [Note(id: "prp_1", title: "Atrium has a question", body: "Stop asking about docs changes? · atrium", path: "/space/spc_1?task=prp_1")],
+  "notes: a new suggestion notifies like a question")
+check(newNotes(previous: sug, next: sug).isEmpty, "notes: a seen suggestion doesn't repeat")
+let blocked = Stopped(id: "tsk_2", title: "Ship", spaceName: "atrium", status: "blocked", reason: "Claude is signed out", path: "/space/spc_1?task=tsk_2")
+let blockedNotes = newNotes(previous: summary(), next: summary(stopped: [blocked]))
+check(blockedNotes.first?.title == "Blocked" && blockedNotes.first?.body == "Ship · Claude is signed out", "notes: blocked uses reason")
+let failedTask = Stopped(id: "tsk_3", title: "Build", spaceName: "atrium", status: "failed", reason: nil, path: "/space/spc_1?task=tsk_3")
+let failedNotes = newNotes(previous: summary(), next: summary(stopped: [failedTask]))
+check(failedNotes.first?.title == "Didn't finish" && failedNotes.first?.body == "Build · atrium", "notes: failed falls back to space")
+check(newNotes(previous: summary(stopped: [failedTask]), next: summary(stopped: [failedTask])).isEmpty, "notes: seen stopped don't repeat")
+let four = summary(needs: (1...4).map { need("apr_\($0)") })
+let collapsed = newNotes(previous: summary(), next: four)
+check(collapsed.count == 1 && collapsed[0].title == "4 things need you" && collapsed[0].path == "/", "notes: more than three collapse")
+check(collapsed.first?.id == "batch-apr_1", "notes: batch id")
+check(newNotes(previous: summary(), next: summary(needs: (1...3).map { need("apr_\($0)") })).count == 3, "notes: three stay separate")
+
+// menu
+let seven = summary(needs: (1...7).map { need("apr_\($0)") })
+let menu = menuNeeds(seven)
+check(menu.shown.count == 5 && menu.more == 2, "menu: first five and more")
+let long = needTitle(need("apr_1", title: String(repeating: "a", count: 80)))
+check(long.count == 60 && long.hasSuffix("…"), "menu: long title cut to 60")
+check(needTitle(need("apr_1")) == "Fix login · atrium", "menu: short title")
+
+// port
+check(resolvePort(env: ["ATRIUM_PORT": "7431"], defaultsPort: 7440) == 7431, "port: env wins")
+check(resolvePort(env: [:], defaultsPort: 7440) == 7440, "port: defaults")
+check(resolvePort(env: [:], defaultsPort: 0) == 7420, "port: fallback")
+check(resolvePort(env: ["ATRIUM_PORT": "nope"], defaultsPort: 0) == 7420, "port: bad env ignored")
+
+// start
+if case .manual = startAction(port: 7431, plistExists: true, loaded: true, cliKnown: true) {
+  check(true, "start: dev port is manual")
+} else {
+  check(false, "start: dev port is manual")
+}
+check(startAction(port: 7420, plistExists: true, loaded: true, cliKnown: true) == .kickstart, "start: kickstart")
+check(startAction(port: 7420, plistExists: true, loaded: false, cliKnown: false) == .bootstrap, "start: bootstrap")
+check(startAction(port: 7420, plistExists: false, loaded: false, cliKnown: true) == .install, "start: install")
+if case .manual = startAction(port: 7420, plistExists: false, loaded: false, cliKnown: false) {
+  check(true, "start: nothing known is manual")
+} else {
+  check(false, "start: nothing known is manual")
+}
+
+// links
+check(isInternal(URL(string: "http://127.0.0.1:7420/space/x")!, port: 7420), "links: 127.0.0.1 internal")
+check(isInternal(URL(string: "http://localhost:7420/")!, port: 7420), "links: localhost internal")
+check(isInternal(URL(string: "about:blank")!, port: 7420), "links: about:blank internal")
+check(!isInternal(URL(string: "http://127.0.0.1:7431/")!, port: 7420), "links: other port external")
+check(!isInternal(URL(string: "https://github.com/x")!, port: 7420), "links: github external")
+check(!isInternal(URL(string: "mailto:a@b.c")!, port: 7420), "links: mailto external")
+
+// link policy: only user clicks in the main frame leave the app, and only to web or mail
+let ext = URL(string: "https://github.com/x/pull/1")!
+check(linkDecision(URL(string: "http://127.0.0.1:7420/space/x")!, port: 7420, userClick: false, mainFrame: true) == .allow, "policy: internal loads")
+check(linkDecision(URL(string: "http://127.0.0.1:7420/")!, port: 7420, userClick: false, mainFrame: false) == .allow, "policy: internal subframe loads")
+check(linkDecision(ext, port: 7420, userClick: true, mainFrame: true) == .openExternally, "policy: http link click opens browser")
+check(linkDecision(URL(string: "mailto:a@b.c")!, port: 7420, userClick: true, mainFrame: true) == .openExternally, "policy: mailto click")
+check(linkDecision(ext, port: 7420, userClick: false, mainFrame: true) == .cancel, "policy: script-initiated http cancelled")
+check(linkDecision(ext, port: 7420, userClick: true, mainFrame: false) == .cancel, "policy: subframe http cancelled")
+check(linkDecision(URL(string: "file:///etc/passwd")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: file cancelled")
+check(linkDecision(URL(string: "javascript:alert(1)")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: javascript cancelled")
+check(linkDecision(URL(string: "x-apple.systempreferences:foo")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: x-apple cancelled")
+check(linkDecision(URL(string: "slack://open")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: custom scheme cancelled")
+check(linkDecision(URL(string: "http://127.0.0.1:7431/")!, port: 7420, userClick: true, mainFrame: true) == .openExternally, "policy: other local port is external")
+
+// offline: only a failure to reach the engine swaps in the offline view
+check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost), "offline: can't connect")
+check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorNetworkConnectionLost), "offline: connection lost")
+check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut), "offline: timed out")
+check(!isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorCancelled), "offline: cancelled load is not offline")
+check(!isOfflineLoadError(domain: "WebKitErrorDomain", code: 102), "offline: policy interruption is not offline")
+
+// user input: script a.click() also reports linkActivated, so only a real recent click or key counts
+check(isRecentUserInput(.leftMouseUp, age: 0.2), "input: recent click")
+check(isRecentUserInput(.keyDown, age: 0.5), "input: recent key (Return on a link)")
+check(isRecentUserInput(.otherMouseUp, age: 0.1), "input: middle click")
+check(!isRecentUserInput(nil, age: 0), "input: no event")
+check(!isRecentUserInput(.leftMouseUp, age: 3), "input: stale click")
+check(!isRecentUserInput(.other, age: 0.1), "input: mouse move or other event")
+check(
+  linkDecision(ext, port: 7420, userClick: isRecentUserInput(nil, age: 0), mainFrame: true) == .cancel,
+  "policy: linkActivated with no input event is cancelled")
+
+// backoff
+check(nextBackoff(0) == 2, "backoff: floor")
+check(nextBackoff(2) == 4, "backoff: doubles")
+check(nextBackoff(16) == 30, "backoff: caps")
+check(nextBackoff(30) == 30, "backoff: stays capped")
+
+print("\(passed) passed, \(failed) failed")
+exit(failed == 0 ? 0 : 1)

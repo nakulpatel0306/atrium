@@ -1,9 +1,10 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { AGENT_IDS, inReserve } from "../agents";
+import { AGENT_IDS } from "../agents";
 import { post, type State } from "../api";
 import { absolute, clock, duration, tokens } from "../format";
 import { navigate } from "../route";
+import { AGENT_ROLES, agentStatus, runOutcome } from "../summary";
 import { Avatar } from "./Avatar";
 import { Plain } from "./WaitLine";
 
@@ -12,26 +13,6 @@ type Run = State["runs"][number];
 
 const RECENT_RUNS = 5;
 const RESERVE_STEPS = [0.25, 0.5, 0.75];
-
-// What the router lets each agent do, so a reader knows why work went where it did.
-const ROLES: Record<string, string> = {
-  claude: "Does repo work and everything in private spaces. Auto sends work here unless Claude's window is being saved.",
-  codex:
-    "Reviews finished work, and takes general tasks while Claude's window is saved. Never works in private spaces or repos with .env files.",
-  gemini:
-    "Reviews code and takes general tasks Codex can't. Never edits repos, and never works in private spaces or repos with .env files.",
-};
-
-type Line = { text: string; tone?: "bad" | "waiting" };
-
-function statusLine(id: string, info: Info, state: State): Line {
-  if (!info.installed) return { text: `Not installed. ${info.detail}`, tone: "bad" };
-  if (info.loggedIn === false) return { text: `Signed out. ${info.detail}`, tone: "bad" };
-  if (info.limitedUntil) return { text: `Limited until ${clock(info.limitedUntil)}`, tone: "waiting" };
-  const reserve = id === "claude" ? inReserve(state) : null;
-  if (reserve) return { text: `Saving your window until ${clock(reserve.until)}`, tone: "waiting" };
-  return { text: "Ready" };
-}
 
 // The reserve marker sits where Claude tasks start waiting, so the bar shows how close that is.
 export function WindowBar({ state, compact = false }: { state: State; compact?: boolean }) {
@@ -95,7 +76,7 @@ function RecentRuns({ runs, state }: { runs: Run[]; state: State }) {
     <ul className="runs agent-runs">
       {runs.map((r) => {
         const task = tasks.get(r.taskId);
-        const outcome = r.endedAt === null ? "running" : r.exitCode === 0 ? "finished" : "ended without finishing";
+        const outcome = runOutcome(r);
         const href = task ? `/space/${task.spaceId}?task=${task.id}` : null;
         return (
           <li key={r.id}>
@@ -129,7 +110,7 @@ function RecentRuns({ runs, state }: { runs: Run[]; state: State }) {
 }
 
 function AgentRow({ id, info, state, open, onToggle }: { id: string; info: Info; state: State; open: boolean; onToggle: () => void }) {
-  const line = statusLine(id, info, state);
+  const line = agentStatus(id, info, state);
   const runs = state.runs.filter((r) => r.agent === id).slice(0, RECENT_RUNS);
   return (
     <div className="entry">
@@ -145,7 +126,7 @@ function AgentRow({ id, info, state, open, onToggle }: { id: string; info: Info;
       </div>
       {open && (
         <div className="detail">
-          <p className="role">{ROLES[id]}</p>
+          <p className="role">{AGENT_ROLES[id]}</p>
           <div className="meta">
             <span>
               Last check: <Plain text={info.detail || "not checked yet"} />

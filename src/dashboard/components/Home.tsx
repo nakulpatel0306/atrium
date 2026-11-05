@@ -1,9 +1,9 @@
 import { ArrowDown, CandlestickChart, Plus } from "lucide-react";
-import { agentText, byPriority, needsAction, ranAgent, type Wait, waitOf } from "../agents";
+import { ranAgent } from "../agents";
 import type { State } from "../api";
-import { relative } from "../format";
 import { briefingMarketsLine } from "../markets";
 import { navigate } from "../route";
+import { liveStatus, spaceStatus } from "../summary";
 import { Activity } from "./Activity";
 import { Avatar } from "./Avatar";
 import { Logo } from "./Logo";
@@ -17,34 +17,10 @@ type Task = State["tasks"][number];
 const OPEN = new Set<Task["status"]>(["queued", "running", "review", "blocked", "failed"]);
 const SHOWN_TASKS = 3;
 
-type Status = { text: string; tone?: "blocked" | "waiting"; wait?: Wait };
-
-// Every held-back task's wait, most pressing first.
-const waitsOf = (tasks: Task[], state: State): Wait[] =>
-  tasks.flatMap((t) => waitOf(t, state) ?? []).sort(byPriority);
-
-function status(space: Space, tasks: Task[], state: State): Status {
-  const running = tasks.find((t) => t.status === "running");
-  if (running) return { text: `${agentText(running, state.runs)} running · ${running.title}` };
-  const [wait] = waitsOf(tasks, state);
-  if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait };
-  const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
-  if (stuck.length === 1 && stuck[0]!.status === "blocked") {
-    return { text: `Blocked: ${stuck[0]!.blockedReason ?? stuck[0]!.title}`, tone: "blocked" };
-  }
-  if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
-  const review = tasks.filter((t) => t.status === "review").length;
-  if (review > 0) return { text: `${review} ready for your review` };
-  const queued = tasks.filter((t) => t.status === "queued").length;
-  if (queued > 0) return { text: `${queued} ${queued === 1 ? "task" : "tasks"} queued` };
-  const last = state.activity.find((a) => a.spaceId === space.id)?.createdAt ?? space.updatedAt;
-  return { text: `Idle · last activity ${relative(last)}` };
-}
-
 function SpaceCard({ space, state }: { space: Space; state: State }) {
   const tasks = state.tasks.filter((t) => t.spaceId === space.id);
   const open = tasks.filter((t) => OPEN.has(t.status));
-  const s = status(space, tasks, state);
+  const s = spaceStatus(space, tasks, state);
   // Who actually worked here; an auto task that hasn't run yet shows as Auto.
   const agents = [...new Set(tasks.map((t) => ranAgent(t, state.runs)))];
   const live = new Set(tasks.filter((t) => t.status === "running").map((t) => ranAgent(t, state.runs)));
@@ -91,25 +67,6 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
       </div>
     </a>
   );
-}
-
-// Composed from live state on every render so counts never go stale while the page stays open.
-function liveStatus(state: State): string {
-  const parts: string[] = [];
-  const pending = state.approvals.length + state.proposals.length;
-  if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
-  const blocked = state.tasks.filter((t) => t.status === "blocked");
-  if (blocked.length > 0) {
-    const reason = blocked[0]!.blockedReason;
-    parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
-  }
-  // Queueing behind a running task is the normal case, not news.
-  const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy");
-  if (waits.length > 0) {
-    const more = waits.length - 1;
-    parts.push(`${waits[0]!.reason.replace(/\.$/, "")}${more > 0 ? ` (${more} more ${more === 1 ? "task" : "tasks"} waiting)` : ""}`);
-  }
-  return parts.length ? ` ${parts.join(". ")}.` : "";
 }
 
 type Props = {
