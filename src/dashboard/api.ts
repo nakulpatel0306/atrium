@@ -3,6 +3,7 @@ import type { Approval } from "../engine/approvals";
 import type { Proposal } from "../engine/autonomy/proposals";
 import type { Rule, RuleEventRow } from "../engine/autonomy/rules";
 import type { Message } from "../engine/messages";
+import type { Quote } from "../engine/markets/providers/types";
 import type { State } from "../engine/state";
 
 export type { Message, State };
@@ -19,7 +20,10 @@ export function activeOnly(state: State): State {
   };
 }
 
-type EngineMessage = { type: "changed" } | { type: "run-output"; runId: string; taskId: string; chunk: string };
+type EngineMessage =
+  | { type: "changed" }
+  | { type: "run-output"; runId: string; taskId: string; chunk: string }
+  | { type: "quotes"; quotes: Quote[] };
 
 // Live output is only for watching; the full record is the transcript, so keep just the tail.
 const OUTPUT_TAIL = 200_000;
@@ -32,6 +36,8 @@ let refetch = false;
 const outputs = new Map<string, string>();
 const seeded = new Set<string>();
 const listeners = new Set<() => void>();
+const quoteListeners = new Set<(quotes: Quote[]) => void>();
+let socket: WebSocket | null = null;
 
 const notify = () => {
   for (const fn of [...listeners]) fn();
@@ -61,9 +67,16 @@ async function refresh(): Promise<void> {
   }
 }
 
+// The market feed only streams while a dashboard tab is actually visible, so each socket says when it is.
+const sendVisibility = () => {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "visibility", visible: document.visibilityState === "visible" }));
+};
+
 function connect(): void {
   const ws = new WebSocket(`ws://${location.host}/ws`);
+  socket = ws;
   ws.onopen = () => {
+    sendVisibility();
     online = true;
     notify();
     void refresh();
@@ -76,6 +89,9 @@ function connect(): void {
       // Chunks are whole lines without their newline, the same as the transcript stores them.
       outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${msg.chunk}\n`.slice(-OUTPUT_TAIL));
       notify();
+    } else if (msg.type === "quotes") {
+      // Prices tick often; listeners patch what they show instead of refetching the whole state.
+      for (const fn of [...quoteListeners]) fn(msg.quotes);
     }
   };
   ws.onclose = () => {
@@ -91,6 +107,7 @@ function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   if (!started) {
     started = true;
+    document.addEventListener("visibilitychange", sendVisibility);
     connect();
   }
   return () => listeners.delete(fn);
@@ -98,6 +115,11 @@ function subscribe(fn: () => void): () => void {
 
 export function useEngineState(): State | null {
   return useSyncExternalStore(subscribe, () => state);
+}
+
+export function onQuotes(fn: (quotes: Quote[]) => void): () => void {
+  quoteListeners.add(fn);
+  return () => quoteListeners.delete(fn);
 }
 
 export function useOnline(): boolean {
@@ -122,7 +144,7 @@ export function useRunOutput(runId: string): string {
 }
 
 // Reads data that isn't part of the pushed state, again whenever `version` changes.
-function useFetched<T>(path: string | null, version: unknown): T | null {
+export function useFetched<T>(path: string | null, version: unknown): T | null {
   const [data, setData] = useState<{ path: string; value: T } | null>(null);
   useEffect(() => {
     if (!path) return;
@@ -169,8 +191,10 @@ export type PostResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
 export const post = <T = unknown>(path: string, body?: unknown) => send<T>("POST", path, body);
 export const patch = <T = unknown>(path: string, body: unknown) => send<T>("PATCH", path, body);
+export const put = <T = unknown>(path: string, body: unknown) => send<T>("PUT", path, body);
+export const del = <T = unknown>(path: string) => send<T>("DELETE", path);
 
-async function send<T>(method: "POST" | "PATCH", path: string, body?: unknown): Promise<PostResult<T>> {
+async function send<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown): Promise<PostResult<T>> {
   try {
     const res = await fetch(path, {
       method,

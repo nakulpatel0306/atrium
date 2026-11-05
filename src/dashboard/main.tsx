@@ -7,6 +7,7 @@ import { CommandBar } from "./components/CommandBar";
 import { Home } from "./components/Home";
 import { Logo } from "./components/Logo";
 import { Rules } from "./components/Rules";
+import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { SpaceView } from "./components/SpaceView";
 import { navigate, parseRoute, usePath } from "./route";
@@ -93,7 +94,9 @@ function App() {
                 Home
               </button>
               <ChevronRight className="sep" />
-              <b>{route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : (space?.name ?? "Unknown space")}</b>
+              <b>
+                {route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : route.name === "settings" ? "Settings" : (space?.name ?? "Unknown space")}
+              </b>
             </>
           )}
           {offline}
@@ -105,6 +108,8 @@ function App() {
           <Agents state={state} />
         ) : route.name === "rules" ? (
           <Rules state={state} />
+        ) : route.name === "settings" ? (
+          <Settings />
         ) : (
           <SpaceView key={route.id} state={state} space={space} focusTask={route.task} />
         )}

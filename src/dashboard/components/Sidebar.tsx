@@ -1,4 +1,4 @@
-import { Activity, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, ShieldCheck } from "lucide-react";
+import { Activity, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
 import { post, type State } from "../api";
 import { bytes, tokens } from "../format";
 import { navigate, type Route } from "../route";
@@ -84,6 +84,10 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
       })}
 
       <div className="foot">
+        <button className={`nav${route.name === "settings" ? " on" : ""}`} onClick={() => navigate("/settings")}>
+          <Settings />
+          Settings
+        </button>
         <div className="row">
           <span>Claude · last 24h</span>
           <span className="val">{tokens(state.usage.claudeTokens24h)} tokens</span>
