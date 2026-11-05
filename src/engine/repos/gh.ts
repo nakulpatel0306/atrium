@@ -101,6 +101,13 @@ export async function ghCreateRepo(d: ProjectDraft, opts: { timeoutMs?: number }
   return url;
 }
 
+// A reused repo was created with an earlier draft's description; it gets the one Nakul approved this time.
+export async function ghEditDescription(slug: string, description: string, opts: { timeoutMs?: number } = {}): Promise<void> {
+  validateGithubSlug(slug);
+  const res = await runGh(["repo", "edit", slug, `--description=${description}`], opts);
+  if (res.code !== 0 || res.timedOut) throw ghProblem(res, { slug });
+}
+
 // gh's repo view takes the slug positionally and rejects it after "--"; the slug is validated first, so it can
 // never start with "-".
 export async function ghViewRepo(slug: string, opts: { timeoutMs?: number } = {}): Promise<{ nameWithOwner: string; isPrivate: boolean; url: string }> {

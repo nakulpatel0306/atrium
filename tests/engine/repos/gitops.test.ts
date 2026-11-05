@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createApproval, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
-import { cloneRepo, fetchOrigin, initialCommit, remoteIsEmpty } from "../../../src/engine/repos/gitops";
+import { cloneRepo, fetchOrigin, initialCommit, remoteState } from "../../../src/engine/repos/gitops";
 import { PushRefused, pushInitialMain } from "../../../src/engine/repos/push";
 import { tempHome } from "../../helpers";
 import { type FakeGitHub, fakeGitHub, seedRemote } from "../../repos-helpers";
@@ -160,9 +160,12 @@ test("fetchOrigin reports a remote that's gone", async () => {
   expect(res.ok).toBe(false);
 });
 
-test("remoteIsEmpty tells an empty repo from one with commits", async () => {
+test("remoteState tells an empty repo, Atrium's own first push and someone else's work apart", async () => {
   bare("empty");
   seedRemote(gh, "full");
-  expect(await remoteIsEmpty("https://github.com/fakeuser/empty.git")).toBe(true);
-  expect(await remoteIsEmpty("https://github.com/fakeuser/full.git")).toBe(false);
+  const sha = git(join(gh.remotes, "fakeuser", "full.git"), "rev-parse", "main").out.trim();
+  expect(await remoteState("https://github.com/fakeuser/empty.git", null)).toBe("empty");
+  expect(await remoteState("https://github.com/fakeuser/full.git", sha)).toBe("ours");
+  expect(await remoteState("https://github.com/fakeuser/full.git", null)).toBe("theirs");
+  expect(await remoteState("https://github.com/fakeuser/full.git", "0".repeat(40))).toBe("theirs");
 });

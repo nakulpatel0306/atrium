@@ -38,8 +38,12 @@ export async function fetchOrigin(path: string, timeoutMs = 60_000): Promise<{ o
   return { ok: false, reason: ghProblem(res, {}).message };
 }
 
-export async function remoteIsEmpty(url: string, timeoutMs = 60_000): Promise<boolean> {
+// What a reused GitHub repo holds: nothing, the commit an earlier run pushed, or someone else's work.
+export async function remoteState(url: string, pushedSha: string | null, timeoutMs = 60_000): Promise<"empty" | "ours" | "theirs"> {
   const res = await git(tmpdir(), [...ghCredentialFlags(), "ls-remote", "--", url], timeoutMs);
   if (res.code !== 0 || res.timedOut) throw ghProblem(res, {});
-  return res.out.trim() === "";
+  const refs = res.out.trim().split("\n").filter(Boolean).map((l) => l.split("\t") as [string, string]);
+  if (refs.length === 0) return "empty";
+  const heads = refs.filter(([, ref]) => ref.startsWith("refs/heads/"));
+  return pushedSha && heads.length === 1 && heads[0]![1] === "refs/heads/main" && heads[0]![0] === pushedSha ? "ours" : "theirs";
 }

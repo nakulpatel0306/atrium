@@ -36,6 +36,7 @@ if (argv[0] === "repo" && argv[1] === "create") {
   console.log(`https://github.com/fakeuser/${name}`);
   process.exit(0);
 }
+if (argv[0] === "repo" && argv[1] === "edit") process.exit(0);
 if (argv[0] === "repo" && argv[1] === "view") {
   const rest = argv.slice(2).filter((a) => a !== "--");
   const slug = rest[0]!;

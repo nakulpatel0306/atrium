@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS repo_actions (
   clone_id TEXT REFERENCES repo_clones(id),
   space_id TEXT REFERENCES spaces(id),
   remote_url TEXT,
+  pushed_sha TEXT,
   error TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -152,6 +153,8 @@ function migrate(db: Database) {
   rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL);
   // The GitHub repo ("owner/name") a repo space comes from, so a missing local copy can be cloned.
   if (!has("spaces", "github")) db.exec("ALTER TABLE spaces ADD COLUMN github TEXT");
+  // The first commit a create run pushed, so a retry can tell its own commit from someone else's.
+  if (!has("repo_actions", "pushed_sha")) db.exec("ALTER TABLE repo_actions ADD COLUMN pushed_sha TEXT");
   // The branch a run started from, so a crashed run's repo can be put back on boot.
   if (!has("runs", "start_ref")) db.exec("ALTER TABLE runs ADD COLUMN start_ref TEXT");
   // The repo's git settings before the run, so recovery and resume can tell if the agent changed them.

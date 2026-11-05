@@ -143,7 +143,7 @@ test("a reused repo that has commits is never pushed over", async () => {
   resolveApproval(db, approval.id, "approve");
   const failed = await createProject(db, action.id, deps());
   expect(failed.error).toBe(
-    "https://github.com/fakeuser/demo already has commits, so Atrium won't push over it. Pick a new name, or delete that repo on GitHub first.",
+    "https://github.com/fakeuser/demo already has commits Atrium didn't make, so it won't push over them. Pick a new name.",
   );
   expect(git(bare(), "log", "-1", "--format=%s", "main").trim()).toBe("theirs");
 });
@@ -177,4 +177,24 @@ test("a folder that appears after the yes is left alone", async () => {
   expect(failed.error).toMatch(/^A folder named "Demo" already exists/);
   expect(readdirSync(join(gh.projects, "Demo"))).toEqual([]);
   expect(gh.argv()).toEqual([]);
+});
+
+test("a retry after a successful push picks up the repo Atrium already pushed", async () => {
+  // As if the first run pushed and then stopped before the space was made.
+  const seed = join(gh.base, "first-run");
+  mkdirSync(seed);
+  git(seed, "init", "-q", "-b", "main");
+  git(seed, "commit", "-q", "--allow-empty", "-m", "Initial commit");
+  const sha = git(seed, "rev-parse", "HEAD").trim();
+  Bun.spawnSync(["git", "init", "-q", "--bare", "-b", "main", bare()], { env: process.env });
+  git(seed, "push", "-q", bare(), "main");
+  const { action, approval } = draftProject(db, { ...d, description: "new words" }, { remoteUrl: "https://github.com/fakeuser/demo", pushedSha: sha, lastError: "Atrium stopped while creating demo." });
+  expect(approval.detail).toContain("Picking up https://github.com/fakeuser/demo, where Atrium already pushed the first commit.");
+  resolveApproval(db, approval.id, "approve");
+  const done = await createProject(db, action.id, deps());
+  expect(done.status).toBe("done");
+  expect(git(join(gh.projects, "demo"), "rev-parse", "HEAD").trim()).toBe(sha);
+  expect(gh.argv().some((a) => a[1] === "create")).toBe(false);
+  // The reused repo gets the description Nakul approved this time.
+  expect(gh.argv()).toContainEqual(["repo", "edit", "fakeuser/demo", "--description=new words"]);
 });

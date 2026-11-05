@@ -17,6 +17,7 @@ export type RepoAction = {
   cloneId: string | null;
   spaceId: string | null;
   remoteUrl: string | null;
+  pushedSha: string | null;
   // On a draft, why the previous try failed; on a failed action, why this one did.
   error: string | null;
   createdAt: number;
@@ -32,6 +33,7 @@ type ActionRow = {
   clone_id: string | null;
   space_id: string | null;
   remote_url: string | null;
+  pushed_sha: string | null;
   error: string | null;
   created_at: number;
   updated_at: number;
@@ -46,6 +48,7 @@ const toAction = (r: ActionRow): RepoAction => ({
   cloneId: r.clone_id,
   spaceId: r.space_id,
   remoteUrl: r.remote_url,
+  pushedSha: r.pushed_sha,
   error: r.error,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -71,10 +74,11 @@ export const pendingRepoActions = (db: Database): RepoAction[] =>
       .all() as ActionRow[]
   ).map(toAction);
 
-export function projectDetail(d: ProjectDraft, opts: { lastError?: string; remoteUrl?: string } = {}): string {
+export function projectDetail(d: ProjectDraft, opts: { lastError?: string; remoteUrl?: string; pushedSha?: string } = {}): string {
   const lines: string[] = [];
   if (opts.lastError) lines.push(`Last try failed: ${opts.lastError}`);
-  if (opts.remoteUrl) lines.push(`Reusing the empty repo ${opts.remoteUrl}.`);
+  if (opts.remoteUrl && opts.pushedSha) lines.push(`Picking up ${opts.remoteUrl}, where Atrium already pushed the first commit.`);
+  else if (opts.remoteUrl) lines.push(`Reusing the empty repo ${opts.remoteUrl}.`);
   let folder: string;
   let taken: string | null = null;
   try {
@@ -104,7 +108,7 @@ const titleFor = (d: ProjectDraft) => `Create GitHub repo "${d.name}"?`;
 export function draftProject(
   db: Database,
   draft: ProjectDraft,
-  opts: { remoteUrl?: string; lastError?: string } = {},
+  opts: { remoteUrl?: string; lastError?: string; pushedSha?: string } = {},
 ): { action: RepoAction; approval: Approval } {
   const made = db.transaction(() => {
     const approval = createApproval(db, {
@@ -117,8 +121,8 @@ export function draftProject(
     const id = newId("rpa");
     const now = Date.now();
     db.query(
-      "INSERT INTO repo_actions (id, kind, status, approval_id, draft, remote_url, error, created_at, updated_at) VALUES (?, 'create', 'draft', ?, ?, ?, ?, ?, ?)",
-    ).run(id, approval.id, JSON.stringify(draft), opts.remoteUrl ?? null, opts.lastError ?? null, now, now);
+      "INSERT INTO repo_actions (id, kind, status, approval_id, draft, remote_url, pushed_sha, error, created_at, updated_at) VALUES (?, 'create', 'draft', ?, ?, ?, ?, ?, ?, ?)",
+    ).run(id, approval.id, JSON.stringify(draft), opts.remoteUrl ?? null, opts.pushedSha ?? null, opts.lastError ?? null, now, now);
     return { action: getRepoAction(db, id)!, approval };
   })();
   bus.emit({ type: "changed" });
@@ -134,8 +138,15 @@ export function updateDraft(db: Database, actionId: string, draft: ProjectDraft)
     // The empty repo from an earlier try has the old name and visibility; a changed draft gets a repo of its own.
     const same = action.draft?.name === draft.name && action.draft?.visibility === draft.visibility;
     const remoteUrl = same ? action.remoteUrl : null;
-    const detail = projectDetail(draft, { lastError: action.error ?? undefined, remoteUrl: remoteUrl ?? undefined });
-    db.query("UPDATE repo_actions SET draft = ?, remote_url = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(draft), remoteUrl, Date.now(), actionId);
+    const pushedSha = same ? action.pushedSha : null;
+    const detail = projectDetail(draft, { lastError: action.error ?? undefined, remoteUrl: remoteUrl ?? undefined, pushedSha: pushedSha ?? undefined });
+    db.query("UPDATE repo_actions SET draft = ?, remote_url = ?, pushed_sha = ?, updated_at = ? WHERE id = ?").run(
+      JSON.stringify(draft),
+      remoteUrl,
+      pushedSha,
+      Date.now(),
+      actionId,
+    );
     db.query("UPDATE approvals SET title = ?, detail = ? WHERE id = ? AND status = 'pending'").run(titleFor(draft), detail, action.approvalId);
     return getRepoAction(db, actionId)!;
   })();
