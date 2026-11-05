@@ -2,6 +2,7 @@ import { Radio } from "lucide-react";
 import { useState } from "react";
 import { useMarkets } from "../../markets";
 import { Holdings } from "./Holdings";
+import { PriceChart } from "./PriceChart";
 import { Watchlist } from "./Watchlist";
 
 const TABS = ["overview", "chart", "alerts", "paper"] as const;
@@ -11,7 +12,7 @@ const TAB_TEXT: Record<Tab, string> = { overview: "Overview", chart: "Chart", al
 export function MarketsPanel({ spaceId }: { spaceId: string }) {
   const view = useMarkets(spaceId);
   const [tab, setTab] = useState<Tab>("overview");
-  const [, setChartKey] = useState<string | null>(null);
+  const [chartKey, setChartKey] = useState<string | null>(null);
 
   return (
     <div className="markets">
@@ -46,6 +47,8 @@ export function MarketsPanel({ spaceId }: { spaceId: string }) {
           />
           <Holdings view={view} />
         </>
+      ) : tab === "chart" ? (
+        <PriceChart key={chartKey ?? ""} view={view} initialKey={chartKey} />
       ) : (
         <div className="list">
           <div className="empty-row">Coming next.</div>

@@ -1756,3 +1756,41 @@ code {
 .mk-cols .fresh-col {
   text-align: center;
 }
+.mk-chart {
+  margin-top: 14px;
+}
+.mk-chart-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.mk-chart-head .fresh {
+  width: auto;
+  max-width: 260px;
+}
+.mk-chart-box {
+  height: 460px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.mk-chart-note {
+  color: var(--dim);
+  font-size: 12px;
+  margin-top: 6px;
+}
+.mk-chart-legend {
+  color: var(--faint);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.swatch {
+  display: inline-block;
+  width: 8px;
+  height: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
