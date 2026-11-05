@@ -1,0 +1,147 @@
+// The terminal app's own state (focus, selection, scroll, overlays) and every way a key can change it.
+import type { AgentChoice } from "../dashboard/agents";
+import { listOf, pick, type View } from "./select";
+
+export type ListPane = "spaces" | "tasks" | "needs" | "activity";
+export type Pane = ListPane | "detail" | "live";
+export type PromptPurpose = "task" | "space" | "reply" | "goal" | "filter";
+
+export type Overlay =
+  | { kind: "help" }
+  | { kind: "agents" }
+  | { kind: "prompt"; purpose: PromptPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null }
+  | { kind: "picker"; purpose: "agent" | "reviewer"; targetId: string; options: string[]; index: number }
+  | { kind: "transcript"; taskId: string; runIndex: number; scroll: number }
+  | { kind: "confirm"; purpose: "archive"; targetId: string };
+
+export type Flash = { text: string; tone: "ok" | "bad" | "info" };
+
+type Selection = { id: string | null; index: number };
+
+export type Ui = {
+  focus: Pane;
+  lastLeft: ListPane;
+  lastRight: "detail" | "live";
+  selected: Record<ListPane, Selection>;
+  filters: Record<ListPane, string>;
+  detailScroll: number;
+  liveScroll: number | null;
+  overlay: Overlay | null;
+  flash: Flash | null;
+};
+
+export type Action =
+  | { type: "focus"; pane: Pane }
+  | { type: "cycle"; dir: 1 | -1 }
+  | { type: "column"; dir: "left" | "right" }
+  | { type: "move"; delta: number }
+  | { type: "edge"; to: "top" | "bottom" }
+  | { type: "page"; dir: 1 | -1 }
+  | { type: "enter" }
+  | { type: "back" }
+  | { type: "open"; overlay: Overlay }
+  | { type: "close" }
+  | { type: "setOverlay"; overlay: Overlay }
+  | { type: "filter"; pane: ListPane; text: string }
+  | { type: "flash"; flash: Flash | null };
+
+// Pane heights, plus how many lines Detail and Live hold so scrolling knows where the end is.
+export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number };
+
+const none: Selection = { id: null, index: 0 };
+
+export const initialUi: Ui = {
+  focus: "spaces",
+  lastLeft: "spaces",
+  lastRight: "detail",
+  selected: { spaces: none, tasks: none, needs: none, activity: none },
+  filters: { spaces: "", tasks: "", needs: "", activity: "" },
+  detailScroll: 0,
+  liveScroll: null,
+  overlay: null,
+  flash: null,
+};
+
+const ORDER: Pane[] = ["spaces", "tasks", "needs", "activity", "detail", "live"];
+const isList = (p: Pane): p is ListPane => p !== "detail" && p !== "live";
+
+function focus(ui: Ui, pane: Pane): Ui {
+  return isList(pane) ? { ...ui, focus: pane, lastLeft: pane } : { ...ui, focus: pane, lastRight: pane };
+}
+
+// Selecting another space shows different tasks and output, so their selection and scroll start over.
+function select(ui: Ui, pane: ListPane, sel: Selection): Ui {
+  const next = { ...ui, selected: { ...ui.selected, [pane]: sel }, detailScroll: 0 };
+  if (pane === "spaces" && sel.id !== ui.selected.spaces.id) {
+    return { ...next, selected: { ...next.selected, tasks: none }, liveScroll: null };
+  }
+  return next;
+}
+
+function moveTo(ui: Ui, view: View, pane: ListPane, index: (current: number, last: number) => number): Ui {
+  const list = listOf(view, pane);
+  if (list.length === 0) return ui;
+  const current = pick(list, ui.selected[pane]).index;
+  const to = Math.min(list.length - 1, Math.max(0, index(current, list.length - 1)));
+  return select(ui, pane, { id: list[to]!.id, index: to });
+}
+
+const detailMax = (rows: Rows) => Math.max(0, (rows.detailLines ?? 0) - rows.detail);
+const liveMax = (rows: Rows) => Math.max(0, (rows.liveLines ?? 0) - rows.live);
+
+function scroll(ui: Ui, delta: number, rows: Rows): Ui {
+  if (ui.focus === "detail") {
+    return { ...ui, detailScroll: Math.min(detailMax(rows), Math.max(0, ui.detailScroll + delta)) };
+  }
+  // Scrolling back down to the end resumes following, like a pager.
+  const top = (ui.liveScroll ?? liveMax(rows)) + delta;
+  return { ...ui, liveScroll: top >= liveMax(rows) ? null : Math.max(0, top) };
+}
+
+export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
+  switch (action.type) {
+    case "focus":
+      return focus(ui, action.pane);
+    case "cycle": {
+      const at = ORDER.indexOf(ui.focus);
+      return focus(ui, ORDER[(at + action.dir + ORDER.length) % ORDER.length]!);
+    }
+    case "column":
+      return focus(ui, action.dir === "left" ? ui.lastLeft : ui.lastRight);
+    case "move":
+      if (isList(ui.focus)) return moveTo(ui, view, ui.focus, (i) => i + action.delta);
+      return scroll(ui, action.delta, rows);
+    case "edge":
+      if (isList(ui.focus)) return moveTo(ui, view, ui.focus, (_, last) => (action.to === "top" ? 0 : last));
+      if (ui.focus === "detail") return { ...ui, detailScroll: action.to === "top" ? 0 : detailMax(rows) };
+      return { ...ui, liveScroll: action.to === "top" ? 0 : null };
+    case "page": {
+      if (isList(ui.focus)) return ui;
+      const half = Math.max(1, Math.floor((ui.focus === "detail" ? rows.detail : rows.live) / 2));
+      return scroll(ui, half * action.dir, rows);
+    }
+    case "enter":
+      if (ui.focus === "spaces") return focus(ui, "tasks");
+      if (ui.focus === "tasks" || ui.focus === "needs") return focus(ui, "detail");
+      if (ui.focus === "activity") {
+        const spaceId = view.activityRow?.spaceId;
+        const index = view.spaces.findIndex((s) => s.id === spaceId);
+        if (index < 0) return ui;
+        return focus(select(ui, "spaces", { id: spaceId!, index }), "spaces");
+      }
+      return ui;
+    case "back":
+      if (isList(ui.focus) && ui.filters[ui.focus]) return { ...ui, filters: { ...ui.filters, [ui.focus]: "" } };
+      if (ui.focus === "spaces") return ui;
+      return focus(ui, isList(ui.focus) ? "spaces" : ui.lastLeft);
+    case "open":
+    case "setOverlay":
+      return { ...ui, overlay: action.overlay };
+    case "close":
+      return { ...ui, overlay: null };
+    case "filter":
+      return { ...ui, filters: { ...ui.filters, [action.pane]: action.text } };
+    case "flash":
+      return { ...ui, flash: action.flash };
+  }
+}
