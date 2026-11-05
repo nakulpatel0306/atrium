@@ -3,20 +3,27 @@ import { useState } from "react";
 import { useMarkets } from "../../markets";
 import { AdviceTag } from "./AdviceTag";
 import { Alerts } from "./Alerts";
+import { Digest } from "./Digest";
 import { Health } from "./Health";
+import { Ideas } from "./Ideas";
+import { Research } from "./Research";
 import { Holdings } from "./Holdings";
 import { Paper } from "./Paper";
 import { PriceChart } from "./PriceChart";
 import { Watchlist } from "./Watchlist";
 
-const TABS = ["overview", "health", "chart", "alerts", "paper"] as const;
+const TABS = ["overview", "health", "research", "ideas", "chart", "alerts", "paper"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_TEXT: Record<Tab, string> = { overview: "Overview", health: "Health", chart: "Chart", alerts: "Alerts", paper: "Paper" };
+const TAB_TEXT: Record<Tab, string> = { overview: "Overview", health: "Health", research: "Research", ideas: "Ideas", chart: "Chart", alerts: "Alerts", paper: "Paper" };
 
 export function MarketsPanel({ spaceId }: { spaceId: string }) {
   const view = useMarkets(spaceId);
   const [tab, setTab] = useState<Tab>("overview");
-  const [chartKey, setChartKey] = useState<string | null>(null);
+  const [researchKey, setResearchKey] = useState<string | null>(null);
+  const research = (key: string) => {
+    setResearchKey(key);
+    setTab("research");
+  };
 
   return (
     <div className="markets">
@@ -45,19 +52,18 @@ export function MarketsPanel({ spaceId }: { spaceId: string }) {
         </div>
       ) : tab === "overview" ? (
         <>
-          <Watchlist
-            view={view}
-            onOpen={(key) => {
-              setChartKey(key);
-              setTab("chart");
-            }}
-          />
-          <Holdings view={view} />
+          <Digest spaceId={spaceId} />
+          <Watchlist view={view} onOpen={research} />
+          <Holdings view={view} onOpen={research} />
         </>
       ) : tab === "health" ? (
         <Health spaceId={spaceId} />
+      ) : tab === "research" ? (
+        <Research key={researchKey ?? ""} spaceId={spaceId} view={view} initialKey={researchKey} />
+      ) : tab === "ideas" ? (
+        <Ideas spaceId={spaceId} onOpen={research} />
       ) : tab === "chart" ? (
-        <PriceChart key={chartKey ?? ""} view={view} initialKey={chartKey} />
+        <PriceChart view={view} initialKey={researchKey} />
       ) : tab === "alerts" ? (
         <Alerts view={view} />
       ) : (

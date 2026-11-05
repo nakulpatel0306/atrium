@@ -41,3 +41,20 @@ export function perfRow(r: PerfResult): { label: string; you: string; spy: strin
   ];
   return { label: r.period, you: signedPctText(r.portfolioPct), spy: signedPctText(b("SPY")?.pct ?? null), xeqt: signedPctText(b("XEQT.TO")?.pct ?? null), title: why.join("\n") };
 }
+
+// Nulls sort last whichever way the column is sorted; sourced cells sort by their value.
+export function sortRows<T>(rows: T[], by: keyof T, dir: "asc" | "desc"): T[] {
+  const val = (r: T): number | string | null => {
+    const v = r[by] as unknown;
+    if (v === null || v === undefined) return null;
+    if (typeof v === "object" && "value" in v) return (v as { value: number }).value;
+    return v as number | string;
+  };
+  return [...rows].sort((a, b) => {
+    const x = val(a);
+    const y = val(b);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    const c = typeof x === "string" ? x.localeCompare(String(y)) : x - (y as number);
+    return dir === "asc" ? c : -c;
+  });
+}

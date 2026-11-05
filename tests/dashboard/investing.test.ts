@@ -37,3 +37,19 @@ test("a performance row explains an n/a", () => {
   expect(row.title).toContain("n/a: Atrium has 100 days of XEQT.TO closes");
   expect(row.title).toContain("price");
 });
+
+test("sortRows puts nulls last in both directions and sorts sourced values by value", async () => {
+  const { sortRows } = await import("../../src/dashboard/investing");
+  const { applyFilters } = await import("../../src/engine/markets/screen");
+  const rows = [
+    { key: "A", pe: { value: 30, source: "x", asOf: 0, tone: "delayed" as const }, rsi14: null as number | null },
+    { key: "B", pe: null, rsi14: 25 },
+    { key: "C", pe: { value: 10, source: "x", asOf: 0, tone: "delayed" as const }, rsi14: 70 },
+  ];
+  expect(sortRows(rows, "pe", "asc").map((r) => r.key)).toEqual(["C", "A", "B"]);
+  expect(sortRows(rows, "pe", "desc").map((r) => r.key)).toEqual(["A", "C", "B"]);
+  expect(sortRows(rows, "rsi14", "desc").map((r) => r.key)).toEqual(["C", "B", "A"]);
+  expect(sortRows(rows, "key", "desc").map((r) => r.key)).toEqual(["C", "B", "A"]);
+  const screen = rows.map((r) => ({ ...r, name: r.key, price: null, pos52: null, fromHighPct: null, divYield: null, held: false, stage: "watching" as const, range52Source: null }));
+  expect(applyFilters(screen, [{ field: "pe", max: 20 }]).map((r) => r.key)).toEqual(["C"]);
+});

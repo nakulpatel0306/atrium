@@ -37,7 +37,7 @@ function Totals({ rows }: { rows: Row[] }) {
   );
 }
 
-function HoldingDetail({ h, spaceId }: { h: Row; spaceId: string }) {
+function HoldingDetail({ h, spaceId, onOpen }: { h: Row; spaceId: string; onOpen?: (key: string) => void }) {
   const [qty, setQty] = useState(String(h.quantity));
   const [book, setBook] = useState(h.bookValue === null ? "" : String(h.bookValue));
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +74,11 @@ function HoldingDetail({ h, spaceId }: { h: Row; spaceId: string }) {
         <button className="btn danger" type="button" onClick={() => void del(url)}>
           Remove
         </button>
+        {onOpen && (
+          <button className="btn" type="button" onClick={() => onOpen(h.key)}>
+            Research {h.key}
+          </button>
+        )}
         {error && <span className="err">{error}</span>}
       </form>
     </div>
@@ -137,7 +142,7 @@ function AddHolding({ spaceId, onDone }: { spaceId: string; onDone: () => void }
   );
 }
 
-export function Holdings({ view }: { view: MarketsView }) {
+export function Holdings({ view, onOpen }: { view: MarketsView; onOpen?: (key: string) => void }) {
   const cad = (h: Row) => (value(h) === null ? null : toCad(value(h)!, currencyOfKey(h.key), view.fx));
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -205,7 +210,7 @@ export function Holdings({ view }: { view: MarketsView }) {
                       <Freshness quote={h.quote} missing={h.missing} />
                     </div>
                     <Estimate e={view.estimates[h.key]} />
-                    {open === h.id && <HoldingDetail h={h} spaceId={view.spaceId} />}
+                    {open === h.id && <HoldingDetail h={h} spaceId={view.spaceId} onOpen={onOpen} />}
                   </div>
                 );
               })}
