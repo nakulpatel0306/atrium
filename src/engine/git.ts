@@ -431,16 +431,23 @@ export async function changedText(path: string, base: string, sha: string): Prom
   return { added, bytes: res.truncated ? Math.max(bytes, PATCH_READ_CAP + 1) : bytes };
 }
 
-// Every file path in a commit's tree.
-export async function treePaths(path: string, sha: string): Promise<string[]> {
-  const res = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--name-only", sha]);
+// Every entry in a commit's tree with its git mode ("100644" plain, "120000" symlink, "160000" gitlink…).
+export async function treeEntries(path: string, sha: string): Promise<{ path: string; mode: string }[]> {
+  const res = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", sha]);
   if (res.code !== 0) throw new Error(`Could not list files at ${sha}: ${res.err.trim()}`);
-  return res.out.split("\0").filter(Boolean);
+  return res.out
+    .split("\0")
+    .filter(Boolean)
+    .map((record) => {
+      const tab = record.indexOf("\t");
+      return { path: record.slice(tab + 1), mode: record.slice(0, record.indexOf(" ")) };
+    });
 }
 
-// One file's contents at a commit, cut at `cap` bytes.
-export async function fileAt(path: string, sha: string, file: string, cap = 64 * 1024): Promise<string> {
-  return (await gitCapped(path, ["cat-file", "blob", `${sha}:${file}`], cap)).out;
+// One file's contents at a commit, cut at `cap` bytes; `truncated` says it was cut.
+export async function fileAt(path: string, sha: string, file: string, cap = 64 * 1024): Promise<{ text: string; truncated: boolean }> {
+  const res = await gitCapped(path, ["cat-file", "blob", `${sha}:${file}`], cap);
+  return { text: res.out, truncated: res.truncated };
 }
 
 // Synchronous so it can be read inside the approval transaction; null when the branch or repo is gone.

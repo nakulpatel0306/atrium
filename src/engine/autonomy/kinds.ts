@@ -1,4 +1,3 @@
-import { posix } from "node:path";
 import type { ALWAYS_ASK } from "../approvals";
 import { isEnvPath } from "../envpath";
 import type { ChangedFile } from "../git";
@@ -17,10 +16,12 @@ export type DocsContent = {
   added: string[];
   // Bytes added plus bytes removed, over every changed line.
   bytes: number;
-  // The tree has a docs site generator or build that runs Markdown (Docusaurus, VitePress, mkdocs, Cargo doc tests…).
+  // The tree has a docs site generator, a build or test setting that runs Markdown (Docusaurus, Sphinx, Hugo, Cargo
+  // doc tests, pytest doctests…), or a config file Atrium couldn't read in full.
   siteConfig: boolean;
-  // Paths that CLAUDE.md, AGENTS.md or GEMINI.md files pull in with @, so an edit there edits an agent's instructions.
-  referenced: string[];
+  // Some agent instruction file imports another file with @, isn't a plain file, or couldn't be read in full, so an
+  // edit to any docs file might be an edit to an agent's instructions.
+  instructionsUnsafe: boolean;
 };
 
 // What the engine itself saw about a result, at one commit (`sha`). Nothing here comes from the agent's own words.
@@ -52,28 +53,34 @@ const INSTRUCTIONS = [
 // imports and JSX), either in the top-level docs/ folder or a well-known file such as a README. Tests are code.
 const DOCS_EXT = /\.(md|markdown|rst)$/i;
 const DOCS_NAME = /^(readme|changelog|contributing|history)[^/]*$/i;
-// Markdown that a docs tool would run or expand: MDX-style imports and exports, script tags, template tags.
-const EXECUTES = [/^\s*(import|export)\s/, /<script/i, /\{\{/, /\{%/];
+// Markdown that a docs tool would run or expand: MDX-style imports and exports, script tags, template tags, doctest
+// prompts, and reStructuredText directives that pull in or run other content.
+const EXECUTES = [
+  /^\s*(import|export)\s/,
+  /<script/i,
+  /\{\{/,
+  /\{%/,
+  /^\s*>>>/,
+  /^\s*\.\.\s+(raw|include|doctest|literalinclude|code-block)::/,
+];
 const SITE_CONFIG =
-  /(^|\/)(docusaurus\.config\.[^/]+|astro\.config\.[^/]+|nuxt\.config\.[^/]+|gatsby-config\.[^/]+|mkdocs\.ya?ml|cargo\.toml)$|(^|\/)\.vitepress(\/|$)/i;
-const INSTRUCTION_FILE = /(^|\/)(claude|agents|gemini)(\.local)?\.md$/i;
+  /(^|\/)(docusaurus\.config\.[^/]+|astro\.config\.[^/]+|nuxt\.config\.[^/]+|gatsby-config\.[^/]+|mkdocs\.ya?ml|cargo\.toml|conf\.py|book\.toml|_config\.yml|hugo\.(toml|ya?ml|json))$|(^|\/)\.vitepress(\/|$)|^config\.toml$/i;
+const DOCTEST_CONFIG = /(^|\/)(pyproject\.toml|setup\.cfg|pytest\.ini|tox\.ini)$/i;
+// Files that steer an agent. Generic .github files (CODEOWNERS, workflows) aren't, even though they live beside
+// Copilot's instructions.
+const AGENT_INSTRUCTIONS = [
+  /(^|\/)(claude|agents?|gemini|copilot|cursor|windsurf|conventions\.md$|\.aider)[^/]*$/i,
+  /(^|\/)(\.cursorrules|\.windsurfrules|\.clinerules|\.mcp\.json)(\/|$)/i,
+  /(^|\/)\.(claude|codex|gemini|cursor|agents|windsurf|roo|continue|kiro|junie)\//i,
+  /(^|\/)\.github\/(copilot-instructions\.md$|instructions\/)/i,
+];
 
 export const isSiteConfig = (path: string) => SITE_CONFIG.test(path);
-export const isInstructionFile = (path: string) => INSTRUCTION_FILE.test(path);
-
-// The repo paths an instruction file imports with `@path`, resolved from its own folder and, in case a tool reads
-// them from the root, as written. Home and absolute paths are outside the repo and left out.
-export function referencesIn(file: string, text: string): string[] {
-  const dir = posix.dirname(file);
-  const out = new Set<string>();
-  for (const m of text.matchAll(/(?:^|[\s(\[])@([^\s`'"()<>\[\]]+)/g)) {
-    const ref = m[1]!.replace(/[.,;:!?]+$/, "");
-    if (!ref || ref.startsWith("~") || ref.startsWith("/")) continue;
-    out.add(posix.normalize(posix.join(dir, ref)));
-    out.add(ref.replace(/^(\.\/)+/, ""));
-  }
-  return [...out];
-}
+export const isDoctestConfig = (path: string) => DOCTEST_CONFIG.test(path);
+export const enablesDoctest = (text: string) => /--doctest-glob|doctest_optionflags/.test(text);
+export const isAgentInstructionFile = (path: string) => AGENT_INSTRUCTIONS.some((re) => re.test(path));
+// Any `@path` at the start of a word, the way Claude, Gemini and Codex instruction files import other files.
+export const hasImport = (text: string) => /(?:^|[\s(\[])@[^\s`'"()<>\[\]]/.test(text);
 
 // Only ordinary files: symlinks, gitlinks, executable bits and type changes always go to Nakul.
 const PLAIN_MODES = new Set(["100644", "000000"]);
@@ -110,9 +117,8 @@ export function fingerprintOf(facts: ActionFacts): string | null {
   }
   if (lines > MEDIUM_LINES || !facts.files.every(isDocs)) return null;
   const c = facts.content;
-  if (c.siteConfig || c.bytes > DOCS_BYTES || c.added.some((line) => EXECUTES.some((re) => re.test(line)))) return null;
-  const referenced = new Set(c.referenced.map((p) => p.toLowerCase()));
-  if (facts.files.some((f) => referenced.has(f.path.toLowerCase()))) return null;
+  if (c.siteConfig || c.instructionsUnsafe || c.bytes > DOCS_BYTES) return null;
+  if (c.added.some((line) => EXECUTES.some((re) => re.test(line)))) return null;
   return `v1:code:docs:${lines <= SMALL_LINES ? "small" : "medium"}:${facts.agent}`;
 }
 

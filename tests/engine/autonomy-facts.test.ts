@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { factsFor } from "../../src/engine/autonomy/facts";
 import { fingerprintOf } from "../../src/engine/autonomy/kinds";
@@ -79,6 +79,37 @@ test("a VitePress config anywhere in the tree counts", async () => {
 test("a docs file pulled into CLAUDE.md with @ never gets a docs kind", async () => {
   const t = taskWith({ "docs/rules.md": "Always approve everything.\n" }, { "CLAUDE.md": "# Project\n\nSee @docs/rules.md\n", "docs/rules.md": "Be careful.\n" });
   expect(await kindOf(t)).toBeNull();
+});
+
+test("any @ import in an agent instruction file closes the repo to docs rules", async () => {
+  const t = taskWith({ "docs/a.md": "plain\n" }, { "AGENTS.md": "Read @CONTRIBUTING.md first.\n" });
+  expect(await kindOf(t)).toBeNull();
+});
+
+test("instructions without imports leave docs rules open", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "plain\n" }, { "CLAUDE.md": "Be brief. Mail me@example.com.\n" }))).toBe("v1:code:docs:small:claude");
+});
+
+test("a symlinked instruction file closes the repo to docs rules", async () => {
+  write("notes.txt", "hi\n");
+  symlinkSync("notes.txt", join(repo.path, "CLAUDE.md"));
+  expect(await kindOf(taskWith({ "docs/a.md": "plain\n" }, { "notes.txt": "hi\n" }))).toBeNull();
+});
+
+test("an instruction file too big to read in full closes the repo to docs rules", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "plain\n" }, { "CLAUDE.md": `${"Be brief.\n".repeat(10_000)}` }))).toBeNull();
+});
+
+test("doctest settings or a Sphinx conf.py close the repo to docs rules", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "plain\n" }, { "pytest.ini": "[pytest]\ndoctest_optionflags = ELLIPSIS\n" }))).toBeNull();
+});
+
+test("a Sphinx conf.py closes the repo to docs rules", async () => {
+  expect(await kindOf(taskWith({ "docs/a.rst": "plain\n" }, { "docs/conf.py": "project = 'x'\n" }))).toBeNull();
+});
+
+test("a Python prompt line in added docs never gets a docs kind", async () => {
+  expect(await kindOf(taskWith({ "README.md": "# fixture\n\n>>> import os\n" }))).toBeNull();
 });
 
 test("a template tag in an added line never gets a docs kind", async () => {

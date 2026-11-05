@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ActionFacts, type DocsContent, fingerprintOf, forbiddenFor, isSiteConfig, labelOf, parseFingerprint, referencesIn } from "../../src/engine/autonomy/kinds";
+import { type ActionFacts, type DocsContent, enablesDoctest, fingerprintOf, forbiddenFor, hasImport, isAgentInstructionFile, isDoctestConfig, isSiteConfig, labelOf, parseFingerprint } from "../../src/engine/autonomy/kinds";
 import { PLAIN_DOCS } from "../helpers";
 import type { ChangedFile } from "../../src/engine/git";
 
@@ -132,29 +132,50 @@ describe("fingerprintOf", () => {
 describe("docs that execute", () => {
   test("a repo with a docs site generator or Rust build never gets a docs kind", () => {
     expect(fingerprintOf(withContent({ siteConfig: true }))).toBeNull();
-    for (const p of ["docusaurus.config.js", "web/docusaurus.config.ts", "docs/.vitepress/config.mts", "astro.config.mjs", "mkdocs.yml", "Cargo.toml", "nuxt.config.ts", "gatsby-config.js"]) {
+    for (const p of [
+      "docusaurus.config.js", "web/docusaurus.config.ts", "docs/.vitepress/config.mts", "astro.config.mjs", "mkdocs.yml", "Cargo.toml",
+      "nuxt.config.ts", "gatsby-config.js", "docs/conf.py", "book.toml", "_config.yml", "site/_config.yml", "hugo.toml", "hugo.yaml",
+      "hugo.json", "config.toml",
+    ]) {
       expect(isSiteConfig(p)).toBe(true);
     }
-    for (const p of ["docs/a.md", "README.md", "package.json", "docs/mkdocs.md", "vitepress.md"]) expect(isSiteConfig(p)).toBe(false);
+    for (const p of ["docs/a.md", "README.md", "package.json", "docs/mkdocs.md", "vitepress.md", "app/config.toml", "conf.pyc"]) {
+      expect(isSiteConfig(p)).toBe(false);
+    }
   });
 
   test("added lines that a docs tool would run never get a docs kind", () => {
-    for (const line of ["import Chart from './chart'", "  export const x = 1", "<script>alert(1)</script>", "<SCRIPT src=x>", "Hello {{ secret }}", "{% include 'x.html' %}"]) {
+    for (const line of [
+      "import Chart from './chart'", "  export const x = 1", "<script>alert(1)</script>", "<SCRIPT src=x>", "Hello {{ secret }}",
+      "{% include 'x.html' %}", ">>> import os", "   >>> 1 + 1", ".. raw:: html", ".. include:: ../secrets.txt", "  .. doctest::",
+      ".. literalinclude:: x.py", ".. code-block:: python",
+    ]) {
       expect(fingerprintOf(withContent({ added: ["fine", line] }))).toBeNull();
     }
-    expect(fingerprintOf(withContent({ added: ["Important: exports are listed below.", "Use `{ a }` braces."] }))).toBe("v1:code:docs:small:claude");
+    expect(fingerprintOf(withContent({ added: ["Important: exports are listed below.", "Use `{ a }` braces.", "> quoted", ".. note::"] }))).toBe(
+      "v1:code:docs:small:claude",
+    );
   });
 
-  test("a file an agent's instructions import never gets a docs kind", () => {
-    expect(fingerprintOf(withContent({ referenced: ["docs/a.md"] }))).toBeNull();
-    expect(fingerprintOf(withContent({ referenced: ["DOCS/A.md"] }))).toBeNull();
-    expect(fingerprintOf(withContent({ referenced: ["docs/other.md"] }))).toBe("v1:code:docs:small:claude");
+  test("a repo whose agent instructions import anything never gets a docs kind", () => {
+    expect(fingerprintOf(withContent({ instructionsUnsafe: true }))).toBeNull();
+    for (const text of ["See @docs/rules.md", "(@./x.md)", "@~/notes.md", "line\n@/etc/hosts"]) expect(hasImport(text)).toBe(true);
+    for (const text of ["Email me@example.com", "uses: actions/checkout@v4", '"@scope/pkg"', "no imports here"]) expect(hasImport(text)).toBe(false);
   });
 
-  test("references resolve from the instruction file's folder", () => {
-    expect(referencesIn("CLAUDE.md", "See @docs/rules.md and @README.md.\nEmail me@example.com")).toEqual(["docs/rules.md", "README.md"]);
-    expect(referencesIn("pkg/AGENTS.md", "Follow @./guide.md, (@../docs/x.md)")).toEqual(["pkg/guide.md", "guide.md", "docs/x.md", "../docs/x.md"]);
-    expect(referencesIn("CLAUDE.md", "@~/notes.md @/etc/hosts")).toEqual([]);
+  test("agent instruction files are found by name and folder", () => {
+    for (const p of ["CLAUDE.md", "CLAUDE.local.md", "pkg/AGENTS.md", "GEMINI.md", ".cursorrules", ".clinerules", ".github/copilot-instructions.md", ".github/instructions/a.md", ".claude/commands/x.md", "CONVENTIONS.md"]) {
+      expect(isAgentInstructionFile(p)).toBe(true);
+    }
+    for (const p of ["README.md", ".github/CODEOWNERS", ".github/workflows/ci.yml", "docs/a.md"]) expect(isAgentInstructionFile(p)).toBe(false);
+  });
+
+  test("doctest settings make Markdown executable", () => {
+    for (const p of ["pyproject.toml", "setup.cfg", "pytest.ini", "tox.ini", "sub/pytest.ini"]) expect(isDoctestConfig(p)).toBe(true);
+    expect(isDoctestConfig("package.json")).toBe(false);
+    expect(enablesDoctest('[tool.pytest.ini_options]\naddopts = "--doctest-glob=*.md"')).toBe(true);
+    expect(enablesDoctest("[pytest]\ndoctest_optionflags = ELLIPSIS")).toBe(true);
+    expect(enablesDoctest("[tool.ruff]\nline-length = 100")).toBe(false);
   });
 
   test("more than 20 KB of changed text never gets a docs kind", () => {

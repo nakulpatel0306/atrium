@@ -1,11 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { branchSha, changedFiles, changedText, fileAt, treePaths } from "../git";
+import { branchSha, changedFiles, changedText, fileAt, treeEntries } from "../git";
 import { resolvedAgent } from "../handoff";
 import type { Space } from "../spaces";
 import type { Task } from "../tasks";
-import { type ActionFacts, isInstructionFile, isSiteConfig, referencesIn } from "./kinds";
+import { type ActionFacts, enablesDoctest, hasImport, isAgentInstructionFile, isDoctestConfig, isSiteConfig } from "./kinds";
 
 // The branch a task's latest repo run started from, which is what its whole diff is measured against.
 export function runStart(db: Database, taskId: string): string | null {
@@ -28,10 +28,24 @@ export async function factsFor(db: Database, task: Task, space: Space, filesKept
     if (!sha) return null;
     const files = await changedFiles(repo, start, sha);
     const text = await changedText(repo, start, sha);
-    const paths = await treePaths(repo, sha);
-    const referenced: string[] = [];
-    for (const p of paths.filter(isInstructionFile)) referenced.push(...referencesIn(p, await fileAt(repo, sha, p)));
-    const content = { added: text.added, bytes: text.bytes, siteConfig: paths.some(isSiteConfig), referenced };
+    const tree = await treeEntries(repo, sha);
+    // Blunt on purpose: any doubt about what runs Markdown or what an agent's instructions pull in closes the repo
+    // to docs rules, instead of trying to resolve exactly which files are affected.
+    let siteConfig = tree.some((e) => isSiteConfig(e.path));
+    for (const e of tree.filter((e) => !siteConfig && isDoctestConfig(e.path))) {
+      const file = await fileAt(repo, sha, e.path);
+      if (file.truncated || enablesDoctest(file.text)) siteConfig = true;
+    }
+    let instructionsUnsafe = false;
+    for (const e of tree.filter((e) => isAgentInstructionFile(e.path))) {
+      if (e.mode !== "100644") instructionsUnsafe = true;
+      else {
+        const file = await fileAt(repo, sha, e.path);
+        if (file.truncated || hasImport(file.text)) instructionsUnsafe = true;
+      }
+      if (instructionsUnsafe) break;
+    }
+    const content = { added: text.added, bytes: text.bytes, siteConfig, instructionsUnsafe };
     return { domain: "code", agent, branch: task.branch, sha, files, content };
   } catch {
     return null;
