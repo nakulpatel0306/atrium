@@ -1,6 +1,6 @@
 import { parseCsv } from "./csv";
 import type { HoldingInput } from "./holdings";
-import { instrumentFromWealthsimple, parseInstrumentKey, type Exchange } from "./instrument";
+import { instrumentFromWealthsimple, isSymbol, parseInstrumentKey, type Exchange } from "./instrument";
 
 export type ImportField =
   | "account"
@@ -48,6 +48,8 @@ const COMPLETENESS = "Positions from an activity export are only right if the fi
 // Activity rows that don't change how many shares are held.
 const CASH_ONLY = new Set(["trade", "dividend", "deposit", "withdrawal", "fee", "interest", "transfer"]);
 const DEFAULT_ACCOUNT = "Imported";
+const MAX_POSITIONS = 500;
+const badSymbol = (s: string) => `"${s}" isn't a symbol Atrium can look up; add it by hand.`;
 
 function detect(headers: string[]): FieldMap {
   const lower = headers.map((h) => h.trim().toLowerCase());
@@ -128,7 +130,16 @@ export function previewImport(text: string, opts: { mapping?: FieldMap; exchange
         continue;
       }
       let inst: { symbol: string; exchange: Exchange } | null;
-      if (mapping.exchange === undefined && mapping.mic === undefined) inst = parseInstrumentKey(symbol);
+      if (mapping.exchange === undefined && mapping.mic === undefined) {
+        inst = parseInstrumentKey(symbol);
+        if (!inst) {
+          preview.skipped.push({ line, reason: badSymbol(symbol) });
+          continue;
+        }
+      } else if (!isSymbol(symbol)) {
+        preview.skipped.push({ line, reason: badSymbol(symbol) });
+        continue;
+      }
       else {
         const e = opts.exchangeOverrides?.[symbol] ?? instrumentFromWealthsimple(cell(r, "exchange"), cell(r, "mic"));
         inst = e ? { symbol, exchange: e } : null;
@@ -138,7 +149,7 @@ export function previewImport(text: string, opts: { mapping?: FieldMap; exchange
         continue;
       }
       const quantity = num(cell(r, "quantity"));
-      if (Number.isNaN(quantity)) {
+      if (!Number.isFinite(quantity)) {
         preview.skipped.push({ line, reason: "Quantity isn't a number." });
         continue;
       }
@@ -158,12 +169,17 @@ export function previewImport(text: string, opts: { mapping?: FieldMap; exchange
         exchange: inst.exchange,
         name: cell(r, "name"),
         quantity,
-        bookValue: Number.isNaN(book) ? null : book,
+        bookValue: Number.isFinite(book) ? book : null,
         currency: cur,
       });
     }
   }
   preview.accounts = [...accounts];
+  preview.skipped.sort((a, b) => a.line - b.line);
+  if (preview.rows.length > MAX_POSITIONS) {
+    preview.warnings.unshift(`That file has ${preview.rows.length} positions; Atrium imports at most ${MAX_POSITIONS} at a time. Export one account at a time.`);
+    preview.rows = [];
+  }
   return preview;
 }
 
@@ -177,7 +193,7 @@ function activity(preview: ImportPreview, data: { line: number; r: string[] }[],
   const dateIdx = preview.headers.findIndex((h) => h.toLowerCase() === "transaction_date");
   const net = preview.headers.findIndex((h) => h.toLowerCase() === "net_cash_amount");
   const ordered = [...data].sort((a, b) => (dateIdx < 0 ? 0 : (a.r[dateIdx] ?? "").localeCompare(b.r[dateIdx] ?? "")));
-  for (const { r } of ordered) {
+  for (const { line, r } of ordered) {
     const account = cell(r, "account") || DEFAULT_ACCOUNT;
     const symbol = cell(r, "symbol").toUpperCase();
     if (account) accounts.add(account);
@@ -188,7 +204,15 @@ function activity(preview: ImportPreview, data: { line: number; r: string[] }[],
       if (!CASH_ONLY.has(type.toLowerCase()) && qty > 0) unapplied.set(type, (unapplied.get(type) ?? 0) + 1);
       continue;
     }
-    if (Number.isNaN(qty) || qty === 0) continue;
+    if (!isSymbol(symbol)) {
+      preview.skipped.push({ line, reason: badSymbol(symbol) });
+      continue;
+    }
+    if (!Number.isFinite(qty)) {
+      preview.skipped.push({ line, reason: "Quantity isn't a number." });
+      continue;
+    }
+    if (qty === 0) continue;
     const id = `${account}\u0000${symbol}`;
     const pos = positions.get(id) ?? { account, symbol, name: cell(r, "name"), currency: cell(r, "currency").toUpperCase(), qty: 0, book: 0 };
     positions.set(id, pos);
@@ -196,7 +220,7 @@ function activity(preview: ImportPreview, data: { line: number; r: string[] }[],
     if (side === "BUY") {
       pos.qty += qty;
       const cash = num(net >= 0 ? r[net] : "");
-      if (!Number.isNaN(cash)) pos.book += -cash;
+      if (Number.isFinite(cash)) pos.book += -cash;
     } else if (side === "SELL") {
       const before = pos.qty;
       pos.qty -= qty;

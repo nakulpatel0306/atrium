@@ -67,3 +67,27 @@ test("bad quantities are listed, parenthesised numbers are negative", () => {
   expect(p.skipped).toEqual([{ line: 2, reason: "Quantity isn't a number." }]);
   expect(p.rows[0]!.bookValue).toBe(-20);
 });
+
+test("symbols that can't be looked up are skipped with a reason, in both formats", () => {
+  const holdings = "Account Name,Symbol,Exchange,MIC,Security Type,Quantity,Book Value (Market),Market Price Currency\nTFSA,AB$CD,TSX,XTSE,EQUITY,5,10,CAD\nTFSA,SHOP,TSX,XTSE,EQUITY,1e999,10,CAD\nTFSA,RY,TSX,XTSE,EQUITY,2,1e999,CAD\n";
+  const h = previewImport(holdings);
+  expect(h.skipped).toEqual([
+    { line: 2, reason: '"AB$CD" isn\'t a symbol Atrium can look up; add it by hand.' },
+    { line: 3, reason: "Quantity isn't a number." },
+  ]);
+  expect(h.rows).toEqual([{ account: "TFSA", symbol: "RY", exchange: "TSX", name: "", quantity: 2, bookValue: null, currency: "CAD" }]);
+  const activity = "transaction_date,account_type,activity_type,activity_sub_type,symbol,currency,quantity,net_cash_amount\n2026-01-02,TFSA,Trade,BUY,BAD SYMBOL,CAD,5,-50\n2026-01-03,TFSA,Trade,BUY,SHOP,CAD,Infinity,-50\n2026-01-04,TFSA,Trade,BUY,RY,CAD,3,-30\n";
+  const a = previewImport(activity);
+  expect(a.skipped).toEqual([
+    { line: 2, reason: '"BAD SYMBOL" isn\'t a symbol Atrium can look up; add it by hand.' },
+    { line: 3, reason: "Quantity isn't a number." },
+  ]);
+  expect(a.rows.map((r) => [r.symbol, r.quantity])).toEqual([["RY", 3]]);
+});
+
+test("an import is capped at 500 positions", () => {
+  const lines = Array.from({ length: 501 }, (_, i) => `TFSA,S${i},TSX,XTSE,EQUITY,1,1,CAD`);
+  const p = previewImport(`Account Name,Symbol,Exchange,MIC,Security Type,Quantity,Book Value (Market),Market Price Currency\n${lines.join("\n")}\n`);
+  expect(p.rows).toEqual([]);
+  expect(p.warnings[0]).toBe("That file has 501 positions; Atrium imports at most 500 at a time. Export one account at a time.");
+});

@@ -4,6 +4,8 @@ export type Instrument = { symbol: string; exchange: Exchange };
 const SUFFIX: Record<Exchange, string> = { US: "", TSX: ".TO", TSXV: ".V", NEO: ".NE", OTC: ":OTC" };
 const SYMBOL = /^[A-Z0-9][A-Z0-9.\-]{0,14}$/;
 
+export const isSymbol = (s: string): boolean => SYMBOL.test(s);
+
 export const instrumentKey = (i: Instrument): string => `${i.symbol}${SUFFIX[i.exchange]}`;
 
 // Only the market suffixes above are stripped, so a share-class dot (BRK.B, BBD.B.TO) stays in the symbol.
