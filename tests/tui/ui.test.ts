@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { deriveView } from "../../src/tui/select";
-import { type Action, initialUi, reduce, type Ui } from "../../src/tui/ui";
+import { CLEARED } from "../../src/tui/select";
+import { type Action, initialUi, pin, reduce, type Ui } from "../../src/tui/ui";
 import { ids, makeState } from "./fixtures";
 
 const state = makeState();
@@ -87,4 +88,25 @@ test("Detail starts at the top when the left pane it follows changes", () => {
   expect(run([{ type: "focus", pane: "needs" }], scrolled).detailScroll).toBe(0);
   expect(run([{ type: "focus", pane: "tasks" }], scrolled).detailScroll).toBe(12);
   expect(run([{ type: "focus", pane: "live" }], scrolled).detailScroll).toBe(12);
+});
+
+test("pin fixes each pane's selection to the row it shows", () => {
+  const pinned = pin(initialUi, deriveView(state, initialUi));
+  expect(pinned.selected.spaces).toEqual({ id: ids.atrium, index: 0 });
+  expect(pinned.selected.needs).toEqual({ id: ids.approval, index: 0 });
+  expect(pin(pinned, deriveView(state, pinned))).toBe(pinned);
+  const cleared: Ui = { ...pinned, selected: { ...pinned.selected, needs: { id: CLEARED, index: 0 } } };
+  expect(pin(cleared, deriveView(state, cleared)).selected.needs.id).toBe(CLEARED);
+});
+
+test("unpin leaves nothing selected, and j picks the row in that spot without moving past it", () => {
+  const start: Ui = { ...initialUi, focus: "spaces", selected: { ...initialUi.selected, spaces: { id: ids.atrium, index: 0 } } };
+  const unpinned = run([{ type: "unpin", pane: "spaces" }], start);
+  expect(unpinned.selected.spaces).toEqual({ id: CLEARED, index: 0 });
+  expect(run([{ type: "move", delta: 1 }], unpinned).selected.spaces).toEqual({ id: ids.atrium, index: 0 });
+});
+
+test("a new filter starts the selection over", () => {
+  const start: Ui = { ...initialUi, selected: { ...initialUi.selected, spaces: { id: ids.jobHunt, index: 1 } } };
+  expect(run([{ type: "filter", pane: "spaces", text: "a" }], start).selected.spaces).toEqual({ id: null, index: 0 });
 });

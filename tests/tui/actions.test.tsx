@@ -114,3 +114,54 @@ test("a new space is set up once and then selected", async () => {
   expect(app.lastFrame()).toContain("[2] Tasks · job hunt");
   expect(client.calls.filter((c) => c.path === "/api/command")).toHaveLength(1);
 });
+
+test("a new approval arriving never changes what a approves", async () => {
+  const state = makeState();
+  const client = fakeClient(state);
+  const app = openApp(client);
+  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.type("3");
+  await app.frame((f) => f.includes("[0] Detail · Review: Fix login redirect"));
+  const fresh = { ...state.approvals[0]!, id: "apr_new", title: "Review: Something newer", createdAt: Date.now() };
+  client.push({ ...state, approvals: [fresh, ...state.approvals] });
+  await app.frame((f) => f.includes("Something newer"));
+  await app.type("a");
+  await app.frame((f) => f.includes("Approved"));
+  expect(mutations(client.calls)).toEqual([{ method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "approve" } }]);
+});
+
+test("after a decision nothing is selected until you pick a row", async () => {
+  const state = makeState();
+  const second = { ...state.approvals[0]!, id: "apr_two", title: "Review: Second thing", createdAt: Date.now() - 600_000 };
+  const client = fakeClient({ ...state, approvals: [state.approvals[0]!, second] });
+  const app = openApp(client);
+  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.type("3", "a");
+  await app.frame((f) => f.includes("Approved"));
+  // The engine drops the decided approval; the one that slides into its place is not selected.
+  client.push({ ...state, approvals: [second] });
+  await app.frame((f) => f.includes("Select an item with j or k."));
+  await app.type("a");
+  await app.frame((f) => f.includes("Select an item first"));
+  expect(mutations(client.calls)).toHaveLength(1);
+  await app.type("j");
+  await app.frame((f) => f.includes("[0] Detail · Review: Second thing"));
+  await app.type("a");
+  await app.frame((f) => f.includes('Approved "Review: Second thing".'));
+  expect(mutations(client.calls)).toHaveLength(2);
+});
+
+test("an approval decided elsewhere leaves nothing selected", async () => {
+  const state = makeState();
+  const second = { ...state.approvals[0]!, id: "apr_two", title: "Review: Second thing" };
+  const client = fakeClient({ ...state, approvals: [state.approvals[0]!, second] });
+  const app = openApp(client);
+  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.type("3");
+  await app.frame((f) => f.includes("[0] Detail · Review: Fix login redirect"));
+  client.push({ ...state, approvals: [second] });
+  await app.frame((f) => f.includes("Select an item with j or k."));
+  await app.type("a");
+  await app.frame((f) => f.includes("Select an item first"));
+  expect(mutations(client.calls)).toEqual([]);
+});

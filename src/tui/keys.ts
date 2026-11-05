@@ -3,7 +3,7 @@ import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import type { ReviewerId } from "../engine/spaces";
 import { editLine } from "./edit";
-import type { View } from "./select";
+import { listOf, pick, type View } from "./select";
 import type { Action, ListPane, Overlay, Pane, Ui } from "./ui";
 
 export type Intent =
@@ -72,12 +72,14 @@ const OVERLAY_HINTS: Partial<Record<Overlay["kind"], string>> = {
   help: "? or q close",
 };
 
-export function hints(ui: Ui, _view: View): string {
+export function hints(ui: Ui, view: View): string {
   const overlay = ui.overlay && OVERLAY_HINTS[ui.overlay.kind];
-  if (overlay) return overlay;
-  return [...HINT_KEYS[ui.focus], "?"]
-    .map((k) => `${k} ${HELP.find((h) => h.keys === k)?.does ?? ""}`)
-    .join("  ");
+  if (overlay) return ui.overlay?.kind === "help" ? overlay : `? help  ${overlay}`;
+  const keys = ["?", ...HINT_KEYS[ui.focus]].map((k) => `${k} ${HELP.find((h) => h.keys === k)?.does ?? ""}`);
+  const pane = ui.focus === "detail" || ui.focus === "live" ? null : ui.focus;
+  const list = pane ? listOf(view, pane) : [];
+  if (pane && list.length > 0 && !pick(list, ui.selected[pane]).item) keys.unshift("j k select an item");
+  return keys.join("  ");
 }
 
 const REVIEWER_OPTIONS = ["none", "codex", "gemini", "claude"];
@@ -94,27 +96,36 @@ const isList = (p: Pane): p is ListPane => p !== "detail" && p !== "live";
 // Detail and Live act on whatever the left column last selected.
 const leftOf = (u: Ui): ListPane => (isList(u.focus) ? u.focus : u.lastLeft);
 
+// Actions act only on a row pinned by id, never on whatever happens to sit at the cursor's position.
+const pinned = <T extends { id: string }>(u: Ui, pane: ListPane, item: T | null): T | null =>
+  item && u.selected[pane].id === item.id ? item : null;
+
 function approvalOf(u: Ui, view: View) {
   const pane = leftOf(u);
-  if (pane === "needs") return view.approval;
-  if (pane === "tasks" && view.task?.approvalId) {
-    return view.state.approvals.find((a) => a.id === view.task!.approvalId) ?? null;
-  }
-  return null;
+  if (pane === "needs") return pinned(u, "needs", view.approval);
+  const task = pane === "tasks" ? pinned(u, "tasks", view.task) : null;
+  return task?.approvalId ? (view.state.approvals.find((a) => a.id === task.approvalId) ?? null) : null;
 }
 
 function taskOf(u: Ui, view: View) {
   const pane = leftOf(u);
-  if (pane === "tasks") return view.task;
-  if (pane === "needs" && view.approval?.taskId) {
-    return view.state.tasks.find((t) => t.id === view.approval!.taskId) ?? null;
+  if (pane === "tasks") return pinned(u, "tasks", view.task);
+  const approval = pane === "needs" ? pinned(u, "needs", view.approval) : null;
+  return approval?.taskId ? (view.state.tasks.find((t) => t.id === approval.taskId) ?? null) : null;
+}
+
+// Why a key found nothing to act on: an empty pane, or rows with none picked.
+function nothingHere(u: Ui, view: View, empty: string): Command {
+  const pane = leftOf(u);
+  if (listOf(view, pane).length > 0 && !pick(listOf(view, pane), u.selected[pane]).item) {
+    return info("Select an item first: press j or k.");
   }
-  return null;
+  return info(empty);
 }
 
 function transcript(u: Ui, view: View): Command {
   const task = taskOf(u, view);
-  if (!task) return info(NO_TASK);
+  if (!task) return nothingHere(u, view, NO_TASK);
   if (!view.state.runs.some((r) => r.taskId === task.id)) return info("No runs yet.");
   return open({ kind: "transcript", taskId: task.id, runIndex: 0, scroll: 0 });
 }
@@ -140,7 +151,7 @@ function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
     if (input === "u") return [ui({ type: "page", dir: -1 })];
     return [];
   }
-  const space = view.space;
+  const space = pinned(u, "spaces", view.space);
   const task = taskOf(u, view);
   switch (input) {
     case "1":
@@ -182,16 +193,16 @@ function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
       return [transcript(u, view)];
     case "a": {
       const approval = approvalOf(u, view);
-      if (!approval) return [info("Nothing to approve here. Pick a row in Needs you [3].")];
+      if (!approval) return [nothingHere(u, view, "Nothing to approve here. Pick a row in Needs you [3].")];
       return [intent({ type: "approve", approvalId: approval.id, title: approval.title })];
     }
     case "r": {
       const approval = approvalOf(u, view);
-      if (!approval) return [info("Nothing to send back here. Pick a row in Needs you [3].")];
+      if (!approval) return [nothingHere(u, view, "Nothing to send back here. Pick a row in Needs you [3].")];
       return [prompt("reply", approval.id)];
     }
     case "R":
-      if (!task) return [info(NO_TASK)];
+      if (!task) return [nothingHere(u, view, NO_TASK)];
       if (task.status !== "blocked" && task.status !== "failed") return [info("Retry is for blocked or failed tasks.")];
       return [intent({ type: "retry", taskId: task.id })];
     case "s":
@@ -205,7 +216,7 @@ function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
     case "N":
       return [prompt("space", null)];
     case "A":
-      if (!task) return [info(NO_TASK)];
+      if (!task) return [nothingHere(u, view, NO_TASK)];
       if (task.status !== "queued") return [info("This task has already started, so its agent can't change.")];
       if (task.kind !== "work") return [info("Reviews and fixes use the agent the space picked.")];
       return [

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { orderedTasks } from "../../src/dashboard/summary";
-import { deriveView, pick } from "../../src/tui/select";
+import { CLEARED, deriveView, pick } from "../../src/tui/select";
 import { initialUi, type Ui } from "../../src/tui/ui";
 import { ids, makeState } from "./fixtures";
 
@@ -16,11 +16,16 @@ test("tasks follow the selected space in dashboard order", () => {
   expect(other.tasks.map((t) => t.id)).toEqual([ids.blocked]);
 });
 
-test("selection survives the item disappearing", () => {
-  const [a, b, c] = [{ id: "a" }, { id: "b" }, { id: "c" }];
+test("a pinned selection never slides onto another row", () => {
+  const [a, b, c, fresh] = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "new" }];
   expect(pick([a, b, c], { id: "b", index: 1 })).toEqual({ item: b, index: 1 });
-  expect(pick([a, c], { id: "b", index: 1 })).toEqual({ item: c, index: 1 });
-  expect(pick([a], { id: "b", index: 2 })).toEqual({ item: a, index: 0 });
+  // A new row above keeps the same item selected, at its new position.
+  expect(pick([fresh, a, b], { id: "a", index: 0 })).toEqual({ item: a, index: 1 });
+  // The pinned row went away (decided elsewhere): nothing is selected, and no neighbour takes its place.
+  expect(pick([a, c], { id: "b", index: 1 })).toEqual({ item: null, index: 1 });
+  expect(pick([a], { id: CLEARED, index: 0 })).toEqual({ item: null, index: 0 });
+  // Not pinned yet: the row at that position, which the app pins at once.
+  expect(pick([a, b], { id: null, index: 1 })).toEqual({ item: b, index: 1 });
   expect(pick([], { id: "b", index: 2 })).toEqual({ item: null, index: 0 });
 });
 

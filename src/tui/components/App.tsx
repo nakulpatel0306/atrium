@@ -12,7 +12,7 @@ import { layout } from "../layout";
 import { deriveView, type View } from "../select";
 import { clean, wrapLines } from "../text";
 import { color } from "../theme";
-import { type Action, type Flash, initialUi, reduce, type Rows, type Ui } from "../ui";
+import { type Action, type Flash, initialUi, pin, reduce, type Rows, type Ui } from "../ui";
 import { AgentsView, agentsLines } from "./AgentsView";
 import { Body } from "./Body";
 import { Confirm } from "./Confirm";
@@ -65,6 +65,17 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     void client.post("/api/seen");
   }, [state, client]);
 
+  // Each pane's selection is pinned to a row id as soon as it shows one, so a row arriving later can't slide
+  // under the cursor before the next key.
+  useEffect(() => {
+    if (!state) return;
+    const pinnedUi = pin(uiRef.current, deriveView(state, uiRef.current));
+    if (pinnedUi !== uiRef.current) {
+      uiRef.current = pinnedUi;
+      setUi(pinnedUi);
+    }
+  }, [state, ui]);
+
   useTick(60_000, true);
   useTick(15_000, state?.tasks.some((t) => t.status === "running") ?? false);
 
@@ -106,7 +117,8 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     return next;
   };
   const commit = (next: Ui) => {
-    const clamped = clampOverlay(next);
+    const s = client.state();
+    const clamped = clampOverlay(s ? pin(next, deriveView(s, next)) : next);
     uiRef.current = clamped;
     setUi(clamped);
   };
@@ -127,6 +139,8 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     }
     const out = await runIntent(client, intent, s);
     if (intent.type === "newSpace") settingUp.current = false;
+    // A decided approval leaves the list; the next one is picked deliberately, never slid into.
+    if ((intent.type === "approve" || intent.type === "reject") && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
     if (out.spaceId) {
       dispatch({ type: "select", pane: "spaces", id: out.spaceId });
       dispatch({ type: "focus", pane: "tasks" });
@@ -140,7 +154,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
       if (input === "q") exit();
       return;
     }
-    let cur = uiRef.current;
+    let cur = pin(uiRef.current, deriveView(s, uiRef.current));
     const intents: Intent[] = [];
     let quit = false;
     const run = (text: string) => {

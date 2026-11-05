@@ -27,17 +27,21 @@ export type View = {
 
 const SUBJECT: Record<ListPane, Subject> = { spaces: "space", tasks: "task", needs: "approval", activity: "activity" };
 
-// The engine can remove the selected row at any time (decided in the dashboard, archived), so a missing id
-// falls back to whatever now sits at the same position.
+// A selection id that pins nothing: after a decision, or once the pinned row has gone.
+export const CLEARED = "";
+
+// Selections are pinned to a row id, so rows arriving or leaving never put a different item under the cursor
+// (pressing `a` must approve what Nakul was looking at). Only an unpinned selection (id null, before the app
+// pins it) resolves by position; a pinned row that has gone leaves nothing selected.
 export function pick<T extends { id: string }>(
   list: T[],
   sel: { id: string | null; index: number },
 ): { item: T | null; index: number } {
-  const at = sel.id === null ? -1 : list.findIndex((x) => x.id === sel.id);
-  if (at >= 0) return { item: list[at]!, index: at };
   if (list.length === 0) return { item: null, index: 0 };
   const index = Math.min(Math.max(0, sel.index), list.length - 1);
-  return { item: list[index]!, index };
+  if (sel.id === null) return { item: list[index]!, index };
+  const at = list.findIndex((x) => x.id === sel.id);
+  return at >= 0 ? { item: list[at]!, index: at } : { item: null, index };
 }
 
 const matches = (filter: string, ...fields: (string | null | undefined)[]) => {

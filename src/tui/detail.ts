@@ -23,6 +23,8 @@ const heading = (text: string): DetailLine => plain(text, { bold: true, color: c
 // Multi-line text (task detail, agent messages) becomes one detail line per source line.
 const block = (text: string, style: Omit<Styled, "text"> = {}) => clean(text).split("\n").map((l) => plain(l, style));
 
+const PICK = "Select an item with j or k.";
+
 const runDate = (ts: number) =>
   new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -57,7 +59,7 @@ function thread(messages: Message[] | null): DetailLine[] {
 
 export function taskDetail(view: View, messages: Message[] | null): DetailLine[] {
   const task = view.task;
-  if (!task) return [muted("Pick a task in [2] to see its detail.")];
+  if (!task) return [muted(view.tasks.length ? PICK : "Pick a task in [2] to see its detail.")];
   const { state } = view;
   const glyph = STATUS_GLYPH[task.status];
   const wait = waitOf(task, state);
@@ -93,7 +95,7 @@ export function taskDetail(view: View, messages: Message[] | null): DetailLine[]
 
 export function approvalDetail(view: View, messages: Message[] | null): DetailLine[] {
   const approval = view.approval;
-  if (!approval) return [muted("Nothing needs you right now.")];
+  if (!approval) return [muted(view.approvals.length ? PICK : "Nothing needs you right now.")];
   const space = view.state.spaces.find((s) => s.id === approval.spaceId);
   const review = reviewLine(approval, view.state, messages);
   const lines: DetailLine[] = [muted(space?.name ?? "Unknown space"), plain(approval.title, { bold: true })];
@@ -106,7 +108,7 @@ export function approvalDetail(view: View, messages: Message[] | null): DetailLi
 
 export function spaceDetail(view: View, reviewers: Record<string, string | null> | null): DetailLine[] {
   const space = view.space;
-  if (!space) return [muted("No spaces yet. Press N to describe one.")];
+  if (!space) return [muted(view.spaces.length ? PICK : "No spaces yet. Press N to describe one.")];
   const { state } = view;
   const tasks = state.tasks.filter((t) => t.spaceId === space.id);
   const status = spaceStatus(space, tasks, state);
@@ -141,7 +143,7 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
 
 export function activityDetail(view: View): DetailLine[] {
   const row = view.activityRow;
-  if (!row) return [muted("No activity yet. Agent runs and your decisions will show up here.")];
+  if (!row) return [muted(view.activity.length ? PICK : "No activity yet. Agent runs and your decisions will show up here.")];
   const space = row.spaceId ? view.state.spaces.find((s) => s.id === row.spaceId) : undefined;
   return [
     [{ text: actorName(row.actor), bold: true }, ...(space ? [{ text: ` · ${space.name}`, color: color.info }] : [])],

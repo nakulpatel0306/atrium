@@ -1,6 +1,6 @@
 // The terminal app's own state (focus, selection, scroll, overlays) and every way a key can change it.
 import type { AgentChoice } from "../dashboard/agents";
-import { listOf, pick, type View } from "./select";
+import { CLEARED, listOf, pick, type View } from "./select";
 
 export type ListPane = "spaces" | "tasks" | "needs" | "activity";
 export type Pane = ListPane | "detail" | "live";
@@ -43,6 +43,7 @@ export type Action =
   | { type: "close" }
   | { type: "setOverlay"; overlay: Overlay }
   | { type: "select"; pane: ListPane; id: string }
+  | { type: "unpin"; pane: ListPane }
   | { type: "filter"; pane: ListPane; text: string }
   | { type: "flash"; flash: Flash | null };
 
@@ -84,8 +85,9 @@ function select(ui: Ui, pane: ListPane, sel: Selection): Ui {
 function moveTo(ui: Ui, view: View, pane: ListPane, index: (current: number, last: number) => number): Ui {
   const list = listOf(view, pane);
   if (list.length === 0) return ui;
-  const current = pick(list, ui.selected[pane]).index;
-  const to = Math.min(list.length - 1, Math.max(0, index(current, list.length - 1)));
+  const { item, index: current } = pick(list, ui.selected[pane]);
+  // With nothing selected, the first key picks the row in that spot rather than skipping past it.
+  const to = item ? Math.min(list.length - 1, Math.max(0, index(current, list.length - 1))) : current;
   return select(ui, pane, { id: list[to]!.id, index: to });
 }
 
@@ -99,6 +101,20 @@ function scroll(ui: Ui, delta: number, rows: Rows): Ui {
   // Scrolling back down to the end resumes following, like a pager.
   const top = (ui.liveScroll ?? liveMax(rows)) + delta;
   return { ...ui, liveScroll: top >= liveMax(rows) ? null : Math.max(0, top) };
+}
+
+const LIST_PANES: ListPane[] = ["spaces", "tasks", "needs", "activity"];
+
+// Turns each unpinned selection into a pin on the row it shows. Run on every state and UI change, so a row
+// arriving later can't take its place. Returns `ui` itself when nothing changed.
+export function pin(ui: Ui, view: View): Ui {
+  let next = ui;
+  for (const pane of LIST_PANES) {
+    if (ui.selected[pane].id !== null) continue;
+    const { item, index } = pick(listOf(view, pane), ui.selected[pane]);
+    if (item) next = { ...next, selected: { ...next.selected, [pane]: { id: item.id, index } } };
+  }
+  return next;
 }
 
 export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
@@ -147,8 +163,14 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
       const index = listOf(view, action.pane).findIndex((x) => x.id === action.id);
       return select(ui, action.pane, { id: action.id, index: Math.max(0, index) });
     }
+    case "unpin":
+      return { ...ui, selected: { ...ui.selected, [action.pane]: { id: CLEARED, index: ui.selected[action.pane].index } } };
     case "filter":
-      return { ...ui, filters: { ...ui.filters, [action.pane]: action.text } };
+      return {
+        ...ui,
+        filters: { ...ui.filters, [action.pane]: action.text },
+        selected: { ...ui.selected, [action.pane]: none },
+      };
     case "flash":
       return { ...ui, flash: action.flash };
   }

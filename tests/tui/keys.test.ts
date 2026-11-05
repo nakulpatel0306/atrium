@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { State } from "../../src/engine/state";
 import { type Command, commandsFor, HELP, hints } from "../../src/tui/keys";
 import { deriveView } from "../../src/tui/select";
-import { initialUi, type Overlay, reduce, type Ui } from "../../src/tui/ui";
+import { initialUi, type Overlay, pin, reduce, type Ui } from "../../src/tui/ui";
 import { ids, makeState } from "./fixtures";
 import { key } from "./key";
 
@@ -12,13 +12,18 @@ const rows = { detail: 20, live: 10 };
 
 // Plays keys through commandsFor and the reducer, the way the App does, collecting every command.
 function play(steps: (string | [string, Partial<Key>])[], start: Partial<Ui> = {}, state: State = makeState()) {
-  let ui: Ui = { ...initialUi, ...start };
+  // Pinned the way the App pins after every change.
+  let ui: Ui = pin({ ...initialUi, ...start }, deriveView(state, { ...initialUi, ...start }));
   const all: Command[] = [];
   for (const step of steps) {
     const [input, flags] = typeof step === "string" ? [step, {}] : step;
     const cmds = commandsFor(input, key(flags), ui, deriveView(state, ui));
     all.push(...cmds);
-    for (const c of cmds) if (c.kind === "ui") ui = reduce(ui, c.action, deriveView(state, ui), rows);
+    for (const c of cmds) {
+      if (c.kind !== "ui") continue;
+      const next = reduce(ui, c.action, deriveView(state, ui), rows);
+      ui = pin(next, deriveView(state, next));
+    }
   }
   return { ui, all, intents: all.flatMap((c) => (c.kind === "intent" ? [c.intent] : [])), last: all.at(-1) };
 }
@@ -177,4 +182,15 @@ test("hints follow the focused pane", () => {
   const needs = { ...initialUi, focus: "needs" as const, lastLeft: "needs" as const };
   expect(hints(needs, deriveView(state, needs))).toContain("a approve");
   expect(hints(initialUi, deriveView(state, initialUi))).toContain("n new task");
+});
+
+test("actions wait for a picked row", () => {
+  const cleared: Partial<Ui> = { focus: "needs", lastLeft: "needs", selected: { ...initialUi.selected, needs: { id: "", index: 0 } } };
+  const a = play(["a"], cleared);
+  expect(a.intents).toEqual([]);
+  expect(flashText(a.all)).toEqual(["Select an item first: press j or k."]);
+  expect(play(["j", "a"], cleared).intents).toMatchObject([{ type: "approve", approvalId: ids.approval }]);
+  const state = makeState();
+  const ui = { ...initialUi, ...cleared } as Ui;
+  expect(hints(ui, deriveView(state, ui)).startsWith("j k select an item")).toBe(true);
 });
