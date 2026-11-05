@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claudeAdapter, sandboxSettings } from "../../src/engine/agents/claude";
@@ -149,16 +149,19 @@ describe("claudeAdapter", () => {
     expect(sandbox.enabled).toBe(true);
     expect(sandbox.failIfUnavailable).toBe(true);
     expect(sandbox.allowUnsandboxedCommands).toBe(false);
-    expect(sandbox.autoAllowBashIfSandboxed).toBe(true);
+    // Auto-allow would let sandboxed Bash bypass the allowedTools allowlist.
+    expect(sandbox.autoAllowBashIfSandboxed).toBe(false);
     expect(sandbox.network.allowedDomains).toEqual(["registry.npmjs.org"]);
   });
 
   test("run passes sandbox and isolation flags", async () => {
-    const argvFile = join(mkdtempSync(join(tmpdir(), "atrium-argv-")), "argv.json");
+    const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+    const argvFile = join(dir, "argv.json");
     process.env.FAKE_CLAUDE_ARGV = argvFile;
     const r = await claudeAdapter(FAKE).run(input());
     expect(r.status).toBe("ok");
     const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    rmSync(dir, { recursive: true });
     expect(argv[argv.indexOf("--settings") + 1]).toBe(sandboxSettings(process.cwd()));
     expect(argv).toContain("--strict-mcp-config");
     expect(argv).toContain("--no-session-persistence");

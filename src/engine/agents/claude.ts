@@ -27,7 +27,7 @@ export function sandboxSettings(cwd: string): string {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
-      autoAllowBashIfSandboxed: true,
+      autoAllowBashIfSandboxed: false,
       filesystem: {
         denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", `${cwd}/**/.env*`],
       },
