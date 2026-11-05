@@ -158,7 +158,10 @@ test("boot turns a run that was cut off into a fresh draft and clears its stagin
 
 test("an approval decided by a rule never creates anything", async () => {
   const { action, approval } = draftProject(db, d);
+  // As if a rule's decision had slipped past the DB's CHECK: the code must still refuse it.
+  db.exec("PRAGMA ignore_check_constraints = ON");
   db.query("UPDATE approvals SET status = 'approved', decided_by = 'rule', resolved_at = 1 WHERE id = ?").run(approval.id);
+  db.exec("PRAGMA ignore_check_constraints = OFF");
   const failed = await createProject(db, action.id, deps());
   expect(failed).toMatchObject({ status: "failed", error: "Only your own yes can create a repo." });
   expect(gh.argv()).toEqual([]);

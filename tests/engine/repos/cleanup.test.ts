@@ -210,7 +210,10 @@ test("a removal decided by a rule removes nothing", async () => {
   const repos = wired();
   const asked = await askToRemove(db, clone.id);
   if (!("approval" in asked)) throw new Error("expected an approval");
+  // As if a rule's decision had slipped past the DB's CHECK: the code must still refuse it.
+  db.exec("PRAGMA ignore_check_constraints = ON");
   db.query("UPDATE approvals SET status = 'approved', decided_by = 'rule', resolved_at = 1 WHERE id = ?").run(asked.approval.id);
+  db.exec("PRAGMA ignore_check_constraints = OFF");
   repos.onDecision(getApproval(db, asked.approval.id)!, "approve");
   await repos.settle();
   expect(existsSync(join(path, "README.md"))).toBe(true);

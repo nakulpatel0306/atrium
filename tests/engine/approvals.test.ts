@@ -170,7 +170,10 @@ test("isOwnYes is true only for Nakul's own standing approval", () => {
   const yes = resolveApproval(db, mk().id, "approve");
   expect(isOwnYes(yes)).toBe(true);
   const byRule = mk();
+  // As if a rule's decision had slipped past the DB's CHECK: the code must still refuse it.
+  db.exec("PRAGMA ignore_check_constraints = ON");
   db.query("UPDATE approvals SET status = 'approved', decided_by = 'rule', resolved_at = 1 WHERE id = ?").run(byRule.id);
+  db.exec("PRAGMA ignore_check_constraints = OFF");
   expect(isOwnYes(getApproval(db, byRule.id)!)).toBe(false);
   const undone = resolveApproval(db, mk().id, "approve");
   db.query("UPDATE approvals SET undone_at = 1 WHERE id = ?").run(undone.id);

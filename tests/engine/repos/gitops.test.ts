@@ -90,7 +90,10 @@ test("pushInitialMain refuses anything but Nakul's own yes on a new repo", async
   resolveApproval(db, rejected.id, "reject");
   await expect(pushInitialMain(db, rejected.id, dir, url)).rejects.toThrow("Only your own yes on a new repo can push.");
   const byRule = repoAsk();
+  // As if a rule's decision had slipped past the DB's CHECK: the code must still refuse it.
+  db.exec("PRAGMA ignore_check_constraints = ON");
   db.query("UPDATE approvals SET status = 'approved', decided_by = 'rule', resolved_at = 1 WHERE id = ?").run(byRule.id);
+  db.exec("PRAGMA ignore_check_constraints = OFF");
   await expect(pushInitialMain(db, byRule.id, dir, url)).rejects.toThrow(PushRefused);
   const wrongKind = repoAsk("remove_clone");
   resolveApproval(db, wrongKind.id, "approve");

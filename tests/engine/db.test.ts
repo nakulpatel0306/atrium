@@ -235,3 +235,13 @@ test("an old spaces table gains github", () => {
   db.close();
   t.cleanup();
 });
+
+test("an always-ask approval can only ever be decided by you", () => {
+  const t = tempHome();
+  const db = openDb();
+  db.exec("INSERT INTO approvals (id, kind, title, always_ask, created_at) VALUES ('apr_q', 'question', 'q', 'create_repo', 1)");
+  expect(() => db.exec("UPDATE approvals SET status = 'approved', decided_by = 'rule' WHERE id = 'apr_q'")).toThrow();
+  db.exec("UPDATE approvals SET status = 'approved' WHERE id = 'apr_q'");
+  db.close();
+  t.cleanup();
+});

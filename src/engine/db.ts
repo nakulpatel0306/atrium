@@ -148,6 +148,8 @@ function migrate(db: Database) {
   rebuildIfMissing(db, "approvals", "'alert'", APPROVALS_DDL);
   // Repo approvals belong to no space and must always wait for Nakul, so the table gains both constraints.
   rebuildIfMissing(db, "approvals", "always_ask", APPROVALS_DDL);
+  // And no rule may ever be recorded as deciding one.
+  rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL);
   // The GitHub repo ("owner/name") a repo space comes from, so a missing local copy can be cloned.
   if (!has("spaces", "github")) db.exec("ALTER TABLE spaces ADD COLUMN github TEXT");
   // The branch a run started from, so a crashed run's repo can be put back on boot.
@@ -218,7 +220,8 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   undone_at INTEGER,
   always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${ALWAYS_ASK.map((k) => `'${k}'`).join(",")})),
   CHECK (space_id IS NOT NULL OR kind = 'question'),
-  CHECK (always_ask IS NULL OR fingerprint IS NULL)
+  CHECK (always_ask IS NULL OR fingerprint IS NULL),
+  CHECK (always_ask IS NULL OR decided_by = 'you')
 )`;
 
 // SQLite's documented table rebuild: foreign keys off (outside any transaction), copy into a new table,
