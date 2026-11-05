@@ -122,11 +122,12 @@ describe("claudeAdapter", () => {
     const { argv } = JSON.parse(r.summary) as { argv: string[] };
     const i = argv.indexOf("--disallowedTools");
     expect(argv.slice(i + 1)).toEqual([
-      "Read(**/.env*)",
-      "Edit(**/.env*)",
-      "Write(**/.env*)",
-      // APFS is case-insensitive, so .ENV opens .env: the rules spell out each letter's case.
+      // APFS is case-insensitive, so .ENV opens .env: bracket forms spell out each letter's case, plain forms stay too.
       ...["Read", "Edit", "Write"].flatMap((tool) => [
+        `${tool}(**/.env*)`,
+        `${tool}(**/.env*/**)`,
+        `${tool}(**/*.env)`,
+        `${tool}(**/*.env/**)`,
         `${tool}(**/.[eE][nN][vV]*)`,
         `${tool}(**/.[eE][nN][vV]*/**)`,
         `${tool}(**/*.[eE][nN][vV])`,
@@ -178,7 +179,7 @@ describe("claudeAdapter", () => {
   test("sandboxSettings embeds the run directory", () => {
     const { sandbox } = JSON.parse(sandboxSettings("/x/repo"));
     expect(sandbox.filesystem.denyRead).toContain("/x/repo/**/.env*");
-    for (const p of ["~/**/.[eE][nN][vV]*", "~/**/*.[eE][nN][vV]", "/x/repo/**/.[eE][nN][vV]*", "/x/repo/**/*.[eE][nN][vV]"]) {
+    for (const p of ["~/**/.env*", "~/**/*.env", "/x/repo/**/*.env", "~/**/.[eE][nN][vV]*", "~/**/*.[eE][nN][vV]", "/x/repo/**/.[eE][nN][vV]*", "/x/repo/**/*.[eE][nN][vV]"]) {
       expect(sandbox.filesystem.denyRead).toContain(p);
     }
     expect(sandbox.filesystem.denyRead).toContain("~/.ssh");

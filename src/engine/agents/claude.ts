@@ -6,10 +6,7 @@ import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
 const denyRules = () => [
-  "Read(**/.env*)",
-  "Edit(**/.env*)",
-  "Write(**/.env*)",
-  // Any case, names ending in .env too, and everything inside a folder with such a name.
+  // .env names in any case, names ending in .env, and everything inside a folder with such a name.
   ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
   // Planted hooks or config in .git could run code outside the agent's tool limits.
@@ -37,7 +34,7 @@ export function sandboxSettings(cwd: string): string {
       autoAllowBashIfSandboxed: false,
       filesystem: {
         denyRead: [
-          "~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", `${cwd}/**/.env*`,
+          "~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains",
           // A wildcard entry that matches a folder blocks its contents too.
           ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
           config().home,

@@ -4,6 +4,7 @@ export const isEnvPath = (path: string): boolean =>
   path.split(/[\\/]+/).some((seg) => /^\.env/i.test(seg) || /\.env$/i.test(seg));
 
 // The same names as globs, for tools that take glob patterns (Claude's permission rules and sandbox paths).
-// APFS is case-insensitive, so `.ENV` opens `.env`; each letter's case is spelled out.
+// APFS is case-insensitive, so `.ENV` opens `.env`: the bracket forms spell out each letter's case, and the
+// plain forms stay alongside them in case a matcher doesn't support bracket classes.
 const ENV = "[eE][nN][vV]";
-export const ENV_GLOBS = [`.${ENV}*`, `*.${ENV}`];
+export const ENV_GLOBS = [".env*", "*.env", `.${ENV}*`, `*.${ENV}`];
