@@ -1,13 +1,13 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import { borderTop } from "../text";
-import { color } from "../theme";
+import { borderTone } from "../theme";
 
-type Props = { n: number; title: string; focused: boolean; width: number; height: number; padded?: boolean; children?: ReactNode };
+type Props = { n: number; title: string; focused: boolean; width: number; height: number; padded?: boolean; online?: boolean; children?: ReactNode };
 
 // A rounded box with its number and title drawn into the top edge, as lazygit does.
-export function Pane({ n, title, focused, width, height, padded, children }: Props) {
-  const tone = focused ? color.accent : color.muted;
+export function Pane({ n, title, focused, width, height, padded, online = true, children }: Props) {
+  const tone = borderTone(focused, online);
   return (
     <Box flexDirection="column" width={width} height={height} flexShrink={0}>
       <Text color={tone} bold={focused}>

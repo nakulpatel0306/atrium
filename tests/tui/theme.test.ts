@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import type { State } from "../../src/engine/state";
-import { color, spaceColor, STATUS_GLYPH, windowGauge } from "../../src/tui/theme";
+import { borderTone, color, spaceColor, STATUS_GLYPH, windowGauge } from "../../src/tui/theme";
 import { width } from "../../src/tui/text";
 
 const ANSI = new Set(
@@ -44,4 +44,11 @@ test("no hex colors in the terminal app", async () => {
     if (/#[0-9a-fA-F]{3,8}\b|rgb\(|backgroundColor/.test(text)) offenders.push(file);
   }
   expect(offenders).toEqual([]);
+});
+
+test("borders turn red while the engine is unreachable", () => {
+  expect(borderTone(true, true)).toBe("blue");
+  expect(borderTone(false, true)).toBe("gray");
+  expect(borderTone(true, false)).toBe("red");
+  expect(borderTone(false, false)).toBe("red");
 });

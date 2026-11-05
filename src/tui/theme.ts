@@ -61,3 +61,8 @@ export function windowGauge(state: State, cols: number): { text: string; tone: "
   ).join("");
   return { text: `${GAUGE_LABEL} ${GLYPH.barLeft}${cells}${GLYPH.barRight}${pct}`, tone };
 }
+
+// Pane borders: the focused one in the accent color, the rest muted; all red while the engine can't be reached,
+// so being offline is visible at a glance, not only in the status bar.
+export const borderTone = (focused: boolean, online: boolean): AnsiColor =>
+  online ? (focused ? color.accent : color.muted) : color.bad;

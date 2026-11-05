@@ -7,15 +7,15 @@ import { tail } from "../text";
 import { color } from "../theme";
 import { Pane } from "./Pane";
 
-type Props = { view: View; lines: string[]; scroll: number | null; focused: boolean; width: number; height: number };
+type Props = { view: View; lines: string[]; scroll: number | null; focused: boolean; width: number; height: number; online?: boolean };
 
 // The selected space's running agent: its task on the first row, then the tail of its output.
-export function LivePane({ view, lines, scroll, focused, width, height }: Props) {
+export function LivePane({ view, lines, scroll, focused, width, height, online }: Props) {
   const live = view.live;
   if (!live) {
     const tasks = view.space ? view.state.tasks.filter((t) => t.spaceId === view.space!.id) : [];
     return (
-      <Pane n={5} title="Live" focused={focused} width={width} height={height} padded>
+      <Pane n={5} title="Live" focused={focused} width={width} height={height} online={online} padded>
         <Text color={color.muted}>No agent working right now</Text>
         {distinctWaits(tasks, view.state).map((w) => (
           <Text key={w.reason} color={needsAction(w) ? color.bad : color.warn} wrap="truncate">
@@ -29,7 +29,7 @@ export function LivePane({ view, lines, scroll, focused, width, height }: Props)
   const paused = scroll !== null ? " · paused, G to follow" : "";
   const title = `Live · ${agentText(task, view.state.runs)} · running ${duration(Date.now() - run.startedAt)}${paused}`;
   return (
-    <Pane n={5} title={title} focused={focused} width={width} height={height} padded>
+    <Pane n={5} title={title} focused={focused} width={width} height={height} online={online} padded>
       <Text bold wrap="truncate">
         {task.kind === "work" ? "" : `${task.kind} · `}
         {shownTitle(task)}

@@ -11,7 +11,7 @@ import { Pane } from "./Pane";
 import { SpacesPane } from "./SpacesPane";
 import { TasksPane } from "./TasksPane";
 
-type Props = { view: View; ui: Ui; lay: Layout; detailLines: DetailLine[]; liveLines: string[] };
+type Props = { view: View; ui: Ui; lay: Layout; detailLines: DetailLine[]; liveLines: string[]; online: boolean };
 
 function detailTitle(view: View): string | undefined {
   if (view.subject === "space") return view.space?.name;
@@ -21,7 +21,7 @@ function detailTitle(view: View): string | undefined {
 }
 
 // The main screen: four lists on the left, Detail and Live on the right.
-export function Body({ view, ui, lay, detailLines, liveLines }: Props) {
+export function Body({ view, ui, lay, detailLines, liveLines, online }: Props) {
   const focused = (p: Ui["focus"]) => ui.focus === p;
   const filterTag = (p: ListPane) => (ui.filters[p] ? ` · /${ui.filters[p]}` : "");
   const list = (p: ListPane) => ({ view, ui, cols: lay.left - 2, rows: lay.heights[p] - 2, focused: focused(p) });
@@ -31,6 +31,7 @@ export function Body({ view, ui, lay, detailLines, liveLines }: Props) {
     focused: focused(p),
     width: lay.left,
     height: lay.heights[p],
+    online,
   });
   const needs = view.state.approvals.length;
   const subject = detailTitle(view);
@@ -58,8 +59,9 @@ export function Body({ view, ui, lay, detailLines, liveLines }: Props) {
           focused={focused("detail")}
           width={lay.right}
           height={lay.detail}
+          online={online}
         />
-        <LivePane view={view} lines={liveLines} scroll={ui.liveScroll} focused={focused("live")} width={lay.right} height={lay.live} />
+        <LivePane view={view} lines={liveLines} scroll={ui.liveScroll} focused={focused("live")} width={lay.right} height={lay.live} online={online} />
       </Box>
     </Box>
   );
