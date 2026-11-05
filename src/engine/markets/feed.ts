@@ -11,6 +11,9 @@ export const OFF_RECHECK_MS = 900_000;
 export const FLUSH_MS = 1_000;
 const CHANGED_DEBOUNCE_MS = 250;
 const MIN_TIMER_MS = 1_000;
+// A streamed symbol this long without a trade is polled instead; when every one is that quiet, the stream is
+// presumed dead (a half-open socket after sleep) and reconnected.
+export const STALE_MS = 300_000;
 
 export type FeedMode = "stream" | "poll" | "off";
 export type FeedStatus = { mode: FeedMode; reason: string; session: Session; lastQuoteAt: number | null; streamError: string | null };
@@ -108,6 +111,8 @@ export function createFeed(deps: {
   let started = false;
   let offBus: (() => void) | null = null;
   const buffer = new Map<string, Quote>();
+  const tickAt = new Map<string, number>();
+  let streamSince = 0;
 
   const publish = (quotes: Quote[]) => {
     if (!quotes.length) return;
@@ -138,6 +143,7 @@ export function createFeed(deps: {
 
   // Stream ticks arrive many times a second; they're batched so the DB and dashboard see at most one write a second.
   const onStreamQuote = (q: Quote) => {
+    tickAt.set(q.key, now());
     buffer.set(q.key, q);
     if (!flushTimer) flushTimer = timers.set(flush, FLUSH_MS);
   };
@@ -146,6 +152,7 @@ export function createFeed(deps: {
     stream?.close();
     stream = null;
     streamKeys = "";
+    tickAt.clear();
   };
 
   const schedule = (delay: number, keep: boolean) => {
@@ -208,10 +215,16 @@ export function createFeed(deps: {
     }
 
     const max = streamer?.maxStreamSymbols ?? 0;
+    let stale: Instrument[] = [];
     if (mode === "stream" && streamer?.stream) {
       const wanted = pollable.slice(0, max);
       const wantedKeys = wanted.map(instrumentKey).join(",");
+      if (stream && trigger === "timer") {
+        stale = wanted.filter((i) => at - (tickAt.get(instrumentKey(i)) ?? streamSince) >= STALE_MS);
+        if (wanted.length && stale.length === wanted.length) closeStream();
+      }
       if (!stream) {
+        streamSince = at;
         stream = streamer.stream(wanted, {
           quote: onStreamQuote,
           status: (s) => {
@@ -234,7 +247,7 @@ export function createFeed(deps: {
 
     const fresh = prev === "off" || trigger === "timer" || trackedChanged;
     if (fresh) {
-      const list = mode === "stream" && prev !== "off" && !trackedChanged ? pollable.slice(max) : pollable;
+      const list = mode === "stream" && prev !== "off" && !trackedChanged ? [...stale, ...pollable.slice(max)] : pollable;
       await fetchQuotes(list);
     }
     const today = etDate(at);

@@ -291,3 +291,27 @@ test("trackedInstruments orders and dedupes", () => {
   db.query("INSERT INTO market_strategies (id, space_id, name, rules, symbols, cadence, max_position_value, max_trades_per_day, status, created_at, updated_at) VALUES ('st', ?, 'n', 'r', '[\"AMD\",\"AAPL\"]', 'open', 1000, 3, 'active', 1, 1)").run(spaceId);
   expect(trackedInstruments(db).map(instrumentKey)).toEqual(["NVDA", "SHOP.TO", "AMD", "AAPL", "MSFT"]);
 });
+
+test("streamed symbols with no tick for 5 minutes are polled, and a silent stream reconnects", async () => {
+  watch("AAPL");
+  watch("MSFT");
+  const s = setup("2026-11-05T15:00:00Z");
+  await s.feed.start();
+  await s.feed.setViewers(1);
+  expect(s.streams).toHaveLength(1);
+  const before = s.quoteCalls.length;
+  now += 2 * 60_000;
+  s.streams[0]!.ev.quote({ key: "AAPL", price: 1, prevClose: 1, at: now, source: "alpaca", freshness: "live" });
+  now += POLL_MS + 60_000;
+  s.timers.fireAll();
+  await s.feed.idle();
+  // AAPL ticked 4 minutes ago; MSFT never did.
+  expect(s.quoteCalls.slice(before).map((l) => l.map(instrumentKey))).toEqual([["MSFT"]]);
+  expect(s.streams).toHaveLength(1);
+  now += POLL_MS;
+  s.timers.fireAll();
+  await s.feed.idle();
+  expect(s.streams[0]!.closed).toBe(true);
+  expect(s.streams).toHaveLength(2);
+  s.feed.stop();
+});
