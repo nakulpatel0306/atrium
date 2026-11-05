@@ -9,7 +9,7 @@ test("openDb creates all tables", () => {
   const t = tempHome();
   const db = openDb();
   const names = (db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name);
-  for (const n of ["spaces", "tasks", "runs", "approvals", "activity", "settings"]) expect(names).toContain(n);
+  for (const n of ["spaces", "tasks", "runs", "approvals", "activity", "settings", "autonomy_proposals", "autonomy_rules", "rule_events"]) expect(names).toContain(n);
   db.close();
   t.cleanup();
 });
@@ -72,6 +72,37 @@ test("migration adds task kind, parent, ignore_reserve and space review_by", () 
     kind: "work",
     ignore_reserve: 0,
     parent_task_id: null,
+  });
+  db.close();
+  openDb(path).close();
+  t.cleanup();
+});
+
+test("an existing database gains the autonomy columns", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const old = new Database(path);
+  old.exec(`CREATE TABLE spaces (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('repo','general')), goal TEXT NOT NULL DEFAULT '',
+    color TEXT NOT NULL, repo_path TEXT, private INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE approvals (
+    id TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES spaces(id), task_id TEXT REFERENCES tasks(id),
+    kind TEXT NOT NULL CHECK (kind IN ('review','question')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), note TEXT,
+    created_at INTEGER NOT NULL, resolved_at INTEGER, branch_head TEXT);
+  INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_old', 'Old', 'general', 'blue', 1, 1);
+  INSERT INTO approvals (id, space_id, kind, title, status, created_at, resolved_at) VALUES ('apr_old', 'spc_old', 'review', 'old', 'approved', 1, 2)`);
+  old.close();
+  const db = openDb(path);
+  const cols = (db.query("PRAGMA table_info(approvals)").all() as { name: string }[]).map((c) => c.name);
+  expect(cols).toEqual(expect.arrayContaining(["fingerprint", "decided_by", "rule_id", "undone_at"]));
+  expect(db.query("SELECT decided_by, fingerprint, rule_id, undone_at FROM approvals").get()).toEqual({
+    decided_by: "you",
+    fingerprint: null,
+    rule_id: null,
+    undone_at: null,
   });
   db.close();
   openDb(path).close();

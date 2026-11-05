@@ -328,6 +328,128 @@ export async function reviewDiff(path: string, base: string, branch: string): Pr
   };
 }
 
+// Modes are git's octal file modes ("100644" plain, "100755" executable, "120000" symlink, "160000" gitlink);
+// "000000" is the missing side of an add or delete.
+export type ChangedFile = {
+  path: string;
+  status: "A" | "M" | "D" | "T";
+  added: number | null;
+  deleted: number | null;
+  oldMode: string;
+  newMode: string;
+};
+
+// Every file the branch changed, for deciding what kind of result it is. Unlike reviewDiff, .env paths stay in:
+// the always-ask check has to see them. Renames show as a delete plus an add, so moving a file counts as deleting one.
+export async function changedFiles(path: string, base: string, branch: string): Promise<ChangedFile[]> {
+  // Submodules always show, whatever the repo's config says, so a gitlink is seen and refused.
+  const flags = [
+    "-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=none",
+    "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--ignore-submodules=none",
+  ];
+  const names = await git(path, [...flags, "--raw", "-z", `${base}...${branch}`, "--"]);
+  if (names.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${names.err.trim()}`);
+  const nums = await git(path, [...flags, "--numstat", "-z", `${base}...${branch}`, "--"]);
+  if (nums.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${nums.err.trim()}`);
+  const counts = new Map<string, { added: number | null; deleted: number | null }>();
+  for (const record of nums.out.split("\0").filter(Boolean)) {
+    const [added, deleted, ...rest] = record.split("\t");
+    // git prints "-" for both counts of a binary file.
+    counts.set(rest.join("\t"), { added: added === "-" ? null : Number(added), deleted: deleted === "-" ? null : Number(deleted) });
+  }
+  // Each record is ":<old mode> <new mode> <old sha> <new sha> <status>" followed by the path.
+  const fields = names.out.split("\0");
+  const files: ChangedFile[] = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const [oldMode, newMode, , , status] = fields[i]!.slice(1).split(" ");
+    const file = fields[i + 1]!;
+    files.push({
+      path: file,
+      status: status as ChangedFile["status"],
+      ...(counts.get(file) ?? { added: null, deleted: null }),
+      oldMode: oldMode!,
+      newMode: newMode!,
+    });
+  }
+  return files;
+}
+
+// For output that can be huge (a diff of a 3 MB line): stops reading at `cap` bytes and says so.
+async function gitCapped(path: string, args: string[], cap: number): Promise<{ out: string; truncated: boolean }> {
+  const proc = Bun.spawn(["git", ...SAFE, ...args], { cwd: path, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  const err = new Response(proc.stderr).text();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  const reader = proc.stdout.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.length;
+    if (total > cap) {
+      truncated = true;
+      proc.kill();
+      break;
+    }
+  }
+  const code = await proc.exited;
+  if (!truncated && code !== 0) throw new Error(`git ${args[0]} failed: ${(await err).trim()}`);
+  return { out: Buffer.concat(chunks).subarray(0, cap).toString(), truncated };
+}
+
+// The commit a branch points at, or null when the branch is gone.
+export async function branchSha(path: string, branch: string): Promise<string | null> {
+  const res = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+  return res.code === 0 ? res.out.trim() : null;
+}
+
+const PATCH_READ_CAP = 256 * 1024;
+
+// The text a change adds, and how many bytes it adds and removes, read from a zero-context diff. A diff too big to
+// read in full reports more bytes than the cap, which is all a caller deciding "small enough?" needs.
+export async function changedText(path: string, base: string, sha: string): Promise<{ added: string[]; bytes: number }> {
+  const res = await gitCapped(
+    path,
+    [
+      "-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=none",
+      "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "-U0", `${base}...${sha}`, "--",
+    ],
+    PATCH_READ_CAP,
+  );
+  const added: string[] = [];
+  let bytes = 0;
+  let inHunk = false;
+  for (const line of res.out.split("\n")) {
+    if (line.startsWith("diff --git ")) inHunk = false;
+    else if (line.startsWith("@@")) inHunk = true;
+    else if (inHunk && (line.startsWith("+") || line.startsWith("-"))) {
+      bytes += Buffer.byteLength(line) - 1;
+      if (line.startsWith("+")) added.push(line.slice(1));
+    }
+  }
+  return { added, bytes: res.truncated ? Math.max(bytes, PATCH_READ_CAP + 1) : bytes };
+}
+
+// Every entry in a commit's tree with its git mode ("100644" plain, "120000" symlink, "160000" gitlink…).
+export async function treeEntries(path: string, sha: string): Promise<{ path: string; mode: string }[]> {
+  const res = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", sha]);
+  if (res.code !== 0) throw new Error(`Could not list files at ${sha}: ${res.err.trim()}`);
+  return res.out
+    .split("\0")
+    .filter(Boolean)
+    .map((record) => {
+      const tab = record.indexOf("\t");
+      return { path: record.slice(tab + 1), mode: record.slice(0, record.indexOf(" ")) };
+    });
+}
+
+// One file's contents at a commit, cut at `cap` bytes; `truncated` says it was cut.
+export async function fileAt(path: string, sha: string, file: string, cap = 64 * 1024): Promise<{ text: string; truncated: boolean }> {
+  const res = await gitCapped(path, ["cat-file", "blob", `${sha}:${file}`], cap);
+  return { text: res.out, truncated: res.truncated };
+}
+
 // Synchronous so it can be read inside the approval transaction; null when the branch or repo is gone.
 export function branchHeadSync(path: string, branch: string): string | null {
   try {

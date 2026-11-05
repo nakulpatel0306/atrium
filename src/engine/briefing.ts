@@ -29,6 +29,11 @@ export function briefing(db: Database, now: number): { greeting: string; summary
     summary = `${plural(ended.length, "run", "runs")} ended without finishing since you were last here.`;
   }
 
+  const byRules = db
+    .query("SELECT COUNT(*) AS n FROM approvals WHERE decided_by = 'rule' AND undone_at IS NULL AND resolved_at > ?")
+    .get(lastSeen) as { n: number };
+  if (byRules.n > 0) summary += ` ${plural(byRules.n, "result")} approved by your rules.`;
+
   return { greeting: greetingFor(now), summary };
 }
 

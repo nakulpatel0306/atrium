@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { createApproval, listPending } from "../../src/engine/approvals";
+import { applyRule } from "../../src/engine/autonomy/rules";
 import { addMessage } from "../../src/engine/messages";
 import { openDb } from "../../src/engine/db";
 import { createRegistry } from "../../src/engine/agents/registry";
@@ -11,7 +12,7 @@ import { createSpace } from "../../src/engine/spaces";
 import { getSetting } from "../../src/engine/settings";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
 import { startServer } from "../../src/server/server";
-import { tempHome } from "../helpers";
+import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
@@ -395,4 +396,190 @@ test("state reports the Claude reserve even without a window reading", async () 
   expect(body.usage.claudeReserve).toBe(0.5);
   await post("/api/settings", { claudeReserve: 0.25 });
   expect(((await (await fetch(`${base}/api/state`)).json()) as { usage: { claudeReserve: number } }).usage.claudeReserve).toBe(0.25);
+});
+
+// Earned autonomy: five results of the same kind approved through the API, as the dashboard does.
+const repos: ReturnType<typeof tempRepo>[] = [];
+afterEach(() => {
+  while (repos.length) repos.pop()!.cleanup();
+});
+const FP = "v1:code:docs:small:claude";
+function reviewItem(spaceId: string, title = "Add a note") {
+  const t = createTask(db, { spaceId, title });
+  setTaskStatus(db, t.id, "running");
+  setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
+  return createApproval(db, { spaceId, taskId: t.id, kind: "review", title, detail: "", fingerprint: FP });
+}
+
+type Prop = { id: string; label: string; spaceId: string; fingerprint: string; status: string };
+type RuleBody = { id: string; spaceId: string; fingerprint: string; state: string };
+const state = async () =>
+  (await (await fetch(`${base}/api/state`)).json()) as { proposals: Prop[]; rules: RuleBody[]; neverAsk: Prop[]; approvals: { id: string; taskId: string }[] };
+
+async function proposed(spaceId: string): Promise<Prop> {
+  for (let i = 0; i < 5; i++) expect((await post(`/api/approvals/${reviewItem(spaceId).id}`, { decision: "approve" })).status).toBe(200);
+  const s = await state();
+  expect(s.proposals).toHaveLength(1);
+  return s.proposals[0]!;
+}
+
+test("approving the fifth clean result returns a proposal in state", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  for (let i = 0; i < 4; i++) await post(`/api/approvals/${reviewItem(s.id).id}`, { decision: "approve" });
+  expect((await state()).proposals).toEqual([]);
+  await post(`/api/approvals/${reviewItem(s.id).id}`, { decision: "approve" });
+  const p = (await state()).proposals;
+  expect(p).toHaveLength(1);
+  expect(p[0]!.label).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude");
+});
+
+test("answering yes creates a rule; a second answer is 409", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  const p = await proposed(s.id);
+  const res = await post(`/api/proposals/${p.id}`, { answer: "yes" });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { proposal: Prop; rule: RuleBody };
+  expect(body.proposal.status).toBe("yes");
+  expect(body.rule.state).toBe("active");
+  const st = await state();
+  expect(st.proposals).toEqual([]);
+  expect(st.rules.map((r) => r.id)).toEqual([body.rule.id]);
+  const again = await post(`/api/proposals/${p.id}`, { answer: "never" });
+  expect(again.status).toBe(409);
+  expect(((await again.json()) as { error: string }).error).toBe("This suggestion was already answered.");
+});
+
+test("answer validation and unknown suggestions", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  const p = await proposed(s.id);
+  const bad = await post(`/api/proposals/${p.id}`, { answer: "maybe" });
+  expect(bad.status).toBe(400);
+  expect(((await bad.json()) as { error: string }).error).toBe("answer must be yes, not_now, or never.");
+  const missing = await post("/api/proposals/prp_nope", { answer: "yes" });
+  expect(missing.status).toBe(404);
+  expect(((await missing.json()) as { error: string }).error).toBe("No such suggestion.");
+});
+
+test("the client can't choose what a rule covers", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  const other = createSpace(db, { name: "Other", kind: "repo", goal: "g" });
+  const p = await proposed(s.id);
+  const res = await post(`/api/proposals/${p.id}`, { answer: "yes", fingerprint: "v1:code:code:small:claude", spaceId: other.id });
+  const { rule } = (await res.json()) as { rule: RuleBody };
+  expect(rule.fingerprint).toBe(FP);
+  expect(rule.spaceId).toBe(s.id);
+});
+
+test("there is no endpoint to create a rule directly", async () => {
+  expect((await post("/api/rules", {})).status).toBe(404);
+  expect((await post("/api/rules/new", { fingerprint: FP })).status).toBe(404);
+});
+
+test("rule and proposal endpoints require the dashboard origin", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  const p = await proposed(s.id);
+  const paths = [`/api/proposals/${p.id}`, `/api/proposals/${p.id}/suggest-again`, "/api/rules/rul_x/revoke", "/api/rules/rul_x/renew", "/api/approvals/apr_x/undo"];
+  for (const path of paths) {
+    const body = JSON.stringify({ answer: "yes" });
+    const noOrigin = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body });
+    expect(noOrigin.status).toBe(403);
+    expect((await post(path, { answer: "yes" }, { origin: "http://evil.test" })).status).toBe(403);
+    expect((await post(path, { answer: "yes" }, { host: "evil.test" })).status).toBe(403);
+  }
+  const st = await state();
+  expect(st.rules).toEqual([]);
+  expect(st.proposals.map((x) => x.status)).toEqual(["pending"]);
+});
+
+test("rule endpoints require JSON", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  const p = await proposed(s.id);
+  const res = await post(`/api/proposals/${p.id}`, undefined, { "content-type": "text/plain" });
+  const raw = await fetch(`${base}/api/proposals/${p.id}`, { method: "POST", headers: { origin, "content-type": "text/plain" }, body: '{"answer":"yes"}' });
+  expect(raw.status).toBe(415);
+  expect(res.status).toBe(400);
+  expect((await state()).rules).toEqual([]);
+});
+
+test("never, then suggest again", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  const p = await proposed(s.id);
+  await post(`/api/proposals/${p.id}`, { answer: "never" });
+  expect((await state()).neverAsk.map((x) => x.id)).toEqual([p.id]);
+  const res = await post(`/api/proposals/${p.id}/suggest-again`);
+  expect(res.status).toBe(200);
+  expect((await state()).neverAsk).toEqual([]);
+  expect((await post(`/api/proposals/${p.id}/suggest-again`)).status).toBe(409);
+  expect((await post("/api/proposals/prp_nope/suggest-again")).status).toBe(404);
+});
+
+async function appliedRule() {
+  const repo = tempRepo();
+  repos.push(repo);
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g", repoPath: repo.path });
+  const p = await proposed(s.id);
+  const { rule } = (await (await post(`/api/proposals/${p.id}`, { answer: "yes" })).json()) as { rule: RuleBody };
+  // Approvals made in the same millisecond as the rule would count as already waiting.
+  await Bun.sleep(5);
+  const a = reviewItem(s.id, "Auto one");
+  const facts = { domain: "code" as const, agent: "claude", branch: `atrium/${a.taskId}`, sha: branchAt(repo.path, `atrium/${a.taskId}`), content: PLAIN_DOCS, files: [{ path: "docs/a.md", status: "A" as const, added: 2, deleted: 0, oldMode: "000000", newMode: "100644" }] };
+  expect(applyRule(db, a.id, facts)).not.toBeNull();
+  return { rule, a };
+}
+
+test("revoke then undo", async () => {
+  const { rule, a } = await appliedRule();
+  const revoked = await post(`/api/rules/${rule.id}/revoke`);
+  expect(revoked.status).toBe(200);
+  expect((await state()).rules[0]!.state).toBe("revoked");
+  const again = await post(`/api/rules/${rule.id}/revoke`);
+  expect(again.status).toBe(409);
+  expect((await post("/api/rules/rul_nope/revoke")).status).toBe(404);
+  kicks = 0;
+  const undo = await post(`/api/approvals/${a.id}/undo`);
+  expect(undo.status).toBe(200);
+  const reopened = (await undo.json()) as { id: string; status: string; taskId: string };
+  expect(reopened.status).toBe("pending");
+  expect(kicks).toBe(1);
+  expect((await state()).approvals.map((x) => x.id)).toContain(reopened.id);
+  expect((await post(`/api/approvals/${a.id}/undo`)).status).toBe(409);
+  expect((await post("/api/approvals/apr_nope/undo")).status).toBe(404);
+});
+
+test("renew extends an active rule", async () => {
+  const { rule } = await appliedRule();
+  const res = await post(`/api/rules/${rule.id}/renew`);
+  expect(res.status).toBe(200);
+  expect((await post("/api/rules/rul_nope/renew")).status).toBe(404);
+  await post(`/api/rules/${rule.id}/revoke`);
+  expect((await post(`/api/rules/${rule.id}/renew`)).status).toBe(409);
+});
+
+test("GET /api/rules/:id returns the rule, its applied approvals and events in order", async () => {
+  const { rule, a } = await appliedRule();
+  const res = await fetch(`${base}/api/rules/${rule.id}`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as {
+    rule: RuleBody;
+    proposal: { evidence: { title: string }[] };
+    approvals: { id: string }[];
+    events: { event: string; actor: string }[];
+  };
+  expect(body.rule.id).toBe(rule.id);
+  // The suggestion's evidence, so the rule's page can show why it exists.
+  expect(body.proposal.evidence).toHaveLength(5);
+  expect(body.approvals.map((x) => x.id)).toEqual([a.id]);
+  expect(body.events.map((e) => [e.event, e.actor])).toEqual([
+    ["proposed", "atrium"],
+    ["yes", "you"],
+    ["created", "you"],
+    ["applied", "atrium"],
+  ]);
+  expect((await fetch(`${base}/api/rules/rul_nope`)).status).toBe(404);
+});
+
+test("/rules serves html", async () => {
+  const res = await fetch(`${base}/rules`);
+  expect(res.status).toBe(200);
+  expect(await res.text()).toContain("<title>Atrium</title>");
 });

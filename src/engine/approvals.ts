@@ -18,6 +18,11 @@ export type Approval = {
   note: string | null;
   // The task branch's commit at the moment Nakul decided; null for non-repo work.
   branchHead: string | null;
+  // The action kind the engine saw (see autonomy/kinds.ts); null when no rule could ever cover it.
+  fingerprint: string | null;
+  decidedBy: "you" | "rule";
+  ruleId: string | null;
+  undoneAt: number | null;
   createdAt: number;
   resolvedAt: number | null;
 };
@@ -32,6 +37,10 @@ type ApprovalRow = {
   status: Approval["status"];
   note: string | null;
   branch_head: string | null;
+  fingerprint: string | null;
+  decided_by: Approval["decidedBy"];
+  rule_id: string | null;
+  undone_at: number | null;
   created_at: number;
   resolved_at: number | null;
 };
@@ -53,6 +62,10 @@ const toApproval = (r: ApprovalRow): Approval => ({
   status: r.status,
   note: r.note,
   branchHead: r.branch_head,
+  fingerprint: r.fingerprint,
+  decidedBy: r.decided_by,
+  ruleId: r.rule_id,
+  undoneAt: r.undone_at,
   createdAt: r.created_at,
   resolvedAt: r.resolved_at,
 });
@@ -62,19 +75,14 @@ export const getApproval = (db: Database, id: string): Approval | null => {
   return row ? toApproval(row) : null;
 };
 
-// Plan 6 adds configurable rules; ALWAYS_ASK stays true regardless of them.
-export function requiresApproval(_action: string): boolean {
-  return true;
-}
-
 export function createApproval(
   db: Database,
-  input: { spaceId: string; taskId?: string; kind: Approval["kind"]; title: string; detail: string },
+  input: { spaceId: string; taskId?: string; kind: Approval["kind"]; title: string; detail: string; fingerprint?: string | null },
 ): Approval {
   const id = newId("apr");
   db.query(
-    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, input.spaceId, input.taskId ?? null, input.kind, input.title, input.detail, Date.now());
+    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, input.spaceId, input.taskId ?? null, input.kind, input.title, input.detail, input.fingerprint ?? null, Date.now());
   bus.emit({ type: "changed" });
   return getApproval(db, id)!;
 }
@@ -117,12 +125,23 @@ function taskBranchHead(db: Database, taskId: string | null): string | null {
   return path && task?.branch ? branchHeadSync(path, task.branch) : null;
 }
 
-export function resolveApproval(db: Database, id: string, decision: "approve" | "reject", note?: string): Approval {
-  const head = taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
+// With `rule`, one of Nakul's rules is deciding in his place, and a rule can only ever approve. Its `head` is the
+// commit the rule checked, recorded as what was approved.
+export function resolveApproval(
+  db: Database,
+  id: string,
+  decision: "approve" | "reject",
+  note?: string,
+  rule?: { id: string; label: string; head?: string },
+): Approval {
+  if (rule && decision !== "approve") throw new Error("A rule can only approve.");
+  const head = rule?.head ?? taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
   const resolve = db.transaction((): Approval => {
     const res = db
-      .query("UPDATE approvals SET status = ?, note = ?, branch_head = ?, resolved_at = ? WHERE id = ? AND status = 'pending'")
-      .run(decision === "approve" ? "approved" : "rejected", note ?? null, head, Date.now(), id);
+      .query(
+        "UPDATE approvals SET status = ?, note = ?, branch_head = ?, resolved_at = ?, decided_by = ?, rule_id = ? WHERE id = ? AND status = 'pending'",
+      )
+      .run(decision === "approve" ? "approved" : "rejected", note ?? null, head, Date.now(), rule ? "rule" : "you", rule?.id ?? null, id);
     if (res.changes === 0) {
       if (!getApproval(db, id)) throw new Error(`No approval with id ${id}`);
       throw new AlreadyResolved();
@@ -143,7 +162,8 @@ export function resolveApproval(db: Database, id: string, decision: "approve" | 
         logActivity(db, a.spaceId, "atrium", `Skipped: you already decided. ${child.title}`);
       }
     }
-    logActivity(db, a.spaceId, "you", `${decision === "approve" ? "Approved" : "Rejected"}: ${a.title}`);
+    if (rule) logActivity(db, a.spaceId, "atrium", `Approved by your rule "${rule.label}": ${a.title}`);
+    else logActivity(db, a.spaceId, "you", `${decision === "approve" ? "Approved" : "Rejected"}: ${a.title}`);
     return a;
   });
   const a = resolve();

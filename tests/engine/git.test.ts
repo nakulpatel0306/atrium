@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchOffDirty, branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
-import { tempRepo } from "../helpers";
+import { branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { fingerprintOf } from "../../src/engine/autonomy/kinds";
+import { PLAIN_DOCS, tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -267,6 +268,56 @@ describe("branchSummary", () => {
     const path = repo();
     const branch = await prepareBranch(path, "tsk_1");
     await expect(branchSummary(path, branch, "nope")).rejects.toThrow();
+  });
+});
+
+describe("changedFiles", () => {
+  test("changedFiles lists status and line counts without renames", async () => {
+    const path = repo();
+    const branch = await prepareBranch(path, "t");
+    mkdirSync(join(path, "docs"));
+    writeFileSync(join(path, "docs/a.md"), "one\ntwo\nthree\n");
+    git(path, "mv", "README.md", "READ.md");
+    writeFileSync(join(path, "x.bin"), "\0");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "changes");
+    const files = await changedFiles(path, "main", branch);
+    expect(files.sort((a, b) => (a.path < b.path ? -1 : 1))).toEqual([
+      { path: "READ.md", status: "A", added: 1, deleted: 0, oldMode: "000000", newMode: "100644" },
+      { path: "README.md", status: "D", added: 0, deleted: 1, oldMode: "100644", newMode: "000000" },
+      { path: "docs/a.md", status: "A", added: 3, deleted: 0, oldMode: "000000", newMode: "100644" },
+      { path: "x.bin", status: "A", added: null, deleted: null, oldMode: "000000", newMode: "100644" },
+    ]);
+  });
+
+  test("reports symlinks and executable bits", async () => {
+    const path = repo();
+    const branch = await prepareBranch(path, "t");
+    symlinkSync("README.md", join(path, "link.md"));
+    chmodSync(join(path, "README.md"), 0o755);
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "modes");
+    const files = await changedFiles(path, "main", branch);
+    expect(files.sort((a, b) => (a.path < b.path ? -1 : 1))).toEqual([
+      { path: "README.md", status: "M", added: 0, deleted: 0, oldMode: "100644", newMode: "100755" },
+      { path: "link.md", status: "A", added: 1, deleted: 0, oldMode: "000000", newMode: "120000" },
+    ]);
+  });
+
+  test("lists a submodule even when the repo hides submodule diffs", async () => {
+    const path = repo();
+    const branch = await prepareBranch(path, "t");
+    const head = git(path, "rev-parse", "HEAD");
+    git(path, "update-index", "--add", "--cacheinfo", `160000,${head},sub`);
+    git(path, "commit", "-m", "add submodule");
+    git(path, "config", "diff.ignoreSubmodules", "all");
+    const files = await changedFiles(path, "main", branch);
+    expect(files.map((x) => [x.path, x.newMode])).toEqual([["sub", "160000"]]);
+    expect(fingerprintOf({ domain: "code", agent: "claude", branch, sha: "x", files, content: PLAIN_DOCS })).toBeNull();
+  });
+
+  test("throws when the branch is gone", async () => {
+    await expect(changedFiles(repo(), "main", "atrium/nope")).rejects.toThrow();
   });
 });
 

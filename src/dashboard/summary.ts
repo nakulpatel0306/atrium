@@ -10,13 +10,14 @@ type Run = State["runs"][number];
 type Approval = State["approvals"][number];
 type AgentInfo = State["agents"][string];
 
-// Archived spaces leave Home, so their tasks and approvals must not linger in its counts and lists.
+// Archived spaces leave Home, so their tasks, approvals and suggestions must not linger in its counts and lists.
 export function activeOnly(state: State): State {
   const ids = new Set(state.spaces.map((s) => s.id));
   return {
     ...state,
     tasks: state.tasks.filter((t) => ids.has(t.spaceId)),
     approvals: state.approvals.filter((a) => ids.has(a.spaceId)),
+    proposals: state.proposals.filter((p) => ids.has(p.spaceId)),
   };
 }
 
@@ -81,7 +82,7 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
 // Composed from live state on every render so counts never go stale while the page stays open.
 export function liveStatus(state: State): string {
   const parts: string[] = [];
-  const pending = state.approvals.length;
+  const pending = state.approvals.length + state.proposals.length;
   if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
   const blocked = state.tasks.filter((t) => t.status === "blocked");
   if (blocked.length > 0) {
