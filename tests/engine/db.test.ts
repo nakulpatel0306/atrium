@@ -169,7 +169,7 @@ const PLAN7_TABLES = [
   "market_news", "research_notes", "market_writeups", "market_ideas", "tfsa_room", "tfsa_entries",
 ];
 const PLAN7_COLUMNS: [string, string][] = [
-  ["market_holdings", "book_value_cad"], ["market_alerts", "fired_for"], ["tasks", "purpose"], ["tasks", "subject"], ["approvals", "topic"],
+  ["market_holdings", "book_value_cad"], ["market_holdings", "account_type"], ["market_alerts", "fired_for"], ["tasks", "purpose"], ["tasks", "subject"], ["approvals", "topic"],
 ];
 
 test("plan 7 tables exist", () => {

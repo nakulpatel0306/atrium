@@ -32,6 +32,7 @@ function positionsWith(db: Database, spaceId: string, quoteOf: (key: string) => 
     return {
       key: h.key,
       account: h.account,
+      accountType: h.accountType ?? null,
       quantity: h.quantity,
       price: q ? quoteSourced(q, now) : null,
       prevClose: q?.prevClose ?? null,

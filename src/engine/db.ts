@@ -192,6 +192,8 @@ function migrate(db: Database) {
   db.exec(MARKETS_SCHEMA);
   // The holding's book value in CAD from a Wealthsimple holdings export, for an honest CAD gain.
   if (!has("market_holdings", "book_value_cad")) db.exec("ALTER TABLE market_holdings ADD COLUMN book_value_cad REAL");
+  // The export's account type ("TFSA"), so a renamed account keeps its tax treatment.
+  if (!has("market_holdings", "account_type")) db.exec("ALTER TABLE market_holdings ADD COLUMN account_type TEXT");
   // The earnings date an alert last fired for, so one date fires once.
   if (!has("market_alerts", "fired_for")) db.exec("ALTER TABLE market_alerts ADD COLUMN fired_for TEXT");
   // Streaks are counted per space and kind, newest first.

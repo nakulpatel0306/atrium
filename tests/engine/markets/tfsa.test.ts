@@ -95,3 +95,14 @@ test("TFSA and notes edits tell the dashboard to refresh", async () => {
   off();
   expect(changed).toBe(4);
 });
+
+test("a renamed TFSA is still a TFSA when the export says so", async () => {
+  const { tfsaOf } = await import("../../../src/engine/markets/tfsa");
+  expect(tfsaOf({ account: "Long-term", accountType: "TFSA" })).toBe(true);
+  expect(tfsaOf({ account: "My TFSA", accountType: null })).toBe(true);
+  expect(tfsaOf({ account: "Long-term", accountType: "RRSP" })).toBe(false);
+  expect(withholdingNote({ key: "SPY", account: "Long-term", accountType: "TFSA", listingCcy: "USD", ttmDividend: 7, usExposure: 1 })).toBe(US_TFSA);
+  db.query("INSERT INTO market_dividends (key, ex_date, amount, source) VALUES ('SPY', '2026-03-20', 1.8, 'tiingo')").run();
+  const r = incomeTtm(db, [{ ...pos("SPY", "Long-term", 10), accountType: "TFSA" }], fx, NOW);
+  expect(r.rows[0]).toMatchObject({ gross: expect.closeTo(18, 9), net: expect.closeTo(15.3, 9), note: US_TFSA });
+});

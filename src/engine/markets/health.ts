@@ -11,6 +11,8 @@ const TOP_COMPANIES = 25;
 export type Position = {
   key: string;
   account: string;
+  // The account's type from the export ("TFSA"), when known.
+  accountType?: string | null;
   quantity: number;
   price: Sourced | null;
   prevClose: number | null;

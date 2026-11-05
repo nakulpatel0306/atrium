@@ -24,7 +24,7 @@ import { getNotes, latestWriteups, requestThesisDraft, saveNotes } from "../engi
 import { screenRows } from "../engine/markets/screener";
 import { seedInvesting } from "../engine/markets/seed";
 import { quoteSourced } from "../engine/markets/sourced";
-import { addEntry, incomeTtm, isTfsa, listEntries, removeEntry, roomStatus, setRoom, ttmDividends, withholdingNote } from "../engine/markets/tfsa";
+import { addEntry, incomeTtm, listEntries, removeEntry, roomStatus, setRoom, tfsaOf, ttmDividends, withholdingNote } from "../engine/markets/tfsa";
 import { listWatchlist } from "../engine/markets/watchlist";
 import { getSetting, setSetting } from "../engine/settings";
 import type { JobStatus } from "../engine/markets/jobs";
@@ -180,9 +180,10 @@ function usExposure(db: Database, key: string): number {
   return lt.exposures.filter((e) => e.country === "United States").reduce((a, e) => a + e.weight, 0);
 }
 
-function withholdingFor(db: Database, key: string, account: string, now: number): string | null {
+// Only called for a TFSA holding, so the account passed on is just a TFSA label.
+function withholdingFor(db: Database, key: string, now: number): string | null {
   const ccy = key.endsWith(".TO") || key.endsWith(".V") ? "CAD" : "USD";
-  return withholdingNote({ key, account, listingCcy: ccy, ttmDividend: ttmDividends(db, key, now), usExposure: ccy === "CAD" ? usExposure(db, key) : 1 });
+  return withholdingNote({ key, account: "TFSA", listingCcy: ccy, ttmDividend: ttmDividends(db, key, now), usExposure: ccy === "CAD" ? usExposure(db, key) : 1 });
 }
 
 function healthView(db: Database, m: MarketsDeps, spaceId: string, now: number) {
@@ -192,7 +193,7 @@ function healthView(db: Database, m: MarketsDeps, spaceId: string, now: number) 
   const holdings = positions.map((p) => ({ key: p.key, quantity: p.quantity, listingCcy: p.listingCcy }));
   const withholding: Record<string, string> = {};
   for (const p of positions) {
-    const note = isTfsa(p.account) ? withholdingFor(db, p.key, p.account, now) : null;
+    const note = tfsaOf(p) ? withholdingFor(db, p.key, now) : null;
     if (note) withholding[p.key] = note;
   }
   const funds = [...new Set(positions.map((p) => p.key).filter(isFund))].map((key) => {
@@ -244,7 +245,7 @@ function researchView(db: Database, m: MarketsDeps, spaceId: string, key: string
     writeups: latestWriteups(db, spaceId, { key, limit: 10 }),
     edgar: q && edgarEps !== null ? crossCheck(meta?.pe ?? null, q.price, edgarEps) : null,
     lookThrough: isFund(key) ? lookThroughFor(db, key) : null,
-    withholding: held && isTfsa(held.account) ? withholdingFor(db, key, held.account, now) : null,
+    withholding: held && tfsaOf(held) ? withholdingFor(db, key, now) : null,
     drafting,
   };
 }

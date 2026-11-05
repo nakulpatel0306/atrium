@@ -10,13 +10,15 @@ import { fxLabel, toCad, type Sourced } from "./sourced";
 // contribution room comes only from numbers Nakul types in (CRA's figure can't be fetched).
 export const US_WITHHOLDING = 0.15;
 export const isTfsa = (account: string): boolean => /tfsa/i.test(account);
+// The export's account type decides when it's known, so a TFSA renamed "Long-term" still counts; else the name.
+export const tfsaOf = (h: { account: string; accountType?: string | null }): boolean => (h.accountType ? isTfsa(h.accountType) : isTfsa(h.account));
 const DIVIDEND_SOURCE = "Tiingo dividends · last 12 months";
 const US_NOTE = "15% US withholding tax is taken from these dividends in a TFSA and can't be recovered.";
 const FUND_NOTE = "About 15% US withholding is taken inside the fund before distributions; it can't be recovered in a TFSA.";
 const YEAR_MS = 365 * 86_400_000;
 
-export function withholdingNote(p: { key: string; account: string; listingCcy: "CAD" | "USD"; ttmDividend: number; usExposure: number }): string | null {
-  if (!isTfsa(p.account)) return null;
+export function withholdingNote(p: { key: string; account: string; accountType?: string | null; listingCcy: "CAD" | "USD"; ttmDividend: number; usExposure: number }): string | null {
+  if (!tfsaOf(p)) return null;
   if (p.listingCcy === "USD") return p.ttmDividend > 0 ? US_NOTE : null;
   return p.usExposure > 0.2 ? FUND_NOTE : null;
 }
@@ -36,10 +38,10 @@ export function incomeTtm(
 ): { rows: IncomeRow[]; totalNetCad: Sourced | null; unavailable: { key: string; reason: string }[] } {
   const rows: IncomeRow[] = [];
   const unavailable: { key: string; reason: string }[] = [];
-  const grouped = new Map<string, { key: string; account: string; quantity: number; ccy: "CAD" | "USD" }>();
+  const grouped = new Map<string, { key: string; account: string; tfsa: boolean; quantity: number; ccy: "CAD" | "USD" }>();
   for (const p of positions) {
-    const id = `${p.key}|${isTfsa(p.account)}`;
-    const g = grouped.get(id) ?? { key: p.key, account: p.account, quantity: 0, ccy: p.listingCcy };
+    const id = `${p.key}|${tfsaOf(p)}`;
+    const g = grouped.get(id) ?? { key: p.key, account: p.account, tfsa: tfsaOf(p), quantity: 0, ccy: p.listingCcy };
     g.quantity += p.quantity;
     grouped.set(id, g);
   }
@@ -51,7 +53,7 @@ export function incomeTtm(
     const perShare = ttmDividends(db, g.key, now);
     if (perShare <= 0) continue;
     const gross = perShare * g.quantity;
-    const tfsa = isTfsa(g.account);
+    const tfsa = g.tfsa;
     rows.push({ key: g.key, gross, net: tfsa ? gross * (1 - US_WITHHOLDING) : gross, ccy: "USD", source: DIVIDEND_SOURCE, note: tfsa ? US_NOTE : null });
   }
   const cad = rows.map((r) => toCad(r.net, r.ccy, fx));

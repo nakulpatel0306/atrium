@@ -13,6 +13,8 @@ export type HoldingInput = {
   bookValue: number | null;
   // From a Wealthsimple holdings export's "Book Value (CAD)"; null when the source doesn't say.
   bookValueCad?: number | null;
+  // From a Wealthsimple holdings export's "Account Type" (e.g. "TFSA"); null when the source doesn't say.
+  accountType?: string | null;
   currency: "CAD" | "USD";
 };
 export type Holding = HoldingInput & {
@@ -33,6 +35,7 @@ type Row = {
   quantity: number;
   book_value: number | null;
   book_value_cad: number | null;
+  account_type: string | null;
   currency: "CAD" | "USD";
   source: Holding["source"];
   updated_at: number;
@@ -49,6 +52,7 @@ const toHolding = (r: Row): Holding => ({
   quantity: r.quantity,
   bookValue: r.book_value,
   bookValueCad: r.book_value_cad,
+  accountType: r.account_type,
   currency: r.currency,
   source: r.source,
   updatedAt: r.updated_at,
@@ -72,8 +76,8 @@ function insert(db: Database, spaceId: string, h: HoldingInput, source: Holding[
   checkQuantity(h.quantity);
   const id = newId("hld");
   db.query(
-    "INSERT INTO market_holdings (id, space_id, account, symbol, exchange, name, quantity, book_value, book_value_cad, currency, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, spaceId, h.account, h.symbol, h.exchange, h.name, h.quantity, h.bookValue, h.bookValueCad ?? null, h.currency, source, Date.now());
+    "INSERT INTO market_holdings (id, space_id, account, symbol, exchange, name, quantity, book_value, book_value_cad, account_type, currency, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, spaceId, h.account, h.symbol, h.exchange, h.name, h.quantity, h.bookValue, h.bookValueCad ?? null, h.accountType ?? null, h.currency, source, Date.now());
   return id;
 }
 

@@ -20,7 +20,7 @@ test("holdings fixture", () => {
   ]);
   expect(p.asOf).toBe("2026-01-28 23:02 GMT-05:00");
   const ko = p.rows.find((r) => r.symbol === "KO")!;
-  expect(ko).toEqual({ account: "RRSP", symbol: "KO", exchange: "US", name: "Coca-Cola Company, The", quantity: 20, bookValue: 1150, bookValueCad: 1600, currency: "USD" });
+  expect(ko).toEqual({ account: "RRSP", symbol: "KO", exchange: "US", name: "Coca-Cola Company, The", quantity: 20, bookValue: 1150, bookValueCad: 1600, accountType: "RRSP", currency: "USD" });
   expect(p.accounts.sort()).toEqual(["RRSP", "TFSA"]);
   expect(p.guessed).toEqual([]);
 });
@@ -28,9 +28,12 @@ test("holdings fixture", () => {
 test("holdings export keeps the CAD book value", () => {
   const p = previewImport(fixture("ws-holdings.csv"));
   expect(p.rows.map((r) => [r.symbol, r.bookValueCad])).toEqual([["SHOP", 1200], ["XEQT", 1500], ["KO", 1600], ["AAPL", 420]]);
+  // The account's type is kept too, so a renamed TFSA is still known as one.
+  expect(p.rows.map((r) => r.accountType)).toEqual(["TFSA", "TFSA", "RRSP", "TFSA"]);
   const a = previewImport(fixture("ws-activity.csv"));
   expect(a.rows.length).toBeGreaterThan(0);
   for (const r of a.rows) expect(r.bookValueCad).toBeNull();
+  for (const r of a.rows) expect(r.accountType).toBeNull();
 });
 
 test("BOM/CRLF fixture parses the same", () => {
@@ -43,9 +46,9 @@ test("activity exports become positions", () => {
   expect(a.format).toBe("wealthsimple_activity");
   expect(b.rows).toEqual(a.rows);
   expect(a.rows).toEqual([
-    { account: "TFSA", symbol: "SHOP", exchange: "TSX", name: "Shopify Inc.", quantity: 12, bookValue: 1720, bookValueCad: null, currency: "CAD" },
-    { account: "RRSP", symbol: "XYZ", exchange: "TSX", name: "XYZ Resources", quantity: 100, bookValue: 1000, bookValueCad: null, currency: "CAD" },
-    { account: "RRSP", symbol: "AAPL", exchange: "US", name: "Apple Inc.", quantity: 4, bookValue: 920, bookValueCad: null, currency: "USD" },
+    { account: "TFSA", symbol: "SHOP", exchange: "TSX", name: "Shopify Inc.", quantity: 12, bookValue: 1720, bookValueCad: null, accountType: null, currency: "CAD" },
+    { account: "RRSP", symbol: "XYZ", exchange: "TSX", name: "XYZ Resources", quantity: 100, bookValue: 1000, bookValueCad: null, accountType: null, currency: "CAD" },
+    { account: "RRSP", symbol: "AAPL", exchange: "US", name: "Apple Inc.", quantity: 4, bookValue: 920, bookValueCad: null, accountType: null, currency: "USD" },
   ]);
   expect(a.guessed).toEqual(expect.arrayContaining(["SHOP", "XYZ"]));
   expect(a.warnings).toContain("Positions from an activity export are only right if the file covers every trade since each account opened.");
@@ -64,8 +67,8 @@ test("an unknown CSV asks for columns, then uses them", () => {
   expect(p.warnings).toContain("Pick which columns hold the symbol and quantity.");
   const m = previewImport(fixture("generic.csv"), { mapping: { symbol: 0, quantity: 1, bookValue: 2 } });
   expect(m.rows).toEqual([
-    { account: "Imported", symbol: "AAPL", exchange: "US", name: "", quantity: 10, bookValue: 1500, bookValueCad: null, currency: "USD" },
-    { account: "Imported", symbol: "SHOP", exchange: "TSX", name: "", quantity: 5, bookValue: 700, bookValueCad: null, currency: "CAD" },
+    { account: "Imported", symbol: "AAPL", exchange: "US", name: "", quantity: 10, bookValue: 1500, bookValueCad: null, accountType: null, currency: "USD" },
+    { account: "Imported", symbol: "SHOP", exchange: "TSX", name: "", quantity: 5, bookValue: 700, bookValueCad: null, accountType: null, currency: "CAD" },
   ]);
 });
 
@@ -83,7 +86,7 @@ test("symbols that can't be looked up are skipped with a reason, in both formats
     { line: 2, reason: '"AB$CD" isn\'t a symbol Atrium can look up; add it by hand.' },
     { line: 3, reason: "Quantity isn't a number." },
   ]);
-  expect(h.rows).toEqual([{ account: "TFSA", symbol: "RY", exchange: "TSX", name: "", quantity: 2, bookValue: null, bookValueCad: null, currency: "CAD" }]);
+  expect(h.rows).toEqual([{ account: "TFSA", symbol: "RY", exchange: "TSX", name: "", quantity: 2, bookValue: null, bookValueCad: null, accountType: null, currency: "CAD" }]);
   const activity = "transaction_date,account_type,activity_type,activity_sub_type,symbol,currency,quantity,net_cash_amount\n2026-01-02,TFSA,Trade,BUY,BAD SYMBOL,CAD,5,-50\n2026-01-03,TFSA,Trade,BUY,SHOP,CAD,Infinity,-50\n2026-01-04,TFSA,Trade,BUY,RY,CAD,3,-30\n";
   const a = previewImport(activity);
   expect(a.skipped).toEqual([

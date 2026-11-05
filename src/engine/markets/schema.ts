@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS market_holdings (
   quantity REAL NOT NULL,
   book_value REAL,
   book_value_cad REAL,
+  account_type TEXT,
   currency TEXT NOT NULL CHECK (currency IN ('CAD','USD')),
   source TEXT NOT NULL CHECK (source IN ('manual','wealthsimple_holdings','wealthsimple_activity')),
   updated_at INTEGER NOT NULL
