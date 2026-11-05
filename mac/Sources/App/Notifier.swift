@@ -4,7 +4,8 @@ import UserNotifications
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
   private let open: (String) -> Void
-  private(set) var isAllowed = false
+  // nil until macOS says: an unanswered prompt shouldn't read as "off".
+  private(set) var isAllowed: Bool?
 
   init(open: @escaping (String) -> Void) {
     self.open = open
@@ -15,6 +16,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
       [weak self] _ in
       MainActor.assumeIsolated { self?.refresh() }
     }
+    refresh()
   }
 
   // .badge too: once an app has asked for notifications, the Dock hides its badge unless badges were granted.
@@ -40,7 +42,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
   private func refresh() {
     UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-      let allowed = settings.authorizationStatus == .authorized
+      let allowed: Bool? =
+        switch settings.authorizationStatus {
+        case .authorized, .provisional: true
+        case .denied: false
+        default: nil
+        }
       Task { @MainActor in self?.isAllowed = allowed }
     }
   }

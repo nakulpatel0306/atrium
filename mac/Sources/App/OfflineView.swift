@@ -143,15 +143,14 @@ enum Starter {
       env["PATH"] = path
       p.environment = env
     }
+    // One pipe for both streams: reading them one after the other could block on a full pipe.
     let out = Pipe()
-    let err = Pipe()
     p.standardOutput = out
-    p.standardError = err
+    p.standardError = out
     do { try p.run() } catch { return (-1, error.localizedDescription) }
-    let o = out.fileHandleForReading.readDataToEndOfFile()
-    let e = err.fileHandleForReading.readDataToEndOfFile()
+    let data = out.fileHandleForReading.readDataToEndOfFile()
     p.waitUntilExit()
-    let text = String(decoding: e.isEmpty ? o : e, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     return (p.terminationStatus, text)
   }
 }
