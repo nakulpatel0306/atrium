@@ -2,7 +2,9 @@ import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
-import { AlreadyResolved, resolveApproval } from "../engine/approvals";
+import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
+import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
+import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
 import { markSeen } from "../engine/briefing";
 import { config } from "../engine/config";
 import { bus } from "../engine/events";
@@ -212,8 +214,56 @@ export function startServer(deps: Deps): Server<undefined> {
       }
       if (!db.query("SELECT 1 FROM approvals WHERE id = ?").get(id)) throw new HttpError(404, "No such approval.");
       const approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"));
+      // Nakul's decision stands whatever happens here; a suggestion is only ever extra.
+      if (b.decision === "approve") {
+        try {
+          considerProposal(db, id);
+        } catch (e) {
+          console.error("Couldn't consider a rule suggestion:", e);
+        }
+      }
       runner.kick();
       return json(approval);
+    }
+
+    const undoM = hit("POST", /^\/api\/approvals\/([^/]+)\/undo$/);
+    if (undoM) {
+      if (!getApproval(db, undoM[1]!)) throw new HttpError(404, "No such approval.");
+      const reopened = undoAutoApproval(db, undoM[1]!);
+      runner.kick();
+      return json(reopened);
+    }
+
+    // Rules are made only by answering yes to a suggestion the engine made; nothing here takes what a rule
+    // covers from the request.
+    const propM = hit("POST", /^\/api\/proposals\/([^/]+)$/);
+    if (propM) {
+      const b = await readBody(req);
+      if (b.answer !== "yes" && b.answer !== "not_now" && b.answer !== "never") {
+        throw new HttpError(400, "answer must be yes, not_now, or never.");
+      }
+      if (!getProposal(db, propM[1]!)) throw new HttpError(404, "No such suggestion.");
+      return json(answerProposal(db, propM[1]!, b.answer));
+    }
+
+    const againM = hit("POST", /^\/api\/proposals\/([^/]+)\/suggest-again$/);
+    if (againM) {
+      if (!getProposal(db, againM[1]!)) throw new HttpError(404, "No such suggestion.");
+      return json(suggestAgain(db, againM[1]!));
+    }
+
+    const ruleActM = hit("POST", /^\/api\/rules\/([^/]+)\/(revoke|renew)$/);
+    if (ruleActM) {
+      const id = ruleActM[1]!;
+      if (!getRule(db, id)) throw new HttpError(404, "No such rule.");
+      return json(ruleActM[2] === "revoke" ? revokeRule(db, id, "you") : renewRule(db, id));
+    }
+
+    const ruleM = hit("GET", /^\/api\/rules\/([^/]+)$/);
+    if (ruleM) {
+      const rule = getRule(db, ruleM[1]!);
+      if (!rule) throw new HttpError(404, "No such rule.");
+      return json({ rule, approvals: ruleApprovals(db, rule.id), events: ruleEvents(db, rule.id) });
     }
 
     if (hit("POST", /^\/api\/command$/)) {
@@ -276,7 +326,7 @@ export function startServer(deps: Deps): Server<undefined> {
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index, "/agents": index },
+    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";
@@ -292,6 +342,7 @@ export function startServer(deps: Deps): Server<undefined> {
         if (e instanceof HttpError) return fail(e.status, e.message);
         if (e instanceof AlreadyResolved) return fail(409, "Already handled");
         if (e instanceof InvalidTransition) return fail(409, e.message);
+        if (e instanceof RuleRefused) return fail(409, e.message);
         if (e instanceof SetupFailed) {
           // The user sees the plain message; the log keeps what actually went wrong.
           console.error("Setup failed:", e.cause instanceof Error ? e.cause.message : e.message);
