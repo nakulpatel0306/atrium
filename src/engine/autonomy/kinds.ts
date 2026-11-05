@@ -67,7 +67,8 @@ const EXECUTES = [
   /\{%/,
   /^\s*>>>/,
   /^\s*iex(\(\d+\))?>/,
-  /^\s*\.\.\s+(raw|include|doctest|literalinclude|code-block)::/,
+  // Any directive, whatever its name: `.. code block::` and `.. sphinx.ext.x::` must not slip past a name list.
+  /^\s*\.\.\s+.*::/,
 ];
 const SITE_CONFIG =
   /(^|\/)(docusaurus\.config\.[^/]+|astro\.config\.[^/]+|nuxt\.config\.[^/]+|gatsby-config\.[^/]+|mkdocs\.ya?ml|cargo\.toml|mix\.exs|conf\.py|book\.toml|_config\.yml|hugo\.(toml|ya?ml|json))$|(^|\/)\.vitepress(\/|$)|^config\.toml$/i;
@@ -85,7 +86,9 @@ const AGENT_INSTRUCTIONS = [
 
 const AGENT_CONFIG =
   /(^|\/)(\.(claude|gemini|codex|cursor|windsurf|agents|roo|continue|kiro|junie|vscode)\/|\.aider[^/]*(\/|$)|(\.clinerules|\.cursorrules|\.windsurfrules|\.mcp\.json)(\/|$))/i;
-const BODY_RUNS = [/>>>/, /^\.\.\. /m, /^\s*\.\.\s+[\w:-]+::/m, /^\s*iex(\(\d+\))?>/m];
+// A superset of EXECUTES, run over each touched file's full text, so executable content that was already there
+// refuses the kind too.
+const BODY_RUNS = [/>>>/, /^\.\.\. /m, ...EXECUTES.map((re) => new RegExp(re.source, `${re.flags}m`))];
 
 export const isSiteConfig = (path: string) => SITE_CONFIG.test(path);
 export const isAgentConfig = (path: string) => AGENT_CONFIG.test(path);
