@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS market_strategies (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','paused','rejected')),
   approval_id TEXT,
   last_run_at INTEGER,
+  -- The schedule slot last enqueued, so a slot runs at most once.
+  last_slot_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
