@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { atriumDenyPaths } from "../../src/engine/agents/atrium-paths";
 import { claudeAdapter, sandboxSettings } from "../../src/engine/agents/claude";
 import { config } from "../../src/engine/config";
 import type { AgentRunInput } from "../../src/engine/agents/types";
@@ -149,8 +150,8 @@ describe("claudeAdapter", () => {
       "Read(~/.aws/**)",
       "Read(~/.gnupg/**)",
       "Read(~/.config/gh/**)",
-      // Atrium's own DB and transcripts hold other spaces' work. "//" anchors the rule at the filesystem root.
-      `Read(/${config().home}/**)`,
+      // Atrium's DB, transcripts and other spaces' folders. "//" anchors the rule at the filesystem root.
+      ...atriumDenyPaths(process.cwd()).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
     ]);
     expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
     // dontAsk makes allowedTools a strict allowlist; acceptEdits would auto-approve unlisted Edit/Write.
@@ -189,7 +190,8 @@ describe("claudeAdapter", () => {
       expect(sandbox.filesystem.denyRead).toContain(p);
     }
     expect(sandbox.filesystem.denyRead).toContain("~/.ssh");
-    expect(sandbox.filesystem.denyRead).toContain(config().home);
+    expect(sandbox.filesystem.denyRead).toContain(join(config().home, "atrium.db"));
+    expect(sandbox.filesystem.denyRead).toContain(join(config().home, "spaces"));
     expect(sandbox.enabled).toBe(true);
     expect(sandbox.failIfUnavailable).toBe(true);
     expect(sandbox.allowUnsandboxedCommands).toBe(false);

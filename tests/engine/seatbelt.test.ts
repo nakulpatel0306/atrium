@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { ENV_FILE_PATTERN, SANDBOX_EXEC, seatbeltProfile, wrapInSeatbelt } from "../../src/engine/agents/seatbelt";
+import { tempHome } from "../helpers";
 
 // /tmp is outside the per-user temp dir ($TMPDIR, under /var/folders), so it stands in for "elsewhere on disk".
 let outside: string;
@@ -23,7 +24,11 @@ function canonicalUnder(home: string, p: string): string {
   }
 }
 
+// A home of the tests' own, so the default Atrium dir below counts as another engine's and is denied whole.
+let atriumHome: ReturnType<typeof tempHome>;
+
 beforeAll(() => {
+  atriumHome = tempHome();
   outside = realpathSync(mkdtempSync("/tmp/atrium-seatbelt-"));
   cwd = join(outside, "repo");
   state = join(outside, "state");
@@ -31,7 +36,10 @@ beforeAll(() => {
   for (const f of [".env", ".env.local", ".envrc", ".ENVRC", "prod.env", "my.env.txt", "environment", "config/.env.production"]) writeFileSync(join(cwd, f), "canary\n");
 });
 
-afterAll(() => rmSync(outside, { recursive: true, force: true }));
+afterAll(() => {
+  rmSync(outside, { recursive: true, force: true });
+  atriumHome.cleanup();
+});
 
 describe("ENV_FILE_PATTERN", () => {
   test("matches a path component starting or ending with .env, in any case, and nothing else", () => {

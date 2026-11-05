@@ -1,11 +1,12 @@
 import { config } from "../config";
 import { ENV_GLOBS } from "../envpath";
+import { atriumDenyPaths } from "./atrium-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
-const denyRules = () => [
+const denyRules = (cwd: string) => [
   // .env names in any case, names ending in .env, and everything inside a folder with such a name.
   ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
@@ -20,8 +21,8 @@ const denyRules = () => [
   "Read(~/.aws/**)",
   "Read(~/.gnupg/**)",
   "Read(~/.config/gh/**)",
-  // Atrium's own DB and transcripts hold other spaces' work. A "//" prefix anchors the rule at the filesystem root.
-  `Read(/${config().home}/**)`,
+  // Atrium's DB, transcripts and other spaces' folders; a general-space run keeps its own. "//" anchors at the root.
+  ...atriumDenyPaths(cwd).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
 ];
 
 // Per-run settings: the sandbox must hard-fail rather than quietly run unconfined.
@@ -37,7 +38,7 @@ export function sandboxSettings(cwd: string): string {
           "~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains",
           // A wildcard entry that matches a folder blocks its contents too.
           ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
-          config().home,
+          ...atriumDenyPaths(cwd),
         ],
       },
       network: { allowedDomains: ["registry.npmjs.org"] },
@@ -136,7 +137,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           "--permission-mode", "dontAsk",
           "--append-system-prompt", input.systemPrompt,
           "--allowedTools", ...input.allowedTools,
-          "--disallowedTools", ...denyRules(),
+          "--disallowedTools", ...denyRules(input.cwd),
         ],
         { cwd: input.cwd, stdin: input.prompt, signal: input.signal, onLine: handle },
       );

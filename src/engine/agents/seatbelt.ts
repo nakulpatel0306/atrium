@@ -2,6 +2,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { config } from "../config";
+import { atriumDenyPaths } from "./atrium-paths";
 import type { AgentProcessResult } from "./process";
 import type { AgentRunResult } from "./types";
 
@@ -67,8 +68,10 @@ const subpath = (p: string) => `(subpath ${str(canonical(p))})`;
 export function seatbeltProfile(opts: SeatbeltOptions): string {
   const home = homedir();
   const cwd = canonical(opts.cwd);
-  // config().home is the default Atrium dir unless ATRIUM_HOME moves it, so the Set drops the usual duplicate.
-  const denyRead = [...new Set([...SECRET_PATHS.map((d) => join(home, d)), config().home, ...(opts.extraDenyRead ?? [])])].map(subpath);
+  // The default Atrium dir is denied whole unless it is this engine's own, whose run-specific denies (everything
+  // but the run's own space folder) come from atriumDenyPaths.
+  const secrets = SECRET_PATHS.map((d) => join(home, d)).filter((p) => p !== config().home);
+  const denyRead = [...new Set([...secrets, ...atriumDenyPaths(opts.cwd), ...(opts.extraDenyRead ?? [])])].map(subpath);
   const writable = opts.writable.map(subpath);
   return [
     "(version 1)",
