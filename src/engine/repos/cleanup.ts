@@ -7,7 +7,7 @@ import { bus, logActivity } from "../events";
 import { git, STAGE_FLAGS } from "../git";
 import { isEnvPath } from "../envpath";
 import { newId } from "../ids";
-import { getSpace, setSpaceRepo } from "../spaces";
+import { getSpace, listSpaces, setSpaceRepo, type Space } from "../spaces";
 import { listTasks } from "../tasks";
 import { bytes, plural } from "../text";
 import { fetchOrigin } from "./gitops";
@@ -88,6 +88,10 @@ async function envInside(root: string, rel: string): Promise<{ env: string | nul
   return { env: null };
 }
 
+// Any space can point at a folder Atrium cloned for another one, so every space using it counts.
+const spacesUsing = (db: Database, path: string): Space[] =>
+  listSpaces(db, { includeArchived: true }).filter((s) => s.repoPath === path);
+
 // Every reason the folder can't go, all collected, from a fresh look at disk and GitHub.
 export async function checkRemovable(db: Database, cloneId: string): Promise<{ ok: true; bytes: number } | { ok: false; reasons: string[] }> {
   const clone = getClone(db, cloneId);
@@ -100,9 +104,8 @@ export async function checkRemovable(db: Database, cloneId: string): Promise<{ o
   }
   const path = clone.path;
   const reasons: string[] = [];
-  const space = clone.spaceId ? getSpace(db, clone.spaceId) : null;
-  if (space && listTasks(db, { spaceId: space.id, status: ["queued", "running"] }).length > 0) {
-    reasons.push(`A task is queued or running in ${space.name}.`);
+  for (const space of spacesUsing(db, path)) {
+    if (listTasks(db, { spaceId: space.id, status: ["queued", "running"] }).length > 0) reasons.push(`A task is queued or running in ${space.name}.`);
   }
   const empty = (await git(path, ["hash-object", "-t", "tree", "/dev/null"])).out.trim();
   const status = await git(path, [
@@ -240,7 +243,7 @@ export async function removeClone(db: Database, actionId: string): Promise<RepoA
   rmSync(clone.path, { recursive: true, force: true });
   return db.transaction(() => {
     markRemoved(db, clone.id, Date.now());
-    if (clone.spaceId && getSpace(db, clone.spaceId)?.repoPath === clone.path) setSpaceRepo(db, clone.spaceId, { repoPath: null });
+    for (const space of spacesUsing(db, clone.path)) setSpaceRepo(db, space.id, { repoPath: null });
     logActivity(db, clone.spaceId, "atrium", `Removed the local copy of ${clone.github} (${bytes(check.bytes)})`);
     return setActionStatus(db, actionId, "done");
   })();

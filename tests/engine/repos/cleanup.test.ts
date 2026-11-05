@@ -228,3 +228,18 @@ test("after removal, the space clones again when a task needs it", async () => {
   expect(existsSync(join(path, "README.md"))).toBe(true);
   expect(listClones(db).map((c) => c.status)).toEqual(["removed", "present"]);
 });
+
+test("a running task in another space that uses the same folder blocks removal, and removal clears both", async () => {
+  const other = createSpace(db, { name: "Other", kind: "repo", goal: "g", github: "fakeuser/demo", repoPath: path });
+  const t = createTask(db, { spaceId: other.id, title: "busy" });
+  db.query("UPDATE tasks SET status = 'running' WHERE id = ?").run(t.id);
+  expect(await reasons()).toEqual(["A task is queued or running in Other."]);
+  db.query("UPDATE tasks SET status = 'done' WHERE id = ?").run(t.id);
+  const repos = wired();
+  const asked = await askToRemove(db, clone.id);
+  if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
+  resolveApproval(db, asked.approval.id, "approve");
+  await repos.settle();
+  expect(getSpace(db, space.id)!.repoPath).toBeNull();
+  expect(getSpace(db, other.id)!.repoPath).toBeNull();
+});
