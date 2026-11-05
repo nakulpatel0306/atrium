@@ -2,7 +2,7 @@ import { Text } from "ink";
 import { clean, oneLine, truncate, width } from "../text";
 import type { AnsiColor } from "../theme";
 
-export type Segment = { text: string; color?: AnsiColor; bold?: boolean; dim?: boolean };
+export type Segment = { text: string; color?: AnsiColor; bold?: boolean; dim?: boolean; inverse?: boolean };
 
 // Fits colored pieces into exactly `cols` columns, cutting the last one that overflows with an ellipsis.
 export function fit(segments: Segment[], cols: number): Segment[] {
@@ -28,7 +28,7 @@ export function Row({ segments, cols, selected }: { segments: Segment[]; cols: n
   return (
     <Text inverse={inverse} bold={selected === "idle"} wrap="truncate">
       {fit(segments, cols).map((s, i) => (
-        <Text key={i} color={inverse ? undefined : s.color} bold={s.bold} dimColor={s.dim}>
+        <Text key={i} color={inverse ? undefined : s.color} bold={s.bold} dimColor={s.dim} inverse={s.inverse}>
           {s.text}
         </Text>
       ))}

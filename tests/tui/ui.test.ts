@@ -75,3 +75,9 @@ test("overlays and flashes", () => {
   expect(run([{ type: "close" }], open).overlay).toBeNull();
   expect(run([{ type: "flash", flash: { text: "hi", tone: "ok" } }]).flash?.text).toBe("hi");
 });
+
+test("select picks a row by id, even before the engine lists it", () => {
+  const ui = run([{ type: "select", pane: "spaces", id: ids.jobHunt }]);
+  expect(ui.selected.spaces).toEqual({ id: ids.jobHunt, index: 1 });
+  expect(run([{ type: "select", pane: "spaces", id: "spc_new" }]).selected.spaces).toEqual({ id: "spc_new", index: 0 });
+});

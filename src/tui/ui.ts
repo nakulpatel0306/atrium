@@ -42,6 +42,7 @@ export type Action =
   | { type: "open"; overlay: Overlay }
   | { type: "close" }
   | { type: "setOverlay"; overlay: Overlay }
+  | { type: "select"; pane: ListPane; id: string }
   | { type: "filter"; pane: ListPane; text: string }
   | { type: "flash"; flash: Flash | null };
 
@@ -139,6 +140,11 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
       return { ...ui, overlay: action.overlay };
     case "close":
       return { ...ui, overlay: null };
+    case "select": {
+      // A space just set up may not be in the state yet; its id is kept and found once it arrives.
+      const index = listOf(view, action.pane).findIndex((x) => x.id === action.id);
+      return select(ui, action.pane, { id: action.id, index: Math.max(0, index) });
+    }
     case "filter":
       return { ...ui, filters: { ...ui.filters, [action.pane]: action.text } };
     case "flash":

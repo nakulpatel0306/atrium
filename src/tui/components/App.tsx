@@ -4,24 +4,29 @@ import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
 import { activityDetail, approvalDetail, type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../detail";
 import { useEngineState, useMessages, useOnline, useReviewers, useRunOutput, useTick } from "../hooks";
+import { runIntent } from "../effects";
 import { commandsFor, hints, type Intent } from "../keys";
 import { layout } from "../layout";
 import { reviewTarget } from "../../dashboard/summary";
 import { deriveView, type View } from "../select";
 import { clean, wrapLines } from "../text";
 import { color } from "../theme";
-import { type Flash, initialUi, reduce, type Rows, type Ui } from "../ui";
+import { type Action, type Flash, initialUi, reduce, type Rows, type Ui } from "../ui";
 import { ActivityPane } from "./ActivityPane";
+import { Confirm } from "./Confirm";
 import { DetailPane } from "./DetailPane";
 import { LivePane } from "./LivePane";
 import { Header } from "./Header";
 import { NeedsPane } from "./NeedsPane";
 import { Pane } from "./Pane";
+import { Picker } from "./Picker";
+import { Prompt } from "./Prompt";
 import { SpacesPane } from "./SpacesPane";
 import { StatusBar } from "./StatusBar";
 import { TasksPane } from "./TasksPane";
 
 const NO_KEY = {} as Key;
+const SETTING_UP = "Setting up your space. This usually takes under a minute.";
 const inPrompt = (u: Ui) => u.overlay?.kind === "prompt";
 
 type Size = { columns: number; rows: number };
@@ -52,6 +57,8 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const uiRef = useRef(ui);
   const briefing = useRef<State["briefing"] | null>(null);
   const seen = useRef(false);
+  // Setting up a space takes a while; a second submit meanwhile would set up a second space.
+  const settingUp = useRef(false);
   if (state && !briefing.current) briefing.current = state.briefing;
 
   useEffect(() => {
@@ -82,12 +89,28 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     setUi(next);
   };
 
-  const flash = (f: Flash) => {
+  const dispatch = (action: Action) => {
     const s = client.state();
-    if (s) commit(reduce(uiRef.current, { type: "flash", flash: f }, deriveView(s, uiRef.current), rows));
+    if (s) commit(reduce(uiRef.current, action, deriveView(s, uiRef.current), rows));
   };
+  const flash = (f: Flash) => dispatch({ type: "flash", flash: f });
 
-  const runIntent = (_intent: Intent) => flash({ tone: "info", text: "Not wired yet." });
+  const act = async (intent: Intent) => {
+    const s = client.state();
+    if (!s) return;
+    if (intent.type === "newSpace") {
+      if (settingUp.current) return flash({ tone: "info", text: SETTING_UP });
+      settingUp.current = true;
+      flash({ tone: "info", text: SETTING_UP });
+    }
+    const out = await runIntent(client, intent, s);
+    if (intent.type === "newSpace") settingUp.current = false;
+    if (out.spaceId) {
+      dispatch({ type: "select", pane: "spaces", id: out.spaceId });
+      dispatch({ type: "focus", pane: "tasks" });
+    }
+    flash({ tone: out.tone, text: out.text });
+  };
 
   const handle = (input: string, key: Key) => {
     const s = client.state();
@@ -119,7 +142,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     }
     commit(cur);
     if (quit) return exit();
-    for (const intent of intents) runIntent(intent);
+    for (const intent of intents) void act(intent);
   };
 
   useInput(handle);
@@ -185,6 +208,13 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
         </Box>
       </Box>
       <StatusBar state={view.state} cols={cols} hints={hints(ui, view)} flash={ui.flash} online={online} />
+      {ui.overlay?.kind === "prompt" && (
+        <Prompt prompt={ui.overlay} state={view.state} width={lay.right} top={height - 5} left={lay.left} />
+      )}
+      {ui.overlay?.kind === "picker" && (
+        <Picker picker={ui.overlay} state={view.state} reviewers={reviewers} cols={cols} rows={height} />
+      )}
+      {ui.overlay?.kind === "confirm" && <Confirm confirm={ui.overlay} state={view.state} cols={cols} rows={height} />}
     </Box>
   );
 }

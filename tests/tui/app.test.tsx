@@ -87,18 +87,11 @@ test("empty states read plainly", async () => {
   expect(f.replace(/[│\s]+/g, " ")).toContain("No activity yet. Agent runs and your decisions will show up here.");
 });
 
-test("intents aren't wired yet", async () => {
-  const app = openApp(fakeClient(makeState()));
-  await app.frame((f) => f.includes("[1] Spaces"));
-  await app.type("3", "a");
-  await app.frame((f) => f.includes("Not wired yet."));
-});
-
 test("each key in a chunk sees the focus the one before it set", async () => {
   const app = openApp(fakeClient(makeState()));
   await app.frame((f) => f.includes("[1] Spaces"));
   await app.type("3a");
-  await app.frame((f) => f.includes("Not wired yet."));
+  await app.frame((f) => f.includes('Approved "Review: Fix login redirect".'));
 });
 
 test("engine text can't send escape sequences to the terminal", async () => {
