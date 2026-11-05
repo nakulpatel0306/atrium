@@ -239,6 +239,18 @@ test("no trading hosts anywhere in the source", () => {
   }
 });
 
+test("no unlicensed sources anywhere in the source", () => {
+  const banned = ["finance.yahoo.com", "query1.finance", "money.tmx.com", "google.com/finance", "stooq.", "api.nasdaq.com"];
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : /\.(ts|tsx)$/.test(e.name) ? [join(dir, e.name)] : []));
+  const files = walk(resolve(import.meta.dir, "../../src"));
+  expect(files.length).toBeGreaterThan(50);
+  for (const f of files) {
+    const text = readFileSync(f, "utf8");
+    for (const b of banned) expect(`${f}: ${b}: ${text.includes(b)}`).toBe(`${f}: ${b}: false`);
+  }
+});
+
 test("an alert's Needs-you item can turn the alert off", async () => {
   boot();
   const s = markets();

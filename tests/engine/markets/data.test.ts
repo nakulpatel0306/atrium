@@ -213,3 +213,21 @@ test("a rejected key is retried once at the next session", async () => {
   await data.prepare();
   expect((await data.status()).us.ready).toBe(true);
 });
+
+test("every provider request is metered, and failures are noted for the budget page", async () => {
+  const { dataBudget } = await import("../../../src/engine/markets/budget");
+  const { stubFetch, jsonResponse, fixture } = await import("./fakes");
+  setSetting(db, "markets.provider", "finnhub");
+  let fail = false;
+  const s = stubFetch(() => (fail ? new Response("no", { status: 500 }) : jsonResponse(fixture("finnhub-quote.json"))));
+  const data = createMarketData({ db, keychain: fakeKeychain({ ...ALL_KEYS }), fetch: s.fetch, now: () => now });
+  await data.quotes([{ symbol: "AAPL", exchange: "US" }]);
+  const row = () => dataBudget(db, now).find((r) => r.source === "finnhub")!;
+  expect(row().callsToday).toBe(s.calls.length);
+  expect(row().callsToday).toBeGreaterThan(0);
+  expect(row().lastOkAt).toBe(now);
+  fail = true;
+  await data.quotes([{ symbol: "AAPL", exchange: "US" }]);
+  expect(row().lastError).toContain("Finnhub");
+  expect(row().lastError).not.toContain("FHTEST12345");
+});

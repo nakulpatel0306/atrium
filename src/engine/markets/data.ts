@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { getSetting } from "../settings";
-import { dailyBudget } from "./budget";
+import { dailyBudget, meteredFetch, noteSourceResult } from "./budget";
 import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
 import { etDate, etInstant, lastCompletedSession } from "./calendar";
 import { instrumentKey, type Instrument } from "./instrument";
@@ -122,14 +122,16 @@ export function createMarketData(deps: {
     if (given) return given;
     const cached = built[id];
     if (cached) return cached;
-    const io = { fetch: deps.fetch, WebSocket: deps.WebSocket, now };
+    // Every request a provider sends is counted for the data budget page.
+    const metered = id === "demo" ? undefined : meteredFetch(db, id, deps.fetch ?? fetch, now);
+    const io = { fetch: metered, WebSocket: deps.WebSocket, now };
     const made =
       id === "alpaca"
         ? alpacaProvider({ keyId: keys.alpacaKeyId!, secret: keys.alpacaSecret! }, io)
         : id === "finnhub"
           ? finnhubProvider(keys.finnhub!, io)
           : id === "alphavantage"
-            ? alphaVantageProvider(keys.alphavantage!, { budget: dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now), fetch: deps.fetch, now })
+            ? alphaVantageProvider(keys.alphavantage!, { budget: dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now), fetch: metered, now })
             : demoProvider({ now });
     built[id] = made;
     return made;
@@ -146,6 +148,9 @@ export function createMarketData(deps: {
 
   const secrets = () => [keys.alpacaKeyId, keys.alpacaSecret, keys.finnhub, keys.alphavantage].filter((k): k is string => !!k);
   const message = (e: unknown) => redact(e instanceof Error ? e.message : String(e), secrets());
+  const note = (p: MarketProvider, ok: boolean, msg?: string) => {
+    if (p.id !== "demo") noteSourceResult(db, p.id, ok, msg, now());
+  };
 
   // Bookkeeping for the daily-bar cache, written directly so it doesn't emit `changed`.
   type BarsMeta = { from: number; fetchedAt: number };
@@ -169,18 +174,20 @@ export function createMarketData(deps: {
     const latest = cached.at(-1)?.t ?? null;
     const coversFrom = meta !== null && meta.from <= from;
     const current = (latest !== null && latest >= etInstant(last.date, "00:00") / 1000) || (meta !== null && meta.fetchedAt >= last.closesAt);
-    let note: string | null = null;
+    let noteText: string | null = null;
     if (!coversFrom || !current) {
       const fetchFrom = coversFrom && latest !== null ? latest * 1000 : from;
       try {
         const fresh = (await p.bars(i, "1Day", fetchFrom, at)).filter((b) => b.t < cutoff);
+        note(p, true);
         saveBars(db, key, "1Day", fresh);
         setMeta(key, { from: coversFrom ? meta!.from : from, fetchedAt: at });
       } catch (e) {
-        note = message(e);
+        noteText = message(e);
+        if (!(e instanceof ProviderError && e.kind === "no_history")) note(p, false, noteText);
       }
     }
-    return { bars: cachedBars(db, key, "1Day", Math.floor(from / 1000)), note };
+    return { bars: cachedBars(db, key, "1Day", Math.floor(from / 1000)), note: noteText };
   };
 
   return {
@@ -197,12 +204,14 @@ export function createMarketData(deps: {
       for (const [p, group] of groups) {
         try {
           const got = await p.quotes(group);
+          note(p, true);
           saveQuotes(db, got);
           quotes.push(...got);
           const seen = new Set(got.map((q) => q.key));
           for (const i of group) if (!seen.has(instrumentKey(i))) missing.push({ key: instrumentKey(i), reason: `${p.label} has no price for ${instrumentKey(i)}.` });
         } catch (e) {
           const reason = message(e);
+          note(p, false, reason);
           if (e instanceof ProviderError && e.kind === "auth") rejected[p.id] = { message: reason, date: etDate(now()) };
           for (const i of group) missing.push({ key: instrumentKey(i), reason });
         }
@@ -240,7 +249,9 @@ export function createMarketData(deps: {
       for (const [p, group] of groups) {
         try {
           out.push(...(await p.news!(group, since)));
+          note(p, true);
         } catch (e) {
+          note(p, false, message(e));
           throw new ProviderError(e instanceof ProviderError ? e.kind : "unavailable", message(e));
         }
       }
