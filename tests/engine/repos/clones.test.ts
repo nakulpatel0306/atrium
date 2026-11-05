@@ -85,7 +85,7 @@ test("a clone that fails blocks the tasks with gh's plain message and leaves no 
   c.request(s);
   await c.settle();
   expect(getTask(db, t.id)!.status).toBe("blocked");
-  expect(getTask(db, t.id)!.blockedReason).toMatch(/^(GitHub said|Couldn't)/);
+  expect(getTask(db, t.id)!.blockedReason).toBe("Couldn't find fakeuser/demo on GitHub, or your account can't see it. Check the name.");
   expect(existsSync(join(gh.projects, "demo"))).toBe(false);
   expect(listClones(db)).toEqual([]);
 });

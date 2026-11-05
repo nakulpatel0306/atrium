@@ -6,6 +6,7 @@ import { logActivity } from "../events";
 import { git } from "../git";
 import { setSpaceRepo, type Space } from "../spaces";
 import { listTasks, setTaskStatus } from "../tasks";
+import { GhProblem } from "./gh";
 import { cloneRepo } from "./gitops";
 import { sameGithubRepo, tildePath, validateGithubSlug } from "./names";
 import { recordClone } from "./store";
@@ -44,6 +45,7 @@ export function createCloner(db: Database, kick: () => void): { request(space: S
     } catch (e) {
       // This run made the folder, so whatever is in it is the clone's partial work.
       rmSync(dest, { recursive: true, force: true });
+      if (e instanceof GhProblem && e.raw) logActivity(db, space.id, "atrium", `Couldn't clone ${slug}. GitHub said: ${e.raw}`);
       blockQueued(space, e instanceof Error ? e.message : String(e));
       return;
     }

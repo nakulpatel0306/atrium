@@ -78,10 +78,17 @@ test("a missing gh says how to install it", async () => {
   expect(() => ghCredentialFlags()).toThrow(GhProblem);
 });
 
-test("ghProblem falls back to gh's own first line", () => {
-  const p = ghProblem({ code: 1, out: "", err: "something odd\nmore", timedOut: false }, {});
+test("an error Atrium doesn't recognise reads plainly, keeping gh's words aside", () => {
+  const p = ghProblem({ code: 1, out: "", err: "fatal: something odd\nmore", timedOut: false }, {});
   expect(p.kind).toBe("other");
-  expect(p.message).toBe("GitHub said: something odd");
+  expect(p.message).toBe("GitHub didn't accept that, and Atrium couldn't tell why. Run `gh auth status` in a terminal to check gh still works, then try again.");
+  expect(p.raw).toBe("fatal: something odd");
+});
+
+test("git's own wording for a missing repo or a failed sign-in maps to the plain messages", () => {
+  expect(ghProblem({ code: 128, out: "", err: "remote: Repository not found.\nfatal: repository 'x' not found", timedOut: false }, { slug: "o/n" }).kind).toBe("not_found");
+  expect(ghProblem({ code: 128, out: "", err: "fatal: '/x/y.git' does not appear to be a git repository", timedOut: false }, { slug: "o/n" }).kind).toBe("not_found");
+  expect(ghProblem({ code: 128, out: "", err: "fatal: Authentication failed for 'https://github.com/o/n.git/'", timedOut: false }, {}).kind).toBe("logged_out");
 });
 
 test("ghCredentialFlags names the gh helper after clearing others", () => {

@@ -40,6 +40,8 @@ export class GhProblem extends Error {
   constructor(
     readonly kind: GhProblemKind,
     message: string,
+    // gh's or git's own words, for the activity log; Nakul-facing text stays plain.
+    readonly raw?: string,
   ) {
     super(message);
     this.name = "GhProblem";
@@ -51,13 +53,14 @@ const COPY = {
   logged_out: "gh is signed out of GitHub. Run `gh auth login` in a terminal, then approve again.",
   offline: "Couldn't reach GitHub. Check your internet connection, then approve again.",
   timeout: "GitHub didn't answer within 30 seconds. If your Mac's keychain is locked, unlock it, then approve again.",
+  other: "GitHub didn't accept that, and Atrium couldn't tell why. Run `gh auth status` in a terminal to check gh still works, then try again.",
 };
 
 export function ghProblem(res: GhResult, ctx: { name?: string; slug?: string }): GhProblem {
   const text = `${res.err}\n${res.out}`;
   if (res.timedOut) return new GhProblem("timeout", COPY.timeout);
   if (res.code === 127) return new GhProblem("not_installed", COPY.not_installed);
-  if (res.code === 4 || /gh auth login|not logged in|authentication required|HTTP 401/i.test(text)) {
+  if (res.code === 4 || /gh auth login|not logged in|authentication required|authentication failed|HTTP 401/i.test(text)) {
     return new GhProblem("logged_out", COPY.logged_out);
   }
   if (/name already exists/i.test(text)) {
@@ -66,11 +69,11 @@ export function ghProblem(res: GhResult, ctx: { name?: string; slug?: string }):
   if (/error connecting|could not resolve host|no such host|dial tcp|network is unreachable|connection refused/i.test(text)) {
     return new GhProblem("offline", COPY.offline);
   }
-  if (/could not resolve to a repository|HTTP 404/i.test(text)) {
+  if (/could not resolve to a repository|HTTP 404|repository not found|does not appear to be a git repository/i.test(text)) {
     return new GhProblem("not_found", `Couldn't find ${ctx.slug ?? "that repo"} on GitHub, or your account can't see it. Check the name.`);
   }
   const first = (res.err.trim() || res.out.trim()).split("\n")[0]!.slice(0, 200);
-  return new GhProblem("other", `GitHub said: ${first}`);
+  return new GhProblem("other", COPY.other, first);
 }
 
 const OWNER = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
@@ -79,7 +82,9 @@ export async function ghLogin(opts: { timeoutMs?: number } = {}): Promise<string
   const res = await runGh(["api", "user", "--jq", ".login"], opts);
   if (res.code !== 0 || res.timedOut) throw ghProblem(res, {});
   const login = res.out.trim();
-  if (!OWNER.test(login)) throw new GhProblem("other", `GitHub said: unexpected account name "${login.slice(0, 60)}"`);
+  if (!OWNER.test(login)) {
+    throw new GhProblem("other", "gh answered with an account name Atrium doesn't recognise. Run `gh auth status` to see who's signed in, then approve again.", login.slice(0, 60));
+  }
   return login;
 }
 
@@ -90,7 +95,9 @@ export async function ghCreateRepo(d: ProjectDraft, opts: { timeoutMs?: number }
   const url = res.out.trim().split("\n").pop() ?? "";
   const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(url);
   // The URL decides where the first push goes, so it must be exactly the repo we asked for.
-  if (!m || !OWNER.test(m[1]!) || m[2] !== d.name) throw new GhProblem("other", `GitHub said: created an unexpected repo "${url.slice(0, 120)}"`);
+  if (!m || !OWNER.test(m[1]!) || m[2] !== d.name) {
+    throw new GhProblem("other", "gh reported a repo with a different name than the one asked for, so nothing was pushed. Check your repos on GitHub, then try again.", url.slice(0, 120));
+  }
   return url;
 }
 
@@ -108,7 +115,7 @@ export async function ghViewRepo(slug: string, opts: { timeoutMs?: number } = {}
   } catch {
     // Falls through to the plain error below.
   }
-  throw new GhProblem("other", "GitHub said: an unreadable reply about that repo");
+  throw new GhProblem("other", "gh's answer about that repo couldn't be read. Update gh with `brew upgrade gh`, then try again.", res.out.slice(0, 120));
 }
 
 // git runs a "!helper" through a shell, so the gh path is only used when it has nothing a shell would interpret.

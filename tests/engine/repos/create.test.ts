@@ -7,6 +7,7 @@ import { openDb } from "../../../src/engine/db";
 import { createProject, recoverRepoActions } from "../../../src/engine/repos/create";
 import type { ProjectDraft } from "../../../src/engine/repos/names";
 import { draftProject, getRepoAction, listClones, pendingRepoActions } from "../../../src/engine/repos/store";
+import { listActivity } from "../../../src/engine/events";
 import { listSpaces } from "../../../src/engine/spaces";
 import { tempHome } from "../../helpers";
 import { type FakeGitHub, fakeGitHub } from "../../repos-helpers";
@@ -119,6 +120,8 @@ test("a failed push keeps the empty repo, and the retry reuses it", async () => 
   Bun.spawnSync(["chmod", "-R", "u+w", bare()]);
   gh.env("ok");
   expect(failed.status).toBe("failed");
+  expect(failed.error).not.toMatch(/GitHub said|fatal/);
+  expect(listActivity(db).find((a) => a.message.startsWith("Couldn't create demo"))!.message).toContain("GitHub said:");
   expect(failed.remoteUrl).toBe("https://github.com/fakeuser/demo");
   const [retry] = pendingRepoActions(db);
   expect(retry!.remoteUrl).toBe("https://github.com/fakeuser/demo");

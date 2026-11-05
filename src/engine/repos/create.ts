@@ -6,7 +6,7 @@ import { config } from "../config";
 import { bus, logActivity } from "../events";
 import { git } from "../git";
 import { createSpace } from "../spaces";
-import { ghCreateRepo, ghLogin } from "./gh";
+import { GhProblem, ghCreateRepo, ghLogin } from "./gh";
 import { initialCommit, remoteIsEmpty } from "./gitops";
 import { projectPath } from "./names";
 import { pushInitialMain } from "./push";
@@ -76,7 +76,8 @@ export async function createProject(db: Database, actionId: string, deps: { kick
     if (staging) rmSync(staging, { recursive: true, force: true });
     const message = e instanceof Error ? e.message : String(e);
     const failed = setActionStatus(db, actionId, "failed", { error: message, remoteUrl: url });
-    logActivity(db, null, "atrium", `Couldn't create ${draft.name}: ${message}`);
+    const raw = e instanceof GhProblem && e.raw ? ` (GitHub said: ${e.raw})` : "";
+    logActivity(db, null, "atrium", `Couldn't create ${draft.name}: ${message}${raw}`);
     draftProject(db, draft, { remoteUrl: url ?? undefined, lastError: message });
     return failed;
   }
