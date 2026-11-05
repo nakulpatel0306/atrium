@@ -5,7 +5,7 @@ import type { AgentAdapter, AgentRunResult } from "./agents/types";
 import { createApproval } from "./approvals";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
-import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, repoReady, returnToBranch } from "./git";
+import { branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, repoReady, returnToBranch } from "./git";
 import { newId } from "./ids";
 import { canRun, type PowerSource } from "./power";
 import { getSetting, setSetting } from "./settings";
@@ -289,7 +289,17 @@ export function createRunner(deps: {
     }
 
     let leftRepo: string | null = null;
+    let commitError: string | null = null;
     try {
+      // Before settleRepo switches branches. Skipped when git settings changed: staging can run
+      // filter drivers from config the agent planted, and settleRepo reports the tampering.
+      if (repo && result.status === "ok" && (await settingsUnchanged(repo.path, repo.fingerprint))) {
+        try {
+          await commitAll(repo.path, task.title);
+        } catch (e) {
+          commitError = (e as Error).message;
+        }
+      }
       transcript.close();
       const tokens = result.status === "ok" ? [result.inputTokens, result.outputTokens] : [0, 0];
       db.query("UPDATE runs SET ended_at = ?, exit_code = ?, input_tokens = ?, output_tokens = ? WHERE id = ?").run(
@@ -308,8 +318,9 @@ export function createRunner(deps: {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
         logActivity(db, space.id, "atrium", `Discarded the result for ${task.title}: the task was moved while it ran.`);
-      } else if (leftRepo) {
-        block(task, leftRepo);
+      } else if (commitError ?? leftRepo) {
+        // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
+        block(task, (commitError ?? leftRepo)!);
       } else if (result.status !== "ok" && r.signal.aborted) {
         setTaskStatus(db, task.id, "queued");
         logActivity(db, space.id, "atrium", `Engine stopped; requeued ${task.title}`);
@@ -387,7 +398,10 @@ async function repoReport(repo: RepoRun): Promise<string[]> {
   try {
     // Against the starting branch, so a retry reports all the work on the task branch.
     const s = await branchSummary(repo.path, repo.branch, repo.start);
-    summaryLine = `${plural(s.commits, "commit")}, ${plural(s.filesChanged, "file")} (+${s.insertions} −${s.deletions}) on ${repo.branch}`;
+    summaryLine =
+      s.commits === 0
+        ? "No file changes"
+        : `${plural(s.commits, "commit")}, ${plural(s.filesChanged, "file")} (+${s.insertions} −${s.deletions}) on ${repo.branch}`;
   } catch (e) {
     summaryLine = `Couldn't summarise the changes on ${repo.branch}: ${(e as Error).message}`;
   }

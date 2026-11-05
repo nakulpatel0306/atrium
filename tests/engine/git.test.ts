@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -267,5 +267,43 @@ describe("branchSummary", () => {
     const path = repo();
     const branch = await prepareBranch(path, "tsk_1");
     await expect(branchSummary(path, branch, "nope")).rejects.toThrow();
+  });
+});
+
+describe("commitAll", () => {
+  test("commits all changes with the given message", async () => {
+    const path = repo();
+    writeFileSync(join(path, "README.md"), "# changed\n");
+    writeFileSync(join(path, "new.txt"), "new\n");
+    expect(await commitAll(path, "Add things")).toEqual({ committed: true, files: 2 });
+    expect(git(path, "log", "-1", "--format=%s")).toBe("Add things");
+    expect(git(path, "status", "--porcelain")).toBe("");
+  });
+
+  test("with no changes does nothing", async () => {
+    const path = repo();
+    const head = git(path, "rev-parse", "HEAD");
+    expect(await commitAll(path, "Nothing")).toEqual({ committed: false, files: 0 });
+    expect(git(path, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  test("refuses .env files at any depth and stages nothing", async () => {
+    const path = repo();
+    // A global ignore file would hide .env.local, and the test needs it visible to git.
+    git(path, "config", "core.excludesFile", "/dev/null");
+    writeFileSync(join(path, "ok.txt"), "ok\n");
+    mkdirSync(join(path, "config"));
+    writeFileSync(join(path, "config", ".env.local"), "SECRET=1\n");
+    await expect(commitAll(path, "Oops")).rejects.toThrow("Refusing to commit a .env file: config/.env.local");
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  test("ignores hooks", async () => {
+    const path = repo();
+    const hook = join(path, ".git", "hooks", "pre-commit");
+    writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+    chmodSync(hook, 0o755);
+    writeFileSync(join(path, "a.txt"), "a\n");
+    expect(await commitAll(path, "Hooked")).toEqual({ committed: true, files: 1 });
   });
 });

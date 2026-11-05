@@ -67,6 +67,29 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
   return branch;
 }
 
+// Commits whatever the agent left in the tree. Signing is left to commit.gpgsign in the user's git config:
+// forcing -S would fail in repos and machines where signing isn't set up.
+export async function commitAll(path: string, message: string): Promise<{ committed: boolean; files: number }> {
+  const status = await git(path, ["status", "--porcelain", "-z", "--untracked-files=all"]);
+  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  const entries = status.out.split("\0").filter(Boolean);
+  const paths: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    paths.push(entries[i]!.slice(3));
+    // A rename or copy is followed by its source path as a separate entry.
+    if (/^[RC]/.test(entries[i]!)) i++;
+  }
+  // Checked before staging so a refusal leaves the index untouched.
+  const env = paths.find((p) => /^\.env/.test(p.split("/").pop()!));
+  if (env) throw new Error(`Refusing to commit a .env file: ${env}`);
+  if (paths.length === 0) return { committed: false, files: 0 };
+  const add = await git(path, ["add", "-A"]);
+  if (add.code !== 0) throw new Error(`Could not stage changes: ${add.err.trim()}`);
+  const commit = await git(path, ["commit", "-m", message]);
+  if (commit.code !== 0) throw new Error(`Could not commit: ${(commit.err || commit.out).trim()}`);
+  return { committed: true, files: paths.length };
+}
+
 const MISSING = "\0missing\0";
 
 function readOrMissing(file: string): string {

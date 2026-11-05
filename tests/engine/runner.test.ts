@@ -148,8 +148,6 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   const t = createTask(db, { spaceId: s.id, title: "Add file" });
   const { adapter, calls } = fakeAdapter((input) => {
     writeFileSync(join(input.cwd, "new.txt"), "hello\n");
-    git(input.cwd, "add", "new.txt");
-    git(input.cwd, "commit", "-m", "add new");
     return ok("Added new.txt.");
   });
   start({ adapter });
@@ -226,8 +224,6 @@ test("never pushes the task branch, even with a remote", async () => {
   start({
     adapter: fakeAdapter((input) => {
       writeFileSync(join(input.cwd, "x.txt"), "x\n");
-      git(input.cwd, "add", "x.txt");
-      git(input.cwd, "commit", "-m", "x");
       return ok();
     }).adapter,
   });
@@ -282,8 +278,6 @@ test("summary counts against the starting branch", async () => {
   start({
     adapter: fakeAdapter((input) => {
       writeFileSync(join(input.cwd, "g.txt"), "g\n");
-      git(input.cwd, "add", "g.txt");
-      git(input.cwd, "commit", "-m", "agent work");
       return ok();
     }).adapter,
   });
@@ -328,19 +322,47 @@ test("a leftover Atrium branch blocks instead of stacking", async () => {
   expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_old");
 });
 
-test("uncommitted changes left by the agent block and stay on the task branch", async () => {
+test("successful repo run is committed by the engine", async () => {
   const path = repo();
   const s = repoSpace(path);
-  const t = createTask(db, { spaceId: s.id, title: "Messy" });
+  const t = createTask(db, { spaceId: s.id, title: "Add greeting" });
   start({
     adapter: fakeAdapter((input) => {
-      writeFileSync(join(input.cwd, "half.txt"), "wip");
+      writeFileSync(join(input.cwd, "greeting.txt"), "hi\n");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("1");
+  expect(git(path, "log", "-1", "--format=%s", `atrium/${t.id}`)).toBe("Add greeting");
+  expect(listPending(db)[0]!.detail).toContain("1 commit");
+});
+
+test("run with no changes reaches review without a commit", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Look around" });
+  start({ adapter: fakeAdapter(() => ok("Nothing to change.")).adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("0");
+  expect(listPending(db)[0]!.detail).toContain("No file changes");
+});
+
+test(".env change blocks the task without a commit", async () => {
+  const path = repo();
+  // A global ignore file would hide .env.local from git, and the guard only sees what git reports.
+  git(path, "config", "core.excludesFile", "/dev/null");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Configure" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, ".env.local"), "SECRET=1\n");
       return ok();
     }).adapter,
   });
   await waitFor(() => status(t.id) === "blocked");
-  expect(getTask(db, t.id)!.blockedReason).toBe(`The agent left uncommitted changes on atrium/${t.id} in ${path}`);
-  expect(git(path, "branch", "--show-current")).toBe(`atrium/${t.id}`);
+  expect(getTask(db, t.id)!.blockedReason).toContain(".env");
+  expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("0");
   expect(listPending(db)).toHaveLength(0);
 });
 
@@ -724,8 +746,6 @@ test("a task whose repo is still on its own branch resumes from the stored start
   start({
     adapter: fakeAdapter((input) => {
       writeFileSync(join(input.cwd, "late.txt"), "late\n");
-      git(input.cwd, "add", "late.txt");
-      git(input.cwd, "commit", "-m", "late agent work");
       return ok();
     }).adapter,
   });
