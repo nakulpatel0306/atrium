@@ -45,6 +45,10 @@ if (scenario === "slow") await Bun.sleep(30_000);
 
 if (scenario === "echo") {
   agentMessage(stdin);
+} else if (scenario === "tmp") {
+  // Reports the temp env it was given and proves that dir is writable from inside the sandbox.
+  await Bun.write(`${process.env.TMPDIR}/probe.txt`, "x");
+  agentMessage(JSON.stringify({ TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP }));
 } else {
   agentMessage("Did the thing.");
   out({

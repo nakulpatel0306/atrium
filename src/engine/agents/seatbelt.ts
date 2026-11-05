@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { config } from "../config";
@@ -7,8 +7,9 @@ import type { AgentRunResult } from "./types";
 
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 
-// Any path component starting with ".env": /a/.env, /a/.env.local, /a/.envrc, /a/.env/x, but not /a/my.env.txt.
-export const ENV_FILE_PATTERN = "/\\.env[^/]*(/|$)";
+// Any path component starting or ending with ".env", in any case: /a/.env.local, /a/.ENVRC, /a/prod.env, /a/.env/x,
+// but not /a/my.env.txt. Seatbelt regexes have no case flag, hence the character classes.
+export const ENV_FILE_PATTERN = "/\\.[eE][nN][vV][^/]*(/|$)|\\.[eE][nN][vV](/|$)";
 
 // Credentials, tokens, shell history, browser and mail data, and Atrium's own database, relative to home.
 const SECRET_PATHS = [
@@ -60,13 +61,13 @@ function str(p: string): string {
 const subpath = (p: string) => `(subpath ${str(canonical(p))})`;
 
 // A deny list on top of allow-default: the CLI keeps network (it must reach its provider) and normal reads,
-// but secret paths and .env files are unreadable and writes are confined to the given dirs plus temp.
+// but secret paths and .env files are unreadable and writes are confined to the given dirs.
 export function seatbeltProfile(opts: SeatbeltOptions): string {
   const home = homedir();
   const cwd = canonical(opts.cwd);
   // config().home is the default Atrium dir unless ATRIUM_HOME moves it, so the Set drops the usual duplicate.
   const denyRead = [...new Set([...SECRET_PATHS.map((d) => join(home, d)), config().home, ...(opts.extraDenyRead ?? [])])].map(subpath);
-  const writable = [...opts.writable, tmpdir()].map(subpath);
+  const writable = opts.writable.map(subpath);
   return [
     "(version 1)",
     "(allow default)",
@@ -84,6 +85,17 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
 
 export function wrapInSeatbelt(argv: string[], opts: SeatbeltOptions & { sandboxExec?: string }): string[] {
   return [opts.sandboxExec ?? SANDBOX_EXEC, "-p", seatbeltProfile(opts), ...argv];
+}
+
+// The shared per-user temp dir holds files that unsandboxed tools trust (xcrun's db, node's compile cache), so each
+// run gets its own temp dir instead, pointed to by TMPDIR/TMP/TEMP and removed when the run ends.
+export async function withPrivateTmp<T>(run: (tmp: string, env: Record<string, string | undefined>) => Promise<T>): Promise<T> {
+  const tmp = mkdtempSync(join(tmpdir(), "atrium-agent-"));
+  try {
+    return await run(tmp, { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 export function sandboxFailed(label: string): AgentRunResult {

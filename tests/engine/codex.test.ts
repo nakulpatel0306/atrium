@@ -12,6 +12,17 @@ function input(chunks: string[] = [], extra: Partial<AgentRunInput> = {}): Agent
   return { prompt: "do it", cwd: process.cwd(), systemPrompt: "be nice", allowedTools: ["Read"], mode: "work", onChunk: (t) => chunks.push(t), ...extra };
 }
 
+// A killed child stays a zombie until launchd reaps it, and kill(pid, 0) still succeeds on a zombie.
+async function goneOrZombie(pid: number): Promise<boolean> {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const stat = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]).stdout.toString().trim();
+    if (stat === "" || stat.startsWith("Z")) return true;
+    await Bun.sleep(50);
+  }
+  return false;
+}
+
 afterEach(() => {
   delete process.env.FAKE_CODEX_SCENARIO;
   delete process.env.FAKE_CODEX_ARGV;
@@ -37,17 +48,16 @@ describe("codexAdapter", () => {
   test("flags", async () => {
     const dir = mkdtempSync(join(tmpdir(), "atrium-codex-"));
     try {
+      // The fake writes its argv inside cwd, the only place a work run may write besides its own state and temp dirs.
       process.env.FAKE_CODEX_ARGV = join(dir, "argv.json");
-      const argv = () => JSON.parse(readFileSync(process.env.FAKE_CODEX_ARGV!, "utf8"));
       // Codex's own sandbox can't start inside Atrium's (macOS refuses a nested sandbox), so the outer profile is the boundary.
       const flags = [
-        "exec", "-", "-C", process.cwd(), "--sandbox", "danger-full-access", "--json", "--ephemeral",
+        "exec", "-", "-C", dir, "--sandbox", "danger-full-access", "--json", "--ephemeral",
         "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "-c", 'approval_policy="never"',
       ];
-      await codexAdapter(FAKE).run(input());
-      expect(argv()).toEqual(flags);
-      await codexAdapter(FAKE).run(input([], { mode: "review" }));
-      expect(argv()).toEqual(flags);
+      await codexAdapter(FAKE).run(input([], { cwd: dir }));
+      expect(JSON.parse(readFileSync(process.env.FAKE_CODEX_ARGV, "utf8"))).toEqual(flags);
+      expect(codexArgv("codex", input([], { cwd: dir, mode: "review" }), "/tmp/x").slice(4)).toEqual(flags);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -56,12 +66,23 @@ describe("codexAdapter", () => {
   test("codex argv is wrapped in sandbox-exec", () => {
     const state = join(homedir(), ".codex");
     const agy = [join(homedir(), ".gemini")];
-    const work = codexArgv("codex", input());
+    const tmp = "/tmp/atrium-agent-x";
+    const work = codexArgv("codex", input(), tmp);
     expect(work.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
-    expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state], extraDenyRead: agy }));
+    expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state, tmp], extraDenyRead: agy }));
     expect(work.slice(3, 5)).toEqual(["codex", "exec"]);
-    const review = codexArgv("codex", input([], { mode: "review" }));
-    expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state], extraDenyRead: agy }));
+    const review = codexArgv("codex", input([], { mode: "review" }), tmp);
+    expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state, tmp], extraDenyRead: agy }));
+  });
+
+  test("each run gets a private temp dir, removed afterwards", async () => {
+    process.env.FAKE_CODEX_SCENARIO = "tmp";
+    const r = await codexAdapter(FAKE).run(input([], { mode: "review" }));
+    if (r.status !== "ok") throw new Error(`expected ok, got ${JSON.stringify(r)}`);
+    const env = JSON.parse(r.summary);
+    expect(env.TMPDIR.startsWith(join(tmpdir(), "atrium-agent-"))).toBe(true);
+    expect([env.TMP, env.TEMP]).toEqual([env.TMPDIR, env.TMPDIR]);
+    expect(existsSync(env.TMPDIR)).toBe(false);
   });
 
   test("sandbox failure never falls back to an unsandboxed run", async () => {
@@ -72,8 +93,8 @@ describe("codexAdapter", () => {
       writeFileSync(failing, "#!/bin/sh\necho 'sandbox-exec: sandbox_apply: Operation not permitted' >&2\nexit 71\n");
       chmodSync(failing, 0o755);
       const paused = { status: "error" as const, kind: "failed" as const, message: "Atrium couldn't start the sandbox for Codex; this agent is paused for safety." };
-      expect(await codexAdapter(FAKE, join(dir, "missing-sandbox-exec")).run(input())).toEqual(paused);
-      expect(await codexAdapter(FAKE, failing).run(input())).toEqual(paused);
+      expect(await codexAdapter(FAKE, join(dir, "missing-sandbox-exec")).run(input([], { cwd: dir }))).toEqual(paused);
+      expect(await codexAdapter(FAKE, failing).run(input([], { cwd: dir }))).toEqual(paused);
       expect(existsSync(process.env.FAKE_CODEX_ARGV)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -136,10 +157,10 @@ describe("codexAdapter", () => {
     try {
       process.env.FAKE_CODEX_SCENARIO = "stray";
       process.env.FAKE_CODEX_PIDFILE = join(dir, "pid");
-      const r = await codexAdapter(FAKE).run(input());
+      const r = await codexAdapter(FAKE).run(input([], { cwd: dir }));
       expect(r.status).toBe("ok");
       const pid = Number(readFileSync(process.env.FAKE_CODEX_PIDFILE, "utf8"));
-      expect(() => process.kill(pid, 0)).toThrow();
+      expect(await goneOrZombie(pid)).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

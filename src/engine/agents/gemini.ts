@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
-import { SANDBOX_EXEC, codexStateDir, geminiStateDir, sandboxFailed, seatbeltFailure, wrapInSeatbelt } from "./seatbelt";
+import { SANDBOX_EXEC, codexStateDir, geminiStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
 
 const MODEL = "gemini-3.8-flash-medium";
@@ -21,7 +21,7 @@ export const GEMINI_SETTINGS = {
   permissions: { deny: ["browser_*", "open_browser_url", "read_url_content", "call_mcp_tool"] },
 };
 
-export function geminiArgv(bin: string, input: AgentRunInput, sandboxExec: string = SANDBOX_EXEC): string[] {
+export function geminiArgv(bin: string, input: AgentRunInput, tmp: string, sandboxExec: string = SANDBOX_EXEC): string[] {
   // A value starting with "-" could parse as a flag, so such a prompt gets a leading newline.
   const text = `${input.systemPrompt}\n\n${input.prompt}`;
   const prompt = text.startsWith("-") ? `\n${text}` : text;
@@ -32,7 +32,7 @@ export function geminiArgv(bin: string, input: AgentRunInput, sandboxExec: strin
   ];
   return wrapInSeatbelt(argv, {
     cwd: input.cwd,
-    writable: input.mode === "review" ? [geminiStateDir()] : [input.cwd, geminiStateDir()],
+    writable: input.mode === "review" ? [geminiStateDir(), tmp] : [input.cwd, geminiStateDir(), tmp],
     extraDenyRead: [codexStateDir()],
     allowRead: [LOGIN_KEYCHAIN],
     sandboxExec,
@@ -95,7 +95,9 @@ export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: str
       };
 
       // The prompt is an argv value, so stdin stays empty.
-      const proc = await runAgentProcess(geminiArgv(bin, input, sandboxExec), { cwd: input.cwd, stdin: "", signal: input.signal, onLine: handle });
+      const proc = await withPrivateTmp((tmp, env) =>
+        runAgentProcess(geminiArgv(bin, input, tmp, sandboxExec), { cwd: input.cwd, stdin: "", env, signal: input.signal, onLine: handle }),
+      );
       const failure = seatbeltFailure(proc);
       if (proc.notInstalled || failure === "sandbox") return sandboxFailed("Gemini");
       if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Antigravity (agy) isn't installed or not on PATH" };

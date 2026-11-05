@@ -21,6 +21,7 @@ async function killGroup(pgid: number): Promise<void> {
   }
   const deadline = Date.now() + KILL_GRACE_MS;
   while (groupAlive(pgid) && Date.now() < deadline) await Bun.sleep(20);
+  if (!groupAlive(pgid)) return;
   try {
     process.kill(-pgid, "SIGKILL");
   } catch {
@@ -32,12 +33,12 @@ async function killGroup(pgid: number): Promise<void> {
 // The group is killed once the main process exits, so stray children can't outlive the run (or hold stdout open).
 export async function runAgentProcess(
   argv: string[],
-  opts: { cwd: string; stdin: string; signal?: AbortSignal; onLine(line: string): void },
+  opts: { cwd: string; stdin: string; env?: Record<string, string | undefined>; signal?: AbortSignal; onLine(line: string): void },
 ): Promise<AgentProcessResult> {
   let proc: ReturnType<typeof Bun.spawn>;
   try {
     proc = Bun.spawn(argv, {
-      cwd: opts.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env, signal: opts.signal, detached: true,
+      cwd: opts.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: opts.env ?? process.env, signal: opts.signal, detached: true,
     });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return { notInstalled: true };

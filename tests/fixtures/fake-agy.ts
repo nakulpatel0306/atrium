@@ -41,10 +41,13 @@ if (scenario === "denied") {
 }
 if (scenario === "slow") await Bun.sleep(30_000);
 
-const text = scenario === "echo" ? prompt : "Did the thing.";
+// "tmp" reports the temp env it was given and proves that dir is writable from inside the sandbox.
+if (scenario === "tmp") await Bun.write(`${process.env.TMPDIR}/probe.txt`, "x");
+const tmpEnv = JSON.stringify({ TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP });
+const text = scenario === "echo" ? prompt : scenario === "tmp" ? tmpEnv : "Did the thing.";
 step({ step_index: 1, state: "ACTIVE", step_type: "agent_response", text_delta: text });
 step({ step_index: 1, state: "DONE", step_type: "agent_response", text_delta: "\n", usage: { input_tokens: 1200, output_tokens: 80 } });
-if (scenario !== "echo") {
+if (scenario === "ok") {
   step({
     step_index: 2, state: "DONE", step_type: "tool", tool_name: "run_command",
     tool_info: { name: "run_command", parameters: { command: "bun test" }, output: "ok" },

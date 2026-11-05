@@ -33,10 +33,10 @@ describe("geminiAdapter", () => {
   test("flags", async () => {
     const dir = mkdtempSync(join(tmpdir(), "atrium-agy-"));
     try {
+      // The fake writes its argv inside cwd, the only place a work run may write besides its own state and temp dirs.
       process.env.FAKE_AGY_ARGV = join(dir, "argv.json");
-      const argv = (): string[] => JSON.parse(readFileSync(process.env.FAKE_AGY_ARGV!, "utf8"));
-      await geminiAdapter(FAKE).run(input());
-      const work = argv();
+      await geminiAdapter(FAKE).run(input([], { cwd: dir }));
+      const work: string[] = JSON.parse(readFileSync(process.env.FAKE_AGY_ARGV, "utf8"));
       expect(work.slice(0, 2)).toEqual(["-p", "be nice\n\ndo it"]);
       expect(work[work.indexOf("--mode") + 1]).toBe("accept-edits");
       for (const f of ["--sandbox", "--disable-slash-commands", "--settings"]) expect(work).toContain(f);
@@ -45,8 +45,7 @@ describe("geminiAdapter", () => {
       expect(work[work.indexOf("--print-timeout") + 1]).toBe("900s");
       expect(JSON.parse(work[work.indexOf("--settings") + 1]!).allowNonWorkspaceAccess).toBe(false);
 
-      await geminiAdapter(FAKE).run(input([], { mode: "review" }));
-      const review = argv();
+      const review = geminiArgv("agy", input([], { mode: "review" }), "/tmp/x");
       expect(review[review.indexOf("--mode") + 1]).toBe("plan");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -55,13 +54,24 @@ describe("geminiAdapter", () => {
 
   test("agy argv is wrapped in sandbox-exec, with only its own state and the login keychain readable", () => {
     const state = join(homedir(), ".gemini", "antigravity-cli");
+    const tmp = "/tmp/atrium-agent-x";
     const sandbox = { extraDenyRead: [join(homedir(), ".codex")], allowRead: [join(homedir(), "Library", "Keychains", "login.keychain-db")] };
-    const work = geminiArgv("agy", input());
+    const work = geminiArgv("agy", input(), tmp);
     expect(work.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
-    expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state], ...sandbox }));
+    expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state, tmp], ...sandbox }));
     expect(work.slice(3, 5)).toEqual(["agy", "-p"]);
-    const review = geminiArgv("agy", input([], { mode: "review" }));
-    expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state], ...sandbox }));
+    const review = geminiArgv("agy", input([], { mode: "review" }), tmp);
+    expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state, tmp], ...sandbox }));
+  });
+
+  test("each run gets a private temp dir, removed afterwards", async () => {
+    process.env.FAKE_AGY_SCENARIO = "tmp";
+    const r = await geminiAdapter(FAKE).run(input([], { mode: "review" }));
+    if (r.status !== "ok") throw new Error(`expected ok, got ${JSON.stringify(r)}`);
+    const env = JSON.parse(r.summary);
+    expect(env.TMPDIR.startsWith(join(tmpdir(), "atrium-agent-"))).toBe(true);
+    expect([env.TMP, env.TEMP]).toEqual([env.TMPDIR, env.TMPDIR]);
+    expect(existsSync(env.TMPDIR)).toBe(false);
   });
 
   test("sandbox failure never falls back to an unsandboxed run", async () => {
@@ -72,8 +82,8 @@ describe("geminiAdapter", () => {
       writeFileSync(failing, "#!/bin/sh\necho 'sandbox-exec: sandbox_apply: Operation not permitted' >&2\nexit 71\n");
       chmodSync(failing, 0o755);
       const paused = { status: "error" as const, kind: "failed" as const, message: "Atrium couldn't start the sandbox for Gemini; this agent is paused for safety." };
-      expect(await geminiAdapter(FAKE, join(dir, "missing-sandbox-exec")).run(input())).toEqual(paused);
-      expect(await geminiAdapter(FAKE, failing).run(input())).toEqual(paused);
+      expect(await geminiAdapter(FAKE, join(dir, "missing-sandbox-exec")).run(input([], { cwd: dir }))).toEqual(paused);
+      expect(await geminiAdapter(FAKE, failing).run(input([], { cwd: dir }))).toEqual(paused);
       expect(existsSync(process.env.FAKE_AGY_ARGV)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });

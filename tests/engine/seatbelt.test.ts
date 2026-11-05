@@ -28,16 +28,17 @@ beforeAll(() => {
   cwd = join(outside, "repo");
   state = join(outside, "state");
   for (const d of [cwd, state, join(cwd, ".git"), join(cwd, "config")]) mkdirSync(d, { recursive: true });
-  for (const f of [".env", ".env.local", ".envrc", "my.env.txt", "environment", "config/.env.production"]) writeFileSync(join(cwd, f), "canary\n");
+  for (const f of [".env", ".env.local", ".envrc", ".ENVRC", "prod.env", "my.env.txt", "environment", "config/.env.production"]) writeFileSync(join(cwd, f), "canary\n");
 });
 
 afterAll(() => rmSync(outside, { recursive: true, force: true }));
 
 describe("ENV_FILE_PATTERN", () => {
-  test("matches any path component starting with .env and nothing else", () => {
+  test("matches a path component starting or ending with .env, in any case, and nothing else", () => {
     const re = new RegExp(ENV_FILE_PATTERN);
-    for (const p of ["/foo/.env", "/foo/.env.local", "/foo/.envrc", "/foo/.env/inner", "/.env"]) expect(re.test(p)).toBe(true);
-    for (const p of ["/foo/my.env.txt", "/foo/environment", "/foo/env", "/foo/x.env", "/foo/a.envrc"]) expect(re.test(p)).toBe(false);
+    const hits = ["/foo/.env", "/foo/.env.local", "/foo/.envrc", "/foo/.ENVRC", "/foo/.Env", "/foo/.env/inner", "/.env", "/foo/prod.env", "/foo/PROD.ENV", "/foo/x.env/inner"];
+    for (const p of hits) expect(re.test(p)).toBe(true);
+    for (const p of ["/foo/my.env.txt", "/foo/environment", "/foo/env", "/foo/a.envrc", "/foo/x.envy", "/foo/env.d"]) expect(re.test(p)).toBe(false);
   });
 });
 
@@ -56,9 +57,9 @@ describe("seatbeltProfile", () => {
     for (const p of secrets) expect(profile).toContain(`"${canonicalUnder(home, p)}")`);
     expect(profile).toContain(`(regex #"${ENV_FILE_PATTERN}")`);
 
-    const reads = sandboxed(profile, "for f in .env .env.local .envrc config/.env.production my.env.txt environment; do cat $f >/dev/null 2>&1 && echo \"read $f\" || echo \"denied $f\"; done");
+    const reads = sandboxed(profile, "for f in .env .env.local .envrc .ENVRC prod.env config/.env.production my.env.txt environment; do cat $f >/dev/null 2>&1 && echo \"read $f\" || echo \"denied $f\"; done");
     expect(reads.out.trim().split("\n")).toEqual([
-      "denied .env", "denied .env.local", "denied .envrc", "denied config/.env.production", "read my.env.txt", "read environment",
+      "denied .env", "denied .env.local", "denied .envrc", "denied .ENVRC", "denied prod.env", "denied config/.env.production", "read my.env.txt", "read environment",
     ]);
     for (const d of [".ssh", ".claude", "Library/Keychains"]) expect(sandboxed(profile, `ls "${home}/${d}"`).err).toContain("Operation not permitted");
   });
@@ -113,13 +114,14 @@ describe("seatbeltProfile", () => {
     expect(r.out.trim().split("\n")).toEqual(["no-cwd", "state-ok"]);
   });
 
-  test("work profile allows writes only in cwd, temp and state dir", () => {
-    const profile = seatbeltProfile({ cwd, writable: [cwd, state] });
-    const tmp = mkdtempSync(join(tmpdir(), "atrium-seatbelt-"));
+  test("work profile allows writes only in cwd, the run's temp dir and state dir", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "atrium-agent-"));
+    const profile = seatbeltProfile({ cwd, writable: [cwd, state, tmp] });
     try {
       const script = [
         "echo x > work.txt && echo cwd-ok",
         `echo x > "${tmp}/t.txt" && echo temp-ok`,
+        `echo x > "${tmpdir()}/atrium-canary-x" || echo shared-temp-denied`,
         `echo x > "${state}/s.txt" && echo state-ok`,
         "echo x > /dev/null && echo devnull-ok",
         `echo x > "${outside}/escape.txt" || echo outside-denied`,
@@ -129,7 +131,7 @@ describe("seatbeltProfile", () => {
         "mv .git moved || echo git-rename-denied",
       ].join("\n");
       expect(sandboxed(profile, script).out.trim().split("\n")).toEqual([
-        "cwd-ok", "temp-ok", "state-ok", "devnull-ok", "outside-denied", "git-denied", "claude-denied", "agents-denied", "git-rename-denied",
+        "cwd-ok", "temp-ok", "shared-temp-denied", "state-ok", "devnull-ok", "outside-denied", "git-denied", "claude-denied", "agents-denied", "git-rename-denied",
       ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

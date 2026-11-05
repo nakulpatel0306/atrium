@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
-import { SANDBOX_EXEC, codexStateDir, sandboxFailed, seatbeltFailure, wrapInSeatbelt } from "./seatbelt";
+import { SANDBOX_EXEC, codexStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
 
 function shortCommand(command: unknown): string {
@@ -31,7 +31,7 @@ function classify(message: string, stderr: string, exitCode: number): AgentRunRe
 // sandbox inside another one, so Codex's sandbox is turned off and the outer profile is the boundary. With it off,
 // sandbox_workspace_write.network_access has nothing to apply to, so the agent's commands share the CLI's network;
 // accepted because secrets are unreadable, writes are confined, and the workspace already goes to the provider.
-export function codexArgv(bin: string, input: AgentRunInput, sandboxExec: string = SANDBOX_EXEC): string[] {
+export function codexArgv(bin: string, input: AgentRunInput, tmp: string, sandboxExec: string = SANDBOX_EXEC): string[] {
   const state = codexStateDir();
   const argv = [
     bin, "exec", "-", "-C", input.cwd, "--sandbox", "danger-full-access",
@@ -40,7 +40,7 @@ export function codexArgv(bin: string, input: AgentRunInput, sandboxExec: string
   ];
   return wrapInSeatbelt(argv, {
     cwd: input.cwd,
-    writable: input.mode === "review" ? [state] : [input.cwd, state],
+    writable: input.mode === "review" ? [state, tmp] : [input.cwd, state, tmp],
     extraDenyRead: [join(homedir(), ".gemini")],
     sandboxExec,
   });
@@ -81,12 +81,15 @@ export function codexAdapter(bin: string = config().codexBin, sandboxExec: strin
       };
 
       // Codex has no system-prompt flag, so the instructions ride in front of the task.
-      const proc = await runAgentProcess(codexArgv(bin, input, sandboxExec), {
-        cwd: input.cwd,
-        stdin: `${input.systemPrompt}\n\n${input.prompt}`,
-        signal: input.signal,
-        onLine: handle,
-      });
+      const proc = await withPrivateTmp((tmp, env) =>
+        runAgentProcess(codexArgv(bin, input, tmp, sandboxExec), {
+          cwd: input.cwd,
+          stdin: `${input.systemPrompt}\n\n${input.prompt}`,
+          env,
+          signal: input.signal,
+          onLine: handle,
+        }),
+      );
       const failure = seatbeltFailure(proc);
       if (proc.notInstalled || failure === "sandbox") return sandboxFailed("Codex");
       if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Codex isn't installed or not on PATH" };
