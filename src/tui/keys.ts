@@ -26,15 +26,15 @@ export type Command = { kind: "ui"; action: Action } | { kind: "intent"; intent:
 type Section = "Move" | "Act" | "Space" | "Views";
 
 export const HELP: { section: Section; keys: string; does: string }[] = [
-  { section: "Move", keys: "1 2 3 4", does: "spaces, tasks, needs you, activity" },
+  { section: "Move", keys: "1 2 3 4", does: "focus a left pane" },
   { section: "Move", keys: "0 5", does: "detail, live" },
-  { section: "Move", keys: "tab", does: "next pane (shift-tab back)" },
+  { section: "Move", keys: "tab", does: "next pane, S-tab back" },
   { section: "Move", keys: "h l", does: "left / right column" },
   { section: "Move", keys: "j k", does: "down / up, or scroll" },
-  { section: "Move", keys: "g G", does: "top / bottom (G follows live)" },
+  { section: "Move", keys: "g G", does: "top / bottom, follow" },
   { section: "Move", keys: "ctrl-d ctrl-u", does: "half page down / up" },
   { section: "Move", keys: "enter", does: "open" },
-  { section: "Move", keys: "esc", does: "back, or clear the filter" },
+  { section: "Move", keys: "esc", does: "back / clear filter" },
   { section: "Move", keys: "/", does: "filter" },
   { section: "Act", keys: "a", does: "approve" },
   { section: "Act", keys: "r", does: "send back" },
@@ -47,12 +47,12 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Space", keys: "e", does: "edit goal" },
   { section: "Space", keys: "v", does: "pick reviewer" },
   { section: "Space", keys: "X", does: "archive space" },
-  { section: "Views", keys: "t", does: "transcript ([ ] older / newer run)" },
-  { section: "Views", keys: "u", does: "agents and usage ([ ] pause point)" },
+  { section: "Views", keys: "t", does: "transcript" },
+  { section: "Views", keys: "u", does: "agents and usage" },
   { section: "Views", keys: "o", does: "overnight mode" },
   { section: "Views", keys: "?", does: "help" },
   { section: "Views", keys: "q", does: "close, or quit" },
-  { section: "Views", keys: "[ ]", does: "older / newer run, or pause point" },
+  { section: "Views", keys: "[ ]", does: "run or pause point" },
   { section: "Views", keys: "y", does: "yes, when asked" },
 ];
 

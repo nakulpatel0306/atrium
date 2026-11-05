@@ -211,10 +211,10 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   if (!view) return null;
   return (
     <Box flexDirection="column" width={cols} height={height} flexShrink={0}>
-      <Header state={view.state} briefing={briefing.current ?? state.briefing} cols={cols} />
+      <Header state={view.state} briefing={briefing.current ?? state.briefing} cols={cols} online={online} />
       {transcript ? (
         <Transcript
-          title={`Transcript · ${view.state.tasks.find((t) => t.id === transcript.taskId)?.title ?? "task"} · run ${transcript.runIndex + 1}/${transcriptRuns.length}${transcriptRun ? ` · ${absolute(transcriptRun.startedAt)}` : ""}`}
+          title={`Transcript · ${view.state.tasks.find((t) => t.id === transcript.taskId)?.title ?? "task"} · run ${transcriptRuns.length - transcript.runIndex}/${transcriptRuns.length}${transcriptRun ? ` · ${absolute(transcriptRun.startedAt)}` : ""}`}
           lines={transcriptLines}
           scroll={transcript.scroll}
           width={cols}
@@ -223,7 +223,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
       ) : ui.overlay?.kind === "agents" ? (
         <AgentsView lines={agentLines} scroll={ui.overlay.scroll} width={cols} height={height - 2} />
       ) : (
-        <Body view={view} ui={ui} lay={lay} detailLines={detailLines} liveLines={liveLines} />
+        <Body view={view} ui={ui} lay={lay} detailLines={detailLines} liveLines={liveLines} online={online} />
       )}
       <StatusBar state={view.state} cols={cols} hints={hints(ui, view)} flash={ui.flash} online={online} />
       {ui.overlay?.kind === "prompt" && (

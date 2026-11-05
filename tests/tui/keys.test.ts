@@ -194,3 +194,9 @@ test("actions wait for a picked row", () => {
   const ui = { ...initialUi, ...cleared } as Ui;
   expect(hints(ui, deriveView(state, ui)).startsWith("j k select an item")).toBe(true);
 });
+
+test("help comes first in the status bar", () => {
+  const state = makeState();
+  const ui = pin(initialUi, deriveView(state, initialUi));
+  expect(hints(ui, deriveView(state, ui)).startsWith("? help  ")).toBe(true);
+});

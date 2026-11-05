@@ -23,10 +23,11 @@ test("t opens the latest transcript and [ ] switch runs", async () => {
   await app.frame((f) => f.includes("[1] Spaces"));
   await app.type(...onReview, "t");
   let f = await app.frame((f) => f.includes("run B text"));
-  expect(f).toContain("Transcript · Fix login redirect · run 1/2");
+  // Runs count from the oldest, so the newest of two is run 2.
+  expect(f).toContain("Transcript · Fix login redirect · run 2/2");
   await app.type("[");
   f = await app.frame((f) => f.includes("run A text"));
-  expect(f).toContain("run 2/2");
+  expect(f).toContain("run 1/2");
   await app.type("]");
   await app.frame((f) => f.includes("run B text"));
   const fetched = (id: string) => client.calls.filter((c) => c.path === `/api/runs/${id}/transcript`).length;
