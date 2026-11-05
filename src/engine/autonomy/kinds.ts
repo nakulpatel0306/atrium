@@ -28,16 +28,17 @@ const SECRET =
   /(^|\/)(id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|[^/]*\.(pem|key|p12|pfx|jks|keystore)|\.npmrc|\.netrc|\.pypirc|credentials(\.json)?|secrets?\.(json|ya?ml|toml))$/i;
 const DEPLOY =
   /(^|\/)(\.github\/workflows\/|\.gitlab-ci\.ya?ml$|vercel\.json$|netlify\.toml$|fly\.toml$|wrangler\.toml$|render\.ya?ml$|procfile$|dockerfile[^/]*$|docker-compose[^/]*$)/i;
-// An agent must never get its own instructions (or another tool's) approved without Nakul looking.
+// An agent must never get its own instructions (or another tool's) approved without Nakul looking. The docs
+// allowlist below already leaves these out; this list stays as a second check.
 const INSTRUCTIONS = [
-  /(^|\/)(claude|agents?|gemini|copilot|cursor|windsurf)[^/]*$/i,
-  /(^|\/)(\.cursorrules|\.windsurfrules|\.mcp\.json)$/i,
-  /(^|\/)\.(claude|codex|gemini|cursor|agents|github)\//i,
+  /(^|\/)(claude|agents?|gemini|copilot|cursor|windsurf|conventions\.md$|\.aider)[^/]*$/i,
+  /(^|\/)(\.cursorrules|\.windsurfrules|\.clinerules|\.mcp\.json)(\/|$)/i,
+  /(^|\/)\.(claude|codex|gemini|cursor|agents|github|windsurf|roo|continue|kiro|junie)\//i,
 ];
-// Plain prose only. Tests are code (they run whenever Nakul runs the suite), and .txt is too often read by
-// tools (requirements.txt, CMakeLists.txt) to count outside a docs folder.
-const DOCS = [/\.(md|mdx|markdown|rst)$/i, /(^|\/)docs\/(.*\/)?[^/]+\.txt$/i];
-const NOT_DOCS = /(^|\/)(requirements[^/]*\.txt|constraints[^/]*\.txt|cmakelists\.txt|license[^/]*|codeowners)$/i;
+// Only prose that nothing executes or imports: Markdown or reStructuredText (not .mdx, which can carry
+// imports and JSX), either in the top-level docs/ folder or a well-known file such as a README. Tests are code.
+const DOCS_EXT = /\.(md|markdown|rst)$/i;
+const DOCS_NAME = /^(readme|changelog|contributing|history)[^/]*$/i;
 // Only ordinary files: symlinks, gitlinks, executable bits and type changes always go to Nakul.
 const PLAIN_MODES = new Set(["100644", "000000"]);
 
@@ -55,8 +56,11 @@ export function forbiddenFor(facts: ActionFacts): ForbiddenReason[] {
 
 function isDocs(f: ChangedFile): boolean {
   if (f.status === "T" || !PLAIN_MODES.has(f.oldMode) || !PLAIN_MODES.has(f.newMode)) return false;
-  if (INSTRUCTIONS.some((re) => re.test(f.path)) || NOT_DOCS.test(f.path)) return false;
-  return DOCS.some((re) => re.test(f.path));
+  if (INSTRUCTIONS.some((re) => re.test(f.path)) || !DOCS_EXT.test(f.path)) return false;
+  const parts = f.path.split("/");
+  // Dot-folders (.github, .changeset, .vitepress…) hold tool config even when it's written in Markdown.
+  if (parts.some((p) => p.startsWith("."))) return false;
+  return parts[0]!.toLowerCase() === "docs" && parts.length > 1 ? true : DOCS_NAME.test(parts.at(-1)!);
 }
 
 export function fingerprintOf(facts: ActionFacts): string | null {

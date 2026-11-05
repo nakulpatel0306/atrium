@@ -342,7 +342,11 @@ export type ChangedFile = {
 // Every file the branch changed, for deciding what kind of result it is. Unlike reviewDiff, .env paths stay in:
 // the always-ask check has to see them. Renames show as a delete plus an add, so moving a file counts as deleting one.
 export async function changedFiles(path: string, base: string, branch: string): Promise<ChangedFile[]> {
-  const flags = ["-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color"];
+  // Submodules always show, whatever the repo's config says, so a gitlink is seen and refused.
+  const flags = [
+    "-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=none",
+    "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--ignore-submodules=none",
+  ];
   const names = await git(path, [...flags, "--raw", "-z", `${base}...${branch}`, "--"]);
   if (names.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${names.err.trim()}`);
   const nums = await git(path, [...flags, "--numstat", "-z", `${base}...${branch}`, "--"]);

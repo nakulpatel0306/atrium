@@ -3,6 +3,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { fingerprintOf } from "../../src/engine/autonomy/kinds";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -301,6 +302,18 @@ describe("changedFiles", () => {
       { path: "README.md", status: "M", added: 0, deleted: 0, oldMode: "100644", newMode: "100755" },
       { path: "link.md", status: "A", added: 1, deleted: 0, oldMode: "000000", newMode: "120000" },
     ]);
+  });
+
+  test("lists a submodule even when the repo hides submodule diffs", async () => {
+    const path = repo();
+    const branch = await prepareBranch(path, "t");
+    const head = git(path, "rev-parse", "HEAD");
+    git(path, "update-index", "--add", "--cacheinfo", `160000,${head},sub`);
+    git(path, "commit", "-m", "add submodule");
+    git(path, "config", "diff.ignoreSubmodules", "all");
+    const files = await changedFiles(path, "main", branch);
+    expect(files.map((x) => [x.path, x.newMode])).toEqual([["sub", "160000"]]);
+    expect(fingerprintOf({ domain: "code", agent: "claude", branch, files })).toBeNull();
   });
 
   test("throws when the branch is gone", async () => {

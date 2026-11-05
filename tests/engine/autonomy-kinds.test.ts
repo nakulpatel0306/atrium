@@ -21,7 +21,7 @@ describe("fingerprintOf", () => {
   });
 
   test("medium docs diff", () => {
-    const fp = fingerprintOf(code([f("docs/guide.mdx", 120, 40, "M")], "codex"));
+    const fp = fingerprintOf(code([f("docs/guide.md", 120, 40, "M")], "codex"));
     expect(fp).toBe("v1:code:docs:medium:codex");
     expect(labelOf(fp!)).toBe("docs-only changes under 200 lines from Codex");
   });
@@ -32,11 +32,13 @@ describe("fingerprintOf", () => {
     expect(fingerprintOf(code([f("tests/README.md"), f("tests/x.test.ts")]))).toBeNull();
   });
 
-  test("plain text counts as docs only under docs/", () => {
-    expect(fingerprintOf(code([f("docs/notes.txt")]))).toBe("v1:code:docs:small:claude");
-    expect(fingerprintOf(code([f("sub/docs/notes.txt")]))).toBe("v1:code:docs:small:claude");
-    expect(fingerprintOf(code([f("notes.txt")]))).toBeNull();
-    expect(fingerprintOf(code([f("README.rst"), f("a/b.markdown")]))).toBe("v1:code:docs:small:claude");
+  test("only known docs files count as docs", () => {
+    for (const ok of ["docs/guide.md", "docs/deep/a.rst", "README.md", "readme.markdown", "CHANGELOG.md", "CONTRIBUTING.md", "HISTORY.rst", "pkg/README.md"]) {
+      expect(fingerprintOf(code([f(ok)]))).toBe("v1:code:docs:small:claude");
+    }
+    for (const no of ["notes.md", "foo.mdx", "docs/guide.mdx", ".changeset/x.md", "docs/x.txt", "notes.txt", "sub/docs/a.md", "docs/.hidden/a.md", "pkg/.vitepress/README.md", "docs/README"]) {
+      expect(fingerprintOf(code([f(no)]))).toBeNull();
+    }
   });
 
   test("text files that configure builds or ownership are not docs", () => {
@@ -79,6 +81,17 @@ describe("fingerprintOf", () => {
       ".gemini/notes.md",
       ".cursor/rules.md",
       ".agents/notes.md",
+      ".windsurf/rules.md",
+      ".clinerules",
+      "docs/.clinerules/a.md",
+      ".roo/a.md",
+      ".continue/a.md",
+      ".kiro/a.md",
+      ".junie/guidelines.md",
+      ".aider.conf.yml",
+      "docs/.aider.md",
+      "CONVENTIONS.md",
+      "docs/CONVENTIONS.md",
       "docs/.claude/notes.md",
     ]) {
       expect(fingerprintOf(code([f(p)]))).toBeNull();
