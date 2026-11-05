@@ -6,7 +6,6 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { openDb } from "../src/engine/db";
 import { setSetting } from "../src/engine/settings";
-import { createSpace, listSpaces } from "../src/engine/spaces";
 import { recordCloses } from "../src/engine/markets/closes";
 import { saveEarnings, saveNews } from "../src/engine/markets/events";
 import { ndxEstimate, parseNdxMembers } from "../src/engine/markets/funds/nasdaq100";
@@ -20,7 +19,7 @@ import { parseInstrumentKey } from "../src/engine/markets/instrument";
 import { metaFromFunds } from "../src/engine/markets/meta";
 import { demoProvider } from "../src/engine/markets/providers/demo";
 import { saveNotes, saveWriteup } from "../src/engine/markets/research";
-import { addToWatchlist } from "../src/engine/markets/watchlist";
+import { INVESTING_TICKERS, seedInvesting } from "../src/engine/markets/seed";
 
 if (!process.env.ATRIUM_HOME) throw new Error("Set ATRIUM_HOME to a temp dir; this script never touches the real data.");
 const DIR = resolve(import.meta.dir, "../tests/fixtures/markets/investing");
@@ -30,13 +29,8 @@ const now = Date.parse(process.env.ATRIUM_MARKET_NOW ?? "2026-11-04T15:00:00-05:
 const db = openDb();
 setSetting(db, "markets.provider", "demo");
 
-const TICKERS: [string, string][] = [
-  ["ATZ.TO", "Aritzia"], ["NOW", "ServiceNow"], ["TSLA", "Tesla"], ["AMZN", "Amazon"], ["MARS", "Roundhill Space & Technology ETF"],
-  ["DRAM", "Roundhill Memory ETF"], ["SPY", "SPDR S&P 500 ETF Trust"], ["VFV.TO", "Vanguard S&P 500 Index ETF"], ["QQQ", "Invesco QQQ Trust"],
-  ["QBTS", "D-Wave Quantum"], ["SOFI", "SoFi Technologies"], ["RKLB", "Rocket Lab"], ["XEQT.TO", "iShares Core Equity ETF Portfolio"],
-];
-const space = listSpaces(db).find((s) => s.name === "Investing" && s.kind === "markets") ?? createSpace(db, { name: "Investing", kind: "markets", goal: "Long-term TFSA investing: portfolio health, research and ideas." });
-for (const [key, name] of TICKERS) addToWatchlist(db, space.id, parseInstrumentKey(key)!, name);
+const TICKERS: [string, string][] = INVESTING_TICKERS.map((t) => [t.key, t.name]);
+const space = { id: seedInvesting(db).spaceId };
 
 // Made-up positions (demo data), shaped like a TFSA with these 13 holdings: [market value, book value], listing currency.
 const SIZE: Record<string, [number, number]> = {

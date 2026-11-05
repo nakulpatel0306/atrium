@@ -207,3 +207,11 @@ test("the EDGAR cross-check can be turned off and on", async () => {
   expect((await (await get("/api/investing/budget")).json()).edgar).toBe(false);
   expect((await call("PUT", "/api/investing/edgar", { on: "yes" })).status).toBe(400);
 });
+
+test("setup creates the Investing space once", async () => {
+  boot();
+  const a = await (await call("POST", "/api/investing/setup")).json();
+  expect(a).toMatchObject({ created: true, added: 13 });
+  const b = await (await call("POST", "/api/investing/setup")).json();
+  expect(b).toEqual({ spaceId: a.spaceId, created: false, added: 0 });
+});
