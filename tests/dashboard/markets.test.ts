@@ -30,19 +30,19 @@ test("settings route", () => {
   expect(parseRoute("/settings")).toEqual({ name: "settings" });
 });
 
-test("briefingMarketsLine", () => {
+test("briefingMarketsLine: one investing line, then paper", () => {
   const nov4 = Date.parse("2026-11-04T21:00:00Z");
-  const holdings = [
-    { key: "SHOP.TO", dayPct: 2.1, freshness: "eod" as const, asOf: nov4 },
-    { key: "AAPL", dayPct: -0.8, freshness: "live" as const, asOf: nov4 },
-  ];
-  expect(briefingMarketsLine({ paper: { dayPnl: 12.3, totalPnl: -40, equity: 9960 }, holdings })).toBe(
-    "Paper +$12.30 today (−$40.00 total) · Your holdings: SHOP.TO +2.1% (close Nov 4), AAPL −0.8%",
-  );
-  expect(briefingMarketsLine({ paper: null, holdings })).toBe("Your holdings: SHOP.TO +2.1% (close Nov 4), AAPL −0.8%");
-  expect(briefingMarketsLine({ paper: { dayPnl: 0, totalPnl: 0, equity: 10000 }, holdings: [] })).toBe("Paper +$0.00 today (+$0.00 total)");
-  expect(briefingMarketsLine({ paper: null, holdings: [] })).toBeNull();
-  expect(briefingMarketsLine({ paper: null, holdings: [{ key: "KO", dayPct: 1, freshness: "demo", asOf: nov4 }] })).toBe("Your holdings: KO +1.0% (demo)");
+  const holdings = [{ key: "SHOP.TO", dayPct: 2.1, freshness: "eod" as const, asOf: nov4 }];
+  const day = { dayPct: 0.8, dayCad: 412.4, mix: "Finnhub · real-time", tone: "live" as const, closes: 0, movers: [{ key: "RKLB", dayPct: 6.1, tag: null }], headline: "Rocket Lab wins NASA contract" };
+  expect(briefingMarketsLine({ paper: null, holdings, portfolio: day })).toBe('Portfolio +0.8% today (+CA$412) · RKLB +6.1%: "Rocket Lab wins NASA contract"');
+  const mixed = { ...day, mix: "10 real-time · 3 close of Nov 4", tone: "delayed" as const, closes: 3, headline: null };
+  expect(briefingMarketsLine({ paper: null, holdings, portfolio: mixed })).toBe("Portfolio +0.8% today (+CA$412) · mixed: 3 at last close · RKLB +6.1%");
+  const down = { ...day, dayPct: -1.25, dayCad: -98.6, headline: null, movers: [{ key: "QBTS", dayPct: -4.2, tag: null }] };
+  expect(briefingMarketsLine({ paper: { dayPnl: 12, totalPnl: -40, equity: 9960 }, holdings, portfolio: down })).toBe("Portfolio −1.3% today (−CA$99) · QBTS −4.2% · Paper +$12.00 today");
+  expect(briefingMarketsLine({ paper: { dayPnl: 12, totalPnl: -40, equity: 9960 }, holdings, portfolio: null })).toBe("Paper +$12.00 today");
+  expect(briefingMarketsLine({ paper: null, holdings, portfolio: null })).toBeNull();
+  const demo = { ...day, mix: "Demo data", tone: "demo" as const, headline: null, movers: [{ key: "RKLB", dayPct: 6.1, tag: "demo" }] };
+  expect(briefingMarketsLine({ paper: null, holdings, portfolio: demo })).toBe("Portfolio +0.8% today (+CA$412) · demo data · RKLB +6.1%");
 });
 
 test("describeRule copy for every alert kind", () => {

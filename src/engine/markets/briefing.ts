@@ -3,13 +3,34 @@ import { getSetting } from "../settings";
 import { cachedQuotes } from "./cache";
 import { marketNow } from "./calendar";
 import { instrumentKey, type Exchange } from "./instrument";
+import { recentNews } from "./events";
 import { paperState } from "./paper";
+import { portfolioDayFromCache, type PortfolioDay } from "./portfolio";
 import type { Freshness } from "./providers/types";
 
 export type MarketsBriefing = {
   paper: { dayPnl: number; totalPnl: number; equity: number } | null;
+  // Kept for older clients; Home renders the portfolio line instead.
   holdings: { key: string; dayPct: number; freshness: Freshness; asOf: number }[];
+  portfolio: (PortfolioDay & { headline: string | null }) | null;
 };
+
+const DAY_MS = 86_400_000;
+const HEADLINE_MAX = 60;
+
+// The Investing space when there is one, else the first markets space with holdings.
+function portfolioOf(db: Database, now: number): MarketsBriefing["portfolio"] {
+  const spaces = db.query("SELECT id, name FROM spaces WHERE kind = 'markets' AND status = 'active' ORDER BY created_at").all() as { id: string; name: string }[];
+  const held = (id: string) => !!db.query("SELECT 1 FROM market_holdings WHERE space_id = ? LIMIT 1").get(id);
+  const space = spaces.find((s) => s.name === "Investing" && held(s.id)) ?? spaces.find((s) => held(s.id));
+  if (!space) return null;
+  const day = portfolioDayFromCache(db, space.id);
+  if (!day) return null;
+  const top = day.movers[0];
+  const news = top ? recentNews(db, [top.key], now - DAY_MS, 1)[0] : undefined;
+  const headline = news ? (news.headline.length > HEADLINE_MAX ? `${news.headline.slice(0, HEADLINE_MAX - 1).trimEnd()}…` : news.headline) : null;
+  return { ...day, headline };
+}
 
 // Cache only: the briefing renders on every state read and must never touch the network.
 export function marketsBriefing(db: Database, wallNow: number): MarketsBriefing | null {
@@ -42,5 +63,5 @@ export function marketsBriefing(db: Database, wallNow: number): MarketsBriefing 
     .map((q) => ({ key: q!.key, dayPct: (q!.price / q!.prevClose! - 1) * 100, freshness: q!.freshness, asOf: q!.at }))
     .sort((a, b) => Math.abs(b.dayPct) - Math.abs(a.dayPct))
     .slice(0, 5);
-  return { paper, holdings: moves };
+  return { paper, holdings: moves, portfolio: portfolioOf(db, now) };
 }

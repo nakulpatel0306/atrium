@@ -237,3 +237,32 @@ test("the briefing carries paper P&L and the biggest holding moves", () => {
   expect(m.holdings[0]).toMatchObject({ key: "SHOP.TO", freshness: "eod", asOf: now - 3600_000 });
   expect(m.holdings[0]!.dayPct).toBeCloseTo(4, 6);
 });
+
+test("the briefing carries the Investing portfolio's day, with the top mover's headline", async () => {
+  const { saveFx } = await import("../../src/engine/markets/fx");
+  const { saveNews } = await import("../../src/engine/markets/events");
+  const { setSetting } = await import("../../src/engine/settings");
+  const now = Date.parse("2026-11-05T15:00:00Z");
+  setSetting(db, "markets.provider", "finnhub");
+  createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
+  const inv = createSpace(db, { name: "Investing", kind: "markets", goal: "" });
+  saveFx(db, [{ date: "2026-11-04", rate: 1.4 }]);
+  saveQuotes(db, [
+    { key: "RKLB", price: 53, prevClose: 50, at: now, source: "finnhub", freshness: "live" },
+    { key: "ATZ.TO", price: 101, prevClose: 100, at: now - 3600_000, source: "alphavantage", freshness: "eod" },
+    // A demo price left over from Demo mode is never counted as real.
+    { key: "SOFI", price: 20, prevClose: 10, at: now, source: "demo", freshness: "demo" },
+  ]);
+  for (const [symbol, exchange, quantity] of [["RKLB", "US", 10], ["ATZ", "TSX", 20], ["SOFI", "US", 5]] as const) {
+    addHolding(db, inv.id, { account: "TFSA", symbol, exchange, name: symbol, quantity, bookValue: null, currency: exchange === "US" ? "USD" : "CAD" });
+  }
+  saveNews(db, [{ key: "RKLB", headline: "Rocket Lab wins a NASA contract for two Neutron launches to the Moon and beyond", source: "Reuters", url: "https://x/1", at: now - 3600_000 }], now);
+  const p = briefing(db, now).markets!.portfolio!;
+  // 10 × 3 × 1.40 + 20 × 1 = 62 on 10 × 50 × 1.40 + 20 × 100 = 2700.
+  expect(p.dayCad).toBeCloseTo(62, 9);
+  expect(p.dayPct).toBeCloseTo((62 / 2700) * 100, 9);
+  expect(p.closes).toBe(1);
+  expect(p.movers[0]).toMatchObject({ key: "RKLB", tag: null });
+  expect(p.headline).toBe("Rocket Lab wins a NASA contract for two Neutron launches to…");
+  expect(p.headline!.length).toBe(60);
+});

@@ -47,19 +47,22 @@ export function useMarkets(spaceId: string): MarketsView | null {
 export const useMarketDataSettings = () => useFetched<{ data: DataStatus; feed: FeedStatus }>("/api/settings/market-data", useEngineState());
 
 const signedMoney = (n: number) => `${n >= 0 ? "+" : "−"}${money(Math.abs(n), "USD")}`;
-const closeDay = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 
-// One line for Home: paper P&L, then the biggest holding moves, each move saying how fresh it is.
+const signedCad = (n: number) => `${n >= 0 ? "+" : "−"}CA$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+
+// One investing line for Home: the portfolio's day, how fresh its prices are, the top mover and its headline,
+// then paper P&L. Home stays general; everything else lives in the space.
 export function briefingMarketsLine(m: MarketsBriefing): string | null {
   const parts: string[] = [];
-  if (m.paper) parts.push(`Paper ${signedMoney(m.paper.dayPnl)} today (${signedMoney(m.paper.totalPnl)} total)`);
-  if (m.holdings.length) {
-    const moves = m.holdings.map((h) => {
-      const tag = h.freshness === "eod" ? ` (close ${closeDay.format(h.asOf)})` : h.freshness === "demo" ? " (demo)" : "";
-      return `${h.key} ${signedPct(h.dayPct, 1)}${tag}`;
-    });
-    parts.push(`Your holdings: ${moves.join(", ")}`);
+  const p = m.portfolio;
+  if (p) {
+    parts.push(`Portfolio ${signedPct(p.dayPct, 1)} today (${signedCad(p.dayCad)})`);
+    if (p.tone === "demo") parts.push("demo data");
+    else if (p.closes > 0) parts.push(`mixed: ${p.closes} at last close`);
+    const top = p.movers[0];
+    if (top) parts.push(`${top.key} ${signedPct(top.dayPct, 1)}${top.tag && top.tag !== "demo" ? ` (${top.tag})` : ""}${p.headline ? `: "${p.headline}"` : ""}`);
   }
+  if (m.paper) parts.push(`Paper ${signedMoney(m.paper.dayPnl)} today`);
   return parts.length ? parts.join(" · ") : null;
 }
 

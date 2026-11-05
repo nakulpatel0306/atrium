@@ -21,6 +21,8 @@ const TONE = { ok: color.ok, waiting: color.warn, bad: color.bad } as const;
 
 const blank: DetailLine = [];
 const signedMoney = (n: number) => `${n >= 0 ? "+" : "−"}${money(Math.abs(n), "USD")}`;
+const signedCad = (n: number) => `${n >= 0 ? "+" : "−"}CA$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+const signedPct1 = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(1)}%`;
 const plain = (text: string, style: Omit<Styled, "text"> = {}): DetailLine => [{ text, ...style }];
 const muted = (text: string) => plain(text, { color: color.muted });
 const heading = (text: string): DetailLine => plain(text, { bold: true, color: color.accent });
@@ -170,6 +172,11 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
   if (space.kind === "markets") {
     lines.push(blank);
     if (markets) {
+      const p = markets.portfolio;
+      if (p) {
+        lines.push(plain(`Portfolio ${signedPct1(p.dayPct)} today (${signedCad(p.dayCad)}) · ${p.mix}`));
+        if (p.movers.length) lines.push(plain(`Top movers: ${p.movers.map((m) => `${m.key} ${signedPct1(m.dayPct)}${m.tag ? ` (${m.tag})` : ""}`).join(", ")}`));
+      }
       lines.push(plain(`Watching ${plural(markets.watchlist, "symbol")}`));
       if (markets.paper) lines.push(plain(`Paper ${signedMoney(markets.paper.dayPnl)} today (${signedMoney(markets.paper.totalPnl)} total)`));
     }
