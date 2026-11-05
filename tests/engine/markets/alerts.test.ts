@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { listPending } from "../../../src/engine/approvals";
+import { listPending, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { createSpace, updateSpace } from "../../../src/engine/spaces";
 import { createAlert, describeRule, evaluateQuotes, listAlerts, setAlertStatus } from "../../../src/engine/markets/alerts";
@@ -56,9 +56,11 @@ test("price_above fires once while hovering, re-arms after a 0.5% move back", ()
   expect(a.title).toBe("AAPL price above $200.00");
   expect(a.detail).toContain("AAPL at $200.10 (IEX real-time, 10:00 AM ET). Your alert: price above $200.00. Note: take profit");
   expect(a.detail).toContain("Analysis, not advice.");
+  resolveApproval(db, a.id, "approve");
   evaluateQuotes(db, [q(198.9)], NOW);
   evaluateQuotes(db, [q(200.3)], NOW);
-  expect(alerts()).toHaveLength(2);
+  expect(alerts()).toHaveLength(1);
+  expect(alerts()[0]!.id).not.toBe(a.id);
 });
 
 test("repeat:false turns off after the first fire", () => {
@@ -76,6 +78,7 @@ test("pct_move fires once per ET date and needs a previous close", () => {
   expect(evaluateQuotes(db, [q(190, { prevClose: null })], NOW)).toBe(0);
   expect(evaluateQuotes(db, [q(189.8)], NOW)).toBe(1);
   expect(evaluateQuotes(db, [q(185)], NOW + 60_000)).toBe(0);
+  resolveApproval(db, alerts()[0]!.id, "approve");
   expect(evaluateQuotes(db, [q(185, { at: NOW + 86_400_000 })], NOW + 86_400_000)).toBe(1);
 });
 
@@ -94,7 +97,11 @@ test("cross_above_sma fires on the cross and only evaluates once a minute", () =
   expect(evaluateQuotes(db, [q(11)], NOW)).toBe(1);
   setAlertStatus(db, a.id, "armed");
   expect(evaluateQuotes(db, [q(11)], NOW + 10_000)).toBe(0);
-  expect(evaluateQuotes(db, [q(11)], NOW + 61_000)).toBe(1);
+  resolveApproval(db, alerts()[0]!.id, "approve");
+  // Once a session for indicator rules: the same day stays quiet, the next session can fire again.
+  expect(evaluateQuotes(db, [q(11)], NOW + 61_000)).toBe(0);
+  setAlertStatus(db, a.id, "armed");
+  expect(evaluateQuotes(db, [q(11, { at: NOW + 86_400_000 })], NOW + 86_400_000)).toBe(1);
 });
 
 test("demo and eod labels; eod evaluates once per new at", () => {
@@ -114,4 +121,32 @@ test("off alerts and archived spaces never fire", () => {
   setAlertStatus(db, a.id, "armed");
   updateSpace(db, spaceId, { status: "archived" });
   expect(evaluateQuotes(db, [q(150)], NOW)).toBe(0);
+});
+
+test("a price chopping around an indicator level gives at most one item per session", () => {
+  saveBars(db, "AAPL", "1Day", [day("2026-11-02", 100), day("2026-11-03", 100), day("2026-11-04", 100)]);
+  createAlert(db, { spaceId, key: "AAPL", rule: { kind: "cross_above_sma", period: 3 } });
+  createAlert(db, { spaceId, key: "AAPL", rule: { kind: "rsi_above", level: 50, period: 2 } });
+  createAlert(db, { spaceId, key: "AAPL", rule: { kind: "price_above", level: 100 } });
+  const open = Date.parse("2026-11-05T14:30:00Z");
+  for (let m = 0; m < 300; m++) {
+    const at = open + m * 60_000;
+    evaluateQuotes(db, [q(m % 2 ? 100.2 : 99.8, { at })], at);
+  }
+  const byTitle = new Map<string, number>();
+  for (const a of alerts()) byTitle.set(a.title, (byTitle.get(a.title) ?? 0) + 1);
+  for (const n of byTitle.values()) expect(n).toBeLessThanOrEqual(1);
+  expect(alerts().length).toBeGreaterThan(0);
+});
+
+test("no second item while the first is still waiting in Needs you", () => {
+  createAlert(db, { spaceId, key: "AAPL", rule: { kind: "price_above", level: 100 } });
+  evaluateQuotes(db, [q(101)], NOW);
+  evaluateQuotes(db, [q(99)], NOW + 60_000);
+  evaluateQuotes(db, [q(101)], NOW + 120_000);
+  expect(alerts()).toHaveLength(1);
+  resolveApproval(db, alerts()[0]!.id, "approve");
+  evaluateQuotes(db, [q(99)], NOW + 180_000);
+  evaluateQuotes(db, [q(101)], NOW + 240_000);
+  expect(alerts()).toHaveLength(1);
 });

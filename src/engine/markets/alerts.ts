@@ -148,12 +148,21 @@ function fire(db: Database, a: Alert, q: Quote, now: number): void {
   createApproval(db, {
     spaceId: a.spaceId,
     kind: "alert",
-    title: `${a.key} ${rule}`,
+    title: titleOf(a),
     detail: `${a.key} at ${money(q.price, currencyOfKey(a.key))} (${freshnessText(q)}, ${etClock(q.at)}). Your alert: ${rule}.${note}\n\nAnalysis, not advice.`,
   });
   db.query("UPDATE market_alerts SET status = ?, last_fired_at = ? WHERE id = ?").run(a.repeat ? "fired" : "off", now, a.id);
   logActivity(db, a.spaceId, "atrium", `Alert: ${a.key} ${rule}`);
 }
+
+const titleOf = (a: Alert) => `${a.key} ${describeRule(a.rule)}`;
+
+// An item Nakul hasn't answered yet already says this; a second one would only repeat it.
+const waiting = (db: Database, a: Alert) =>
+  !!db.query("SELECT 1 FROM approvals WHERE space_id = ? AND kind = 'alert' AND status = 'pending' AND title = ? LIMIT 1").get(a.spaceId, titleOf(a));
+
+// Indicator rules flip with every tick around a level, so each fires at most once per trading session.
+const firedToday = (a: Alert, now: number) => a.lastFiredAt !== null && etDate(a.lastFiredAt) === etDate(now);
 
 export function evaluateQuotes(db: Database, quotes: Quote[], now: number): number {
   let fired = 0;
@@ -181,7 +190,7 @@ export function evaluateQuotes(db: Database, quotes: Quote[], now: number): numb
         db.query("UPDATE market_alerts SET status = 'armed' WHERE id = ?").run(a.id);
         status = "armed";
       }
-      if (status === "armed" && holds) {
+      if (status === "armed" && holds && !(indicator && firedToday(a, now)) && !waiting(db, a)) {
         fire(db, a, q, now);
         fired++;
       }
