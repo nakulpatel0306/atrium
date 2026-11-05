@@ -163,7 +163,7 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   expect(calls[0]!.allowedTools).toEqual([
     "Read", "Edit", "Write", "Glob", "Grep",
     "Bash(bun test*)", "Bash(bun install --ignore-scripts*)", "Bash(bunx tsc*)",
-    "Bash(git add *)", "Bash(git commit *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
+    "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
   ]);
   const [a] = listPending(db);
   expect(a!.detail).toContain("Added new.txt.");

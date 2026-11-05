@@ -4,6 +4,8 @@ const mode = process.env.FAKE_CLAUDE_MODE ?? "ok";
 const out = (o: unknown) => console.log(JSON.stringify(o));
 const sessionId = "fake-session";
 
+if (process.env.FAKE_CLAUDE_ARGV) await Bun.write(process.env.FAKE_CLAUDE_ARGV, JSON.stringify(process.argv.slice(2)));
+
 out({ type: "system", subtype: "init", cwd: process.cwd(), session_id: sessionId, tools: ["Read", "Bash"] });
 
 function result(text: string, isError = false) {
@@ -21,6 +23,10 @@ if (mode === "crash_after_text") {
   out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: process.env.FAKE_CLAUDE_TEXT ?? "" }] } });
   console.error("boom: something exploded");
   process.exit(2);
+}
+if (mode === "sandbox_unavailable") {
+  console.error("Error: sandbox unavailable: sandbox-exec could not start");
+  process.exit(1);
 }
 if (mode === "crash") {
   console.error("line 1\nboom: something exploded");

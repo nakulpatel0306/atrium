@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { claudeAdapter } from "../../src/engine/agents/claude";
+import { claudeAdapter, sandboxSettings } from "../../src/engine/agents/claude";
 import type { AgentRunInput } from "../../src/engine/agents/types";
 
 const FAKE = join(import.meta.dir, "..", "fixtures", "fake-claude.ts");
@@ -13,6 +15,7 @@ afterEach(() => {
   delete process.env.FAKE_CLAUDE_MODE;
   delete process.env.FAKE_CLAUDE_LIMIT_TEXT;
   delete process.env.FAKE_CLAUDE_TEXT;
+  delete process.env.FAKE_CLAUDE_ARGV;
 });
 
 describe("claudeAdapter", () => {
@@ -103,6 +106,11 @@ describe("claudeAdapter", () => {
       "Write(**/.git/**)",
       "Edit(**/.claude/**)",
       "Write(**/.claude/**)",
+      // The sandbox does not cover the Read tool.
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.config/gh/**)",
     ]);
     expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
     // dontAsk makes allowedTools a strict allowlist; acceptEdits would auto-approve unlisted Edit/Write.
@@ -132,5 +140,36 @@ describe("claudeAdapter", () => {
 
   test("rejects flag-like allowedTools entries", async () => {
     await expect(claudeAdapter(FAKE).run({ ...input(), allowedTools: ["Read", "--dangerously-skip-permissions"] })).rejects.toThrow(/allowedTools/);
+  });
+
+  test("sandboxSettings embeds the run directory", () => {
+    const { sandbox } = JSON.parse(sandboxSettings("/x/repo"));
+    expect(sandbox.filesystem.denyRead).toContain("/x/repo/**/.env*");
+    expect(sandbox.filesystem.denyRead).toContain("~/.ssh");
+    expect(sandbox.enabled).toBe(true);
+    expect(sandbox.failIfUnavailable).toBe(true);
+    expect(sandbox.allowUnsandboxedCommands).toBe(false);
+    expect(sandbox.autoAllowBashIfSandboxed).toBe(true);
+    expect(sandbox.network.allowedDomains).toEqual(["registry.npmjs.org"]);
+  });
+
+  test("run passes sandbox and isolation flags", async () => {
+    const argvFile = join(mkdtempSync(join(tmpdir(), "atrium-argv-")), "argv.json");
+    process.env.FAKE_CLAUDE_ARGV = argvFile;
+    const r = await claudeAdapter(FAKE).run(input());
+    expect(r.status).toBe("ok");
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    expect(argv[argv.indexOf("--settings") + 1]).toBe(sandboxSettings(process.cwd()));
+    expect(argv).toContain("--strict-mcp-config");
+    expect(argv).toContain("--no-session-persistence");
+    expect(argv.slice(argv.indexOf("--disallowedTools") + 1)).toContain("Read(~/.ssh/**)");
+  });
+
+  test("sandbox unavailable is reported plainly", async () => {
+    process.env.FAKE_CLAUDE_MODE = "sandbox_unavailable";
+    const r = await claudeAdapter(FAKE).run(input());
+    if (r.status !== "error") throw new Error("expected error");
+    expect(r.kind).toBe("failed");
+    expect(r.message).toStartWith("Claude's sandbox isn't available on this Mac");
   });
 });

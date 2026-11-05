@@ -12,8 +12,29 @@ const DENY = [
   // Project settings in .claude are loaded by later runs (--setting-sources project), so an agent could widen its own permissions.
   "Edit(**/.claude/**)",
   "Write(**/.claude/**)",
+  // The OS sandbox covers Bash and its children, not Claude's own Read tool.
+  "Read(~/.ssh/**)",
+  "Read(~/.aws/**)",
+  "Read(~/.gnupg/**)",
+  "Read(~/.config/gh/**)",
 ];
 const FALLBACK_WAIT_MS = 30 * 60_000;
+
+// Per-run settings: the sandbox must hard-fail rather than quietly run unconfined.
+export function sandboxSettings(cwd: string): string {
+  return JSON.stringify({
+    sandbox: {
+      enabled: true,
+      failIfUnavailable: true,
+      allowUnsandboxedCommands: false,
+      autoAllowBashIfSandboxed: true,
+      filesystem: {
+        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", `${cwd}/**/.env*`],
+      },
+      network: { allowedDomains: ["registry.npmjs.org"] },
+    },
+  });
+}
 
 function shortInput(input: Record<string, unknown> | undefined): string {
   if (!input) return "";
@@ -47,6 +68,13 @@ function classify(text: string, stderr: string, exitCode: number): AgentRunResul
   if (/not logged in|logged out|please run \/login|invalid api key|authentication/i.test(text)) {
     return { status: "error", kind: "not_logged_in", message: "Claude Code is logged out. Run `claude` once to log in." };
   }
+  if (/sandbox/i.test(stderr) && /unavailable|not available|failed to start/i.test(stderr)) {
+    return {
+      status: "error",
+      kind: "failed",
+      message: "Claude's sandbox isn't available on this Mac, so Atrium won't run Claude without it. Update Claude Code (`claude update`) and try again.",
+    };
+  }
   const tail = stderr.trim().split("\n").slice(-20).join("\n");
   return { status: "error", kind: "failed", message: tail || `Claude Code exited with code ${exitCode}` };
 }
@@ -66,6 +94,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           [
             bin, "-p",
             "--setting-sources", "project,local",
+            "--settings", sandboxSettings(input.cwd),
+            "--strict-mcp-config", "--no-session-persistence",
             "--output-format", "stream-json", "--verbose",
             "--permission-mode", "dontAsk",
             "--append-system-prompt", input.systemPrompt,
