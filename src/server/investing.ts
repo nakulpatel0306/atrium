@@ -4,7 +4,7 @@ import { AV_RESERVE, dailyBudget, dataBudget } from "../engine/markets/budget";
 import { etDate } from "../engine/markets/calendar";
 import { adjustedCloses, closes } from "../engine/markets/closes";
 import { AV_DAILY_LIMIT, currentQuote } from "../engine/markets/data";
-import { crossCheck } from "../engine/markets/edgar";
+import { crossCheck, edgarStatus, setEdgarContact, type EdgarStatus } from "../engine/markets/edgar";
 import { estimateFor, ESTIMATED } from "../engine/markets/estimate";
 import { recentNews, saveEarnings, upcomingEarnings } from "../engine/markets/events";
 import { fileSource } from "../engine/markets/funds/lookthrough";
@@ -37,7 +37,7 @@ export type BudgetView = {
   sources: ReturnType<typeof dataBudget>;
   alphaVantage: { plan: string[]; deferred: string[]; reserve: number; used: number };
   jobs: JobStatus[];
-  edgar: boolean;
+  edgar: EdgarStatus;
 };
 export type TfsaView = ReturnType<typeof roomStatus> & { entries: ReturnType<typeof listEntries> };
 
@@ -85,14 +85,15 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
       sources: dataBudget(db, now),
       alphaVantage: { plan: read("markets.av.plan"), deferred: read("markets.av.deferred"), reserve: AV_RESERVE, used },
       jobs: m.jobs?.status() ?? [],
-      edgar: getSetting(db, "markets.edgar") !== "off",
+      edgar: edgarStatus(db, now),
     });
   }
   if (hit("PUT", /^\/edgar$/)) {
     const b = await readBody(req);
-    if (typeof b.on !== "boolean") throw new HttpError(400, "on must be true or false.");
-    setSetting(db, "markets.edgar", b.on ? "on" : "off");
-    return json({ edgar: b.on });
+    if (b.on !== undefined && typeof b.on !== "boolean") throw new HttpError(400, "on must be true or false.");
+    if (b.contact !== undefined) check(() => setEdgarContact(db, String(b.contact)));
+    if (b.on !== undefined) setSetting(db, "markets.edgar", b.on ? "on" : "off");
+    return json(edgarStatus(db, now));
   }
   if (hit("POST", /^\/setup$/)) return json(seedInvesting(db));
   if (hit("GET", /^\/tfsa$/)) {

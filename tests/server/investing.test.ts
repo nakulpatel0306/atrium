@@ -200,11 +200,14 @@ test("the markets view carries the portfolio's day and the VFV estimate", async 
   expect(v).toHaveProperty("estimates");
 });
 
-test("the EDGAR cross-check can be turned off and on", async () => {
+test("the EDGAR cross-check stays off until a contact email is saved, and can be turned off again", async () => {
   boot();
-  expect((await (await get("/api/investing/budget")).json()).edgar).toBe(true);
+  expect((await (await get("/api/investing/budget")).json()).edgar).toMatchObject({ on: false, contact: null, note: "Off — add a contact email" });
+  expect((await call("PUT", "/api/investing/edgar", { contact: "nope" })).status).toBe(400);
+  expect((await call("PUT", "/api/investing/edgar", { contact: "nakul@example.com" })).status).toBe(200);
+  expect((await (await get("/api/investing/budget")).json()).edgar).toMatchObject({ on: true, contact: "nakul@example.com", note: null });
   expect((await call("PUT", "/api/investing/edgar", { on: false })).status).toBe(200);
-  expect((await (await get("/api/investing/budget")).json()).edgar).toBe(false);
+  expect((await (await get("/api/investing/budget")).json()).edgar.on).toBe(false);
   expect((await call("PUT", "/api/investing/edgar", { on: "yes" })).status).toBe(400);
 });
 

@@ -1,7 +1,8 @@
 import { Clock } from "lucide-react";
+import { useState } from "react";
 import { put } from "../api";
 import { absolute, relative } from "../format";
-import { useBudget } from "../investing";
+import { useBudget, type BudgetView } from "../investing";
 
 // One row per data source: calls today against its free limit, the last good answer and the last error in words.
 export function DataBudget() {
@@ -22,6 +23,7 @@ export function DataBudget() {
                 {s.limit}
                 {s.source === "alphavantage" && ` · planned after close: ${av.plan.length ? av.plan.join(", ") : "nothing yet"} · ${av.reserve} kept for you${av.deferred.length ? ` · deferred: ${av.deferred.join(", ")}` : ""}`}
               </span>
+              {s.note && <span>{s.note}</span>}
               {s.lastError && <span className="err">{s.lastError}</span>}
             </span>
             <span className="faint" title={s.lastOkAt ? absolute(s.lastOkAt) : undefined}>
@@ -46,10 +48,44 @@ export function DataBudget() {
           </div>
         ))}
       </div>
-      <label className="check set-check">
-        <input type="checkbox" checked={b.edgar} onChange={(e) => void put("/api/investing/edgar", { on: e.target.checked })} />
-        Cross-check P/E against SEC EDGAR filings (a few requests a month, US stocks only)
-      </label>
+      <EdgarSettings edgar={b.edgar} />
     </>
+  );
+}
+
+// SEC refuses requests without a real contact email, so the cross-check is off until Nakul adds one.
+function EdgarSettings({ edgar }: { edgar: BudgetView["edgar"] }) {
+  const [contact, setContact] = useState(edgar.contact ?? "");
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="set-card">
+      <div className="set-title">
+        <b>SEC EDGAR P/E cross-check</b>
+        <span className="tag">{edgar.note ?? "On"}</span>
+      </div>
+      <p className="hint">SEC requires a real contact email; it's only sent to sec.gov. A few requests a month, US stocks only.</p>
+      <form
+        className="mk-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void put("/api/investing/edgar", { contact }).then((r) => setError(r.ok ? null : r.error));
+        }}
+      >
+        <label>
+          Contact email
+          <input className="mk-input wide" type="email" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="you@example.com" />
+        </label>
+        <button className="btn" type="submit" disabled={!contact.trim()}>
+          Save
+        </button>
+        {edgar.contact && (
+          <label className="check set-check">
+            <input type="checkbox" checked={edgar.on} onChange={(e) => void put("/api/investing/edgar", { on: e.target.checked })} />
+            Cross-check on
+          </label>
+        )}
+        {error && <span className="err">{error}</span>}
+      </form>
+    </div>
   );
 }

@@ -61,6 +61,7 @@ test("the meta job marks ETFs and fetches profile and metrics for US stocks only
   } as unknown as MarketProvider;
   const data = { research: () => research, prepare: async () => {} } as unknown as MarketData;
   const edgar = stubFetch((url) => jsonResponse(fixture(url.host === "www.sec.gov" ? "investing/edgar-tickers.json" : "investing/edgar-facts-now.json")));
+  setSetting(db, "markets.edgar.contact", "nakul@example.com");
   const job = metaJob(db, { data, now: () => NOW, fetch: edgar.fetch, sleep: async () => {} });
   expect(job).toMatchObject({ name: "meta", slot: { at: "10:00", days: [6] } });
   await job.run(NOW);

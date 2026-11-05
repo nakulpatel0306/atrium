@@ -5,9 +5,14 @@ import { trackedInstruments } from "./feed";
 import { isFund } from "./funds/sources";
 import { instrumentKey } from "./instrument";
 import { fetchJson } from "./providers/http";
+import { ProviderError } from "./providers/types";
 
-// SEC asks automated clients for a contact in the User-Agent. Nakul's GitHub noreply address, never a personal one.
-export const EDGAR_USER_AGENT = "Atrium personal dashboard 123441573+nakulpatel0306@users.noreply.github.com";
+// SEC requires a real contact email in the User-Agent and refuses anything else, so the cross-check stays off until
+// Nakul types one into Settings. It's only ever sent to sec.gov.
+export const edgarUserAgent = (contact: string) => `Atrium personal dashboard ${contact}`;
+const CONTACT = "markets.edgar.contact";
+const PAUSED = "markets.edgar.pausedUntil";
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
 const FACTS_URL = (cik: number) => `https://data.sec.gov/api/xbrl/companyfacts/CIK${String(cik).padStart(10, "0")}.json`;
 const DAY_MS = 86_400_000;
@@ -55,11 +60,34 @@ export function crossCheck(pe: number | null, price: number, edgarEps: number | 
 
 const setRaw = (db: Database, key: string, value: string) =>
   db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+const pausedFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
+
+export function setEdgarContact(db: Database, contact: string): void {
+  const c = contact.trim();
+  if (!EMAIL.test(c) || c.length > 200) throw new Error("Type an email address like you@example.com.");
+  setRaw(db, CONTACT, c);
+  // A new contact deserves a fresh try, whatever SEC said to the old one.
+  db.query("DELETE FROM settings WHERE key = ?").run(PAUSED);
+}
+
+export type EdgarStatus = { on: boolean; contact: string | null; pausedUntil: number | null; note: string | null };
+
+// For Settings and the data budget: off without a contact, paused after a refusal, never shown as an error.
+export function edgarStatus(db: Database, now: number): EdgarStatus {
+  const contact = getSetting(db, CONTACT);
+  const paused = Number(getSetting(db, PAUSED) ?? 0);
+  const pausedUntil = paused > now ? paused : null;
+  if (!contact) return { on: false, contact: null, pausedUntil: null, note: "Off — add a contact email" };
+  if (getSetting(db, "markets.edgar") === "off") return { on: false, contact, pausedUntil, note: "Off" };
+  if (pausedUntil) return { on: true, contact, pausedUntil, note: `Paused: SEC refused requests from this contact. Atrium tries again on ${pausedFmt.format(pausedUntil)}.` };
+  return { on: true, contact, pausedUntil: null, note: null };
+}
 
 // Monthly, for US stocks Atrium tracks. Off with the setting markets.edgar = "off".
 export async function refreshEdgar(db: Database, deps: { fetch?: typeof fetch; now: () => number; sleep?: (ms: number) => Promise<void> }): Promise<number> {
-  if (getSetting(db, "markets.edgar") === "off") return 0;
   const now = deps.now();
+  const status = edgarStatus(db, now);
+  if (!status.on || status.pausedUntil) return 0;
   const due = trackedInstruments(db)
     .filter((i) => i.exchange === "US" && !isFund(instrumentKey(i)))
     .map(instrumentKey)
@@ -70,7 +98,7 @@ export async function refreshEdgar(db: Database, deps: { fetch?: typeof fetch; n
   if (!due.length) return 0;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const f = meteredFetch(db, "edgar", deps.fetch ?? fetch, deps.now);
-  const opts = { fetch: f, name: "SEC EDGAR", authMessage: "SEC EDGAR refused Atrium's request; it will try again next month.", now: deps.now, headers: { "User-Agent": EDGAR_USER_AGENT } };
+  const opts = { fetch: f, name: "SEC EDGAR", authMessage: "SEC EDGAR refused Atrium's request; it will try again next month.", now: deps.now, headers: { "User-Agent": edgarUserAgent(status.contact!) } };
   let asked = 0;
   const pause = async () => {
     if (asked++ > 0) await sleep(GAP_MS);
@@ -104,6 +132,11 @@ export async function refreshEdgar(db: Database, deps: { fetch?: typeof fetch; n
     noteSourceResult(db, "edgar", true, undefined, now);
     return n;
   } catch (e) {
+    // A refusal (SEC's 403 for a contact it won't accept) pauses the cross-check for a month instead of asking daily.
+    if (e instanceof ProviderError && e.kind === "auth") {
+      setRaw(db, PAUSED, String(now + MONTH_MS));
+      return 0;
+    }
     noteSourceResult(db, "edgar", false, e instanceof Error ? e.message : String(e), now);
     throw e;
   }

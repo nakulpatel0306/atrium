@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { etDate, etParts } from "./calendar";
+import { edgarStatus } from "./edgar";
 
 // Counted per ET date in the settings table. Written directly rather than through setSetting so a spend doesn't
 // emit `changed` and wake every listener for a counter nobody displays live.
@@ -106,6 +107,8 @@ export type BudgetRow = {
   perDay: number | null;
   lastOkAt: number | null;
   lastError: string | null;
+  // A plain status line instead of an error, e.g. "Off — add a contact email" for SEC EDGAR.
+  note: string | null;
 };
 
 export function dataBudget(db: Database, now: number): BudgetRow[] {
@@ -122,6 +125,7 @@ export function dataBudget(db: Database, now: number): BudgetRow[] {
       perDay: info.perDay ?? null,
       lastOkAt: state?.lastOkAt ?? null,
       lastError: state?.lastError ?? null,
+      note: source === "edgar" ? edgarStatus(db, now).note : null,
     };
   });
 }
