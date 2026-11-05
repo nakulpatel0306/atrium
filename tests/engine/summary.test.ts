@@ -113,3 +113,10 @@ test("summary counts price alerts like any other approval", () => {
     needs: [{ kind: "alert", title: "AAPL price above $200.00", spaceName: "Stocks", path: `/space/${s.id}` }],
   });
 });
+
+test("summary shows an Atrium-wide question as Atrium's", () => {
+  const a = createApproval(db, { spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?', detail: "", alwaysAsk: "create_repo" });
+  const sum = summary(db);
+  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/" });
+  expect(sum.needsYou).toBe(1);
+});

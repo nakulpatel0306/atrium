@@ -18,6 +18,10 @@ import { summary } from "../engine/summary";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { marketsRoute, type MarketsDeps } from "./markets";
+import type { Repos } from "../engine/repos";
+import { BadDraft } from "../engine/repos/names";
+import { PushRefused } from "../engine/repos/push";
+import { reposRoute } from "./repos";
 
 type Deps = {
   db: Database;
@@ -27,6 +31,7 @@ type Deps = {
   // How many dashboard tabs are visible; the market feed only streams while someone is looking.
   onViewers?: (n: number) => void;
   markets?: MarketsDeps;
+  repos?: Repos;
 };
 
 
@@ -101,7 +106,7 @@ export function startServer(deps: Deps): Server<WsData> {
       if (reviewBy !== undefined && reviewBy !== null && !REVIEWERS.includes(reviewBy as ReviewerId)) {
         throw new HttpError(400, "reviewBy must be codex, gemini, claude, or null.");
       }
-      return json(
+      const res = json(
         updateSpace(db, id, {
           ...(b.name !== undefined && { name: str(b.name, "name") }),
           ...(b.goal !== undefined && { goal: str(b.goal, "goal") }),
@@ -110,6 +115,9 @@ export function startServer(deps: Deps): Server<WsData> {
           ...(reviewBy !== undefined && { reviewBy: reviewBy as ReviewerId | null }),
         }),
       );
+      // An archived space's local copy may now be idle enough to offer for removal.
+      if (status === "archived") deps.repos?.daily(Date.now());
+      return res;
     }
 
     // Lets space settings say up front why a reviewer would be skipped, instead of after the work finishes.
@@ -305,6 +313,10 @@ export function startServer(deps: Deps): Server<WsData> {
       const res = await marketsRoute(db, deps.markets, req, url);
       if (res) return res;
     }
+    if (deps.repos) {
+      const res = await reposRoute(db, deps.repos, req, url);
+      if (res) return res;
+    }
 
     throw new HttpError(404, "Not found.");
   };
@@ -342,6 +354,8 @@ export function startServer(deps: Deps): Server<WsData> {
         if (e instanceof AlreadyResolved) return fail(409, "Already handled");
         if (e instanceof InvalidTransition) return fail(409, e.message);
         if (e instanceof RuleRefused) return fail(409, e.message);
+        if (e instanceof BadDraft) return fail(400, e.message);
+        if (e instanceof PushRefused) return fail(409, e.message);
         if (e instanceof SetupFailed) {
           // The user sees the plain message; the log keeps what actually went wrong.
           console.error("Setup failed:", e.cause instanceof Error ? e.cause.message : e.message);
