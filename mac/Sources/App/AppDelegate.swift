@@ -39,7 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self?.showOffline()
       }
     }
-    web.onLoadFailed = { [weak self] in self?.showOffline() }
+    // The socket may still be up (the page load raced the engine starting); a fresh connect brings the dashboard
+    // back if so, and otherwise falls into the usual backoff.
+    web.onLoadFailed = { [weak self] in
+      self?.showOffline()
+      self?.client.reconnectNow()
+    }
     client.start()
   }
 

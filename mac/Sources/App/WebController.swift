@@ -31,7 +31,8 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
   }
 
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-    onLoadFailed?()
+    let e = error as NSError
+    if isOfflineLoadError(domain: e.domain, code: e.code) { onLoadFailed?() }
   }
 
   private func decide(_ action: WKNavigationAction) -> LinkDecision {

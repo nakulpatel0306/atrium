@@ -84,6 +84,16 @@ func linkDecision(_ url: URL, port: Int, userClick: Bool, mainFrame: Bool) -> Li
   return .openExternally
 }
 
+// WebKit also reports cancelled loads (a reload over a reload, a policy cancel) as failures; only a load that
+// couldn't reach the engine means it's offline.
+func isOfflineLoadError(domain: String, code: Int) -> Bool {
+  guard domain == NSURLErrorDomain else { return false }
+  return [
+    NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut, NSURLErrorCannotFindHost,
+    NSURLErrorNotConnectedToInternet,
+  ].contains(code)
+}
+
 func nextBackoff(_ current: TimeInterval) -> TimeInterval {
   max(minBackoff, min(current * 2, maxBackoff))
 }

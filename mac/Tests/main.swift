@@ -112,6 +112,13 @@ check(linkDecision(URL(string: "x-apple.systempreferences:foo")!, port: 7420, us
 check(linkDecision(URL(string: "slack://open")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: custom scheme cancelled")
 check(linkDecision(URL(string: "http://127.0.0.1:7431/")!, port: 7420, userClick: true, mainFrame: true) == .openExternally, "policy: other local port is external")
 
+// offline: only a failure to reach the engine swaps in the offline view
+check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost), "offline: can't connect")
+check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorNetworkConnectionLost), "offline: connection lost")
+check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut), "offline: timed out")
+check(!isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorCancelled), "offline: cancelled load is not offline")
+check(!isOfflineLoadError(domain: "WebKitErrorDomain", code: 102), "offline: policy interruption is not offline")
+
 // backoff
 check(nextBackoff(0) == 2, "backoff: floor")
 check(nextBackoff(2) == 4, "backoff: doubles")
