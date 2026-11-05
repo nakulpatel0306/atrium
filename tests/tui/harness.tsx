@@ -2,7 +2,7 @@ import { render } from "ink-testing-library";
 import type { EngineClient } from "../../src/tui/client";
 import { App } from "../../src/tui/components/App";
 
-export const KEY = { enter: "\r", tab: "\t", shiftTab: "\x1b[Z", esc: "\x1b", up: "\x1b[A", down: "\x1b[B" };
+export const KEY = { enter: "\r", tab: "\t", shiftTab: "\x1b[Z", esc: "\x1b", up: "\x1b[A", down: "\x1b[B", left: "\x1b[D", right: "\x1b[C" };
 
 // Renders the whole app and lets a test wait for the frame it expects, without fixed sleeps.
 export function openApp(client: EngineClient, size = { columns: 120, rows: 36 }) {

@@ -36,3 +36,13 @@ export function editLine(line: Line, input: string, key: Key): Line | "submit" |
   if (!text) return line;
   return { value: value.slice(0, cursor) + text + value.slice(cursor), cursor: cursor + text.length };
 }
+
+// The prompt's text split around the cursor; the cursor cell is a whole grapheme, or a space at the end.
+export function cursorParts(line: Line): { before: string; at: string; after: string } {
+  const end = after(line.value, line.cursor);
+  return {
+    before: line.value.slice(0, line.cursor),
+    at: line.cursor < line.value.length ? line.value.slice(line.cursor, end) : " ",
+    after: line.value.slice(end),
+  };
+}

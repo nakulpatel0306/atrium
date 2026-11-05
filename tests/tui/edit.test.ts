@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { editLine, type Line } from "../../src/tui/edit";
+import { cursorParts, editLine, type Line } from "../../src/tui/edit";
 import { key } from "./key";
 
 const line = (value: string, cursor = value.length): Line => ({ value, cursor });
@@ -25,4 +25,9 @@ test("backspace removes a whole wide character", () => {
 test("pasted text goes into the prompt whole", () => {
   expect(editLine(line(""), "fix the jjj bug", key())).toEqual(line("fix the jjj bug"));
   expect(editLine(line(""), "two\nlines\x1b[2J", key())).toEqual(line("two lines"));
+});
+
+test("the cursor cell is a whole grapheme", () => {
+  expect(cursorParts({ value: "a🙂b", cursor: 1 })).toEqual({ before: "a", at: "🙂", after: "b" });
+  expect(cursorParts({ value: "ab", cursor: 2 })).toEqual({ before: "ab", at: " ", after: "" });
 });

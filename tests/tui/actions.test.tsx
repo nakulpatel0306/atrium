@@ -165,3 +165,11 @@ test("an approval decided elsewhere leaves nothing selected", async () => {
   await app.frame((f) => f.includes("Select an item first"));
   expect(mutations(client.calls)).toEqual([]);
 });
+
+test("the prompt cursor never splits a wide character", async () => {
+  const app = openApp(fakeClient(makeState()));
+  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.type("n", "a🙂b", KEY.left, KEY.left);
+  const f = await app.frame((f) => f.includes("New task in atrium"));
+  expect(f).toContain("> a🙂b");
+});
