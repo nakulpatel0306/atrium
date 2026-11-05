@@ -6,7 +6,7 @@ import { agentName } from "../text";
 import { backtest, describeTemplate, type BacktestTemplate } from "./backtest";
 import { cachedBars, cachedQuotes } from "./cache";
 import { etClock, etDate, etInstant, usSession } from "./calendar";
-import type { ChartRange, MarketData } from "./data";
+import { currentQuote, type ChartRange, type MarketData } from "./data";
 import { listHoldings } from "./holdings";
 import { rsi, sma } from "./indicators";
 import { instrumentKey, parseInstrumentKey, type Instrument } from "./instrument";
@@ -193,7 +193,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
             refuse(`this strategy already made its ${strategy.maxTradesPerDay} trades today.`);
             continue;
           }
-          const quote = cachedQuotes(db, [key]).get(key) ?? null;
+          const quote = inst ? currentQuote(db, data, inst) : null;
           if (side === "buy" && quote) {
             const held = paperState(db, space.id, new Map(), at).positions.find((p) => p.symbol === key)?.qty ?? 0;
             const value = (held + qty) * quote.price;

@@ -113,3 +113,12 @@ test("a proposed strategy goes to Needs you", async () => {
   expect(r.lines).toEqual(['Proposed paper strategy "Dip"; it\'s in Needs you.']);
   expect(listPending(db).map((a) => a.title)).toEqual(["Approve paper strategy: Dip"]);
 });
+
+test("a strategy never fills from a price the current provider didn't give", async () => {
+  const s = activeStrategy(2000, 3);
+  // A real-looking price left in the cache from before switching to Demo.
+  saveQuotes(db, [{ key: "AAPL", price: 100, prevClose: 99, at: NOW, source: "alpaca", freshness: "live" }]);
+  const task = createTask(db, { spaceId: space.id, title: "Paper strategy: Momentum", agent: "claude", strategyId: s.id });
+  const r = await hooks().settle(task, space, "claude", block({ orders: [order(1)] }));
+  expect(r.lines).toEqual(["Refused: buy 1 AAPL — No live price for AAPL right now."]);
+});

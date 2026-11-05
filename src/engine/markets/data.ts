@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { getSetting } from "../settings";
 import { dailyBudget } from "./budget";
-import { cachedBars, saveBars, saveQuotes } from "./cache";
+import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
 import { etDate, etInstant, lastCompletedSession } from "./calendar";
 import { instrumentKey, type Instrument } from "./instrument";
 import { KEY_ACCOUNTS, type Keychain } from "./keychain";
@@ -249,4 +249,12 @@ export function createMarketData(deps: {
     },
     secrets,
   };
+}
+
+// A cached price only counts when today's source for the instrument produced it: after switching from Demo to
+// Alpaca, demo prices must not show, or fill paper orders, as if they were real (and the reverse).
+export function currentQuote(db: Database, data: MarketData, i: Instrument): Quote | null {
+  const p = data.providerFor(i);
+  const q = cachedQuotes(db, [instrumentKey(i)]).get(instrumentKey(i));
+  return p && q && q.source === p.id ? q : null;
 }

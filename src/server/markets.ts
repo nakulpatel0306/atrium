@@ -5,7 +5,7 @@ import { backtest, type BacktestTemplate } from "../engine/markets/backtest";
 import { dailyBudget } from "../engine/markets/budget";
 import { cachedQuotes } from "../engine/markets/cache";
 import { lastCompletedSession } from "../engine/markets/calendar";
-import { AV_DAILY_LIMIT, type ChartRange, type DataStatus, type MarketData } from "../engine/markets/data";
+import { AV_DAILY_LIMIT, currentQuote as current, type ChartRange, type DataStatus, type MarketData } from "../engine/markets/data";
 import type { Feed, FeedStatus } from "../engine/markets/feed";
 import { addHolding, listHoldings, removeHolding, replaceImported, updateHolding, type Holding } from "../engine/markets/holdings";
 import { previewImport, type FieldMap } from "../engine/markets/import";
@@ -349,13 +349,8 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
   throw new HttpError(404, "Not found.");
 }
 
-// A cached price only counts when today's source for the instrument produced it: after switching from Demo to
-// Alpaca, demo prices must not show (or fill orders) as if they were real.
-function currentQuote(db: Database, m: MarketsDeps, i: Instrument): Quote | null {
-  const p = m.data.providerFor(i);
-  const q = cachedQuotes(db, [instrumentKey(i)]).get(instrumentKey(i));
-  return p && q && q.source === p.id ? q : null;
-}
+
+const currentQuote = (db: Database, m: MarketsDeps, i: Instrument) => current(db, m.data, i);
 
 async function view(db: Database, m: MarketsDeps, spaceId: string, at: number): Promise<MarketsView> {
   const watchlist = listWatchlist(db, spaceId);
