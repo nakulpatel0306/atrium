@@ -11,12 +11,13 @@ import { SetupFailed } from "../../src/engine/setup";
 import { createSpace } from "../../src/engine/spaces";
 import { getSetting } from "../../src/engine/settings";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
-import { startServer } from "../../src/server/server";
+import { bus } from "../../src/engine/events";
+import { startServer, type WsData } from "../../src/server/server";
 import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
-let server: Server<undefined>;
+let server: Server<WsData>;
 let kicks: number;
 let setupImpl: (text: string) => Promise<never>;
 let base: string;
@@ -295,9 +296,9 @@ test("unknown route is 404", async () => {
   expect((await fetch(`${base}/api/nope`)).status).toBe(404);
 });
 
-const openWs = (headers: Record<string, string>) =>
+const openWs = (headers: Record<string, string>, path = "/ws") =>
   new Promise<{ ws: WebSocket; ok: boolean }>((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${server.port}/ws`, { headers } as never);
+    const ws = new WebSocket(`ws://127.0.0.1:${server.port}${path}`, { headers } as never);
     ws.onopen = () => resolve({ ws, ok: true });
     ws.onerror = () => resolve({ ws, ok: false });
   });
@@ -313,6 +314,37 @@ test("ws receives changed after a mutation", async () => {
 
 test("ws upgrade with a foreign Origin is rejected", async () => {
   const { ok } = await openWs({ origin: "http://evil.example" });
+  expect(ok).toBe(false);
+});
+
+test("GET /api/summary returns the summary without Origin", async () => {
+  const s = createSpace(db, { name: "App", kind: "general", goal: "g" });
+  createApproval(db, { spaceId: s.id, kind: "question", title: "Which?", detail: "" });
+  const res = await fetch(`${base}/api/summary`);
+  expect(res.status).toBe(200);
+  expect(((await res.json()) as { needsYou: number }).needsYou).toBe(1);
+});
+
+test("changed-only socket skips run output", async () => {
+  const { ws, ok } = await openWs({ origin }, "/ws?events=changed");
+  expect(ok).toBe(true);
+  const got: unknown[] = [];
+  const first = new Promise<void>((resolve) => {
+    ws.onmessage = (m) => {
+      got.push(JSON.parse(String(m.data)));
+      resolve();
+    };
+  });
+  bus.emit({ type: "run-output", runId: "r", taskId: "t", chunk: "x" });
+  bus.emit({ type: "changed" });
+  await first;
+  await Bun.sleep(50);
+  expect(got).toEqual([{ type: "changed" }]);
+  ws.close();
+});
+
+test("changed-only socket requires Origin", async () => {
+  const { ok } = await openWs({ origin: "http://evil.example" }, "/ws?events=changed");
   expect(ok).toBe(false);
 });
 

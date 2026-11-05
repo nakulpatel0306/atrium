@@ -6,13 +6,13 @@ import { openDb } from "../../src/engine/db";
 import { bus } from "../../src/engine/events";
 import { createSpace } from "../../src/engine/spaces";
 import { createTask } from "../../src/engine/tasks";
-import { startServer } from "../../src/server/server";
+import { startServer, type WsData } from "../../src/server/server";
 import { createClient, type EngineClient, OFFLINE_ERROR } from "../../src/tui/client";
 import { tempHome } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
-let server: Server<undefined>;
+let server: Server<WsData>;
 let base: string;
 let client: EngineClient;
 let attempts: number[];

@@ -4,13 +4,13 @@ import type { Server } from "bun";
 import { join } from "node:path";
 import { screen } from "../../scripts/tui-screen";
 import { openDb } from "../../src/engine/db";
-import { startServer } from "../../src/server/server";
+import { startServer, type WsData } from "../../src/server/server";
 import { tempHome } from "../helpers";
 import { seedReview } from "./seed";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
-let server: Server<undefined>;
+let server: Server<WsData>;
 let port: number;
 let quit: Awaited<ReturnType<typeof screen>>;
 

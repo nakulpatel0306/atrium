@@ -6,7 +6,7 @@ import { listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { bus } from "../../src/engine/events";
 import { createTask, setTaskStatus } from "../../src/engine/tasks";
-import { startServer } from "../../src/server/server";
+import { startServer, type WsData } from "../../src/server/server";
 import { createClient, type EngineClient } from "../../src/tui/client";
 import { App } from "../../src/tui/components/App";
 import { tempHome } from "../helpers";
@@ -14,7 +14,7 @@ import { seedReview } from "./seed";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
-let server: Server<undefined>;
+let server: Server<WsData>;
 let client: EngineClient;
 let stateFetches: number;
 const realFetch = globalThis.fetch;
