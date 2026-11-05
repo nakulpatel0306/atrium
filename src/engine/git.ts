@@ -340,12 +340,16 @@ export function branchHeadSync(path: string, branch: string): string | null {
 
 // Moves a late fix's uncommitted work onto its own new branch at the current commit, so the branch Nakul
 // decided on gets nothing after his decision. Null when there is nothing to move. Creating a branch at
-// HEAD rewrites no files, so nothing in the tree is checked out over.
+// HEAD rewrites no files, so nothing in the tree is checked out over. A fix stopped more than once gets a
+// numbered branch each time, since its earlier edits already sit on `atrium/<id>`.
 export async function branchOffDirty(path: string, taskId: string): Promise<string | null> {
   const status = await git(path, ["status", "--porcelain"]);
   if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
   if (status.out.trim() === "") return null;
-  const branch = `atrium/${taskId}`;
+  let branch = `atrium/${taskId}`;
+  for (let n = 2; (await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0; n++) {
+    branch = `atrium/${taskId}-${n}`;
+  }
   const valid = await git(path, ["check-ref-format", "--branch", branch]);
   if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
   const res = await git(path, ["checkout", "-b", branch]);

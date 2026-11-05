@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { branchOffDirty, branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -455,5 +455,20 @@ describe("commitAll", () => {
     expect(git(path, "diff", "--cached", "--name-only")).toBe("");
     expect(git(path, "rev-parse", "HEAD")).toBe(head);
     expect(readFileSync(join(path, "a.txt"), "utf8")).toBe("a\n");
+  });
+});
+
+describe("branchOffDirty", () => {
+  test("picks a fresh name when the fix's branch already exists from an earlier run", async () => {
+    const path = repo();
+    writeFileSync(join(path, "a.txt"), "a\n");
+    expect(await branchOffDirty(path, "tsk_fix")).toBe("atrium/tsk_fix");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "first");
+    git(path, "checkout", "main");
+    writeFileSync(join(path, "b.txt"), "b\n");
+    expect(await branchOffDirty(path, "tsk_fix")).toBe("atrium/tsk_fix-2");
+    expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_fix-2");
+    expect(existsSync(join(path, "b.txt"))).toBe(true);
   });
 });
