@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { newId } from "../ids";
+import { syncIdeas } from "./ideas";
 import { instrumentKey, type Exchange } from "./instrument";
 
 export type HoldingInput = {
@@ -78,6 +79,7 @@ function insert(db: Database, spaceId: string, h: HoldingInput, source: Holding[
 
 export function addHolding(db: Database, spaceId: string, h: HoldingInput): Holding {
   const id = insert(db, spaceId, h, "manual");
+  syncIdeas(db, spaceId);
   bus.emit({ type: "changed" });
   return getHolding(db, id)!;
 }
@@ -95,7 +97,9 @@ export function updateHolding(db: Database, id: string, patch: Partial<HoldingIn
 }
 
 export function removeHolding(db: Database, id: string): void {
+  const spaceId = getHolding(db, id)?.spaceId;
   db.query("DELETE FROM market_holdings WHERE id = ?").run(id);
+  if (spaceId) syncIdeas(db, spaceId);
   bus.emit({ type: "changed" });
 }
 
@@ -114,6 +118,7 @@ export function replaceImported(
       replaced += db.query("DELETE FROM market_holdings WHERE space_id = ? AND account = ? AND source != 'manual'").run(spaceId, account).changes;
     }
     for (const r of rows) insert(db, spaceId, r, source);
+    syncIdeas(db, spaceId);
     return { added: rows.length, replaced };
   })();
   bus.emit({ type: "changed" });
