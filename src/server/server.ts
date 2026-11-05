@@ -12,6 +12,7 @@ import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
 import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { snapshot } from "../engine/state";
+import { summary } from "../engine/summary";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 
 type Deps = {
@@ -53,7 +54,10 @@ const agentField = (v: unknown): string | undefined => {
 };
 const RESERVE_STEPS = [0.25, 0.5, 0.75];
 
-export function startServer(deps: Deps): Server<undefined> {
+// "changed" sockets (the Mac app) skip run output, which only the dashboard's live transcript needs.
+export type WsData = { topic: "engine" | "changed" };
+
+export function startServer(deps: Deps): Server<WsData> {
   const { db, runner } = deps;
 
   const origins = (port: number) => [`127.0.0.1:${port}`, `localhost:${port}`];
@@ -90,6 +94,7 @@ export function startServer(deps: Deps): Server<undefined> {
     const hit = (m: string, pattern: RegExp) => (method === m ? pathname.match(pattern) : null);
 
     if (hit("GET", /^\/api\/state$/)) return json(snapshot(db, runner.registry));
+    if (hit("GET", /^\/api\/summary$/)) return json(summary(db));
 
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);
@@ -269,7 +274,7 @@ export function startServer(deps: Deps): Server<undefined> {
     throw new HttpError(404, "Not found.");
   };
 
-  const server = Bun.serve({
+  const server = Bun.serve<WsData>({
     hostname: config().host,
     port: deps.port ?? config().port,
     // Dev mode serves unminified bundles with HMR; only wanted while working on the dashboard.
@@ -283,7 +288,8 @@ export function startServer(deps: Deps): Server<undefined> {
       const denied = guard(req, srv.port as number, needsOrigin);
       if (denied) return denied;
       if (url.pathname === "/ws") {
-        if (srv.upgrade(req)) return undefined as unknown as Response;
+        const topic = url.searchParams.get("events") === "changed" ? "changed" : "engine";
+        if (srv.upgrade(req, { data: { topic } })) return undefined as unknown as Response;
         return fail(400, "Expected a WebSocket upgrade.");
       }
       try {
@@ -302,12 +308,16 @@ export function startServer(deps: Deps): Server<undefined> {
       }
     },
     websocket: {
-      open: (ws) => void ws.subscribe("engine"),
+      open: (ws) => void ws.subscribe(ws.data.topic),
       message: () => {},
     },
   });
 
-  const off = bus.on((e) => server.publish("engine", JSON.stringify(e)));
+  const off = bus.on((e) => {
+    const msg = JSON.stringify(e);
+    server.publish("engine", msg);
+    if (e.type === "changed") server.publish("changed", msg);
+  });
   const stop = server.stop.bind(server);
   server.stop = (force?: boolean) => {
     off();
