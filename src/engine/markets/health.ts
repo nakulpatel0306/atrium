@@ -24,7 +24,8 @@ export type Position = {
 };
 export type Slice = { label: string; cad: number; pct: number };
 export type CompanySlice = Slice & { key: string | null; direct: number; via: { holding: string; pct: number }[] };
-export type Warning = { kind: "company" | "holding" | "sector" | "country" | "overlap" | "unpriced" | "no_breakdown" | "no_fx"; text: string };
+// link: where to fix it, e.g. Settings → Market data for holdings without a price.
+export type Warning = { kind: "company" | "holding" | "sector" | "country" | "overlap" | "unpriced" | "earlier_day" | "no_breakdown" | "no_fx"; text: string; link?: string };
 export type HoldingPnl = {
   key: string;
   account: string;
@@ -69,6 +70,8 @@ const bump = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k
 export function portfolioHealth(i: {
   positions: Position[];
   fx: Sourced | null;
+  // The rate for the previous session, so yesterday's value is converted at yesterday's rate.
+  fxPrev?: Sourced | null;
   lookThrough: Map<string, LookThrough>;
   meta: Map<string, Meta>;
   // Why a fund has no breakdown, for its warning.
@@ -82,6 +85,7 @@ export function portfolioHealth(i: {
     warnings.push({
       kind: "unpriced",
       text: keys.length === 1 ? `1 holding has no price, so totals leave it out: ${keys[0]}.` : `${keys.length} holdings have no price, so totals leave them out: ${keys.join(", ")}.`,
+      link: "/settings",
     });
   }
   const priced = i.positions.filter((p) => p.price);
@@ -110,7 +114,7 @@ export function portfolioHealth(i: {
     const names = earlier.map((p) => `${p.key} (${p.price!.source.replace(/^.* · /, "")})`);
     const label = dayOf === (i.now !== undefined ? etDay(i.now) : dayOf) ? "today's" : "the day's";
     warnings.push({
-      kind: "unpriced",
+      kind: "earlier_day",
       text:
         earlier.length === 1
           ? `1 holding isn't in ${label} change because its price is from an earlier day: ${names[0]}.`
@@ -118,8 +122,9 @@ export function portfolioHealth(i: {
     });
   }
   const moved = counted.filter((p) => p.prevClose && etDay(p.price!.asOf) === dayOf);
-  const dayValue = moved.reduce((a, p) => a + toCad(p.quantity * (p.price!.value - p.prevClose!), p.listingCcy, i.fx)!, 0);
-  const prevValue = moved.reduce((a, p) => a + toCad(p.quantity * p.prevClose!, p.listingCcy, i.fx)!, 0);
+  const prevFx = i.fxPrev ?? i.fx;
+  const prevValue = moved.reduce((a, p) => a + toCad(p.quantity * p.prevClose!, p.listingCcy, prevFx)!, 0);
+  const dayValue = moved.reduce((a, p) => a + valueCad(p), 0) - prevValue;
   const dayCad: Sourced | null = moved.length ? { value: dayValue, source, asOf, tone: mix.tone } : null;
   const dayPct = moved.length && prevValue > 0 ? (dayValue / prevValue) * 100 : null;
 
@@ -232,7 +237,7 @@ export function portfolioHealth(i: {
       let shared = 0;
       for (const [k, w] of a) shared += Math.min(w, b.get(k) ?? 0);
       if (shared >= OVERLAP_LISTED) overlap.push({ a: funds[x]!, b: funds[y]!, pct: shared * 100 });
-      if (shared >= CONCENTRATION.overlap) warnings.push({ kind: "overlap", text: `${funds[x]} and ${funds[y]} overlap ${pct0(shared * 100)}.` });
+      if (shared >= CONCENTRATION.overlap) warnings.push({ kind: "overlap", text: `${funds[x]} and ${funds[y]} overlap ${pct1(shared * 100)}.` });
     }
   }
 

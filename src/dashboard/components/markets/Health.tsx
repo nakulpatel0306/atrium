@@ -135,6 +135,11 @@ export function Health({ spaceId }: { spaceId: string }) {
               <div key={w.text} className={`item warn-row ${w.kind}`}>
                 <AlertTriangle />
                 <span className="t">{w.text}</span>
+                {w.link && (
+                  <a className="btn" href={w.link}>
+                    Settings → Market data
+                  </a>
+                )}
               </div>
             ))}
           </div>

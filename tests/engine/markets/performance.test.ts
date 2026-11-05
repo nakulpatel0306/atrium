@@ -46,10 +46,16 @@ test("returns are in CAD at the Bank of Canada rate of each date", () => {
 test("short history is n/a, not shortened", () => {
   const xeqt = series(weekdays(TODAY, 100), 30, 36);
   const r = run({ "XEQT.TO": xeqt, SPY: series(weekdays(TODAY, 260), 500, 600) }, [{ key: "SPY", quantity: 1, listingCcy: "USD" }], () => 1.4, "1Y", ["SPY", "XEQT.TO"]);
-  expect(r.benchmarks.find((b) => b.key === "XEQT.TO")).toEqual({ key: "XEQT.TO", pct: null, reason: "n/a: Atrium has 100 days of XEQT.TO closes" });
+  const x = r.benchmarks.find((b) => b.key === "XEQT.TO")!;
+  expect(x.pct).toBeNull();
+  // It says when the period will work: 1Y needs history back to Nov 5, 2025.
+  const m = x.reason!.match(/^n\/a: Atrium has 100 days of XEQT\.TO closes; 1Y works after about (\d+) more trading days$/);
+  expect(m).not.toBeNull();
+  expect(Number(m![1])).toBeGreaterThan(140);
+  expect(Number(m![1])).toBeLessThan(165);
   expect(r.benchmarks.find((b) => b.key === "SPY")!.pct!).toBeCloseTo(20, 1);
   const p = run({ "XEQT.TO": xeqt, SPY: series(weekdays(TODAY, 260), 500, 600) }, [{ key: "SPY", quantity: 1, listingCcy: "USD" }, { key: "XEQT.TO", quantity: 100, listingCcy: "CAD" }], () => 1.4, "1Y");
-  expect(p.missing).toEqual([{ key: "XEQT.TO", reason: "n/a: Atrium has 100 days of XEQT.TO closes" }]);
+  expect(p.missing).toEqual([{ key: "XEQT.TO", reason: x.reason! }]);
   // XEQT is 3,600 of 4,440 CAD today, far over a tenth, so there's no portfolio number.
   expect(p.portfolioPct).toBeNull();
 });

@@ -16,6 +16,7 @@ import { fxOn, latestFx } from "../engine/markets/fx";
 import { listHoldings } from "../engine/markets/holdings";
 import { listIdeas, setIdea, type Stage } from "../engine/markets/ideas";
 import { instrumentKey, parseInstrumentKey } from "../engine/markets/instrument";
+import { currencyOfKey } from "../engine/markets/labels";
 import { getMeta } from "../engine/markets/meta";
 import { performance, type Period } from "../engine/markets/performance";
 import { healthFor, lookThroughFor, positionsFor } from "../engine/markets/portfolio";
@@ -182,7 +183,7 @@ function usExposure(db: Database, key: string): number {
 
 // Only called for a TFSA holding, so the account passed on is just a TFSA label.
 function withholdingFor(db: Database, key: string, now: number): string | null {
-  const ccy = key.endsWith(".TO") || key.endsWith(".V") ? "CAD" : "USD";
+  const ccy = currencyOfKey(key);
   return withholdingNote({ key, account: "TFSA", listingCcy: ccy, ttmDividend: ttmDividends(db, key, now), usExposure: ccy === "CAD" ? usExposure(db, key) : 1 });
 }
 

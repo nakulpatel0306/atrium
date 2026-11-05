@@ -218,3 +218,12 @@ test("setup creates the Investing space once", async () => {
   const b = await (await call("POST", "/api/investing/setup")).json();
   expect(b).toEqual({ spaceId: a.spaceId, created: false, added: 0 });
 });
+
+test("a NEO-listed CDR isn't treated as a US listing for withholding", async () => {
+  boot();
+  const s = investing();
+  addHolding(db, s.id, { account: "TFSA", symbol: "AAPL", exchange: "NEO", name: "Apple CDR", quantity: 1, bookValue: 10, currency: "CAD" });
+  db.query("INSERT INTO market_dividends (key, ex_date, amount, source) VALUES ('AAPL.NE', '2026-08-01', 0.1, 'tiingo')").run();
+  const body = await (await get(`/api/investing/${s.id}/health`)).json();
+  expect(body.withholding["AAPL.NE"] ?? null).not.toBe("15% US withholding tax is taken from these dividends in a TFSA and can't be recovered.");
+});

@@ -12,7 +12,8 @@ import { parseInstrumentKey } from "./instrument";
 import { currencyOfKey } from "./labels";
 import { getMeta } from "./meta";
 import type { Quote } from "./providers/types";
-import { closeDayText, etDay, mixLabel, quoteSourced, type Tone } from "./sourced";
+import { etInstant } from "./calendar";
+import { closeDayText, etDay, mixLabel, quoteSourced, type Sourced, type Tone } from "./sourced";
 
 // The DB glue for health: cached prices only (through currentQuote, so a demo price never passes for a real one),
 // the latest Bank of Canada rate, saved fund files and metadata. Nothing here touches the network.
@@ -47,6 +48,17 @@ function positionsWith(db: Database, spaceId: string, quoteOf: (key: string) => 
   });
 }
 
+// The Bank of Canada rate for the session before the latest priced one, for yesterday's value in CAD.
+function fxPrevFor(db: Database, positions: PricedPosition[]): Sourced | null {
+  const days = positions.filter((p) => p.price).map((p) => etDay(p.price!.asOf)).sort();
+  const latest = days.at(-1);
+  if (!latest) return null;
+  const r = db.query("SELECT date, rate FROM fx_rates WHERE pair = 'USDCAD' AND date < ? ORDER BY date DESC LIMIT 1").get(latest) as { date: string; rate: number } | null;
+  if (!r) return null;
+  const asOf = etInstant(r.date, "16:30");
+  return { value: r.rate, source: `Bank of Canada · ${closeDayText(asOf)}`, asOf, tone: "official" };
+}
+
 // Look-through is recomputed only when a fund's file changes.
 const memo = new Map<string, { fetchedAt: number; lt: LookThrough }>();
 
@@ -71,7 +83,7 @@ export function healthFor(db: Database, data: MarketData, spaceId: string, now: 
     if (lt) lts.set(k, lt);
     else unavailable.set(k, fundError(db, fileFundFor(k)) ?? "no holdings file yet");
   }
-  return portfolioHealth({ positions, fx: latestFx(db), lookThrough: lts, meta: getMeta(db, keys), unavailable, now });
+  return portfolioHealth({ positions, fx: latestFx(db), fxPrev: fxPrevFor(db, positions), lookThrough: lts, meta: getMeta(db, keys), unavailable, now });
 }
 
 // closes: how many priced holdings are at a previous close rather than live. dayLabel: "today", or the session the
@@ -111,7 +123,7 @@ const sessionFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: 
 function dayOf(db: Database, all: PricedPosition[], now: number): PortfolioDay | null {
   const positions = all.filter((p) => p.price);
   if (!positions.length) return null;
-  const h = portfolioHealth({ positions, fx: latestFx(db), lookThrough: new Map(), meta: new Map(), now });
+  const h = portfolioHealth({ positions, fx: latestFx(db), fxPrev: fxPrevFor(db, positions), lookThrough: new Map(), meta: new Map(), now });
   if (!h.dayCad || h.dayPct === null) return null;
   const mix = mixLabel(positions.map((p) => p.price!));
   const seen = new Set<string>();

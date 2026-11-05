@@ -87,7 +87,8 @@ test("currency by exposure and by listing, and overlap between funds", () => {
   expect(h.byCurrency.map((s) => [s.label, Math.round(s.pct)])).toEqual([["USD", 100]]);
   expect(h.byListingCurrency.map((s) => [s.label, Math.round(s.pct)])).toEqual([["USD", 80], ["CAD", 20]]);
   expect(h.overlap.map((o) => [o.a, o.b, Math.round(o.pct)])).toEqual([["SPY", "VFV.TO", 100]]);
-  expect(h.warnings.map((w) => w.text)).toContain("SPY and VFV.TO overlap 100%.");
+  // Same rounding as the overlap table.
+  expect(h.warnings.map((w) => w.text)).toContain("SPY and VFV.TO overlap 100.0%.");
   expect(h.warnings.map((w) => w.text)).toContain("United States is 100% of your portfolio.");
   expect(h.byHolding.map((s) => [s.label, Math.round(s.pct)])).toEqual([["AAPL", 40], ["SPY", 40], ["VFV.TO", 20]]);
   expect(h.byAssetClass.map((s) => [s.label, Math.round(s.pct)])).toEqual([["ETFs", 60], ["Stocks", 40]]);
@@ -161,4 +162,18 @@ test("today's change only counts prices from today, and says which were left out
   const sat = portfolioHealth({ positions: POSITIONS, fx, lookThrough: LT, meta, now: Date.parse("2026-11-07T17:00:00Z") });
   expect(sat.dayOf).toBe("2026-11-04");
   expect(sat.dayCad!.value).toBeCloseTo(76, 9);
+});
+
+test("unpriced holdings point to the market data settings", () => {
+  const h = health({ positions: [...POSITIONS, pos({ key: "QBTS", quantity: 3 })] });
+  const w = h.warnings.find((x) => x.kind === "unpriced")!;
+  expect(w.link).toBe("/settings");
+});
+
+test("the day change values yesterday's holdings at yesterday's rate", () => {
+  const prev: Sourced = { ...fx, value: 1.38, source: "Bank of Canada · Nov 3" };
+  const h = portfolioHealth({ positions: [POSITIONS[0]!], fx, fxPrev: prev, lookThrough: new Map(), meta: new Map() });
+  // 10 × 200 × 1.40 − 10 × 198 × 1.38 = 2800 − 2732.4.
+  expect(h.dayCad!.value).toBeCloseTo(67.6, 9);
+  expect(h.dayPct!).toBeCloseTo((67.6 / 2732.4) * 100, 9);
 });

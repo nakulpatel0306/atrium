@@ -36,7 +36,18 @@ export function periodStart(period: Period, today: string): string {
 
 type Leg = { key: string; startCad: number; endCad: number; adjusted: boolean } | { key: string; reason: string; endCad: number | null };
 
-function leg(key: string, ccy: "CAD" | "USD", i: { closes: (key: string, from: string) => Close[]; fxOn: (date: string) => number | null }, start: string, today: string): Leg {
+const shiftIso = (iso: string, days: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+// Weekdays after `from` up to and including `to`.
+function weekdaysBetween(from: string, to: string): number {
+  let n = 0;
+  for (let d = shiftIso(from, 1); d <= to; d = shiftIso(d, 1)) {
+    const dow = new Date(`${d}T12:00:00Z`).getUTCDay();
+    if (dow !== 0 && dow !== 6) n++;
+  }
+  return n;
+}
+
+function leg(key: string, ccy: "CAD" | "USD", i: { closes: (key: string, from: string) => Close[]; fxOn: (date: string) => number | null }, start: string, today: string, period: Period): Leg {
   const stored = i.closes(key, "1900-01-01").filter((c) => c.date <= today);
   // Never mix raw and adjusted closes: with any adjusted ones (Tiingo), only those count, and a raw trailing close
   // (the feed's own capture) is ignored rather than compared against split-adjusted history.
@@ -49,7 +60,11 @@ function leg(key: string, ccy: "CAD" | "USD", i: { closes: (key: string, from: s
   const cad = (c: Close, v: number) => (usd ? (i.fxOn(c.date) === null ? null : v * i.fxOn(c.date)!) : v);
   const endPlain = last ? cad(last, last.close) : null;
   if (!first || (Date.parse(first.date) - Date.parse(start)) / DAY_MS > START_SLACK_DAYS) {
-    return { key, reason: `n/a: Atrium has ${all.length} days of ${key} closes`, endCad: endPlain };
+    // How long until the period works: the first stored close has to fall within a few days of the start.
+    const firstDate = all[0]?.date;
+    const wait = firstDate ? weekdaysBetween(start, shiftIso(firstDate, -START_SLACK_DAYS)) : null;
+    const when = wait !== null && wait > 0 ? `; ${period} works after about ${wait} more trading days` : "";
+    return { key, reason: `n/a: Atrium has ${all.length} days of ${key} closes${when}`, endCad: endPlain };
   }
   const pick = (c: Close) => (adjusted ? c.adjClose! : c.close);
   const s = cad(first, pick(first));
@@ -70,7 +85,7 @@ export function performance(
     qty.set(h.key, (qty.get(h.key) ?? 0) + h.quantity);
     ccy.set(h.key, h.listingCcy);
   }
-  const legs = [...qty.keys()].map((k) => leg(k, ccy.get(k)!, i, start, i.today));
+  const legs = [...qty.keys()].map((k) => leg(k, ccy.get(k)!, i, start, i.today, period));
   const missing = legs.filter((l): l is Extract<Leg, { reason: string }> => "reason" in l).map((l) => ({ key: l.key, reason: l.reason }));
   const used = legs.filter((l): l is Extract<Leg, { startCad: number }> => "startCad" in l);
   const usedNow = used.reduce((a, l) => a + qty.get(l.key)! * l.endCad, 0);
@@ -79,7 +94,7 @@ export function performance(
   const tooMuchMissing = missingNow > MISSING_SHARE * (usedNow + missingNow);
   const portfolioPct = used.length && startValue > 0 && !tooMuchMissing ? (usedNow / startValue - 1) * 100 : null;
   const bench = benchmarks.map((k) => {
-    const l = leg(k, currencyOfKey(k), i, start, i.today);
+    const l = leg(k, currencyOfKey(k), i, start, i.today, period);
     return "reason" in l ? { key: k, pct: null, reason: l.reason, adjusted: true } : { key: k, pct: (l.endCad / l.startCad - 1) * 100, reason: null, adjusted: l.adjusted };
   });
   const bases = [...used.map((l) => l.adjusted), ...bench.filter((b) => b.pct !== null).map((b) => b.adjusted)];
