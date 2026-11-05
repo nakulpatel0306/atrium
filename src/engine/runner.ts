@@ -23,7 +23,7 @@ import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./ha
 import { newId } from "./ids";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
-import { keepScratch } from "./scratch";
+import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
 import { getTask, listTasks, setTaskStatus, type Task } from "./tasks";
@@ -403,7 +403,7 @@ export function createRunner(deps: {
     // Where the agent's unfinished edits were committed when the run ended without finishing.
     let saved: string | null = null;
     // Where a scratch run's files were copied before its folder went away.
-    let kept: { dir: string; truncated: boolean } | null = null;
+    let kept: (KeptScratch & { dir: string }) | null = null;
     try {
       const stopped = result.status !== "ok";
       // A fix still running after Nakul decided must not add to the branch he decided on, and one that didn't
@@ -486,10 +486,7 @@ export function createRunner(deps: {
         const lines = [result.summary.trim()];
         const report = repo ? await repoReport(repo) : null;
         if (report) lines.push(...report.lines);
-        if (kept) {
-          const cut = kept.truncated ? " Some were cut short or left out to stay under 5 MB each and 50 MB in all." : "";
-          lines.push(`Files it left are kept in ${kept.dir}.${cut}`);
-        }
+        if (kept) lines.push(keptLine(kept));
         setTaskStatus(db, task.id, "review");
         const approval = createApproval(db, {
           spaceId: space.id,
@@ -521,11 +518,12 @@ export function createRunner(deps: {
   }
 
   // A copy that fails must not lose the run's outcome; the agent's summary still reaches Nakul.
-  function keepScratchFiles(space: Space, runId: string, cwd: string): { dir: string; truncated: boolean } | null {
+  // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
+  function keepScratchFiles(space: Space, runId: string, cwd: string): (KeptScratch & { dir: string }) | null {
     const dir = join(config().home, "spaces", space.id, "runs", runId);
     try {
       const res = keepScratch(cwd, dir);
-      return res.files > 0 ? { dir, truncated: res.truncated } : null;
+      return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;
     } catch (e) {
       logActivity(db, space.id, "atrium", `Couldn't keep the files from a run's temporary folder: ${(e as Error).message}`);
       return null;
@@ -610,6 +608,16 @@ async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: nu
 
 // A fix adds to the branch its parent's work is on.
 const branchTaskId = (task: Task) => (task.kind === "fix" && task.parentTaskId) || task.id;
+
+function keptLine(kept: KeptScratch & { dir: string }): string {
+  const parts = [kept.files > 0 ? `Files it left are kept in ${kept.dir}.` : "None of the files it left were kept."];
+  if (kept.truncated) parts.push("Some were cut short or left out to stay under 5 MB each and 50 MB in all.");
+  if (kept.skipped > 0) {
+    const one = kept.skipped === 1;
+    parts.push(`Left out ${plural(kept.skipped, "item")} that ${one ? "was a link" : "were links"} or changed while being copied.`);
+  }
+  return parts.join(" ");
+}
 
 // A work task's retry resumes on its own branch; a fix's retry starts again from the branch under review.
 const savedNote = (task: Task, saved: string) =>

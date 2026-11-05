@@ -615,7 +615,9 @@ test("files a scratch run leaves are kept with the run, and the approval says wh
   expect(readFileSync(join(kept, "notes.md"), "utf8")).toBe("# notes\n");
   expect(readFileSync(join(kept, "sub", "more.txt"), "utf8")).toBe("more\n");
   expect(existsSync(join(kept, "link"))).toBe(false);
-  expect(listPending(db)[0]!.detail).toContain(`Files it left are kept in ${kept}.`);
+  expect(listPending(db)[0]!.detail).toContain(
+    `Files it left are kept in ${kept}. Left out 1 item that was a link or changed while being copied.`,
+  );
 });
 
 test("launch re-checks the agent and holds a task the space no longer allows", async () => {
