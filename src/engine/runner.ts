@@ -285,7 +285,7 @@ export function createRunner(deps: {
         cwd: r.cwd,
         systemPrompt: SYSTEM_PROMPT,
         allowedTools: repo ? REPO_TOOLS : BASE_TOOLS,
-        mode: "work",
+        mode: task.kind === "review" ? "review" : "work",
         signal: r.signal,
         onChunk(chunk) {
           try {

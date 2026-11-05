@@ -562,6 +562,16 @@ test("a limited codex does not pause claude tasks", async () => {
   expect(codex.calls).toHaveLength(0);
 });
 
+test("a review task runs its agent in review mode", async () => {
+  const s = generalSpace();
+  const review = createTask(db, { spaceId: s.id, title: "Review it", kind: "review" });
+  const work = createTask(db, { spaceId: s.id, title: "Do it" });
+  const { adapter, calls } = fakeAdapter();
+  start({ adapter });
+  await waitFor(() => status(review.id) === "review" && status(work.id) === "review");
+  expect(calls.map((c) => [c.prompt.includes("Review it"), c.mode])).toEqual([[true, "review"], [false, "work"]]);
+});
+
 test("run row records the resolved agent for auto tasks", async () => {
   const s = generalSpace();
   const t = createTask(db, { spaceId: s.id, title: "Auto job", agent: "auto" });

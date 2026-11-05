@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentAdapter, AgentStatus } from "../../src/engine/agents/types";
 import { openDb } from "../../src/engine/db";
@@ -133,6 +133,52 @@ test("an untracked .env that git doesn't ignore also counts", async () => {
   expect(resolveFor(r, task(space.id, { agent: "gemini", kind: "review" }), space.id)).toEqual({
     wait: "Gemini can't work here: this repo has .env files Gemini could read. Use Claude for this task.",
   });
+});
+
+function codexWaitsOn(spaceId: string) {
+  const r = createRegistry(db, { claude: fake("claude"), codex: fake("codex") });
+  return r.resolve(task(spaceId, { agent: "codex" }), getSpace(db, spaceId)!);
+}
+const git = (cwd: string, ...args: string[]) => {
+  const r = Bun.spawnSync(["git", "-C", cwd, ...args]);
+  if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+  return r.stdout.toString().trim();
+};
+const SECRET_WAIT = { wait: "Codex can't work here: this repo has .env files Codex could read. Use Claude for this task." };
+
+test("a .env under a different name pattern or in a subfolder counts", () => {
+  const { space, path } = repoSpace();
+  mkdirSync(join(path, "config"));
+  writeFileSync(join(path, "config", "prod.env"), "X=1\n");
+  expect(codexWaitsOn(space.id)).toEqual(SECRET_WAIT);
+});
+
+test("a space pointing at a subfolder checks the whole repo", () => {
+  const { space, path } = repoSpace();
+  mkdirSync(join(path, "pkg"));
+  writeFileSync(join(path, "pkg", "keep"), "");
+  writeFileSync(join(path, ".env"), "X=1\n");
+  db.query("UPDATE spaces SET repo_path = ? WHERE id = ?").run(join(path, "pkg"), space.id);
+  expect(codexWaitsOn(space.id)).toEqual(SECRET_WAIT);
+});
+
+test("an untracked nested repo is treated as holding .env files", () => {
+  const { space, path } = repoSpace();
+  mkdirSync(join(path, "vendor"));
+  git(join(path, "vendor"), "init", "-q");
+  expect(codexWaitsOn(space.id)).toEqual(SECRET_WAIT);
+});
+
+test("a submodule gitlink is treated as holding .env files", () => {
+  const { space, path } = repoSpace();
+  const sha = git(path, "rev-parse", "HEAD");
+  git(path, "update-index", "--add", "--cacheinfo", `160000,${sha},mod`);
+  expect(codexWaitsOn(space.id)).toEqual(SECRET_WAIT);
+});
+
+test("a clean repo lets codex in", () => {
+  const { space, path } = repoSpace();
+  expect(codexWaitsOn(space.id)).toEqual({ agent: "codex" });
 });
 
 test("explicit codex in a private space waits", async () => {
