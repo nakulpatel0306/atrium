@@ -131,8 +131,11 @@ export function updateDraft(db: Database, actionId: string, draft: ProjectDraft)
     const action = getRepoAction(db, actionId);
     if (!action) throw new Error(`No repo action with id ${actionId}`);
     if (action.status !== "draft" || getApproval(db, action.approvalId)?.status !== "pending") throw new AlreadyResolved();
-    const detail = projectDetail(draft, { lastError: action.error ?? undefined, remoteUrl: action.remoteUrl ?? undefined });
-    db.query("UPDATE repo_actions SET draft = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(draft), Date.now(), actionId);
+    // The empty repo from an earlier try has the old name and visibility; a changed draft gets a repo of its own.
+    const same = action.draft?.name === draft.name && action.draft?.visibility === draft.visibility;
+    const remoteUrl = same ? action.remoteUrl : null;
+    const detail = projectDetail(draft, { lastError: action.error ?? undefined, remoteUrl: remoteUrl ?? undefined });
+    db.query("UPDATE repo_actions SET draft = ?, remote_url = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(draft), remoteUrl, Date.now(), actionId);
     db.query("UPDATE approvals SET title = ?, detail = ? WHERE id = ? AND status = 'pending'").run(titleFor(draft), detail, action.approvalId);
     return getRepoAction(db, actionId)!;
   })();

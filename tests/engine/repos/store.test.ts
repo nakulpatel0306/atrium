@@ -118,3 +118,15 @@ test("recording a clone retires a stale row left for the same path", () => {
   expect(presentCloneForPath(db, path)!.id).toBe(fresh.id);
   expect(listClones(db).find((c) => c.id === old.id)!.status).toBe("removed");
 });
+
+test("a renamed or re-scoped retry stops reusing the earlier empty repo", () => {
+  const remoteUrl = "https://github.com/fakeuser/demo";
+  const kept = draftProject(db, d, { remoteUrl, lastError: "push failed" }).action;
+  expect(updateDraft(db, kept.id, { ...d, description: "new words" }).remoteUrl).toBe(remoteUrl);
+  const renamed = draftProject(db, d, { remoteUrl }).action;
+  const next = updateDraft(db, renamed.id, { ...d, name: "other" });
+  expect(next.remoteUrl).toBeNull();
+  expect(getApproval(db, next.approvalId)!.detail).not.toContain("Reusing the empty repo");
+  const rescoped = draftProject(db, d, { remoteUrl }).action;
+  expect(updateDraft(db, rescoped.id, { ...d, visibility: "public" }).remoteUrl).toBeNull();
+});
