@@ -1,6 +1,9 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { SANDBOX_EXEC, codexStateDir, sandboxFailed, seatbeltFailure, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./types";
 
 function shortCommand(command: unknown): string {
@@ -24,19 +27,29 @@ function classify(message: string, stderr: string, exitCode: number): AgentRunRe
   return { status: "error", kind: "failed", message: tail || `Codex exited with code ${exitCode}` };
 }
 
-export function codexAdapter(bin: string = config().codexBin): AgentAdapter {
+// Codex's own sandbox only limits writes, so it runs inside Atrium's profile instead. macOS refuses to apply a
+// sandbox inside another one, so Codex's sandbox is turned off and the outer profile is the boundary. With it off,
+// sandbox_workspace_write.network_access has nothing to apply to, so the agent's commands share the CLI's network.
+export function codexArgv(bin: string, input: AgentRunInput, sandboxExec: string = SANDBOX_EXEC): string[] {
+  const state = codexStateDir();
+  const argv = [
+    bin, "exec", "-", "-C", input.cwd, "--sandbox", "danger-full-access",
+    "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+    "-c", 'approval_policy="never"',
+  ];
+  return wrapInSeatbelt(argv, {
+    cwd: input.cwd,
+    writable: input.mode === "review" ? [state] : [input.cwd, state],
+    extraDenyRead: [join(homedir(), ".gemini")],
+    sandboxExec,
+  });
+}
+
+export function codexAdapter(bin: string = config().codexBin, sandboxExec: string = SANDBOX_EXEC): AgentAdapter {
   return {
     id: "codex",
     label: "Codex",
     async run(input: AgentRunInput): Promise<AgentRunResult> {
-      // Codex has no system-prompt flag, so the instructions ride in front of the task.
-      const argv = [
-        bin, "exec", "-", "-C", input.cwd,
-        "--sandbox", input.mode === "review" ? "read-only" : "workspace-write",
-        "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
-        "-c", 'approval_policy="never"',
-      ];
-
       let lastMessage = "";
       let errorMessage = "";
       let usage: { inputTokens: number; outputTokens: number } | undefined;
@@ -66,13 +79,16 @@ export function codexAdapter(bin: string = config().codexBin): AgentAdapter {
         }
       };
 
-      const proc = await runAgentProcess(argv, {
+      // Codex has no system-prompt flag, so the instructions ride in front of the task.
+      const proc = await runAgentProcess(codexArgv(bin, input, sandboxExec), {
         cwd: input.cwd,
         stdin: `${input.systemPrompt}\n\n${input.prompt}`,
         signal: input.signal,
         onLine: handle,
       });
-      if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Codex isn't installed or not on PATH" };
+      const failure = seatbeltFailure(proc);
+      if (proc.notInstalled || failure === "sandbox") return sandboxFailed("Codex");
+      if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Codex isn't installed or not on PATH" };
       const { stderr, exitCode } = proc;
 
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.

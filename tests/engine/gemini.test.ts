@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { geminiAdapter } from "../../src/engine/agents/gemini";
+import { geminiAdapter, geminiArgv } from "../../src/engine/agents/gemini";
+import { SANDBOX_EXEC, seatbeltProfile } from "../../src/engine/agents/seatbelt";
 import type { AgentRunInput } from "../../src/engine/agents/types";
 
 const FAKE = join(import.meta.dir, "..", "fixtures", "fake-agy.ts");
@@ -47,6 +48,33 @@ describe("geminiAdapter", () => {
       await geminiAdapter(FAKE).run(input([], { mode: "review" }));
       const review = argv();
       expect(review[review.indexOf("--mode") + 1]).toBe("plan");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("agy argv is wrapped in sandbox-exec, with only its own state and the login keychain readable", () => {
+    const state = join(homedir(), ".gemini", "antigravity-cli");
+    const sandbox = { extraDenyRead: [join(homedir(), ".codex")], allowRead: [join(homedir(), "Library", "Keychains", "login.keychain-db")] };
+    const work = geminiArgv("agy", input());
+    expect(work.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
+    expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state], ...sandbox }));
+    expect(work.slice(3, 5)).toEqual(["agy", "-p"]);
+    const review = geminiArgv("agy", input([], { mode: "review" }));
+    expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state], ...sandbox }));
+  });
+
+  test("sandbox failure never falls back to an unsandboxed run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atrium-agy-"));
+    try {
+      process.env.FAKE_AGY_ARGV = join(dir, "argv.json");
+      const failing = join(dir, "sandbox-exec");
+      writeFileSync(failing, "#!/bin/sh\necho 'sandbox-exec: sandbox_apply: Operation not permitted' >&2\nexit 71\n");
+      chmodSync(failing, 0o755);
+      const paused = { status: "error" as const, kind: "failed" as const, message: "Atrium couldn't start the sandbox for Gemini; this agent is paused for safety." };
+      expect(await geminiAdapter(FAKE, join(dir, "missing-sandbox-exec")).run(input())).toEqual(paused);
+      expect(await geminiAdapter(FAKE, failing).run(input())).toEqual(paused);
+      expect(existsSync(process.env.FAKE_AGY_ARGV)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

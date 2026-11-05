@@ -1,10 +1,16 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { SANDBOX_EXEC, codexStateDir, geminiStateDir, sandboxFailed, seatbeltFailure, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
 
 const MODEL = "gemini-3.8-flash-medium";
 const SIGN_IN = "Run `agy` once in a terminal to sign in.";
+
+// agy's sign-in goes through the login keychain file, so that one file is reopened inside the denied Keychains dir.
+const LOGIN_KEYCHAIN = join(homedir(), "Library", "Keychains", "login.keychain-db");
 
 // Passed per run with --settings, so nothing is written to the user's agy config. Headless agy auto-denies any
 // action without an allow rule, and allowNonWorkspaceAccess:false keeps file tools inside the workspace. The deny
@@ -15,16 +21,22 @@ export const GEMINI_SETTINGS = {
   permissions: { deny: ["browser_*", "open_browser_url", "read_url_content", "call_mcp_tool"] },
 };
 
-// One place builds the command line so a sandbox wrapper can prefix it.
-export function geminiArgv(bin: string, input: AgentRunInput): string[] {
+export function geminiArgv(bin: string, input: AgentRunInput, sandboxExec: string = SANDBOX_EXEC): string[] {
   // A value starting with "-" could parse as a flag, so such a prompt gets a leading newline.
   const text = `${input.systemPrompt}\n\n${input.prompt}`;
   const prompt = text.startsWith("-") ? `\n${text}` : text;
-  return [
+  const argv = [
     bin, "-p", prompt, "--output-format", "stream-json", "--model", MODEL, "--disable-slash-commands",
     "--sandbox", "--print-timeout", "900s", "--settings", JSON.stringify(GEMINI_SETTINGS),
     "--mode", input.mode === "review" ? "plan" : "accept-edits",
   ];
+  return wrapInSeatbelt(argv, {
+    cwd: input.cwd,
+    writable: input.mode === "review" ? [geminiStateDir()] : [input.cwd, geminiStateDir()],
+    extraDenyRead: [codexStateDir()],
+    allowRead: [LOGIN_KEYCHAIN],
+    sandboxExec,
+  });
 }
 
 function shortCommand(command: unknown): string {
@@ -47,7 +59,7 @@ function classify(message: string, stderr: string, exitCode: number): AgentRunRe
   return { status: "error", kind: "failed", message: tail || `Gemini exited with code ${exitCode}` };
 }
 
-export function geminiAdapter(bin: string = config().geminiBin): AgentAdapter {
+export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: string = SANDBOX_EXEC): AgentAdapter {
   return {
     id: "gemini",
     label: "Gemini",
@@ -83,8 +95,10 @@ export function geminiAdapter(bin: string = config().geminiBin): AgentAdapter {
       };
 
       // The prompt is an argv value, so stdin stays empty.
-      const proc = await runAgentProcess(geminiArgv(bin, input), { cwd: input.cwd, stdin: "", signal: input.signal, onLine: handle });
-      if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Antigravity (agy) isn't installed or not on PATH" };
+      const proc = await runAgentProcess(geminiArgv(bin, input, sandboxExec), { cwd: input.cwd, stdin: "", signal: input.signal, onLine: handle });
+      const failure = seatbeltFailure(proc);
+      if (proc.notInstalled || failure === "sandbox") return sandboxFailed("Gemini");
+      if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Antigravity (agy) isn't installed or not on PATH" };
 
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
       if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped" };
