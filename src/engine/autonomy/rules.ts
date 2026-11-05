@@ -96,15 +96,26 @@ export function getRule(db: Database, id: string, now = Date.now()): Rule | null
   return row ? toRule(row, now) : null;
 }
 
-// Only answerProposal calls this, so a rule exists only because Nakul said yes to a suggestion.
-export function createRule(db: Database, input: { spaceId: string; fingerprint: string; proposalId: string }, now = Date.now()): Rule {
-  if (!parseFingerprint(input.fingerprint)) throw new RuleRefused("Atrium can't make a rule for this kind of result.");
+// A rule exists only because Nakul said yes to a suggestion: its space and kind come from that suggestion's
+// row and nowhere else, and each suggestion makes at most one rule.
+export function createRule(db: Database, proposalId: string, now = Date.now()): Rule {
   const id = newId("rul");
   db.transaction(() => {
+    const p = db.query("SELECT space_id, fingerprint, status FROM autonomy_proposals WHERE id = ?").get(proposalId) as {
+      space_id: string;
+      fingerprint: string;
+      status: string;
+    } | null;
+    if (p?.status !== "yes") throw new RuleRefused("A rule needs a suggestion you said yes to.");
+    if (!parseFingerprint(p.fingerprint)) throw new RuleRefused("Atrium can't make a rule for this kind of result.");
+    if (db.query("SELECT 1 FROM autonomy_rules WHERE proposal_id = ?").get(proposalId)) {
+      throw new RuleRefused("This suggestion already made a rule.");
+    }
+    if (activeRuleFor(db, p.space_id, p.fingerprint, now)) throw new RuleRefused("A rule for this already exists.");
     db.query(
       "INSERT INTO autonomy_rules (id, space_id, fingerprint, proposal_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(id, input.spaceId, input.fingerprint, input.proposalId, now, now + RULE_TTL_MS);
-    logRuleEvent(db, { spaceId: input.spaceId, event: "created", actor: "you", proposalId: input.proposalId, ruleId: id }, now);
+    ).run(id, p.space_id, p.fingerprint, proposalId, now, now + RULE_TTL_MS);
+    logRuleEvent(db, { spaceId: p.space_id, event: "created", actor: "you", proposalId, ruleId: id }, now);
   })();
   bus.emit({ type: "changed" });
   return getRule(db, id, now)!;

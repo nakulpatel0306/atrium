@@ -53,29 +53,56 @@ function pending(s: Space = space) {
 }
 
 let proposals = 0;
-function proposal(s: Space = space, fp = FP): string {
+function proposal(s: Space = space, fp = FP, status = "yes"): string {
   const id = `prp_${++proposals}`;
-  db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, status, created_at) VALUES (?, ?, ?, '[]', 'yes', 1)").run(id, s.id, fp);
+  db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, status, created_at) VALUES (?, ?, ?, '[]', ?, 1)").run(id, s.id, fp, status);
   return id;
 }
 
 // Created a second in the past, so approvals made right after it are newer.
-const rule = (s: Space = space, fp = FP) => createRule(db, { spaceId: s.id, fingerprint: fp, proposalId: proposal(s, fp) }, Date.now() - 1000);
+const rule = (s: Space = space, fp = FP) => createRule(db, proposal(s, fp), Date.now() - 1000);
+const ruleCount = () => (db.query("SELECT COUNT(*) AS n FROM autonomy_rules").get() as { n: number }).n;
 const events = (event: string) => (db.query("SELECT * FROM rule_events WHERE event = ?").all(event) as { approval_id: string | null }[]);
 
 describe("createRule", () => {
   test("createRule refuses a fingerprint outside the grammar", () => {
     for (const fp of ["v1:code:code:small:claude", "v1:delete:x", "*"]) {
-      expect(() => createRule(db, { spaceId: space.id, fingerprint: fp, proposalId: proposal(space, fp) })).toThrow(RuleRefused);
+      expect(() => createRule(db, proposal(space, fp))).toThrow(RuleRefused);
     }
-    expect(db.query("SELECT COUNT(*) AS n FROM autonomy_rules").get()).toEqual({ n: 0 });
+    expect(ruleCount()).toBe(0);
   });
 
   test("a new rule is active for 60 days and logged", () => {
     const now = Date.now();
-    const r = createRule(db, { spaceId: space.id, fingerprint: FP, proposalId: proposal() }, now);
+    const r = createRule(db, proposal(), now);
     expect(r).toMatchObject({ state: "active", expiresAt: now + RULE_TTL_MS, label: "docs-only changes under 50 lines from Claude", appliedCount: 0 });
     expect(events("created")).toHaveLength(1);
+  });
+
+  test("a rule covers exactly its proposal's space and kind", () => {
+    const other = createSpace(db, { name: "Other", kind: "general", goal: "" });
+    const r = createRule(db, proposal(other, "v1:general:text:codex"));
+    expect(r).toMatchObject({ spaceId: other.id, fingerprint: "v1:general:text:codex" });
+  });
+
+  test("only a suggestion Nakul said yes to makes a rule", () => {
+    for (const status of ["pending", "not_now", "never"]) expect(() => createRule(db, proposal(space, FP, status))).toThrow(RuleRefused);
+    expect(() => createRule(db, "prp_missing")).toThrow(RuleRefused);
+    expect(ruleCount()).toBe(0);
+  });
+
+  test("a suggestion makes at most one rule", () => {
+    const id = proposal();
+    const r = createRule(db, id);
+    revokeRule(db, r.id, "you");
+    expect(() => createRule(db, id)).toThrow(RuleRefused);
+    expect(ruleCount()).toBe(1);
+  });
+
+  test("no second active rule for the same space and kind", () => {
+    createRule(db, proposal());
+    expect(() => createRule(db, proposal())).toThrow(RuleRefused);
+    expect(ruleCount()).toBe(1);
   });
 });
 
@@ -126,7 +153,7 @@ describe("applyRule", () => {
 
   test("rule does not sweep approvals created before it", () => {
     const { a, facts } = pending();
-    createRule(db, { spaceId: space.id, fingerprint: FP, proposalId: proposal() }, Date.now() + 1000);
+    createRule(db, proposal(), Date.now() + 1000);
     expect(applyRule(db, a.id, facts)).toBeNull();
     expect(getApproval(db, a.id)!.status).toBe("pending");
   });
