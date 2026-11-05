@@ -8,7 +8,7 @@ export type ReviewerId = (typeof REVIEWERS)[number];
 export type Space = {
   id: string;
   name: string;
-  kind: "repo" | "general";
+  kind: "repo" | "general" | "markets";
   goal: string;
   color: string;
   repoPath: string | null;

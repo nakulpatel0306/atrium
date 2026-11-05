@@ -11,7 +11,7 @@ export type Approval = {
   id: string;
   spaceId: string;
   taskId: string | null;
-  kind: "review" | "question";
+  kind: "review" | "question" | "alert";
   title: string;
   detail: string;
   status: "pending" | "approved" | "rejected";
@@ -163,10 +163,26 @@ export function resolveApproval(
       }
     }
     if (rule) logActivity(db, a.spaceId, "atrium", `Approved by your rule "${rule.label}": ${a.title}`);
+    else if (a.kind === "alert") logActivity(db, a.spaceId, "you", `Dismissed: ${a.title}`);
     else logActivity(db, a.spaceId, "you", `${decision === "approve" ? "Approved" : "Rejected"}: ${a.title}`);
     return a;
   });
   const a = resolve();
+  for (const fn of [...resolvedListeners]) {
+    try {
+      fn(a, decision);
+    } catch (e) {
+      console.error(`An approval listener failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   bus.emit({ type: "changed" });
   return a;
+}
+
+const resolvedListeners = new Set<(a: Approval, decision: "approve" | "reject") => void>();
+
+// Runs after the decision is committed, so a listener sees the final state and can't undo the decision by throwing.
+export function onApprovalResolved(fn: (a: Approval, decision: "approve" | "reject") => void): () => void {
+  resolvedListeners.add(fn);
+  return () => resolvedListeners.delete(fn);
 }

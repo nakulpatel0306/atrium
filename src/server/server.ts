@@ -96,7 +96,7 @@ export function startServer(deps: Deps): Server<undefined> {
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);
       const kind = b.kind;
-      if (kind !== "repo" && kind !== "general") throw new HttpError(400, "kind must be repo or general.");
+      if (kind !== "repo" && kind !== "general" && kind !== "markets") throw new HttpError(400, "kind must be repo, general or markets.");
       return json(
         createSpace(db, {
           name: str(b.name, "name"),
