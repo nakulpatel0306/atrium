@@ -3,7 +3,9 @@ import { bus } from "../events";
 import { newId } from "../ids";
 import { createTask, type Task, type TaskPurpose } from "../tasks";
 import { etDate, etInstant } from "./calendar";
-import { upcomingEarnings } from "./events";
+import { recentNews, upcomingEarnings } from "./events";
+import { getSetting } from "../settings";
+import { cachedQuotes } from "./cache";
 import { instrumentKey, type Exchange } from "./instrument";
 import type { Job } from "./jobs";
 
@@ -82,21 +84,35 @@ function spaceKeys(db: Database, spaceId: string): string[] {
     .all(spaceId, spaceId) as { symbol: string; exchange: Exchange }[];
   return [...new Set(rows.map(instrumentKey))];
 }
+// A holding with a cached price from the current mode (demo prices only count in Demo mode).
+function hasPricedHoldings(db: Database, spaceId: string): boolean {
+  const keys = (db.query("SELECT symbol, exchange FROM market_holdings WHERE space_id = ?").all(spaceId) as { symbol: string; exchange: Exchange }[]).map(instrumentKey);
+  const demo = getSetting(db, "markets.provider") === "demo";
+  return [...cachedQuotes(db, keys).values()].some((q) => (q.source === "demo") === demo);
+}
 const activeSpaces = (db: Database) => (db.query(ACTIVE).all() as { id: string }[]).map((r) => r.id);
 
-// After the close on weekdays: one Claude digest per markets space that has something to watch. No network.
+// After the close on weekdays: one Claude digest per markets space with something to write about (priced holdings,
+// or headlines since the last digest). No network. A slot missed on an earlier day isn't caught up: yesterday's
+// digest written today would be about today's prices.
 export function digestJob(db: Database): Job {
   return {
     name: "digest",
     slot: { at: "17:15", days: "weekdays" },
     async run(now) {
       const today = etDate(now);
+      const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
+      if (dow === 0 || dow === 6 || now < etInstant(today, "17:15")) return;
       const midnight = etInstant(today, "00:00");
       for (const spaceId of activeSpaces(db)) {
-        if (!spaceKeys(db, spaceId).length) continue;
-        if (latestWriteups(db, spaceId, { kind: "digest", limit: 1 })[0]?.forDate === today) continue;
+        const keys = spaceKeys(db, spaceId);
+        if (!keys.length) continue;
+        const last = latestWriteups(db, spaceId, { kind: "digest", limit: 1 })[0];
+        if (last?.forDate === today) continue;
         const queuedToday = db.query("SELECT 1 FROM tasks WHERE space_id = ? AND purpose = 'digest' AND created_at >= ? LIMIT 1").get(spaceId, midnight);
         if (queuedToday) continue;
+        const news = recentNews(db, keys, last?.createdAt ?? now - DAY_MS, 1).length > 0;
+        if (!news && !hasPricedHoldings(db, spaceId)) continue;
         claudeTask(db, spaceId, "Daily digest: what moved and why", "digest");
       }
     },

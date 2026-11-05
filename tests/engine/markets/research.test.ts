@@ -3,7 +3,8 @@ import type { Database } from "bun:sqlite";
 import { openDb } from "../../../src/engine/db";
 import { createSpace } from "../../../src/engine/spaces";
 import { listTasks, setTaskStatus } from "../../../src/engine/tasks";
-import { saveEarnings } from "../../../src/engine/markets/events";
+import { saveQuotes } from "../../../src/engine/markets/cache";
+import { saveEarnings, saveNews } from "../../../src/engine/markets/events";
 import { digestJob, getNotes, latestWriteups, requestThesisDraft, saveNotes, thesisChecks } from "../../../src/engine/markets/research";
 import { tempHome } from "../../helpers";
 
@@ -43,6 +44,8 @@ test("one thesis draft at a time per symbol", () => {
 
 test("the digest job queues one Claude digest per space a weekday", async () => {
   watch(spaceId, "RKLB");
+  // Something to write about: a headline since the last digest.
+  saveNews(db, [{ key: "RKLB", headline: "Rocket Lab wins NASA contract", source: "Reuters", url: "https://x/1", at: WED_1720 - 3_600_000 }], WED_1720);
   const empty = createSpace(db, { name: "Empty", kind: "markets", goal: "g" });
   const job = digestJob(db);
   expect(job).toMatchObject({ name: "digest", slot: { at: "17:15", days: "weekdays" } });
@@ -52,6 +55,24 @@ test("the digest job queues one Claude digest per space a weekday", async () => 
   expect(tasks.some((t) => t.spaceId === empty.id)).toBe(false);
   await job.run(WED_1720 + 600_000);
   expect(listTasks(db).filter((t) => t.purpose === "digest")).toHaveLength(1);
+});
+
+test("no digest about nothing, and no catch-up digest for an earlier day (the first-start repro)", async () => {
+  watch(spaceId, "RKLB");
+  const job = digestJob(db);
+  // Watchlist only, no prices, no news: nothing to say.
+  await job.run(WED_1720);
+  expect(listTasks(db).filter((t) => t.purpose === "digest")).toHaveLength(0);
+  // A first start on Thursday morning finds Wednesday's slot missed; it isn't caught up, even with news.
+  saveNews(db, [{ key: "RKLB", headline: "Rocket Lab wins NASA contract", source: "Reuters", url: "https://x/1", at: WED_1720 }], WED_1720);
+  await job.run(Date.parse("2026-11-05T14:00:00Z"));
+  expect(listTasks(db).filter((t) => t.purpose === "digest")).toHaveLength(0);
+  // Priced holdings are enough on their own.
+  const other = createSpace(db, { name: "Held", kind: "markets", goal: "g" });
+  db.query("INSERT INTO market_holdings (id, space_id, account, symbol, exchange, quantity, currency, source, updated_at) VALUES ('h1', ?, 'TFSA', 'SPY', 'US', 1, 'USD', 'manual', 1)").run(other.id);
+  saveQuotes(db, [{ key: "SPY", price: 600, prevClose: 598, at: Date.parse("2026-11-05T21:00:00Z"), source: "finnhub", freshness: "live" }]);
+  await job.run(Date.parse("2026-11-05T22:20:00Z"));
+  expect(listTasks(db).filter((t) => t.purpose === "digest").map((t) => t.spaceId).sort()).toEqual([other.id, spaceId].sort());
 });
 
 test("before earnings: a thesis check, or a reminder when there's no thesis", () => {

@@ -84,10 +84,13 @@ const stub = (async (input: string | URL | Request) => {
 
 const call = (method: string, path: string, body?: unknown) =>
   fetch(base + path, { method, headers: { origin: base, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-const step = async (at: number) => {
+// A step can run the feed more than once (its timer, plus a debounced change); this collects every job it ran.
+const step = async (at: number): Promise<string[]> => {
+  const before = ran.length;
   clock = at;
   timers.fireAll();
   await feed.idle();
+  return ran.slice(before).flat();
 };
 
 beforeAll(async () => {
@@ -139,21 +142,23 @@ test("1. the 13 tickers, then a Wealthsimple import with CAD book values and own
   expect(owned).toEqual(["AAPL.NE", "KO", "SHOP.TO", "SPY", "XEQT.TO"]);
 });
 
-test("2. Wednesday after the close: fx, eod and digest run once; a later step runs nothing", async () => {
+test("2. Wednesday after the close: fx and eod run, then the digest at 17:15 once there are prices; a later step runs nothing", async () => {
   await feed.start();
   await feed.idle();
-  expect(ran.at(-1)).toEqual(expect.arrayContaining(["fx", "eod", "digest"]));
+  expect(ran.at(-1)).toEqual(expect.arrayContaining(["fx", "eod"]));
+  // Tuesday's missed digest slot isn't caught up.
+  expect(listTasks(db, { spaceId }).filter((t) => t.purpose === "digest")).toHaveLength(0);
+  await feed.refreshNow();
+  expect(await step(et("2026-11-04T17:20:00"))).toEqual(["digest"]);
   expect(db.query("SELECT rate FROM fx_rates WHERE date = '2026-11-04'").get()).toEqual({ rate: 1.3961 });
   const digest = listTasks(db, { spaceId }).filter((t) => t.purpose === "digest");
   expect(digest.map((t) => t.agent)).toEqual(["claude"]);
-  await step(et("2026-11-04T17:10:00"));
-  expect(ran.at(-1)).toEqual([]);
+  expect(await step(et("2026-11-04T17:25:00"))).toEqual([]);
   expect(fetched.every((u) => !u.includes("tiingo") && !u.includes("finnhub") && !u.includes("alphavantage"))).toBe(true);
 });
 
 test("3. Saturday morning: funds and meta run; look-through, swaps and the QQQ estimate", async () => {
-  await step(et("2026-11-07T10:05:00"));
-  expect(ran.at(-1)).toEqual(expect.arrayContaining(["funds", "meta"]));
+  expect(await step(et("2026-11-07T10:05:00"))).toEqual(expect.arrayContaining(["funds", "meta"]));
   expect(lookThroughFor(db, "XEQT.TO")!.coverage).toBeGreaterThanOrEqual(0.9);
   // Watched, so fetched too: DRAM's swaps resolve to their companies.
   const dram = loadFundFile(db, "DRAM")!;
