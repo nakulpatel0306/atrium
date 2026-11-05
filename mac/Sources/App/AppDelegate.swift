@@ -5,12 +5,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   let port = resolvePort(env: ProcessInfo.processInfo.environment, defaultsPort: UserDefaults.standard.integer(forKey: "port"))
   lazy var web = WebController(port: port)
   lazy var window = MainWindow(content: web.webView)
+  lazy var client = EngineClient(port: port)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.mainMenu = mainMenu()
     window.show()
     web.load()
     NSApp.activate()
+    client.onSummary = { s in NSApp.dockTile.badgeLabel = badgeLabel(s.needsYou) }
+    client.onOnline = { online in
+      if !online { NSApp.dockTile.badgeLabel = nil }
+    }
+    client.start()
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -71,6 +71,19 @@ func isInternal(_ url: URL, port: Int) -> Bool {
   return (host == "127.0.0.1" || host == "localhost") && url.port == port
 }
 
+enum LinkDecision: Equatable {
+  case allow, openExternally, cancel
+}
+
+// Dashboard pages show agent-written text, so a link or script there must not get NSWorkspace to open files or
+// launch other apps. Only a click Nakul made in the main frame leaves the app, and only to the web or mail.
+func linkDecision(_ url: URL, port: Int, userClick: Bool, mainFrame: Bool) -> LinkDecision {
+  if isInternal(url, port: port) { return .allow }
+  let scheme = url.scheme?.lowercased() ?? ""
+  guard ["http", "https", "mailto"].contains(scheme), userClick, mainFrame else { return .cancel }
+  return .openExternally
+}
+
 func nextBackoff(_ current: TimeInterval) -> TimeInterval {
   max(minBackoff, min(current * 2, maxBackoff))
 }

@@ -98,6 +98,20 @@ check(!isInternal(URL(string: "http://127.0.0.1:7431/")!, port: 7420), "links: o
 check(!isInternal(URL(string: "https://github.com/x")!, port: 7420), "links: github external")
 check(!isInternal(URL(string: "mailto:a@b.c")!, port: 7420), "links: mailto external")
 
+// link policy: only user clicks in the main frame leave the app, and only to web or mail
+let ext = URL(string: "https://github.com/x/pull/1")!
+check(linkDecision(URL(string: "http://127.0.0.1:7420/space/x")!, port: 7420, userClick: false, mainFrame: true) == .allow, "policy: internal loads")
+check(linkDecision(URL(string: "http://127.0.0.1:7420/")!, port: 7420, userClick: false, mainFrame: false) == .allow, "policy: internal subframe loads")
+check(linkDecision(ext, port: 7420, userClick: true, mainFrame: true) == .openExternally, "policy: http link click opens browser")
+check(linkDecision(URL(string: "mailto:a@b.c")!, port: 7420, userClick: true, mainFrame: true) == .openExternally, "policy: mailto click")
+check(linkDecision(ext, port: 7420, userClick: false, mainFrame: true) == .cancel, "policy: script-initiated http cancelled")
+check(linkDecision(ext, port: 7420, userClick: true, mainFrame: false) == .cancel, "policy: subframe http cancelled")
+check(linkDecision(URL(string: "file:///etc/passwd")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: file cancelled")
+check(linkDecision(URL(string: "javascript:alert(1)")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: javascript cancelled")
+check(linkDecision(URL(string: "x-apple.systempreferences:foo")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: x-apple cancelled")
+check(linkDecision(URL(string: "slack://open")!, port: 7420, userClick: true, mainFrame: true) == .cancel, "policy: custom scheme cancelled")
+check(linkDecision(URL(string: "http://127.0.0.1:7431/")!, port: 7420, userClick: true, mainFrame: true) == .openExternally, "policy: other local port is external")
+
 // backoff
 check(nextBackoff(0) == 2, "backoff: floor")
 check(nextBackoff(2) == 4, "backoff: doubles")

@@ -29,18 +29,33 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
     webView.evaluateJavaScript("history.pushState(null,\"\",\(quoted));dispatchEvent(new PopStateEvent(\"popstate\"))")
   }
 
-  func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-    guard let url = navigationAction.request.url, !isInternal(url, port: port) else { return .allow }
-    NSWorkspace.shared.open(url)
-    return .cancel
+  private func decide(_ action: WKNavigationAction) -> LinkDecision {
+    guard let url = action.request.url else { return .cancel }
+    return linkDecision(
+      url, port: port, userClick: action.navigationType == .linkActivated, mainFrame: action.targetFrame?.isMainFrame ?? true)
   }
 
-  // target=_blank links (PRs, docs in agent output) belong in the default browser.
+  func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+    switch decide(navigationAction) {
+    case .allow: return .allow
+    case .openExternally:
+      NSWorkspace.shared.open(navigationAction.request.url!)
+      return .cancel
+    case .cancel: return .cancel
+    }
+  }
+
+  // target=_blank: off-site links (PRs, docs in agent output) go to the default browser, the dashboard's own pages
+  // stay in this window, and the app never opens a second web view.
   func webView(
     _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction,
     windowFeatures: WKWindowFeatures
   ) -> WKWebView? {
-    if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
+    switch decide(navigationAction) {
+    case .allow: webView.load(navigationAction.request)
+    case .openExternally: NSWorkspace.shared.open(navigationAction.request.url!)
+    case .cancel: break
+    }
     return nil
   }
 }
