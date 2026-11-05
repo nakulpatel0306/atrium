@@ -1,4 +1,4 @@
-import { Activity, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus } from "lucide-react";
+import { Activity, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, ShieldCheck } from "lucide-react";
 import { post, type State } from "../api";
 import { bytes, tokens } from "../format";
 import { navigate, type Route } from "../route";
@@ -13,9 +13,12 @@ type Props = {
 };
 
 export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
-  const pending = state.approvals.length;
+  // Suggestions wait for an answer just like approvals do.
+  const waiting = [...state.approvals, ...state.proposals];
+  const pending = waiting.length;
   const pendingBySpace = new Map<string, number>();
-  for (const a of state.approvals) pendingBySpace.set(a.spaceId, (pendingBySpace.get(a.spaceId) ?? 0) + 1);
+  for (const a of waiting) pendingBySpace.set(a.spaceId, (pendingBySpace.get(a.spaceId) ?? 0) + 1);
+  const activeRules = state.rules.filter((r) => r.state === "active").length;
   const battery = state.power.source === "battery";
   // Agents that can't take work right now: missing, signed out, or at a limit.
   const held = Object.values(state.agents).filter((a) => !a.installed || a.loggedIn === false || a.limitedUntil).length;
@@ -46,6 +49,15 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
         {held > 0 && (
           <span className="ct warn" title={`${held} can't take work right now`}>
             {held}
+          </span>
+        )}
+      </button>
+      <button className={`nav${route.name === "rules" ? " on" : ""}`} onClick={() => navigate("/rules")}>
+        <ShieldCheck />
+        Rules
+        {activeRules > 0 && (
+          <span className="ct" title={`${activeRules} active`}>
+            {activeRules}
           </span>
         )}
       </button>

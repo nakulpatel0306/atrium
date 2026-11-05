@@ -74,6 +74,36 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS autonomy_proposals (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  fingerprint TEXT NOT NULL,
+  evidence TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','yes','not_now','never')),
+  created_at INTEGER NOT NULL,
+  answered_at INTEGER,
+  lifted_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS autonomy_rules (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  fingerprint TEXT NOT NULL,
+  proposal_id TEXT NOT NULL REFERENCES autonomy_proposals(id),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  revoked_reason TEXT
+);
+CREATE TABLE IF NOT EXISTS rule_events (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  proposal_id TEXT,
+  rule_id TEXT,
+  approval_id TEXT,
+  event TEXT NOT NULL CHECK (event IN ('proposed','yes','not_now','never','suggest_again','created','applied','undone','revoked','renewed','skipped_cap')),
+  actor TEXT NOT NULL CHECK (actor IN ('you','atrium')),
+  created_at INTEGER NOT NULL
+);
 `;
 
 export function openDb(path?: string): Database {
@@ -109,5 +139,17 @@ function migrate(db: Database) {
   if (!has("tasks", "approval_id")) db.exec("ALTER TABLE tasks ADD COLUMN approval_id TEXT REFERENCES approvals(id)");
   // The task branch's commit when Nakul decided, so what he approved stays checkable.
   if (!has("approvals", "branch_head")) db.exec("ALTER TABLE approvals ADD COLUMN branch_head TEXT");
+  // The engine-computed kind of result, so repeated approvals of the same kind can earn a rule. NULL is never counted.
+  if (!has("approvals", "fingerprint")) db.exec("ALTER TABLE approvals ADD COLUMN fingerprint TEXT");
+  // Who decided: Nakul, or one of his rules. Only his own decisions count towards a new rule.
+  if (!has("approvals", "decided_by")) {
+    db.exec("ALTER TABLE approvals ADD COLUMN decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule'))");
+  }
+  // The rule that approved it, so the rule's page can list and undo what it did.
+  if (!has("approvals", "rule_id")) db.exec("ALTER TABLE approvals ADD COLUMN rule_id TEXT REFERENCES autonomy_rules(id)");
+  // When Nakul undid an automatic approval; an undone one is neither evidence nor counted again.
+  if (!has("approvals", "undone_at")) db.exec("ALTER TABLE approvals ADD COLUMN undone_at INTEGER");
+  // Streaks are counted per space and kind, newest first.
+  db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");
 }
 

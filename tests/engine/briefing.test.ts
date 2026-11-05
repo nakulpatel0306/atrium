@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { createApproval } from "../../src/engine/approvals";
+import { createApproval, resolveApproval } from "../../src/engine/approvals";
 import { briefing, markSeen } from "../../src/engine/briefing";
 import { createRegistry } from "../../src/engine/agents/registry";
 import { openDb } from "../../src/engine/db";
@@ -160,4 +160,55 @@ test("snapshot reports each agent and the open claude window", () => {
 
   registry.recordUsage("claude", { fiveHour: { utilization: 0.6, resetsAt: Date.now() - 1 } });
   expect(snapshot(db, registry).claudeWindow).toBeNull();
+});
+
+test("briefing counts rule approvals", () => {
+  const now = Date.now();
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, status, created_at) VALUES ('prp_b', ?, 'v1:code:docs:small:claude', '[]', 'yes', 1)").run(a.id);
+  db.query("INSERT INTO autonomy_rules (id, space_id, fingerprint, proposal_id, created_at, expires_at) VALUES ('rul_b', ?, 'v1:code:docs:small:claude', 'prp_b', 1, ?)").run(a.id, now + 86_400_000);
+  markSeen(db, now - 60_000);
+  for (const title of ["one", "two", "three"]) {
+    const t = createTask(db, { spaceId: a.id, title });
+    seedRun(t.id, now - 1000);
+    setTaskStatus(db, t.id, "running");
+    setTaskStatus(db, t.id, "review");
+    const ap = createApproval(db, { spaceId: a.id, taskId: t.id, kind: "review", title, detail: "" });
+    resolveApproval(db, ap.id, "approve", undefined, title === "three" ? undefined : { id: "rul_b", label: "docs" });
+  }
+  expect(briefing(db, now).summary).toBe("3 tasks finished across 1 space. 2 results approved by your rules.");
+});
+
+test("one rule approval reads in the singular, and older ones are left out", () => {
+  const now = Date.now();
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, status, created_at) VALUES ('prp_b', ?, 'v1:code:docs:small:claude', '[]', 'yes', 1)").run(a.id);
+  db.query("INSERT INTO autonomy_rules (id, space_id, fingerprint, proposal_id, created_at, expires_at) VALUES ('rul_b', ?, 'v1:code:docs:small:claude', 'prp_b', 1, ?)").run(a.id, now + 86_400_000);
+  for (const title of ["old", "new"]) {
+    const t = createTask(db, { spaceId: a.id, title });
+    setTaskStatus(db, t.id, "running");
+    setTaskStatus(db, t.id, "review");
+    const ap = createApproval(db, { spaceId: a.id, taskId: t.id, kind: "review", title, detail: "" });
+    resolveApproval(db, ap.id, "approve", undefined, { id: "rul_b", label: "docs" });
+    if (title === "old") db.query("UPDATE approvals SET resolved_at = ? WHERE id = ?").run(now - 120_000, ap.id);
+  }
+  markSeen(db, now - 60_000);
+  expect(briefing(db, now).summary).toBe("Nothing ran since you were last here. 1 result approved by your rules.");
+});
+
+test("undone rule approvals aren't counted", () => {
+  const now = Date.now();
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, status, created_at) VALUES ('prp_b', ?, 'v1:code:docs:small:claude', '[]', 'yes', 1)").run(a.id);
+  db.query("INSERT INTO autonomy_rules (id, space_id, fingerprint, proposal_id, created_at, expires_at) VALUES ('rul_b', ?, 'v1:code:docs:small:claude', 'prp_b', 1, ?)").run(a.id, now + 86_400_000);
+  markSeen(db, now - 60_000);
+  for (const title of ["kept", "undone"]) {
+    const t = createTask(db, { spaceId: a.id, title });
+    setTaskStatus(db, t.id, "running");
+    setTaskStatus(db, t.id, "review");
+    const ap = createApproval(db, { spaceId: a.id, taskId: t.id, kind: "review", title, detail: "" });
+    resolveApproval(db, ap.id, "approve", undefined, { id: "rul_b", label: "docs" });
+    if (title === "undone") db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, ap.id);
+  }
+  expect(briefing(db, now).summary).toBe("Nothing ran since you were last here. 1 result approved by your rules.");
 });

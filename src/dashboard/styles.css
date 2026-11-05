@@ -1355,3 +1355,76 @@ code {
 .review-line.bad {
   color: var(--red);
 }
+
+/* earned autonomy */
+.item.suggestion .spark {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  flex: none;
+}
+.always {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  margin: -12px 0 8px;
+}
+.always svg {
+  width: 14px;
+  height: 14px;
+  color: var(--yellow);
+  flex: none;
+  margin-top: 1px;
+}
+.rules-note {
+  margin: -2px 0 8px;
+}
+.item.rule {
+  cursor: pointer;
+}
+.item.rule .chev {
+  color: var(--faint);
+  flex: none;
+  transition: transform 0.15s;
+}
+.item.rule .chev.open {
+  transform: rotate(90deg);
+}
+.evidence li,
+.rule-events li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.evidence li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.auto-approvals li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+.evidence .task-link,
+.auto-approvals .task-link,
+.rule-events .task-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.auto-approvals a.task-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.undo {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-self: end;
+}
+.faint {
+  color: var(--faint);
+}
