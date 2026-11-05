@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { saveQuotes } from "./cache";
+import { recordCloses } from "./closes";
 import { etClock, etDate, usSession, type Session } from "./calendar";
 import type { MarketData } from "./data";
 import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } from "./instrument";
@@ -123,14 +124,16 @@ export function createFeed(deps: {
     deps.onQuotes(quotes);
   };
 
-  const fetchQuotes = async (list: Instrument[]) => {
-    if (!list.length) return;
+  const fetchQuotes = async (list: Instrument[]): Promise<Quote[]> => {
+    if (!list.length) return [];
     try {
       // data.quotes caches what it gets.
       const r = await data.quotes(list);
       publish(r.quotes);
+      return r.quotes;
     } catch (e) {
       console.error(`Market data refresh failed: ${e instanceof Error ? e.message : String(e)}`);
+      return [];
     }
   };
 
@@ -205,7 +208,14 @@ export function createFeed(deps: {
 
     if (mode === "off") {
       // One last price at the close, so the day's close is what's cached overnight.
-      if (prev !== "off" && session.closesAt !== null && at >= session.closesAt) await fetchQuotes(pollable);
+      if (prev !== "off" && session.closesAt !== null && at >= session.closesAt) {
+        const closesAt = session.closesAt;
+        const date = etDate(closesAt);
+        // Prices from the last minute of the session are that day's close, kept as Atrium's own history.
+        for (const q of await fetchQuotes(pollable)) {
+          if (q.at >= closesAt - 60_000) recordCloses(db, q.key, [{ date, close: q.price, adjClose: null, source: q.source }]);
+        }
+      }
       if (tracked.length) await deps.jobs?.runDue(at);
       if (!tracked.length) clearMain();
       else schedule(Math.min(session.nextOpen - at, OFF_RECHECK_MS), trigger !== "timer" && prev === "off");

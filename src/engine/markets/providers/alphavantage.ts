@@ -16,7 +16,8 @@ const nextEtMidnight = (now: number) => etInstant(new Date(Date.parse(`${etDate(
 
 export function alphaVantageProvider(
   key: string,
-  deps: { budget: ReturnType<typeof dailyBudget>; fetch?: typeof fetch; now?: () => number },
+  // onDaily sees every daily series fetched, so the caller can keep the bars and closes it already paid for.
+  deps: { budget: ReturnType<typeof dailyBudget>; fetch?: typeof fetch; now?: () => number; onDaily?(key: string, days: { date: string; bar: Bar }[]): void },
 ): MarketProvider {
   const f = deps.fetch ?? fetch;
   const now = deps.now ?? Date.now;
@@ -44,12 +45,14 @@ export function alphaVantageProvider(
     }
     const series = res["Time Series (Daily)"];
     if (res["Error Message"] || !series) throw new ProviderError("unknown_symbol", `Alpha Vantage doesn't know ${instrumentKey(i)}.`);
-    return Object.entries(series)
+    const days = Object.entries(series)
       .map(([date, d]) => ({
         date,
         bar: { t: etInstant(date, "00:00") / 1000, o: Number(d["1. open"]), h: Number(d["2. high"]), l: Number(d["3. low"]), c: Number(d["4. close"]), v: Number(d["5. volume"]) },
       }))
       .sort((a, b) => a.bar.t - b.bar.t);
+    deps.onDaily?.(instrumentKey(i), days);
+    return days;
   };
 
   return {

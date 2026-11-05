@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { getSetting } from "../settings";
 import { dailyBudget, meteredFetch, noteSourceResult } from "./budget";
 import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
+import { recordCloses } from "./closes";
 import { etDate, etInstant, lastCompletedSession } from "./calendar";
 import { instrumentKey, type Instrument } from "./instrument";
 import { KEY_ACCOUNTS, KEYCHAIN_LOCKED, type Keychain } from "./keychain";
@@ -117,6 +118,13 @@ export function createMarketData(deps: {
     return v === "finnhub" || v === "demo" ? v : "alpaca";
   };
 
+  // Alpha Vantage's daily series cost one of 25 calls a day, so every one fetched is kept: completed sessions go to
+  // the bar cache and to Atrium's own closes.
+  const keepDaily = (key: string, days: { date: string; bar: Bar }[]) => {
+    const done = days.filter((d) => d.date < etDate(now()) || lastCompletedSession(now()).date === d.date);
+    saveBars(db, key, "1Day", done.map((d) => d.bar));
+    recordCloses(db, key, done.map((d) => ({ date: d.date, close: d.bar.c, adjClose: null, source: "alphavantage" })));
+  };
   const provider = (id: ProviderId): MarketProvider => {
     const given = deps.providers?.[id];
     if (given) return given;
@@ -131,7 +139,7 @@ export function createMarketData(deps: {
         : id === "finnhub"
           ? finnhubProvider(keys.finnhub!, io)
           : id === "alphavantage"
-            ? alphaVantageProvider(keys.alphavantage!, { budget: dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now), fetch: metered, now })
+            ? alphaVantageProvider(keys.alphavantage!, { budget: dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now), fetch: metered, now, onDaily: keepDaily })
             : demoProvider({ now });
     built[id] = made;
     return made;

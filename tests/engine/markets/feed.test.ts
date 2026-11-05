@@ -185,6 +185,26 @@ test("poll during the session, one final call at the close, then stop", async ()
   s.feed.stop();
 });
 
+test("the last price at the close is kept as the day's close", async () => {
+  const { closes } = await import("../../../src/engine/markets/closes");
+  watch("AAPL");
+  watch("MSFT");
+  watch("SHOP", "TSX");
+  const s = setup("2026-11-05T20:57:00Z");
+  await s.feed.start();
+  now = Date.parse("2026-11-05T21:00:30Z");
+  s.timers.fireAll();
+  await s.feed.idle();
+  expect(s.feed.status().mode).toBe("off");
+  const rows = db.query("SELECT key, date, close, source FROM market_closes ORDER BY key").all();
+  expect(rows).toEqual([
+    { key: "AAPL", date: "2026-11-05", close: 10, source: "alpaca" },
+    { key: "MSFT", date: "2026-11-05", close: 10, source: "alpaca" },
+  ]);
+  expect(closes(db, "AAPL", "2026-11-01")).toHaveLength(1);
+  s.feed.stop();
+});
+
 test("a bus change doesn't push the next poll back", async () => {
   watch("AAPL");
   const s = setup("2026-11-05T15:00:00Z");
