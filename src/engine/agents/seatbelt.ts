@@ -43,7 +43,16 @@ export interface SeatbeltOptions {
   allowRead?: string[];
   // Whole folders re-allowed inside a denied path: the engine-made folder a sandboxed copy writes into.
   allowReadDirs?: string[];
+  // Cut the run off from the Keychain's services as well as its files. Only for a CLI that keeps its sign-in elsewhere.
+  denyKeychain?: boolean;
 }
+
+// File keychains (login, where Atrium keeps market data keys) are read from ~/Library/Keychains, which SECRET_PATHS
+// already denies to every binary, a copied `security` included. These services front the data-protection keychain
+// and the unlock prompt. com.apple.SecurityServer has to stay reachable: TLS certificate checks go through it, and
+// without it Codex can't reach its API (verified: "invalid peer certificate: UnknownIssuer").
+const KEYCHAIN_SERVICES =
+  '(deny mach-lookup (global-name "com.apple.securityd") (global-name "com.apple.security.agent") (global-name-prefix "com.apple.securityd"))';
 
 // Seatbelt matches resolved paths (/private/var, never /var), so an unresolved path would silently never match.
 // A path that doesn't exist yet resolves through its nearest existing parent.
@@ -81,6 +90,7 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     "(deny appleevent-send)",
     // The Keychain CLI would hand an agent Atrium's market data keys; agents only ever get prices.
     '(deny process-exec (literal "/usr/bin/security"))',
+    ...(opts.denyKeychain ? [KEYCHAIN_SERVICES] : []),
     // Atrium's API listens on loopback, and a forged Host/Origin from inside a run could approve its own drafts.
     // "localhost" covers 127.0.0.1, ::1, 0.0.0.0 and ::ffff:127.0.0.1; the CLIs only need the internet.
     '(deny network-outbound (remote ip "localhost:*"))',

@@ -38,6 +38,8 @@ export function codexArgv(bin: string, input: AgentRunInput, tmp: string, sandbo
     cwd: input.cwd,
     writable: input.mode === "review" ? [state, tmp] : [input.cwd, state, tmp],
     extraDenyRead: [join(homedir(), ".gemini")],
+    // Codex signs in with ~/.codex/auth.json, so it never needs the Keychain where Atrium keeps market data keys.
+    denyKeychain: true,
     sandboxExec,
   });
 }

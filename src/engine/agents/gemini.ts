@@ -36,6 +36,8 @@ export function geminiArgv(bin: string, input: AgentRunInput, tmp: string, sandb
     cwd: input.cwd,
     writable: input.mode === "review" ? [geminiStateDir(), tmp] : [input.cwd, geminiStateDir(), tmp],
     extraDenyRead: [codexStateDir()],
+    // agy signs in through the Keychain, so securityd stays reachable (no denyKeychain). Its headless mode runs no
+    // shell commands, so it has no way to call `security` or a copy of it.
     allowRead: [LOGIN_KEYCHAIN],
     sandboxExec,
   });

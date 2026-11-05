@@ -69,10 +69,11 @@ describe("codexAdapter", () => {
     const tmp = "/tmp/atrium-agent-x";
     const work = codexArgv("codex", input(), tmp);
     expect(work.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
-    expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state, tmp], extraDenyRead: agy }));
+    expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state, tmp], extraDenyRead: agy, denyKeychain: true }));
+    expect(work[2]).toContain('(global-name-prefix "com.apple.securityd")');
     expect(work.slice(3, 5)).toEqual(["codex", "exec"]);
     const review = codexArgv("codex", input([], { mode: "review" }), tmp);
-    expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state, tmp], extraDenyRead: agy }));
+    expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state, tmp], extraDenyRead: agy, denyKeychain: true }));
   });
 
   test("each run gets a private temp dir, removed afterwards", async () => {
