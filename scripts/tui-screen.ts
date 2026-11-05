@@ -24,7 +24,7 @@ export function parseKeys(script: string): Step[] {
 }
 
 // The screen is read before a final "q", since quitting leaves the alternate screen and the app's frame with it.
-// A script that doesn't end in "q" gets one sent after the read, so the app always exits on its own.
+// After the read, esc closes whatever overlay or prompt is open (a "q" would be typed into a prompt), then "q" quits.
 export async function screen(opts: { port: number; cols?: number; rows?: number; steps: Step[] }): Promise<Screen> {
   const cols = opts.cols ?? 120;
   const rows = opts.rows ?? 36;
@@ -66,6 +66,11 @@ export async function screen(opts: { port: number; cols?: number; rows?: number;
   // Let the last key's frame land before reading it.
   await sleep(150);
   const text = await read();
+  // Gaps keep esc a key of its own; esc followed at once by "q" reads as alt-q.
+  for (let i = 0; i < 2; i++) {
+    send("\x1b");
+    await sleep(150);
+  }
   send("q");
   const timer = setTimeout(() => proc.kill(), EXIT_TIMEOUT_MS);
   const exitCode = await proc.exited;
