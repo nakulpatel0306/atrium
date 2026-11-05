@@ -5,7 +5,7 @@ import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
 import { listTasks } from "./tasks";
 
-export type Need = { id: string; kind: "review" | "question" | "suggestion"; title: string; spaceName: string; path: string };
+export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
 export type Summary = { needsYou: number; needs: Need[]; stopped: Stopped[]; overnight: boolean };
 

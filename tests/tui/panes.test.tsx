@@ -85,3 +85,22 @@ test("detail scrolls with j and k", async () => {
   await app.type("g");
   await app.frame((f) => f.includes("detail line 0"));
 });
+
+test("a markets space and its price alert show up and can be answered", async () => {
+  const state = makeState();
+  state.spaces.unshift({ ...state.spaces[0]!, id: "spc_markets", name: "Stocks", kind: "markets", private: true, repoPath: null, goal: "Watch", reviewBy: null });
+  state.approvals.unshift({ ...state.approvals[0]!, id: "apr_alert", spaceId: "spc_markets", kind: "alert", taskId: null, title: "AAPL price above $200.00", createdAt: Date.now() });
+  const client = fakeClient(state);
+  client.respond("/api/markets/spc_markets", { ok: true, data: { watchlist: [{}, {}], paper: { dayPnl: 5, totalPnl: 7, fills: [{}] } } });
+  const app = openApp(client);
+  await app.frame((f) => f.includes("[1] Spaces") && f.includes("Stocks"));
+  await app.frame((f) => f.includes("Watching 2 symbols") && f.includes("Open the dashboard for charts"));
+  expect(client.calls).toContainEqual({ method: "GET", path: "/api/markets/spc_markets" });
+  await app.type("3");
+  await app.frame((f) => f.includes("AAPL price above $200.00") && f.includes("a dismiss"));
+  await app.type("r");
+  await app.frame((f) => f.includes("Price alerts are dismissed with a"));
+  await app.type("a");
+  await app.frame(() => client.calls.some((c) => c.method === "POST" && c.path === "/api/approvals/apr_alert"));
+  expect(client.calls).toContainEqual({ method: "POST", path: "/api/approvals/apr_alert", body: { decision: "approve" } });
+});

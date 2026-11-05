@@ -91,3 +91,29 @@ test("wrapStyled breaks between words when it can", () => {
   expect(out[1]![0]!.color).toBe("gray");
   expect(wrapStyled([{ text: "abcdefghij" }], 4).map((l) => l.map((s) => s.text).join(""))).toEqual(["abcd", "efgh", "ij"]);
 });
+
+const MARKETS = "spc_markets";
+function marketsState() {
+  const state = makeState();
+  state.spaces.unshift({ ...state.spaces[0]!, id: MARKETS, name: "Stocks", kind: "markets", private: true, repoPath: null, goal: "Watch and paper trade", reviewBy: null });
+  return state;
+}
+
+test("an alert's detail says how to dismiss it", () => {
+  const state = makeState();
+  state.approvals.unshift({ ...state.approvals[0]!, id: "apr_alert", kind: "alert", taskId: null, title: "AAPL price above $200.00", detail: "AAPL at $200.10 (IEX real-time, 10:42 AM ET).\n\nAnalysis, not advice." });
+  const all = text(approvalDetail(deriveView(state, { ...initialUi, focus: "needs", lastLeft: "needs" }), null));
+  expect(all).toContain("AAPL price above $200.00");
+  expect(all).toContain("a dismiss");
+  expect(all).not.toContain("r send back");
+});
+
+test("a markets space's detail shows the watchlist, paper P&L and where the charts are", () => {
+  const view = deriveView(marketsState(), initialUi);
+  const all = text(spaceDetail(view, null, { watchlist: 3, paper: { dayPnl: 12.3, totalPnl: -4 } }));
+  expect(all).toContain("Stocks");
+  expect(all).toContain("Watching 3 symbols");
+  expect(all).toContain("Paper +$12.30 today (−$4.00 total)");
+  expect(all).toContain("Open the dashboard for charts");
+  expect(text(spaceDetail(view, null, null))).toContain("Open the dashboard for charts");
+});

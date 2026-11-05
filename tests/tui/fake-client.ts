@@ -1,7 +1,7 @@
 import type { PostResult } from "../../src/dashboard/api";
 import type { Message } from "../../src/engine/messages";
 import type { State } from "../../src/engine/state";
-import type { EngineClient } from "../../src/tui/client";
+import { type EngineClient, glance } from "../../src/tui/client";
 
 type Call = { method: string; path: string; body?: unknown };
 
@@ -50,6 +50,12 @@ export function fakeClient(initial: State | null, opts: { online?: boolean } = {
       calls.push({ method: "GET", path });
       const r = responses.get(path);
       return r?.ok ? (r.data as Record<string, string | null>) : null;
+    },
+    async markets(spaceId) {
+      const path = `/api/markets/${spaceId}`;
+      calls.push({ method: "GET", path });
+      const r = responses.get(path);
+      return r?.ok ? glance(r.data as Parameters<typeof glance>[0]) : null;
     },
     async transcript(runId) {
       const path = `/api/runs/${runId}/transcript`;

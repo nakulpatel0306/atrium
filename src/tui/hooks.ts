@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
-import type { EngineClient } from "./client";
+import type { EngineClient, MarketsGlance } from "./client";
 
 type Space = State["spaces"][number];
 
@@ -37,6 +37,12 @@ export function useMessages(c: EngineClient, taskId: string | null): Message[] |
 // Only the space's own settings change the answer, so it's read again when the space is saved.
 export function useReviewers(c: EngineClient, space: Space | null): Record<string, string | null> | null {
   return useFetched(space?.id ?? null, space?.updatedAt, () => c.reviewers(space!.id));
+}
+
+// Prices and paper P&L move with every quote, so this is read again on any state push while the space is open.
+export function useMarketsGlance(c: EngineClient, space: Space | null): MarketsGlance | null {
+  const state = useEngineState(c);
+  return useFetched(space?.id ?? null, state, () => c.markets(space!.id));
 }
 
 type Transcript = { ok: true; text: string } | { ok: false; error: string };

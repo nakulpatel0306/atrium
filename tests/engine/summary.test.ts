@@ -104,3 +104,12 @@ test("summary skips suggestions in archived spaces", () => {
   updateSpace(db, s.id, { status: "archived" });
   expect(summary(db).needsYou).toBe(0);
 });
+
+test("summary counts price alerts like any other approval", () => {
+  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
+  createApproval(db, { spaceId: s.id, kind: "alert", title: "AAPL price above $200.00", detail: "d" });
+  expect(summary(db)).toMatchObject({
+    needsYou: 1,
+    needs: [{ kind: "alert", title: "AAPL price above $200.00", spaceName: "Stocks", path: `/space/${s.id}` }],
+  });
+});

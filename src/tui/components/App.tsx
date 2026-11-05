@@ -6,7 +6,7 @@ import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
 import { activityDetail, approvalDetail, type DetailLine, proposalDetail, spaceDetail, taskDetail, wrapStyled } from "../detail";
 import { runIntent } from "../effects";
-import { useEngineState, useMessages, useOnline, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
+import { useEngineState, useMarketsGlance, useMessages, useOnline, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, hints, type Intent } from "../keys";
 import { layout } from "../layout";
 import { deriveView, type View } from "../select";
@@ -42,11 +42,16 @@ function threadOf(view: View): string | null {
   return null;
 }
 
-function detailOf(view: View, messages: ReturnType<typeof useMessages>, reviewers: ReturnType<typeof useReviewers>): DetailLine[] {
+function detailOf(
+  view: View,
+  messages: ReturnType<typeof useMessages>,
+  reviewers: ReturnType<typeof useReviewers>,
+  markets: ReturnType<typeof useMarketsGlance>,
+): DetailLine[] {
   if (view.subject === "task") return taskDetail(view, messages);
   if (view.subject === "approval") return view.proposal ? proposalDetail(view) : approvalDetail(view, messages);
   if (view.subject === "activity") return activityDetail(view);
-  return spaceDetail(view, reviewers);
+  return spaceDetail(view, reviewers, markets);
 }
 
 export function App({ client, size }: { client: EngineClient; size?: Size }) {
@@ -91,10 +96,11 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const view = state ? deriveView(state, ui) : null;
   const messages = useMessages(client, view ? threadOf(view) : null);
   const reviewers = useReviewers(client, view?.subject === "space" && view.space?.kind === "repo" ? view.space : null);
+  const markets = useMarketsGlance(client, view?.subject === "space" && view.space?.kind === "markets" ? view.space : null);
   // Live is only drawn on the main screen; under a full-screen view its output isn't read or wrapped.
   const fullScreen = ui.overlay?.kind === "transcript" || ui.overlay?.kind === "agents";
   const output = useRunOutput(client, fullScreen ? null : (view?.live?.run.id ?? null));
-  const detailLines = view ? detailOf(view, messages, reviewers).flatMap((l) => wrapStyled(l, inner)) : [];
+  const detailLines = view ? detailOf(view, messages, reviewers, markets).flatMap((l) => wrapStyled(l, inner)) : [];
   const liveLines = useWrapped(output, inner);
   // Full-screen views: the header, one pane, and the status bar.
   const viewRows = height - 4;

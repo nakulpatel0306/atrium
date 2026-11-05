@@ -2,6 +2,7 @@ import type { PostResult } from "../dashboard/api";
 import { config } from "../engine/config";
 import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
+import type { MarketsView } from "../server/markets";
 import { clean, scrub } from "./text";
 
 export type EngineClient = {
@@ -12,11 +13,15 @@ export type EngineClient = {
   subscribe(fn: () => void): () => void;
   messages(taskId: string): Promise<Message[] | null>;
   reviewers(spaceId: string): Promise<Record<string, string | null> | null>;
+  markets(spaceId: string): Promise<MarketsGlance | null>;
   transcript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
   post<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>>;
   patch<T = unknown>(path: string, body: unknown): Promise<PostResult<T>>;
   close(): void;
 };
+
+// The few markets numbers the terminal shows; charts and the rest stay on the dashboard.
+export type MarketsGlance = { watchlist: number; paper: { dayPnl: number; totalPnl: number } | null };
 
 export const engineBase = () => `http://${config().host}:${config().port}`;
 
@@ -213,6 +218,10 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     },
     messages: (taskId) => read<Message[]>(`/api/tasks/${encodeURIComponent(taskId)}/messages`),
     reviewers: (spaceId) => read<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`),
+    markets: async (spaceId) => {
+      const v = await read<MarketsView>(`/api/markets/${encodeURIComponent(spaceId)}`);
+      return v ? glance(v) : null;
+    },
     transcript,
     post: (path, body) => send("POST", path, body),
     patch: (path, body) => send("PATCH", path, body),
@@ -227,3 +236,11 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     },
   };
 }
+
+type GlanceSource = { watchlist: unknown[]; paper: { dayPnl: number; totalPnl: number; fills: unknown[] } };
+
+// A paper account nobody has traded in has nothing worth a line.
+export const glance = (v: Pick<MarketsView, "watchlist" | "paper"> | GlanceSource): MarketsGlance => ({
+  watchlist: v.watchlist.length,
+  paper: v.paper.fills.length ? { dayPnl: v.paper.dayPnl, totalPnl: v.paper.totalPnl } : null,
+});

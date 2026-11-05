@@ -57,6 +57,8 @@ check(
     == [Note(id: "prp_1", title: "Atrium has a question", body: "Stop asking about docs changes? · atrium", path: "/space/spc_1?task=prp_1")],
   "notes: a new suggestion notifies like a question")
 check(newNotes(previous: sug, next: sug).isEmpty, "notes: a seen suggestion doesn't repeat")
+let alert = summary(needs: [need("apr_7", kind: "alert", title: "AAPL price above $200.00")])
+check(newNotes(previous: summary(), next: alert).first?.title == "Price alert", "notes: price alert title")
 let blocked = Stopped(id: "tsk_2", title: "Ship", spaceName: "atrium", status: "blocked", reason: "Claude is signed out", path: "/space/spc_1?task=tsk_2")
 let blockedNotes = newNotes(previous: summary(), next: summary(stopped: [blocked]))
 check(blockedNotes.first?.title == "Blocked" && blockedNotes.first?.body == "Ship · Claude is signed out", "notes: blocked uses reason")
