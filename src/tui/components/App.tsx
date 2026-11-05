@@ -10,11 +10,14 @@ import { layout } from "../layout";
 import { reviewTarget } from "../../dashboard/summary";
 import { deriveView, type View } from "../select";
 import { clean, wrapLines } from "../text";
+import { absolute } from "../../dashboard/format";
 import { color } from "../theme";
 import { type Action, type Flash, initialUi, reduce, type Rows, type Ui } from "../ui";
 import { ActivityPane } from "./ActivityPane";
+import { AgentsView, agentsLines } from "./AgentsView";
 import { Confirm } from "./Confirm";
 import { DetailPane } from "./DetailPane";
+import { Help } from "./Help";
 import { LivePane } from "./LivePane";
 import { Header } from "./Header";
 import { NeedsPane } from "./NeedsPane";
@@ -24,12 +27,14 @@ import { Prompt } from "./Prompt";
 import { SpacesPane } from "./SpacesPane";
 import { StatusBar } from "./StatusBar";
 import { TasksPane } from "./TasksPane";
+import { Transcript } from "./Transcript";
 
 const NO_KEY = {} as Key;
 const SETTING_UP = "Setting up your space. This usually takes under a minute.";
 const inPrompt = (u: Ui) => u.overlay?.kind === "prompt";
 
 type Size = { columns: number; rows: number };
+type Fetched = { ok: true; text: string } | { ok: false; error: string };
 
 // The agent thread a subject needs: a work task's own, or an approval's once its review has finished.
 function threadOf(view: View): string | null {
@@ -79,14 +84,49 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const output = useRunOutput(client, view?.live?.run.id ?? null);
   const detailLines = view ? detailOf(view, messages, reviewers).flatMap((l) => wrapStyled(l, inner)) : [];
   const liveLines = output ? wrapLines(clean(output).replace(/\n$/, ""), inner) : [];
+  // Full-screen views: the header, one pane, and the status bar.
+  const viewRows = height - 4;
+  const fullInner = cols - 4;
+  const transcript = ui.overlay?.kind === "transcript" ? ui.overlay : null;
+  const transcriptRuns = transcript && state ? state.runs.filter((r) => r.taskId === transcript.taskId) : [];
+  const transcriptRun = transcript ? (transcriptRuns[transcript.runIndex] ?? null) : null;
+  // Fetched once per run opened; a transcript only grows while its run is live, and Live shows that.
+  const fetched = useRef(new Map<string, Fetched>());
+  const [, setFetchedCount] = useState(0);
+  useEffect(() => {
+    const id = transcriptRun?.id;
+    if (!id || fetched.current.has(id)) return;
+    void client.transcript(id).then((res) => {
+      fetched.current.set(id, res);
+      setFetchedCount(fetched.current.size);
+    });
+  }, [transcriptRun?.id, client]);
+  const loaded = transcriptRun ? fetched.current.get(transcriptRun.id) : undefined;
+  const transcriptLines = !transcriptRun
+    ? []
+    : !loaded
+      ? ["Loading the transcript…"]
+      : loaded.ok
+        ? wrapLines(clean(loaded.text).replace(/\n$/, ""), fullInner)
+        : [loaded.error];
+  const agentLines = ui.overlay?.kind === "agents" && view ? agentsLines(view.state).flatMap((l) => wrapStyled(l, fullInner)) : [];
+
   const rows: Rows =
     "tooSmall" in lay
       ? { detail: 1, live: 1 }
       : { detail: lay.detail - 2, live: lay.live - 3, detailLines: detailLines.length, liveLines: liveLines.length };
 
+  // G in a full-screen view asks for "the end"; it's pinned to the last screenful of what's loaded.
+  const clampOverlay = (next: Ui): Ui => {
+    const o = next.overlay;
+    if (o?.kind === "transcript") return { ...next, overlay: { ...o, scroll: Math.min(o.scroll, Math.max(0, transcriptLines.length - viewRows)) } };
+    if (o?.kind === "agents") return { ...next, overlay: { ...o, scroll: Math.min(o.scroll, Math.max(0, agentLines.length - viewRows)) } };
+    return next;
+  };
   const commit = (next: Ui) => {
-    uiRef.current = next;
-    setUi(next);
+    const clamped = clampOverlay(next);
+    uiRef.current = clamped;
+    setUi(clamped);
   };
 
   const dispatch = (action: Action) => {
@@ -180,6 +220,17 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   return (
     <Box flexDirection="column" width={cols} height={height} flexShrink={0}>
       <Header state={view.state} briefing={briefing.current ?? state.briefing} cols={cols} />
+      {transcript ? (
+        <Transcript
+          title={`Transcript · ${view.state.tasks.find((t) => t.id === transcript.taskId)?.title ?? "task"} · run ${transcript.runIndex + 1}/${transcriptRuns.length}${transcriptRun ? ` · ${absolute(transcriptRun.startedAt)}` : ""}`}
+          lines={transcriptLines}
+          scroll={transcript.scroll}
+          width={cols}
+          height={height - 2}
+        />
+      ) : ui.overlay?.kind === "agents" ? (
+        <AgentsView lines={agentLines} scroll={ui.overlay.scroll} width={cols} height={height - 2} />
+      ) : (
       <Box>
         <Box flexDirection="column" width={lay.left} flexShrink={0}>
           <Pane n={1} title={`Spaces${filterTag("spaces")}`} focused={focused("spaces")} width={lay.left} height={lay.heights.spaces}>
@@ -207,6 +258,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
           <LivePane view={view} lines={liveLines} scroll={ui.liveScroll} focused={focused("live")} width={lay.right} height={lay.live} />
         </Box>
       </Box>
+      )}
       <StatusBar state={view.state} cols={cols} hints={hints(ui, view)} flash={ui.flash} online={online} />
       {ui.overlay?.kind === "prompt" && (
         <Prompt prompt={ui.overlay} state={view.state} width={lay.right} top={height - 5} left={lay.left} />
@@ -214,6 +266,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
       {ui.overlay?.kind === "picker" && (
         <Picker picker={ui.overlay} state={view.state} reviewers={reviewers} cols={cols} rows={height} />
       )}
+      {ui.overlay?.kind === "help" && <Help cols={cols} rows={height} />}
       {ui.overlay?.kind === "confirm" && <Confirm confirm={ui.overlay} state={view.state} cols={cols} rows={height} />}
     </Box>
   );

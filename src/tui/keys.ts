@@ -66,7 +66,15 @@ const HINT_KEYS: Record<Pane, string[]> = {
 };
 
 // The status bar's reminder of what the focused pane's keys do.
+const OVERLAY_HINTS: Partial<Record<Overlay["kind"], string>> = {
+  transcript: "j k scroll  g G top / bottom  [ ] older / newer run  q close",
+  agents: "[ ] pause point  o overnight mode  j k scroll  q close",
+  help: "? or q close",
+};
+
 export function hints(ui: Ui, _view: View): string {
+  const overlay = ui.overlay && OVERLAY_HINTS[ui.overlay.kind];
+  if (overlay) return overlay;
   return [...HINT_KEYS[ui.focus], "?"]
     .map((k) => `${k} ${HELP.find((h) => h.keys === k)?.does ?? ""}`)
     .join("  ");
@@ -167,7 +175,7 @@ function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
     case "q":
       return [{ kind: "quit" }];
     case "u":
-      return [open({ kind: "agents" })];
+      return [open({ kind: "agents", scroll: 0 })];
     case "o":
       return [intent({ type: "overnight", on: !view.state.power.overnight })];
     case "t":
@@ -287,7 +295,48 @@ function pickerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "p
   return [intent({ type: "reviewer", spaceId: overlay.targetId, reviewBy }), close];
 }
 
-function overlayKey(input: string, key: Key, overlay: Overlay): Command[] {
+const RESERVE_STEPS = [0.25, 0.5, 0.75] as const;
+// Half a screen of transcript; the App clamps the result to what the transcript holds.
+const PAGE = 10;
+const BOTTOM = Number.MAX_SAFE_INTEGER;
+
+// j/k/g/G and half pages, shared by the full-screen views. Null when the key isn't a scroll key.
+function scrollKey(input: string, key: Key, scroll: number): number | null {
+  if (key.ctrl) return input === "d" ? scroll + PAGE : input === "u" ? Math.max(0, scroll - PAGE) : null;
+  if (key.downArrow || input === "j") return scroll + 1;
+  if (key.upArrow || input === "k") return Math.max(0, scroll - 1);
+  if (input === "g") return 0;
+  if (input === "G") return BOTTOM;
+  return null;
+}
+
+function transcriptKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "transcript" }>, view: View): Command[] {
+  if (input === "q" || key.escape) return [close];
+  const runs = view.state.runs.filter((r) => r.taskId === overlay.taskId).length;
+  // Runs are listed newest first, so older is further along.
+  if (input === "[" || input === "]") {
+    const runIndex = Math.min(runs - 1, Math.max(0, overlay.runIndex + (input === "[" ? 1 : -1)));
+    if (runIndex === overlay.runIndex) return [info(input === "[" ? "This is the oldest run." : "This is the newest run.")];
+    return [ui({ type: "setOverlay", overlay: { ...overlay, runIndex, scroll: 0 } })];
+  }
+  const scroll = scrollKey(input, key, overlay.scroll);
+  return scroll === null ? [] : [ui({ type: "setOverlay", overlay: { ...overlay, scroll } })];
+}
+
+function agentsKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "agents" }>, view: View): Command[] {
+  if (input === "u" || input === "q" || key.escape) return [close];
+  if (input === "o") return [intent({ type: "overnight", on: !view.state.power.overnight })];
+  if (input === "[" || input === "]") {
+    const at = RESERVE_STEPS.findIndex((s) => s === view.state.usage.claudeReserve);
+    const next = RESERVE_STEPS[(at < 0 ? 1 : at) + (input === "]" ? 1 : -1)];
+    if (next === undefined) return [info(input === "]" ? "75% is the highest pause point." : "25% is the lowest pause point.")];
+    return [intent({ type: "reserve", value: next })];
+  }
+  const scroll = scrollKey(input, key, overlay.scroll);
+  return scroll === null ? [] : [ui({ type: "setOverlay", overlay: { ...overlay, scroll } })];
+}
+
+function overlayKey(input: string, key: Key, overlay: Overlay, view: View): Command[] {
   switch (overlay.kind) {
     case "prompt":
       return promptKey(input, key, overlay);
@@ -299,9 +348,9 @@ function overlayKey(input: string, key: Key, overlay: Overlay): Command[] {
     case "help":
       return input === "?" || input === "q" || key.escape ? [close] : [];
     case "agents":
-      return input === "u" || input === "q" || key.escape ? [close] : [];
+      return agentsKey(input, key, overlay, view);
     case "transcript":
-      return input === "q" || key.escape ? [close] : [];
+      return transcriptKey(input, key, overlay, view);
   }
 }
 
@@ -312,6 +361,6 @@ export function commandsFor(input: string, key: Key, u: Ui, view: View): Command
   // Keys typed quickly arrive as one chunk; each character is its own command.
   const chars = input.length > 1 && !key.ctrl && !key.meta ? [...input] : [input];
   const out = [...clear];
-  for (const ch of chars) out.push(...(u.overlay ? overlayKey(ch, key, u.overlay) : globalKey(ch, key, u, view)));
+  for (const ch of chars) out.push(...(u.overlay ? overlayKey(ch, key, u.overlay, view) : globalKey(ch, key, u, view)));
   return out;
 }

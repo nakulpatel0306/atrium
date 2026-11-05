@@ -8,7 +8,7 @@ export type PromptPurpose = "task" | "space" | "reply" | "goal" | "filter";
 
 export type Overlay =
   | { kind: "help" }
-  | { kind: "agents" }
+  | { kind: "agents"; scroll: number }
   | { kind: "prompt"; purpose: PromptPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null }
   | { kind: "picker"; purpose: "agent" | "reviewer"; targetId: string; options: string[]; index: number }
   | { kind: "transcript"; taskId: string; runIndex: number; scroll: number }
