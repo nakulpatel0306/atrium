@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { lstatSync, rmSync } from "node:fs";
+import { lstatSync, renameSync, rmSync } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { type Approval, createApproval, getApproval, isOwnYes } from "../approvals";
 import { bus, logActivity } from "../events";
 import { git, STAGE_FLAGS } from "../git";
@@ -223,6 +223,26 @@ export async function scanIdleClones(db: Database, now: number): Promise<number>
   return made;
 }
 
+// The folder is moved aside first, so nothing can be swapped in under its path between the check and the delete,
+// and the moved .git must still be the one pinned when Atrium cloned it. On any mismatch it goes back untouched.
+export function removeVerified(path: string, cloneId: string, pin: { dev: number; ino: number }): boolean {
+  const trash = join(dirname(path), `.atrium-trash-${cloneId}`);
+  renameSync(path, trash);
+  let same = false;
+  try {
+    const st = lstatSync(join(trash, ".git"));
+    same = st.isDirectory() && st.dev === pin.dev && st.ino === pin.ino;
+  } catch {
+    // No .git: not the checkout Atrium made.
+  }
+  if (!same) {
+    renameSync(trash, path);
+    return false;
+  }
+  rmSync(trash, { recursive: true, force: true });
+  return true;
+}
+
 // Runs only on Nakul's own yes, and checks everything again right before deleting.
 export async function removeClone(db: Database, actionId: string): Promise<RepoAction> {
   const action = getRepoAction(db, actionId);
@@ -240,7 +260,9 @@ export async function removeClone(db: Database, actionId: string): Promise<RepoA
     logActivity(db, clone.spaceId, "atrium", `Kept the local copy of ${clone.github}: ${error}`);
     return setActionStatus(db, actionId, "failed", { error });
   }
-  rmSync(clone.path, { recursive: true, force: true });
+  if (!removeVerified(clone.path, clone.id, { dev: clone.gitDev, ino: clone.gitIno })) {
+    return setActionStatus(db, actionId, "failed", { error: NOT_OURS });
+  }
   return db.transaction(() => {
     markRemoved(db, clone.id, Date.now());
     for (const space of spacesUsing(db, clone.path)) setSpaceRepo(db, space.id, { repoPath: null });

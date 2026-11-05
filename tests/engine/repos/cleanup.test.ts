@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getApproval, listPending, onApprovalResolved, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
-import { askToRemove, CLONE_IDLE_MS, checkRemovable, DECLINE_QUIET_MS, scanIdleClones } from "../../../src/engine/repos/cleanup";
+import { askToRemove, CLONE_IDLE_MS, checkRemovable, DECLINE_QUIET_MS, removeVerified, scanIdleClones } from "../../../src/engine/repos/cleanup";
 import { createCloner } from "../../../src/engine/repos/clones";
 import { createRepos } from "../../../src/engine/repos";
 import { actionForApproval, listClones, type RepoClone } from "../../../src/engine/repos/store";
@@ -242,4 +242,14 @@ test("a running task in another space that uses the same folder blocks removal, 
   await repos.settle();
   expect(getSpace(db, space.id)!.repoPath).toBeNull();
   expect(getSpace(db, other.id)!.repoPath).toBeNull();
+});
+
+test("removal moves the folder aside and deletes it only if it's still the pinned checkout", () => {
+  const pin = { dev: clone.gitDev, ino: clone.gitIno };
+  expect(removeVerified(path, "cln_wrong", { ...pin, ino: pin.ino + 1 })).toBe(false);
+  expect(existsSync(join(path, "README.md"))).toBe(true);
+  expect(readdirSync(gh.projects).filter((e) => e.startsWith(".atrium-trash-"))).toEqual([]);
+  expect(removeVerified(path, clone.id, pin)).toBe(true);
+  expect(existsSync(path)).toBe(false);
+  expect(readdirSync(gh.projects).filter((e) => e.startsWith(".atrium-trash-"))).toEqual([]);
 });
