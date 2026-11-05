@@ -2335,3 +2335,6 @@ code {
   padding-left: 18px;
   color: var(--text);
 }
+.list + .set-card {
+  margin-top: 12px;
+}
