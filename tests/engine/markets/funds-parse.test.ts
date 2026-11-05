@@ -2,10 +2,14 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
+import { ndxEstimate, parseNdxMembers } from "../../../src/engine/markets/funds/nasdaq100";
+import { parseInvesco } from "../../../src/engine/markets/funds/parse-invesco";
 import { parseIshares } from "../../../src/engine/markets/funds/parse-ishares";
+import { parseRoundhill } from "../../../src/engine/markets/funds/parse-roundhill";
+import { classifyLine } from "../../../src/engine/markets/funds/swaps";
 import { parseSsga } from "../../../src/engine/markets/funds/parse-ssga";
 import { normalizeSector } from "../../../src/engine/markets/funds/sectors";
-import { FundFileError } from "../../../src/engine/markets/funds/types";
+import { FundFileError, type FundFile } from "../../../src/engine/markets/funds/types";
 import { readXlsxRows } from "../../../src/engine/markets/funds/xlsx";
 
 const DIR = join(import.meta.dir, "../../fixtures/markets/investing");
@@ -88,4 +92,90 @@ test("a holdings file without its header row has changed shape", () => {
     .join("\n");
   expect(() => parseIshares(csv, "XEQT.TO", "ishares-ca")).toThrow(new FundFileError("The XEQT.TO holdings file has changed shape; Atrium couldn't find its holdings table."));
   expect(() => parseIshares("<html><body>Error</body></html>", "XEQT.TO", "ishares-ca")).toThrow(FundFileError);
+});
+
+const roundhill = () => text("roundhill-holdings.csv");
+
+test("MARS holdings come from Roundhill's daily file", () => {
+  const f = parseRoundhill(roundhill(), "MARS");
+  expect(f.source).toBe("roundhill");
+  expect(f.asOf).toBe("2026-11-04");
+  expect(Math.abs(f.lines.find((l) => l.ticker === "RKLB")!.weight - 0.0886)).toBeLessThan(0.005);
+  expect(Math.abs(f.lines.find((l) => l.ticker === "SPCX")!.weight - 0.2576)).toBeLessThan(0.005);
+  expect(f.lines.find((l) => l.ticker === "RKLB")).toMatchObject({ key: "RKLB", kind: "stock", country: "United States" });
+  expect(f.lines.find((l) => l.ticker === "9412.JP")).toMatchObject({ key: null, country: "Japan", kind: "stock" });
+  // No swaps, so MARS's cash is just cash.
+  expect(f.lines.some((l) => l.kind === "cash")).toBe(true);
+  expect(f.note).toBeNull();
+  expect(() => parseRoundhill(roundhill(), "NOPE")).toThrow(FundFileError);
+});
+
+test("DRAM swaps resolve, collateral dropped", () => {
+  const f = parseRoundhill(roundhill(), "DRAM");
+  const mu = f.lines.filter((l) => l.ticker === "MU");
+  expect(mu.some((l) => l.via === "swap" && l.kind === "stock" && l.key === "MU")).toBe(true);
+  expect(mu.some((l) => l.via === null)).toBe(true);
+  expect(f.lines.find((l) => l.via === "swap" && /hynix/i.test(l.name))).toMatchObject({ ticker: "000660.KS", key: null, country: "South Korea" });
+  expect(f.lines.some((l) => l.kind === "cash")).toBe(false);
+  expect(Math.abs(sum(f.lines.map((l) => l.weight)) - 1)).toBeLessThan(0.001);
+  expect(f.note).toBe("Treasury bills and cash back DRAM's swaps; they aren't counted as extra exposure.");
+});
+
+test("an unknown swap says so", () => {
+  expect(classifyLine("ACME MEMORY CORP-SWAP-GOLD-L", "X123 TRS 052427 GS")).toEqual({ kind: "other", swap: true, name: "Swap, underlying not recognised: ACME MEMORY CORP-SWAP-GOLD-L" });
+  expect(classifyLine("United States Treasury Bill 12/03/2026", "912797VA2").kind).toBe("cash");
+  expect(classifyLine("Micron Technology Inc", "MU")).toEqual({ kind: "stock", swap: false });
+  const csv = [
+    "Date,Account,StockTicker,CUSIP,SecurityName,Shares,Price,MarketValue,Weightings,NetAssets,SharesOutstanding,CreationUnits,MoneyMarketFlag",
+    "11/05/2026,TEST,X1 TRS 1 GS,X1 TRS 1 GS,ACME MEMORY CORP-SWAP-GOLD-L,1,1,1,60.00%,1,1,1,",
+    "11/05/2026,TEST,MU,595112103,Micron Technology Inc,1,1,1,40.00%,1,1,1,",
+  ].join("\n");
+  const f = parseRoundhill(csv, "TEST");
+  expect(f.lines.find((l) => l.kind === "other")!.name).toBe("Swap, underlying not recognised: ACME MEMORY CORP-SWAP-GOLD-L");
+});
+
+test("a fund whose non-cash lines are 60% keeps its cash", () => {
+  const csv = [
+    "Date,Account,StockTicker,CUSIP,SecurityName,Shares,Price,MarketValue,Weightings,NetAssets,SharesOutstanding,CreationUnits,MoneyMarketFlag",
+    "11/05/2026,TEST,595112103 TRS 1 GS,595112103 TRS 1 GS,MICRON TECHNOLOGY INC SWAP,1,1,1,60.00%,1,1,1,",
+    "11/05/2026,TEST,912797VA2,912797VA2,United States Treasury Bill 12/03/2026,1,1,1,40.00%,1,1,1,",
+  ].join("\n");
+  const f = parseRoundhill(csv, "TEST");
+  expect(f.lines.map((l) => [l.kind, l.weight])).toEqual([["stock", 0.6], ["cash", 0.4]]);
+  expect(f.note).toBeNull();
+});
+
+test("parseInvesco reads QQQ's file", () => {
+  const f = parseInvesco(text("invesco-qqq.csv"));
+  expect(f).toMatchObject({ fund: "QQQ", source: "invesco", asOf: "2026-11-04" });
+  expect(sum(f.lines.map((l) => l.weight))).toBeGreaterThan(0.99);
+  expect(sum(f.lines.map((l) => l.weight))).toBeLessThan(1.01);
+  expect(f.lines[0]).toMatchObject({ ticker: "NVDA", key: "NVDA", weight: 0.091 });
+});
+
+test("the Nasdaq-100 estimate weights members by their S&P 500 weights", () => {
+  const spy: FundFile = {
+    fund: "SPY",
+    source: "ssga",
+    asOf: "2026-11-04",
+    note: null,
+    lines: [
+      { ticker: "AAPL", key: "AAPL", name: "APPLE INC", weight: 0.07, kind: "stock", sector: null, country: "United States", currency: "USD", via: null },
+      { ticker: "MSFT", key: "MSFT", name: "MICROSOFT", weight: 0.06, kind: "stock", sector: null, country: "United States", currency: "USD", via: null },
+      { ticker: "JPM", key: "JPM", name: "JPMORGAN", weight: 0.03, kind: "stock", sector: null, country: "United States", currency: "USD", via: null },
+    ],
+  };
+  const f = ndxEstimate(["AAPL", "MSFT", "ASML"], spy);
+  expect(f).toMatchObject({ fund: "QQQ", source: "ndx-estimate", asOf: "2026-11-04" });
+  expect(f.lines.map((l) => [l.ticker, l.weight])).toEqual([["AAPL", 0.07 / 0.13], ["MSFT", 0.06 / 0.13]]);
+  expect(f.note).toBe("Estimate: Nasdaq-100 members (from Wikipedia, CC BY-SA) weighted by their S&P 500 weights. Not counted: ASML.");
+});
+
+test("parseNdxMembers reads the components table", () => {
+  const m = parseNdxMembers(text("wikipedia-nasdaq100.json"));
+  expect(m.length).toBeGreaterThanOrEqual(95);
+  expect(m.length).toBeLessThanOrEqual(110);
+  expect(m).toContain("AAPL");
+  expect(m).toContain("NVDA");
+  expect(() => parseNdxMembers("{}")).toThrow(FundFileError);
 });
