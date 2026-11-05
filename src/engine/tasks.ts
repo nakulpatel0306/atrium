@@ -4,6 +4,8 @@ import { newId } from "./ids";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
+export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check";
+
 export type Task = {
   id: string;
   spaceId: string;
@@ -20,6 +22,9 @@ export type Task = {
   approvalId: string | null;
   // The approved paper strategy this task runs; null for everything else.
   strategyId: string | null;
+  // What an investing task writes (a digest or thesis write-up) and the instrument it's about; null otherwise.
+  purpose: TaskPurpose | null;
+  subject: string | null;
   branch: string | null;
   createdAt: number;
   updatedAt: number;
@@ -40,6 +45,8 @@ type TaskRow = {
   parent_task_id: string | null;
   approval_id: string | null;
   strategy_id: string | null;
+  purpose: TaskPurpose | null;
+  subject: string | null;
   branch: string | null;
   created_at: number;
   updated_at: number;
@@ -78,6 +85,8 @@ const toTask = (r: TaskRow): Task => ({
   parentTaskId: r.parent_task_id,
   approvalId: r.approval_id,
   strategyId: r.strategy_id,
+  purpose: r.purpose ?? null,
+  subject: r.subject ?? null,
   branch: r.branch,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -102,12 +111,14 @@ export function createTask(
     approvalId?: string;
     strategyId?: string;
     agent?: string;
+    purpose?: TaskPurpose;
+    subject?: string;
   },
 ): Task {
   const id = newId("tsk");
   const now = Date.now();
   db.query(
-    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, ignore_reserve, kind, parent_task_id, approval_id, strategy_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, ignore_reserve, kind, parent_task_id, approval_id, strategy_id, purpose, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.spaceId,
@@ -121,6 +132,8 @@ export function createTask(
     input.parentTaskId ?? null,
     input.approvalId ?? null,
     input.strategyId ?? null,
+    input.purpose ?? null,
+    input.subject ?? null,
     now,
     now,
   );

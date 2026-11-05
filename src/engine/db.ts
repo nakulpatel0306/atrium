@@ -116,7 +116,6 @@ export function openDb(path?: string): Database {
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
   migrate(db);
-  db.exec(MARKETS_SCHEMA);
   return db;
 }
 
@@ -156,6 +155,17 @@ function migrate(db: Database) {
   if (!has("approvals", "undone_at")) db.exec("ALTER TABLE approvals ADD COLUMN undone_at INTEGER");
   // The paper strategy a task runs for, so its orders can be checked against that strategy's limits.
   if (!has("tasks", "strategy_id")) db.exec("ALTER TABLE tasks ADD COLUMN strategy_id TEXT");
+  // What an investing task produces (a digest or thesis write-up) and the instrument it's about.
+  if (!has("tasks", "purpose")) db.exec("ALTER TABLE tasks ADD COLUMN purpose TEXT");
+  if (!has("tasks", "subject")) db.exec("ALTER TABLE tasks ADD COLUMN subject TEXT");
+  // Which kind of market alert an approval is, so Needs-you and notifications can group them.
+  if (!has("approvals", "topic")) db.exec("ALTER TABLE approvals ADD COLUMN topic TEXT");
+  // Markets tables are created here, before their own added columns are checked.
+  db.exec(MARKETS_SCHEMA);
+  // The holding's book value in CAD from a Wealthsimple holdings export, for an honest CAD gain.
+  if (!has("market_holdings", "book_value_cad")) db.exec("ALTER TABLE market_holdings ADD COLUMN book_value_cad REAL");
+  // The earnings date an alert last fired for, so one date fires once.
+  if (!has("market_alerts", "fired_for")) db.exec("ALTER TABLE market_alerts ADD COLUMN fired_for TEXT");
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");
 }
@@ -191,7 +201,8 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   fingerprint TEXT,
   decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
   rule_id TEXT REFERENCES autonomy_rules(id),
-  undone_at INTEGER
+  undone_at INTEGER,
+  topic TEXT
 )`;
 
 // SQLite's documented table rebuild: foreign keys off (outside any transaction), copy into a new table,

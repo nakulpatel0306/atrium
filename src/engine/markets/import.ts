@@ -98,6 +98,8 @@ export function previewImport(text: string, opts: { mapping?: FieldMap; exchange
     preview.warnings.push("Pick which columns hold the symbol and quantity.");
     return preview;
   }
+  // Only a Wealthsimple holdings export says what each position cost in CAD.
+  const cadBookCol = format === "wealthsimple_holdings" ? lower.indexOf("book value (cad)") : -1;
   const cell = (r: string[], f: ImportField) => (mapping[f] === undefined ? "" : (r[mapping[f]!] ?? "").trim());
   const accounts = new Set<string>();
   const data: { line: number; r: string[] }[] = [];
@@ -163,6 +165,7 @@ export function previewImport(text: string, opts: { mapping?: FieldMap; exchange
         continue;
       }
       const book = num(cell(r, "bookValue"));
+      const bookCad = cadBookCol >= 0 ? num(r[cadBookCol]) : NaN;
       preview.rows.push({
         account,
         symbol: inst.symbol,
@@ -170,6 +173,7 @@ export function previewImport(text: string, opts: { mapping?: FieldMap; exchange
         name: cell(r, "name"),
         quantity,
         bookValue: Number.isFinite(book) ? book : null,
+        bookValueCad: Number.isFinite(bookCad) ? bookCad : null,
         currency: cur,
       });
     }
@@ -238,7 +242,7 @@ function activity(preview: ImportPreview, data: { line: number; r: string[] }[],
       exchange = currency === "USD" ? "US" : "TSX";
       guessed.add(p.symbol);
     }
-    preview.rows.push({ account: p.account, symbol: p.symbol, exchange, name: p.name, quantity: round(p.qty), bookValue: Math.round(p.book * 100) / 100, currency });
+    preview.rows.push({ account: p.account, symbol: p.symbol, exchange, name: p.name, quantity: round(p.qty), bookValue: Math.round(p.book * 100) / 100, bookValueCad: null, currency });
   }
   preview.guessed = [...guessed];
 }

@@ -23,9 +23,13 @@ export type Approval = {
   decidedBy: "you" | "rule";
   ruleId: string | null;
   undoneAt: number | null;
+  // The kind of market alert; null for everything else.
+  topic: AlertTopic | null;
   createdAt: number;
   resolvedAt: number | null;
 };
+
+export type AlertTopic = "price" | "indicator" | "earnings" | "news" | "flag";
 
 type ApprovalRow = {
   id: string;
@@ -41,6 +45,7 @@ type ApprovalRow = {
   decided_by: Approval["decidedBy"];
   rule_id: string | null;
   undone_at: number | null;
+  topic: AlertTopic | null;
   created_at: number;
   resolved_at: number | null;
 };
@@ -66,6 +71,7 @@ const toApproval = (r: ApprovalRow): Approval => ({
   decidedBy: r.decided_by,
   ruleId: r.rule_id,
   undoneAt: r.undone_at,
+  topic: r.topic ?? null,
   createdAt: r.created_at,
   resolvedAt: r.resolved_at,
 });
@@ -77,12 +83,12 @@ export const getApproval = (db: Database, id: string): Approval | null => {
 
 export function createApproval(
   db: Database,
-  input: { spaceId: string; taskId?: string; kind: Approval["kind"]; title: string; detail: string; fingerprint?: string | null },
+  input: { spaceId: string; taskId?: string; kind: Approval["kind"]; title: string; detail: string; fingerprint?: string | null; topic?: AlertTopic | null },
 ): Approval {
   const id = newId("apr");
   db.query(
-    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, input.spaceId, input.taskId ?? null, input.kind, input.title, input.detail, input.fingerprint ?? null, Date.now());
+    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, topic, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, input.spaceId, input.taskId ?? null, input.kind, input.title, input.detail, input.fingerprint ?? null, input.topic ?? null, Date.now());
   bus.emit({ type: "changed" });
   return getApproval(db, id)!;
 }

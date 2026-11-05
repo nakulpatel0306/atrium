@@ -145,3 +145,11 @@ test("alert approvals resolve without a task", () => {
   expect(seen).toEqual([`${a.id}:approve`]);
   expect(listActivity(db)[0]!.message).toBe("Dismissed: AAPL price above $200.00");
 });
+
+test("topic round-trips", () => {
+  const s = createSpace(db, { name: "M", kind: "general", goal: "g" });
+  const a = createApproval(db, { spaceId: s.id, kind: "alert", title: "SPY earnings within 5 days", detail: "d", topic: "earnings" });
+  expect(getApproval(db, a.id)!.topic).toBe("earnings");
+  const b = createApproval(db, { spaceId: s.id, kind: "alert", title: "x", detail: "d" });
+  expect(b.topic).toBeNull();
+});

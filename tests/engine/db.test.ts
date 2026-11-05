@@ -163,3 +163,45 @@ test("markets tables exist", () => {
   db.close();
   t.cleanup();
 });
+
+const PLAN7_TABLES = [
+  "fx_rates", "market_closes", "market_dividends", "fund_files", "fund_lines", "instrument_meta", "market_earnings",
+  "market_news", "research_notes", "market_writeups", "market_ideas", "tfsa_room", "tfsa_entries",
+];
+const PLAN7_COLUMNS: [string, string][] = [
+  ["market_holdings", "book_value_cad"], ["market_alerts", "fired_for"], ["tasks", "purpose"], ["tasks", "subject"], ["approvals", "topic"],
+];
+
+test("plan 7 tables exist", () => {
+  const t = tempHome();
+  const db = openDb();
+  const names = (db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name);
+  for (const n of PLAN7_TABLES) expect(names).toContain(n);
+  db.close();
+  t.cleanup();
+});
+
+test("old DB gains plan 7 columns", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const db = openDb(path);
+  db.exec(`INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_m', 'M', 'markets', 'x', 1, 1);
+    INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('tsk_1', 'spc_m', 't', 'claude', 'light', 1, 1);
+    INSERT INTO approvals (id, space_id, kind, title, created_at) VALUES ('apr_1', 'spc_m', 'alert', 'a', 1);
+    INSERT INTO market_holdings (id, space_id, account, symbol, exchange, quantity, currency, source, updated_at) VALUES ('h1', 'spc_m', 'TFSA', 'SPY', 'US', 2, 'USD', 'manual', 1);
+    INSERT INTO market_alerts (id, space_id, key, rule, created_at) VALUES ('al1', 'spc_m', 'SPY', '{}', 1);`);
+  // A Plan 6 database: the same tables without the plan 7 columns.
+  for (const [table, column] of PLAN7_COLUMNS) db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  db.close();
+  const cols = (d: Database, table: string) => (d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  const again = openDb(path);
+  for (const [table, column] of PLAN7_COLUMNS) expect(cols(again, table)).toContain(column);
+  for (const table of ["tasks", "approvals", "market_holdings", "market_alerts"]) {
+    expect((again.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n).toBe(1);
+  }
+  again.close();
+  const third = openDb(path);
+  expect(cols(third, "tasks").filter((c) => c === "purpose")).toHaveLength(1);
+  third.close();
+  t.cleanup();
+});
