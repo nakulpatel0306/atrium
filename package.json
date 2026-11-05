@@ -2,7 +2,9 @@
   "name": "atrium",
   "type": "module",
   "private": true,
-  "bin": { "atrium": "src/cli.ts" },
+  "bin": {
+    "atrium": "src/cli.ts"
+  },
   "devDependencies": {
     "@types/bun": "^1.4.4",
     "@types/react": "^19.3.0",
@@ -12,6 +14,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "lucide-react": "^1.68.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   }

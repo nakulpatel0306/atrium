@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { LucideProvider, ChevronRight, Unplug } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { activeOnly, post, type State, useEngineState, useOnline } from "./api";
 import { CommandBar } from "./components/CommandBar";
@@ -45,7 +46,12 @@ function App() {
 
   const space = route.name === "space" ? state?.spaces.find((s) => s.id === route.id) : undefined;
   const newSpace = () => setSetupRequest((n) => n + 1);
-  const offline = !online && <span className="offline">Reconnecting…</span>;
+  const offline = !online && (
+    <span className="offline" role="status">
+      <Unplug />
+      Reconnecting…
+    </span>
+  );
 
   if (!state) {
     return (
@@ -82,7 +88,8 @@ function App() {
               <button className="crumb" onClick={() => navigate("/")}>
                 Home
               </button>
-              / <b>{space?.name ?? "Unknown space"}</b>
+              <ChevronRight className="sep" />
+              <b>{space?.name ?? "Unknown space"}</b>
             </>
           )}
           {offline}
@@ -99,4 +106,9 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+// Every icon shares one size and stroke so the set reads as a single family.
+createRoot(document.getElementById("root")!).render(
+  <LucideProvider size={16} strokeWidth={1.5}>
+    <App />
+  </LucideProvider>,
+);

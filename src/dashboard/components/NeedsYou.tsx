@@ -1,3 +1,4 @@
+import { Inbox } from "lucide-react";
 import { useState } from "react";
 import { post, type State } from "../api";
 import { absolute, firstLine, relative } from "../format";
@@ -100,7 +101,9 @@ export function NeedsYou({ state }: { state: State }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
   return (
     <>
-      <h2 id="needs">◎ Needs you{state.approvals.length > 0 && ` · ${state.approvals.length}`}</h2>
+      <h2 id="needs">
+        <Inbox />
+        Needs you{state.approvals.length > 0 && ` · ${state.approvals.length}`}</h2>
       <div className="list">
         {state.approvals.length === 0 ? (
           <div className="empty-row">You're all caught up.</div>
