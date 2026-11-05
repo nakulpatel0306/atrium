@@ -8,6 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   lazy var client = EngineClient(port: port)
   lazy var offline = OfflineView(port: port) { [weak self] in self?.client.reconnectNow() }
   private var status: StatusMenu?
+  lazy var notifier = Notifier { [weak self] path in self?.open(path) }
+  // Kept across reconnects, so an engine restart doesn't notify again about what was already seen.
+  private var lastSummary: Summary?
   // The web view is the first content; this keeps a reconnect from reloading a dashboard that is already showing.
   private var showingWeb = true
 
@@ -18,9 +21,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSApp.activate()
     let status = StatusMenu(client: client) { [weak self] path in self?.open(path) }
     self.status = status
-    client.onSummary = { s in
+    status.notifier = notifier
+    notifier.authorize()
+    client.onSummary = { [weak self] s in
       NSApp.dockTile.badgeLabel = badgeLabel(s.needsYou)
       status.update(online: true, summary: s)
+      guard let self else { return }
+      self.notifier.post(newNotes(previous: self.lastSummary, next: s))
+      self.lastSummary = s
     }
     client.onOnline = { [weak self] online in
       if online {

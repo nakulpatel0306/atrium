@@ -9,6 +9,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
   private var online = false
   private var summary: Summary?
+  var notifier: Notifier?
 
   init(client: EngineClient, open: @escaping (_ path: String) -> Void) {
     self.client = client
@@ -58,6 +59,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     overnight.state = s?.overnight == true ? .on : .off
     overnight.isEnabled = s != nil
     menu.addItem(overnight)
+    if notifier?.isAllowed == false {
+      let off = NSMenuItem(title: "Notifications are off", action: nil, keyEquivalent: "")
+      off.isEnabled = false
+      menu.addItem(off)
+      menu.addItem(action("Open Notification Settings…", #selector(openNotificationSettings)))
+    }
     let login = action("Open at Login", #selector(toggleLogin))
     login.state = SMAppService.mainApp.status == .enabled ? .on : .off
     menu.addItem(login)
@@ -84,6 +91,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
   @objc private func openPath(_ sender: NSMenuItem) {
     open(sender.representedObject as? String ?? "/")
+  }
+
+  @objc private func openNotificationSettings() {
+    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
   }
 
   @objc private func toggleOvernight() {
