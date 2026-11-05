@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildApp } from "../../src/mac/build";
+import { buildApp, toolchainError } from "../../src/mac/build";
 import { infoPlist } from "../../src/mac/plists";
 
 const canBuild = process.platform === "darwin" && !!Bun.which("swiftc");
@@ -10,7 +10,7 @@ const outDir = mkdtempSync(join(tmpdir(), "atrium-app-"));
 afterAll(() => rmSync(outDir, { recursive: true, force: true }));
 
 let built: Promise<string> | undefined;
-const app = () => (built ??= buildApp({ outDir }));
+const app = () => (built ??= buildApp({ outDir, bundleId: "com.atrium.app.test" }));
 
 const sh = (cmd: string[]) => {
   const r = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "pipe" });
@@ -30,6 +30,17 @@ test("infoPlist takes another bundle id for a test copy", () => {
   expect(plist).toContain("<string>com.atrium.app.test</string>");
 });
 
+test("a missing Command Line Tools install gives a plain message, without asking xcrun", () => {
+  const asked: string[][] = [];
+  const missing = toolchainError((cmd) => (asked.push(cmd), cmd[0] === "xcode-select" ? 2 : 0));
+  expect(missing).toBe("The Xcode Command Line Tools aren't installed. Run xcode-select --install, then try again.");
+  expect(asked).toEqual([["xcode-select", "-p"]]);
+  expect(toolchainError((cmd) => (cmd[0] === "xcrun" ? 1 : 0))).toBe(
+    "The Xcode Command Line Tools don't include swiftc. Run xcode-select --install, then try again.",
+  );
+  expect(toolchainError(() => 0)).toBeNull();
+});
+
 test.skipIf(!canBuild)(
   "build produces a signed bundle",
   async () => {
@@ -41,8 +52,8 @@ test.skipIf(!canBuild)(
     expect(sh(["codesign", "--verify", "--strict", path]).code).toBe(0);
     const info = sh(["codesign", "-dv", path]).err;
     expect(info).toContain("Signature=adhoc");
-    expect(info).toContain("Identifier=com.atrium.app");
-    expect(sh(["plutil", "-extract", "CFBundleIdentifier", "raw", join(path, "Contents/Info.plist")]).out.trim()).toBe("com.atrium.app");
+    expect(info).toContain("Identifier=com.atrium.app.test\n");
+    expect(sh(["plutil", "-extract", "CFBundleIdentifier", "raw", join(path, "Contents/Info.plist")]).out.trim()).toBe("com.atrium.app.test");
   },
   180_000,
 );

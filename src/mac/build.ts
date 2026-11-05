@@ -22,15 +22,33 @@ async function step(what: string, cmd: string[]): Promise<void> {
   if (code !== 0) throw new Error(`Couldn't ${what}: ${(err || out).trim().split("\n").slice(0, 12).join("\n")}`);
 }
 
+// Bun.which finds /usr/bin/swiftc even without the Command Line Tools: it's a shim that offers to install them.
+export function toolchainError(exitCode: (cmd: string[]) => number): string | null {
+  if (exitCode(["xcode-select", "-p"]) !== 0) {
+    return "The Xcode Command Line Tools aren't installed. Run xcode-select --install, then try again.";
+  }
+  if (exitCode(["xcrun", "--find", "swiftc"]) !== 0) {
+    return "The Xcode Command Line Tools don't include swiftc. Run xcode-select --install, then try again.";
+  }
+  return null;
+}
+
+const exitCode = (cmd: string[]) => {
+  try {
+    return Bun.spawnSync(cmd, { stdout: "ignore", stderr: "ignore" }).exitCode;
+  } catch {
+    return 127;
+  }
+};
+
 function version(): string {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: string };
   return pkg.version ?? "0.1.0";
 }
 
 export async function buildApp(o: BuildOpts): Promise<string> {
-  if (!Bun.which("swiftc")) {
-    throw new Error("The Xcode Command Line Tools aren't installed. Run xcode-select --install, then try again.");
-  }
+  const missing = toolchainError(exitCode);
+  if (missing) throw new Error(missing);
   const app = join(resolve(o.outDir), "Atrium.app");
   const contents = join(app, "Contents");
   rmSync(app, { recursive: true, force: true });
