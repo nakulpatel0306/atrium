@@ -67,3 +67,43 @@ test("replaceImported only replaces those accounts' imported rows", () => {
   expect(rows.find((x) => x.symbol === "N1")!.source).toBe("wealthsimple_activity");
   expect(rows.find((x) => x.symbol === "MANUAL")!.source).toBe("manual");
 });
+
+test("portfolioDay mixes sources", async () => {
+  const { setSetting } = await import("../../../src/engine/settings");
+  const { saveQuotes } = await import("../../../src/engine/markets/cache");
+  const { createMarketData } = await import("../../../src/engine/markets/data");
+  const { saveFx } = await import("../../../src/engine/markets/fx");
+  const { recordCloses } = await import("../../../src/engine/markets/closes");
+  const { portfolioDay, positionsFor } = await import("../../../src/engine/markets/portfolio");
+  setSetting(db, "markets.provider", "finnhub");
+  const keys: Record<string, string> = { "finnhub.token": "FHTEST12345", "alphavantage.key": "AVTEST12345" };
+  const data = createMarketData({ db, keychain: { get: async (a) => keys[a] ?? null, set: async () => {}, remove: async () => {} } });
+  await data.refreshKeys(true);
+  const at = Date.parse("2026-11-05T16:00:00Z");
+  const closeNov4 = Date.parse("2026-11-04T21:00:00Z");
+  addHolding(db, spaceId, { account: "TFSA", symbol: "RKLB", exchange: "US", name: "Rocket Lab", quantity: 10, bookValue: 400, currency: "USD" });
+  addHolding(db, spaceId, { account: "TFSA", symbol: "SPY", exchange: "US", name: "SPY", quantity: 2, bookValue: 1000, currency: "USD" });
+  addHolding(db, spaceId, { account: "TFSA", symbol: "VFV", exchange: "TSX", name: "VFV", quantity: 5, bookValue: 700, currency: "CAD" });
+  saveQuotes(db, [
+    { key: "RKLB", price: 53, prevClose: 50, at, source: "finnhub", freshness: "live" },
+    { key: "SPY", price: 606, prevClose: 600, at, source: "finnhub", freshness: "live" },
+    { key: "VFV.TO", price: 151, prevClose: 150, at: closeNov4, source: "alphavantage", freshness: "eod" },
+  ]);
+  saveFx(db, [{ date: "2026-11-04", rate: 1.4 }]);
+  recordCloses(db, "VFV.TO", [{ date: "2026-11-04", close: 151, adjClose: null, source: "alphavantage" }]);
+  recordCloses(db, "SPY", [{ date: "2026-11-04", close: 600, adjClose: null, source: "tiingo" }]);
+  expect(positionsFor(db, data, spaceId).map((p) => [p.key, p.price?.tone])).toEqual([["RKLB", "live"], ["SPY", "live"], ["VFV.TO", "delayed"]]);
+  const d = portfolioDay(db, data, spaceId)!;
+  expect(d.mix).toBe("2 real-time · 1 close of Nov 4");
+  expect(d.tone).toBe("delayed");
+  // (10×3 + 2×6) × 1.40 + 5×1 = 63.8 on 1×(500+1200)×1.40 + 750 = 3130; the VFV estimate (from SPY's live move) isn't used.
+  expect(d.dayCad).toBeCloseTo(63.8, 9);
+  expect(d.dayPct).toBeCloseTo((63.8 / 3130) * 100, 9);
+  expect(d.movers).toEqual([
+    { key: "RKLB", dayPct: expect.closeTo(6, 9), tag: null },
+    { key: "SPY", dayPct: expect.closeTo(1, 9), tag: null },
+    { key: "VFV.TO", dayPct: expect.closeTo((1 / 150) * 100, 9), tag: "close Nov 4" },
+  ]);
+  const empty = createSpace(db, { name: "Empty", kind: "markets", goal: "g" });
+  expect(portfolioDay(db, data, empty.id)).toBeNull();
+});
