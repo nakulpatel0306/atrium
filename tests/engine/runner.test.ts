@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskWait } from "../../src/engine/agents/registry";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
-import { listPending } from "../../src/engine/approvals";
+import { getApproval, listPending } from "../../src/engine/approvals";
+import * as rules from "../../src/engine/autonomy/rules";
+import { createRule } from "../../src/engine/autonomy/rules";
 import { openDb } from "../../src/engine/db";
 import * as gitOps from "../../src/engine/git";
 import * as scratch from "../../src/engine/scratch";
@@ -14,7 +16,7 @@ import { bus, listActivity } from "../../src/engine/events";
 import { createRunner, recoverOnBoot } from "../../src/engine/runner";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
-import { createTask, getTask, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
 import { tempHome, tempRepo } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -1234,4 +1236,213 @@ test("recoverOnBoot sweeps Atrium temp folders older than a day", async () => {
   expect(existsSync(oldAgent)).toBe(false);
   expect(existsSync(fresh)).toBe(true);
   expect(existsSync(other)).toBe(true);
+});
+
+// Earned autonomy: a rule Nakul said yes to, created a second ago so the results below are newer than it.
+function yesRule(spaceId: string, fingerprint = "v1:code:docs:small:claude") {
+  const id = `prp_${Math.random().toString(36).slice(2, 8)}`;
+  db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, status, created_at, answered_at) VALUES (?, ?, ?, '[]', 'yes', 1, 1)").run(
+    id,
+    spaceId,
+    fingerprint,
+  );
+  return createRule(db, id, Date.now() - 1000);
+}
+
+const writesDoc = (name = "docs/a.md") =>
+  fakeAdapter((input) => {
+    mkdirSync(join(input.cwd, "docs"), { recursive: true });
+    writeFileSync(join(input.cwd, name), "one\ntwo\nthree\nfour\nfive\n");
+    return ok("Added a note.");
+  });
+
+function gated(id: string, summary: string) {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  const calls: AgentRunInput[] = [];
+  const adapter: AgentAdapter = {
+    id,
+    label: id,
+    async run(input) {
+      calls.push(input);
+      const stopped = await Promise.race([gate.then(() => false), new Promise<boolean>((r) => input.signal?.addEventListener("abort", () => r(true)))]);
+      return stopped ? { status: "error", kind: "failed", message: "Stopped" } : ok(summary);
+    },
+  };
+  return { adapter, calls, release };
+}
+
+const approvalFor = (taskId: string) => db.query("SELECT id FROM approvals WHERE task_id = ? ORDER BY rowid DESC").get(taskId) as { id: string } | null;
+const reviewOf = (taskId: string) => listTasks(db).find((t) => t.parentTaskId === taskId && t.kind === "review");
+const reviewSpaceBy = (path: string) => updateSpace(db, createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: path, private: false }).id, { reviewBy: "codex" });
+
+test("a work approval stores its action kind", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const docs = createTask(db, { spaceId: s.id, title: "Docs" });
+  start({ adapter: writesDoc().adapter });
+  await waitFor(() => status(docs.id) === "review");
+  await runner!.stop();
+  expect(getApproval(db, approvalFor(docs.id)!.id)!.fingerprint).toBe("v1:code:docs:small:claude");
+
+  git(path, "checkout", "main");
+  const code = createTask(db, { spaceId: s.id, title: "Code" });
+  start({
+    adapter: fakeAdapter((input) => {
+      mkdirSync(join(input.cwd, "src"), { recursive: true });
+      writeFileSync(join(input.cwd, "src/x.ts"), "export {};\n");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(code.id) === "review");
+  expect(getApproval(db, approvalFor(code.id)!.id)!.fingerprint).toBeNull();
+});
+
+test("an active rule approves a matching result on its own", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const rule = yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Add a note" });
+  start({ adapter: writesDoc().adapter });
+  await waitFor(() => status(t.id) === "done");
+  const a = getApproval(db, approvalFor(t.id)!.id)!;
+  expect(a).toMatchObject({ status: "approved", decidedBy: "rule", ruleId: rule.id });
+  expect(listPending(db)).toEqual([]);
+  expect(listActivity(db).some((x) => x.actor === "atrium" && x.message.startsWith('Approved by your rule "docs-only changes under 50 lines from Claude"'))).toBe(true);
+  // Atrium still never merges: the work stays on its branch.
+  expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("1");
+});
+
+test("a rule waits for the space's review", async () => {
+  const path = repo();
+  const s = reviewSpaceBy(path);
+  yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
+  const codex = gated("codex", "Reads well.\nVERDICT: approve");
+  start({ adapter: writesDoc().adapter, extra: { codex: codex.adapter } });
+  await waitFor(() => codex.calls.length === 1);
+  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+  codex.release();
+  await waitFor(() => status(t.id) === "done");
+  expect(getApproval(db, approvalFor(t.id)!.id)!.decidedBy).toBe("rule");
+  expect(reviewOf(t.id)!.status).toBe("done");
+});
+
+test("a review asking for changes keeps the result waiting", async () => {
+  const path = repo();
+  const s = reviewSpaceBy(path);
+  yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
+  const codex = fakeAdapter(() => ok("Typo on line 2.\nVERDICT: changes"));
+  start({ adapter: writesDoc().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => listTasks(db).some((x) => x.parentTaskId === t.id && x.kind === "fix" && x.status === "done"));
+  await runner!.stop();
+  runner = null;
+  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+  expect(status(t.id)).toBe("review");
+});
+
+test("a review without a verdict keeps the result waiting", async () => {
+  const path = repo();
+  const s = reviewSpaceBy(path);
+  yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
+  const codex = fakeAdapter(() => ok("Seems fine I guess."));
+  start({ adapter: writesDoc().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => reviewOf(t.id)?.status === "done");
+  await runner!.stop();
+  runner = null;
+  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+});
+
+test("rule applies after a review that finished after a restart", async () => {
+  const path = repo();
+  const s = reviewSpaceBy(path);
+  yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
+  const first = gated("codex", "VERDICT: approve");
+  start({ adapter: writesDoc().adapter, extra: { codex: first.adapter } });
+  await waitFor(() => first.calls.length === 1);
+  await runner!.stop();
+  expect(reviewOf(t.id)!.status).toBe("queued");
+  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+  const second = fakeAdapter(() => ok("All good.\nVERDICT: approve"));
+  start({ adapter: writesDoc().adapter, extra: { codex: { ...second.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "done");
+  expect(getApproval(db, approvalFor(t.id)!.id)!.decidedBy).toBe("rule");
+});
+
+test("branch deleted before review ends", async () => {
+  const path = repo();
+  const s = reviewSpaceBy(path);
+  yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
+  const codex = gated("codex", "VERDICT: approve");
+  start({ adapter: writesDoc().adapter, extra: { codex: codex.adapter } });
+  await waitFor(() => codex.calls.length === 1);
+  git(path, "branch", "-D", `atrium/${t.id}`);
+  codex.release();
+  await waitFor(() => reviewOf(t.id)?.status === "done");
+  await runner!.stop();
+  runner = null;
+  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+  expect(listActivity(db).some((x) => x.message.startsWith("Couldn't check your rules"))).toBe(false);
+});
+
+test("a deleted file is never auto-approved", async () => {
+  const path = repo();
+  mkdirSync(join(path, "docs"));
+  writeFileSync(join(path, "docs/old.md"), "old\n");
+  git(path, "add", "-A");
+  git(path, "commit", "-m", "old doc");
+  const s = repoSpace(path);
+  yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Swap docs" });
+  start({
+    adapter: fakeAdapter((input) => {
+      rmSync(join(input.cwd, "docs/old.md"));
+      writeFileSync(join(input.cwd, "docs/a.md"), "new\n");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  const a = getApproval(db, approvalFor(t.id)!.id)!;
+  expect(a.status).toBe("pending");
+  expect(a.fingerprint).toBeNull();
+});
+
+test("a general text answer is rule-approved, but not one that left files in the space folder", async () => {
+  const s = generalSpace();
+  yesRule(s.id, "v1:general:text:claude");
+  const text = createTask(db, { spaceId: s.id, title: "Answer" });
+  start({ adapter: fakeAdapter(() => ok("The answer is 42.")).adapter });
+  await waitFor(() => status(text.id) === "done");
+  expect(getApproval(db, approvalFor(text.id)!.id)).toMatchObject({ decidedBy: "rule", fingerprint: "v1:general:text:claude" });
+  await runner!.stop();
+
+  const files = createTask(db, { spaceId: s.id, title: "Write a file" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, "notes.txt"), "hi\n");
+      return ok("Wrote notes.");
+    }).adapter,
+  });
+  await waitFor(() => status(files.id) === "review");
+  expect(getApproval(db, approvalFor(files.id)!.id)).toMatchObject({ status: "pending", fingerprint: null });
+});
+
+test("a failing rule check leaves the result waiting and says so", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  yesRule(s.id);
+  const t = createTask(db, { spaceId: s.id, title: "Add a note" });
+  const spy = spyOn(rules, "applyRule").mockImplementation(() => {
+    throw new Error("disk on fire");
+  });
+  cleanups.push(() => spy.mockRestore());
+  start({ adapter: writesDoc().adapter });
+  await waitFor(() => listActivity(db).some((x) => x.message.startsWith("Couldn't check your rules")));
+  expect(listActivity(db).map((x) => x.message)).toContain("Couldn't check your rules for Add a note: disk on fire. It's waiting for you as usual.");
+  expect(status(t.id)).toBe("review");
+  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
 });

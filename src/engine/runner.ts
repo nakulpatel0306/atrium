@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { clock, createRegistry, type Registry, type TaskWait } from "./agents/registry";
 import type { AgentAdapter, AgentRunResult } from "./agents/types";
 import { correctBranchHead, createApproval, getApproval } from "./approvals";
+import { factsFor, folderState } from "./autonomy/facts";
+import { fingerprintOf } from "./autonomy/kinds";
+import { applyRule } from "./autonomy/rules";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
 import {
@@ -23,6 +26,7 @@ import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./ha
 import { newId } from "./ids";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
+import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
@@ -368,6 +372,9 @@ export function createRunner(deps: {
     transcript: ReturnType<typeof openTranscript>;
   }) {
     const { task, space, adapter, repo, runId, transcript } = r;
+    // A Claude run away from a repo works in the space folder itself, where its files stay; this is how a rule
+    // tells a text answer from one that left files behind.
+    const folderBefore = !repo && !r.scratch && task.kind === "work" ? folderState(r.cwd) : null;
     let result: AgentRunResult;
     try {
       result = await adapter.run({
@@ -474,6 +481,7 @@ export function createRunner(deps: {
         setTaskStatus(db, task.id, "done");
         afterReview(db, task, result);
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
+        if (task.approvalId) await considerRule(task.approvalId, { reviewed: verdictOf(result.summary) === "approve" });
       } else if (result.status === "ok" && task.kind === "fix") {
         // The parent's approval covers the branch, so the fix reports there instead of asking on its own. The
         // count starts where the work did, even if Nakul has since moved the repo to another branch.
@@ -487,6 +495,8 @@ export function createRunner(deps: {
         const report = repo ? await repoReport(repo) : null;
         if (report) lines.push(...report.lines);
         if (kept) lines.push(keptLine(kept));
+        const filesKept = repo ? 0 : kept ? Math.max(kept.files + kept.skipped, 1) : r.scratch ? 0 : filesLeftIn(r.cwd, folderBefore);
+        const facts = await factsFor(db, getTask(db, task.id)!, space, filesKept);
         setTaskStatus(db, task.id, "review");
         const approval = createApproval(db, {
           spaceId: space.id,
@@ -494,9 +504,11 @@ export function createRunner(deps: {
           kind: "review",
           title: task.title,
           detail: lines.join("\n\n"),
+          fingerprint: facts ? fingerprintOf(facts) : null,
         });
         logActivity(db, space.id, adapter.id, `Ready for review: ${task.title}`);
         if (repo && report?.commits) await handOff(task, repo, approval.id);
+        await considerRule(approval.id, { filesKept });
       } else if (result.kind === "rate_limited") {
         const hits = (limitHits.get(task.id) ?? 0) + 1;
         if (hits >= MAX_LIMIT_RETRIES) {
@@ -533,6 +545,25 @@ export function createRunner(deps: {
   function fixStillWanted(task: Task): boolean {
     if (getTask(db, task.id)?.status !== "running" || !task.approvalId) return false;
     return getApproval(db, task.approvalId)?.status === "pending";
+  }
+
+  // One of Nakul's rules may decide in his place. In a space with a reviewer that happens only once the review
+  // has said approve without a fix round; anything that goes wrong here leaves the item waiting for him.
+  async function considerRule(approvalId: string, opts: { filesKept?: number; reviewed?: boolean } = {}) {
+    const a = getApproval(db, approvalId);
+    if (a?.status !== "pending" || !a.fingerprint || !a.taskId) return;
+    try {
+      const task = getTask(db, a.taskId);
+      const space = getSpace(db, a.spaceId);
+      if (!task || !space) return;
+      const kids = db.query("SELECT kind FROM tasks WHERE parent_task_id = ?").all(task.id) as { kind: Task["kind"] }[];
+      if (kids.some((k) => k.kind === "fix")) return;
+      const reviewed = (space.kind === "repo" && space.reviewBy) || kids.some((k) => k.kind === "review");
+      if (reviewed && !opts.reviewed) return;
+      applyRule(db, approvalId, await factsFor(db, task, space, opts.filesKept ?? 0));
+    } catch (e) {
+      logActivity(db, a.spaceId, "atrium", `Couldn't check your rules for ${a.title}: ${(e as Error).message}. It's waiting for you as usual.`);
+    }
   }
 
   // A review is extra: if it can't be set up, the work still waits for Nakul as usual.
@@ -578,6 +609,11 @@ export function createRunner(deps: {
     kick,
     registry,
   };
+}
+
+// Any change to the space folder, or a folder that can't be read, counts as files left behind.
+function filesLeftIn(dir: string, before: string | null): number {
+  return before !== null && folderState(dir) === before ? 0 : 1;
 }
 
 function buildPrompt(task: Task, space: Space): string {
