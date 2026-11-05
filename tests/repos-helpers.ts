@@ -67,7 +67,7 @@ export function fakeGitHub(mode = "ok"): FakeGitHub {
 }
 
 // A bare repo at fakeuser/<name> with one commit on main, as an existing GitHub repo.
-export function seedRemote(gh: FakeGitHub, name: string): string {
+export function seedRemote(gh: FakeGitHub, name: string, files: Record<string, string> = {}): string {
   const bare = join(gh.remotes, "fakeuser", `${name}.git`);
   const work = mkdtempSync(join(tmpdir(), "atrium-seed-"));
   const run = (cwd: string, ...args: string[]) => {
@@ -77,6 +77,7 @@ export function seedRemote(gh: FakeGitHub, name: string): string {
   mkdirSync(join(gh.remotes, "fakeuser"), { recursive: true });
   run(gh.remotes, "init", "-q", "--bare", "-b", "main", bare);
   writeFileSync(join(work, "README.md"), `# ${name}\n`);
+  for (const [rel, body] of Object.entries(files)) writeFileSync(join(work, rel), body);
   run(work, "init", "-q", "-b", "main");
   run(work, "add", "-A");
   run(work, "commit", "-q", "-m", "init");

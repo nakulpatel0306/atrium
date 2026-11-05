@@ -15,6 +15,8 @@ import { createMarketData } from "./engine/markets/data";
 import { createFeed } from "./engine/markets/feed";
 import { createKeychain } from "./engine/markets/keychain";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
+import { createRepos } from "./engine/repos";
+import { recoverRepoActions } from "./engine/repos/create";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
@@ -29,7 +31,16 @@ const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: gemin
 const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "alpaca");
 const keychain = createKeychain();
 const data = createMarketData({ db, keychain, now: marketClock });
-const runner = createRunner({ db, adapters, power: powerSource, keepAwake, markets: createMarketsHooks(db, { data, now: marketClock }) });
+// Repo work wakes the runner when a clone lands or a new project's space is ready.
+const repos = createRepos({ db, kick: () => runner.kick() });
+const runner = createRunner({
+  db,
+  adapters,
+  power: powerSource,
+  keepAwake,
+  markets: createMarketsHooks(db, { data, now: marketClock }),
+  repos,
+});
 const feed = createFeed({
   db,
   data,
@@ -39,6 +50,8 @@ const feed = createFeed({
   onTick: (now) => enqueueDueStrategies(db, now, () => runner.kick()),
 });
 onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
+// The only path to creating, pushing or removing a repo: Nakul's own decision on its approval.
+onApprovalResolved(repos.onDecision);
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
 let server: ReturnType<typeof startServer>;
@@ -57,7 +70,9 @@ try {
 }
 
 await recoverOnBoot(db);
+recoverRepoActions(db);
 runner.start();
+repos.daily(Date.now());
 void feed.start();
 console.log(`Atrium running at ${url}`);
 
