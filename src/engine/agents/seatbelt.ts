@@ -74,6 +74,9 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     // LaunchServices and Apple Events start apps (Terminal, Finder) outside the sandbox, which would escape it.
     "(deny lsopen)",
     "(deny appleevent-send)",
+    // Atrium's API listens on loopback, and a forged Host/Origin from inside a run could approve its own drafts.
+    // "localhost" covers 127.0.0.1, ::1, 0.0.0.0 and ::ffff:127.0.0.1; the CLIs only need the internet.
+    '(deny network-outbound (remote ip "localhost:*"))',
     `(deny file-read* ${denyRead.join(" ")} (regex #"${ENV_FILE_PATTERN}"))`,
     // Later rules win in Seatbelt, so these literals reopen just the named files.
     ...(opts.allowRead?.length ? [`(allow file-read* ${opts.allowRead.map((p) => `(literal ${str(canonical(p))})`).join(" ")})`] : []),

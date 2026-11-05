@@ -3,7 +3,7 @@ import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
-const DENY = [
+const denyRules = () => [
   "Read(**/.env*)",
   "Edit(**/.env*)",
   "Write(**/.env*)",
@@ -19,6 +19,8 @@ const DENY = [
   "Read(~/.aws/**)",
   "Read(~/.gnupg/**)",
   "Read(~/.config/gh/**)",
+  // Atrium's own DB and transcripts hold other spaces' work. A "//" prefix anchors the rule at the filesystem root.
+  `Read(/${config().home}/**)`,
 ];
 
 // Per-run settings: the sandbox must hard-fail rather than quietly run unconfined.
@@ -30,7 +32,7 @@ export function sandboxSettings(cwd: string): string {
       allowUnsandboxedCommands: false,
       autoAllowBashIfSandboxed: false,
       filesystem: {
-        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", `${cwd}/**/.env*`],
+        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", `${cwd}/**/.env*`, config().home],
       },
       network: { allowedDomains: ["registry.npmjs.org"] },
     },
@@ -130,7 +132,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           "--permission-mode", "dontAsk",
           "--append-system-prompt", input.systemPrompt,
           "--allowedTools", ...input.allowedTools,
-          "--disallowedTools", ...DENY,
+          "--disallowedTools", ...denyRules(),
         ],
         { cwd: input.cwd, stdin: input.prompt, signal: input.signal, onLine: handle },
       );

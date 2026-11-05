@@ -108,6 +108,21 @@ describe("seatbeltProfile", () => {
     expect(sandboxed(profile, `/usr/bin/osascript -e 'tell application "Finder" to activate'`).exitCode).not.toBe(0);
   });
 
+  test("loopback is unreachable, so an agent can't call Atrium's local API", () => {
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("engine") });
+    try {
+      const profile = seatbeltProfile({ cwd, writable: [cwd] });
+      expect(profile).toContain('(deny network-outbound (remote ip "localhost:*"))');
+      for (const host of ["127.0.0.1", "localhost", "0.0.0.0", "[::ffff:127.0.0.1]"]) {
+        const r = sandboxed(profile, `/usr/bin/curl -s --max-time 5 http://${host}:${server.port}/`);
+        expect(r.out).not.toContain("engine");
+        expect(r.exitCode).toBe(7);
+      }
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("review profile has no writable cwd", () => {
     const profile = seatbeltProfile({ cwd, writable: [state] });
     const r = sandboxed(profile, `echo x > review.txt || echo no-cwd; echo x > "${state}/s.txt" && echo state-ok`);
