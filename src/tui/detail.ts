@@ -178,7 +178,7 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
     if (markets) {
       const p = markets.portfolio;
       if (p) {
-        lines.push(plain(`Portfolio ${signedPct1(p.dayPct)} today (${signedCad(p.dayCad)}) · ${p.mix}`));
+        lines.push(plain(`Portfolio ${signedPct1(p.dayPct)} ${p.dayLabel} (${signedCad(p.dayCad)}) · ${p.mix}`));
         if (p.movers.length) lines.push(plain(`Top movers: ${p.movers.map((m) => `${m.key} ${signedPct1(m.dayPct)}${m.tag ? ` (${m.tag})` : ""}`).join(", ")}`));
       }
       lines.push(plain(`Watching ${plural(markets.watchlist, "symbol")}`));

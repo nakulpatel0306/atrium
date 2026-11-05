@@ -24,7 +24,7 @@ function portfolioOf(db: Database, now: number): MarketsBriefing["portfolio"] {
   const held = (id: string) => !!db.query("SELECT 1 FROM market_holdings WHERE space_id = ? LIMIT 1").get(id);
   const space = spaces.find((s) => s.name === "Investing" && held(s.id)) ?? spaces.find((s) => held(s.id));
   if (!space) return null;
-  const day = portfolioDayFromCache(db, space.id);
+  const day = portfolioDayFromCache(db, space.id, now);
   if (!day) return null;
   const top = day.movers[0];
   const news = top ? recentNews(db, [top.key], now - DAY_MS, 1)[0] : undefined;

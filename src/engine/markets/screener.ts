@@ -30,7 +30,7 @@ export function screenRows(db: Database, data: MarketData, spaceId: string, now:
   const held = new Set(holdings.map((h) => h.key));
   return keys.map((key) => {
     const q = currentQuote(db, data, parseInstrumentKey(key)!);
-    const price = q ? quoteSourced(q) : null;
+    const price = q ? quoteSourced(q, now) : null;
     const m = meta.get(key);
     const metricsLabel = m?.metricsAt ? `Finnhub · metrics ${closeDayText(m.metricsAt)}` : null;
     const year = adjustedCloses(closes(db, key, etDate(now - YEAR_MS))).map((c) => c.close);

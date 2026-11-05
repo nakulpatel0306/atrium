@@ -86,7 +86,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
 
   function investingContext(task: Task, space: Space, at: number): string[] {
     const out: string[] = [];
-    const h = healthFor(db, data, space.id);
+    const h = healthFor(db, data, space.id, at);
     if (h.totalCad) {
       const top = h.byCompany.filter((c) => c.key).slice(0, 5).map((c) => `${c.label} ${c.pct.toFixed(1)}%`);
       out.push(`Portfolio: ${money(h.totalCad.value, "CAD")} (${h.totalCad.source}). Top exposures: ${top.join(", ")}.`);
@@ -151,7 +151,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     if (live.length && session.open) await data.quotes(live).catch(() => null);
     const quotes = cachedQuotes(db, [...instruments.keys()]);
     const line = (key: string, q: Quote | undefined) =>
-      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} today` : ""} (${freshnessText(q)}, ${etClock(q.at)})` : `${key}: no price yet`;
+      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} today` : ""} (${freshnessText(q, at)}, ${etClock(q.at)})` : `${key}: no price yet`;
 
     const out: string[] = [];
     out.push(`Market data as of ${etClock(at)} on ${etDate(at)}. US market ${session.open ? "open" : session.holiday ? `closed (${session.holiday})` : "closed"}.`);

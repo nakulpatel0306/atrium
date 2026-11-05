@@ -45,3 +45,16 @@ test("toCad and fxLabel", () => {
   expect(fxLabel(fx)).toBe("at Bank of Canada USD/CAD 1.3961 (Nov 4)");
   expect(closeDayText(closeNov4)).toBe("Nov 4");
 });
+
+test("a 'live' price that's gone stale says how old it is", () => {
+  const friClose = Date.parse("2026-11-06T20:59:58Z"); // Fri 15:59:58 ET
+  const sat = Date.parse("2026-11-07T17:00:00Z");
+  const fri = q({ at: friClose });
+  expect(freshnessText(fri, sat)).toBe("Finnhub · close of Nov 6");
+  expect(quoteSourced(fri, sat)).toMatchObject({ source: "Finnhub · close of Nov 6", tone: "delayed" });
+  const morning = q({ at: Date.parse("2026-11-05T15:30:00Z"), source: "alpaca" }); // Thu 10:30 ET
+  expect(freshnessText(morning, Date.parse("2026-11-05T16:05:00Z"))).toBe("Alpaca · IEX as of 10:30 AM ET");
+  expect(quoteSourced(morning, Date.parse("2026-11-05T16:05:00Z")).tone).toBe("delayed");
+  expect(freshnessText(morning, Date.parse("2026-11-05T15:40:00Z"))).toBe("Alpaca · IEX real-time");
+  expect(freshnessText(fri)).toBe("Finnhub · real-time");
+});

@@ -24,7 +24,7 @@ export type EngineClient = {
 export type MarketsGlance = {
   watchlist: number;
   paper: { dayPnl: number; totalPnl: number } | null;
-  portfolio: { dayPct: number; dayCad: number; mix: string; movers: { key: string; dayPct: number; tag: string | null }[] } | null;
+  portfolio: { dayPct: number; dayCad: number; mix: string; dayLabel: string; movers: { key: string; dayPct: number; tag: string | null }[] } | null;
 };
 
 export const engineBase = () => `http://${config().host}:${config().port}`;
@@ -247,5 +247,5 @@ type GlanceSource = { watchlist: unknown[]; paper: { dayPnl: number; totalPnl: n
 export const glance = (v: Pick<MarketsView, "watchlist" | "paper" | "portfolio"> | GlanceSource): MarketsGlance => ({
   watchlist: v.watchlist.length,
   paper: v.paper.fills.length ? { dayPnl: v.paper.dayPnl, totalPnl: v.paper.totalPnl } : null,
-  portfolio: v.portfolio ? { dayPct: v.portfolio.dayPct, dayCad: v.portfolio.dayCad, mix: v.portfolio.mix, movers: v.portfolio.movers } : null,
+  portfolio: v.portfolio ? { dayPct: v.portfolio.dayPct, dayCad: v.portfolio.dayCad, mix: v.portfolio.mix, dayLabel: v.portfolio.dayLabel, movers: v.portfolio.movers } : null,
 });

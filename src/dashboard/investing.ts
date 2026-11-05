@@ -58,3 +58,9 @@ export function sortRows<T>(rows: T[], by: keyof T, dir: "asc" | "desc"): T[] {
     return dir === "asc" ? c : -c;
   });
 }
+
+const sessionFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+const etDayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+// "today" while the change is today's session, else the session it's from.
+export const dayText = (dayOf: string | null, now: number): string =>
+  !dayOf || dayOf === etDayFmt.format(now) ? "today" : `on ${sessionFmt.format(Date.parse(`${dayOf}T12:00:00Z`))}`;

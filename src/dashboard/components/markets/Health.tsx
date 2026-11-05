@@ -4,7 +4,7 @@ import type { CompanySlice } from "../../../engine/markets/health";
 import { currencyOfKey } from "../../../engine/markets/labels";
 import { post } from "../../api";
 import { money } from "../../format";
-import { investingPath, perfRow, pctText, signedPctText, useHealth, type HealthView } from "../../investing";
+import { dayText, investingPath, perfRow, pctText, signedPctText, useHealth, type HealthView } from "../../investing";
 import { AllocationBars } from "./AllocationBars";
 import { SourceTag } from "./SourceTag";
 import { TfsaCard } from "./TfsaCard";
@@ -120,7 +120,7 @@ export function Health({ spaceId }: { spaceId: string }) {
           <span className="big">{h.totalCad ? money(h.totalCad.value, "CAD") : "—"}</span>
           {h.dayCad && h.dayPct !== null && (
             <span className={h.dayCad.value >= 0 ? "up" : "down"}>
-              {signedCad(h.dayCad.value)} ({signedPctText(h.dayPct)}) today
+              {signedCad(h.dayCad.value)} ({signedPctText(h.dayPct)}) {dayText(h.dayOf, Date.now())}
             </span>
           )}
         </div>

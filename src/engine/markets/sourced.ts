@@ -1,6 +1,6 @@
 // Pure: shared by the engine and the dashboard, so it imports types only. Every number Atrium shows carries
 // where it came from and how fresh it is.
-import { freshnessText } from "./labels";
+import { freshnessText, isStaleLive } from "./labels";
 import type { Quote } from "./providers/types";
 
 export type Tone = "live" | "delayed" | "estimate" | "official" | "entered" | "demo" | "none";
@@ -12,10 +12,15 @@ export const TONE_RANK: Tone[] = ["live", "official", "entered", "delayed", "est
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 export const closeDayText = (ms: number): string => dayFmt.format(ms);
 
-export function quoteSourced(q: Quote): Sourced {
-  const tone: Tone = q.freshness === "live" ? "live" : q.freshness === "eod" ? "delayed" : "demo";
-  return { value: q.price, source: freshnessText(q), asOf: q.at, tone };
+// With `now`, a live quote that has gone stale (after the close, or a quiet symbol) is labelled delayed.
+export function quoteSourced(q: Quote, now?: number): Sourced {
+  const tone: Tone = q.freshness === "live" ? (isStaleLive(q, now) ? "delayed" : "live") : q.freshness === "eod" ? "delayed" : "demo";
+  return { value: q.price, source: freshnessText(q, now), asOf: q.at, tone };
 }
+
+const etDayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+// The ET calendar date of an instant, "2026-11-04".
+export const etDay = (ms: number): string => etDayFmt.format(ms);
 
 export const worstTone = (tones: Tone[]): Tone =>
   tones.reduce<Tone>((w, t) => (TONE_RANK.indexOf(t) > TONE_RANK.indexOf(w) ? t : w), "live");

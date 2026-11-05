@@ -53,3 +53,10 @@ test("sortRows puts nulls last in both directions and sorts sourced values by va
   const screen = rows.map((r) => ({ ...r, name: r.key, price: null, pos52: null, fromHighPct: null, divYield: null, held: false, stage: "watching" as const, range52Source: null }));
   expect(applyFilters(screen, [{ field: "pe", max: 20 }]).map((r) => r.key)).toEqual(["C"]);
 });
+
+test("the day a change is for reads today or names the session", async () => {
+  const { dayText } = await import("../../src/dashboard/investing");
+  expect(dayText("2026-11-06", Date.parse("2026-11-06T18:00:00Z"))).toBe("today");
+  expect(dayText("2026-11-06", Date.parse("2026-11-07T18:00:00Z"))).toBe("on Fri, Nov 6");
+  expect(dayText(null, Date.now())).toBe("today");
+});

@@ -185,7 +185,7 @@ function withholdingFor(db: Database, key: string, account: string, now: number)
 }
 
 function healthView(db: Database, m: MarketsDeps, spaceId: string, now: number) {
-  const positions = positionsFor(db, m.data, spaceId);
+  const positions = positionsFor(db, m.data, spaceId, now);
   const fx = latestFx(db);
   const today = etDate(now);
   const holdings = positions.map((p) => ({ key: p.key, quantity: p.quantity, listingCcy: p.listingCcy }));
@@ -206,7 +206,7 @@ function healthView(db: Database, m: MarketsDeps, spaceId: string, now: number) 
     };
   });
   return {
-    health: healthFor(db, m.data, spaceId),
+    health: healthFor(db, m.data, spaceId, now),
     performance: PERIODS.map((p) => performance({ holdings, closes: (k, f) => closes(db, k, f), fxOn: (d) => fxOn(db, d), today }, p)),
     income: incomeTtm(db, positions, fx, now),
     withholding,
@@ -230,7 +230,7 @@ function researchView(db: Database, m: MarketsDeps, spaceId: string, key: string
     key,
     name,
     meta,
-    price: q ? quoteSourced(q) : null,
+    price: q ? quoteSourced(q, now) : null,
     estimate: estimateFor(db, key, proxy, now),
     closes: adjustedCloses(closes(db, key, etDate(now - YEAR_MS))),
     earnings: upcomingEarnings(db, [key], etDate(now), 120),

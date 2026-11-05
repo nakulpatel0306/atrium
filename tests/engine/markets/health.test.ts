@@ -138,3 +138,27 @@ test("tiny shares read <0.1%, and a stock's company warning isn't repeated as a 
   expect(texts.find((t) => t.startsWith("SOFI is "))).toContain("through SPY <0.1%");
   expect(texts.some((t) => t.startsWith("SOFI on its own"))).toBe(false);
 });
+
+test("today's change only counts prices from today, and says which were left out", () => {
+  const today = Date.parse("2026-11-05T15:00:00Z");
+  const fresh = (value: number): Sourced => ({ value, source: "Finnhub · real-time", asOf: today - 60_000, tone: "live" });
+  const h = portfolioHealth({
+    positions: [
+      pos({ key: "AAPL", quantity: 10, price: fresh(200), prevClose: 198 }),
+      pos({ key: "VFV.TO", quantity: 20, price: eod(70), prevClose: 69, listingCcy: "CAD", bookCcy: "CAD", kind: "etf" }),
+    ],
+    fx,
+    lookThrough: new Map(),
+    meta: new Map(),
+    now: today,
+  });
+  // Only AAPL's move: 10 × 2 × 1.40 = 28 on 10 × 198 × 1.40.
+  expect(h.dayCad!.value).toBeCloseTo(28, 9);
+  expect(h.dayPct!).toBeCloseTo((28 / 2772) * 100, 9);
+  expect(h.dayOf).toBe("2026-11-05");
+  expect(h.warnings.map((w) => w.text)).toContain("1 holding isn't in today's change because its price is from an earlier day: VFV.TO (close of Nov 4).");
+  // On a Saturday the latest session is the "day", and nothing is left out.
+  const sat = portfolioHealth({ positions: POSITIONS, fx, lookThrough: LT, meta, now: Date.parse("2026-11-07T17:00:00Z") });
+  expect(sat.dayOf).toBe("2026-11-04");
+  expect(sat.dayCad!.value).toBeCloseTo(76, 9);
+});

@@ -1,7 +1,7 @@
 // Pure: portfolio health from positions, the USD/CAD rate, fund look-through and instrument metadata.
 import type { LookThrough } from "./funds/lookthrough";
 import type { Meta } from "./meta";
-import { fxLabel, mixLabel, toCad, type Sourced } from "./sourced";
+import { etDay, fxLabel, mixLabel, toCad, type Sourced } from "./sourced";
 
 // My calls; easy to change.
 export const CONCENTRATION = { company: 0.1, holding: 0.25, sector: 0.35, country: 0.85, overlap: 0.5 };
@@ -49,6 +49,8 @@ export type Health = {
   warnings: Warning[];
   pnl: HoldingPnl[];
   lookThroughCoverage: number;
+  // The ET date the day change is for: today in session, else the latest session the prices come from.
+  dayOf: string | null;
 };
 
 const pct1 = (n: number) => (n > 0 && n < 0.05 ? "<0.1%" : `${(Math.round(n * 10) / 10).toFixed(1)}%`);
@@ -69,6 +71,7 @@ export function portfolioHealth(i: {
   meta: Map<string, Meta>;
   // Why a fund has no breakdown, for its warning.
   unavailable?: Map<string, string>;
+  now?: number;
 }): Health {
   const warnings: Warning[] = [];
   const unpriced = i.positions.filter((p) => !p.price);
@@ -87,7 +90,7 @@ export function portfolioHealth(i: {
   const total = counted.reduce((a, p) => a + valueCad(p), 0);
   const pnl = i.positions.map((p) => pnlOf(p, i.fx));
   if (!counted.length || total <= 0) {
-    return { totalCad: null, dayCad: null, dayPct: null, byHolding: [], byAssetClass: [], bySector: [], byCountry: [], byCurrency: [], byListingCurrency: [], byCompany: [], overlap: [], warnings, pnl, lookThroughCoverage: 0 };
+    return { totalCad: null, dayCad: null, dayPct: null, byHolding: [], byAssetClass: [], bySector: [], byCountry: [], byCurrency: [], byListingCurrency: [], byCompany: [], overlap: [], warnings, pnl, lookThroughCoverage: 0, dayOf: null };
   }
 
   const mix = mixLabel(counted.map((p) => p.price!));
@@ -96,7 +99,23 @@ export function portfolioHealth(i: {
   const asOf = Math.max(...counted.map((p) => p.price!.asOf));
   const totalCad: Sourced = { value: total, source, asOf, tone: mix.tone };
 
-  const moved = counted.filter((p) => p.prevClose);
+  // A day change only adds up moves from the same session: a price from an earlier day (a Canadian close, a
+  // symbol that didn't trade) carries that day's move, so it's left out of today's and named.
+  const latest = counted.map((p) => etDay(p.price!.asOf)).sort().at(-1)!;
+  const dayOf = i.now !== undefined && counted.some((p) => etDay(p.price!.asOf) === etDay(i.now!)) ? etDay(i.now) : latest;
+  const earlier = counted.filter((p) => p.prevClose && etDay(p.price!.asOf) !== dayOf);
+  if (earlier.length) {
+    const names = earlier.map((p) => `${p.key} (${p.price!.source.replace(/^.* · /, "")})`);
+    const label = dayOf === (i.now !== undefined ? etDay(i.now) : dayOf) ? "today's" : "the day's";
+    warnings.push({
+      kind: "unpriced",
+      text:
+        earlier.length === 1
+          ? `1 holding isn't in ${label} change because its price is from an earlier day: ${names[0]}.`
+          : `${earlier.length} holdings aren't in ${label} change because their prices are from an earlier day: ${names.join(", ")}.`,
+    });
+  }
+  const moved = counted.filter((p) => p.prevClose && etDay(p.price!.asOf) === dayOf);
   const dayValue = moved.reduce((a, p) => a + toCad(p.quantity * (p.price!.value - p.prevClose!), p.listingCcy, i.fx)!, 0);
   const prevValue = moved.reduce((a, p) => a + toCad(p.quantity * p.prevClose!, p.listingCcy, i.fx)!, 0);
   const dayCad: Sourced | null = moved.length ? { value: dayValue, source, asOf, tone: mix.tone } : null;
@@ -230,6 +249,7 @@ export function portfolioHealth(i: {
     warnings,
     pnl,
     lookThroughCoverage: fundValue > 0 ? resolved / fundValue : 1,
+    dayOf,
   };
 }
 

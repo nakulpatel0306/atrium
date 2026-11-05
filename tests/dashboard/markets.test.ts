@@ -8,7 +8,9 @@ import type { Quote } from "../../src/engine/markets/providers/types";
 const q = (extra: Partial<Quote>): Quote => ({ key: "AAPL", price: 100, prevClose: 99, at: Date.parse("2026-11-04T21:00:00Z"), source: "alpaca", freshness: "live", ...extra });
 
 test("freshnessLabel", () => {
-  expect(freshnessLabel(q({}), null)).toEqual({ text: "Alpaca · IEX real-time", tone: "live" });
+  const nov4close = Date.parse("2026-11-04T21:00:00Z");
+  expect(freshnessLabel(q({}), null, nov4close + 60_000)).toEqual({ text: "Alpaca · IEX real-time", tone: "live" });
+  expect(freshnessLabel(q({}), null, Date.parse("2026-11-07T15:00:00Z"))).toEqual({ text: "Alpaca · close of Nov 4", tone: "delayed" });
   expect(freshnessLabel(q({ freshness: "eod", source: "alphavantage" }), null)).toEqual({ text: "Alpha Vantage · close of Nov 4", tone: "delayed" });
   expect(freshnessLabel(q({ freshness: "demo", source: "demo" }), null)).toEqual({ text: "Demo data", tone: "demo" });
   expect(freshnessLabel(null, "No free source covers NEO-listed CDRs.")).toEqual({ text: "No live data: No free source covers NEO-listed CDRs.", tone: "none" });
@@ -33,7 +35,7 @@ test("settings route", () => {
 test("briefingMarketsLine: one investing line, then paper", () => {
   const nov4 = Date.parse("2026-11-04T21:00:00Z");
   const holdings = [{ key: "SHOP.TO", dayPct: 2.1, freshness: "eod" as const, asOf: nov4 }];
-  const day = { dayPct: 0.8, dayCad: 412.4, mix: "Finnhub · real-time", tone: "live" as const, closes: 0, movers: [{ key: "RKLB", dayPct: 6.1, tag: null }], headline: "Rocket Lab wins NASA contract" };
+  const day = { dayPct: 0.8, dayCad: 412.4, mix: "Finnhub · real-time", tone: "live" as const, closes: 0, dayLabel: "today", movers: [{ key: "RKLB", dayPct: 6.1, tag: null }], headline: "Rocket Lab wins NASA contract" };
   expect(briefingMarketsLine({ paper: null, holdings, portfolio: day })).toBe('Portfolio +0.8% today (+CA$412) · RKLB +6.1%: "Rocket Lab wins NASA contract"');
   const mixed = { ...day, mix: "10 real-time · 3 close of Nov 4", tone: "delayed" as const, closes: 3, headline: null };
   expect(briefingMarketsLine({ paper: null, holdings, portfolio: mixed })).toBe("Portfolio +0.8% today (+CA$412) · mixed: 3 at last close · RKLB +6.1%");
@@ -41,6 +43,7 @@ test("briefingMarketsLine: one investing line, then paper", () => {
   expect(briefingMarketsLine({ paper: { dayPnl: 12, totalPnl: -40, equity: 9960 }, holdings, portfolio: down })).toBe("Portfolio −1.3% today (−CA$99) · QBTS −4.2% · Paper +$12.00 today");
   expect(briefingMarketsLine({ paper: { dayPnl: 12, totalPnl: -40, equity: 9960 }, holdings, portfolio: null })).toBe("Paper +$12.00 today");
   expect(briefingMarketsLine({ paper: null, holdings, portfolio: null })).toBeNull();
+  expect(briefingMarketsLine({ paper: null, holdings, portfolio: { ...day, dayLabel: "on Fri, Nov 6", headline: null } })).toBe("Portfolio +0.8% on Fri, Nov 6 (+CA$412) · RKLB +6.1%");
   const demo = { ...day, mix: "Demo data", tone: "demo" as const, headline: null, movers: [{ key: "RKLB", dayPct: 6.1, tag: "demo" }] };
   expect(briefingMarketsLine({ paper: null, holdings, portfolio: demo })).toBe("Portfolio +0.8% today (+CA$412) · demo data · RKLB +6.1%");
 });

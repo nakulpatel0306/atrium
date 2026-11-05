@@ -124,6 +124,7 @@ test("a markets space with holdings shows the portfolio's day and its top movers
     dayPct: 0.8,
     dayCad: 412,
     mix: "10 real-time · 3 close of Nov 4",
+    dayLabel: "today",
     movers: [
       { key: "RKLB", dayPct: 6.1, tag: null },
       { key: "QBTS", dayPct: -4.2, tag: null },

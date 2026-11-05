@@ -5,11 +5,23 @@ const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", 
 
 const PROVIDER_NAMES: Record<ProviderId, string> = { alpaca: "Alpaca", finnhub: "Finnhub", alphavantage: "Alpha Vantage", tiingo: "Tiingo", demo: "Demo" };
 
-// The provider and how fresh its number is, e.g. "Finnhub · real-time" or "Alpha Vantage · close of Nov 4".
-export function freshnessText(q: Pick<Quote, "freshness" | "source" | "at">): string {
+// A live price this old isn't real-time any more: it was the last trade before the close, or a quiet symbol.
+export const STALE_LIVE_MS = 20 * 60_000;
+const timeFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+const hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+export const isStaleLive = (q: Pick<Quote, "freshness" | "at">, now?: number) => q.freshness === "live" && now !== undefined && now - q.at > STALE_LIVE_MS;
+
+// The provider and how fresh its number is, e.g. "Finnhub · real-time" or "Alpha Vantage · close of Nov 4". With
+// `now`, a live price older than 20 minutes says when it's from instead: the close, or the time of its last trade.
+export function freshnessText(q: Pick<Quote, "freshness" | "source" | "at">, now?: number): string {
   if (q.freshness === "demo") return "Demo data";
+  const name = q.source === "alpaca" ? "Alpaca · IEX" : PROVIDER_NAMES[q.source];
   if (q.freshness === "eod") return `${PROVIDER_NAMES[q.source]} · close of ${dayFmt.format(q.at)}`;
-  return q.source === "alpaca" ? "Alpaca · IEX real-time" : `${PROVIDER_NAMES[q.source]} · real-time`;
+  if (isStaleLive(q, now)) {
+    return hourFmt.format(q.at) >= "15:59" ? `${PROVIDER_NAMES[q.source]} · close of ${dayFmt.format(q.at)}` : `${name} as of ${timeFmt.format(q.at)} ET`;
+  }
+  return q.source === "alpaca" ? "Alpaca · IEX real-time" : `${name} · real-time`;
 }
 
 const moneyFmt = { CAD: new Intl.NumberFormat("en-US", { style: "currency", currency: "CAD" }), USD: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }) };

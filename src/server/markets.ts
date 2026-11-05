@@ -417,7 +417,7 @@ async function view(db: Database, m: MarketsDeps, spaceId: string, at: number): 
     strategies: listStrategies(db, spaceId),
     feed: m.feed.status(),
     data: await m.data.status(),
-    portfolio: portfolioDay(db, m.data, spaceId),
+    portfolio: portfolioDay(db, m.data, spaceId, at),
     estimates: estimates(db, m, [...all.keys()], at),
     fx: latestFx(db),
   };
