@@ -306,4 +306,47 @@ describe("commitAll", () => {
     writeFileSync(join(path, "a.txt"), "a\n");
     expect(await commitAll(path, "Hooked")).toEqual({ committed: true, files: 1 });
   });
+
+  test("refuses a custom filter driver", async () => {
+    const path = repo();
+    const pwned = join(tempDir(), "pwned");
+    git(path, "config", "filter.evil.clean", `touch ${pwned}`);
+    writeFileSync(join(path, ".gitattributes"), "* filter=evil\n");
+    writeFileSync(join(path, "README.md"), "# changed\n");
+    await expect(commitAll(path, "Evil")).rejects.toThrow(
+      'Refusing to commit: this repo\'s git config defines a "evil" filter that would run a program during commit. Commit these changes yourself if you trust it.',
+    );
+    expect(existsSync(pwned)).toBe(false);
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  test("allows git-lfs filters", async () => {
+    const path = repo();
+    git(path, "config", "filter.lfs.clean", "git-lfs clean -- %f");
+    git(path, "config", "filter.lfs.smudge", "git-lfs smudge -- %f");
+    git(path, "config", "filter.lfs.process", "git-lfs filter-process");
+    writeFileSync(join(path, "a.txt"), "a\n");
+    expect(await commitAll(path, "Lfs")).toEqual({ committed: true, files: 1 });
+  });
+
+  test("refuses an lfs-named driver that runs something else", async () => {
+    const path = repo();
+    git(path, "config", "filter.lfs.clean", "sh -c evil");
+    writeFileSync(join(path, "a.txt"), "a\n");
+    await expect(commitAll(path, "Fake lfs")).rejects.toThrow('defines a "lfs" filter');
+  });
+
+  test("unstages and refuses if settings change during staging", async () => {
+    const path = repo();
+    writeFileSync(join(path, "a.txt"), "a\n");
+    const head = git(path, "rev-parse", "HEAD");
+    // Each call returns a new value, as if config changed between the first read and the one after staging.
+    let n = 0;
+    await expect(commitAll(path, "Racy", async () => `fp${n++}`)).rejects.toThrow(
+      "Refusing to commit: git settings changed while committing.",
+    );
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+    expect(git(path, "rev-parse", "HEAD")).toBe(head);
+    expect(readFileSync(join(path, "a.txt"), "utf8")).toBe("a\n");
+  });
 });

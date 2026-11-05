@@ -69,7 +69,13 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
 
 // Commits whatever the agent left in the tree. Signing is left to commit.gpgsign in the user's git config:
 // forcing -S would fail in repos and machines where signing isn't set up.
-export async function commitAll(path: string, message: string): Promise<{ committed: boolean; files: number }> {
+export async function commitAll(
+  path: string,
+  message: string,
+  fingerprint: (path: string) => Promise<string> = gitSettingsFingerprint,
+): Promise<{ committed: boolean; files: number }> {
+  const before = await fingerprint(path);
+  await refuseFilterDrivers(path);
   const status = await git(path, ["status", "--porcelain", "-z", "--untracked-files=all"]);
   if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
   const entries = status.out.split("\0").filter(Boolean);
@@ -84,10 +90,37 @@ export async function commitAll(path: string, message: string): Promise<{ commit
   if (env) throw new Error(`Refusing to commit a .env file: ${env}`);
   if (paths.length === 0) return { committed: false, files: 0 };
   const add = await git(path, ["add", "-A"]);
+  // Config can change under a running agent child between the checks above and the add. If it did,
+  // whatever the add just ran is already done, but nothing gets committed.
+  if ((await fingerprint(path)) !== before) {
+    await git(path, ["reset", "-q"]);
+    throw new Error("Refusing to commit: git settings changed while committing.");
+  }
   if (add.code !== 0) throw new Error(`Could not stage changes: ${add.err.trim()}`);
   const commit = await git(path, ["commit", "-m", message]);
   if (commit.code !== 0) throw new Error(`Could not commit: ${(commit.err || commit.out).trim()}`);
   return { committed: true, files: paths.length };
+}
+
+// git add runs clean/process filter drivers, so a driver the agent planted would run with the engine's privileges.
+// git-lfs is the one driver people install on purpose; it is recognised by its command, not its name.
+async function refuseFilterDrivers(path: string): Promise<void> {
+  const res = await git(path, ["config", "--get-regexp", "^filter\\."]);
+  // Exit 1 just means no filter is configured.
+  if (res.code > 1) throw new Error(`Could not read git config: ${res.err.trim()}`);
+  for (const line of res.out.split("\n").filter(Boolean)) {
+    const space = line.indexOf(" ");
+    const key = space === -1 ? line : line.slice(0, space);
+    const value = space === -1 ? "" : line.slice(space + 1);
+    // Subsection names may contain dots, so only the first and last dot are structural.
+    const name = key.slice("filter.".length, key.lastIndexOf("."));
+    const variable = key.slice(key.lastIndexOf(".") + 1);
+    if (!["clean", "smudge", "process"].includes(variable)) continue;
+    if (name === "lfs" && value.startsWith("git-lfs ")) continue;
+    throw new Error(
+      `Refusing to commit: this repo's git config defines a "${name}" filter that would run a program during commit. Commit these changes yourself if you trust it.`,
+    );
+  }
 }
 
 const MISSING = "\0missing\0";
