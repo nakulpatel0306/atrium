@@ -31,7 +31,8 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
   let seenStopped = Set(previous.stopped.map(\.id))
   var notes: [Note] = next.needs.filter { !seenNeeds.contains($0.id) }.map {
     Note(
-      id: $0.id, title: $0.kind == "question" ? "Atrium has a question" : "Ready for review",
+      // A suggestion ("stop asking about this?") waits on an answer, like a question.
+      id: $0.id, title: $0.kind == "review" ? "Ready for review" : "Atrium has a question",
       body: "\($0.title) · \($0.spaceName)", path: $0.path)
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {

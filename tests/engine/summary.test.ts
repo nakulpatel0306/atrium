@@ -6,7 +6,15 @@ import { setSetting } from "../../src/engine/settings";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { summary } from "../../src/engine/summary";
 import { createTask, setTaskStatus } from "../../src/engine/tasks";
+import { labelOf } from "../../src/engine/autonomy/kinds";
 import { tempHome } from "../helpers";
+
+const FP = "v1:code:docs:small:claude";
+// A pending "stop asking about this?" suggestion, inserted directly so the test doesn't need a clean streak.
+const suggest = (spaceId: string, id: string, createdAt: number) =>
+  db
+    .query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, created_at) VALUES (?, ?, ?, '[]', ?)")
+    .run(id, spaceId, FP, createdAt);
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
@@ -74,4 +82,25 @@ test("summary reports overnight", () => {
   expect(summary(db).overnight).toBe(false);
   setSetting(db, "overnight", "true");
   expect(summary(db).overnight).toBe(true);
+});
+
+test("summary counts pending suggestions as things that need you", () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
+  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Which?", detail: "" });
+  suggest(s.id, "prp_new", a.createdAt + 1000);
+  const answered = createSpace(db, { name: "Old", kind: "general", goal: "g" });
+  suggest(answered.id, "prp_done", a.createdAt + 2000);
+  db.query("UPDATE autonomy_proposals SET status = 'never' WHERE id = 'prp_done'").run();
+
+  const sum = summary(db);
+  expect(sum.needsYou).toBe(2);
+  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/" });
+  expect(sum.needs[1]!.id).toBe(a.id);
+});
+
+test("summary skips suggestions in archived spaces", () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
+  suggest(s.id, "prp_1", Date.now());
+  updateSpace(db, s.id, { status: "archived" });
+  expect(summary(db).needsYou).toBe(0);
 });
