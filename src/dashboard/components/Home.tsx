@@ -3,7 +3,7 @@ import { ranAgent } from "../agents";
 import type { State } from "../api";
 import { briefingMarketsLine } from "../markets";
 import { navigate } from "../route";
-import { liveStatus, spaceStatus } from "../summary";
+import { emptyHome, liveStatus, spaceStatus } from "../summary";
 import { Activity } from "./Activity";
 import { Avatar } from "./Avatar";
 import { Logo } from "./Logo";
@@ -76,7 +76,7 @@ type Props = {
 };
 
 export function Home({ state, briefing, onNewSpace }: Props) {
-  if (state.spaces.length === 0) {
+  if (emptyHome(state)) {
     return (
       <div className="wrap">
         <div className="hero-empty">

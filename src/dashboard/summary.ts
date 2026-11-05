@@ -176,3 +176,8 @@ export function reviewHint(reviewBy: Space["reviewBy"]): string {
 }
 
 export const actorName = (actor: string) => (actor === "you" ? "You" : actor.charAt(0).toUpperCase() + actor.slice(1));
+
+// The first-run hero replaces Home only when nothing exists yet; a waiting question (say, a first project's draft)
+// must still be shown.
+export const emptyHome = (state: State): boolean =>
+  state.spaces.length === 0 && state.approvals.length === 0 && state.proposals.length === 0;

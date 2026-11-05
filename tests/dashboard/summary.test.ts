@@ -4,6 +4,7 @@ import type { Message, State } from "../../src/dashboard/api";
 import {
   agentStatus,
   distinctWaits,
+  emptyHome,
   orderedTasks,
   reviewLine,
   reviewTarget,
@@ -113,4 +114,11 @@ test("distinctWaits drops repeated reasons", () => {
   ];
   const got = distinctWaits(tasks, state({ tasks, waits: waitsOf(waits) }));
   expect(got.map((w) => w.kind)).toEqual(["signed_out", "limited"]);
+});
+
+test("Home is only empty when there are no spaces and nothing waiting", () => {
+  expect(emptyHome(state({ spaces: [], proposals: [] } as Partial<State>))).toBe(true);
+  const ask = { id: "apr_1", spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?' } as Approval;
+  expect(emptyHome(state({ spaces: [], proposals: [], approvals: [ask] } as Partial<State>))).toBe(false);
+  expect(emptyHome(state({ spaces: [space], proposals: [] } as Partial<State>))).toBe(false);
 });
