@@ -237,7 +237,10 @@ describe("agents can't reach GitHub credentials", () => {
       const profile = seatbeltProfile({ cwd, writable: [cwd] });
       expect(profile).toContain(`(deny process-exec (literal "${realpathSync(FAKE_GH)}")`);
       expect(profile).toContain('(deny network-outbound (remote tcp "*:22"))');
-      expect(profile).toContain(`(deny network-outbound (remote unix-socket (path-literal "${join(outside, "agent.sock")}")))`);
+      // Every local socket, named by SSH_AUTH_SOCK or not, except DNS.
+      expect(profile).toContain("(deny network-outbound (remote unix-socket))");
+      expect(profile).toContain('(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))');
+      expect(profile).not.toContain(join(outside, "agent.sock"));
     } finally {
       for (const [k, v] of [["ATRIUM_GH_BIN", saved.gh], ["SSH_AUTH_SOCK", saved.sock]] as const) {
         if (v === undefined) delete process.env[k];
@@ -263,6 +266,9 @@ describe("agents can't reach GitHub credentials", () => {
       expect(gh.err).toContain("Operation not permitted");
       // Exit 2: ssh-add couldn't talk to the agent at all.
       expect(sandboxed(profile, `SSH_AUTH_SOCK='${sock}' ssh-add -l`).exitCode).toBe(2);
+      // The launchd engine may not have SSH_AUTH_SOCK while the socket still exists: blocked all the same.
+      delete process.env.SSH_AUTH_SOCK;
+      expect(sandboxed(seatbeltProfile({ cwd, writable: [cwd] }), `SSH_AUTH_SOCK='${sock}' ssh-add -l`).exitCode).toBe(2);
       expect(sandboxed(profile, "curl -sI -m 10 -o /dev/null -w '%{http_code}' https://github.com").out).toBe("200");
     } finally {
       if (pid) process.kill(Number(pid));
@@ -273,3 +279,15 @@ describe("agents can't reach GitHub credentials", () => {
     }
   });
 });
+
+// GitHub also takes SSH on port 443. With ~/.ssh unreadable and no agent, there's no key to offer.
+test("SSH to GitHub over port 443 finds no key under the profile", () => {
+  if (process.platform !== "darwin") return;
+  const profile = seatbeltProfile({ cwd, writable: [cwd] });
+  const r = sandboxed(
+    profile,
+    "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -T -p 443 git@ssh.github.com",
+  );
+  expect(r.exitCode).not.toBe(0);
+  expect(r.err).not.toContain("successfully authenticated");
+}, 30_000);

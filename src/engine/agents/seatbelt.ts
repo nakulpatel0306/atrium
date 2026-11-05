@@ -108,7 +108,11 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     // GitHub is the engine's alone: no gh, no SSH to git hosts, and no SSH agent to sign or push with.
     ...ghBinaries().map((p) => `(deny process-exec (literal ${str(p)}))`),
     '(deny network-outbound (remote tcp "*:22"))',
-    ...(process.env.SSH_AUTH_SOCK ? [`(deny network-outbound (remote unix-socket (path-literal ${str(canonical(process.env.SSH_AUTH_SOCK))})))`] : []),
+    // No local sockets at all: SSH agents (launchd's, 1Password's, Secretive's) and any other local service are
+    // reached through one, wherever it lives and whether or not SSH_AUTH_SOCK names it.
+    "(deny network-outbound (remote unix-socket))",
+    // Except DNS, which macOS answers through mDNSResponder's socket.
+    '(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))',
     ...(opts.denyKeychain ? [KEYCHAIN_SERVICES] : []),
     // Atrium's API listens on loopback, and a forged Host/Origin from inside a run could approve its own drafts.
     // "localhost" covers 127.0.0.1, ::1, 0.0.0.0 and ::ffff:127.0.0.1; the CLIs only need the internet.
