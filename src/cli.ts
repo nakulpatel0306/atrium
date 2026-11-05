@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { config } from "./engine/config";
 import type { State } from "./engine/state";
+import { xml } from "./mac/plists";
 
 const LABEL = "com.atrium.engine";
 const root = resolve(import.meta.dir, "..");
@@ -11,8 +12,6 @@ const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 
 export type PlistOpts = { bunPath: string; mainPath: string; logPath: string; workingDir?: string; pathEnv?: string };
-
-const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export function renderPlist(opts: PlistOpts): string {
   const values: Record<string, string> = {
