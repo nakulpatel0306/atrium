@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { ENV_GLOBS } from "../envpath";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { shortCommand } from "./short";
@@ -8,10 +9,8 @@ const denyRules = () => [
   "Read(**/.env*)",
   "Edit(**/.env*)",
   "Write(**/.env*)",
-  // Names ending in .env, such as prod.env.
-  "Read(**/*.env)",
-  "Edit(**/*.env)",
-  "Write(**/*.env)",
+  // Any case, names ending in .env too, and everything inside a folder with such a name.
+  ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
@@ -37,7 +36,12 @@ export function sandboxSettings(cwd: string): string {
       allowUnsandboxedCommands: false,
       autoAllowBashIfSandboxed: false,
       filesystem: {
-        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", "~/**/*.env", `${cwd}/**/.env*`, `${cwd}/**/*.env`, config().home],
+        denyRead: [
+          "~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", `${cwd}/**/.env*`,
+          // A wildcard entry that matches a folder blocks its contents too.
+          ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
+          config().home,
+        ],
       },
       network: { allowedDomains: ["registry.npmjs.org"] },
     },

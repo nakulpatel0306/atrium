@@ -125,9 +125,13 @@ describe("claudeAdapter", () => {
       "Read(**/.env*)",
       "Edit(**/.env*)",
       "Write(**/.env*)",
-      "Read(**/*.env)",
-      "Edit(**/*.env)",
-      "Write(**/*.env)",
+      // APFS is case-insensitive, so .ENV opens .env: the rules spell out each letter's case.
+      ...["Read", "Edit", "Write"].flatMap((tool) => [
+        `${tool}(**/.[eE][nN][vV]*)`,
+        `${tool}(**/.[eE][nN][vV]*/**)`,
+        `${tool}(**/*.[eE][nN][vV])`,
+        `${tool}(**/*.[eE][nN][vV]/**)`,
+      ]),
       "Bash(cat *.env*)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
@@ -174,8 +178,9 @@ describe("claudeAdapter", () => {
   test("sandboxSettings embeds the run directory", () => {
     const { sandbox } = JSON.parse(sandboxSettings("/x/repo"));
     expect(sandbox.filesystem.denyRead).toContain("/x/repo/**/.env*");
-    expect(sandbox.filesystem.denyRead).toContain("/x/repo/**/*.env");
-    expect(sandbox.filesystem.denyRead).toContain("~/**/*.env");
+    for (const p of ["~/**/.[eE][nN][vV]*", "~/**/*.[eE][nN][vV]", "/x/repo/**/.[eE][nN][vV]*", "/x/repo/**/*.[eE][nN][vV]"]) {
+      expect(sandbox.filesystem.denyRead).toContain(p);
+    }
     expect(sandbox.filesystem.denyRead).toContain("~/.ssh");
     expect(sandbox.filesystem.denyRead).toContain(config().home);
     expect(sandbox.enabled).toBe(true);
