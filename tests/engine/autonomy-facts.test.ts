@@ -142,6 +142,14 @@ test("a touched file with a doctest prompt in an untouched line isn't plain", as
   expect(await kindOf(t)).toBeNull();
 });
 
+test("a docs file that already holds a script tag isn't plain after a prose-only edit", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "<script setup>\nlet a;\n</script>\n\nnew prose\n" }, { "docs/a.md": "<script setup>\nlet a;\n</script>\n" }))).toBeNull();
+});
+
+test("plain prose docs still get the docs kind", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "Hello.\n\nMore prose.\n" }, { "docs/a.md": "Hello.\n" }))).toBe("v1:code:docs:small:claude");
+});
+
 test("a touched file with a continuation line isn't plain", async () => {
   expect(await kindOf(taskWith({ "docs/a.md": "intro\n... continued\nnew\n" }, { "docs/a.md": "intro\n... continued\n" }))).toBeNull();
 });

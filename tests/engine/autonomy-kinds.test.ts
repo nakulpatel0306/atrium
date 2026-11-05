@@ -148,11 +148,11 @@ describe("docs that execute", () => {
     for (const line of [
       "import Chart from './chart'", "  export const x = 1", "<script>alert(1)</script>", "<SCRIPT src=x>", "Hello {{ secret }}",
       "{% include 'x.html' %}", ">>> import os", "   >>> 1 + 1", ".. raw:: html", ".. include:: ../secrets.txt", "  .. doctest::",
-      ".. literalinclude:: x.py", ".. code-block:: python", "iex> 1 + 1", "  iex(2)> x",
+      ".. literalinclude:: x.py", ".. code-block:: python", "iex> 1 + 1", "  iex(2)> x", ".. note::", ".. code block::",
     ]) {
       expect(fingerprintOf(withContent({ added: ["fine", line] }))).toBeNull();
     }
-    expect(fingerprintOf(withContent({ added: ["Important: exports are listed below.", "Use `{ a }` braces.", "> quoted", ".. note::"] }))).toBe(
+    expect(fingerprintOf(withContent({ added: ["Important: exports are listed below.", "Use `{ a }` braces.", "> quoted"] }))).toBe(
       "v1:code:docs:small:claude",
     );
   });
@@ -189,6 +189,16 @@ describe("docs that execute", () => {
       expect(bodyRuns(text)).toBe(true);
     }
     for (const text of ["# T\n\nplain text...\n", "a .. b", "Wait... what"]) expect(bodyRuns(text)).toBe(false);
+  });
+
+  test("rST directive names with spaces or dots still count", () => {
+    for (const text of [".. code block::\n   x", ".. sphinx.ext.x::\n   y"]) expect(bodyRuns(text)).toBe(true);
+  });
+
+  test("the whole-file check covers everything the added-line check refuses", () => {
+    for (const text of ["<script setup>\n", "x {{ y }}", "{% if a %}", "import X from 'x'", "  export const a = 1", "iex> 1", "intro\n<SCRIPT>"]) {
+      expect(bodyRuns(text)).toBe(true);
+    }
   });
 
   test("doctest settings make Markdown executable", () => {
