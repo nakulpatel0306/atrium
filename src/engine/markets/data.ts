@@ -64,15 +64,23 @@ export function createMarketData(deps: {
   let keys: Keys = { alpacaKeyId: null, alpacaSecret: null, finnhub: null, alphavantage: null };
   let loaded: Promise<void> | null = null;
   let built: Partial<Record<ProviderId, MarketProvider>> = {};
+  // A provider that rejected its key says so in the status until the keys change.
+  let rejected: Partial<Record<ProviderId, string>> = {};
+  let lastRead = 0;
+  let readFailed = false;
 
   const read = async (account: string) => {
     try {
       return await deps.keychain.get(account);
     } catch {
+      readFailed = true;
       return null;
     }
   };
   const reload = async () => {
+    readFailed = false;
+    lastRead = now();
+    rejected = {};
     keys = {
       alpacaKeyId: await read(KEY_ACCOUNTS.alpacaKeyId),
       alpacaSecret: await read(KEY_ACCOUNTS.alpacaSecret),
@@ -81,7 +89,17 @@ export function createMarketData(deps: {
     };
     built = {};
   };
-  const ensure = () => (loaded ??= reload());
+  // A Keychain that was locked at boot (or a key added outside Atrium) is picked up later without a restart: after a
+  // failed read, retried a minute on; with the current provider's key missing, every ten minutes.
+  const ensure = async () => {
+    if (loaded) await loaded;
+    const since = now() - lastRead;
+    const missing = mode() !== "demo" && !has[mode() as "alpaca" | "finnhub"]();
+    if (!loaded || (readFailed && since > 60_000) || (missing && since > 600_000)) {
+      loaded = reload();
+      await loaded;
+    }
+  };
 
   const has = { alpaca: () => !!(keys.alpacaKeyId && keys.alpacaSecret), finnhub: () => !!keys.finnhub, alphavantage: () => !!keys.alphavantage };
   const mode = (): DataStatus["usProvider"] => {
@@ -175,6 +193,7 @@ export function createMarketData(deps: {
           for (const i of group) if (!seen.has(instrumentKey(i))) missing.push({ key: instrumentKey(i), reason: `${p.label} has no price for ${instrumentKey(i)}.` });
         } catch (e) {
           const reason = message(e);
+          if (e instanceof ProviderError && e.kind === "auth") rejected[p.id] = reason;
           for (const i of group) missing.push({ key: instrumentKey(i), reason });
         }
       }
@@ -229,9 +248,15 @@ export function createMarketData(deps: {
       const m = mode();
       const keysPresent = { alpaca: has.alpaca(), finnhub: has.finnhub(), alphavantage: has.alphavantage() };
       if (m === "demo") return { usProvider: m, us: { ready: true, message: "Demo data" }, ca: { ready: true, message: "Demo data" }, keys: keysPresent };
-      const us = has[m]() ? { ready: true, message: m === "alpaca" ? "Alpaca · IEX real-time" : "Finnhub · real-time" } : { ready: false, message: MISSING[m] };
+      const us = !has[m]()
+        ? { ready: false, message: MISSING[m] }
+        : rejected[m]
+          ? { ready: false, message: rejected[m]! }
+          : { ready: true, message: m === "alpaca" ? "Alpaca · IEX real-time" : "Finnhub · real-time" };
       const left = dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now).remaining();
-      const ca = has.alphavantage()
+      const ca = rejected.alphavantage
+        ? { ready: false, message: rejected.alphavantage }
+        : has.alphavantage()
         ? { ready: true, message: `Alpha Vantage · end of day (${left} of ${AV_DAILY_LIMIT} requests left today)` }
         : { ready: false, message: MISSING.ca };
       return { usProvider: m, us, ca, keys: keysPresent };

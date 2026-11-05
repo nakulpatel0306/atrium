@@ -22,6 +22,8 @@ if (process.env.FAKE_SECURITY_FAIL) {
 
 function run(list: string[]): number {
   const [cmd, ...rest] = list;
+  // Fails writes to one account only, to test a two-key save that breaks halfway.
+  if (cmd === "add-generic-password" && process.env.FAKE_SECURITY_FAIL_ACCOUNT === flag(rest, "-a")) return 1;
   const id = `${flag(rest, "-s")}/${flag(rest, "-a")}`;
   const s = load();
   if (cmd === "add-generic-password") {

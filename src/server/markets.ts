@@ -424,9 +424,12 @@ async function saveKeys(db: Database, m: MarketsDeps, b: Record<string, unknown>
   } catch (e) {
     throw new HttpError(422, redact(e instanceof Error ? e.message : String(e), secrets));
   }
+  // A key ID without its secret is useless, so a pair is saved whole or the old pair is put back.
+  const previous = await Promise.all(entries.map(async ([account]) => [account, await m.keychain.get(account).catch(() => null)] as const));
   try {
     for (const [account, value] of entries) await m.keychain.set(account, value);
   } catch (e) {
+    for (const [account, old] of previous) await (old ? m.keychain.set(account, old) : m.keychain.remove(account)).catch(() => {});
     if (e instanceof KeychainError) throw new HttpError(422, e.message);
     throw e;
   }

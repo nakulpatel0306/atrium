@@ -71,3 +71,16 @@ test("news maps datetime seconds", async () => {
   expect(f.calls[0]!.url.searchParams.get("from")).toBe("2026-11-04");
   expect(f.calls[0]!.url.searchParams.get("to")).toBe("2026-11-05");
 });
+
+test("an auth error on the stream stops retrying", () => {
+  const timers = fakeTimers();
+  const statuses: { ok: boolean; message: string }[] = [];
+  const p = finnhubProvider(TOKEN, { WebSocket: WS, now: () => NOW, timers });
+  p.stream!([AAPL], { quote: () => {}, status: (s) => statuses.push(s) });
+  const ws = FakeWebSocket.instances[0]!;
+  ws.receive({ type: "error", msg: "Invalid API key" });
+  expect(statuses.at(-1)).toEqual({ ok: false, message: "Finnhub rejected the token. Check it in Settings → Market data." });
+  expect(ws.closed).toBe(true);
+  ws.drop();
+  expect(timers.pending.size).toBe(0);
+});

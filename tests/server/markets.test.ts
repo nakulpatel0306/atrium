@@ -270,3 +270,26 @@ test("a cross-site page can't read market data or spend provider calls", async (
   expect((await fetch(`${base}/api/markets/bars?key=AAPL&range=1M`)).status).toBe(200);
   expect(calls).toBe(1);
 });
+
+test("the Alpaca key pair is saved together or not at all", async () => {
+  const ok = (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch;
+  const { keychain } = boot({ demo: false, fetch: ok });
+  process.env.FAKE_SECURITY_FAIL_ACCOUNT = "alpaca.secret";
+  try {
+    const r = await call("POST", "/api/settings/market-data/keys", { provider: "alpaca", keyId: "PKFIRSTKEY123", secret: "SKFIRSTSECRET1" });
+    expect(r.status).toBe(422);
+    expect(await keychain.get("alpaca.keyId")).toBeNull();
+  } finally {
+    delete process.env.FAKE_SECURITY_FAIL_ACCOUNT;
+  }
+  await keychain.set("alpaca.keyId", "PKOLDKEY12345");
+  await keychain.set("alpaca.secret", "SKOLDSECRET123");
+  process.env.FAKE_SECURITY_FAIL_ACCOUNT = "alpaca.secret";
+  try {
+    expect((await call("POST", "/api/settings/market-data/keys", { provider: "alpaca", keyId: "PKNEWKEY12345", secret: "SKNEWSECRET123" })).status).toBe(422);
+  } finally {
+    delete process.env.FAKE_SECURITY_FAIL_ACCOUNT;
+  }
+  expect(await keychain.get("alpaca.keyId")).toBe("PKOLDKEY12345");
+  expect(await keychain.get("alpaca.secret")).toBe("SKOLDSECRET123");
+});

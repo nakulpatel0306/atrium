@@ -74,7 +74,16 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
         } catch {
           return;
         }
-        if (m.type === "error") ev.status({ ok: false, message: "Finnhub's live feed reported a problem. Checking every 3 minutes instead." });
+        if (m.type === "error") {
+          // A rejected token won't start working by retrying; the stream stays closed until the keys change.
+          if (/api key|token|auth/i.test(String((m as { msg?: unknown }).msg ?? ""))) {
+            stopped = true;
+            ev.status({ ok: false, message: AUTH_MESSAGE });
+            sock.close();
+            return;
+          }
+          ev.status({ ok: false, message: "Finnhub's live feed reported a problem. Checking every 3 minutes instead." });
+        }
         if (m.type !== "trade") return;
         for (const t of m.data ?? []) {
           if (!symbols.includes(t.s)) continue;

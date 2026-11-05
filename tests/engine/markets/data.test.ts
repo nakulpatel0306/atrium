@@ -151,3 +151,34 @@ test("secrets() lists loaded keys and reload() re-reads them", async () => {
   expect(data.secrets()).toEqual(["FHTEST12345"]);
   expect((await data.status()).keys.finnhub).toBe(true);
 });
+
+test("a rejected key shows in the status and stops the feed asking", async () => {
+  const us = stub("alpaca");
+  us.p.quotes = async () => {
+    throw new ProviderError("auth", "Alpaca rejected the key. Check the key ID and secret in Settings → Market data.");
+  };
+  const data = createMarketData({ db, keychain: fakeKeychain({ ...ALL_KEYS }), now: () => now, providers: { alpaca: us.p } });
+  await data.quotes([{ symbol: "AAPL", exchange: "US" }]);
+  expect((await data.status()).us).toEqual({ ready: false, message: "Alpaca rejected the key. Check the key ID and secret in Settings → Market data." });
+  await data.reload();
+  expect((await data.status()).us.ready).toBe(true);
+});
+
+test("keys are read again later when the Keychain was locked at boot", async () => {
+  let locked = true;
+  const keys: Record<string, string> = { ...ALL_KEYS };
+  const keychain: Keychain = {
+    get: async (a) => {
+      if (locked) throw new Error("locked");
+      return keys[a] ?? null;
+    },
+    set: async () => {},
+    remove: async () => {},
+  };
+  const data = createMarketData({ db, keychain, now: () => now, providers: { alpaca: stub("alpaca").p } });
+  expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).missing).toHaveLength(1);
+  locked = false;
+  expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).missing).toHaveLength(1);
+  now += 61_000;
+  expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).quotes).toHaveLength(1);
+});
