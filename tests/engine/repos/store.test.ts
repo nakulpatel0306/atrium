@@ -130,3 +130,15 @@ test("a renamed or re-scoped retry stops reusing the earlier empty repo", () => 
   const rescoped = draftProject(db, d, { remoteUrl }).action;
   expect(updateDraft(db, rescoped.id, { ...d, visibility: "public" }).remoteUrl).toBeNull();
 });
+
+test("a retry that picks up the pushed repo keeps its template and says what it will do", () => {
+  const remoteUrl = "https://github.com/fakeuser/demo";
+  const { action, approval } = draftProject(db, d, { remoteUrl, pushedSha: "a".repeat(40), lastError: "stopped" });
+  expect(approval.detail).toContain("The README keeps the first description; the GitHub description is updated to this one.");
+  expect(approval.detail).toContain(`On yes, Atrium picks up ${remoteUrl} as it is, updates its GitHub description, and adds a repo space.`);
+  expect(approval.detail).not.toContain("sets up the folder from the template");
+  expect(() => updateDraft(db, action.id, { ...d, template: "empty" })).toThrow(
+    "Atrium already pushed the first commit with the bun + TypeScript template; pick a new name to start over with a different template.",
+  );
+  expect(updateDraft(db, action.id, { ...d, description: "new words" }).pushedSha).toBe("a".repeat(40));
+});

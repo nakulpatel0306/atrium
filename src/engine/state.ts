@@ -70,6 +70,8 @@ export type RepoActionView = {
   path: string | null;
   folderTaken: boolean;
   github: string | null;
+  // A retry that picks up the repo an earlier run already pushed: its template can't change.
+  pickedUp: boolean;
   // Not measured here (walking a big folder would slow every snapshot); the removal's detail carries its size.
   bytes: number | null;
 };
@@ -85,10 +87,10 @@ function repoActionViews(db: Database): RepoActionView[] {
         folderTaken = true;
       }
       const path = join(config().projectsRoot, a.draft.name);
-      return { id: a.id, approvalId: a.approvalId, kind: a.kind, draft: a.draft, path, folderTaken, github: null, bytes: null };
+      return { id: a.id, approvalId: a.approvalId, kind: a.kind, draft: a.draft, path, folderTaken, github: null, pickedUp: a.pushedSha !== null, bytes: null };
     }
     const clone = a.cloneId ? getClone(db, a.cloneId) : null;
-    return { id: a.id, approvalId: a.approvalId, kind: a.kind, draft: null, path: clone?.path ?? null, folderTaken: false, github: clone?.github ?? null, bytes: null };
+    return { id: a.id, approvalId: a.approvalId, kind: a.kind, draft: null, path: clone?.path ?? null, folderTaken: false, github: clone?.github ?? null, pickedUp: false, bytes: null };
   });
 }
 

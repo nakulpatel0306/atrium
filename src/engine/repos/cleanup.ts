@@ -1,8 +1,9 @@
 import type { Database } from "bun:sqlite";
-import { lstatSync, renameSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type Approval, createApproval, getApproval, isOwnYes } from "../approvals";
+import { config } from "../config";
 import { bus, logActivity } from "../events";
 import { git, STAGE_FLAGS } from "../git";
 import { isEnvPath } from "../envpath";
@@ -36,6 +37,8 @@ export const BUILD_OUTPUT = new Set([
 const IGNORED_JUNK = ".DS_Store";
 const WALK_LIMIT = 50_000;
 const NOT_OURS = "Atrium didn't create this folder, so it never removes it.";
+const MOVE_FAILED = "Atrium couldn't move the local copy aside to remove it, so it left it where it was. Check the folder's permissions, then ask again.";
+const TRASH_PREFIX = ".atrium-trash-";
 
 const first3 = (paths: string[]) => paths.slice(0, 3).join(", ");
 
@@ -227,6 +230,8 @@ export async function scanIdleClones(db: Database, now: number): Promise<number>
 // and the moved .git must still be the one pinned when Atrium cloned it. On any mismatch it goes back untouched.
 export function removeVerified(path: string, cloneId: string, pin: { dev: number; ino: number }): boolean {
   const trash = join(dirname(path), `.atrium-trash-${cloneId}`);
+  // Only ever Atrium's own leftover from an earlier try at this same clone.
+  rmSync(trash, { recursive: true, force: true });
   renameSync(path, trash);
   let same = false;
   try {
@@ -260,13 +265,52 @@ export async function removeClone(db: Database, actionId: string): Promise<RepoA
     logActivity(db, clone.spaceId, "atrium", `Kept the local copy of ${clone.github}: ${error}`);
     return setActionStatus(db, actionId, "failed", { error });
   }
-  if (!removeVerified(clone.path, clone.id, { dev: clone.gitDev, ino: clone.gitIno })) {
-    return setActionStatus(db, actionId, "failed", { error: NOT_OURS });
+  let removed: boolean;
+  try {
+    removed = removeVerified(clone.path, clone.id, { dev: clone.gitDev, ino: clone.gitIno });
+  } catch (e) {
+    console.error(`Couldn't remove ${clone.path}: ${e instanceof Error ? e.message : String(e)}`);
+    return setActionStatus(db, actionId, "failed", { error: MOVE_FAILED });
   }
+  if (!removed) return setActionStatus(db, actionId, "failed", { error: NOT_OURS });
   return db.transaction(() => {
     markRemoved(db, clone.id, Date.now());
     for (const space of spacesUsing(db, clone.path)) setSpaceRepo(db, space.id, { repoPath: null });
     logActivity(db, clone.spaceId, "atrium", `Removed the local copy of ${clone.github} (${bytes(check.bytes)})`);
     return setActionStatus(db, actionId, "done");
   })();
+}
+
+// On boot: a removal cut off mid-run is failed, a folder caught between being moved aside and deleted goes back,
+// and trash whose clone is already gone is deleted (it only ever holds a folder Atrium had verified as its own).
+export function recoverRemovals(db: Database): number {
+  const root = config().projectsRoot;
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(root).filter((e) => e.startsWith(TRASH_PREFIX));
+  } catch {
+    // No projects folder, so nothing to tidy.
+  }
+  for (const entry of entries) {
+    const trash = join(root, entry);
+    const clone = getClone(db, entry.slice(TRASH_PREFIX.length));
+    if (clone?.status === "present" && dirname(clone.path) === root && !existsSync(clone.path)) renameSync(trash, clone.path);
+    else if (clone?.status !== "present") rmSync(trash, { recursive: true, force: true });
+  }
+  const stuck = db.query("SELECT id FROM repo_actions WHERE kind = 'remove' AND status = 'running'").all() as { id: string }[];
+  for (const { id } of stuck) {
+    const action = getRepoAction(db, id)!;
+    const clone = action.cloneId ? getClone(db, action.cloneId) : null;
+    if (clone && clone.status === "present" && !existsSync(clone.path)) {
+      // The delete itself finished before the stop; only the bookkeeping is left.
+      markRemoved(db, clone.id, Date.now());
+      for (const space of spacesUsing(db, clone.path)) setSpaceRepo(db, space.id, { repoPath: null });
+      setActionStatus(db, id, "failed", { error: "Atrium stopped while removing this local copy, after it was already deleted." });
+    } else {
+      setActionStatus(db, id, "failed", {
+        error: "Atrium stopped while removing this local copy. It was put back; ask again from Settings → Storage if you still want it gone.",
+      });
+    }
+  }
+  return stuck.length;
 }

@@ -97,7 +97,12 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
           </fieldset>
           <label>
             Template
-            <select className="mk-input" value={fields.template} onChange={(e) => set({ template: e.target.value as TemplateId })}>
+            <select
+              className="mk-input"
+              value={fields.template}
+              disabled={action.pickedUp && fields.name === action.draft!.name && fields.visibility === action.draft!.visibility}
+              onChange={(e) => set({ template: e.target.value as TemplateId })}
+            >
               {(Object.keys(TEMPLATE_LABELS) as TemplateId[]).map((t) => (
                 <option key={t} value={t}>
                   {TEMPLATE_LABELS[t]}
@@ -110,10 +115,17 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
             <input className="mk-input" value={folder ?? ""} readOnly tabIndex={-1} />
             {taken && <span className="err">A folder with this name already exists. Pick another name.</span>}
           </label>
-          <p className="hint">
-            On yes, Atrium creates the repo on your GitHub account with gh, sets up the folder from the template, makes a signed first commit as
-            you, pushes it to main, and adds a repo space.
-          </p>
+          {action.pickedUp && fields.name === action.draft!.name && fields.visibility === action.draft!.visibility ? (
+            <p className="hint">
+              Atrium already pushed the first commit, so on yes it picks up that repo as it is, updates its GitHub description, and adds a repo
+              space. The README keeps the first description. Change the name to start over with a fresh repo.
+            </p>
+          ) : (
+            <p className="hint">
+              On yes, Atrium creates the repo on your GitHub account with gh, sets up the folder from the template, makes a signed first commit as
+              you, pushes it to main, and adds a repo space.
+            </p>
+          )}
           <button type="submit" hidden />
         </form>
       )}

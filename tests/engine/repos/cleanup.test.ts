@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getApproval, listPending, onApprovalResolved, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
-import { askToRemove, CLONE_IDLE_MS, checkRemovable, DECLINE_QUIET_MS, removeVerified, scanIdleClones } from "../../../src/engine/repos/cleanup";
+import { askToRemove, CLONE_IDLE_MS, checkRemovable, DECLINE_QUIET_MS, recoverRemovals, removeVerified, scanIdleClones } from "../../../src/engine/repos/cleanup";
 import { createCloner } from "../../../src/engine/repos/clones";
 import { createRepos } from "../../../src/engine/repos";
 import { actionForApproval, listClones, type RepoClone } from "../../../src/engine/repos/store";
@@ -254,5 +254,50 @@ test("removal moves the folder aside and deletes it only if it's still the pinne
   expect(readdirSync(gh.projects).filter((e) => e.startsWith(".atrium-trash-"))).toEqual([]);
   expect(removeVerified(path, clone.id, pin)).toBe(true);
   expect(existsSync(path)).toBe(false);
+  expect(readdirSync(gh.projects).filter((e) => e.startsWith(".atrium-trash-"))).toEqual([]);
+});
+
+test("Atrium's own leftover trash for the same clone doesn't block removal", () => {
+  const trash = join(gh.projects, `.atrium-trash-${clone.id}`);
+  mkdirSync(join(trash, "old"), { recursive: true });
+  writeFileSync(join(trash, "old", "x"), "x");
+  expect(removeVerified(path, clone.id, { dev: clone.gitDev, ino: clone.gitIno })).toBe(true);
+  expect(existsSync(path)).toBe(false);
+  expect(existsSync(trash)).toBe(false);
+});
+
+test("a removal that can't move the folder fails plainly and leaves it in place", async () => {
+  const repos = wired();
+  const asked = await askToRemove(db, clone.id);
+  if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
+  // A read-only projects folder makes the move aside fail.
+  Bun.spawnSync(["chmod", "a-w", gh.projects]);
+  try {
+    resolveApproval(db, asked.approval.id, "approve");
+    await repos.settle();
+  } finally {
+    Bun.spawnSync(["chmod", "u+w", gh.projects]);
+  }
+  const action = actionForApproval(db, asked.approval.id)!;
+  expect(action.status).toBe("failed");
+  expect(action.error).toBe("Atrium couldn't move the local copy aside to remove it, so it left it where it was. Check the folder's permissions, then ask again.");
+  expect(existsSync(join(path, "README.md"))).toBe(true);
+});
+
+test("boot fails a removal cut off mid-run and tidies Atrium's leftover trash", async () => {
+  const asked = await askToRemove(db, clone.id);
+  if (!("approval" in asked)) throw new Error("expected an approval");
+  const action = actionForApproval(db, asked.approval.id)!;
+  db.query("UPDATE repo_actions SET status = 'running' WHERE id = ?").run(action.id);
+  // Cut off between moving the folder aside and deleting it.
+  renameSync(path, join(gh.projects, `.atrium-trash-${clone.id}`));
+  // And a stray trash folder whose clone row no longer exists.
+  mkdirSync(join(gh.projects, ".atrium-trash-cln_gone", "x"), { recursive: true });
+  expect(recoverRemovals(db)).toBe(1);
+  expect(actionForApproval(db, asked.approval.id)).toMatchObject({
+    status: "failed",
+    error: "Atrium stopped while removing this local copy. It was put back; ask again from Settings → Storage if you still want it gone.",
+  });
+  expect(existsSync(join(path, "README.md"))).toBe(true);
   expect(readdirSync(gh.projects).filter((e) => e.startsWith(".atrium-trash-"))).toEqual([]);
 });

@@ -16,6 +16,7 @@ import { createFeed } from "./engine/markets/feed";
 import { createKeychain } from "./engine/markets/keychain";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { createRepos } from "./engine/repos";
+import { recoverRemovals } from "./engine/repos/cleanup";
 import { recoverRepoActions } from "./engine/repos/create";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
@@ -72,6 +73,7 @@ try {
 
 await recoverOnBoot(db);
 recoverRepoActions(db);
+recoverRemovals(db);
 runner.start();
 repos.daily(Date.now());
 void feed.start();

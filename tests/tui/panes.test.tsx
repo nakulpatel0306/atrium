@@ -111,7 +111,7 @@ test("an Atrium-wide repo question shows as Atrium's and approves with a", async
     ...state.approvals[0]!, id: "apr_repo", spaceId: null, taskId: null, kind: "question", alwaysAsk: "create_repo",
     title: 'Create GitHub repo "demo"?', detail: "Name: demo\nVisibility: Private", createdAt: Date.now(),
   });
-  state.repoActions = [{ id: "rpa_1", approvalId: "apr_repo", kind: "create", draft: { name: "demo", description: "d", visibility: "private", template: "bun-ts" }, path: "/p/demo", folderTaken: false, github: null, bytes: null }];
+  state.repoActions = [{ id: "rpa_1", approvalId: "apr_repo", kind: "create", draft: { name: "demo", description: "d", visibility: "private", template: "bun-ts" }, path: "/p/demo", folderTaken: false, github: null, pickedUp: false, bytes: null }];
   const client = fakeClient(state);
   const app = openApp(client);
   await app.type("3");

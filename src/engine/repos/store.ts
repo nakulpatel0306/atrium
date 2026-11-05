@@ -96,10 +96,18 @@ export function projectDetail(d: ProjectDraft, opts: { lastError?: string; remot
     `Local folder: ${tildePath(folder)}`,
   );
   if (taken) lines.push(taken);
-  lines.push(
-    "",
-    "On yes, Atrium creates the repo on your GitHub account with gh, sets up the folder from the template, makes a signed first commit as you, pushes it to main, and adds a repo space.",
-  );
+  if (opts.remoteUrl && opts.pushedSha) {
+    lines.push(
+      "The README keeps the first description; the GitHub description is updated to this one.",
+      "",
+      `On yes, Atrium picks up ${opts.remoteUrl} as it is, updates its GitHub description, and adds a repo space.`,
+    );
+  } else {
+    lines.push(
+      "",
+      "On yes, Atrium creates the repo on your GitHub account with gh, sets up the folder from the template, makes a signed first commit as you, pushes it to main, and adds a repo space.",
+    );
+  }
   return lines.join("\n");
 }
 
@@ -137,6 +145,12 @@ export function updateDraft(db: Database, actionId: string, draft: ProjectDraft)
     if (action.status !== "draft" || getApproval(db, action.approvalId)?.status !== "pending") throw new AlreadyResolved();
     // The empty repo from an earlier try has the old name and visibility; a changed draft gets a repo of its own.
     const same = action.draft?.name === draft.name && action.draft?.visibility === draft.visibility;
+    // The pushed first commit already holds the template's files; only a fresh repo can have different ones.
+    if (same && action.pushedSha && action.draft && draft.template !== action.draft.template) {
+      throw new BadDraft(
+        `Atrium already pushed the first commit with the ${TEMPLATE_LABELS[action.draft.template]} template; pick a new name to start over with a different template.`,
+      );
+    }
     const remoteUrl = same ? action.remoteUrl : null;
     const pushedSha = same ? action.pushedSha : null;
     const detail = projectDetail(draft, { lastError: action.error ?? undefined, remoteUrl: remoteUrl ?? undefined, pushedSha: pushedSha ?? undefined });

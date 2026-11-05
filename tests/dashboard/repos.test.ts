@@ -50,7 +50,7 @@ test("storageRow says who made a folder and whether it can go", () => {
 
 test("State carries the repo drafts the form needs", () => {
   const view: State["repoActions"][number] = {
-    id: "rpa_1", approvalId: "apr_1", kind: "create", draft: null, path: null, folderTaken: false, github: null, bytes: null,
+    id: "rpa_1", approvalId: "apr_1", kind: "create", draft: null, path: null, folderTaken: false, github: null, pickedUp: false, bytes: null,
   };
   expect(view.kind).toBe("create");
 });

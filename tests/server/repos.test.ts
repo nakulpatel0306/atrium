@@ -136,3 +136,12 @@ test("state lists pending repo drafts with their folder", async () => {
     expect.objectContaining({ kind: "create", path: join(gh.projects, "demo"), folderTaken: true, github: null, bytes: null }),
   ]);
 });
+
+test("state marks a draft that picks up an already-pushed repo", async () => {
+  draftProject(db, { name: "demo", description: "A demo", visibility: "private", template: "bun-ts" }, { remoteUrl: "https://github.com/fakeuser/demo", pushedSha: "a".repeat(40) });
+  const state = (await (await fetch(`${base}/api/state`)).json()) as State;
+  expect(state.repoActions[0]!.pickedUp).toBe(true);
+  const r = await post(`/api/repo-actions/${state.repoActions[0]!.id}/approve`, { ...fields, template: "empty" });
+  expect(r.status).toBe(400);
+  expect(await errorOf(r)).toMatch(/^Atrium already pushed the first commit/);
+});
