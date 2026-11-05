@@ -7,6 +7,7 @@ import { AgentPicker } from "./AgentPicker";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
+type Draft = State["repoActions"][number];
 
 type Props = {
   space: Space | null;
@@ -22,6 +23,8 @@ export function CommandBar({ space, setupRequest }: Props) {
   const [forceSetup, setForceSetup] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [agent, setAgent] = useState<AgentChoice>("auto");
+  // Set when a message must survive the navigation that follows it.
+  const keepMessage = useRef(false);
   const busy = message?.kind === "busy";
   const setup = !space || forceSetup;
 
@@ -46,6 +49,10 @@ export function CommandBar({ space, setupRequest }: Props) {
   useEffect(() => {
     setForceSetup(false);
     setAgent("auto");
+    if (keepMessage.current) {
+      keepMessage.current = false;
+      return;
+    }
     if (busy) return;
     setText("");
     setMessage(null);
@@ -56,9 +63,16 @@ export function CommandBar({ space, setupRequest }: Props) {
     if (!value || busy) return;
     if (setup) {
       setMessage({ kind: "busy", text: "Setting up your space. This usually takes under a minute." });
-      const res = await post<{ space: Space; tasks: Task[] }>("/api/command", { text: value });
+      const res = await post<{ space: Space; tasks: Task[] } | { draft: Draft }>("/api/command", { text: value });
       if (!res.ok) return setMessage({ kind: "error", text: res.error });
       setText("");
+      // A new project is only a draft until Nakul approves it in Needs you, which lives on Home.
+      if ("draft" in res.data) {
+        setMessage({ kind: "info", text: `Drafted "${res.data.draft.draft?.name}". Check it in Needs you and approve to create the repo.` });
+        keepMessage.current = space !== null;
+        navigate("/");
+        return;
+      }
       setMessage(null);
       navigate(`/space/${res.data.space.id}`);
     } else {
@@ -72,7 +86,7 @@ export function CommandBar({ space, setupRequest }: Props) {
   };
 
   const placeholder = setup
-    ? 'Describe something new to set up, e.g. "keep my job search organized"'
+    ? 'Describe something new, e.g. "keep my job search organized" or "start a new project called…"'
     : `Give ${space!.name} a task…`;
 
   return (

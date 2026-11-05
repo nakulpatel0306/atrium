@@ -49,9 +49,12 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return said(res, (d) => `Queued "${d.task.title}" in ${spaceName(intent.spaceId)}${by}.`);
     }
     case "newSpace": {
-      const res = await client.post<{ space: Space }>("/api/command", { text: intent.text });
-      const out = said(res, (d) => `Set up ${d.space.name}.`);
-      return res.ok ? { ...out, spaceId: res.data.space.id } : out;
+      const res = await client.post<{ space: Space } | { draft: { draft: { name: string } | null } }>("/api/command", { text: intent.text });
+      if (!res.ok) return said(res, () => "");
+      const data = res.data;
+      // A new project is only a draft until Nakul approves it, so there's no space to select yet.
+      if ("draft" in data) return said(res, () => `Drafted "${data.draft.draft?.name ?? "your project"}". It's waiting in Needs you.`);
+      return { ...said(res, () => `Set up ${data.space.name}.`), spaceId: data.space.id };
     }
     case "setAgent":
       return said(

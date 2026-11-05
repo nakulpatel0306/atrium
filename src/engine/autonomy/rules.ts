@@ -136,7 +136,9 @@ export function applyRule(db: Database, approvalId: string, facts: ActionFacts |
   let capped = false;
   const result = db.transaction((): Approval | null => {
     const a = getApproval(db, approvalId);
-    if (a?.status !== "pending" || a.kind !== "review" || !a.fingerprint || !facts) return null;
+    // Repo creation, pushing and clone removal are Nakul's alone, whatever else the row says.
+    if (a?.alwaysAsk) return null;
+    if (a?.status !== "pending" || a.kind !== "review" || !a.fingerprint || !a.spaceId || !facts) return null;
     if (forbiddenFor(facts).length > 0 || fingerprintOf(facts) !== a.fingerprint) return null;
     // Once Nakul has sent a task back, or undone a rule's approval of it, only he decides on it again.
     const doubted = db
@@ -206,7 +208,7 @@ export function renewRule(db: Database, id: string, now = Date.now()): Rule {
 export function undoAutoApproval(db: Database, approvalId: string, now = Date.now()): Approval {
   const next = db.transaction((): Approval => {
     const a = getApproval(db, approvalId);
-    if (!a || a.decidedBy !== "rule" || !a.ruleId) throw new RuleRefused("Only an automatic approval can be undone.");
+    if (!a || a.decidedBy !== "rule" || !a.ruleId || !a.spaceId) throw new RuleRefused("Only an automatic approval can be undone.");
     if (a.undoneAt !== null) throw new RuleRefused("This automatic approval was already undone.");
     const task = a.taskId ? getTask(db, a.taskId) : null;
     if (task?.status !== "done" || task.kind !== "work") {

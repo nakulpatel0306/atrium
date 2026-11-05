@@ -24,11 +24,14 @@ const pathFor = (spaceId: string, taskId: string | null) => (taskId ? `/space/${
 // and "stop asking about this?" suggestions count like approvals, so the badge matches the dashboard's Needs you.
 export function summary(db: Database): Summary {
   const names = new Map(listSpaces(db).map((s) => [s.id, s.name]));
+  // An Atrium-wide question (a new repo, removing a local copy) belongs to no space and is answered from Home.
   const approvals = listPending(db)
-    .filter((a) => names.has(a.spaceId))
+    .filter((a) => a.spaceId === null || names.has(a.spaceId))
     .map((a) => ({
       at: a.createdAt,
-      need: { id: a.id, kind: a.kind, title: a.title, spaceName: names.get(a.spaceId)!, path: pathFor(a.spaceId, a.taskId), topic: a.topic } as Need,
+      need: (a.spaceId === null
+        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic }
+        : { id: a.id, kind: a.kind, title: a.title, spaceName: names.get(a.spaceId)!, path: pathFor(a.spaceId, a.taskId), topic: a.topic }) as Need,
     }));
   // Suggestions are answered from Home's Needs you list, not from a space.
   const suggestions = listPendingProposals(db)

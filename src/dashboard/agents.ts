@@ -36,6 +36,7 @@ const PRIORITY: WaitKind[] = [
   "limited",
   "reserve",
   "power",
+  "cloning",
   "busy",
 ];
 export const byPriority = (a: Wait, b: Wait) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind);

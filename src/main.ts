@@ -23,6 +23,9 @@ import { metaJob } from "./engine/markets/meta";
 import { seedOnBoot } from "./engine/markets/seed";
 import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
+import { createRepos } from "./engine/repos";
+import { recoverRemovals } from "./engine/repos/cleanup";
+import { recoverRepoActions } from "./engine/repos/create";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
@@ -52,7 +55,16 @@ const jobs = createJobs(
   ],
   marketClock,
 );
-const runner = createRunner({ db, adapters, power: powerSource, keepAwake, markets: createMarketsHooks(db, { data, now: marketClock }) });
+// Repo work wakes the runner when a clone lands or a new project's space is ready.
+const repos = createRepos({ db, kick: () => runner.kick() });
+const runner = createRunner({
+  db,
+  adapters,
+  power: powerSource,
+  keepAwake,
+  markets: createMarketsHooks(db, { data, now: marketClock }),
+  repos,
+});
 const feed = createFeed({
   db,
   data,
@@ -63,6 +75,8 @@ const feed = createFeed({
   jobs,
 });
 onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
+// The only path to creating, pushing or removing a repo: Nakul's own decision on its approval.
+onApprovalResolved(repos.onDecision);
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
 let server: ReturnType<typeof startServer>;
@@ -73,6 +87,7 @@ try {
     setup: (text) => setupSpace(db, claudeAdapter(), text),
     onViewers: (n) => void feed.setViewers(n),
     markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs },
+    repos,
   });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
@@ -81,7 +96,10 @@ try {
 }
 
 await recoverOnBoot(db);
+recoverRepoActions(db);
+recoverRemovals(db);
 runner.start();
+repos.daily(Date.now());
 void feed.start();
 console.log(`Atrium running at ${url}`);
 

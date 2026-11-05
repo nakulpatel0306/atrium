@@ -125,3 +125,10 @@ test("summary counts alert kinds and gives each need its topic", () => {
   expect(sum.needs.find((n) => n.title === "x earnings")!.topic).toBe("earnings");
   expect(sum.needs.find((n) => n.title === "q")!.topic).toBeNull();
 });
+
+test("summary shows an Atrium-wide question as Atrium's", () => {
+  const a = createApproval(db, { spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?', detail: "", alwaysAsk: "create_repo" });
+  const sum = summary(db);
+  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null });
+  expect(sum.needsYou).toBe(1);
+});

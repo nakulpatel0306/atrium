@@ -2,8 +2,9 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { config } from "./config";
 import { MARKETS_SCHEMA } from "./markets/schema";
+import { ALWAYS_ASK } from "./approvals";
 
-const SCHEMA = `
+const schema = () => `
 CREATE TABLE IF NOT EXISTS spaces (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -14,7 +15,8 @@ CREATE TABLE IF NOT EXISTS spaces (
   private INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  github TEXT
 );
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
@@ -43,18 +45,7 @@ CREATE TABLE IF NOT EXISTS runs (
   start_ref TEXT,
   git_fingerprint TEXT
 );
-CREATE TABLE IF NOT EXISTS approvals (
-  id TEXT PRIMARY KEY,
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  task_id TEXT REFERENCES tasks(id),
-  kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')),
-  title TEXT NOT NULL,
-  detail TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-  note TEXT,
-  created_at INTEGER NOT NULL,
-  resolved_at INTEGER
-);
+${APPROVALS_DDL("IF NOT EXISTS approvals")};
 CREATE TABLE IF NOT EXISTS activity (
   id TEXT PRIMARY KEY,
   space_id TEXT REFERENCES spaces(id),
@@ -95,6 +86,35 @@ CREATE TABLE IF NOT EXISTS autonomy_rules (
   revoked_at INTEGER,
   revoked_reason TEXT
 );
+CREATE TABLE IF NOT EXISTS repo_clones (
+  id TEXT PRIMARY KEY,
+  space_id TEXT REFERENCES spaces(id),
+  path TEXT NOT NULL,
+  github TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('new_project','clone')),
+  git_dev INTEGER NOT NULL,
+  git_ino INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present','removed')),
+  last_used_at INTEGER NOT NULL,
+  declined_at INTEGER,
+  created_at INTEGER NOT NULL,
+  removed_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS repo_clones_present ON repo_clones(path) WHERE status = 'present';
+CREATE TABLE IF NOT EXISTS repo_actions (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('create','remove')),
+  status TEXT NOT NULL CHECK (status IN ('draft','running','done','failed','rejected')),
+  approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id),
+  draft TEXT,
+  clone_id TEXT REFERENCES repo_clones(id),
+  space_id TEXT REFERENCES spaces(id),
+  remote_url TEXT,
+  pushed_sha TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rule_events (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
@@ -114,7 +134,7 @@ export function openDb(path?: string): Database {
   const db = new Database(path ?? c.dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
-  db.exec(SCHEMA);
+  db.exec(schema());
   migrate(db);
   return db;
 }
@@ -126,6 +146,14 @@ function migrate(db: Database) {
   // CHECK constraints can't be altered, so a table whose kinds predate markets spaces is rebuilt.
   rebuildIfMissing(db, "spaces", "'markets'", SPACES_DDL);
   rebuildIfMissing(db, "approvals", "'alert'", APPROVALS_DDL);
+  // Repo approvals belong to no space and must always wait for Nakul, so the table gains both constraints.
+  rebuildIfMissing(db, "approvals", "always_ask", APPROVALS_DDL);
+  // And no rule may ever be recorded as deciding one.
+  rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL);
+  // The GitHub repo ("owner/name") a repo space comes from, so a missing local copy can be cloned.
+  if (!has("spaces", "github")) db.exec("ALTER TABLE spaces ADD COLUMN github TEXT");
+  // The first commit a create run pushed, so a retry can tell its own commit from someone else's.
+  if (!has("repo_actions", "pushed_sha")) db.exec("ALTER TABLE repo_actions ADD COLUMN pushed_sha TEXT");
   // The branch a run started from, so a crashed run's repo can be put back on boot.
   if (!has("runs", "start_ref")) db.exec("ALTER TABLE runs ADD COLUMN start_ref TEXT");
   // The repo's git settings before the run, so recovery and resume can tell if the agent changed them.
@@ -183,12 +211,13 @@ const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  review_by TEXT
+  review_by TEXT,
+  github TEXT
 )`;
 
 const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   id TEXT PRIMARY KEY,
-  space_id TEXT NOT NULL REFERENCES spaces(id),
+  space_id TEXT REFERENCES spaces(id),
   task_id TEXT REFERENCES tasks(id),
   kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')),
   title TEXT NOT NULL,
@@ -202,7 +231,11 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
   rule_id TEXT REFERENCES autonomy_rules(id),
   undone_at INTEGER,
-  topic TEXT
+  topic TEXT,
+  always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${ALWAYS_ASK.map((k) => `'${k}'`).join(",")})),
+  CHECK (space_id IS NOT NULL OR kind = 'question'),
+  CHECK (always_ask IS NULL OR fingerprint IS NULL),
+  CHECK (always_ask IS NULL OR decided_by = 'you')
 )`;
 
 // SQLite's documented table rebuild: foreign keys off (outside any transaction), copy into a new table,

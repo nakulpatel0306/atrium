@@ -1,4 +1,4 @@
-import { Clock, FileKey, Gauge, Hourglass, Lock, LogIn, type LucideIcon, PackageX, PlugZap, ShieldAlert } from "lucide-react";
+import { Clock, Download, FileKey, Gauge, Hourglass, Lock, LogIn, type LucideIcon, PackageX, PlugZap, ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { needsAction, type Wait, type WaitKind } from "../agents";
 
@@ -11,6 +11,7 @@ export const WAIT_ICONS: Record<WaitKind, LucideIcon> = {
   private_space: Lock,
   env_files: FileKey,
   gemini_repo: ShieldAlert,
+  cloning: Download,
   busy: Clock,
 };
 

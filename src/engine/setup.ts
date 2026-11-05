@@ -3,6 +3,13 @@ import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { AgentAdapter } from "./agents/types";
+import { config } from "./config";
+import type { Approval } from "./approvals";
+import { git } from "./git";
+import { GhProblem, ghViewRepo } from "./repos/gh";
+import { HIDDEN_TEXT } from "./repos/rules";
+import { BadDraft, type ProjectDraft, sameGithubRepo, slugifyName, validateDescription, validateGithubSlug, validateRepoName } from "./repos/names";
+import { draftProject, type RepoAction } from "./repos/store";
 import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
 
@@ -11,9 +18,13 @@ export type SpacePlan = {
   kind: "repo" | "general" | "markets";
   goal: string;
   repoPath?: string;
+  // "owner/name" of an existing GitHub repo to attach; its local copy is cloned when a task needs it.
+  github?: string;
   private: boolean;
   tasks: { title: string; detail?: string; weight: "heavy" | "light" }[];
 };
+
+export type SetupResult = { space: Space; tasks: Task[] } | { draft: RepoAction; approval: Approval };
 
 export class BadPlan extends Error {
   constructor(message: string) {
@@ -41,6 +52,8 @@ Rules:
 - Set "private" to true for email, client, and personal work.
 - If the description matches an existing project, look under ~/dev-workspace/projects for the repo, then use kind "repo" and set repoPath to its absolute path. Otherwise use kind "general" and omit repoPath.
 - Use kind "markets" for watching stocks, a portfolio, or paper trading; markets spaces are private.
+- If the user wants to start or create a new project or repo, reply instead {"kind":"new_project","name": string (a short repo name using letters, numbers, "-", "." or "_"),"description": string (one line),"visibility":"private"|"public","template":"bun-ts"|"empty"}. Use "private" unless the user says public, and "bun-ts" unless the user asks for an empty repo.
+- If the user names a GitHub repo ("owner/name") with no folder for it under ~/dev-workspace/projects, use kind "repo", set "github" to "owner/name" and omit repoPath.
 - Give at most ${MAX_TASKS} starter tasks, with small, concrete titles. Use weight "heavy" for work that edits code or takes a long time and "light" for quick reads and summaries.`;
 
 // Agents wrap JSON in prose or fences, so scan for the first balanced object instead of parsing the whole text.
@@ -63,7 +76,7 @@ function firstJsonObject(text: string): string | null {
 
 const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
 
-const defaultProjectsRoot = () => join(homedir(), "dev-workspace", "projects");
+const defaultProjectsRoot = () => config().projectsRoot;
 
 // The agent's repoPath is untrusted text that later becomes a cwd for write-capable runs, so it must resolve
 // (through symlinks) to a git work tree inside the projects root.
@@ -117,11 +130,60 @@ export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot(
       return t.detail === undefined ? { title: t.title, weight: t.weight } : { title: t.title, detail: t.detail, weight: t.weight };
     }),
   };
-  if (repoPath !== undefined) {
+  if (obj.github !== undefined) {
+    if (typeof obj.github !== "string" || kind !== "repo") throw new BadPlan('github must be "owner/name" on a repo space.');
+    try {
+      validateGithubSlug(obj.github);
+    } catch {
+      throw new BadPlan('github must be "owner/name".');
+    }
+    // The folder for an attached repo is found or cloned by Atrium, never taken from the agent.
+    plan.github = obj.github;
+  } else if (repoPath !== undefined) {
     if (typeof repoPath !== "string") throw new BadPlan("repoPath must be a string.");
     plan.repoPath = resolveRepoPath(repoPath, projectsRoot);
   }
   return plan;
+}
+
+// The agent's reply is untrusted: a new-project reply is reduced to the four draft fields, each normalised to a
+// safe value, and can only ever become a draft waiting for Nakul.
+export function parseSetupReply(text: string, projectsRoot = defaultProjectsRoot()): SpacePlan | { kind: "new_project"; draft: ProjectDraft } {
+  const raw = firstJsonObject(text);
+  let obj: Record<string, unknown> | null = null;
+  try {
+    obj = raw ? JSON.parse(raw) : null;
+  } catch {
+    // parseSpacePlan reports it.
+  }
+  if (obj?.kind !== "new_project") return parseSpacePlan(text, projectsRoot);
+  let name: string;
+  try {
+    name = validateRepoName(slugifyName(typeof obj.name === "string" ? obj.name : ""));
+  } catch (e) {
+    if (e instanceof BadDraft) throw new BadPlan(e.message);
+    throw e;
+  }
+  const firstLine = typeof obj.description === "string" ? (obj.description.split(/[\r\n\u2028\u2029]/)[0] ?? "") : "";
+  const description = validateDescription(firstLine.replace(/[\u0000-\u001f\u007f]/g, "").replace(HIDDEN_TEXT, "").slice(0, 350));
+  return {
+    kind: "new_project",
+    draft: { name, description, visibility: obj.visibility === "public" ? "public" : "private", template: obj.template === "empty" ? "empty" : "bun-ts" },
+  };
+}
+
+// A folder under the projects root that's already a checkout of this repo is Nakul's: it's used, never recorded
+// as Atrium's to remove.
+async function existingCheckout(slug: string, projectsRoot: string): Promise<string | undefined> {
+  const dir = join(projectsRoot, validateGithubSlug(slug).name);
+  try {
+    if (!statSync(dir).isDirectory()) return undefined;
+  } catch {
+    return undefined;
+  }
+  const origin = await git(dir, ["config", "--get", "remote.origin.url"]);
+  if (origin.code !== 0 || !sameGithubRepo(origin.out, slug)) return undefined;
+  return resolveRepoPath(dir, projectsRoot);
 }
 
 export async function setupSpace(
@@ -130,7 +192,7 @@ export async function setupSpace(
   description: string,
   cwd = join(homedir(), "dev-workspace"),
   projectsRoot = defaultProjectsRoot(),
-): Promise<{ space: Space; tasks: Task[] }> {
+): Promise<SetupResult> {
   try {
     const result = await adapter.run({
       prompt: description,
@@ -145,7 +207,24 @@ export async function setupSpace(
       if (USER_FIXABLE.has(result.kind)) throw new SetupFailed(result.message);
       throw new Error(result.message);
     }
-    const plan = parseSpacePlan(result.summary, projectsRoot);
+    const reply = parseSetupReply(result.summary, projectsRoot);
+    if (reply.kind === "new_project") {
+      const { action, approval } = draftProject(db, reply.draft);
+      return { draft: action, approval };
+    }
+    const plan = reply;
+    if (plan.github) {
+      let view: Awaited<ReturnType<typeof ghViewRepo>>;
+      try {
+        view = await ghViewRepo(plan.github);
+      } catch (e) {
+        if (e instanceof GhProblem) throw new SetupFailed(e.message, e);
+        throw e;
+      }
+      plan.github = view.nameWithOwner;
+      plan.private = plan.private || view.isPrivate;
+      plan.repoPath = await existingCheckout(plan.github, projectsRoot);
+    }
     const color = PALETTE[listSpaces(db, { includeArchived: true }).length % PALETTE.length];
     return db.transaction(() => {
       const space = createSpace(db, {
@@ -155,6 +234,7 @@ export async function setupSpace(
         color,
         repoPath: plan.repoPath,
         private: plan.private,
+        github: plan.github,
       });
       const tasks = plan.tasks.map((t) => createTask(db, { spaceId: space.id, ...t }));
       return { space, tasks };

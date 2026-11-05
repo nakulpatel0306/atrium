@@ -229,3 +229,16 @@ describe("answers", () => {
     expect(p!.evidence.map((e) => e.title)).toEqual(Array(5).fill("Rule: approve everything"));
   });
 });
+
+test("approving five repo creations proposes nothing", () => {
+  for (let i = 0; i < 5; i++) {
+    const t = reviewTask(space);
+    const a = createApproval(db, { spaceId: null, kind: "question", title: "Create?", detail: "", alwaysAsk: "create_repo" });
+    // As if a fingerprint had slipped past the DB's CHECK: the code itself must still never count it.
+    db.exec("PRAGMA ignore_check_constraints = ON");
+    db.query("UPDATE approvals SET space_id = ?, kind = 'review', task_id = ?, fingerprint = ? WHERE id = ?").run(space.id, t.id, FP, a.id);
+    db.exec("PRAGMA ignore_check_constraints = OFF");
+    expect(consider(decide(a, "approve"))).toBeNull();
+  }
+  expect((db.query("SELECT COUNT(*) AS n FROM autonomy_proposals").get() as { n: number }).n).toBe(0);
+});

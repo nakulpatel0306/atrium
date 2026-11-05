@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { ALWAYS_ASK, AlreadyResolved, createApproval, getApproval, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
+import { ALWAYS_ASK, AlreadyResolved, createApproval, getApproval, isOwnYes, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { listActivity } from "../../src/engine/events";
 import { createSpace } from "../../src/engine/spaces";
@@ -63,7 +63,7 @@ test("listPending returns newest first", () => {
 });
 
 test("the always-ask list", () => {
-  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "first_contact", "delete", "spend", "secrets"]);
+  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "first_contact", "delete", "spend", "secrets", "create_repo", "push", "remove_clone"]);
 });
 
 function insertRule(spaceId: string, fp = "v1:code:docs:small:claude") {
@@ -152,4 +152,38 @@ test("topic round-trips", () => {
   expect(getApproval(db, a.id)!.topic).toBe("earnings");
   const b = createApproval(db, { spaceId: s.id, kind: "alert", title: "x", detail: "d" });
   expect(b.topic).toBeNull();
+});
+
+test("a spaceless always-ask question waits for Nakul and no rule can decide it", () => {
+  const a = createApproval(db, { spaceId: null, kind: "question", title: "Create?", detail: "d", alwaysAsk: "create_repo" });
+  expect(a.spaceId).toBeNull();
+  expect(a.alwaysAsk).toBe("create_repo");
+  expect(listPending(db).map((p) => p.id)).toContain(a.id);
+  expect(() => resolveApproval(db, a.id, "approve", undefined, { id: "rul_x", label: "x" })).toThrow("A rule can never decide this. It always waits for you.");
+  expect(getApproval(db, a.id)!.status).toBe("pending");
+});
+
+test("createApproval refuses an always-ask kind with a fingerprint, or a spaceless non-question", () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  expect(() => createApproval(db, { spaceId: s.id, kind: "question", title: "q", detail: "", alwaysAsk: "push", fingerprint: "v1:general:text:claude" })).toThrow();
+  expect(() => createApproval(db, { spaceId: null, kind: "review", title: "r", detail: "" })).toThrow();
+});
+
+test("isOwnYes is true only for Nakul's own standing approval", () => {
+  const mk = () => createApproval(db, { spaceId: null, kind: "question", title: "q", detail: "", alwaysAsk: "create_repo" });
+  const pending = mk();
+  expect(isOwnYes(pending)).toBe(false);
+  const rejected = resolveApproval(db, mk().id, "reject");
+  expect(isOwnYes(rejected)).toBe(false);
+  const yes = resolveApproval(db, mk().id, "approve");
+  expect(isOwnYes(yes)).toBe(true);
+  const byRule = mk();
+  // As if a rule's decision had slipped past the DB's CHECK: the code must still refuse it.
+  db.exec("PRAGMA ignore_check_constraints = ON");
+  db.query("UPDATE approvals SET status = 'approved', decided_by = 'rule', resolved_at = 1 WHERE id = ?").run(byRule.id);
+  db.exec("PRAGMA ignore_check_constraints = OFF");
+  expect(isOwnYes(getApproval(db, byRule.id)!)).toBe(false);
+  const undone = resolveApproval(db, mk().id, "approve");
+  db.query("UPDATE approvals SET undone_at = 1 WHERE id = ?").run(undone.id);
+  expect(isOwnYes(getApproval(db, undone.id)!)).toBe(false);
 });

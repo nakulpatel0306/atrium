@@ -8,6 +8,10 @@ import { type ActivityRow, listActivity } from "./events";
 import { getSetting } from "./settings";
 import { type Space, listSpaces } from "./spaces";
 import { atriumDiskUsage } from "./storage";
+import { config } from "./config";
+import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
+import { getClone, pendingRepoActions } from "./repos/store";
+import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
 
 export type RunSummary = {
@@ -54,7 +58,41 @@ export type State = {
   // The last five-hour reading while its window is still open; null when unknown or already reset.
   claudeWindow: { utilization: number; resetsAt: number; reserve: number } | null;
   disk: ReturnType<typeof atriumDiskUsage>;
+  // Pending new-project drafts and clone removals, for the forms in Needs you.
+  repoActions: RepoActionView[];
 };
+
+export type RepoActionView = {
+  id: string;
+  approvalId: string;
+  kind: "create" | "remove";
+  draft: ProjectDraft | null;
+  path: string | null;
+  folderTaken: boolean;
+  github: string | null;
+  // A retry that picks up the repo an earlier run already pushed: its template can't change.
+  pickedUp: boolean;
+  // Not measured here (walking a big folder would slow every snapshot); the removal's detail carries its size.
+  bytes: number | null;
+};
+
+function repoActionViews(db: Database): RepoActionView[] {
+  return pendingRepoActions(db).map((a) => {
+    if (a.kind === "create" && a.draft) {
+      let folderTaken = false;
+      try {
+        projectPath(a.draft.name);
+      } catch (e) {
+        if (!(e instanceof BadDraft)) throw e;
+        folderTaken = true;
+      }
+      const path = join(config().projectsRoot, a.draft.name);
+      return { id: a.id, approvalId: a.approvalId, kind: a.kind, draft: a.draft, path, folderTaken, github: null, pickedUp: a.pushedSha !== null, bytes: null };
+    }
+    const clone = a.cloneId ? getClone(db, a.cloneId) : null;
+    return { id: a.id, approvalId: a.approvalId, kind: a.kind, draft: null, path: clone?.path ?? null, folderTaken: false, github: clone?.github ?? null, pickedUp: false, bytes: null };
+  });
+}
 
 export function snapshot(db: Database, registry?: Registry): State {
   const now = Date.now();
@@ -113,5 +151,6 @@ export function snapshot(db: Database, registry?: Registry): State {
         ? { ...window, reserve }
         : null,
     disk: atriumDiskUsage(),
+    repoActions: repoActionViews(db),
   };
 }

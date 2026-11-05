@@ -93,3 +93,12 @@ test("SIGTERM shuts down once and exits 0, even with a second signal", async () 
   await out.done;
   expect(out.text().match(/Atrium stopping/g)).toEqual(["Atrium stopping"]);
 }, 15_000);
+
+test("the engine serves the repo routes", async () => {
+  const port = freePort();
+  const p = engine(port);
+  await collect(p.stdout as ReadableStream<Uint8Array>).waitFor("Atrium running at");
+  const res = await fetch(`http://127.0.0.1:${port}/api/storage`);
+  expect(res.status).toBe(200);
+  expect(((await res.json()) as { repos: unknown[] }).repos).toEqual([]);
+}, 15_000);

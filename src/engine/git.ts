@@ -8,7 +8,7 @@ const PROTECTED = new Set(["main", "master"]);
 // The agent can write inside the repo, so config it plants must never run with the engine's privileges.
 const SAFE = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=ssh"];
 
-async function git(
+export async function git(
   path: string,
   args: string[],
   timeoutMs?: number,
@@ -77,7 +77,7 @@ type CommitSeams = { fingerprint?: (path: string) => Promise<string>; beforeStag
 
 // Applied to every git call that touches the worktree: no attributes from the user's global file, and no
 // descending into submodules, whose own config and info/attributes the outer checks and fingerprint never see.
-const STAGE_FLAGS = ["-c", "core.attributesFile=/dev/null", "-c", "diff.ignoreSubmodules=all"];
+export const STAGE_FLAGS = ["-c", "core.attributesFile=/dev/null", "-c", "diff.ignoreSubmodules=all"];
 
 const SUBMODULES_REFUSAL = "Refusing to commit: this repo has submodules or nested repos. Commit these changes yourself.";
 
@@ -91,7 +91,7 @@ const SIGNING_PROGRAMS: Array<[string, string]> = [
   ["gpg.ssh.defaultKeyCommand", ""],
 ];
 
-async function signingPins(path: string): Promise<string[]> {
+export async function signingPins(path: string): Promise<string[]> {
   const pins: string[] = [];
   for (const [key, fallback] of SIGNING_PROGRAMS) {
     const global = await git(path, ["config", "--global", "--get", key]);

@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { openDb } from "../../src/engine/db";
 import { bus, listActivity, logActivity, type EngineEvent } from "../../src/engine/events";
 import { getSetting, setSetting } from "../../src/engine/settings";
-import { createSpace, getSpace, listSpaces, updateSpace } from "../../src/engine/spaces";
+import { createSpace, getSpace, listSpaces, setSpaceRepo, updateSpace } from "../../src/engine/spaces";
 import { createTask, InvalidTransition, listTasks, setTaskStatus } from "../../src/engine/tasks";
 import { tempHome } from "../helpers";
 
@@ -111,4 +111,16 @@ test("purpose and subject round-trip", () => {
   expect([t.purpose, t.subject]).toEqual(["thesis_draft", "NOW"]);
   const plain = createTask(db, { spaceId: space().id, title: "x" });
   expect([plain.purpose, plain.subject]).toEqual([null, null]);
+});
+
+test("setSpaceRepo sets and clears repoPath and github", () => {
+  const s = createSpace(db, { name: "Demo", kind: "repo", goal: "g", github: "fakeuser/demo" });
+  expect(s.github).toBe("fakeuser/demo");
+  expect(s.repoPath).toBeNull();
+  const set = setSpaceRepo(db, s.id, { repoPath: "/p/demo" });
+  expect(set.repoPath).toBe("/p/demo");
+  expect(set.github).toBe("fakeuser/demo");
+  const cleared = setSpaceRepo(db, s.id, { repoPath: null, github: null });
+  expect(cleared.repoPath).toBeNull();
+  expect(cleared.github).toBeNull();
 });

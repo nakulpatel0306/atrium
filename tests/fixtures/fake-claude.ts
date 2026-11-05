@@ -9,6 +9,8 @@ if (process.argv[2] === "--version") {
   process.exit(0);
 }
 if (process.env.FAKE_CLAUDE_ARGV) await Bun.write(process.env.FAKE_CLAUDE_ARGV, JSON.stringify(process.argv.slice(2)));
+// Names only, never values: tests check which variables reach the CLI.
+if (process.env.FAKE_CLAUDE_ENV) await Bun.write(process.env.FAKE_CLAUDE_ENV, JSON.stringify(Object.keys(process.env)));
 
 out({ type: "system", subtype: "init", cwd: process.cwd(), session_id: sessionId, tools: ["Read", "Bash"] });
 
@@ -92,4 +94,5 @@ out({
   message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/repo/README.md" } }] },
 });
 out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "# fixture" }] } });
-result("All done.");
+// FAKE_CLAUDE_TEXT stands in for the reply, so a dev engine can drive the setup agent.
+result(process.env.FAKE_CLAUDE_TEXT ?? "All done.");

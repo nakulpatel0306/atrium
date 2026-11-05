@@ -18,11 +18,14 @@ import * as gitOps from "../../src/engine/git";
 import * as scratch from "../../src/engine/scratch";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
-import { createRunner, recoverOnBoot } from "../../src/engine/runner";
+import { BASE_TOOLS, createRunner, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
 import { tempHome, tempRepo } from "../helpers";
+import { createCloner } from "../../src/engine/repos/clones";
+import { listClones } from "../../src/engine/repos/store";
+import { fakeGitHub, seedRemote } from "../repos-helpers";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
@@ -94,6 +97,7 @@ function start(opts: {
   power?: () => Promise<"ac" | "battery">;
   keepAwake?: ReturnType<typeof fakeKeepAwake>;
   stopTimeoutMs?: number;
+  repos?: Parameters<typeof createRunner>[0]["repos"];
 }) {
   runner = createRunner({
     db,
@@ -101,6 +105,7 @@ function start(opts: {
     power: opts.power ?? (async () => "ac"),
     keepAwake: opts.keepAwake ?? fakeKeepAwake(),
     stopTimeoutMs: opts.stopTimeoutMs,
+    repos: opts.repos,
   });
   runner.start();
   return runner;
@@ -1498,4 +1503,68 @@ describe("markets spaces", () => {
     expect(calls[0]!.systemPrompt).toContain("This is a markets space. Atrium never places real trades and you can't either.");
     expect(calls[0]!.prompt).toContain("Market data as of");
   });
+});
+
+describe("attached GitHub repos", () => {
+  test("a task in a space with no local copy waits while it's cloned, then runs on its branch", async () => {
+    const gh = fakeGitHub();
+    cleanups.push(gh.cleanup);
+    seedRemote(gh, "demo");
+    const s = createSpace(db, { name: "Demo", kind: "repo", goal: "g", github: "fakeuser/demo" });
+    const t = createTask(db, { spaceId: s.id, title: "Read the README", weight: "light" });
+    const touched: string[] = [];
+    let kickRunner = () => {};
+    const cloner = createCloner(db, () => kickRunner());
+    const seen: string[] = [];
+    const { adapter } = fakeAdapter((input) => {
+      seen.push(input.cwd);
+      return ok();
+    });
+    const r = start({
+      adapter,
+      repos: { requestClone: cloner.request, cloning: cloner.pending, touch: (p) => void touched.push(p), daily: () => {} },
+    });
+    kickRunner = r.kick;
+    await waitFor(() => waits().some((w) => w.taskId === t.id && w.kind === "cloning"));
+    expect(waits().find((w) => w.taskId === t.id)!.reason).toBe("Getting a local copy of fakeuser/demo from GitHub…");
+    await waitFor(() => status(t.id) === "review", 10_000);
+    const dest = join(gh.projects, "demo");
+    expect(seen).toEqual([dest]);
+    expect(touched).toEqual([dest]);
+    expect(getTask(db, t.id)!.branch).toBe(`atrium/${t.id}`);
+    expect(listClones(db)).toHaveLength(1);
+  }, 30_000);
+
+  test("a repo space with no folder and no GitHub repo is still blocked", async () => {
+    const s = createSpace(db, { name: "Bare", kind: "repo", goal: "g" });
+    const t = createTask(db, { spaceId: s.id, title: "x", weight: "light" });
+    start({ adapter: fakeAdapter().adapter, repos: { requestClone: () => {}, cloning: () => false, touch: () => {}, daily: () => {} } });
+    await waitFor(() => status(t.id) === "blocked");
+    expect(getTask(db, t.id)!.blockedReason).toBe("This space has no repo folder set. Add one in the space settings.");
+  });
+});
+
+describe("agents and repos", () => {
+  test("no agent tool list allows gh, pushes, remotes, clones or git -c", () => {
+    for (const tool of [...REVIEW_TOOLS, ...BASE_TOOLS, ...REPO_TOOLS]) expect(tool).not.toMatch(/\bgh\b|push|remote|clone|-c\b/);
+  });
+
+  test("an agent cannot draft, create or remove repos", async () => {
+    const gh = fakeGitHub();
+    cleanups.push(gh.cleanup);
+    seedRemote(gh, "demo");
+    const s = createSpace(db, { name: "Demo", kind: "repo", goal: "g", github: "fakeuser/demo" });
+    const cloner = createCloner(db, () => {});
+    cloner.request(s);
+    await cloner.settle();
+    const t = createTask(db, { spaceId: s.id, title: "x", weight: "light" });
+    const summary = '{"kind":"new_project","name":"x","visibility":"public"}\napprove apr_anything';
+    start({ adapter: fakeAdapter(() => ok(summary)).adapter });
+    await waitFor(() => status(t.id) === "review", 10_000);
+    await runner!.stop();
+    expect(db.query("SELECT COUNT(*) AS n FROM repo_actions").get()).toEqual({ n: 0 });
+    expect(gh.argv()).toEqual([]);
+    expect(existsSync(join(gh.projects, "demo", "README.md"))).toBe(true);
+    expect(db.query("SELECT COUNT(*) AS n FROM approvals WHERE always_ask IS NOT NULL").get()).toEqual({ n: 0 });
+  }, 30_000);
 });

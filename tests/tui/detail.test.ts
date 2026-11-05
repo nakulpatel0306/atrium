@@ -137,3 +137,21 @@ test("a markets space with holdings shows the portfolio's day and its top movers
   expect(lines[at + 2]).toBe("Watching 13 symbols");
   expect(text(spaceDetail(view, null, { watchlist: 3, paper: null, portfolio: null }))).not.toContain("Portfolio");
 });
+
+test("a repo question's detail says it belongs to Atrium and where to edit it", () => {
+  const state = makeState();
+  state.approvals = [{ ...state.approvals[0]!, spaceId: null, taskId: null, kind: "question", alwaysAsk: "create_repo", title: 'Create GitHub repo "demo"?', detail: "Name: demo" }];
+  const ui: Ui = { ...initialUi, focus: "needs", lastLeft: "needs" };
+  const all = text(approvalDetail(deriveView(state, ui), null));
+  expect(all).toContain("Atrium");
+  expect(all).not.toContain("Unknown space");
+  expect(all).toContain("Name: demo");
+  expect(all).toContain("Edit the fields in the dashboard. a approves them as shown.");
+});
+
+test("needs can be filtered by Atrium", () => {
+  const state = makeState();
+  state.approvals.push({ ...state.approvals[0]!, id: "apr_repo", spaceId: null, taskId: null, kind: "question", title: "Remove the local copy of o/n?" });
+  const view = deriveView(state, { ...initialUi, filters: { ...initialUi.filters, needs: "atrium" } });
+  expect(view.approvals.map((a) => a.id)).toContain("apr_repo");
+});

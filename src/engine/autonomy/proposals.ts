@@ -89,7 +89,9 @@ export function cleanStreak(db: Database, spaceId: string, fingerprint: string, 
 export function considerProposal(db: Database, approvalId: string, now = Date.now()): Proposal | null {
   const made = db.transaction((): string | null => {
     const a = getApproval(db, approvalId);
-    if (!a || a.status !== "approved" || a.decidedBy !== "you" || !a.fingerprint) return null;
+    // An always-ask kind never earns a rule, however often Nakul says yes to it.
+    if (a?.alwaysAsk) return null;
+    if (!a || a.status !== "approved" || a.decidedBy !== "you" || !a.fingerprint || !a.spaceId) return null;
     if (!parseFingerprint(a.fingerprint) || activeRuleFor(db, a.spaceId, a.fingerprint, now)) return null;
     const open = db
       .query(

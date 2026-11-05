@@ -104,3 +104,19 @@ test("a markets space and its price alert show up and can be answered", async ()
   await app.frame(() => client.calls.some((c) => c.method === "POST" && c.path === "/api/approvals/apr_alert"));
   expect(client.calls).toContainEqual({ method: "POST", path: "/api/approvals/apr_alert", body: { decision: "approve" } });
 });
+
+test("an Atrium-wide repo question shows as Atrium's and approves with a", async () => {
+  const state = makeState();
+  state.approvals.unshift({
+    ...state.approvals[0]!, id: "apr_repo", spaceId: null, taskId: null, kind: "question", alwaysAsk: "create_repo",
+    title: 'Create GitHub repo "demo"?', detail: "Name: demo\nVisibility: Private", createdAt: Date.now(),
+  });
+  state.repoActions = [{ id: "rpa_1", approvalId: "apr_repo", kind: "create", draft: { name: "demo", description: "d", visibility: "private", template: "bun-ts" }, path: "/p/demo", folderTaken: false, github: null, pickedUp: false, bytes: null }];
+  const client = fakeClient(state);
+  const app = openApp(client);
+  await app.type("3");
+  await app.frame((f) => /Atrium\s+Create GitHub repo "demo"\?/.test(f) && f.includes("Edit the fields in the dashboard. a approves them as shown."));
+  await app.type("a");
+  await app.frame(() => client.calls.some((c) => c.method === "POST" && c.path === "/api/approvals/apr_repo"));
+  expect(client.calls).toContainEqual({ method: "POST", path: "/api/approvals/apr_repo", body: { decision: "approve" } });
+});

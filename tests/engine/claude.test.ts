@@ -143,6 +143,12 @@ describe("claudeAdapter", () => {
       "Bash(cat *.env*)",
       // The Keychain CLI, where market data keys live.
       "Bash(security *)",
+      // GitHub is the engine's alone.
+      "Bash(gh *)",
+      "Bash(git push*)",
+      "Bash(git remote*)",
+      "Bash(git clone*)",
+      "Bash(git -c*)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
       "Edit(**/.claude/**)",
@@ -214,6 +220,32 @@ describe("claudeAdapter", () => {
     expect(argv).toContain("--strict-mcp-config");
     expect(argv).toContain("--no-session-persistence");
     expect(argv.slice(argv.indexOf("--disallowedTools") + 1)).toContain("Read(~/.ssh/**)");
+  });
+
+  test("run denies gh, pushes, remotes and clones, and drops GitHub credentials from the env", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
+    process.env.FAKE_CLAUDE_ENV = join(dir, "env.json");
+    const saved = { sock: process.env.SSH_AUTH_SOCK, token: process.env.GH_TOKEN };
+    process.env.SSH_AUTH_SOCK = "/tmp/atrium-fake-agent.sock";
+    process.env.GH_TOKEN = "fake-token-for-test";
+    try {
+      expect((await claudeAdapter(FAKE).run(input())).status).toBe("ok");
+      const argv = JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")) as string[];
+      const denied = argv.slice(argv.indexOf("--disallowedTools") + 1);
+      for (const rule of ["Bash(gh *)", "Bash(git push*)", "Bash(git remote*)", "Bash(git clone*)", "Bash(git -c*)"]) expect(denied).toContain(rule);
+      const names = JSON.parse(readFileSync(join(dir, "env.json"), "utf8")) as string[];
+      expect(names).not.toContain("SSH_AUTH_SOCK");
+      expect(names).not.toContain("GH_TOKEN");
+      expect(names).toContain("PATH");
+    } finally {
+      delete process.env.FAKE_CLAUDE_ENV;
+      for (const [k, v] of [["SSH_AUTH_SOCK", saved.sock], ["GH_TOKEN", saved.token]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      rmSync(dir, { recursive: true });
+    }
   });
 
   test("sandbox unavailable is reported plainly", async () => {
