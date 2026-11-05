@@ -45,7 +45,10 @@ check(
     == [Note(id: "apr_1", title: "Ready for review", body: "Fix login · atrium", path: "/space/spc_1?task=tsk_1")],
   "notes: new review")
 check(newNotes(previous: s1, next: s1).isEmpty, "notes: seen ids don't repeat")
-check(newNotes(previous: summary(), next: s1).count == 1, "notes: a need that comes back after it was gone is new again")
+// A need resolved elsewhere and then raised again (same id) is a new event once a summary without it was seen.
+let gone = summary()
+check(newNotes(previous: s1, next: gone).isEmpty, "notes: a need going away posts nothing")
+check(newNotes(previous: gone, next: s1).map(\.id) == ["apr_1"], "notes: a need that comes back after it was gone is new again")
 let q = summary(needs: [need("apr_9", kind: "question", title: "Which db?")])
 check(newNotes(previous: summary(), next: q).first?.title == "Atrium has a question", "notes: question title")
 let sug = summary(needs: [need("prp_1", kind: "suggestion", title: "Stop asking about docs changes?")])
@@ -124,6 +127,17 @@ check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorNetworkConnec
 check(isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut), "offline: timed out")
 check(!isOfflineLoadError(domain: NSURLErrorDomain, code: NSURLErrorCancelled), "offline: cancelled load is not offline")
 check(!isOfflineLoadError(domain: "WebKitErrorDomain", code: 102), "offline: policy interruption is not offline")
+
+// user input: script a.click() also reports linkActivated, so only a real recent click or key counts
+check(isRecentUserInput(.leftMouseUp, age: 0.2), "input: recent click")
+check(isRecentUserInput(.keyDown, age: 0.5), "input: recent key (Return on a link)")
+check(isRecentUserInput(.otherMouseUp, age: 0.1), "input: middle click")
+check(!isRecentUserInput(nil, age: 0), "input: no event")
+check(!isRecentUserInput(.leftMouseUp, age: 3), "input: stale click")
+check(!isRecentUserInput(.other, age: 0.1), "input: mouse move or other event")
+check(
+  linkDecision(ext, port: 7420, userClick: isRecentUserInput(nil, age: 0), mainFrame: true) == .cancel,
+  "policy: linkActivated with no input event is cancelled")
 
 // backoff
 check(nextBackoff(0) == 2, "backoff: floor")

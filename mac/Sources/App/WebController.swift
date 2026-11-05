@@ -35,10 +35,28 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
     if isOfflineLoadError(domain: e.domain, code: e.code) { onLoadFailed?() }
   }
 
+  // A crashed or killed WebContent process leaves a blank window; reloading brings the dashboard back.
+  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    webView.reload()
+  }
+
   private func decide(_ action: WKNavigationAction) -> LinkDecision {
     guard let url = action.request.url else { return .cancel }
-    return linkDecision(
-      url, port: port, userClick: action.navigationType == .linkActivated, mainFrame: action.targetFrame?.isMainFrame ?? true)
+    let userClick = action.navigationType == .linkActivated && recentUserInput()
+    return linkDecision(url, port: port, userClick: userClick, mainFrame: action.targetFrame?.isMainFrame ?? true)
+  }
+
+  private func recentUserInput() -> Bool {
+    guard let e = NSApp.currentEvent else { return isRecentUserInput(nil, age: 0) }
+    let kind: InputKind =
+      switch e.type {
+      case .leftMouseDown: .leftMouseDown
+      case .leftMouseUp: .leftMouseUp
+      case .otherMouseUp: .otherMouseUp
+      case .keyDown: .keyDown
+      default: .other
+      }
+    return isRecentUserInput(kind, age: ProcessInfo.processInfo.systemUptime - e.timestamp)
   }
 
   func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {

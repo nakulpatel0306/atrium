@@ -72,6 +72,17 @@ func isInternal(_ url: URL, port: Int) -> Bool {
   return (host == "127.0.0.1" || host == "localhost") && url.port == port
 }
 
+enum InputKind {
+  case leftMouseDown, leftMouseUp, otherMouseUp, keyDown, other
+}
+
+// WebKit marks a script's a.click() as linkActivated too, so a click only counts when a real mouse or key event
+// arrived within the last second.
+func isRecentUserInput(_ kind: InputKind?, age: TimeInterval) -> Bool {
+  guard let kind, kind != .other else { return false }
+  return age >= 0 && age <= 1
+}
+
 enum LinkDecision: Equatable {
   case allow, openExternally, cancel
 }
