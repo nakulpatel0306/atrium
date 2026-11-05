@@ -17,8 +17,9 @@ const all = files(SRC).map((p) => ({ rel: relative(SRC, p), text: readFileSync(p
 const containing = (needle: string | RegExp) =>
   all.filter((f) => (typeof needle === "string" ? f.text.includes(needle) : needle.test(f.text))).map((f) => f.rel).sort();
 
-test("ghBin is read only by config and the gh wrapper", () => {
-  expect(containing("ghBin")).toEqual(["engine/config.ts", "engine/repos/gh.ts"]);
+// seatbelt.ts reads it only to deny gh to agents.
+test("ghBin is read only by config, the gh wrapper and the agent sandbox", () => {
+  expect(containing("ghBin")).toEqual(["engine/agents/seatbelt.ts", "engine/config.ts", "engine/repos/gh.ts"]);
 });
 
 // approvals.ts names "push" only as an always-ask kind.

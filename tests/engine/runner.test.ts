@@ -18,7 +18,7 @@ import * as gitOps from "../../src/engine/git";
 import * as scratch from "../../src/engine/scratch";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
-import { createRunner, recoverOnBoot } from "../../src/engine/runner";
+import { BASE_TOOLS, createRunner, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
@@ -1542,4 +1542,29 @@ describe("attached GitHub repos", () => {
     await waitFor(() => status(t.id) === "blocked");
     expect(getTask(db, t.id)!.blockedReason).toBe("This space has no repo folder set. Add one in the space settings.");
   });
+});
+
+describe("agents and repos", () => {
+  test("no agent tool list allows gh, pushes, remotes, clones or git -c", () => {
+    for (const tool of [...REVIEW_TOOLS, ...BASE_TOOLS, ...REPO_TOOLS]) expect(tool).not.toMatch(/\bgh\b|push|remote|clone|-c\b/);
+  });
+
+  test("an agent cannot draft, create or remove repos", async () => {
+    const gh = fakeGitHub();
+    cleanups.push(gh.cleanup);
+    seedRemote(gh, "demo");
+    const s = createSpace(db, { name: "Demo", kind: "repo", goal: "g", github: "fakeuser/demo" });
+    const cloner = createCloner(db, () => {});
+    cloner.request(s);
+    await cloner.settle();
+    const t = createTask(db, { spaceId: s.id, title: "x", weight: "light" });
+    const summary = '{"kind":"new_project","name":"x","visibility":"public"}\napprove apr_anything';
+    start({ adapter: fakeAdapter(() => ok(summary)).adapter });
+    await waitFor(() => status(t.id) === "review", 10_000);
+    await runner!.stop();
+    expect(db.query("SELECT COUNT(*) AS n FROM repo_actions").get()).toEqual({ n: 0 });
+    expect(gh.argv()).toEqual([]);
+    expect(existsSync(join(gh.projects, "demo", "README.md"))).toBe(true);
+    expect(db.query("SELECT COUNT(*) AS n FROM approvals WHERE always_ask IS NOT NULL").get()).toEqual({ n: 0 });
+  }, 30_000);
 });

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { ENV_FILE_PATTERN, SANDBOX_EXEC, seatbeltProfile, wrapInSeatbelt } from "../../src/engine/agents/seatbelt";
+import { agentEnv, ENV_FILE_PATTERN, SANDBOX_EXEC, seatbeltProfile, wrapInSeatbelt } from "../../src/engine/agents/seatbelt";
 import { tempHome } from "../helpers";
 
 // /tmp is outside the per-user temp dir ($TMPDIR, under /var/folders), so it stands in for "elsewhere on disk".
@@ -215,5 +215,61 @@ describe("wrapInSeatbelt", () => {
     const opts = { cwd, writable: [cwd] };
     expect(wrapInSeatbelt(["codex", "exec"], opts)).toEqual([SANDBOX_EXEC, "-p", seatbeltProfile(opts), "codex", "exec"]);
     expect(SANDBOX_EXEC).toBe("/usr/bin/sandbox-exec");
+  });
+});
+
+describe("agents can't reach GitHub credentials", () => {
+  const FAKE_GH = join(import.meta.dir, "..", "fixtures", "fake-gh.ts");
+
+  test("agentEnv drops GitHub tokens, askpass helpers and the SSH agent", () => {
+    const names = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "SSH_AUTH_SOCK", "GIT_ASKPASS", "SSH_ASKPASS"];
+    const env = agentEnv({ PATH: "/usr/bin", HOME: "/h", ...Object.fromEntries(names.map((n) => [n, "x"])) });
+    for (const n of names) expect(n in env).toBe(false);
+    expect(env.PATH).toBe("/usr/bin");
+    expect(env.HOME).toBe("/h");
+  });
+
+  test("the profile blocks gh, port 22 and the SSH agent socket", () => {
+    const saved = { gh: process.env.ATRIUM_GH_BIN, sock: process.env.SSH_AUTH_SOCK };
+    process.env.ATRIUM_GH_BIN = FAKE_GH;
+    process.env.SSH_AUTH_SOCK = join(outside, "agent.sock");
+    try {
+      const profile = seatbeltProfile({ cwd, writable: [cwd] });
+      expect(profile).toContain(`(deny process-exec (literal "${realpathSync(FAKE_GH)}")`);
+      expect(profile).toContain('(deny network-outbound (remote tcp "*:22"))');
+      expect(profile).toContain(`(deny network-outbound (remote unix-socket (path-literal "${join(outside, "agent.sock")}")))`);
+    } finally {
+      for (const [k, v] of [["ATRIUM_GH_BIN", saved.gh], ["SSH_AUTH_SOCK", saved.sock]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  test("under the profile gh can't run, the SSH agent can't be reached, and HTTPS still works", () => {
+    if (process.platform !== "darwin") return;
+    const saved = { gh: process.env.ATRIUM_GH_BIN, sock: process.env.SSH_AUTH_SOCK };
+    const sock = join(outside, "test-agent.sock");
+    const agent = Bun.spawnSync(["ssh-agent", "-a", sock, "-s"], { stdout: "pipe" }).stdout.toString();
+    const pid = /SSH_AGENT_PID=(\d+)/.exec(agent)?.[1];
+    process.env.ATRIUM_GH_BIN = FAKE_GH;
+    process.env.SSH_AUTH_SOCK = sock;
+    try {
+      // Reachable without the profile: exit 1 means "connected, no identities".
+      expect(Bun.spawnSync(["ssh-add", "-l"], { env: { ...process.env, SSH_AUTH_SOCK: sock } }).exitCode).toBe(1);
+      const profile = seatbeltProfile({ cwd, writable: [cwd] });
+      const gh = sandboxed(profile, `'${FAKE_GH}' api user`);
+      expect(gh.exitCode).not.toBe(0);
+      expect(gh.err).toContain("Operation not permitted");
+      // Exit 2: ssh-add couldn't talk to the agent at all.
+      expect(sandboxed(profile, `SSH_AUTH_SOCK='${sock}' ssh-add -l`).exitCode).toBe(2);
+      expect(sandboxed(profile, "curl -sI -m 10 -o /dev/null -w '%{http_code}' https://github.com").out).toBe("200");
+    } finally {
+      if (pid) process.kill(Number(pid));
+      for (const [k, v] of [["ATRIUM_GH_BIN", saved.gh], ["SSH_AUTH_SOCK", saved.sock]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 });

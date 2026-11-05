@@ -9,6 +9,8 @@ if (process.argv[2] === "--version") {
   process.exit(0);
 }
 if (process.env.FAKE_CLAUDE_ARGV) await Bun.write(process.env.FAKE_CLAUDE_ARGV, JSON.stringify(process.argv.slice(2)));
+// Names only, never values: tests check which variables reach the CLI.
+if (process.env.FAKE_CLAUDE_ENV) await Bun.write(process.env.FAKE_CLAUDE_ENV, JSON.stringify(Object.keys(process.env)));
 
 out({ type: "system", subtype: "init", cwd: process.cwd(), session_id: sessionId, tools: ["Read", "Bash"] });
 

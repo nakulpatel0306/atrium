@@ -3,6 +3,7 @@ import { ENV_GLOBS } from "../envpath";
 import { atriumDenyPaths } from "./atrium-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { agentEnv } from "./seatbelt";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
@@ -12,6 +13,12 @@ const denyRules = (cwd: string) => [
   "Bash(cat *.env*)",
   // The Keychain CLI, where market data keys live.
   "Bash(security *)",
+  // GitHub is the engine's alone: creating repos, pushing, and pointing a repo at another remote.
+  "Bash(gh *)",
+  "Bash(git push*)",
+  "Bash(git remote*)",
+  "Bash(git clone*)",
+  "Bash(git -c*)",
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
   "Write(**/.git/**)",
@@ -141,7 +148,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           "--allowedTools", ...input.allowedTools,
           "--disallowedTools", ...denyRules(input.cwd),
         ],
-        { cwd: input.cwd, stdin: input.prompt, signal: input.signal, onLine: handle },
+        { cwd: input.cwd, stdin: input.prompt, env: agentEnv(process.env), signal: input.signal, onLine: handle },
       );
       if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" };
       const { stderr, exitCode } = proc;

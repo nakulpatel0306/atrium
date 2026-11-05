@@ -66,9 +66,9 @@ const REVIEW_SYSTEM_PROMPT = [
   "Never read, print, or edit .env files, keys, or tokens.",
 ].join("\n");
 
-const REVIEW_TOOLS = ["Read", "Glob", "Grep"];
-const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
-const REPO_TOOLS = [
+export const REVIEW_TOOLS = ["Read", "Glob", "Grep"];
+export const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
+export const REPO_TOOLS = [
   ...BASE_TOOLS,
   "Bash(bun test*)",
   "Bash(bun install --ignore-scripts*)",

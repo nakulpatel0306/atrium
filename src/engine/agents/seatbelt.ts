@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { config } from "../config";
@@ -54,6 +54,21 @@ export interface SeatbeltOptions {
 const KEYCHAIN_SERVICES =
   '(deny mach-lookup (global-name "com.apple.securityd") (global-name "com.apple.security.agent") (global-name-prefix "com.apple.securityd"))';
 
+// Only the engine talks to GitHub (creating, pushing, cloning); agents never commit, so they need none of these.
+const GITHUB_ENV = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "SSH_AUTH_SOCK", "GIT_ASKPASS", "SSH_ASKPASS"];
+
+export function agentEnv(base: Record<string, string | undefined>): Record<string, string | undefined> {
+  const env = { ...base };
+  for (const name of GITHUB_ENV) delete env[name];
+  return env;
+}
+
+// gh wherever it's installed, so a run can't use Nakul's GitHub login even through a path the env still names.
+function ghBinaries(): string[] {
+  const found = [Bun.which(config().ghBin), "/opt/homebrew/bin/gh", "/usr/local/bin/gh"].filter((p): p is string => !!p && existsSync(p));
+  return [...new Set(found.map((p) => realpathSync(p)))];
+}
+
 // Seatbelt matches resolved paths (/private/var, never /var), so an unresolved path would silently never match.
 // A path that doesn't exist yet resolves through its nearest existing parent.
 function canonical(p: string): string {
@@ -90,6 +105,10 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     "(deny appleevent-send)",
     // The Keychain CLI would hand an agent Atrium's market data keys; agents only ever get prices.
     '(deny process-exec (literal "/usr/bin/security"))',
+    // GitHub is the engine's alone: no gh, no SSH to git hosts, and no SSH agent to sign or push with.
+    ...ghBinaries().map((p) => `(deny process-exec (literal ${str(p)}))`),
+    '(deny network-outbound (remote tcp "*:22"))',
+    ...(process.env.SSH_AUTH_SOCK ? [`(deny network-outbound (remote unix-socket (path-literal ${str(canonical(process.env.SSH_AUTH_SOCK))})))`] : []),
     ...(opts.denyKeychain ? [KEYCHAIN_SERVICES] : []),
     // Atrium's API listens on loopback, and a forged Host/Origin from inside a run could approve its own drafts.
     // "localhost" covers 127.0.0.1, ::1, 0.0.0.0 and ::ffff:127.0.0.1; the CLIs only need the internet.
@@ -113,7 +132,7 @@ export function wrapInSeatbelt(argv: string[], opts: SeatbeltOptions & { sandbox
 export async function withPrivateTmp<T>(run: (tmp: string, env: Record<string, string | undefined>) => Promise<T>): Promise<T> {
   const tmp = mkdtempSync(join(tmpdir(), "atrium-agent-"));
   try {
-    return await run(tmp, { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp });
+    return await run(tmp, agentEnv({ ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
