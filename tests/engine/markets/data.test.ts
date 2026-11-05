@@ -166,9 +166,11 @@ test("a rejected key shows in the status and stops the feed asking", async () =>
 
 test("keys are read again later when the Keychain was locked at boot", async () => {
   let locked = true;
+  let reads = 0;
   const keys: Record<string, string> = { ...ALL_KEYS };
   const keychain: Keychain = {
     get: async (a) => {
+      reads++;
       if (locked) throw new Error("locked");
       return keys[a] ?? null;
     },
@@ -176,9 +178,38 @@ test("keys are read again later when the Keychain was locked at boot", async () 
     remove: async () => {},
   };
   const data = createMarketData({ db, keychain, now: () => now, providers: { alpaca: stub("alpaca").p } });
+  // status() never touches the Keychain.
+  await data.status();
+  expect(reads).toBe(0);
   expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).missing).toHaveLength(1);
+  expect((await data.status()).us.message).toBe("Keychain is locked. Unlock it, then press Test in Settings → Market data.");
   locked = false;
+  const after = reads;
   expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).missing).toHaveLength(1);
-  now += 61_000;
+  expect(reads).toBe(after);
+  now += 601_000;
   expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).quotes).toHaveLength(1);
+  // A user action reads straight away.
+  locked = true;
+  await data.refreshKeys(true);
+  expect((await data.status()).us.ready).toBe(false);
+});
+
+test("a rejected key is retried once at the next session", async () => {
+  const us = stub("alpaca");
+  let fail = true;
+  const real = us.p.quotes;
+  us.p.quotes = async (list) => {
+    if (fail) throw new ProviderError("auth", "Alpaca rejected the key. Check the key ID and secret in Settings → Market data.");
+    return real(list);
+  };
+  const data = createMarketData({ db, keychain: fakeKeychain({ ...ALL_KEYS }), now: () => now, providers: { alpaca: us.p } });
+  await data.quotes([{ symbol: "AAPL", exchange: "US" }]);
+  expect((await data.status()).us.ready).toBe(false);
+  await data.prepare();
+  expect((await data.status()).us.ready).toBe(false);
+  now = Date.parse("2026-11-06T15:00:00Z");
+  fail = false;
+  await data.prepare();
+  expect((await data.status()).us.ready).toBe(true);
 });

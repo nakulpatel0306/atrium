@@ -26,17 +26,28 @@ export const isKeyShaped = (s: string): boolean => /^[A-Za-z0-9]{8,128}$/.test(s
 
 // `security` exits 44 when the item isn't there.
 const NOT_FOUND = 44;
+// A locked Keychain can sit on an unlock dialog indefinitely; the engine gives up rather than hang the feed or API.
+const READ_TIMEOUT_MS = 5_000;
+export const KEYCHAIN_LOCKED = "Keychain is locked. Unlock it, then press Test in Settings → Market data.";
 
 // stdout and stderr never go into an error: `security` echoes its input, which can hold the secret.
-export function createKeychain(bin = config().securityBin): Keychain {
+export function createKeychain(bin = config().securityBin, opts: { timeoutMs?: number } = {}): Keychain {
+  const timeoutMs = opts.timeoutMs ?? READ_TIMEOUT_MS;
   const run = async (args: string[], stdin?: string) => {
     const proc = Bun.spawn([bin, ...args], { stdin: stdin === undefined ? "ignore" : "pipe", stdout: "pipe", stderr: "pipe", env: process.env });
     if (stdin !== undefined && proc.stdin) {
       proc.stdin.write(stdin);
       await proc.stdin.end();
     }
-    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    return { out, code };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<"timeout">((resolve) => (timer = setTimeout(() => resolve("timeout"), timeoutMs)));
+    const code = await Promise.race([proc.exited, timedOut]);
+    clearTimeout(timer);
+    if (code === "timeout") {
+      proc.kill();
+      throw new KeychainError(KEYCHAIN_LOCKED);
+    }
+    return { out: await new Response(proc.stdout).text(), code };
   };
   const id = (account: string) => ["-s", KEYCHAIN_SERVICE, "-a", account];
   return {

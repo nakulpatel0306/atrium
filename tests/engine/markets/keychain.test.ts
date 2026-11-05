@@ -68,3 +68,16 @@ test("redact", () => {
   expect(redact("https://x/q?apikey=ZZZ999&a=1", [])).toBe("https://x/q?apikey=[redacted]&a=1");
   expect(redact("abc", [null, undefined, "ab"])).toBe("abc");
 });
+
+test("a read that hangs (an unlock dialog) times out with a plain message", async () => {
+  process.env.FAKE_SECURITY_HANG = "1";
+  try {
+    const started = Date.now();
+    const err = await createKeychain(FAKE, { timeoutMs: 200 }).get("alpaca.keyId").catch((e) => e);
+    expect(err).toBeInstanceOf(KeychainError);
+    expect(err.message).toBe("Keychain is locked. Unlock it, then press Test in Settings → Market data.");
+    expect(Date.now() - started).toBeLessThan(2000);
+  } finally {
+    delete process.env.FAKE_SECURITY_HANG;
+  }
+});

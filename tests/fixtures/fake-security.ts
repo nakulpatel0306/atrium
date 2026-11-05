@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 const store = process.env.FAKE_SECURITY_STORE!;
 const argvLog = process.env.FAKE_SECURITY_ARGV;
 const args = process.argv.slice(2);
-if (argvLog) appendFileSync(argvLog, JSON.stringify(args) + "\n");
+if (argvLog) appendFileSync(argvLog, JSON.stringify({ at: Date.now(), args }) + "\n");
 
 const load = (): Record<string, string> => (existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : {});
 const save = (s: Record<string, string>) => writeFileSync(store, JSON.stringify(s));
@@ -13,6 +13,9 @@ const flag = (list: string[], f: string) => {
   const i = list.indexOf(f);
   return i >= 0 ? list[i + 1] : undefined;
 };
+
+// Stands in for a Keychain waiting on an unlock dialog.
+if (process.env.FAKE_SECURITY_HANG) await Bun.sleep(30_000);
 
 if (process.env.FAKE_SECURITY_FAIL) {
   const input = args[0] === "-i" ? await Bun.stdin.text() : args.join(" ");

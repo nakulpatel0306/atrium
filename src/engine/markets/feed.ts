@@ -11,9 +11,10 @@ export const OFF_RECHECK_MS = 900_000;
 export const FLUSH_MS = 1_000;
 const CHANGED_DEBOUNCE_MS = 250;
 const MIN_TIMER_MS = 1_000;
-// A streamed symbol this long without a trade is polled instead; when every one is that quiet, the stream is
-// presumed dead (a half-open socket after sleep) and reconnected.
+// A streamed symbol this long without a trade is polled instead. When every one has been quiet for three times that,
+// the stream is presumed dead (a half-open socket after sleep) and reconnected; the feed only streams in session.
 export const STALE_MS = 300_000;
+const DEAD_STREAM_MS = 900_000;
 
 export type FeedMode = "stream" | "poll" | "off";
 export type FeedStatus = { mode: FeedMode; reason: string; session: Session; lastQuoteAt: number | null; streamError: string | null };
@@ -174,6 +175,8 @@ export function createFeed(deps: {
     const at = now();
     const session = usSession(at);
     const tracked = trackedInstruments(db);
+    // Keys are only read when there's something to fetch now; a closed market never touches the Keychain.
+    if (session.open && tracked.length) await data.prepare();
     const status = await data.status();
     const pollable = tracked.filter((i) => {
       const p = data.providerFor(i);
@@ -220,8 +223,9 @@ export function createFeed(deps: {
       const wanted = pollable.slice(0, max);
       const wantedKeys = wanted.map(instrumentKey).join(",");
       if (stream && trigger === "timer") {
-        stale = wanted.filter((i) => at - (tickAt.get(instrumentKey(i)) ?? streamSince) >= STALE_MS);
-        if (wanted.length && stale.length === wanted.length) closeStream();
+        const quiet = (i: Instrument) => at - (tickAt.get(instrumentKey(i)) ?? streamSince);
+        stale = wanted.filter((i) => quiet(i) >= STALE_MS);
+        if (wanted.length && wanted.every((i) => quiet(i) >= DEAD_STREAM_MS)) closeStream();
       }
       if (!stream) {
         streamSince = at;

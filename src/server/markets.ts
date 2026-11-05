@@ -136,11 +136,15 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
   const method = req.method;
   const hit = (verb: string, pattern: RegExp) => (method === verb ? pathname.match(pattern) : null);
 
-  if (hit("GET", /^\/api\/settings\/market-data$/)) return json({ data: await m.data.status(), feed: m.feed.status() });
+  if (hit("GET", /^\/api\/settings\/market-data$/)) {
+    await m.data.refreshKeys();
+    return json({ data: await m.data.status(), feed: m.feed.status() });
+  }
   if (hit("PUT", /^\/api\/settings\/market-data$/)) {
     const b = await readBody(req);
     if (!PROVIDERS.includes(b.provider as (typeof PROVIDERS)[number])) throw new HttpError(400, "provider must be alpaca, finnhub or demo.");
     setSetting(db, "markets.provider", b.provider as string);
+    await m.data.refreshKeys();
     await m.feed.reevaluate();
     return json({ data: await m.data.status(), feed: m.feed.status() });
   }
@@ -159,6 +163,7 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
     return json({ ok: true, message: "Removed from your Mac's Keychain." });
   }
   if (hit("POST", /^\/api\/settings\/market-data\/test$/)) {
+    await m.data.refreshKeys(true);
     const probe = async (i: Instrument) => {
       const reason = m.data.reasonFor(i);
       if (reason) return { ok: false, message: reason };
@@ -183,7 +188,10 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
   const rest = sm[2] ?? "";
   const sub = (verb: string, pattern: RegExp) => (method === verb ? rest.match(pattern) : null);
 
-  if (sub("GET", /^$/)) return json(await view(db, m, spaceId, now()));
+  if (sub("GET", /^$/)) {
+    await m.data.refreshKeys();
+    return json(await view(db, m, spaceId, now()));
+  }
 
   if (sub("POST", /^\/watchlist$/)) {
     const b = await readBody(req);

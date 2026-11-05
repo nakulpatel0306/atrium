@@ -4,7 +4,7 @@ import { dailyBudget } from "./budget";
 import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
 import { etDate, etInstant, lastCompletedSession } from "./calendar";
 import { instrumentKey, type Instrument } from "./instrument";
-import { KEY_ACCOUNTS, type Keychain } from "./keychain";
+import { KEY_ACCOUNTS, KEYCHAIN_LOCKED, type Keychain } from "./keychain";
 import { alpacaProvider } from "./providers/alpaca";
 import { alphaVantageProvider } from "./providers/alphavantage";
 import { demoProvider } from "./providers/demo";
@@ -27,6 +27,10 @@ export type MarketData = {
   streamer(): MarketProvider | null;
   status(): Promise<DataStatus>;
   reload(): Promise<void>;
+  // Reads the Keychain if the feed is about to fetch and keys are missing or unread (at most every ten minutes).
+  prepare(): Promise<void>;
+  // The same for a user action (Settings, a markets space, Test); force reads straight away.
+  refreshKeys(force?: boolean): Promise<void>;
   providerFor(i: Instrument): MarketProvider | null;
   // Why nothing prices this instrument right now; null when a provider covers it.
   reasonFor(i: Instrument): string | null;
@@ -64,8 +68,9 @@ export function createMarketData(deps: {
   let keys: Keys = { alpacaKeyId: null, alpacaSecret: null, finnhub: null, alphavantage: null };
   let loaded: Promise<void> | null = null;
   let built: Partial<Record<ProviderId, MarketProvider>> = {};
-  // A provider that rejected its key says so in the status until the keys change.
-  let rejected: Partial<Record<ProviderId, string>> = {};
+  // A provider that rejected its key says so in the status until the keys change, or until the next session's first
+  // fetch, which tries once more.
+  let rejected: Partial<Record<ProviderId, { message: string; date: string }>> = {};
   let lastRead = 0;
   let readFailed = false;
 
@@ -89,16 +94,21 @@ export function createMarketData(deps: {
     };
     built = {};
   };
-  // A Keychain that was locked at boot (or a key added outside Atrium) is picked up later without a restart: after a
-  // failed read, retried a minute on; with the current provider's key missing, every ten minutes.
-  const ensure = async () => {
+  // The Keychain is read only when something needs the keys: the feed about to fetch in market hours (prepare), or
+  // Nakul opening Settings or a markets space (refreshKeys). A missing key or a failed (locked) read is retried at
+  // most every ten minutes from the feed, half a minute from a user action, and never from status().
+  const missingKey = () => mode() !== "demo" && !has[mode() as "alpaca" | "finnhub"]();
+  const readIfDue = async (gapMs: number, force = false) => {
     if (loaded) await loaded;
-    const since = now() - lastRead;
-    const missing = mode() !== "demo" && !has[mode() as "alpaca" | "finnhub"]();
-    if (!loaded || (readFailed && since > 60_000) || (missing && since > 600_000)) {
-      loaded = reload();
-      await loaded;
-    }
+    const due = !loaded || force || ((readFailed || missingKey()) && now() - lastRead > gapMs);
+    if (!due) return;
+    loaded = reload();
+    await loaded;
+  };
+  const ensure = async () => {
+    await readIfDue(600_000);
+    const today = etDate(now());
+    for (const id of Object.keys(rejected) as ProviderId[]) if (rejected[id]!.date !== today) delete rejected[id];
   };
 
   const has = { alpaca: () => !!(keys.alpacaKeyId && keys.alpacaSecret), finnhub: () => !!keys.finnhub, alphavantage: () => !!keys.alphavantage };
@@ -193,7 +203,7 @@ export function createMarketData(deps: {
           for (const i of group) if (!seen.has(instrumentKey(i))) missing.push({ key: instrumentKey(i), reason: `${p.label} has no price for ${instrumentKey(i)}.` });
         } catch (e) {
           const reason = message(e);
-          if (e instanceof ProviderError && e.kind === "auth") rejected[p.id] = reason;
+          if (e instanceof ProviderError && e.kind === "auth") rejected[p.id] = { message: reason, date: etDate(now()) };
           for (const i of group) missing.push({ key: instrumentKey(i), reason });
         }
       }
@@ -244,23 +254,24 @@ export function createMarketData(deps: {
       return p.stream ? p : null;
     },
     async status() {
-      await ensure();
       const m = mode();
       const keysPresent = { alpaca: has.alpaca(), finnhub: has.finnhub(), alphavantage: has.alphavantage() };
       if (m === "demo") return { usProvider: m, us: { ready: true, message: "Demo data" }, ca: { ready: true, message: "Demo data" }, keys: keysPresent };
       const us = !has[m]()
-        ? { ready: false, message: MISSING[m] }
+        ? { ready: false, message: readFailed ? KEYCHAIN_LOCKED : MISSING[m] }
         : rejected[m]
-          ? { ready: false, message: rejected[m]! }
+          ? { ready: false, message: rejected[m]!.message }
           : { ready: true, message: m === "alpaca" ? "Alpaca · IEX real-time" : "Finnhub · real-time" };
       const left = dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now).remaining();
       const ca = rejected.alphavantage
-        ? { ready: false, message: rejected.alphavantage }
+        ? { ready: false, message: rejected.alphavantage.message }
         : has.alphavantage()
         ? { ready: true, message: `Alpha Vantage · end of day (${left} of ${AV_DAILY_LIMIT} requests left today)` }
         : { ready: false, message: MISSING.ca };
       return { usProvider: m, us, ca, keys: keysPresent };
     },
+    prepare: ensure,
+    refreshKeys: (force = false) => readIfDue(30_000, force),
     async reload() {
       loaded = reload();
       await loaded;

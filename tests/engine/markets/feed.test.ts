@@ -8,7 +8,14 @@ import type { DataStatus, MarketData } from "../../../src/engine/markets/data";
 import { createFeed, feedMode, FLUSH_MS, OFF_RECHECK_MS, POLL_MS, trackedInstruments } from "../../../src/engine/markets/feed";
 import { instrumentKey, type Instrument } from "../../../src/engine/markets/instrument";
 import type { MarketProvider, Quote, StreamEvents } from "../../../src/engine/markets/providers/types";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { createMarketData } from "../../../src/engine/markets/data";
+import { createKeychain } from "../../../src/engine/markets/keychain";
 import { tempHome } from "../../helpers";
+
+const FAKE_SECURITY = resolve(import.meta.dir, "../../fixtures/fake-security.ts");
 import { fakeTimers } from "./fakes";
 
 let home: ReturnType<typeof tempHome>;
@@ -74,6 +81,8 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
       keys: { alpaca: true, finnhub: false, alphavantage: true },
     }),
     reload: async () => {},
+    prepare: async () => {},
+    refreshKeys: async () => {},
     providerFor: (i) => (i.exchange === "US" ? streamer : i.exchange === "TSX" ? av : null),
     reasonFor: () => null,
     secrets: () => [],
@@ -311,7 +320,48 @@ test("streamed symbols with no tick for 5 minutes are polled, and a silent strea
   now += POLL_MS;
   s.timers.fireAll();
   await s.feed.idle();
+  // Quiet symbols are polled, but the stream is only presumed dead after 15 minutes without any trade.
+  expect(s.streams).toHaveLength(1);
+  now += 3 * POLL_MS;
+  s.timers.fireAll();
+  await s.feed.idle();
   expect(s.streams[0]!.closed).toBe(true);
   expect(s.streams).toHaveLength(2);
   s.feed.stop();
+});
+
+test("no Keychain reads while the market is closed and nobody is looking", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "atrium-feedkc-"));
+  process.env.FAKE_SECURITY_STORE = join(dir, "store.json");
+  process.env.FAKE_SECURITY_ARGV = join(dir, "argv.log");
+  try {
+    watch("AAPL");
+    now = Date.parse("2026-11-07T17:00:00Z");
+    const timers = fakeTimers();
+    const data = createMarketData({ db, keychain: createKeychain(FAKE_SECURITY), now: () => now });
+    const feed = createFeed({ db, data, onQuotes: () => {}, strategyActive: () => false, now: () => now, timers });
+    await feed.start();
+    for (let i = 0; i < 8; i++) {
+      now += OFF_RECHECK_MS;
+      timers.fireAll();
+      await feed.idle();
+    }
+    await feed.reevaluate();
+    expect(existsSync(join(dir, "argv.log"))).toBe(false);
+    // In session, the feed reads the Keychain before fetching, then not again for 10 minutes.
+    now = Date.parse("2026-11-09T15:00:00Z");
+    timers.fireAll();
+    await feed.idle();
+    const first = readFileSync(join(dir, "argv.log"), "utf8").trim().split("\n").length;
+    expect(first).toBe(4);
+    now += POLL_MS;
+    timers.fireAll();
+    await feed.idle();
+    expect(readFileSync(join(dir, "argv.log"), "utf8").trim().split("\n").length).toBe(first);
+    feed.stop();
+  } finally {
+    delete process.env.FAKE_SECURITY_STORE;
+    delete process.env.FAKE_SECURITY_ARGV;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
