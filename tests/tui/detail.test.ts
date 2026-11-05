@@ -117,3 +117,21 @@ test("a markets space's detail shows the watchlist, paper P&L and where the char
   expect(all).toContain("Open the dashboard for charts");
   expect(text(spaceDetail(view, null, null))).toContain("Open the dashboard for charts");
 });
+
+test("a repo question's detail says it belongs to Atrium and where to edit it", () => {
+  const state = makeState();
+  state.approvals = [{ ...state.approvals[0]!, spaceId: null, taskId: null, kind: "question", alwaysAsk: "create_repo", title: 'Create GitHub repo "demo"?', detail: "Name: demo" }];
+  const ui: Ui = { ...initialUi, focus: "needs", lastLeft: "needs" };
+  const all = text(approvalDetail(deriveView(state, ui), null));
+  expect(all).toContain("Atrium");
+  expect(all).not.toContain("Unknown space");
+  expect(all).toContain("Name: demo");
+  expect(all).toContain("Edit the fields in the dashboard. a approves them as shown.");
+});
+
+test("needs can be filtered by Atrium", () => {
+  const state = makeState();
+  state.approvals.push({ ...state.approvals[0]!, id: "apr_repo", spaceId: null, taskId: null, kind: "question", title: "Remove the local copy of o/n?" });
+  const view = deriveView(state, { ...initialUi, filters: { ...initialUi.filters, needs: "atrium" } });
+  expect(view.approvals.map((a) => a.id)).toContain("apr_repo");
+});

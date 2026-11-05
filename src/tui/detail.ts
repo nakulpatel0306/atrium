@@ -102,15 +102,19 @@ export function approvalDetail(view: View, messages: Message[] | null): DetailLi
   if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
   const space = view.state.spaces.find((s) => s.id === approval.spaceId);
   const review = reviewLine(approval, view.state, messages);
-  const lines: DetailLine[] = [muted(space?.name ?? "Unknown space"), plain(approval.title, { bold: true })];
+  const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");
+  const lines: DetailLine[] = [muted(owner), plain(approval.title, { bold: true })];
   if (review) lines.push(plain(review.text, { color: review.tone ? TONE[review.tone] : undefined }));
   lines.push(blank, ...block(approval.detail || "No further detail."), blank);
   lines.push(muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`));
+  if (approval.alwaysAsk === "create_repo") lines.push(plain("Edit the fields in the dashboard. a approves them as shown."));
   lines.push(
     muted(
       approval.kind === "alert"
         ? "a dismiss · turn the alert off or change it on the dashboard"
-        : "a approve · r send back · enter on the task in [2] for runs · t transcript",
+        : approval.spaceId === null
+          ? "a approve · r decline"
+          : "a approve · r send back · enter on the task in [2] for runs · t transcript",
     ),
   );
   return lines;

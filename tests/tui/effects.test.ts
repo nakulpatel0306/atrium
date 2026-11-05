@@ -62,3 +62,10 @@ test("a new space says which space to select", async () => {
   client.respond("/api/command", { ok: true, data: { space: { id: "spc_new", name: "reading" }, tasks: [] } });
   expect(await runIntent(client, { type: "newSpace", text: "reading" }, state)).toMatchObject({ spaceId: "spc_new" });
 });
+
+test("a drafted project says where it waits, and selects no space", async () => {
+  const client = fakeClient(state);
+  client.respond("/api/command", { ok: true, data: { draft: { id: "rpa_1", draft: { name: "demo" } }, approval: { id: "apr_1" } } });
+  const flash = await runIntent(client, { type: "newSpace", text: "start a new project called demo" }, state);
+  expect(flash).toEqual({ tone: "ok", text: 'Drafted "demo". It\'s waiting in Needs you.' });
+});
