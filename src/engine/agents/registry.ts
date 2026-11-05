@@ -24,6 +24,8 @@ export type Registry = {
   recordUsage(id: string, usage: AgentUsage): void;
   inReserve(): { until: number } | null;
   resolve(task: Task, space: Space): Resolution;
+  // Why this space shuts out the task's explicitly chosen free agent for good (privacy, .env files), or null.
+  refusal(task: Task, space: Space): string | null;
 };
 
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -177,5 +179,6 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
     },
     inReserve,
     resolve,
+    refusal: (task, space) => (task.agent === "claude" || task.agent === "auto" ? null : freeAgentBlock(task.agent, task, space)),
   };
 }

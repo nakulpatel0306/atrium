@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bus, logActivity } from "./events";
 import { newId } from "./ids";
-import { appendTaskDetail, setTaskStatus } from "./tasks";
+import { appendTaskDetail, listTasks, setTaskStatus } from "./tasks";
 
 export const ALWAYS_ASK = ["merge_main", "deploy", "first_contact", "delete", "spend", "secrets"] as const;
 
@@ -73,6 +73,22 @@ export function createApproval(
   return getApproval(db, id)!;
 }
 
+// The open review approval for a task, if Nakul hasn't decided on it yet.
+export function pendingReviewFor(db: Database, taskId: string): Approval | null {
+  const row = db
+    .query(
+      "SELECT * FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'pending' ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    )
+    .get(taskId) as ApprovalRow | null;
+  return row ? toApproval(row) : null;
+}
+
+// Only a pending approval grows: once Nakul has decided, what he decided on stays as it was.
+export function appendApprovalDetail(db: Database, id: string, text: string): void {
+  db.query("UPDATE approvals SET detail = detail || ? WHERE id = ? AND status = 'pending'").run(text, id);
+  bus.emit({ type: "changed" });
+}
+
 export function listPending(db: Database): Approval[] {
   // rowid breaks ties between approvals created in the same millisecond
   const rows = db
@@ -97,6 +113,13 @@ export function resolveApproval(db: Database, id: string, decision: "approve" | 
       } else {
         setTaskStatus(db, a.taskId, "queued");
         if (note) appendTaskDetail(db, a.taskId, `\n\nFeedback: ${note}`);
+      }
+      // A review or fix still waiting would only second-guess a decision Nakul has made.
+      const parentId = a.taskId;
+      for (const child of listTasks(db, { status: ["queued", "running", "blocked", "failed"] })) {
+        if (child.parentTaskId !== parentId) continue;
+        setTaskStatus(db, child.id, "done");
+        logActivity(db, a.spaceId, "atrium", `Skipped: you already decided. ${child.title}`);
       }
     }
     logActivity(db, a.spaceId, "you", `${decision === "approve" ? "Approved" : "Rejected"}: ${a.title}`);

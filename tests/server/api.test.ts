@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { createApproval, listPending } from "../../src/engine/approvals";
+import { addMessage } from "../../src/engine/messages";
 import { openDb } from "../../src/engine/db";
 import { createRunner } from "../../src/engine/runner";
 import { SetupFailed } from "../../src/engine/setup";
@@ -47,6 +48,39 @@ const post = (path: string, body?: unknown, headers: Record<string, string> = {}
     headers: { origin, "content-type": "application/json", ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+
+const patch = (path: string, body: unknown) =>
+  fetch(base + path, { method: "PATCH", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body) });
+
+test("PATCH reviewBy validates the agent id", async () => {
+  const s = createSpace(db, { name: "App", kind: "general", goal: "g" });
+  const bad = await patch(`/api/spaces/${s.id}`, { reviewBy: "bogus" });
+  expect(bad.status).toBe(400);
+  expect(((await bad.json()) as { error: string }).error).toBe("reviewBy must be codex, gemini, claude, or null.");
+  const set = await patch(`/api/spaces/${s.id}`, { reviewBy: "codex" });
+  expect(set.status).toBe(200);
+  expect(((await set.json()) as { reviewBy: string }).reviewBy).toBe("codex");
+  const cleared = await patch(`/api/spaces/${s.id}`, { reviewBy: null });
+  expect(((await cleared.json()) as { reviewBy: string | null }).reviewBy).toBeNull();
+  // Leaving it out keeps what's there.
+  await patch(`/api/spaces/${s.id}`, { reviewBy: "gemini" });
+  expect(((await (await patch(`/api/spaces/${s.id}`, { name: "Renamed" })).json()) as { reviewBy: string }).reviewBy).toBe("gemini");
+});
+
+test("GET messages returns the thread in order", async () => {
+  const s = createSpace(db, { name: "App", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Work" });
+  addMessage(db, { spaceId: s.id, taskId: t.id, fromAgent: "claude", toAgent: "codex", body: "Please review 2 files on atrium/x." });
+  addMessage(db, { spaceId: s.id, taskId: t.id, fromAgent: "codex", toAgent: "claude", body: "VERDICT: approve" });
+  const res = await fetch(`${base}/api/tasks/${t.id}/messages`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { fromAgent: string; body: string }[];
+  expect(body.map((m) => [m.fromAgent, m.body])).toEqual([
+    ["claude", "Please review 2 files on atrium/x."],
+    ["codex", "VERDICT: approve"],
+  ]);
+  expect((await fetch(`${base}/api/tasks/nope/messages`)).status).toBe(404);
+});
 
 test("GET /api/state returns spaces and briefing", async () => {
   createSpace(db, { name: "Docs", kind: "general", goal: "write" });

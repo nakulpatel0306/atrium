@@ -2,6 +2,9 @@ import type { Database } from "bun:sqlite";
 import { bus } from "./events";
 import { newId } from "./ids";
 
+export const REVIEWERS = ["codex", "gemini", "claude"] as const;
+export type ReviewerId = (typeof REVIEWERS)[number];
+
 export type Space = {
   id: string;
   name: string;
@@ -11,6 +14,8 @@ export type Space = {
   repoPath: string | null;
   private: boolean;
   status: "active" | "archived";
+  // The agent that reviews finished work here; null means no automatic review.
+  reviewBy: ReviewerId | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -24,6 +29,7 @@ type SpaceRow = {
   repo_path: string | null;
   private: number;
   status: Space["status"];
+  review_by: ReviewerId | null;
   created_at: number;
   updated_at: number;
 };
@@ -39,6 +45,7 @@ const toSpace = (r: SpaceRow): Space => ({
   repoPath: r.repo_path,
   private: r.private === 1,
   status: r.status,
+  reviewBy: r.review_by,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -80,16 +87,17 @@ export function listSpaces(db: Database, opts: { includeArchived?: boolean } = {
 export function updateSpace(
   db: Database,
   id: string,
-  patch: Partial<Pick<Space, "name" | "goal" | "private" | "status">>,
+  patch: Partial<Pick<Space, "name" | "goal" | "private" | "status" | "reviewBy">>,
 ): Space {
   const cur = getSpace(db, id);
   if (!cur) throw new Error(`No space with id ${id}`);
   const next = { ...cur, ...patch };
-  db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, updated_at = ? WHERE id = ?").run(
+  db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, updated_at = ? WHERE id = ?").run(
     next.name,
     next.goal,
     next.private ? 1 : 0,
     next.status,
+    next.reviewBy,
     Date.now(),
     id,
   );

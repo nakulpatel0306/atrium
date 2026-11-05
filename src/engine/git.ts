@@ -50,7 +50,9 @@ export async function headRef(path: string): Promise<{ branch: string | null; sh
   return { branch: name.out.trim() || null, sha: sha.out.trim() };
 }
 
-export async function prepareBranch(path: string, taskId: string): Promise<string> {
+// A fix task passes its parent's id with `existing`: it adds to the branch under review, and a branch that's
+// gone means there is nothing left to fix, so it is never recreated.
+export async function prepareBranch(path: string, taskId: string, opts: { existing?: boolean } = {}): Promise<string> {
   if (isProtected(taskId)) throw new Error("Refusing to work on main");
   const branch = `atrium/${taskId}`;
   const valid = await git(path, ["check-ref-format", "--branch", branch]);
@@ -62,6 +64,7 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
   // A retry after a send-back reuses the existing branch. Plain checkout (never --force)
   // fails rather than overwrite local changes.
   const exists = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+  if (opts.existing && exists.code !== 0) throw new Error(`${branch} no longer exists, so there's no work left to fix.`);
   const res = await git(path, exists.code === 0 ? ["checkout", branch] : ["checkout", "-b", branch]);
   if (res.code !== 0) throw new Error(`Could not switch to ${branch}: ${res.err.trim()}`);
   return branch;
@@ -285,4 +288,30 @@ export async function branchSummary(
     insertions: num(/(\d+) insertions?\(\+\)/),
     deletions: num(/(\d+) deletions?\(-\)/),
   };
+}
+
+const REVIEW_DIFF_CAP = 60 * 1024;
+
+// Any path segment, so a file inside a `.env.d/` folder is caught as well as `.env.local` and `prod.env`.
+const touchesEnv = (header: string) => header.split(/[\s"/]+/).some((seg) => /^\.env/i.test(seg) || /\.env$/i.test(seg));
+
+// The branch's changes for a reviewer who never sees the repo. .env paths are left out twice over: by
+// pathspec, and by dropping any file section whose header still names one (e.g. a `.env.d/` folder).
+export async function reviewDiff(path: string, base: string, branch: string): Promise<{ diff: string; files: number }> {
+  const res = await git(path, [
+    "-c", "core.quotePath=false",
+    // No external diff programs or textconv filters: repo config must not run code while the engine reads a diff.
+    "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color",
+    // Against the merge base, so commits made on the start branch meanwhile don't show up reversed.
+    `${base}...${branch}`,
+    "--", ".", ":(exclude,glob,icase)**/.env*", ":(exclude,glob,icase)**/*.env",
+  ]);
+  if (res.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${res.err.trim()}`);
+  const sections = res.out.split(/^(?=diff --git )/m).filter((s) => s.startsWith("diff --git ") && !touchesEnv(s.split("\n")[0]!));
+  const full = Buffer.from(sections.join(""));
+  if (full.length <= REVIEW_DIFF_CAP) return { diff: full.toString(), files: sections.length };
+  const head = full.subarray(0, REVIEW_DIFF_CAP);
+  // Cut at a line end so no line, or multi-byte character, is left half-written.
+  const cut = head.subarray(0, head.lastIndexOf(10) + 1).toString();
+  return { diff: `${cut}[The rest of the diff was cut at 60 KB to keep the review short.]`, files: sections.length };
 }

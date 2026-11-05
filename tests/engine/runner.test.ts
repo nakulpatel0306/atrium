@@ -568,8 +568,54 @@ test("a review task runs its agent in review mode", async () => {
   const work = createTask(db, { spaceId: s.id, title: "Do it" });
   const { adapter, calls } = fakeAdapter();
   start({ adapter });
-  await waitFor(() => status(review.id) === "review" && status(work.id) === "review");
+  await waitFor(() => status(review.id) === "done" && status(work.id) === "review");
   expect(calls.map((c) => [c.prompt.includes("Review it"), c.mode])).toEqual([[true, "review"], [false, "work"]]);
+  // Reviews read the diff in their prompt, so Claude gets no edit tools for them.
+  expect(calls[0]!.allowedTools).toEqual(["Read", "Glob", "Grep"]);
+});
+
+test("a general-space codex run uses a fresh scratch folder that is removed afterwards", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Codex job", agent: "codex" });
+  let seen = "";
+  const codex = fakeAdapter((input) => {
+    seen = input.cwd;
+    expect(existsSync(input.cwd)).toBe(true);
+    return ok();
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  expect(seen).not.toBe(join(home.home, "spaces", s.id));
+  expect(existsSync(seen)).toBe(false);
+});
+
+test("launch re-checks the agent and holds a task the space no longer allows", async () => {
+  const path = repo();
+  const s = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: path, private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Codex job", agent: "codex" });
+  const codex = fakeAdapter();
+  const real = gitOps.prepareBranch;
+  let flipped = false;
+  // The space turns private while git is busy, after the queue check passed.
+  const spy = spyOn(gitOps, "prepareBranch").mockImplementation(async (...args) => {
+    flipped = true;
+    updateSpace(db, s.id, { private: true });
+    return real(...args);
+  });
+  try {
+    start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+    await waitFor(() => !!getSetting(db, "runner.waiting"));
+  } finally {
+    spy.mockRestore();
+  }
+  expect(flipped).toBe(true);
+  expect(codex.calls).toHaveLength(0);
+  expect(status(t.id)).toBe("queued");
+  expect(git(path, "branch", "--show-current")).toBe("main");
+  expect(JSON.parse(getSetting(db, "runner.waiting")!)).toEqual({
+    taskId: t.id,
+    reason: "Codex can't work here: this space is private, so only Claude works in it.",
+  });
 });
 
 test("run row records the resolved agent for auto tasks", async () => {

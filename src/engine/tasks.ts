@@ -47,12 +47,14 @@ export class InvalidTransition extends Error {
   }
 }
 
+// A review or fix task finishes straight to done (its parent's approval covers it), and is
+// cancelled to done from any unfinished state once Nakul decides on the parent.
 const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
-  queued: ["running", "blocked"],
-  running: ["review", "failed", "blocked", "queued"],
+  queued: ["running", "blocked", "done"],
+  running: ["review", "failed", "blocked", "queued", "done"],
   review: ["done", "queued"],
-  blocked: ["queued"],
-  failed: ["queued"],
+  blocked: ["queued", "done"],
+  failed: ["queued", "done"],
   done: [],
 };
 

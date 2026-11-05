@@ -9,7 +9,8 @@ import { bus } from "../engine/events";
 import type { setupSpace } from "../engine/setup";
 import { SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
-import { createSpace, getSpace, updateSpace } from "../engine/spaces";
+import { listMessages } from "../engine/messages";
+import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { snapshot } from "../engine/state";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 
@@ -106,12 +107,17 @@ export function startServer(deps: Deps): Server<undefined> {
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
       }
+      const reviewBy = b.reviewBy;
+      if (reviewBy !== undefined && reviewBy !== null && !REVIEWERS.includes(reviewBy as ReviewerId)) {
+        throw new HttpError(400, "reviewBy must be codex, gemini, claude, or null.");
+      }
       return json(
         updateSpace(db, id, {
           ...(b.name !== undefined && { name: str(b.name, "name") }),
           ...(b.goal !== undefined && { goal: str(b.goal, "goal") }),
           ...(b.private !== undefined && { private: opt(b.private, isBool, "private") }),
           ...(status !== undefined && { status }),
+          ...(reviewBy !== undefined && { reviewBy: reviewBy as ReviewerId | null }),
         }),
       );
     }
@@ -147,6 +153,12 @@ export function startServer(deps: Deps): Server<undefined> {
       const task = setTaskStatus(db, id, "queued");
       runner.kick();
       return json(task);
+    }
+
+    const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
+    if (msgM) {
+      if (!getTask(db, msgM[1]!)) throw new HttpError(404, "No such task.");
+      return json(listMessages(db, msgM[1]!));
     }
 
     const apprM = hit("POST", /^\/api\/approvals\/([^/]+)$/);
