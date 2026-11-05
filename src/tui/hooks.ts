@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
 import type { EngineClient } from "./client";
@@ -37,6 +37,22 @@ export function useMessages(c: EngineClient, taskId: string | null): Message[] |
 // Only the space's own settings change the answer, so it's read again when the space is saved.
 export function useReviewers(c: EngineClient, space: Space | null): Record<string, string | null> | null {
   return useFetched(space?.id ?? null, space?.updatedAt, () => c.reviewers(space!.id));
+}
+
+type Transcript = { ok: true; text: string } | { ok: false; error: string };
+
+// Fetched once per run opened; a transcript only grows while its run is live, and Live shows that. Null while loading.
+export function useTranscript(c: EngineClient, runId: string | null): Transcript | null {
+  const cache = useRef(new Map<string, Transcript>());
+  const [, setLoaded] = useState(0);
+  useEffect(() => {
+    if (!runId || cache.current.has(runId)) return;
+    void c.transcript(runId).then((res) => {
+      cache.current.set(runId, res);
+      setLoaded(cache.current.size);
+    });
+  }, [runId, c]);
+  return runId ? (cache.current.get(runId) ?? null) : null;
 }
 
 // Redraws on an interval so relative times stay true; only while `active`, so an idle screen does no work.

@@ -1,32 +1,26 @@
 import { Box, type Key, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useRef, useState } from "react";
+import { absolute } from "../../dashboard/format";
+import { reviewTarget } from "../../dashboard/summary";
 import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
 import { activityDetail, approvalDetail, type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../detail";
-import { useEngineState, useMessages, useOnline, useReviewers, useRunOutput, useTick } from "../hooks";
 import { runIntent } from "../effects";
+import { useEngineState, useMessages, useOnline, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, hints, type Intent } from "../keys";
 import { layout } from "../layout";
-import { reviewTarget } from "../../dashboard/summary";
 import { deriveView, type View } from "../select";
 import { clean, wrapLines } from "../text";
-import { absolute } from "../../dashboard/format";
 import { color } from "../theme";
 import { type Action, type Flash, initialUi, reduce, type Rows, type Ui } from "../ui";
-import { ActivityPane } from "./ActivityPane";
 import { AgentsView, agentsLines } from "./AgentsView";
+import { Body } from "./Body";
 import { Confirm } from "./Confirm";
-import { DetailPane } from "./DetailPane";
 import { Help } from "./Help";
-import { LivePane } from "./LivePane";
 import { Header } from "./Header";
-import { NeedsPane } from "./NeedsPane";
-import { Pane } from "./Pane";
 import { Picker } from "./Picker";
 import { Prompt } from "./Prompt";
-import { SpacesPane } from "./SpacesPane";
 import { StatusBar } from "./StatusBar";
-import { TasksPane } from "./TasksPane";
 import { Transcript } from "./Transcript";
 
 const NO_KEY = {} as Key;
@@ -34,7 +28,6 @@ const SETTING_UP = "Setting up your space. This usually takes under a minute.";
 const inPrompt = (u: Ui) => u.overlay?.kind === "prompt";
 
 type Size = { columns: number; rows: number };
-type Fetched = { ok: true; text: string } | { ok: false; error: string };
 
 // The agent thread a subject needs: a work task's own, or an approval's once its review has finished.
 function threadOf(view: View): string | null {
@@ -90,18 +83,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const transcript = ui.overlay?.kind === "transcript" ? ui.overlay : null;
   const transcriptRuns = transcript && state ? state.runs.filter((r) => r.taskId === transcript.taskId) : [];
   const transcriptRun = transcript ? (transcriptRuns[transcript.runIndex] ?? null) : null;
-  // Fetched once per run opened; a transcript only grows while its run is live, and Live shows that.
-  const fetched = useRef(new Map<string, Fetched>());
-  const [, setFetchedCount] = useState(0);
-  useEffect(() => {
-    const id = transcriptRun?.id;
-    if (!id || fetched.current.has(id)) return;
-    void client.transcript(id).then((res) => {
-      fetched.current.set(id, res);
-      setFetchedCount(fetched.current.size);
-    });
-  }, [transcriptRun?.id, client]);
-  const loaded = transcriptRun ? fetched.current.get(transcriptRun.id) : undefined;
+  const loaded = useTranscript(client, transcriptRun?.id ?? null);
   const transcriptLines = !transcriptRun
     ? []
     : !loaded
@@ -210,13 +192,6 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   }
 
   if (!view) return null;
-  const focused = (p: Ui["focus"]) => ui.focus === p;
-  const filterTag = (p: keyof Ui["filters"]) => (ui.filters[p] ? ` · /${ui.filters[p]}` : "");
-  const list = (p: keyof Ui["filters"]) => ({ view, ui, cols: lay.left - 2, rows: lay.heights[p] - 2, focused: focused(p) });
-  const needs = view.state.approvals.length;
-  const detailTitle =
-    view.subject === "space" ? view.space?.name : view.subject === "task" ? view.task?.title : view.subject === "approval" ? view.approval?.title : view.activityRow ? "Activity" : undefined;
-
   return (
     <Box flexDirection="column" width={cols} height={height} flexShrink={0}>
       <Header state={view.state} briefing={briefing.current ?? state.briefing} cols={cols} />
@@ -231,33 +206,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
       ) : ui.overlay?.kind === "agents" ? (
         <AgentsView lines={agentLines} scroll={ui.overlay.scroll} width={cols} height={height - 2} />
       ) : (
-      <Box>
-        <Box flexDirection="column" width={lay.left} flexShrink={0}>
-          <Pane n={1} title={`Spaces${filterTag("spaces")}`} focused={focused("spaces")} width={lay.left} height={lay.heights.spaces}>
-            <SpacesPane {...list("spaces")} />
-          </Pane>
-          <Pane n={2} title={`Tasks${view.space ? ` · ${view.space.name}` : ""}${filterTag("tasks")}`} focused={focused("tasks")} width={lay.left} height={lay.heights.tasks}>
-            <TasksPane {...list("tasks")} />
-          </Pane>
-          <Pane n={3} title={`Needs you${needs ? ` · ${needs}` : ""}${filterTag("needs")}`} focused={focused("needs")} width={lay.left} height={lay.heights.needs}>
-            <NeedsPane {...list("needs")} />
-          </Pane>
-          <Pane n={4} title={`Activity${filterTag("activity")}`} focused={focused("activity")} width={lay.left} height={lay.heights.activity}>
-            <ActivityPane {...list("activity")} />
-          </Pane>
-        </Box>
-        <Box flexDirection="column" width={lay.right} flexShrink={0}>
-          <DetailPane
-            title={`Detail${detailTitle ? ` · ${detailTitle}` : ""}`}
-            lines={detailLines}
-            scroll={ui.detailScroll}
-            focused={focused("detail")}
-            width={lay.right}
-            height={lay.detail}
-          />
-          <LivePane view={view} lines={liveLines} scroll={ui.liveScroll} focused={focused("live")} width={lay.right} height={lay.live} />
-        </Box>
-      </Box>
+        <Body view={view} ui={ui} lay={lay} detailLines={detailLines} liveLines={liveLines} />
       )}
       <StatusBar state={view.state} cols={cols} hints={hints(ui, view)} flash={ui.flash} online={online} />
       {ui.overlay?.kind === "prompt" && (
