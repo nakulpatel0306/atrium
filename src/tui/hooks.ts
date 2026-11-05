@@ -40,6 +40,7 @@ export function useReviewers(c: EngineClient, space: Space | null): Record<strin
 }
 
 type Transcript = { ok: true; text: string } | { ok: false; error: string };
+const KEEP_TRANSCRIPTS = 20;
 type RunRef = { id: string; endedAt: number | null };
 
 // A finished run's transcript never changes, so it's fetched once and kept. A live run's isn't cached: its
@@ -53,6 +54,8 @@ export function useTranscript(c: EngineClient, run: RunRef | null): Transcript |
     if (!key || !run || cache.current.has(key)) return;
     void c.transcript(run.id).then((res) => {
       cache.current.set(key, res);
+      // Up to 5 MB each; keep the most recently opened few.
+      for (const old of [...cache.current.keys()].slice(0, Math.max(0, cache.current.size - KEEP_TRANSCRIPTS))) cache.current.delete(old);
       setLoaded((n) => n + 1);
     });
   }, [key, c]);

@@ -34,6 +34,9 @@ const OUTPUT_BATCH_MS = 50;
 // The DOM lib's constructor type wins over Bun's, which also takes headers.
 const BunSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
 
+const KEEP_RUNS = 20;
+const KEEP_ENDED_MS = 10 * 60_000;
+
 const defaultBackoff = (attempt: number) => Math.min(2000 * 2 ** (attempt - 1), 30_000);
 
 export function createClient(opts: { base?: string; backoff?: (attempt: number) => number } = {}): EngineClient {
@@ -53,6 +56,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
   let refetch = false;
   const outputs = new Map<string, string>();
   const seeded = new Set<string>();
+  const loading = new Map<string, string[]>();
   const listeners = new Set<() => void>();
 
   const notify = () => {
@@ -70,6 +74,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
       const res = await fetch(`${base}/api/state`);
       if (res.ok && !closed) {
         state = scrub((await res.json()) as State);
+        prune(state.runs);
         notify();
       }
     } catch {
@@ -95,12 +100,21 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
       void refresh();
     };
     socket.onmessage = (ev) => {
-      const msg = JSON.parse(String(ev.data)) as EngineMessage;
+      let msg: EngineMessage;
+      try {
+        msg = JSON.parse(String(ev.data)) as EngineMessage;
+      } catch {
+        // A frame that isn't JSON isn't from this engine version; skip it rather than drop the connection.
+        return;
+      }
       if (msg.type === "changed") {
         void refresh();
       } else if (msg.type === "run-output") {
+        const line = clean(msg.chunk);
+        // Held while the run's transcript loads, then merged onto it without repeating what it already has.
+        loading.get(msg.runId)?.push(line);
         // Chunks are whole lines without their newline, the same as the transcript stores them.
-        outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${clean(msg.chunk)}\n`.slice(-OUTPUT_TAIL));
+        outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${line}\n`.slice(-OUTPUT_TAIL));
         batch ??= setTimeout(() => {
           batch = null;
           notify();
@@ -133,11 +147,31 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
   // A run that started before the app opened has output only in its transcript, so start from that.
   async function seed(runId: string): Promise<void> {
     seeded.add(runId);
+    loading.set(runId, []);
     const res = await transcript(runId);
+    const during = loading.get(runId) ?? [];
+    loading.delete(runId);
     if (!res.ok || closed) return;
-    // Chunks that arrived during the fetch were written to the transcript before they were sent.
-    outputs.set(runId, clean(res.text).slice(-OUTPUT_TAIL));
+    // Lines that arrived during the fetch may already be in the transcript (written before they were sent);
+    // only the ones after its end are new.
+    let skip = during.length;
+    while (skip > 0 && !res.text.endsWith(`${during.slice(0, skip).join("\n")}\n`)) skip--;
+    const fresh = during.slice(skip).map((l) => `${l}\n`).join("");
+    outputs.set(runId, (res.text + fresh).slice(-OUTPUT_TAIL));
     notify();
+  }
+
+  // Output is only for watching while a run is recent; older runs are read from their transcript instead.
+  function prune(runs: State["runs"]): void {
+    const now = Date.now();
+    const keep = new Set(
+      runs.slice(0, KEEP_RUNS).flatMap((r) => (r.endedAt === null || now - r.endedAt < KEEP_ENDED_MS ? [r.id] : [])),
+    );
+    for (const id of [...outputs.keys(), ...seeded]) {
+      if (keep.has(id) || loading.has(id)) continue;
+      outputs.delete(id);
+      seeded.delete(id);
+    }
   }
 
   async function read<T>(path: string): Promise<T | null> {

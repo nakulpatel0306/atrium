@@ -5,6 +5,7 @@ import { createApproval, listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { bus } from "../../src/engine/events";
 import { createSpace } from "../../src/engine/spaces";
+import { createTask } from "../../src/engine/tasks";
 import { startServer } from "../../src/server/server";
 import { createClient, type EngineClient, OFFLINE_ERROR } from "../../src/tui/client";
 import { tempHome } from "../helpers";
@@ -148,4 +149,57 @@ test("strings from the engine arrive without escape sequences", async () => {
   bus.emit({ type: "run-output", runId: "run_y", taskId: "t", chunk: "ok\x1b]0;title\x07!" });
   await until(() => client.output("run_y").includes("ok"));
   expect(client.output("run_y")).toBe("ok!\n");
+});
+
+test("output for runs no longer listed is let go", async () => {
+  await until(() => client.state() !== null);
+  client.output("run_gone");
+  await settle(50);
+  bus.emit({ type: "run-output", runId: "run_gone", taskId: "t", chunk: "old output" });
+  await until(() => client.output("run_gone").includes("old output"));
+  bus.emit({ type: "changed" });
+  await settle(150);
+  expect(client.output("run_gone")).toBe("");
+});
+
+test("live output that arrives while the transcript loads isn't lost or doubled", async () => {
+  const space = createSpace(db, { name: "App", kind: "general", goal: "g" });
+  const task = createTask(db, { spaceId: space.id, title: "Build" });
+  const path = `${home.home}/seed.log`;
+  await Bun.write(path, "line A\n");
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run("run_seed", task.id, "claude", Date.now(), path);
+  await until(() => client.state() !== null);
+  client.output("run_seed");
+  bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line A" });
+  bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line B" });
+  await settle(200);
+  expect(client.output("run_seed")).toBe("line A\nline B\n");
+});
+
+test("a frame that isn't JSON is ignored", async () => {
+  let fetches = 0;
+  const fake = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(req, srv) {
+      if (new URL(req.url).pathname === "/ws") return srv.upgrade(req) ? undefined : new Response("no", { status: 400 });
+      fetches++;
+      return Response.json({ spaces: [], tasks: [], runs: [], approvals: [], activity: [] });
+    },
+    websocket: {
+      open(ws) {
+        ws.send("not json {");
+        ws.send(JSON.stringify({ type: "changed" }));
+      },
+      message() {},
+    },
+  });
+  const other = createClient({ base: `http://127.0.0.1:${fake.port}`, backoff: () => 20 });
+  const off = other.subscribe(() => {});
+  await settle(300);
+  off();
+  other.close();
+  fake.stop(true);
+  expect(other.online()).toBe(true);
+  expect(fetches).toBeGreaterThanOrEqual(2);
 });
