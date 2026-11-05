@@ -13,6 +13,7 @@ import { evaluateQuotes } from "./engine/markets/alerts";
 import { marketNow } from "./engine/markets/calendar";
 import { createMarketData } from "./engine/markets/data";
 import { createFeed } from "./engine/markets/feed";
+import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { getSetting } from "./engine/settings";
@@ -29,6 +30,8 @@ const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: gemin
 const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "alpaca");
 const keychain = createKeychain();
 const data = createMarketData({ db, keychain, now: marketClock });
+// Daily and weekly market jobs, run from the feed's own timer.
+const jobs = createJobs(db, [], marketClock);
 const runner = createRunner({ db, adapters, power: powerSource, keepAwake, markets: createMarketsHooks(db, { data, now: marketClock }) });
 const feed = createFeed({
   db,
@@ -37,6 +40,7 @@ const feed = createFeed({
   onQuotes: (quotes) => evaluateQuotes(db, quotes, marketClock()),
   strategyActive: () => anyStrategyActive(db),
   onTick: (now) => enqueueDueStrategies(db, now, () => runner.kick()),
+  jobs,
 });
 onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
 

@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { saveQuotes } from "./cache";
-import { etClock, etDate, etInstant, usSession, type Session } from "./calendar";
+import { etClock, etDate, usSession, type Session } from "./calendar";
 import type { MarketData } from "./data";
 import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } from "./instrument";
 import type { Quote, QuoteStream } from "./providers/types";
@@ -89,6 +89,8 @@ export function createFeed(deps: {
   onTick?(now: number): void;
   now?: () => number;
   timers?: Timers;
+  // Daily and weekly jobs ride this feed's timer instead of keeping their own.
+  jobs?: { runDue(now: number): Promise<unknown> };
 }) {
   const { db, data } = deps;
   const now = deps.now ?? Date.now;
@@ -104,7 +106,6 @@ export function createFeed(deps: {
   let streamKeys = "";
   let lastKeys = "";
   let barsDate: string | null = null;
-  let eodDate: string | null = null;
   let mainTimer: ReturnType<typeof setTimeout> | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let debounce: ReturnType<typeof setTimeout> | null = null;
@@ -205,13 +206,7 @@ export function createFeed(deps: {
     if (mode === "off") {
       // One last price at the close, so the day's close is what's cached overnight.
       if (prev !== "off" && session.closesAt !== null && at >= session.closesAt) await fetchQuotes(pollable);
-      const today = etDate(at);
-      const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
-      const eod = tracked.filter((i) => data.providerFor(i)?.id === "alphavantage");
-      if (eod.length && dow !== 0 && dow !== 6 && at >= etInstant(today, "16:30") && eodDate !== today) {
-        eodDate = today;
-        await fetchQuotes(eod);
-      }
+      if (tracked.length) await deps.jobs?.runDue(at);
       if (!tracked.length) clearMain();
       else schedule(Math.min(session.nextOpen - at, OFF_RECHECK_MS), trigger !== "timer" && prev === "off");
       return;
@@ -269,6 +264,7 @@ export function createFeed(deps: {
       }
     }
     deps.onTick?.(at);
+    await deps.jobs?.runDue(at);
     const untilClose = (session.closesAt ?? at + POLL_MS) - at;
     schedule(Math.min(POLL_MS, untilClose), trigger !== "timer" && prev !== "off");
   };
