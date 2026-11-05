@@ -45,12 +45,19 @@ export function startServer(deps: Deps): Server<WsData> {
   const { db, runner } = deps;
 
   const origins = (port: number) => [`127.0.0.1:${port}`, `localhost:${port}`];
-  // Blocks DNS rebinding (Host) and other websites driving the engine (Origin).
-  const guard = (req: Request, port: number, needsOrigin: boolean): Response | null => {
+  // Blocks DNS rebinding (Host) and other websites driving or reading the engine. Mutations and the socket must carry
+  // our Origin; any API read that says it comes from another site (a foreign Origin, or Sec-Fetch-Site naming
+  // another site or another port) is refused too, so a web page can't read prices or make the engine spend
+  // provider calls. Reads with neither header (curl, the terminal app, the Mac app) are allowed.
+  const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean): Response | null => {
     if (!origins(port).includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
-    if (needsOrigin) {
-      const origin = req.headers.get("origin") ?? "";
-      if (!origins(port).some((h) => origin === `http://${h}`)) return fail(403, "Forbidden origin.");
+    const origin = req.headers.get("origin");
+    const ours = origin !== null && origins(port).some((h) => origin === `http://${h}`);
+    if (needsOrigin && !ours) return fail(403, "Forbidden origin.");
+    if (api) {
+      if (origin !== null && !ours) return fail(403, "Forbidden origin.");
+      const site = req.headers.get("sec-fetch-site");
+      if (site === "cross-site" || site === "same-site") return fail(403, "Forbidden origin.");
     }
     return null;
   };
@@ -321,7 +328,7 @@ export function startServer(deps: Deps): Server<WsData> {
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";
-      const denied = guard(req, srv.port as number, needsOrigin);
+      const denied = guard(req, srv.port as number, needsOrigin, url.pathname.startsWith("/api/") || url.pathname === "/ws");
       if (denied) return denied;
       if (url.pathname === "/ws") {
         const topic = url.searchParams.get("events") === "changed" ? "changed" : "engine";

@@ -635,3 +635,13 @@ test("visibility messages count viewers", async () => {
   expect(seen).toEqual([1, 2, 1]);
   b.ws.close();
 });
+
+test("cross-site reads are refused; plain reads still work", async () => {
+  expect((await fetch(`${base}/api/state`, { headers: { origin: "http://evil.example" } })).status).toBe(403);
+  expect((await fetch(`${base}/api/state`, { headers: { "sec-fetch-site": "cross-site" } })).status).toBe(403);
+  expect((await fetch(`${base}/api/state`, { headers: { "sec-fetch-site": "same-site" } })).status).toBe(403);
+  expect((await fetch(`${base}/api/summary`, { headers: { origin: "http://localhost:9999" } })).status).toBe(403);
+  expect((await fetch(`${base}/api/state`)).status).toBe(200);
+  expect((await fetch(`${base}/api/state`, { headers: { origin, "sec-fetch-site": "same-origin" } })).status).toBe(200);
+  expect((await fetch(`${base}/api/state`, { headers: { "sec-fetch-site": "none" } })).status).toBe(200);
+});

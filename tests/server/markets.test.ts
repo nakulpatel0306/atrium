@@ -256,3 +256,20 @@ test("an alert's Needs-you item can turn the alert off", async () => {
   expect(view.alerts.find((x: { id: string }) => x.id === a.id).status).toBe("off");
   expect((await call("POST", `/api/markets/${s.id}/alerts/off-from-approval`, { approvalId: "apr_nope" })).status).toBe(404);
 });
+
+test("a cross-site page can't read market data or spend provider calls", async () => {
+  setSetting(db, "markets.provider", "demo");
+  let calls = 0;
+  const demo = demoProvider({ now: () => now });
+  const counting = { ...demo, bars: (...a: Parameters<typeof demo.bars>) => (calls++, demo.bars(...a)), quotes: (...a: Parameters<typeof demo.quotes>) => (calls++, demo.quotes(...a)) };
+  const keychain = createKeychain(FAKE);
+  const data = createMarketData({ db, keychain, now: () => now, providers: { demo: counting } });
+  const feed = createFeed({ db, data, onQuotes: () => {}, strategyActive: () => false, now: () => now });
+  server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0, markets: { data, feed, keychain, kick: () => {}, now: () => now } });
+  base = `http://127.0.0.1:${server.port}`;
+  const cross = await fetch(`${base}/api/markets/bars?key=AAPL&range=1M`, { headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" } });
+  expect(cross.status).toBe(403);
+  expect(calls).toBe(0);
+  expect((await fetch(`${base}/api/markets/bars?key=AAPL&range=1M`)).status).toBe(200);
+  expect(calls).toBe(1);
+});
