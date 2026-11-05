@@ -17,9 +17,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
   }
 
-  // No .badge: the Dock badge is set directly. A refusal isn't shown; the menu says notifications are off.
+  // .badge too: once an app has asked for notifications, the Dock hides its badge unless badges were granted.
+  // A refusal isn't shown; the menu says notifications are off.
   func authorize() {
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
       Task { @MainActor in self?.isAllowed = granted }
     }
   }
