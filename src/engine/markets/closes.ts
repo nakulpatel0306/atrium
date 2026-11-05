@@ -49,3 +49,10 @@ export function latestClose(db: Database, key: string): Close | null {
 export function closeCount(db: Database, key: string): number {
   return (db.query(`SELECT COUNT(*) AS n FROM market_closes WHERE key = ?${demoFilter(db)}`).get(key) as { n: number }).n;
 }
+
+// A series safe to compare across time: with any adjusted closes (Tiingo), only those, valued at the adjusted
+// close; otherwise the raw closes as stored. Raw and adjusted are never mixed, so a split never shows as a cliff.
+export function adjustedCloses(rows: Close[]): Close[] {
+  if (!rows.some((r) => r.adjClose !== null)) return rows;
+  return rows.filter((r) => r.adjClose !== null).map((r) => ({ ...r, close: r.adjClose! }));
+}

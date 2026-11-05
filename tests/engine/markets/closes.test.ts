@@ -54,3 +54,15 @@ test("Alpha Vantage daily answers become Atrium's own closes", async () => {
   expect(closeOn(db, "SHOP.TO", "2026-11-04")).toEqual({ date: "2026-11-04", close: 153.9, adjClose: null, source: "alphavantage" });
   expect(closeCount(db, "SHOP.TO")).toBeGreaterThan(2);
 });
+
+test("adjustedCloses never mixes raw and adjusted rows", async () => {
+  const { adjustedCloses } = await import("../../../src/engine/markets/closes");
+  const rows = [
+    { date: "2026-11-02", close: 200, adjClose: 100, source: "tiingo" },
+    { date: "2026-11-03", close: 100, adjClose: 100, source: "tiingo" },
+    { date: "2026-11-04", close: 101, adjClose: null, source: "finnhub" },
+  ];
+  expect(adjustedCloses(rows).map((c) => [c.date, c.close])).toEqual([["2026-11-02", 100], ["2026-11-03", 100]]);
+  const raw = [{ date: "2026-11-04", close: 30, adjClose: null, source: "alphavantage" }];
+  expect(adjustedCloses(raw)).toEqual(raw);
+});

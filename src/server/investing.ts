@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { getSpace } from "../engine/spaces";
 import { AV_RESERVE, dailyBudget, dataBudget } from "../engine/markets/budget";
 import { etDate } from "../engine/markets/calendar";
-import { closes } from "../engine/markets/closes";
+import { adjustedCloses, closes } from "../engine/markets/closes";
 import { AV_DAILY_LIMIT, currentQuote } from "../engine/markets/data";
 import { crossCheck } from "../engine/markets/edgar";
 import { estimateFor, ESTIMATED } from "../engine/markets/estimate";
@@ -232,7 +232,7 @@ function researchView(db: Database, m: MarketsDeps, spaceId: string, key: string
     meta,
     price: q ? quoteSourced(q) : null,
     estimate: estimateFor(db, key, proxy, now),
-    closes: closes(db, key, etDate(now - YEAR_MS)),
+    closes: adjustedCloses(closes(db, key, etDate(now - YEAR_MS))),
     earnings: upcomingEarnings(db, [key], etDate(now), 120),
     dividends: (db.query("SELECT ex_date, amount FROM market_dividends WHERE key = ? ORDER BY ex_date DESC LIMIT 8").all(key) as { ex_date: string; amount: number }[]).map((d) => ({
       exDate: d.ex_date,

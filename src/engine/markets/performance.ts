@@ -9,7 +9,8 @@ export type PerfResult = {
   end: string;
   portfolioPct: number | null;
   benchmarks: { key: string; pct: number | null; reason: string | null }[];
-  basis: "total return" | "price";
+  // Per leg: adjusted closes where Atrium has them (total return), raw closes otherwise; "mixed" when legs differ.
+  basis: "total return" | "price" | "mixed";
   missing: { key: string; reason: string }[];
   note: string;
 };
@@ -36,7 +37,11 @@ export function periodStart(period: Period, today: string): string {
 type Leg = { key: string; startCad: number; endCad: number; adjusted: boolean } | { key: string; reason: string; endCad: number | null };
 
 function leg(key: string, ccy: "CAD" | "USD", i: { closes: (key: string, from: string) => Close[]; fxOn: (date: string) => number | null }, start: string, today: string): Leg {
-  const all = i.closes(key, "1900-01-01").filter((c) => c.date <= today);
+  const stored = i.closes(key, "1900-01-01").filter((c) => c.date <= today);
+  // Never mix raw and adjusted closes: with any adjusted ones (Tiingo), only those count, and a raw trailing close
+  // (the feed's own capture) is ignored rather than compared against split-adjusted history.
+  const adjusted = stored.some((c) => c.adjClose !== null);
+  const all = adjusted ? stored.filter((c) => c.adjClose !== null) : stored;
   const window = all.filter((c) => c.date >= start);
   const first = window[0];
   const last = all.at(-1);
@@ -46,7 +51,6 @@ function leg(key: string, ccy: "CAD" | "USD", i: { closes: (key: string, from: s
   if (!first || (Date.parse(first.date) - Date.parse(start)) / DAY_MS > START_SLACK_DAYS) {
     return { key, reason: `n/a: Atrium has ${all.length} days of ${key} closes`, endCad: endPlain };
   }
-  const adjusted = window.every((c) => c.adjClose !== null);
   const pick = (c: Close) => (adjusted ? c.adjClose! : c.close);
   const s = cad(first, pick(first));
   const e = cad(last!, pick(last!));
@@ -78,7 +82,8 @@ export function performance(
     const l = leg(k, currencyOfKey(k), i, start, i.today);
     return "reason" in l ? { key: k, pct: null, reason: l.reason, adjusted: true } : { key: k, pct: (l.endCad / l.startCad - 1) * 100, reason: null, adjusted: l.adjusted };
   });
-  const basis = used.every((l) => l.adjusted) && bench.every((b) => b.adjusted) ? "total return" : "price";
+  const bases = [...used.map((l) => l.adjusted), ...bench.filter((b) => b.pct !== null).map((b) => b.adjusted)];
+  const basis = bases.every(Boolean) ? "total return" : bases.some(Boolean) ? "mixed" : "price";
   return {
     period,
     start,

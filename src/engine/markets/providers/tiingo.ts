@@ -13,8 +13,23 @@ const MONTHLY_SYMBOLS = 450;
 const OVER_BUDGET = "Tiingo's free daily or hourly limit is reached; closes refresh later.";
 const OVER_SYMBOLS = "Tiingo's free plan allows 500 symbols a month; Atrium stops at 450.";
 
-type Row = { date: string; open: number; high: number; low: number; close: number; volume: number; adjClose: number; divCash: number };
-export type TiingoDay = { bar: Bar; date: string; adjClose: number; divCash: number };
+type Row = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  adjOpen: number;
+  adjHigh: number;
+  adjLow: number;
+  adjClose: number;
+  adjVolume: number;
+  divCash: number;
+  splitFactor: number;
+};
+// bar is the raw day; adjBar is split- and dividend-adjusted, as charts and returns need.
+export type TiingoDay = { bar: Bar; adjBar: Bar; date: string; adjClose: number; divCash: number; splitFactor: number };
 export type TiingoProvider = MarketProvider & { daily(i: Instrument, startDate: string): Promise<TiingoDay[]> };
 
 // The distinct symbols asked for this month, kept under Tiingo's 500.
@@ -68,11 +83,15 @@ export function tiingoProvider(
       .filter((r) => typeof r?.date === "string" && Number.isFinite(r.close))
       .map((r) => {
         const date = r.date.slice(0, 10);
+        const t = etInstant(date, "00:00") / 1000;
+        const adj = Number.isFinite(r.adjClose);
         return {
           date,
-          bar: { t: etInstant(date, "00:00") / 1000, o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume },
+          bar: { t, o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume },
+          adjBar: adj ? { t, o: r.adjOpen ?? r.adjClose, h: r.adjHigh ?? r.adjClose, l: r.adjLow ?? r.adjClose, c: r.adjClose, v: r.adjVolume ?? r.volume } : { t, o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume },
           adjClose: r.adjClose,
           divCash: Number(r.divCash) || 0,
+          splitFactor: Number(r.splitFactor) || 1,
         };
       })
       .sort((a, b) => a.bar.t - b.bar.t);
@@ -96,7 +115,8 @@ export function tiingoProvider(
     async bars(i, tf, from, to) {
       if (tf !== "1Day") throw new ProviderError("no_history", "Tiingo's free plan has daily prices only.");
       const toSec = to / 1000;
-      return (await daily(i, etDate(from))).map((d) => d.bar).filter((b) => b.t <= toSec);
+      // Charts use adjusted bars, so a split or dividend never shows as a cliff.
+      return (await daily(i, etDate(from))).map((d) => d.adjBar).filter((b) => b.t <= toSec);
     },
     async validate() {
       await daily({ symbol: "SPY", exchange: "US" }, isoDaysAgo(now(), 5));

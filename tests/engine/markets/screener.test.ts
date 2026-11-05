@@ -71,3 +71,14 @@ test("filters drop rows outside a range and rows without the field", () => {
   expect(applyFilters(rows, [{ field: "rsi14", min: 30 }]).map((r) => r.key)).toEqual(["B"]);
   expect(applyFilters(rows, []).map((r) => r.key)).toEqual(["A", "B", "C"]);
 });
+
+test("a split inside the year doesn't distort the 52-week position", async () => {
+  const d = data();
+  await d.refreshKeys(true);
+  addToWatchlist(db, spaceId, { symbol: "NOW", exchange: "US" });
+  // Raw closes were ~1000 before a 5:1 split; adjusted they're ~200. Today 210.
+  recordCloses(db, "NOW", dates(252).map((date, i) => ({ date, close: i < 200 ? 1000 : 200, adjClose: i === 0 ? 180 : i === 1 ? 220 : 200, source: "tiingo" })));
+  saveQuotes(db, [{ key: "NOW", price: 210, prevClose: 200, at: Date.now(), source: "finnhub", freshness: "live" }]);
+  const [r] = screenRows(db, d, spaceId);
+  expect(r!.pos52).toBeCloseTo(0.75, 9);
+});

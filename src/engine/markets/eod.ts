@@ -57,7 +57,10 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
           const start = last.d ? shift(last.d, 1) : shift(today, -BACKFILL_DAYS);
           if (start > today) continue;
           try {
-            const days = await tiingo.daily(i, start);
+            let days = await tiingo.daily(i, start);
+            // A split or a dividend changes every earlier adjusted close, so the whole window is fetched again and
+            // the stored rows replaced; otherwise old and new adjustments would mix and show a cliff.
+            if (last.d && days.some((d) => d.date >= start && (d.splitFactor !== 1 || d.divCash > 0))) days = await tiingo.daily(i, shift(today, -BACKFILL_DAYS));
             recordCloses(db, key, days.map((d) => ({ date: d.date, close: d.bar.c, adjClose: d.adjClose, source: "tiingo" })));
             const div = db.query("INSERT OR REPLACE INTO market_dividends (key, ex_date, amount, source) VALUES (?, ?, ?, 'tiingo')");
             db.transaction(() => {

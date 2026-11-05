@@ -129,3 +129,38 @@ test("the end-of-day job queues thesis checks for earnings in the next days", as
   await eodJob(db, { data, tiingo: () => null, now: () => clock.now }).run(clock.now);
   expect(db.query("SELECT title, purpose, agent FROM tasks").all()).toEqual([{ title: "Thesis check before NOW earnings on 2026-11-06", purpose: "thesis_check", agent: "claude" }]);
 });
+
+test("a split re-fetches the whole window so stored adjusted closes match (NOW 5:1: 1Y about +6%, no cliff)", async () => {
+  const { closes } = await import("../../../src/engine/markets/closes");
+  const { performance } = await import("../../../src/engine/markets/performance");
+  hold("NOW", "US");
+  const days = (from: string, to: string) => {
+    const out: string[] = [];
+    for (let t = Date.parse(`${from}T12:00:00Z`); t <= Date.parse(`${to}T12:00:00Z`); t += 86_400_000) {
+      const d = new Date(t);
+      if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  };
+  const row = (date: string, close: number, adjClose: number, splitFactor = 1) => ({ date: `${date}T00:00:00.000Z`, open: close, high: close, low: close, close, volume: 1, adjClose, adjOpen: adjClose, adjHigh: adjClose, adjLow: adjClose, adjVolume: 1, divCash: 0, splitFactor });
+  // Before the split, Tiingo's adjusted closes equal the raw ones (~1000).
+  const before = days("2025-10-01", "2026-11-03").map((d) => row(d, 1000, 1000));
+  // After it, every earlier adjusted close is a fifth, and the split day says splitFactor 5.
+  const after = [...days("2025-10-01", "2026-11-03").map((d) => row(d, 1000, 200)), row("2026-11-04", 212, 212, 5)];
+  const s = stubFetch((url) => {
+    const start = url.searchParams.get("startDate")!;
+    return jsonResponse(start === "2026-11-04" ? after.slice(-1) : start <= "2025-10-01" && s.calls.length > 1 ? after : before);
+  });
+  const now = { now: Date.parse("2026-11-03T21:35:00Z") };
+  const data = { quotes: async () => ({ quotes: [], missing: [] }), news: async () => [], prepare: async () => {} } as unknown as MarketData;
+  const tiingo = () =>
+    tiingoProvider("TGTEST12345", { fetch: s.fetch, now: () => now.now, budget: { day: dailyBudget(db, "tiingo", 950, () => now.now), hour: hourlyBudget(db, "tiingo", 48, () => now.now) }, symbols: tiingoSymbols(db, () => now.now) });
+  await eodJob(db, { data, tiingo, now: () => now.now }).run(now.now);
+  now.now = Date.parse("2026-11-04T21:35:00Z");
+  await eodJob(db, { data, tiingo, now: () => now.now }).run(now.now);
+  const nowCalls = s.calls.filter((c) => c.url.pathname.includes("/NOW/")).map((c) => c.url.searchParams.get("startDate"));
+  expect(nowCalls).toEqual(["2025-09-29", "2026-11-04", "2025-09-30"]);
+  expect(closes(db, "NOW", "2026-11-03")[0]!.adjClose).toBe(200);
+  const r = performance({ holdings: [{ key: "NOW", quantity: 1, listingCcy: "USD" }], closes: (k, f) => closes(db, k, f), fxOn: () => 1.4, today: "2026-11-04" }, "1Y", []);
+  expect(r.portfolioPct!).toBeCloseTo(6, 6);
+});

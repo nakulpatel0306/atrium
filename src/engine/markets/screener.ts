@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { etDate } from "./calendar";
-import { closes } from "./closes";
+import { adjustedCloses, closes } from "./closes";
 import { currentQuote, type MarketData } from "./data";
 import { listHoldings } from "./holdings";
 import { listIdeas } from "./ideas";
@@ -33,7 +33,7 @@ export function screenRows(db: Database, data: MarketData, spaceId: string, now:
     const price = q ? quoteSourced(q) : null;
     const m = meta.get(key);
     const metricsLabel = m?.metricsAt ? `Finnhub · metrics ${closeDayText(m.metricsAt)}` : null;
-    const year = closes(db, key, etDate(now - YEAR_MS)).map((c) => c.close);
+    const year = adjustedCloses(closes(db, key, etDate(now - YEAR_MS))).map((c) => c.close);
     let high: number | null = null;
     let low: number | null = null;
     let range52Source: string | null = null;
@@ -49,7 +49,7 @@ export function screenRows(db: Database, data: MarketData, spaceId: string, now:
     const p = price?.value ?? null;
     const pos52 = p !== null && high !== null && low !== null && high > low ? (p - low) / (high - low) : null;
     const fromHighPct = p !== null && high ? (p / high - 1) * 100 : null;
-    const series = closes(db, key, "1900-01-01").map((c) => c.close);
+    const series = adjustedCloses(closes(db, key, "1900-01-01")).map((c) => c.close);
     const rsi14 = series.length >= 15 ? rsi(series, 14).at(-1) ?? null : null;
     const ttm = ttmDividends(db, key, now);
     const divYield: Sourced | null =

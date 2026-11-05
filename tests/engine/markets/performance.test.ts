@@ -54,8 +54,25 @@ test("short history is n/a, not shortened", () => {
   expect(p.portfolioPct).toBeNull();
 });
 
-test("one series without adjusted closes makes it a price return", () => {
-  const r = run({ SPY: series(month, 100, 110), "XEQT.TO": series(month, 30, 33, false) }, [{ key: "SPY", quantity: 1, listingCcy: "USD" }, { key: "XEQT.TO", quantity: 1, listingCcy: "CAD" }], () => 1.4);
+test("only raw closes make it a price return", () => {
+  const r = run({ "XEQT.TO": series(month, 30, 33, false) }, [{ key: "XEQT.TO", quantity: 1, listingCcy: "CAD" }], () => 1.4);
   expect(r.basis).toBe("price");
+  expect(r.portfolioPct!).toBeCloseTo(10, 9);
+});
+
+test("a 2:1 split doesn't read as a 50% loss: a trailing raw close is ignored when adjusted closes exist", () => {
+  // Tiingo's adjusted series (after the split) plus the feed's raw close for today.
+  const dates = weekdays(TODAY, 24);
+  const tiingo: Close[] = dates.slice(0, -1).map((date, i) => ({ date, close: i < 10 ? 200 : 100, adjClose: 100, source: "tiingo" }));
+  const raw: Close = { date: dates.at(-1)!, close: 100.5, adjClose: null, source: "finnhub" };
+  const r = run({ AAPL: [...tiingo, raw] }, [{ key: "AAPL", quantity: 1, listingCcy: "USD" }], () => 1.4);
+  expect(r.portfolioPct!).toBeCloseTo(0, 6);
+  expect(r.basis).toBe("total return");
+});
+
+test("legs on different bases are labelled mixed", () => {
+  const r = run({ SPY: series(month, 100, 110), "XEQT.TO": series(month, 30, 33, false) }, [{ key: "SPY", quantity: 1, listingCcy: "USD" }, { key: "XEQT.TO", quantity: 1, listingCcy: "CAD" }], () => 1.4);
+  expect(r.basis).toBe("mixed");
+  // Each leg on its own basis: SPY adjusted, XEQT raw.
   expect(r.portfolioPct!).toBeCloseTo(((110 * 1.4 + 33) / (100 * 1.4 + 30) - 1) * 100, 9);
 });
