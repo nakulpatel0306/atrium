@@ -89,6 +89,24 @@ describe("seatbeltProfile", () => {
     expect(r.err).toContain("Operation not permitted");
   });
 
+  test("a denied file can't be reached through a hard link, a clone or a symlink in cwd", () => {
+    const secret = join(outside, "linked");
+    mkdirSync(secret, { recursive: true });
+    writeFileSync(join(secret, "note.txt"), "canary\n");
+    const profile = seatbeltProfile({ cwd, writable: [cwd], extraDenyRead: [secret] });
+    for (const make of ["ln", "cp -c", "ln -s"]) {
+      const r = sandboxed(profile, `rm -f via; ${make} "${secret}/note.txt" via; cat via`);
+      expect(r.out).not.toContain("canary");
+      expect(r.err).toContain("Operation not permitted");
+    }
+  });
+
+  test("open and osascript can't launch apps outside the sandbox", () => {
+    const profile = seatbeltProfile({ cwd, writable: [cwd] });
+    expect(sandboxed(profile, "/usr/bin/open -a TextEdit").exitCode).not.toBe(0);
+    expect(sandboxed(profile, `/usr/bin/osascript -e 'tell application "Finder" to activate'`).exitCode).not.toBe(0);
+  });
+
   test("review profile has no writable cwd", () => {
     const profile = seatbeltProfile({ cwd, writable: [state] });
     const r = sandboxed(profile, `echo x > review.txt || echo no-cwd; echo x > "${state}/s.txt" && echo state-ok`);

@@ -70,6 +70,9 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
   return [
     "(version 1)",
     "(allow default)",
+    // LaunchServices and Apple Events start apps (Terminal, Finder) outside the sandbox, which would escape it.
+    "(deny lsopen)",
+    "(deny appleevent-send)",
     `(deny file-read* ${denyRead.join(" ")} (regex #"${ENV_FILE_PATTERN}"))`,
     // Later rules win in Seatbelt, so these literals reopen just the named files.
     ...(opts.allowRead?.length ? [`(allow file-read* ${opts.allowRead.map((p) => `(literal ${str(canonical(p))})`).join(" ")})`] : []),

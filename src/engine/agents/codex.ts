@@ -29,7 +29,8 @@ function classify(message: string, stderr: string, exitCode: number): AgentRunRe
 
 // Codex's own sandbox only limits writes, so it runs inside Atrium's profile instead. macOS refuses to apply a
 // sandbox inside another one, so Codex's sandbox is turned off and the outer profile is the boundary. With it off,
-// sandbox_workspace_write.network_access has nothing to apply to, so the agent's commands share the CLI's network.
+// sandbox_workspace_write.network_access has nothing to apply to, so the agent's commands share the CLI's network;
+// accepted because secrets are unreadable, writes are confined, and the workspace already goes to the provider.
 export function codexArgv(bin: string, input: AgentRunInput, sandboxExec: string = SANDBOX_EXEC): string[] {
   const state = codexStateDir();
   const argv = [
