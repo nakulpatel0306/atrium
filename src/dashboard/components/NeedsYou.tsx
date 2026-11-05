@@ -1,18 +1,54 @@
-import { Inbox } from "lucide-react";
+import { Inbox, SearchCheck, Wrench } from "lucide-react";
 import { useState } from "react";
-import { post, type State } from "../api";
+import { agentName, ranAgent, verdictOf } from "../agents";
+import { post, type State, useMessages } from "../api";
 import { absolute, firstLine, relative } from "../format";
 import { navigate } from "../route";
 
 type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
+type Task = State["tasks"][number];
+type Review = { text: string; tone?: "ok" | "waiting" | "bad"; fixing: boolean };
 
-function Row({ approval, space }: { approval: Approval; space: Space | undefined }) {
+const FIX_STATE: Partial<Record<Task["status"], string>> = {
+  queued: "fix in progress",
+  running: "fix in progress",
+  done: "fixed",
+  failed: "fix didn't finish",
+  blocked: "fix didn't finish",
+};
+
+// The second agent's part in this approval, as one line; null when the space doesn't review.
+function useReview(approval: Approval, state: State): Review | null {
+  const children = approval.taskId ? state.tasks.filter((t) => t.parentTaskId === approval.taskId) : [];
+  const review = children.find((t) => t.kind === "review");
+  const fix = children.find((t) => t.kind === "fix");
+  const messages = useMessages(review?.status === "done" ? approval.taskId : null);
+  if (!review) return null;
+  const who = agentName(review.agent);
+  if (review.status !== "done") return { text: `${who} is reviewing · you can decide now`, tone: "waiting", fixing: false };
+  if (fix) {
+    const worker = agentName(ranAgent(fix, state.runs));
+    const step = FIX_STATE[fix.status] ?? "fix in progress";
+    return { text: `${who} asked for changes · ${step === "fixed" ? `${worker} fixed them` : step}`, tone: "waiting", fixing: true };
+  }
+  if (!messages) return { text: `Reviewed by ${who}`, fixing: false };
+  const said = messages.filter((m) => m.fromAgent === review.agent).at(-1);
+  if (!said) return { text: `${who}'s review didn't happen · decide as usual`, tone: "bad", fixing: false };
+  const verdict = verdictOf(said.body);
+  if (verdict === "approve") return { text: `Reviewed by ${who} · approve`, tone: "ok", fixing: false };
+  if (verdict === "changes") return { text: `${who} asked for changes`, tone: "waiting", fixing: false };
+  return { text: `Reviewed by ${who} · no verdict, see the thread`, fixing: false };
+}
+
+function Row({ approval, space, state }: { approval: Approval; space: Space | undefined; state: State }) {
   const [open, setOpen] = useState(false);
   const [sendingBack, setSendingBack] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const review = useReview(approval, state);
+  const ReviewIcon = review?.fixing ? Wrench : SearchCheck;
 
   const decide = async (decision: "approve" | "reject") => {
     setBusy(true);
@@ -37,6 +73,12 @@ function Row({ approval, space }: { approval: Approval; space: Space | undefined
           {approval.title}
           {approval.detail && <span>{firstLine(approval.detail)}</span>}
         </span>
+        {review && (
+          <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>
+            <ReviewIcon />
+            {review.text}
+          </span>
+        )}
         <div className="acts">
           <button className="btn" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? "Hide" : "View"}
@@ -108,7 +150,7 @@ export function NeedsYou({ state }: { state: State }) {
         {state.approvals.length === 0 ? (
           <div className="empty-row">You're all caught up.</div>
         ) : (
-          state.approvals.map((a) => <Row key={a.id} approval={a} space={spaces.get(a.spaceId)} />)
+          state.approvals.map((a) => <Row key={a.id} approval={a} space={spaces.get(a.spaceId)} state={state} />)
         )}
       </div>
     </>

@@ -1,11 +1,14 @@
 import { ArrowDown, Plus } from "lucide-react";
+import { agentName, agentText, needsAction, ranAgent, type Wait, waitFor } from "../agents";
 import type { State } from "../api";
 import { clock, relative } from "../format";
 import { navigate } from "../route";
 import { Activity } from "./Activity";
+import { Avatar } from "./Avatar";
 import { Logo } from "./Logo";
 import { NeedsYou } from "./NeedsYou";
 import { StatusIcon } from "./StatusIcon";
+import { Plain, WAIT_ICONS } from "./WaitLine";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -13,14 +16,23 @@ type Task = State["tasks"][number];
 const OPEN = new Set<Task["status"]>(["queued", "running", "review", "blocked", "failed"]);
 const SHOWN_TASKS = 3;
 
-const pausedText = (until: number) => `Paused: Claude usage limit, resumes at ${clock(until)}`;
+type Status = { text: string; tone?: "blocked" | "waiting"; wait?: Wait };
 
-function status(space: Space, tasks: Task[], state: State): { text: string; tone?: "blocked" | "waiting" } {
-  const running = tasks.find((t) => t.status === "running");
-  if (running) return { text: `Running · ${running.title}` };
-  if (state.power.waiting && tasks.some((t) => t.id === state.power.waiting!.taskId)) {
-    return { text: "Waiting for power", tone: "waiting" };
+// The first queued task that's held back, and why; the runner's own record comes first.
+function firstWait(tasks: Task[], state: State): Wait | null {
+  const recorded = tasks.find((t) => t.id === state.power.waiting?.taskId);
+  for (const t of recorded ? [recorded, ...tasks] : tasks) {
+    const wait = waitFor(t, state);
+    if (wait) return wait;
   }
+  return null;
+}
+
+function status(space: Space, tasks: Task[], state: State): Status {
+  const running = tasks.find((t) => t.status === "running");
+  if (running) return { text: `${agentText(running, state.runs)} running · ${running.title}` };
+  const wait = firstWait(tasks, state);
+  if (wait) return { text: wait.text, tone: needsAction(wait) ? "blocked" : "waiting", wait };
   const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
   if (stuck.length === 1 && stuck[0]!.status === "blocked") {
     return { text: `Blocked: ${stuck[0]!.blockedReason ?? stuck[0]!.title}`, tone: "blocked" };
@@ -29,26 +41,19 @@ function status(space: Space, tasks: Task[], state: State): { text: string; tone
   const review = tasks.filter((t) => t.status === "review").length;
   if (review > 0) return { text: `${review} ready for your review` };
   const queued = tasks.filter((t) => t.status === "queued").length;
-  if (queued > 0 && state.power.pausedUntil) return { text: pausedText(state.power.pausedUntil), tone: "waiting" };
   if (queued > 0) return { text: `${queued} ${queued === 1 ? "task" : "tasks"} queued` };
   const last = state.activity.find((a) => a.spaceId === space.id)?.createdAt ?? space.updatedAt;
   return { text: `Idle · last activity ${relative(last)}` };
-}
-
-function Avatar({ agent, live }: { agent: string; live: boolean }) {
-  return (
-    <span className={`av ${agent === "claude" ? "c-claude" : "c-other"}${live ? " live" : ""}`} title={agent}>
-      {agent.charAt(0).toUpperCase()}
-    </span>
-  );
 }
 
 function SpaceCard({ space, state }: { space: Space; state: State }) {
   const tasks = state.tasks.filter((t) => t.spaceId === space.id);
   const open = tasks.filter((t) => OPEN.has(t.status));
   const s = status(space, tasks, state);
-  const agents = [...new Set(tasks.map((t) => t.agent))];
-  const live = new Set(tasks.filter((t) => t.status === "running").map((t) => t.agent));
+  // Who actually worked here; an auto task that hasn't run yet shows as Auto.
+  const agents = [...new Set(tasks.map((t) => ranAgent(t, state.runs)))];
+  const live = new Set(tasks.filter((t) => t.status === "running").map((t) => ranAgent(t, state.runs)));
+  const WaitIcon = s.wait && WAIT_ICONS[s.wait.kind];
 
   return (
     <a
@@ -67,7 +72,12 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
           <span className="tag">{space.kind}</span>
         </span>
       </div>
-      <div className={`s${s.tone ? ` ${s.tone}` : ""}`}>{s.text}</div>
+      <div className={`s${s.tone ? ` ${s.tone}` : ""}`} title={s.text}>
+        {WaitIcon && <WaitIcon />}
+        <span>
+          <Plain text={s.text} />
+        </span>
+      </div>
       {open.length > 0 && (
         <ul className="tasks">
           {open.slice(0, SHOWN_TASKS).map((t) => (
@@ -98,8 +108,12 @@ function liveStatus(state: State): string {
     const reason = blocked[0]!.blockedReason;
     parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
   }
-  if (state.power.waiting) parts.push("Heavy work is waiting for power");
-  if (state.power.pausedUntil) parts.push(pausedText(state.power.pausedUntil));
+  if (state.power.waiting) parts.push(state.power.waiting.reason.replace(/\.$/, ""));
+  // Limits on agents with nothing waiting for them don't need mentioning.
+  const limited = new Set(state.tasks.filter((t) => waitFor(t, state)?.kind === "limit").map((t) => (t.agent === "auto" ? "claude" : t.agent)));
+  for (const id of limited) {
+    parts.push(`${agentName(id)} is at its usage limit until ${clock(state.agents[id]!.limitedUntil!)}`);
+  }
   return parts.length ? ` ${parts.join(". ")}.` : "";
 }
 
@@ -128,7 +142,7 @@ export function Home({ state, briefing, onNewSpace }: Props) {
       <h1>{briefing.greeting}</h1>
       <p className="brief">
         {briefing.summary}
-        {liveStatus(state)}
+        <Plain text={liveStatus(state)} />
       </p>
 
       <NeedsYou state={state} />

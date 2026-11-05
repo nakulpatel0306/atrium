@@ -42,7 +42,7 @@ export type State = {
     waiting?: { taskId: string; reason: string };
     pausedUntil?: number;
   };
-  usage: { claudeTokens24h: number };
+  usage: { claudeTokens24h: number; claudeReserve: number };
   agents: Record<string, AgentInfo>;
   // The last five-hour reading while its window is still open; null when unknown or already reset.
   claudeWindow: { utilization: number; resetsAt: number; reserve: number } | null;
@@ -69,6 +69,7 @@ export function snapshot(db: Database, registry?: Registry): State {
   );
   const windowRaw = getSetting(db, "usage.claude.fiveHour");
   const window = windowRaw ? (JSON.parse(windowRaw) as { utilization: number; resetsAt: number }) : null;
+  const reserve = Number(getSetting(db, "usage.claude.reserve") ?? 0.5);
   const tokens = db
     .query("SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS n FROM runs WHERE started_at > ?")
     .get(now - 24 * 3600_000) as { n: number };
@@ -94,11 +95,11 @@ export function snapshot(db: Database, registry?: Registry): State {
       ...(waitingRaw ? { waiting: JSON.parse(waitingRaw) as { taskId: string; reason: string } } : {}),
       ...(pausedUntil > now ? { pausedUntil } : {}),
     },
-    usage: { claudeTokens24h: tokens.n },
+    usage: { claudeTokens24h: tokens.n, claudeReserve: reserve },
     agents,
     claudeWindow:
       window && window.resetsAt > now
-        ? { ...window, reserve: Number(getSetting(db, "usage.claude.reserve") ?? 0.5) }
+        ? { ...window, reserve }
         : null,
     disk: atriumDiskUsage(),
   };

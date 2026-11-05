@@ -12,7 +12,7 @@ import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
 import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { snapshot } from "../engine/state";
-import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
+import { createTask, getTask, InvalidTransition, setTaskStatus, type Task } from "../engine/tasks";
 
 type Deps = {
   db: Database;
@@ -44,6 +44,14 @@ const opt = <T>(v: unknown, ok: (x: unknown) => x is T, field: string): T | unde
 };
 const isBool = (x: unknown): x is boolean => typeof x === "boolean";
 const isString = (x: unknown): x is string => typeof x === "string";
+
+const AGENTS = ["auto", "claude", "codex", "gemini"];
+const agentField = (v: unknown): string | undefined => {
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || !AGENTS.includes(v)) throw new HttpError(400, "agent must be auto, claude, codex, or gemini.");
+  return v;
+};
+const RESERVE_STEPS = [0.25, 0.5, 0.75];
 
 export function startServer(deps: Deps): Server<undefined> {
   const { db, runner } = deps;
@@ -122,6 +130,34 @@ export function startServer(deps: Deps): Server<undefined> {
       );
     }
 
+    // Lets space settings say up front why a reviewer would be skipped, instead of after the work finishes.
+    const reviewersM = hit("GET", /^\/api\/spaces\/([^/]+)\/reviewers$/);
+    if (reviewersM) {
+      const space = getSpace(db, reviewersM[1]!);
+      if (!space) throw new HttpError(404, "No such space.");
+      const now = Date.now();
+      // A stand-in review task: refusal only looks at the agent, the kind and the space.
+      const probe = (agent: string): Task => ({
+        id: "",
+        spaceId: space.id,
+        title: "",
+        detail: "",
+        status: "queued",
+        blockedReason: null,
+        agent,
+        weight: "light",
+        allowOnBattery: true,
+        ignoreReserve: false,
+        kind: "review",
+        parentTaskId: null,
+        approvalId: null,
+        branch: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return json(Object.fromEntries(REVIEWERS.map((id) => [id, runner.registry?.refusal(probe(id), space) ?? null])));
+    }
+
     if (hit("POST", /^\/api\/tasks$/)) {
       const b = await readBody(req);
       const spaceId = str(b.spaceId, "spaceId");
@@ -136,6 +172,7 @@ export function startServer(deps: Deps): Server<undefined> {
         detail: opt(b.detail, isString, "detail"),
         weight,
         allowOnBattery: opt(b.allowOnBattery, isBool, "allowOnBattery"),
+        agent: agentField(b.agent),
       });
       runner.kick();
       return json(task);
@@ -153,6 +190,31 @@ export function startServer(deps: Deps): Server<undefined> {
       const task = setTaskStatus(db, id, "queued");
       runner.kick();
       return json(task);
+    }
+
+    // Changing the agent after a run started would misattribute that run, so only queued tasks change.
+    const taskM = hit("PATCH", /^\/api\/tasks\/([^/]+)$/);
+    if (taskM) {
+      const id = taskM[1]!;
+      if (!getTask(db, id)) throw new HttpError(404, "No such task.");
+      const agent = agentField((await readBody(req)).agent);
+      if (!agent) throw new HttpError(400, "agent is required.");
+      const res = db.query("UPDATE tasks SET agent = ?, updated_at = ? WHERE id = ? AND status = 'queued'").run(agent, Date.now(), id);
+      if (res.changes === 0) throw new HttpError(409, "This task has already started, so its agent can't change.");
+      bus.emit({ type: "changed" });
+      runner.kick();
+      return json(getTask(db, id));
+    }
+
+    const nowM = hit("POST", /^\/api\/tasks\/([^/]+)\/run-now$/);
+    if (nowM) {
+      const id = nowM[1]!;
+      if (!getTask(db, id)) throw new HttpError(404, "No such task.");
+      const res = db.query("UPDATE tasks SET ignore_reserve = 1, updated_at = ? WHERE id = ? AND status = 'queued'").run(Date.now(), id);
+      if (res.changes === 0) throw new HttpError(409, "This task isn't waiting to start, so there's nothing to run now.");
+      bus.emit({ type: "changed" });
+      runner.kick();
+      return json(getTask(db, id));
     }
 
     const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
@@ -185,6 +247,7 @@ export function startServer(deps: Deps): Server<undefined> {
         title: text.split("\n")[0]!.slice(0, 80),
         detail: text,
         weight: space.kind === "repo" ? "heavy" : "light",
+        agent: agentField(b.agent),
       });
       runner.kick();
       return json({ task });
@@ -192,10 +255,19 @@ export function startServer(deps: Deps): Server<undefined> {
 
     if (hit("POST", /^\/api\/settings$/)) {
       const b = await readBody(req);
-      if (typeof b.overnight !== "boolean") throw new HttpError(400, "overnight must be true or false.");
-      setSetting(db, "overnight", String(b.overnight));
+      if (b.overnight === undefined && b.claudeReserve === undefined) {
+        throw new HttpError(400, "Send overnight or claudeReserve.");
+      }
+      if (b.overnight !== undefined && typeof b.overnight !== "boolean") {
+        throw new HttpError(400, "overnight must be true or false.");
+      }
+      if (b.claudeReserve !== undefined && !RESERVE_STEPS.includes(b.claudeReserve as number)) {
+        throw new HttpError(400, "claudeReserve must be 0.25, 0.5, or 0.75.");
+      }
+      if (b.overnight !== undefined) setSetting(db, "overnight", String(b.overnight));
+      if (b.claudeReserve !== undefined) setSetting(db, "usage.claude.reserve", String(b.claudeReserve));
       runner.kick();
-      return json({ overnight: b.overnight });
+      return json({ overnight: b.overnight, claudeReserve: b.claudeReserve });
     }
 
     if (hit("POST", /^\/api\/seen$/)) {
@@ -224,7 +296,7 @@ export function startServer(deps: Deps): Server<undefined> {
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index },
+    routes: { "/": index, "/space/*": index, "/agents": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";

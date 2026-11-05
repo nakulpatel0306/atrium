@@ -1,7 +1,9 @@
 import { LoaderCircle, Sparkle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { type AgentChoice, agentName } from "../agents";
 import { post, type State } from "../api";
 import { navigate } from "../route";
+import { AgentPicker } from "./AgentPicker";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -19,6 +21,7 @@ export function CommandBar({ space, setupRequest }: Props) {
   const [text, setText] = useState("");
   const [forceSetup, setForceSetup] = useState(false);
   const [message, setMessage] = useState<Message>(null);
+  const [agent, setAgent] = useState<AgentChoice>("auto");
   const busy = message?.kind === "busy";
   const setup = !space || forceSetup;
 
@@ -42,6 +45,7 @@ export function CommandBar({ space, setupRequest }: Props) {
   // Text typed for one place (a new space, or another space's task) shouldn't follow the user elsewhere.
   useEffect(() => {
     setForceSetup(false);
+    setAgent("auto");
     if (busy) return;
     setText("");
     setMessage(null);
@@ -59,10 +63,11 @@ export function CommandBar({ space, setupRequest }: Props) {
       navigate(`/space/${res.data.space.id}`);
     } else {
       setMessage({ kind: "busy", text: "Adding the task…" });
-      const res = await post<{ task: Task }>("/api/command", { text: value, spaceId: space!.id });
+      const res = await post<{ task: Task }>("/api/command", { text: value, spaceId: space!.id, agent });
       if (!res.ok) return setMessage({ kind: "error", text: res.error });
       setText("");
-      setMessage({ kind: "info", text: `Queued "${res.data.task.title}" in ${space!.name}.` });
+      const by = agent === "auto" ? "" : ` for ${agentName(agent)}`;
+      setMessage({ kind: "info", text: `Queued "${res.data.task.title}" in ${space!.name}${by}.` });
     }
   };
 
@@ -91,6 +96,7 @@ export function CommandBar({ space, setupRequest }: Props) {
           }}
           onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
         />
+        {!setup && <AgentPicker value={agent} disabled={busy} onChange={setAgent} label="Agent for the new task" />}
         <span className="k">⌘K</span>
       </form>
       {message && (

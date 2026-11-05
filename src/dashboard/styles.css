@@ -116,6 +116,9 @@ svg.lucide {
   padding: 0 6px;
   font-weight: 600;
 }
+.nav .ct.warn {
+  color: var(--yellow);
+}
 .sec {
   font-size: 11px;
   color: var(--faint);
@@ -437,6 +440,12 @@ h2 {
   border-color: var(--line-strong);
   background: var(--hover);
 }
+.btn svg {
+  width: 12px;
+  height: 12px;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
@@ -510,6 +519,21 @@ h2 {
   font-size: 12px;
   margin: 8px 0 10px;
   min-height: 34px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.space .s svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+/* Wait reasons run long; two lines is the summary, the space view has the rest. */
+.space .s span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .space .s.blocked {
   color: var(--red);
@@ -572,6 +596,15 @@ h2 {
   background: var(--claude);
   color: #fff;
 }
+.c-codex {
+  background: #e6e6ea;
+  color: #000;
+}
+.c-gemini {
+  background: #4e7ff5;
+  color: #fff;
+}
+.c-auto,
 .c-other {
   background: var(--line-strong);
   color: var(--text);
@@ -905,13 +938,31 @@ h2 {
   font-size: 12px;
 }
 .idle .why {
+  margin-top: 6px;
+}
+.why {
   color: var(--faint);
-  margin-top: 4px;
   display: flex;
   gap: 6px;
+  align-items: flex-start;
 }
-.idle .why.waiting {
+.why svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+.why.waiting {
   color: var(--yellow);
+}
+.why.bad {
+  color: var(--red);
+}
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
 }
 
 /* transcript overlay */
@@ -972,4 +1023,335 @@ h2 {
 .sheet-note {
   padding: 14px 16px;
   color: var(--dim);
+}
+
+/* agents */
+.item.agent {
+  cursor: pointer;
+}
+.item.agent .chev {
+  color: var(--faint);
+  transition: transform 0.15s;
+}
+.item.agent .chev.open {
+  transform: rotate(90deg);
+}
+.item.agent .name {
+  width: 96px;
+  flex: none;
+  font-weight: 500;
+}
+.item.agent .status {
+  color: var(--dim);
+  font-size: 12px;
+}
+.item.agent .status.waiting {
+  color: var(--yellow);
+}
+.item.agent .status.bad {
+  color: var(--red);
+}
+.item.agent .val {
+  flex: none;
+  width: 116px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.detail h3 {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--faint);
+  margin: 14px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.detail .role {
+  color: var(--dim);
+  margin-bottom: 4px;
+  max-width: 640px;
+}
+.window-bar {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  margin: 6px 0 2px;
+}
+.window-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--claude);
+}
+.window-bar i.over {
+  background: var(--yellow);
+}
+/* The reserve marker: where Claude tasks start waiting. */
+.window-bar b {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text);
+}
+.window-bar.compact {
+  height: 4px;
+  margin: 0;
+}
+.window-bar.compact b {
+  top: -2px;
+  bottom: -2px;
+}
+.item.agent .window-bar.compact {
+  width: 96px;
+  flex: none;
+}
+.window {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.window-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text);
+}
+.window-head .val {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.reserve {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--dim);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  background: var(--raised);
+  color: var(--dim);
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.seg button + button {
+  border-left: 1px solid var(--line);
+}
+.seg button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+.note-line {
+  color: var(--faint);
+  font-size: 11px;
+}
+.agent-runs li {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+.agent-runs .task-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.window-mini {
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.window-mini:hover .row > span:first-child {
+  color: var(--text);
+}
+
+/* tasks: kinds, waits, agents */
+.tag.kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.tag.kind svg {
+  width: 11px;
+  height: 11px;
+}
+.tag.kind.review {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
+}
+.tag.kind.fix {
+  color: var(--claude);
+  border-color: color-mix(in srgb, var(--claude) 35%, var(--line));
+}
+.tag.wait {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 35%, var(--line));
+}
+.detail .why {
+  margin-bottom: 8px;
+}
+.follows {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--faint);
+  margin-bottom: 8px;
+}
+.agent-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-meta b {
+  color: var(--dim);
+  font-weight: 500;
+}
+.pick {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 1px 4px;
+  cursor: pointer;
+}
+.pick:hover {
+  border-color: var(--line-strong);
+}
+.cmd .pick {
+  flex: none;
+  color: var(--dim);
+}
+.agent-task .tag.kind {
+  margin-right: 4px;
+}
+.review-setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.review-setting label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.review-setting label svg {
+  color: var(--faint);
+}
+.review-setting .hint {
+  color: var(--faint);
+}
+
+/* thread */
+.thread {
+  margin-top: 12px;
+}
+.thread ol {
+  list-style: none;
+  margin-top: 6px;
+  border-left: 1px solid var(--line-strong);
+  margin-left: 9px;
+  padding-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.thread li .from {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  margin-left: -25px;
+}
+.thread li .from .av {
+  box-shadow: 0 0 0 3px var(--panel);
+}
+.thread li .from b {
+  color: var(--text);
+  font-weight: 500;
+}
+.thread li .from .to {
+  width: 12px;
+  height: 12px;
+  color: var(--faint);
+}
+.thread li .from time {
+  margin-left: auto;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.thread li .body {
+  margin-top: 4px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.tag.verdict.approve {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 35%, var(--line));
+}
+.tag.verdict.changes {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 35%, var(--line));
+}
+
+/* needs you: the reviewer's part */
+.review-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--dim);
+  flex: none;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-line svg {
+  width: 13px;
+  height: 13px;
+}
+.review-line.ok {
+  color: var(--green);
+}
+.review-line.waiting {
+  color: var(--yellow);
+}
+.review-line.bad {
+  color: var(--red);
 }

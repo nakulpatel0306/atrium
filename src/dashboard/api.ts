@@ -1,7 +1,8 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
 
-export type { State };
+export type { Message, State };
 
 // Archived spaces leave Home, so their tasks and approvals must not linger in its counts and lists.
 export function activeOnly(state: State): State {
@@ -114,6 +115,32 @@ export function useRunOutput(runId: string): string {
   }, [runId]);
   return useSyncExternalStore(subscribe, () => outputs.get(runId) ?? "");
 }
+
+// Threads and reviewer checks aren't part of the pushed state, so each change re-reads the ones on screen.
+function useFetched<T>(path: string | null): T | null {
+  const version = useEngineState();
+  const [data, setData] = useState<{ path: string; value: T } | null>(null);
+  useEffect(() => {
+    if (!path) return;
+    let live = true;
+    fetch(path)
+      .then((res) => (res.ok ? (res.json() as Promise<T>) : null))
+      .then((value) => live && value !== null && setData({ path, value }))
+      // A failed read keeps what's shown; the next change tries again.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [path, version]);
+  return data && data.path === path ? data.value : null;
+}
+
+export const useMessages = (taskId: string | null) =>
+  useFetched<Message[]>(taskId ? `/api/tasks/${encodeURIComponent(taskId)}/messages` : null);
+
+// Why each agent would be skipped as this space's reviewer, or null where it can review.
+export const useReviewers = (spaceId: string) =>
+  useFetched<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`);
 
 export async function fetchTranscript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   try {
