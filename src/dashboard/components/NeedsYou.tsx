@@ -5,6 +5,7 @@ import { absolute, firstLine, relative } from "../format";
 import { navigate } from "../route";
 import { reviewLine, reviewTarget } from "../summary";
 import { ProposalRow } from "./Proposal";
+import { AdviceTag } from "./markets/AdviceTag";
 
 type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
@@ -19,6 +20,18 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const review = useReview(approval, state);
+  const alert = approval.kind === "alert";
+  // An agent's flag isn't one of Nakul's alerts, so there's nothing to turn off.
+  const ownAlert = alert && !/ flagged /.test(approval.title);
+  const turnOff = async () => {
+    setBusy(true);
+    const res = await post(`/api/markets/${approval.spaceId}/alerts/off-from-approval`, { approvalId: approval.id });
+    if (res.ok) await decide("approve");
+    else {
+      setError(res.error);
+      setBusy(false);
+    }
+  };
   const ReviewIcon = review?.fixing ? Wrench : SearchCheck;
 
   const decide = async (decision: "approve" | "reject") => {
@@ -50,16 +63,32 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
             {review.text}
           </span>
         )}
+        {space?.kind === "markets" && <AdviceTag />}
         <div className="acts">
           <button className="btn" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? "Hide" : "View"}
           </button>
-          <button className="btn" disabled={busy} onClick={() => setSendingBack(!sendingBack)}>
-            Send back
-          </button>
-          <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
-            Approve
-          </button>
+          {alert ? (
+            <>
+              {ownAlert && (
+                <button className="btn link" disabled={busy} onClick={() => void turnOff()}>
+                  Turn off alert
+                </button>
+              )}
+              <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
+                Dismiss
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn" disabled={busy} onClick={() => setSendingBack(!sendingBack)}>
+                Send back
+              </button>
+              <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
+                Approve
+              </button>
+            </>
+          )}
         </div>
       </div>
       {open && (
@@ -82,7 +111,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           </div>
         </div>
       )}
-      {sendingBack && (
+      {sendingBack && !alert && (
         <form
           className="note"
           onSubmit={(e) => {

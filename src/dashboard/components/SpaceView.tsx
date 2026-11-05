@@ -12,6 +12,8 @@ import { StatusIcon } from "./StatusIcon";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
+import { AdviceTag } from "./markets/AdviceTag";
+import { MarketsPanel } from "./markets/MarketsPanel";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -121,15 +123,17 @@ function Header({ space }: { space: Space }) {
             <button
               className="toggle"
               role="switch"
-              aria-checked={space.private}
-              disabled={busy}
+              aria-checked={space.private || space.kind === "markets"}
+              disabled={busy || space.kind === "markets"}
               onClick={() => void save({ private: !space.private })}
             >
               <span className="switch" />
               <Lock />
               Private
             </button>
-            <span className="hint">Private spaces only use Claude</span>
+            <span className="hint">
+              {space.kind === "markets" ? "Markets spaces stay private: your holdings only go to Claude." : "Private spaces only use Claude"}
+            </span>
           </div>
           {confirmArchive ? (
             <>
@@ -292,6 +296,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
       </div>
       {open && (
         <div className="detail">
+          {state.spaces.find((s) => s.id === task.spaceId)?.kind === "markets" && (
+            <p className="advice-line">
+              <AdviceTag />
+            </p>
+          )}
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {wait && <WaitLine wait={wait} />}
           {parent && (
@@ -435,6 +444,7 @@ export function SpaceView({ state, space, focusTask }: Props) {
   return (
     <div className="wrap">
       <Header key={space.id} space={space} />
+      {space.kind === "markets" && <MarketsPanel spaceId={space.id} />}
       <div className="cols">
         <div>
           <h2>Tasks</h2>

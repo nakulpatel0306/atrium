@@ -1,9 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { newId } from "./ids";
+import type { Quote } from "./markets/providers/types";
 
 export type EngineEvent =
   | { type: "changed" }
-  | { type: "run-output"; runId: string; taskId: string; chunk: string };
+  | { type: "run-output"; runId: string; taskId: string; chunk: string }
+  | { type: "quotes"; quotes: Quote[] };
 
 const listeners = new Set<(e: EngineEvent) => void>();
 

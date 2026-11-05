@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { Server } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
 import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
@@ -12,41 +12,23 @@ import type { setupSpace } from "../engine/setup";
 import { SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
-import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
+import { createSpace, getSpace, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
+import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
+import { marketsRoute, type MarketsDeps } from "./markets";
 
 type Deps = {
   db: Database;
   runner: { kick(): void; registry?: Registry };
   setup: (text: string) => ReturnType<typeof setupSpace>;
   port?: number;
+  // How many dashboard tabs are visible; the market feed only streams while someone is looking.
+  onViewers?: (n: number) => void;
+  markets?: MarketsDeps;
 };
 
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-const json = (body: unknown, status = 200) => Response.json(body, { status });
-const fail = (status: number, message: string) => json({ error: message }, status);
-
-const str = (v: unknown, field: string): string => {
-  if (typeof v !== "string" || !v.trim()) throw new HttpError(400, `${field} is required.`);
-  return v;
-};
-const opt = <T>(v: unknown, ok: (x: unknown) => x is T, field: string): T | undefined => {
-  if (v === undefined) return undefined;
-  if (!ok(v)) throw new HttpError(400, `${field} is not valid.`);
-  return v;
-};
-const isBool = (x: unknown): x is boolean => typeof x === "boolean";
-const isString = (x: unknown): x is string => typeof x === "string";
 
 const AGENTS = ["auto", "claude", "codex", "gemini"];
 const agentField = (v: unknown): string | undefined => {
@@ -63,31 +45,21 @@ export function startServer(deps: Deps): Server<WsData> {
   const { db, runner } = deps;
 
   const origins = (port: number) => [`127.0.0.1:${port}`, `localhost:${port}`];
-  // Blocks DNS rebinding (Host) and other websites driving the engine (Origin).
-  const guard = (req: Request, port: number, needsOrigin: boolean): Response | null => {
+  // Blocks DNS rebinding (Host) and other websites driving or reading the engine. Mutations and the socket must carry
+  // our Origin; any API read that says it comes from another site (a foreign Origin, or Sec-Fetch-Site naming
+  // another site or another port) is refused too, so a web page can't read prices or make the engine spend
+  // provider calls. Reads with neither header (curl, the terminal app, the Mac app) are allowed.
+  const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean): Response | null => {
     if (!origins(port).includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
-    if (needsOrigin) {
-      const origin = req.headers.get("origin") ?? "";
-      if (!origins(port).some((h) => origin === `http://${h}`)) return fail(403, "Forbidden origin.");
+    const origin = req.headers.get("origin");
+    const ours = origin !== null && origins(port).some((h) => origin === `http://${h}`);
+    if (needsOrigin && !ours) return fail(403, "Forbidden origin.");
+    if (api) {
+      if (origin !== null && !ours) return fail(403, "Forbidden origin.");
+      const site = req.headers.get("sec-fetch-site");
+      if (site === "cross-site" || site === "same-site") return fail(403, "Forbidden origin.");
     }
     return null;
-  };
-
-  const readBody = async (req: Request): Promise<Record<string, unknown>> => {
-    if (!req.body) return {};
-    if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
-      throw new HttpError(415, "Send the request body as application/json.");
-    }
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      throw new HttpError(400, "The request body isn't valid JSON.");
-    }
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      throw new HttpError(400, "The request body must be a JSON object.");
-    }
-    return body as Record<string, unknown>;
   };
 
   const route = async (req: Request, url: URL): Promise<Response> => {
@@ -101,7 +73,8 @@ export function startServer(deps: Deps): Server<WsData> {
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);
       const kind = b.kind;
-      if (kind !== "repo" && kind !== "general") throw new HttpError(400, "kind must be repo or general.");
+      if (kind !== "repo" && kind !== "general" && kind !== "markets") throw new HttpError(400, "kind must be repo, general or markets.");
+      if (kind === "markets" && b.private === false) throw new HttpError(400, MARKETS_PRIVATE);
       return json(
         createSpace(db, {
           name: str(b.name, "name"),
@@ -116,8 +89,10 @@ export function startServer(deps: Deps): Server<WsData> {
     const spaceM = hit("PATCH", /^\/api\/spaces\/([^/]+)$/);
     if (spaceM) {
       const id = spaceM[1]!;
-      if (!getSpace(db, id)) throw new HttpError(404, "No such space.");
+      const current = getSpace(db, id);
+      if (!current) throw new HttpError(404, "No such space.");
       const b = await readBody(req);
+      if (current.kind === "markets" && b.private === false) throw new HttpError(400, MARKETS_PRIVATE);
       const status = b.status;
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
@@ -326,7 +301,20 @@ export function startServer(deps: Deps): Server<WsData> {
       return new Response(file, { headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
     }
 
+    if (deps.markets) {
+      const res = await marketsRoute(db, deps.markets, req, url);
+      if (res) return res;
+    }
+
     throw new HttpError(404, "Not found.");
+  };
+
+  const visible = new Set<ServerWebSocket<WsData>>();
+  const setVisible = (ws: ServerWebSocket<WsData>, on: boolean) => {
+    const before = visible.size;
+    if (on) visible.add(ws);
+    else visible.delete(ws);
+    if (visible.size !== before) deps.onViewers?.(visible.size);
   };
 
   const server = Bun.serve<WsData>({
@@ -336,11 +324,11 @@ export function startServer(deps: Deps): Server<WsData> {
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index },
+    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";
-      const denied = guard(req, srv.port as number, needsOrigin);
+      const denied = guard(req, srv.port as number, needsOrigin, url.pathname.startsWith("/api/") || url.pathname === "/ws");
       if (denied) return denied;
       if (url.pathname === "/ws") {
         const topic = url.searchParams.get("events") === "changed" ? "changed" : "engine";
@@ -365,7 +353,17 @@ export function startServer(deps: Deps): Server<WsData> {
     },
     websocket: {
       open: (ws) => void ws.subscribe(ws.data.topic),
-      message: () => {},
+      message: (ws, raw) => {
+        let msg: unknown;
+        try {
+          msg = JSON.parse(String(raw));
+        } catch {
+          return;
+        }
+        const m = msg as { type?: unknown; visible?: unknown } | null;
+        if (m?.type === "visibility" && typeof m.visible === "boolean") setVisible(ws, m.visible);
+      },
+      close: (ws) => setVisible(ws, false),
     },
   });
 

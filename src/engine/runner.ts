@@ -24,13 +24,14 @@ import {
 } from "./git";
 import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
+import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
 import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
-import { getTask, listTasks, setTaskStatus, type Task } from "./tasks";
+import { appendTaskDetail, getTask, listTasks, setTaskStatus, type Task } from "./tasks";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -77,6 +78,8 @@ const REPO_TOOLS = [
   "Bash(git log*)",
 ];
 
+type Settled = Awaited<ReturnType<MarketsHooks["settle"]>>;
+
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
 
 // The repo as found at task start, so it can be put back after the run.
@@ -90,6 +93,8 @@ export function createRunner(deps: {
   keepAwake: KeepAwake;
   maxConcurrent?: number;
   stopTimeoutMs?: number;
+  // Market context in prompts and the atrium-markets block afterwards; absent, markets spaces run like general ones.
+  markets?: MarketsHooks;
 }): { start(): void; stop(): Promise<void>; kick(): void; registry: Registry } {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
@@ -375,12 +380,16 @@ export function createRunner(deps: {
     // A Claude run away from a repo works in the space folder itself, where its files stay; this is how a rule
     // tells a text answer from one that left files behind.
     const folderBefore = !repo && !r.scratch && task.kind === "work" ? folderState(r.cwd) : null;
+    const markets = space.kind === "markets" && task.kind === "work" ? deps.markets : undefined;
     let result: AgentRunResult;
     try {
+      const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
+      const general = generalSystemPrompt(r.scratch);
       result = await adapter.run({
-        prompt: buildPrompt(task, space),
+        prompt: buildPrompt(task, space) + context,
         cwd: r.cwd,
-        systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : repo ? REPO_SYSTEM_PROMPT : generalSystemPrompt(r.scratch),
+        systemPrompt:
+          task.kind === "review" ? REVIEW_SYSTEM_PROMPT : repo ? REPO_SYSTEM_PROMPT : markets ? [general, ...MARKETS_SYSTEM_LINES].join("\n") : general,
         allowedTools: task.kind === "review" ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
         mode: task.kind === "review" ? "review" : "work",
         signal: r.signal,
@@ -462,6 +471,7 @@ export function createRunner(deps: {
     }
 
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
+    let settled: Settled | null = null;
     try {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
@@ -490,8 +500,13 @@ export function createRunner(deps: {
         setTaskStatus(db, task.id, "done");
         afterFix(db, task, result.summary, report?.lines[0] ?? "");
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
+      } else if (result.status === "ok" && (settled = markets ? await settleMarkets(markets, task, space, adapter.id, result.summary) : null)?.done) {
+        // A paper strategy run settled its own orders; there is nothing for Nakul to review.
+        if (settled.lines.length) appendTaskDetail(db, task.id, `\n\nThis run:\n${settled.lines.join("\n")}`);
+        setTaskStatus(db, task.id, "done");
+        logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`);
       } else if (result.status === "ok") {
-        const lines = [result.summary.trim()];
+        const lines = [result.summary.trim(), ...(settled?.lines ?? [])];
         const report = repo ? await repoReport(repo) : null;
         if (report) lines.push(...report.lines);
         if (kept) lines.push(keptLine(kept));
@@ -526,6 +541,15 @@ export function createRunner(deps: {
       }
     } finally {
       enforceTranscriptCap();
+    }
+  }
+
+  // A failure here still leaves the agent's answer for review, with a line saying what didn't happen.
+  async function settleMarkets(markets: MarketsHooks, task: Task, space: Space, agent: string, summary: string): Promise<Settled> {
+    try {
+      return await markets.settle(task, space, agent, summary);
+    } catch (e) {
+      return { done: false, lines: [`Atrium couldn't act on the markets block: ${(e as Error).message}`] };
     }
   }
 

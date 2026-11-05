@@ -203,6 +203,14 @@ test("explicit codex in a private space waits", async () => {
   });
 });
 
+test("a markets space counts as private whatever its flag says", async () => {
+  const r = await registry();
+  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
+  db.query("UPDATE spaces SET private = 0 WHERE id = ?").run(s.id);
+  expect(resolveFor(r, task(s.id, { agent: "codex" }), s.id)).toMatchObject({ wait: { agent: "codex", kind: "private_space" } });
+  expect(resolveFor(r, task(s.id, { kind: "review" }), s.id)).toEqual({ agent: "claude" });
+});
+
 test("explicit gemini never does repo work", async () => {
   const r = await registry();
   const { space } = repoSpace();

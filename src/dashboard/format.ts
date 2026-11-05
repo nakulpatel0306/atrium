@@ -1,3 +1,5 @@
+export { money } from "../engine/markets/labels";
+
 export function relative(ts: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - ts) / 1000));
   if (s < 45) return "just now";
@@ -35,3 +37,5 @@ export function duration(ms: number): string {
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
+
+export const signedPct = (n: number, digits = 2) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(digits)}%`;

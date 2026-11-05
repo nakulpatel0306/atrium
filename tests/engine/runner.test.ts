@@ -1,11 +1,16 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskWait } from "../../src/engine/agents/registry";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
-import { getApproval, listPending } from "../../src/engine/approvals";
+import { getApproval, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
+import { createMarketsHooks } from "../../src/engine/markets/agent";
+import { saveQuotes } from "../../src/engine/markets/cache";
+import { createMarketData } from "../../src/engine/markets/data";
+import { demoProvider } from "../../src/engine/markets/providers/demo";
+import { handleStrategyDecision, proposeStrategy } from "../../src/engine/markets/strategies";
 import * as rules from "../../src/engine/autonomy/rules";
 import { createRule } from "../../src/engine/autonomy/rules";
 import { openDb } from "../../src/engine/db";
@@ -1445,4 +1450,52 @@ test("a failing rule check leaves the result waiting and says so", async () => {
   expect(listActivity(db).map((x) => x.message)).toContain("Couldn't check your rules for Add a note: disk on fire. It's waiting for you as usual.");
   expect(status(t.id)).toBe("review");
   expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+});
+
+describe("markets spaces", () => {
+  const IN_SESSION = Date.parse("2026-11-05T15:00:00Z");
+  const noKeys = { get: async () => null, set: async () => {}, remove: async () => {} };
+  let offStrategy: () => void = () => {};
+  afterEach(() => offStrategy());
+
+  function marketsRunner(adapter: AgentAdapter) {
+    setSetting(db, "markets.provider", "demo");
+    const data = createMarketData({ db, keychain: noKeys, now: () => IN_SESSION, providers: { demo: demoProvider({ now: () => IN_SESSION }) } });
+    runner = createRunner({ db, adapters: { claude: adapter }, power: async () => "ac", keepAwake: fakeKeepAwake(), markets: createMarketsHooks(db, { data, now: () => IN_SESSION }) });
+    runner.start();
+    return runner;
+  }
+
+  test("markets strategy run settles without a review", async () => {
+    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "paper" });
+    offStrategy = onApprovalResolved((a, d) => handleStrategyDecision(db, a, d));
+    const s = proposeStrategy(db, space.id, { name: "Momentum", rules: "r", symbols: ["AAPL"], cadence: "open", maxPositionValue: 2000, maxTradesPerDay: 3 }, "claude");
+    resolveApproval(db, s.approvalId!, "approve");
+    saveQuotes(db, [{ key: "AAPL", price: 100, prevClose: 99, at: IN_SESSION, source: "demo", freshness: "demo" }]);
+    const block = '```atrium-markets\n{"orders":[{"symbol":"AAPL","side":"buy","qty":5,"reason":"Above SMA20"}]}\n```\nAnalysis, not advice.';
+    const { adapter, calls } = fakeAdapter(() => ok(block));
+    const task = createTask(db, { spaceId: space.id, title: "Paper strategy: Momentum (9:45 AM ET)", agent: "claude", weight: "light", strategyId: s.id });
+    marketsRunner(adapter);
+    await waitFor(() => getTask(db, task.id)!.status === "done");
+    expect(listPending(db)).toHaveLength(0);
+    expect(db.query("SELECT COUNT(*) AS n FROM paper_fills").get()).toEqual({ n: 1 });
+    expect(listActivity(db).map((a) => a.message)).toContain("Paper strategy run: 1 filled, 0 refused");
+    // What happened to each order stays with the task, since there's no review to carry it.
+    expect(getTask(db, task.id)!.detail).toMatch(/Filled: buy 5 AAPL @ \$[\d.]+ — Above SMA20/);
+    expect(calls[0]!.prompt).toContain("Market data as of");
+    expect(calls[0]!.systemPrompt).toContain("Analysis, not advice");
+  });
+
+  test("markets analysis task ends in review with the label", async () => {
+    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
+    const { adapter, calls } = fakeAdapter(() => ok('Holdings moved with the market.\n\n```atrium-markets\n{"orders":[{"symbol":"AAPL","side":"buy","qty":1,"reason":"x"}]}\n```\nAnalysis, not advice.'));
+    const task = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
+    marketsRunner(adapter);
+    await waitFor(() => getTask(db, task.id)!.status === "review");
+    const a = listPending(db)[0]!;
+    expect(a.detail).toContain("Holdings moved with the market.");
+    expect(a.detail).toContain("Paper orders only run from an approved strategy; ignored 1.");
+    expect(calls[0]!.systemPrompt).toContain("This is a markets space. Atrium never places real trades and you can't either.");
+    expect(calls[0]!.prompt).toContain("Market data as of");
+  });
 });

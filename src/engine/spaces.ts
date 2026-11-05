@@ -8,7 +8,7 @@ export type ReviewerId = (typeof REVIEWERS)[number];
 export type Space = {
   id: string;
   name: string;
-  kind: "repo" | "general";
+  kind: "repo" | "general" | "markets";
   goal: string;
   color: string;
   repoPath: string | null;
@@ -36,6 +36,11 @@ type SpaceRow = {
 
 const DEFAULT_COLOR = "#8ba4b0";
 
+export const MARKETS_PRIVATE = "Markets spaces stay private: your holdings only go to Claude.";
+
+// Holdings and the paper account are Nakul's private data, so a markets space is private whatever its flag says.
+export const isPrivate = (space: Pick<Space, "kind" | "private">): boolean => space.private || space.kind === "markets";
+
 const toSpace = (r: SpaceRow): Space => ({
   id: r.id,
   name: r.name,
@@ -59,6 +64,7 @@ export function createSpace(
   db: Database,
   input: { name: string; kind: Space["kind"]; goal: string; color?: string; repoPath?: string; private?: boolean },
 ): Space {
+  if (input.kind === "markets" && input.private === false) throw new Error(MARKETS_PRIVATE);
   const id = newId("spc");
   const now = Date.now();
   db.query(
@@ -92,6 +98,7 @@ export function updateSpace(
   const cur = getSpace(db, id);
   if (!cur) throw new Error(`No space with id ${id}`);
   const next = { ...cur, ...patch };
+  if (next.kind === "markets" && !next.private) throw new Error(MARKETS_PRIVATE);
   db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, updated_at = ? WHERE id = ?").run(
     next.name,
     next.goal,

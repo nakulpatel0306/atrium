@@ -141,6 +141,8 @@ describe("claudeAdapter", () => {
         `${tool}(**/*.[eE][nN][vV]/**)`,
       ]),
       "Bash(cat *.env*)",
+      // The Keychain CLI, where market data keys live.
+      "Bash(security *)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
       "Edit(**/.claude/**)",

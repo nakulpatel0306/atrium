@@ -1,0 +1,13 @@
+[
+  {
+    "category": "company",
+    "datetime": 1793884200,
+    "headline": "Apple supplier lifts guidance on strong handset demand",
+    "id": 135790,
+    "image": "https://static.example.com/img.jpg",
+    "related": "AAPL",
+    "source": "MarketWatch",
+    "summary": "A key supplier raised its outlook.",
+    "url": "https://finnhub.io/api/news?id=abc"
+  }
+]

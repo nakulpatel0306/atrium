@@ -62,6 +62,7 @@ export const task = (over: Partial<Task>): Task => ({
   kind: "work",
   parentTaskId: null,
   approvalId: null,
+  strategyId: null,
   branch: null,
   createdAt: now - 30 * min,
   updatedAt: now - 10 * min,
@@ -96,7 +97,7 @@ export function makeState(over: Partial<State> = {}): State {
       { id: "act_2", spaceId: ids.jobHunt, actor: "you", message: "added Summarize postings", createdAt: now - 15 * min },
       { id: "act_3", spaceId: null, actor: "atrium", message: "Overnight mode off", createdAt: now - 90 * min },
     ],
-    briefing: { greeting: "Good evening, Nakul.", summary: "2 tasks finished across 1 space." },
+    briefing: { greeting: "Good evening, Nakul.", summary: "2 tasks finished across 1 space.", markets: null },
     power: { source: "ac", overnight: false, keepAwake: false },
     waits: {
       [ids.queued]: { taskId: ids.queued, agent: "claude", kind: "reserve", reason: "Saving Claude's window until 9:00 PM.", until: now + 60 * min },

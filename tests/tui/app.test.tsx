@@ -72,7 +72,7 @@ test("marks the briefing seen once", async () => {
   const app = openApp(client);
   await app.frame((f) => f.includes("[1] Spaces"));
   await new Promise((r) => setTimeout(r, 20));
-  client.push(makeState({ briefing: { greeting: "Good night, Nakul.", summary: "Later." } }));
+  client.push(makeState({ briefing: { greeting: "Good night, Nakul.", summary: "Later.", markets: null } }));
   client.push(makeState());
   await new Promise((r) => setTimeout(r, 20));
   expect(client.calls.filter((c) => c.method === "POST" && c.path === "/api/seen")).toHaveLength(1);

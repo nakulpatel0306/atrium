@@ -1,12 +1,13 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { config } from "./config";
+import { MARKETS_SCHEMA } from "./markets/schema";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS spaces (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('repo','general')),
+  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets')),
   goal TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL,
   repo_path TEXT,
@@ -46,7 +47,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
   task_id TEXT REFERENCES tasks(id),
-  kind TEXT NOT NULL CHECK (kind IN ('review','question')),
+  kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')),
   title TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
@@ -115,6 +116,7 @@ export function openDb(path?: string): Database {
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
   migrate(db);
+  db.exec(MARKETS_SCHEMA);
   return db;
 }
 
@@ -122,6 +124,9 @@ export function openDb(path?: string): Database {
 function migrate(db: Database) {
   const has = (table: string, column: string) =>
     (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+  // CHECK constraints can't be altered, so a table whose kinds predate markets spaces is rebuilt.
+  rebuildIfMissing(db, "spaces", "'markets'", SPACES_DDL);
+  rebuildIfMissing(db, "approvals", "'alert'", APPROVALS_DDL);
   // The branch a run started from, so a crashed run's repo can be put back on boot.
   if (!has("runs", "start_ref")) db.exec("ALTER TABLE runs ADD COLUMN start_ref TEXT");
   // The repo's git settings before the run, so recovery and resume can tell if the agent changed them.
@@ -149,7 +154,67 @@ function migrate(db: Database) {
   if (!has("approvals", "rule_id")) db.exec("ALTER TABLE approvals ADD COLUMN rule_id TEXT REFERENCES autonomy_rules(id)");
   // When Nakul undid an automatic approval; an undone one is neither evidence nor counted again.
   if (!has("approvals", "undone_at")) db.exec("ALTER TABLE approvals ADD COLUMN undone_at INTEGER");
+  // The paper strategy a task runs for, so its orders can be checked against that strategy's limits.
+  if (!has("tasks", "strategy_id")) db.exec("ALTER TABLE tasks ADD COLUMN strategy_id TEXT");
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");
 }
 
+
+// Full current definitions, migrated columns included, used only when rebuilding an older table.
+const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets')),
+  goal TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL,
+  repo_path TEXT,
+  private INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  review_by TEXT
+)`;
+
+const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  task_id TEXT REFERENCES tasks(id),
+  kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')),
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  note TEXT,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  branch_head TEXT,
+  fingerprint TEXT,
+  decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
+  rule_id TEXT REFERENCES autonomy_rules(id),
+  undone_at INTEGER
+)`;
+
+// SQLite's documented table rebuild: foreign keys off (outside any transaction), copy into a new table,
+// swap names, then check the rebuild left no new dangling references. Ones that were already there (old test
+// fixtures, hand-edited DBs) aren't the rebuild's doing and don't stop the engine starting.
+function rebuildIfMissing(db: Database, table: string, marker: string, ddl: (name: string) => string) {
+  const row = db.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string } | null;
+  if (!row || row.sql.includes(marker)) return;
+  const before = db.query("PRAGMA foreign_key_check").all().length;
+  const columns = (t: string) => (db.query(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      db.exec(ddl(`${table}_new`));
+      const keep = columns(`${table}_new`);
+      const shared = columns(table).filter((c) => keep.includes(c)).join(", ");
+      db.exec(`INSERT INTO ${table}_new (${shared}) SELECT ${shared} FROM ${table}`);
+      db.exec(`DROP TABLE ${table}`);
+      db.exec(`ALTER TABLE ${table}_new RENAME TO ${table}`);
+    })();
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+  const after = db.query("PRAGMA foreign_key_check").all().length;
+  if (after > before) throw new Error(`Rebuilding ${table} left ${after - before} broken references.`);
+}

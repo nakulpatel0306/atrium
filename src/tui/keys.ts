@@ -172,6 +172,7 @@ function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
     }
     if (input === "a" || input === "r") return [info("That's a suggestion: y yes, n not now, N never.")];
   }
+  if (input === "r" && approvalOf(u, view)?.kind === "alert") return [info("Price alerts are dismissed with a; turn one off on the dashboard.")];
   switch (input) {
     case "1":
       return [ui({ type: "focus", pane: "spaces" })];

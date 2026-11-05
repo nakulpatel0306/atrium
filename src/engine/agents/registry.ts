@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { isEnvPath } from "../envpath";
 import { getSetting, setSetting } from "../settings";
-import type { Space } from "../spaces";
+import { isPrivate, type Space } from "../spaces";
 import type { Task } from "../tasks";
 import type { AgentAdapter, AgentStatus, AgentUsage } from "./types";
 
@@ -118,7 +118,7 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
 
   // Codex and Gemini reads aren't sandboxed like Claude's, so they stay away from secrets and private spaces.
   function freeAgentBlock(id: string, kind: Task["kind"], space: Space): Wait | null {
-    if (space.private) {
+    if (isPrivate(space)) {
       return { agent: id, kind: "private_space", reason: `${label(id)} can't work here: this space is private, so only Claude works in it.` };
     }
     if (space.kind === "repo" && space.repoPath && envFiles(space.repoPath)) {
@@ -155,7 +155,7 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
       );
     const repoWork = space.kind === "repo" && task.kind !== "review";
     // Free agents only get work Claude's reserve or a review frees up; otherwise Claude does it.
-    const wantsFree = !space.private && (task.kind === "review" || (!repoWork && inReserve() !== null));
+    const wantsFree = !isPrivate(space) && (task.kind === "review" || (!repoWork && inReserve() !== null));
     const pick = wantsFree ? free() : undefined;
     return pick ? { agent: pick } : claude(task);
   }

@@ -8,6 +8,9 @@ import { setSetting } from "../../src/engine/settings";
 import { createSpace } from "../../src/engine/spaces";
 import { snapshot } from "../../src/engine/state";
 import { createTask, setTaskStatus } from "../../src/engine/tasks";
+import { saveQuotes } from "../../src/engine/markets/cache";
+import { addHolding } from "../../src/engine/markets/holdings";
+import { placePaperOrder } from "../../src/engine/markets/paper";
 import { tempHome } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -211,4 +214,26 @@ test("undone rule approvals aren't counted", () => {
     if (title === "undone") db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, ap.id);
   }
   expect(briefing(db, now).summary).toBe("Nothing ran since you were last here. 1 result approved by your rules.");
+});
+
+test("the briefing carries paper P&L and the biggest holding moves", () => {
+  const now = Date.parse("2026-11-05T15:00:00Z");
+  expect(briefing(db, now).markets).toBeNull();
+  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
+  saveQuotes(db, [
+    { key: "AAPL", price: 99, prevClose: 100, at: now, source: "demo", freshness: "demo" },
+    { key: "SHOP.TO", price: 104, prevClose: 100, at: now - 3600_000, source: "alphavantage", freshness: "eod" },
+    { key: "KO", price: 100.5, prevClose: 100, at: now, source: "demo", freshness: "demo" },
+  ]);
+  for (const [symbol, exchange] of [["AAPL", "US"], ["SHOP", "TSX"], ["KO", "US"], ["NONE", "US"]] as const) {
+    addHolding(db, s.id, { account: "TFSA", symbol, exchange, name: symbol, quantity: 1, bookValue: null, currency: exchange === "US" ? "USD" : "CAD" });
+  }
+  placePaperOrder(db, { spaceId: s.id, symbol: "AAPL", side: "buy", qty: 10, reasoning: "r", actor: "you" }, { key: "AAPL", price: 100, prevClose: 100, at: now, source: "demo", freshness: "demo" }, now);
+  const m = briefing(db, now).markets!;
+  expect(m.paper!.dayPnl).toBeCloseTo(-10, 6);
+  expect(m.paper!.totalPnl).toBeCloseTo(-10, 6);
+  expect(m.paper!.equity).toBeCloseTo(9_990, 6);
+  expect(m.holdings.map((h) => h.key)).toEqual(["SHOP.TO", "AAPL", "KO"]);
+  expect(m.holdings[0]).toMatchObject({ key: "SHOP.TO", freshness: "eod", asOf: now - 3600_000 });
+  expect(m.holdings[0]!.dayPct).toBeCloseTo(4, 6);
 });

@@ -1,6 +1,7 @@
-import { ArrowDown, Plus } from "lucide-react";
+import { ArrowDown, CandlestickChart, Plus } from "lucide-react";
 import { ranAgent } from "../agents";
 import type { State } from "../api";
+import { briefingMarketsLine } from "../markets";
 import { navigate } from "../route";
 import { liveStatus, spaceStatus } from "../summary";
 import { Activity } from "./Activity";
@@ -95,6 +96,13 @@ export function Home({ state, briefing, onNewSpace }: Props) {
         {briefing.summary}
         <Plain text={liveStatus(state)} />
       </p>
+      {/* Live, unlike the summary above: prices and paper P&L keep moving while the page is open. */}
+      {state.briefing.markets && briefingMarketsLine(state.briefing.markets) && (
+        <p className="brief briefing-markets">
+          <CandlestickChart />
+          {briefingMarketsLine(state.briefing.markets)}
+        </p>
+      )}
 
       <NeedsYou state={state} />
 

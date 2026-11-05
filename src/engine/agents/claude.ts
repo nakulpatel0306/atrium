@@ -10,6 +10,8 @@ const denyRules = (cwd: string) => [
   // .env names in any case, names ending in .env, and everything inside a folder with such a name.
   ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
+  // The Keychain CLI, where market data keys live.
+  "Bash(security *)",
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
   "Write(**/.git/**)",

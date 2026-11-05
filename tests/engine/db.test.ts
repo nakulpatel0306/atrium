@@ -108,3 +108,58 @@ test("an existing database gains the autonomy columns", () => {
   openDb(path).close();
   t.cleanup();
 });
+
+test("old DB gains markets and alert kinds", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const old = new Database(path);
+  old.exec(`CREATE TABLE spaces (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('repo','general')), goal TEXT NOT NULL DEFAULT '',
+    color TEXT NOT NULL, repo_path TEXT, private INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, review_by TEXT);
+  CREATE TABLE tasks (
+    id TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES spaces(id), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued', blocked_reason TEXT, agent TEXT NOT NULL, weight TEXT NOT NULL,
+    allow_on_battery INTEGER NOT NULL DEFAULT 0, branch TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE approvals (
+    id TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES spaces(id), task_id TEXT REFERENCES tasks(id),
+    kind TEXT NOT NULL CHECK (kind IN ('review','question')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), note TEXT,
+    created_at INTEGER NOT NULL, resolved_at INTEGER, branch_head TEXT);
+  INSERT INTO spaces (id, name, kind, goal, color, repo_path, private, status, created_at, updated_at, review_by)
+    VALUES ('spc_old', 'Old', 'repo', 'g', 'blue', '/r', 1, 'active', 1, 2, 'codex');
+  INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('tsk_old', 'spc_old', 'old', 'claude', 'heavy', 1, 1);
+  INSERT INTO approvals (id, space_id, task_id, kind, title, detail, status, note, created_at, resolved_at, branch_head)
+    VALUES ('apr_old', 'spc_old', 'tsk_old', 'review', 'old', 'd', 'approved', 'n', 1, 2, 'abc')`);
+  old.close();
+  const db = openDb(path);
+  expect(db.query("SELECT * FROM spaces").get()).toEqual({
+    id: "spc_old", name: "Old", kind: "repo", goal: "g", color: "blue", repo_path: "/r", private: 1, status: "active",
+    created_at: 1, updated_at: 2, review_by: "codex",
+  });
+  expect(db.query("SELECT id, space_id, task_id, kind, title, detail, status, note, created_at, resolved_at, branch_head, decided_by FROM approvals").get()).toEqual({
+    id: "apr_old", space_id: "spc_old", task_id: "tsk_old", kind: "review", title: "old", detail: "d", status: "approved",
+    note: "n", created_at: 1, resolved_at: 2, branch_head: "abc", decided_by: "you",
+  });
+  db.exec("INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_m', 'M', 'markets', 'x', 1, 1)");
+  db.exec("INSERT INTO approvals (id, space_id, kind, title, created_at) VALUES ('apr_a', 'spc_m', 'alert', 'a', 1)");
+  expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  expect(() => db.exec("INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('t2', 'nope', 't', 'c', 'heavy', 1, 1)")).toThrow();
+  const cols = (db.query("PRAGMA table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
+  expect(cols).toContain("strategy_id");
+  db.close();
+  const again = openDb(path);
+  expect((again.query("SELECT COUNT(*) AS n FROM approvals").get() as { n: number }).n).toBe(2);
+  again.close();
+  t.cleanup();
+});
+
+test("markets tables exist", () => {
+  const t = tempHome();
+  const db = openDb();
+  const names = (db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name);
+  for (const n of ["market_watchlist", "market_holdings", "market_quotes", "market_bars", "market_alerts", "paper_accounts", "paper_fills", "market_strategies"]) expect(names).toContain(n);
+  db.close();
+  t.cleanup();
+});

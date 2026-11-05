@@ -51,6 +51,38 @@ describe("ENV_FILE_PATTERN", () => {
 });
 
 describe("seatbeltProfile", () => {
+  // Any binary that asks for a Keychain item (a copied or renamed `security` included) reads the keychain file itself,
+  // so the denied ~/Library/Keychains is what stops it; securityd's own services are cut off for Codex as well. The
+  // check uses a throwaway keychain in a denied folder so the login keychain is untouched.
+  test("a keychain in a denied folder can't be read, whatever binary asks", () => {
+    if (process.platform !== "darwin") return;
+    const dir = join(outside, "keychains");
+    mkdirSync(dir, { recursive: true });
+    const kc = join(dir, "probe.keychain");
+    const sec = (...a: string[]) => Bun.spawnSync(["/usr/bin/security", ...a], { stdout: "pipe", stderr: "pipe" }).exitCode;
+    expect(sec("create-keychain", "-p", "probe", kc)).toBe(0);
+    try {
+      expect(sec("add-generic-password", "-s", "AtriumProbe", "-a", "probe", "-w", "probevalue123", kc)).toBe(0);
+      // The exec rule would stop /usr/bin/security before the read rule is reached, so it's taken out here.
+      const strip = (p: string) => p.replace('(deny process-exec (literal "/usr/bin/security"))', "");
+      const find = `/usr/bin/security find-generic-password -s AtriumProbe -a probe '${kc}'`;
+      const denied = seatbeltProfile({ cwd, writable: [cwd], extraDenyRead: [dir], denyKeychain: true });
+      expect(denied).toContain('(global-name-prefix "com.apple.securityd")');
+      expect(sandboxed(strip(denied), find).exitCode).not.toBe(0);
+      expect(sandboxed(strip(seatbeltProfile({ cwd, writable: [cwd], denyKeychain: true })), find).exitCode).toBe(0);
+    } finally {
+      sec("delete-keychain", kc);
+    }
+  });
+
+  test("security CLI can't run under the profile", () => {
+    if (process.platform !== "darwin") return;
+    const profile = seatbeltProfile({ cwd, writable: [cwd] });
+    expect(profile).toContain('(deny process-exec (literal "/usr/bin/security"))');
+    const r = sandboxed(profile, "/usr/bin/security help");
+    expect(r.exitCode).not.toBe(0);
+  });
+
   test("profile denies credential paths and .env names", () => {
     const home = realpathSync(homedir());
     const profile = seatbeltProfile({ cwd, writable: [] });

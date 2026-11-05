@@ -8,7 +8,7 @@ import { createTask, type Task } from "./tasks";
 
 export type SpacePlan = {
   name: string;
-  kind: "repo" | "general";
+  kind: "repo" | "general" | "markets";
   goal: string;
   repoPath?: string;
   private: boolean;
@@ -35,11 +35,12 @@ const USER_FIXABLE = new Set(["not_installed", "not_logged_in", "rate_limited"])
 
 const SYSTEM_PROMPT = `You set up a new "space" in a personal task dashboard from the user's plain description.
 Reply with a single JSON object and nothing else, shaped like:
-{"name": string (1-40 chars), "kind": "repo" | "general", "goal": string, "repoPath"?: string, "private": boolean, "tasks": [{"title": string, "detail"?: string, "weight": "heavy" | "light"}]}
+{"name": string (1-40 chars), "kind": "repo" | "general" | "markets", "goal": string, "repoPath"?: string, "private": boolean, "tasks": [{"title": string, "detail"?: string, "weight": "heavy" | "light"}]}
 Rules:
 - Return JSON only: no prose, no code fences.
 - Set "private" to true for email, client, and personal work.
 - If the description matches an existing project, look under ~/dev-workspace/projects for the repo, then use kind "repo" and set repoPath to its absolute path. Otherwise use kind "general" and omit repoPath.
+- Use kind "markets" for watching stocks, a portfolio, or paper trading; markets spaces are private.
 - Give at most ${MAX_TASKS} starter tasks, with small, concrete titles. Use weight "heavy" for work that edits code or takes a long time and "light" for quick reads and summaries.`;
 
 // Agents wrap JSON in prose or fences, so scan for the first balanced object instead of parsing the whole text.
@@ -100,15 +101,15 @@ export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot(
   }
   const { name, kind, goal, repoPath, tasks } = obj;
   if (typeof name !== "string" || name.length < 1 || name.length > 40) throw new BadPlan("name must be 1-40 characters.");
-  if (kind !== "repo" && kind !== "general") throw new BadPlan('kind must be "repo" or "general".');
+  if (kind !== "repo" && kind !== "general" && kind !== "markets") throw new BadPlan('kind must be "repo", "general" or "markets".');
   if (typeof goal !== "string") throw new BadPlan("goal must be a string.");
   if (!Array.isArray(tasks) || tasks.length > MAX_TASKS) throw new BadPlan(`tasks must be a list of at most ${MAX_TASKS}.`);
   const plan: SpacePlan = {
     name,
     kind,
     goal,
-    // Private is the safe side: only an explicit false makes a space non-private.
-    private: obj.private !== false,
+    // Private is the safe side: only an explicit false makes a space non-private, and markets spaces always are.
+    private: obj.private !== false || kind === "markets",
     tasks: tasks.map((t) => {
       if (!t || typeof t.title !== "string" || !t.title) throw new BadPlan("Every task needs a title.");
       if (t.weight !== "heavy" && t.weight !== "light") throw new BadPlan('Task weight must be "heavy" or "light".');

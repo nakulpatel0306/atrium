@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "ink": "8.0.0",
+    "lightweight-charts": "5.2.1",
     "lucide-react": "^1.68.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

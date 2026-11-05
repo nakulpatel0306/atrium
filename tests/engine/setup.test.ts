@@ -194,3 +194,10 @@ test("default cwd is ~/dev-workspace", async () => {
   await setupSpace(db, fake(ok(plan), seen), "x");
   expect(seen[0]!.cwd).toBe(join(homedir(), "dev-workspace"));
 });
+
+test("markets plans are accepted", async () => {
+  const reply = JSON.stringify({ name: "Stocks", kind: "markets", goal: "watch and paper trade", tasks: [] });
+  const { space } = await setupSpace(db, fake(ok(reply)), "watch my stocks", repo.path, root());
+  expect(space.kind).toBe("markets");
+  expect(space.private).toBe(true);
+});

@@ -60,6 +60,8 @@ describe("geminiAdapter", () => {
     expect(work.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
     expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state, tmp], ...sandbox }));
     expect(work.slice(3, 5)).toEqual(["agy", "-p"]);
+    // agy signs in through the Keychain, so only Codex's profile cuts securityd off.
+    expect(work[2]).not.toContain("com.apple.securityd");
     const review = geminiArgv("agy", input([], { mode: "review" }), tmp);
     expect(review[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [state, tmp], ...sandbox }));
   });

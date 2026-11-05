@@ -4,6 +4,9 @@ import { absolute, clock, duration, relative, tokens } from "../dashboard/format
 import { actorName, reviewHint, reviewLine, runOutcome, spaceStatus, STATUS_TEXT } from "../dashboard/summary";
 import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
+import { money } from "../engine/markets/labels";
+import { plural } from "../engine/text";
+import type { MarketsGlance } from "./client";
 import type { View } from "./select";
 import { clean, width } from "./text";
 import { type AnsiColor, color, STATUS_GLYPH } from "./theme";
@@ -17,6 +20,7 @@ const SPACE_ACTIVITY = 10;
 const TONE = { ok: color.ok, waiting: color.warn, bad: color.bad } as const;
 
 const blank: DetailLine = [];
+const signedMoney = (n: number) => `${n >= 0 ? "+" : "−"}${money(Math.abs(n), "USD")}`;
 const plain = (text: string, style: Omit<Styled, "text"> = {}): DetailLine => [{ text, ...style }];
 const muted = (text: string) => plain(text, { color: color.muted });
 const heading = (text: string): DetailLine => plain(text, { bold: true, color: color.accent });
@@ -102,7 +106,13 @@ export function approvalDetail(view: View, messages: Message[] | null): DetailLi
   if (review) lines.push(plain(review.text, { color: review.tone ? TONE[review.tone] : undefined }));
   lines.push(blank, ...block(approval.detail || "No further detail."), blank);
   lines.push(muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`));
-  lines.push(muted("a approve · r send back · enter on the task in [2] for runs · t transcript"));
+  lines.push(
+    muted(
+      approval.kind === "alert"
+        ? "a dismiss · turn the alert off or change it on the dashboard"
+        : "a approve · r send back · enter on the task in [2] for runs · t transcript",
+    ),
+  );
   return lines;
 }
 
@@ -131,7 +141,7 @@ export function proposalDetail(view: View): DetailLine[] {
 // The engine logs a rule's decision as Atrium's, in these words; it's the only record of it the state carries.
 export const ruleApproved = (row: State["activity"][number]) => row.message.startsWith("Approved by your rule");
 
-export function spaceDetail(view: View, reviewers: Record<string, string | null> | null): DetailLine[] {
+export function spaceDetail(view: View, reviewers: Record<string, string | null> | null, markets: MarketsGlance | null = null): DetailLine[] {
   const space = view.space;
   if (!space) return [muted(view.spaces.length ? PICK : "No spaces yet. Press N to describe one.")];
   const { state } = view;
@@ -156,6 +166,14 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
         ? plain(`${reason} Reviews will be skipped until you pick another reviewer.`, { color: color.bad })
         : muted(reviewHint(space.reviewBy)),
     );
+  }
+  if (space.kind === "markets") {
+    lines.push(blank);
+    if (markets) {
+      lines.push(plain(`Watching ${plural(markets.watchlist, "symbol")}`));
+      if (markets.paper) lines.push(plain(`Paper ${signedMoney(markets.paper.dayPnl)} today (${signedMoney(markets.paper.totalPnl)} total)`));
+    }
+    lines.push(muted("Open the dashboard for charts, alerts and the paper account."));
   }
   const activity = state.activity.filter((a) => a.spaceId === space.id).slice(0, SPACE_ACTIVITY);
   lines.push(blank, heading("Recent activity"));

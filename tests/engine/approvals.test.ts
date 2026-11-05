@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { ALWAYS_ASK, AlreadyResolved, createApproval, getApproval, listPending, resolveApproval } from "../../src/engine/approvals";
+import { ALWAYS_ASK, AlreadyResolved, createApproval, getApproval, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { listActivity } from "../../src/engine/events";
 import { createSpace } from "../../src/engine/spaces";
@@ -122,4 +122,26 @@ test("reopenForReview only reopens done work tasks", () => {
   setTaskStatus(db, review.id, "done");
   expect(() => reopenForReview(db, review.id)).toThrow(InvalidTransition);
   expect(getTask(db, review.id)!.status).toBe("done");
+});
+
+test("alert approvals resolve without a task", () => {
+  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
+  const a = createApproval(db, { spaceId: s.id, kind: "alert", title: "AAPL price above $200.00", detail: "d" });
+  const seen: string[] = [];
+  const offBad = onApprovalResolved(() => {
+    throw new Error("listener broke");
+  });
+  const off = onApprovalResolved((x, decision) => seen.push(`${x.id}:${decision}`));
+  const err = console.error;
+  console.error = () => {};
+  try {
+    const r = resolveApproval(db, a.id, "approve");
+    expect(r.status).toBe("approved");
+  } finally {
+    console.error = err;
+    off();
+    offBad();
+  }
+  expect(seen).toEqual([`${a.id}:approve`]);
+  expect(listActivity(db)[0]!.message).toBe("Dismissed: AAPL price above $200.00");
 });
