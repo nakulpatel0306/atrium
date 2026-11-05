@@ -92,8 +92,12 @@ function fail(message: string): number {
   return 1;
 }
 
-async function main(cmd: string | undefined): Promise<number> {
+export async function main(cmd: string | undefined): Promise<number> {
   switch (cmd) {
+    case undefined:
+    case "tui":
+      await import("./tui/main");
+      return -1;
     case "start":
       await import("./main");
       return -1;
@@ -107,7 +111,7 @@ async function main(cmd: string | undefined): Promise<number> {
     case "uninstall":
       return uninstall();
     default:
-      return fail("Usage: atrium <start|status|open|install|uninstall>");
+      return fail("Usage: atrium [tui|start|status|open|install|uninstall]");
   }
 }
 
