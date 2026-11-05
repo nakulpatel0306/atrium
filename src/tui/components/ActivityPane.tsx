@@ -12,7 +12,7 @@ export function ActivityPane(p: ListProps) {
       pane="activity"
       empty="No activity yet. Agent runs and your decisions will show up here."
       render={(row) => {
-        const when = relative(row.createdAt).replace(" ago", "");
+        const when = relative(row.createdAt).replace(" ago", "").replace("just now", "now");
         const space = row.spaceId ? names.get(row.spaceId) : undefined;
         return [
           { text: `${pad(when, 5)} `, color: color.muted },

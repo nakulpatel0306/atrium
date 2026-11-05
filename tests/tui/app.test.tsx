@@ -110,3 +110,12 @@ test("engine text can't send escape sequences to the terminal", async () => {
   expect(out).not.toContain("\x9b");
   expect(out).toContain("finished it");
 });
+
+test("activity times stay in one narrow column", async () => {
+  const state = makeState();
+  state.activity[0] = { ...state.activity[0]!, createdAt: Date.now() };
+  const app = openApp(fakeClient(state));
+  const f = await app.frame((f) => f.includes("[4] Activity"));
+  expect(f).toContain("│now   Claude · atrium");
+  expect(f).toContain("│15m   You · job hunt");
+});
