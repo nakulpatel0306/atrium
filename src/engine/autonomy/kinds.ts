@@ -22,6 +22,11 @@ export type DocsContent = {
   // Some agent instruction file imports another file with @, isn't a plain file, or couldn't be read in full, so an
   // edit to any docs file might be an edit to an agent's instructions.
   instructionsUnsafe: boolean;
+  // The tree has a symlink, a submodule, or an agent or editor config folder anywhere: not a plain repo.
+  notPlain: boolean;
+  // A touched file's whole new text has a doctest prompt, a continuation line or an rST directive, or couldn't be
+  // read in full.
+  bodyUnsafe: boolean;
 };
 
 // What the engine itself saw about a result, at one commit (`sha`). Nothing here comes from the agent's own words.
@@ -61,23 +66,33 @@ const EXECUTES = [
   /\{\{/,
   /\{%/,
   /^\s*>>>/,
+  /^\s*iex(\(\d+\))?>/,
   /^\s*\.\.\s+(raw|include|doctest|literalinclude|code-block)::/,
 ];
 const SITE_CONFIG =
-  /(^|\/)(docusaurus\.config\.[^/]+|astro\.config\.[^/]+|nuxt\.config\.[^/]+|gatsby-config\.[^/]+|mkdocs\.ya?ml|cargo\.toml|conf\.py|book\.toml|_config\.yml|hugo\.(toml|ya?ml|json))$|(^|\/)\.vitepress(\/|$)|^config\.toml$/i;
+  /(^|\/)(docusaurus\.config\.[^/]+|astro\.config\.[^/]+|nuxt\.config\.[^/]+|gatsby-config\.[^/]+|mkdocs\.ya?ml|cargo\.toml|mix\.exs|conf\.py|book\.toml|_config\.yml|hugo\.(toml|ya?ml|json))$|(^|\/)\.vitepress(\/|$)|^config\.toml$/i;
 const DOCTEST_CONFIG = /(^|\/)(pyproject\.toml|setup\.cfg|pytest\.ini|tox\.ini)$/i;
 // Files that steer an agent. Generic .github files (CODEOWNERS, workflows) aren't, even though they live beside
 // Copilot's instructions.
+// The name rule only covers text files, so source such as src/agents/claude.ts isn't taken for instructions.
 const AGENT_INSTRUCTIONS = [
-  /(^|\/)(claude|agents?|gemini|copilot|cursor|windsurf|conventions\.md$|\.aider)[^/]*$/i,
+  /(^|\/)(claude|agents?|gemini|copilot|cursor|windsurf)[^/]*\.(md|mdc|markdown|txt|rst)$/i,
+  /(^|\/)(conventions\.md|\.aider[^/]*)$/i,
   /(^|\/)(\.cursorrules|\.windsurfrules|\.clinerules|\.mcp\.json)(\/|$)/i,
   /(^|\/)\.(claude|codex|gemini|cursor|agents|windsurf|roo|continue|kiro|junie)\//i,
-  /(^|\/)\.github\/(copilot-instructions\.md$|instructions\/)/i,
+  /(^|\/)\.github\/(copilot-instructions\.md$|(instructions|agents|prompts|chatmodes)\/)/i,
 ];
 
+const AGENT_CONFIG =
+  /(^|\/)(\.(claude|gemini|codex|cursor|windsurf|agents|roo|continue|kiro|junie|vscode)\/|\.aider[^/]*(\/|$)|(\.clinerules|\.cursorrules|\.windsurfrules|\.mcp\.json)(\/|$))/i;
+const BODY_RUNS = [/>>>/, /^\.\.\. /m, /^\s*\.\.\s+[\w:-]+::/m, /^\s*iex(\(\d+\))?>/m];
+
 export const isSiteConfig = (path: string) => SITE_CONFIG.test(path);
+export const isAgentConfig = (path: string) => AGENT_CONFIG.test(path);
+export const bodyRuns = (text: string) => BODY_RUNS.some((re) => re.test(text));
 export const isDoctestConfig = (path: string) => DOCTEST_CONFIG.test(path);
-export const enablesDoctest = (text: string) => /--doctest-glob|doctest_optionflags/.test(text);
+// Any mention at all: parsing these formats exactly is where the gaps would be.
+export const enablesDoctest = (text: string) => /doctest|markdown-docs|codeblocks/i.test(text);
 export const isAgentInstructionFile = (path: string) => AGENT_INSTRUCTIONS.some((re) => re.test(path));
 // Any `@path` at the start of a word, the way Claude, Gemini and Codex instruction files import other files.
 export const hasImport = (text: string) => /(?:^|[\s(\[])@[^\s`'"()<>\[\]]/.test(text);
@@ -117,7 +132,7 @@ export function fingerprintOf(facts: ActionFacts): string | null {
   }
   if (lines > MEDIUM_LINES || !facts.files.every(isDocs)) return null;
   const c = facts.content;
-  if (c.siteConfig || c.instructionsUnsafe || c.bytes > DOCS_BYTES) return null;
+  if (c.siteConfig || c.instructionsUnsafe || c.notPlain || c.bodyUnsafe || c.bytes > DOCS_BYTES) return null;
   if (c.added.some((line) => EXECUTES.some((re) => re.test(line)))) return null;
   return `v1:code:docs:${lines <= SMALL_LINES ? "small" : "medium"}:${facts.agent}`;
 }

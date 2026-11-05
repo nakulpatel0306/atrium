@@ -1382,6 +1382,9 @@ code {
   flex: none;
   margin-top: 1px;
 }
+.rules-note {
+  margin: -2px 0 8px;
+}
 .item.rule {
   cursor: pointer;
 }

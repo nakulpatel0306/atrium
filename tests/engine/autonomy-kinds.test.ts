@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ActionFacts, type DocsContent, enablesDoctest, fingerprintOf, forbiddenFor, hasImport, isAgentInstructionFile, isDoctestConfig, isSiteConfig, labelOf, parseFingerprint } from "../../src/engine/autonomy/kinds";
+import { type ActionFacts, type DocsContent, bodyRuns, enablesDoctest, fingerprintOf, forbiddenFor, hasImport, isAgentConfig, isAgentInstructionFile, isDoctestConfig, isSiteConfig, labelOf, parseFingerprint } from "../../src/engine/autonomy/kinds";
 import { PLAIN_DOCS } from "../helpers";
 import type { ChangedFile } from "../../src/engine/git";
 
@@ -135,7 +135,7 @@ describe("docs that execute", () => {
     for (const p of [
       "docusaurus.config.js", "web/docusaurus.config.ts", "docs/.vitepress/config.mts", "astro.config.mjs", "mkdocs.yml", "Cargo.toml",
       "nuxt.config.ts", "gatsby-config.js", "docs/conf.py", "book.toml", "_config.yml", "site/_config.yml", "hugo.toml", "hugo.yaml",
-      "hugo.json", "config.toml",
+      "hugo.json", "config.toml", "mix.exs", "apps/web/mix.exs",
     ]) {
       expect(isSiteConfig(p)).toBe(true);
     }
@@ -148,7 +148,7 @@ describe("docs that execute", () => {
     for (const line of [
       "import Chart from './chart'", "  export const x = 1", "<script>alert(1)</script>", "<SCRIPT src=x>", "Hello {{ secret }}",
       "{% include 'x.html' %}", ">>> import os", "   >>> 1 + 1", ".. raw:: html", ".. include:: ../secrets.txt", "  .. doctest::",
-      ".. literalinclude:: x.py", ".. code-block:: python",
+      ".. literalinclude:: x.py", ".. code-block:: python", "iex> 1 + 1", "  iex(2)> x",
     ]) {
       expect(fingerprintOf(withContent({ added: ["fine", line] }))).toBeNull();
     }
@@ -167,7 +167,28 @@ describe("docs that execute", () => {
     for (const p of ["CLAUDE.md", "CLAUDE.local.md", "pkg/AGENTS.md", "GEMINI.md", ".cursorrules", ".clinerules", ".github/copilot-instructions.md", ".github/instructions/a.md", ".claude/commands/x.md", "CONVENTIONS.md"]) {
       expect(isAgentInstructionFile(p)).toBe(true);
     }
-    for (const p of ["README.md", ".github/CODEOWNERS", ".github/workflows/ci.yml", "docs/a.md"]) expect(isAgentInstructionFile(p)).toBe(false);
+    for (const p of [".github/agents/reviewer.md", ".github/prompts/fix.prompt.md", ".github/chatmodes/plan.chatmode.md", "copilot-notes.txt"]) {
+      expect(isAgentInstructionFile(p)).toBe(true);
+    }
+    for (const p of ["README.md", ".github/CODEOWNERS", ".github/workflows/ci.yml", "docs/a.md", "src/agents/claude.ts", "src/gemini-client.py", "agents.json"]) {
+      expect(isAgentInstructionFile(p)).toBe(false);
+    }
+  });
+
+  test("only a plain repo can earn docs rules", () => {
+    expect(fingerprintOf(withContent({ notPlain: true }))).toBeNull();
+    expect(fingerprintOf(withContent({ bodyUnsafe: true }))).toBeNull();
+    for (const p of [".claude/settings.json", "pkg/.vscode/settings.json", ".gemini/x", ".codex/a", ".cursor/rules/a.mdc", ".windsurf/a", ".agents/a", ".roo/a", ".continue/a", ".kiro/a", ".junie/a", ".aider.conf.yml", ".aiderignore", ".clinerules", ".clinerules/a.md", ".cursorrules", ".windsurfrules", "sub/.mcp.json"]) {
+      expect(isAgentConfig(p)).toBe(true);
+    }
+    for (const p of ["README.md", "docs/claude.md", ".github/workflows/ci.yml", "vscode.md"]) expect(isAgentConfig(p)).toBe(false);
+  });
+
+  test("a docs file whose whole text has doctest or rST directives isn't plain", () => {
+    for (const text of ["# T\n\nSee >>> here", "intro\n... continued\n", ".. note::\n   hi", "  .. image:: x.png", "Try:\n\n    iex> Enum.sum([1])"]) {
+      expect(bodyRuns(text)).toBe(true);
+    }
+    for (const text of ["# T\n\nplain text...\n", "a .. b", "Wait... what"]) expect(bodyRuns(text)).toBe(false);
   });
 
   test("doctest settings make Markdown executable", () => {
@@ -176,6 +197,9 @@ describe("docs that execute", () => {
     expect(enablesDoctest('[tool.pytest.ini_options]\naddopts = "--doctest-glob=*.md"')).toBe(true);
     expect(enablesDoctest("[pytest]\ndoctest_optionflags = ELLIPSIS")).toBe(true);
     expect(enablesDoctest("[tool.ruff]\nline-length = 100")).toBe(false);
+    // Any mention at all counts, even a comment.
+    expect(enablesDoctest("# we used to run Doctest here")).toBe(true);
+    for (const text of ["addopts = --markdown-docs", "pytest-codeblocks", "phmdoctest README.md"]) expect(enablesDoctest(text)).toBe(true);
   });
 
   test("more than 20 KB of changed text never gets a docs kind", () => {

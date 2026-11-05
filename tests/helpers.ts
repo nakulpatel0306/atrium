@@ -33,7 +33,7 @@ export function tempRepo(): { path: string; cleanup(): void } {
 }
 
 // Content facts for a plain docs change: nothing that executes, nothing an agent's instructions import.
-export const PLAIN_DOCS = { added: ["A plain note."], bytes: 14, siteConfig: false, instructionsUnsafe: false };
+export const PLAIN_DOCS = { added: ["A plain note."], bytes: 14, siteConfig: false, instructionsUnsafe: false, notPlain: false, bodyUnsafe: false };
 
 // A branch at the repo's current commit, as an agent's finished task leaves it; returns that commit.
 export function branchAt(path: string, branch: string): string {

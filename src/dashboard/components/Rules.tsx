@@ -241,6 +241,9 @@ export function Rules({ state }: { state: State }) {
         <Lock />
         {ALWAYS_ASK}
       </p>
+      <p className="note-line rules-note">
+        Rules can't see instructions written in plain prose — keep agent instructions out of docs you let rules approve.
+      </p>
       {empty ? (
         <div className="list">
           <div className="empty-row">

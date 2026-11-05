@@ -41,7 +41,8 @@ const write = (file: string, text: string) => {
 function taskWith(change: Record<string, string>, base: Record<string, string> = {}): Task {
   for (const [file, text] of Object.entries(base)) write(file, text);
   if (Object.keys(base).length) {
-    git("add", "-A");
+    // Forced: a global gitignore may skip editor folders such as .vscode.
+    git("add", "-A", "-f");
     git("commit", "-qm", "base");
   }
   const t = createTask(db, { spaceId: space.id, title: "Note", agent: "claude" });
@@ -110,6 +111,43 @@ test("a Sphinx conf.py closes the repo to docs rules", async () => {
 
 test("a Python prompt line in added docs never gets a docs kind", async () => {
   expect(await kindOf(taskWith({ "README.md": "# fixture\n\n>>> import os\n" }))).toBeNull();
+});
+
+test("a symlink anywhere in the tree closes the repo to docs rules", async () => {
+  symlinkSync("README.md", join(repo.path, "link.md"));
+  expect(await kindOf(taskWith({ "docs/a.md": "plain\n" }, { "other.txt": "x\n" }))).toBeNull();
+});
+
+test("a submodule anywhere in the tree closes the repo to docs rules", async () => {
+  git("update-index", "--add", "--cacheinfo", `160000,${git("rev-parse", "HEAD")},vendor/lib`);
+  git("commit", "-qm", "submodule");
+  // An unpopulated submodule leaves an empty folder; without it the next commit would record a deletion.
+  mkdirSync(join(repo.path, "vendor/lib"), { recursive: true });
+  const t = taskWith({ "docs/a.md": "plain\n" });
+  const facts = await factsFor(db, t, space);
+  expect(facts?.domain === "code" && facts.files.map((f) => f.path)).toEqual(["docs/a.md"]);
+  expect(facts && fingerprintOf(facts)).toBeNull();
+});
+
+test("an editor or agent config folder closes the repo to docs rules", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "plain\n" }, { ".vscode/settings.json": "{}\n" }))).toBeNull();
+});
+
+test("a pyproject that mentions doctest at all closes the repo to docs rules", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "plain\n" }, { "pyproject.toml": "# doctest: maybe later\n[project]\nname='x'\n" }))).toBeNull();
+});
+
+test("a touched file with a doctest prompt in an untouched line isn't plain", async () => {
+  const t = taskWith({ "docs/a.md": ">>> 1 + 1\n2\nA new plain line.\n" }, { "docs/a.md": ">>> 1 + 1\n2\n" });
+  expect(await kindOf(t)).toBeNull();
+});
+
+test("a touched file with a continuation line isn't plain", async () => {
+  expect(await kindOf(taskWith({ "docs/a.md": "intro\n... continued\nnew\n" }, { "docs/a.md": "intro\n... continued\n" }))).toBeNull();
+});
+
+test("a touched rST file with any directive isn't plain", async () => {
+  expect(await kindOf(taskWith({ "docs/a.rst": "Title\n=====\n\n.. note::\n   Hi\n\nnew line\n" }, { "docs/a.rst": "Title\n=====\n\n.. note::\n   Hi\n" }))).toBeNull();
 });
 
 test("a template tag in an added line never gets a docs kind", async () => {
