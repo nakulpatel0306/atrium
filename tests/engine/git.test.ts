@@ -336,6 +336,16 @@ describe("commitAll", () => {
     await expect(commitAll(path, "Fake lfs")).rejects.toThrow('defines a "lfs" filter');
   });
 
+  test("refuses an lfs driver with a command chained after git-lfs", async () => {
+    const path = repo();
+    const pwned = join(tempDir(), "pwned");
+    git(path, "config", "filter.lfs.clean", `git-lfs clean -- %f; touch ${pwned}`);
+    writeFileSync(join(path, ".gitattributes"), "* filter=lfs\n");
+    writeFileSync(join(path, "a.txt"), "a\n");
+    await expect(commitAll(path, "Chained")).rejects.toThrow('defines a "lfs" filter');
+    expect(existsSync(pwned)).toBe(false);
+  });
+
   test("unstages and refuses if settings change during staging", async () => {
     const path = repo();
     writeFileSync(join(path, "a.txt"), "a\n");

@@ -103,7 +103,14 @@ export async function commitAll(
 }
 
 // git add runs clean/process filter drivers, so a driver the agent planted would run with the engine's privileges.
-// git-lfs is the one driver people install on purpose; it is recognised by its command, not its name.
+// git-lfs is the one driver people install on purpose; it is recognised by its exact installed commands, since a
+// prefix match would let "git-lfs clean -- %f; evil" through the shell git runs filters in.
+const LFS_COMMANDS: Record<string, string> = {
+  clean: "git-lfs clean -- %f",
+  smudge: "git-lfs smudge -- %f",
+  process: "git-lfs filter-process",
+};
+
 async function refuseFilterDrivers(path: string): Promise<void> {
   const res = await git(path, ["config", "--get-regexp", "^filter\\."]);
   // Exit 1 just means no filter is configured.
@@ -116,7 +123,7 @@ async function refuseFilterDrivers(path: string): Promise<void> {
     const name = key.slice("filter.".length, key.lastIndexOf("."));
     const variable = key.slice(key.lastIndexOf(".") + 1);
     if (!["clean", "smudge", "process"].includes(variable)) continue;
-    if (name === "lfs" && value.startsWith("git-lfs ")) continue;
+    if (name === "lfs" && value.trim() === LFS_COMMANDS[variable]) continue;
     throw new Error(
       `Refusing to commit: this repo's git config defines a "${name}" filter that would run a program during commit. Commit these changes yourself if you trust it.`,
     );
