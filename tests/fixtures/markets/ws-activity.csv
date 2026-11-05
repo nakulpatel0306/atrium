@@ -1,0 +1,11 @@
+transaction_date,settlement_date,account_id,account_type,activity_type,activity_sub_type,direction,symbol,name,currency,quantity,unit_price,commission,net_cash_amount
+2026-02-10,2026-02-11,TFSA-1,TFSA,Trade,SELL,SHORT,SHOP,Shopify Inc.,CAD,-3,160.00,0,480.00
+2026-02-08,2026-02-09,RRSP-1,RRSP,Trade,BUY,LONG,AAPL,Apple Inc.,USD,4,230.00,0,-920.00
+2026-02-07,2026-02-08,RRSP-1,RRSP,Trade,BUY,LONG,XYZ,XYZ Resources,CAD,100,10.00,0,-1000.00
+2026-02-12,2026-02-12,TFSA-1,TFSA,Dividend,,,SHOP,Shopify Inc.,CAD,0,,0,5.00
+2026-02-15,2026-02-15,RRSP-1,RRSP,Reorganization,CONSOLIDATION,,XYZ,XYZ Resources,CAD,-50,,0,0
+2026-02-06,2026-02-07,TFSA-1,TFSA,Trade,BUY,LONG,SHOP,Shopify Inc.,CAD,5,150.00,0,-750.00
+2026-02-05,2026-02-06,TFSA-1,TFSA,Trade,BUY,LONG,SHOP,Shopify Inc.,CAD,10,140.00,0,-1400.00
+2026-02-01,2026-02-01,TFSA-1,TFSA,Deposit,,,,,CAD,,,0,5000.00
+,,,,
+As of 2026-01-28 23:02 GMT-05:00
