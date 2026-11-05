@@ -35,11 +35,11 @@ test("archived spaces are hidden from listSpaces by default", () => {
   expect(listSpaces(db, { includeArchived: true })).toHaveLength(1);
 });
 
-test("createTask defaults to queued heavy claude", () => {
+test("createTask defaults to queued heavy auto", () => {
   const t = createTask(db, { spaceId: space().id, title: "x" });
   expect(t.status).toBe("queued");
   expect(t.weight).toBe("heavy");
-  expect(t.agent).toBe("claude");
+  expect(t.agent).toBe("auto");
   expect(t.allowOnBattery).toBe(false);
 });
 

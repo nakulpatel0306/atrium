@@ -5,6 +5,11 @@ const out = (o: unknown) => console.log(JSON.stringify(o));
 const agentMessage = (text: string) => out({ type: "item.completed", item: { id: "item_0", type: "agent_message", text } });
 
 if (process.env.FAKE_CODEX_ARGV) await Bun.write(process.env.FAKE_CODEX_ARGV, JSON.stringify(process.argv.slice(2)));
+if (process.argv[2] === "login" && process.argv[3] === "status") {
+  if (scenario === "logged-out") process.exit(1);
+  console.log("Logged in using ChatGPT");
+  process.exit(0);
+}
 const stdin = await Bun.stdin.text();
 
 if (scenario === "logged-out") {

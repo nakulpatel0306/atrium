@@ -9,8 +9,12 @@ export interface AgentRunInput {
   signal?: AbortSignal;
 }
 
+// Subscription window usage as the CLI reports it; resetsAt is epoch ms.
+export type WindowUsage = { utilization: number; resetsAt: number };
+export type AgentUsage = { fiveHour?: WindowUsage; sevenDay?: WindowUsage };
+
 export type AgentRunResult =
-  | { status: "ok"; summary: string; inputTokens: number; outputTokens: number }
+  | { status: "ok"; summary: string; inputTokens: number; outputTokens: number; usage?: AgentUsage }
   | {
       status: "error";
       kind: "not_installed" | "not_logged_in" | "rate_limited" | "failed";

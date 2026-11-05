@@ -4,6 +4,10 @@ const mode = process.env.FAKE_CLAUDE_MODE ?? "ok";
 const out = (o: unknown) => console.log(JSON.stringify(o));
 const sessionId = "fake-session";
 
+if (process.argv[2] === "--version") {
+  console.log("2.1.0 (Claude Code)");
+  process.exit(0);
+}
 if (process.env.FAKE_CLAUDE_ARGV) await Bun.write(process.env.FAKE_CLAUDE_ARGV, JSON.stringify(process.argv.slice(2)));
 
 out({ type: "system", subtype: "init", cwd: process.cwd(), session_id: sessionId, tools: ["Read", "Bash"] });
@@ -62,6 +66,21 @@ if (mode === "argv") {
   process.exit(0);
 }
 
+if (mode === "ok_usage" || mode === "ok_usage_no_reset") {
+  const reset = mode === "ok_usage" ? { resetsAt: 1893459600 } : {};
+  out({
+    type: "rate_limit_event",
+    rate_limit_info: {
+      status: "allowed",
+      resetsAt: 1893456000,
+      rateLimitType: "five_hour",
+      unifiedWindows: {
+        five_hour: { utilization: 0.14, ...reset },
+        seven_day: { utilization: 0.31, resetsAt: 1893801600 },
+      },
+    },
+  });
+}
 out({
   type: "rate_limit_event",
   rate_limit_info: { status: mode === "ok_warning" ? "allowed_warning" : "allowed", resetsAt: 1893456000, rateLimitType: "five_hour" },

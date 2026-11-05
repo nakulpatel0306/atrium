@@ -49,3 +49,31 @@ test("openDb adds runs.start_ref and runs.git_fingerprint to an existing databas
   openDb(path).close();
   t.cleanup();
 });
+
+test("migration adds task kind, parent, ignore_reserve and space review_by", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const old = new Database(path);
+  old.exec(`CREATE TABLE spaces (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', color TEXT NOT NULL,
+    repo_path TEXT, private INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE tasks (
+    id TEXT PRIMARY KEY, space_id TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued', blocked_reason TEXT, agent TEXT NOT NULL, weight TEXT NOT NULL,
+    allow_on_battery INTEGER NOT NULL DEFAULT 0, branch TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('tsk_old', 'spc', 'old', 'claude', 'heavy', 1, 1)`);
+  old.close();
+  const db = openDb(path);
+  const cols = (table: string) => (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  expect(cols("tasks")).toEqual(expect.arrayContaining(["kind", "parent_task_id", "ignore_reserve"]));
+  expect(cols("spaces")).toContain("review_by");
+  expect(db.query("SELECT kind, ignore_reserve, parent_task_id FROM tasks").get()).toEqual({
+    kind: "work",
+    ignore_reserve: 0,
+    parent_task_id: null,
+  });
+  db.close();
+  openDb(path).close();
+  t.cleanup();
+});

@@ -1,5 +1,7 @@
 import { join } from "node:path";
 import { claudeAdapter } from "./engine/agents/claude";
+import { codexAdapter } from "./engine/agents/codex";
+import { geminiAdapter } from "./engine/agents/gemini";
 import { config } from "./engine/config";
 import { openDb } from "./engine/db";
 import { trimLog } from "./engine/logfile";
@@ -13,7 +15,8 @@ trimLog(join(config().home, "engine.log"), 1024 * 1024);
 
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();
-const runner = createRunner({ db, adapters: { claude: claudeAdapter() }, power: powerSource, keepAwake });
+const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: geminiAdapter() };
+const runner = createRunner({ db, adapters, power: powerSource, keepAwake });
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
 let server: ReturnType<typeof startServer>;

@@ -33,6 +33,29 @@ describe("claudeAdapter", () => {
     expect(r.status).toBe("ok");
   });
 
+  test("reports five-hour and seven-day window usage in epoch ms", async () => {
+    process.env.FAKE_CLAUDE_MODE = "ok_usage";
+    const r = await claudeAdapter(FAKE).run(input());
+    expect(r).toMatchObject({
+      status: "ok",
+      usage: {
+        fiveHour: { utilization: 0.14, resetsAt: 1893459600_000 },
+        sevenDay: { utilization: 0.31, resetsAt: 1893801600_000 },
+      },
+    });
+  });
+
+  test("a five-hour window without its own reset uses the event's resetsAt", async () => {
+    process.env.FAKE_CLAUDE_MODE = "ok_usage_no_reset";
+    const r = await claudeAdapter(FAKE).run(input());
+    expect(r).toMatchObject({ usage: { fiveHour: { utilization: 0.14, resetsAt: 1893456000_000 } } });
+  });
+
+  test("probe: installed with unknown sign-in, or missing", async () => {
+    expect(await claudeAdapter(FAKE).probe!()).toEqual({ installed: true, loggedIn: null, detail: "Installed" });
+    expect((await claudeAdapter("/nonexistent/claude").probe!()).installed).toBe(false);
+  });
+
   test("missing binary maps to not_installed", async () => {
     const r = await claudeAdapter("/nonexistent/claude").run(input());
     expect(r).toEqual({ status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" });

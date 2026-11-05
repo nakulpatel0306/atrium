@@ -27,6 +27,13 @@ describe("codexAdapter", () => {
     expect(chunks).toContain("→ bash bun test");
   });
 
+  test("probe: signed in, signed out, missing", async () => {
+    expect(await codexAdapter(FAKE).probe!()).toEqual({ installed: true, loggedIn: true, detail: "Signed in" });
+    process.env.FAKE_CODEX_SCENARIO = "logged-out";
+    expect((await codexAdapter(FAKE).probe!()).loggedIn).toBe(false);
+    expect((await codexAdapter("/nonexistent/codex").probe!()).installed).toBe(false);
+  });
+
   test("flags", async () => {
     const dir = mkdtempSync(join(tmpdir(), "atrium-codex-"));
     try {

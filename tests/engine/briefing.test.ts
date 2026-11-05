@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { createApproval } from "../../src/engine/approvals";
 import { briefing, markSeen } from "../../src/engine/briefing";
+import { createRegistry } from "../../src/engine/agents/registry";
 import { openDb } from "../../src/engine/db";
 import { setSetting } from "../../src/engine/settings";
 import { createSpace } from "../../src/engine/spaces";
@@ -92,7 +93,7 @@ test("snapshot defaults and settings-derived power, usage", () => {
   setSetting(db, "power.keepAwake", "true");
   setSetting(db, "overnight", "true");
   setSetting(db, "runner.waiting", JSON.stringify({ taskId: t.id, reason: "on battery" }));
-  setSetting(db, "runner.pausedUntil", String(Date.now() + 60_000));
+  setSetting(db, "agent.claude.limitedUntil", String(Date.now() + 60_000));
   const s = snapshot(db);
   expect(s.usage.claudeTokens24h).toBe(100);
   expect(s.power.source).toBe("battery");
@@ -102,7 +103,7 @@ test("snapshot defaults and settings-derived power, usage", () => {
   expect(s.power.pausedUntil).toBeGreaterThan(Date.now());
 
   setSetting(db, "runner.waiting", "");
-  setSetting(db, "runner.pausedUntil", String(Date.now() - 1));
+  setSetting(db, "agent.claude.limitedUntil", String(Date.now() - 1));
   const s2 = snapshot(db);
   expect(s2.power.waiting).toBeUndefined();
   expect(s2.power.pausedUntil).toBeUndefined();
@@ -132,4 +133,27 @@ test("snapshot lists runs newest first, capped at 200", () => {
   expect(runs[1]!.outputTokens).toBe(204);
   expect(runs[199]!.inputTokens).toBe(6);
   expect(Object.keys(runs[1]!)).not.toContain("transcriptPath");
+});
+
+test("snapshot reports each agent and the open claude window", () => {
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  const t = createTask(db, { spaceId: a.id, title: "one" });
+  seedRun(t.id, Date.now(), 0, 50);
+  const registry = createRegistry(db, {
+    claude: { id: "claude", label: "Claude Code", run: async () => ({ status: "error", kind: "failed", message: "" }) },
+  });
+  expect(snapshot(db).agents).toEqual({});
+  expect(snapshot(db, registry).claudeWindow).toBeNull();
+
+  const resetsAt = Date.now() + 60_000;
+  registry.recordUsage("claude", { fiveHour: { utilization: 0.6, resetsAt } });
+  registry.setLimited("claude", resetsAt);
+  const s = snapshot(db, registry);
+  expect(s.claudeWindow).toEqual({ utilization: 0.6, resetsAt, reserve: 0.5 });
+  expect(s.agents.claude).toEqual({
+    label: "Claude Code", installed: true, loggedIn: null, detail: "", limitedUntil: resetsAt, tokensToday: 100,
+  });
+
+  registry.recordUsage("claude", { fiveHour: { utilization: 0.6, resetsAt: Date.now() - 1 } });
+  expect(snapshot(db, registry).claudeWindow).toBeNull();
 });

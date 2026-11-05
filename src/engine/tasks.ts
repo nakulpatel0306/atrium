@@ -14,6 +14,9 @@ export type Task = {
   agent: string;
   weight: "heavy" | "light";
   allowOnBattery: boolean;
+  ignoreReserve: boolean;
+  kind: "work" | "review" | "fix";
+  parentTaskId: string | null;
   branch: string | null;
   createdAt: number;
   updatedAt: number;
@@ -29,6 +32,9 @@ type TaskRow = {
   agent: string;
   weight: Task["weight"];
   allow_on_battery: number;
+  ignore_reserve: number;
+  kind: Task["kind"];
+  parent_task_id: string | null;
   branch: string | null;
   created_at: number;
   updated_at: number;
@@ -60,6 +66,9 @@ const toTask = (r: TaskRow): Task => ({
   agent: r.agent,
   weight: r.weight,
   allowOnBattery: r.allow_on_battery === 1,
+  ignoreReserve: r.ignore_reserve === 1,
+  kind: r.kind,
+  parentTaskId: r.parent_task_id,
   branch: r.branch,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -78,21 +87,27 @@ export function createTask(
     detail?: string;
     weight?: Task["weight"];
     allowOnBattery?: boolean;
+    ignoreReserve?: boolean;
+    kind?: Task["kind"];
+    parentTaskId?: string;
     agent?: string;
   },
 ): Task {
   const id = newId("tsk");
   const now = Date.now();
   db.query(
-    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, ignore_reserve, kind, parent_task_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.spaceId,
     input.title,
     input.detail ?? "",
-    input.agent ?? "claude",
+    input.agent ?? "auto",
     input.weight ?? "heavy",
     input.allowOnBattery ? 1 : 0,
+    input.ignoreReserve ? 1 : 0,
+    input.kind ?? "work",
+    input.parentTaskId ?? null,
     now,
     now,
   );

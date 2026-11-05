@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import index from "../dashboard/index.html";
+import type { Registry } from "../engine/agents/registry";
 import { AlreadyResolved, resolveApproval } from "../engine/approvals";
 import { markSeen } from "../engine/briefing";
 import { config } from "../engine/config";
@@ -14,7 +15,7 @@ import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine
 
 type Deps = {
   db: Database;
-  runner: { kick(): void };
+  runner: { kick(): void; registry?: Registry };
   setup: (text: string) => ReturnType<typeof setupSpace>;
   port?: number;
 };
@@ -79,7 +80,7 @@ export function startServer(deps: Deps): Server<undefined> {
     const method = req.method;
     const hit = (m: string, pattern: RegExp) => (method === m ? pathname.match(pattern) : null);
 
-    if (hit("GET", /^\/api\/state$/)) return json(snapshot(db));
+    if (hit("GET", /^\/api\/state$/)) return json(snapshot(db, runner.registry));
 
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);

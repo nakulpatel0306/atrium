@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { createRegistry, type Registry } from "./agents/registry";
 import type { AgentAdapter, AgentRunResult } from "./agents/types";
 import { createApproval } from "./approvals";
 import { config } from "./config";
@@ -45,12 +46,14 @@ type RepoRun = { path: string; start: string; branch: string; fingerprint: strin
 export function createRunner(deps: {
   db: Database;
   adapters: Record<string, AgentAdapter>;
+  registry?: Registry;
   power: () => Promise<PowerSource>;
   keepAwake: KeepAwake;
   maxConcurrent?: number;
   stopTimeoutMs?: number;
-}): { start(): void; stop(): Promise<void>; kick(): void } {
+}): { start(): void; stop(): Promise<void>; kick(): void; registry: Registry } {
   const { db, adapters, keepAwake } = deps;
+  const registry = deps.registry ?? createRegistry(db, adapters);
   const maxConcurrent = deps.maxConcurrent ?? 1;
   const active = new Map<string, { done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
@@ -117,22 +120,28 @@ export function createRunner(deps: {
     }
   }
 
-  function pausedUntil(): number {
-    return Number(getSetting(db, "runner.pausedUntil") ?? 0);
-  }
-
-  // Oldest queued task in an active space that power allows, plus the first one power holds back.
-  function candidates(source: PowerSource): { runnable: Task[]; waiting: { taskId: string; reason: string } | null } {
-    const runnable: Task[] = [];
+  // Queued tasks in active spaces that power and the registry allow, each with the agent it resolved to,
+  // plus the first one held back and why. A limited agent's tasks stay in `runnable` so the queue counts as work.
+  function candidates(source: PowerSource): {
+    runnable: { task: Task; agent: string }[];
+    waiting: { taskId: string; reason: string } | null;
+  } {
+    const runnable: { task: Task; agent: string }[] = [];
     let waiting: { taskId: string; reason: string } | null = null;
     for (const task of listTasks(db, { status: ["queued"] })) {
-      if (getSpace(db, task.spaceId)?.status !== "active") continue;
+      const space = getSpace(db, task.spaceId);
+      if (space?.status !== "active") continue;
       const check = canRun(task, source);
       if (!check.ok) {
         waiting ??= { taskId: task.id, reason: check.reason };
         continue;
       }
-      runnable.push(task);
+      const pick = registry.resolve(task, space);
+      if ("wait" in pick) {
+        waiting ??= { taskId: task.id, reason: pick.wait };
+        continue;
+      }
+      runnable.push({ task, agent: pick.agent });
     }
     return { runnable, waiting };
   }
@@ -141,20 +150,22 @@ export function createRunner(deps: {
     const source = await readPower();
     if (!running) return;
     setSetting(db, "power.source", source);
+    await registry.refresh();
+    if (!running) return;
 
     const { runnable, waiting } = candidates(source);
     setSetting(db, "runner.waiting", waiting ? JSON.stringify(waiting) : "");
 
-    if (pausedUntil() <= Date.now()) {
-      for (const task of runnable) {
-        if (!running || active.size >= maxConcurrent || pausedUntil() > Date.now()) break;
-        // Two runs in one space would share a working tree.
-        if (activeSpaces.has(task.spaceId)) continue;
-        await launch(task);
-      }
+    for (const { task, agent } of runnable) {
+      if (!running || active.size >= maxConcurrent) break;
+      // One agent at its limit leaves the others free to run.
+      if (registry.limitedUntil(agent) > Date.now()) continue;
+      // Two runs in one space would share a working tree.
+      if (activeSpaces.has(task.spaceId)) continue;
+      await launch(task, agent);
     }
 
-    // A paused queue still counts as work: overnight mode should be awake when the limit resets.
+    // A limited agent's queue still counts as work: overnight mode should be awake when the limit resets.
     const hasWork = active.size > 0 || candidates(source).runnable.length > 0;
     if (getSetting(db, "overnight") === "true" && source === "ac" && hasWork) keepAwake.start();
     else keepAwake.stop();
@@ -183,10 +194,10 @@ export function createRunner(deps: {
     return leaveRepo(repo);
   }
 
-  async function launch(task: Task) {
+  async function launch(task: Task, agent: string) {
     const space = getSpace(db, task.spaceId)!;
-    const adapter = adapters[task.agent];
-    if (!adapter) return block(task, `No agent called "${task.agent}" is set up. Pick another agent and requeue.`);
+    const adapter = adapters[agent];
+    if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
 
     let repo: RepoRun | null = null;
     if (space.kind === "repo") {
@@ -235,14 +246,14 @@ export function createRunner(deps: {
       const transcript = openTranscript(runId);
       db.query(
         "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(runId, task.id, adapter.id, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null);
+      ).run(runId, task.id, agent, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null);
       started = { cwd, runId, transcript };
     } catch (e) {
       // Blocking takes the task out of the queue, so a broken disk can't retry it every tick.
       const left = repo ? await leaveRepo(repo) : null;
       return block(task, left ?? `Atrium couldn't start the run: ${(e as Error).message}`);
     }
-    logActivity(db, space.id, task.agent, `Started: ${task.title}`);
+    logActivity(db, space.id, agent, `Started: ${task.title}`);
 
     activeSpaces.add(space.id);
     const controller = new AbortController();
@@ -289,6 +300,9 @@ export function createRunner(deps: {
       result = { status: "error", kind: "failed", message: `${adapter.label} could not start: ${(e as Error).message}` };
     }
 
+    // Usage is the account's, whatever became of the task.
+    if (result.status === "ok" && result.usage) registry.recordUsage(adapter.id, result.usage);
+
     let leftRepo: string | null = null;
     let commitError: string | null = null;
     try {
@@ -330,13 +344,13 @@ export function createRunner(deps: {
         if (repo) lines.push(...(await repoReport(repo)));
         setTaskStatus(db, task.id, "review");
         createApproval(db, { spaceId: space.id, taskId: task.id, kind: "review", title: task.title, detail: lines.join("\n\n") });
-        logActivity(db, space.id, task.agent, `Ready for review: ${task.title}`);
+        logActivity(db, space.id, adapter.id, `Ready for review: ${task.title}`);
       } else if (result.kind === "rate_limited") {
-        setSetting(db, "runner.pausedUntil", String(result.retryAfter ?? Date.now() + 30 * 60_000));
+        registry.setLimited(adapter.id, result.retryAfter ?? Date.now() + 30 * 60_000);
         const hits = (limitHits.get(task.id) ?? 0) + 1;
         if (hits >= MAX_LIMIT_RETRIES) {
           limitHits.delete(task.id);
-          block(task, "Claude kept reporting a usage limit for this task; retry when you're ready.");
+          block(task, `${adapter.id === "claude" ? "Claude" : adapter.label} kept reporting a usage limit for this task; retry when you're ready.`);
         } else {
           limitHits.set(task.id, hits);
           // The task did nothing wrong; it goes back in line and runs when the limit resets.
@@ -381,6 +395,7 @@ export function createRunner(deps: {
       setSetting(db, "power.keepAwake", "false");
     },
     kick,
+    registry,
   };
 }
 

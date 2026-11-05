@@ -79,13 +79,14 @@ function fakeKeepAwake() {
 
 function start(opts: {
   adapter: AgentAdapter;
+  extra?: Record<string, AgentAdapter>;
   power?: () => Promise<"ac" | "battery">;
   keepAwake?: ReturnType<typeof fakeKeepAwake>;
   stopTimeoutMs?: number;
 }) {
   runner = createRunner({
     db,
-    adapters: { claude: opts.adapter },
+    adapters: { claude: opts.adapter, ...opts.extra },
     power: opts.power ?? (async () => "ac"),
     keepAwake: opts.keepAwake ?? fakeKeepAwake(),
     stopTimeoutMs: opts.stopTimeoutMs,
@@ -528,23 +529,87 @@ test("rate limit pauses the runner until retryAfter", async () => {
     retryAfter,
   }));
   const r = start({ adapter });
-  await waitFor(() => getSetting(db, "runner.pausedUntil") !== null);
+  await waitFor(() => getSetting(db, "agent.claude.limitedUntil") !== null);
   r.kick();
   await Bun.sleep(50);
 
-  expect(getSetting(db, "runner.pausedUntil")).toBe(String(retryAfter));
+  expect(getSetting(db, "agent.claude.limitedUntil")).toBe(String(retryAfter));
+  expect(getSetting(db, "runner.pausedUntil")).toBeNull();
   expect(calls).toHaveLength(1);
   expect(status(first.id)).toBe("queued");
   expect(status(second.id)).toBe("queued");
 });
 
-test("runner resumes once pausedUntil has passed", async () => {
+test("runner resumes once limitedUntil has passed", async () => {
   const s = generalSpace();
   const t = createTask(db, { spaceId: s.id, title: "One" });
-  setSetting(db, "runner.pausedUntil", String(Date.now() - 1000));
+  setSetting(db, "agent.claude.limitedUntil", String(Date.now() - 1000));
   const { adapter } = fakeAdapter();
   start({ adapter });
   await waitFor(() => status(t.id) === "review");
+});
+
+test("a limited codex does not pause claude tasks", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const viaCodex = createTask(db, { spaceId: s.id, title: "Codex job", agent: "codex" });
+  const viaClaude = createTask(db, { spaceId: s.id, title: "Claude job", agent: "claude" });
+  setSetting(db, "agent.codex.limitedUntil", String(Date.now() + 3600_000));
+  const claude = fakeAdapter();
+  const codex = fakeAdapter();
+  start({ adapter: claude.adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(viaClaude.id) === "review");
+  expect(status(viaCodex.id)).toBe("queued");
+  expect(codex.calls).toHaveLength(0);
+});
+
+test("run row records the resolved agent for auto tasks", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Auto job", agent: "auto" });
+  start({ adapter: fakeAdapter().adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect((db.query("SELECT agent FROM runs WHERE task_id = ?").get(t.id) as any).agent).toBe("claude");
+  expect(getTask(db, t.id)!.agent).toBe("auto");
+});
+
+test("a task the registry holds back shows its reason as the waiting line", async () => {
+  const s = createSpace(db, { name: "Notes", kind: "general", goal: "", private: true });
+  const t = createTask(db, { spaceId: s.id, title: "Secret job", agent: "codex" });
+  const codex = fakeAdapter();
+  const r = start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  r.kick();
+  await waitFor(() => !!getSetting(db, "runner.waiting"));
+  expect(JSON.parse(getSetting(db, "runner.waiting")!)).toEqual({
+    taskId: t.id,
+    reason: "Codex can't work here: this space is private, so only Claude works in it.",
+  });
+  expect(status(t.id)).toBe("queued");
+  expect(codex.calls).toHaveLength(0);
+});
+
+test("a run that reports usage feeds the claude reserve", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Usage job" });
+  const resetsAt = Date.now() + 3600_000;
+  const { adapter } = fakeAdapter(() => ({ ...ok(), usage: { fiveHour: { utilization: 0.7, resetsAt } } }));
+  const r = start({ adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect(r.registry.inReserve()).toEqual({ until: resetsAt });
+});
+
+test("legacy runner.pausedUntil migrates to agent.claude.limitedUntil", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Waits" });
+  const until = Date.now() + 3600_000;
+  setSetting(db, "runner.pausedUntil", String(until));
+  const { adapter, calls } = fakeAdapter();
+  const r = start({ adapter });
+  await waitFor(() => getSetting(db, "agent.claude.limitedUntil") !== null);
+  r.kick();
+  await Bun.sleep(50);
+  expect(getSetting(db, "agent.claude.limitedUntil")).toBe(String(until));
+  expect(getSetting(db, "runner.pausedUntil")).toBeNull();
+  expect(calls).toHaveLength(0);
+  expect(status(t.id)).toBe("queued");
 });
 
 test("recoverOnBoot requeues running tasks", async () => {
