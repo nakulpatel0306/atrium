@@ -35,6 +35,7 @@ export const GLYPH = {
   barLeft: "▕",
   barRight: "▏",
   ellipsis: "…",
+  suggestion: "✦",
 } as const;
 
 const SPACE_COLORS: AnsiColor[] = ["blue", "green", "yellow", "magenta", "cyan", "red"];

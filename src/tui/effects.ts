@@ -80,6 +80,18 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       const ok = intent.reviewBy ? `${agentName(intent.reviewBy)} reviews finished work in ${name}.` : `No automatic review in ${name}.`;
       return space(intent.spaceId, { reviewBy: intent.reviewBy }, ok);
     }
+    case "answer": {
+      const proposal = state.proposals.find((p) => p.id === intent.proposalId);
+      const name = proposal ? spaceName(proposal.spaceId) : "this space";
+      const res = await client.post(`/api/proposals/${enc(intent.proposalId)}`, { answer: intent.answer });
+      return said(res, () =>
+        intent.answer === "yes"
+          ? `Atrium will approve ${intent.label} in ${name} on its own. Undo any of them, or turn the rule off, on the dashboard's Rules page.`
+          : intent.answer === "not_now"
+            ? `Not now. Atrium will keep asking about ${intent.label}.`
+            : `Atrium won't suggest a rule for ${intent.label} again.`,
+      );
+    }
     case "archive":
       return space(intent.spaceId, { status: "archived" }, `Archived ${spaceName(intent.spaceId)}. Its agents stop picking up tasks.`);
   }

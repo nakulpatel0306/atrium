@@ -4,7 +4,7 @@ import { absolute } from "../../dashboard/format";
 import { reviewTarget } from "../../dashboard/summary";
 import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
-import { activityDetail, approvalDetail, type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../detail";
+import { activityDetail, approvalDetail, type DetailLine, proposalDetail, spaceDetail, taskDetail, wrapStyled } from "../detail";
 import { runIntent } from "../effects";
 import { useEngineState, useMessages, useOnline, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, hints, type Intent } from "../keys";
@@ -44,7 +44,7 @@ function threadOf(view: View): string | null {
 
 function detailOf(view: View, messages: ReturnType<typeof useMessages>, reviewers: ReturnType<typeof useReviewers>): DetailLine[] {
   if (view.subject === "task") return taskDetail(view, messages);
-  if (view.subject === "approval") return approvalDetail(view, messages);
+  if (view.subject === "approval") return view.proposal ? proposalDetail(view) : approvalDetail(view, messages);
   if (view.subject === "activity") return activityDetail(view);
   return spaceDetail(view, reviewers);
 }
@@ -143,7 +143,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     const out = await runIntent(client, intent, s);
     if (intent.type === "newSpace") settingUp.current = false;
     // A decided approval leaves the list; the next one is picked deliberately, never slid into.
-    if ((intent.type === "approve" || intent.type === "reject") && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
+    if ((intent.type === "approve" || intent.type === "reject" || intent.type === "answer") && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
     if (out.spaceId) {
       dispatch({ type: "select", pane: "spaces", id: out.spaceId });
       dispatch({ type: "focus", pane: "tasks" });

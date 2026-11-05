@@ -1,5 +1,6 @@
 import { relative } from "../../dashboard/format";
 import { actorName } from "../../dashboard/summary";
+import { ruleApproved } from "../detail";
 import { color } from "../theme";
 import { List, type ListProps, pad } from "./List";
 
@@ -16,7 +17,7 @@ export function ActivityPane(p: ListProps) {
         const space = row.spaceId ? names.get(row.spaceId) : undefined;
         return [
           { text: `${pad(when, 5)} `, color: color.muted },
-          { text: `${actorName(row.actor)}${space ? ` · ${space}` : ""}`, color: color.info },
+          { text: `${ruleApproved(row) ? "Your rule" : actorName(row.actor)}${space ? ` · ${space}` : ""}`, color: color.info },
           { text: `: ${row.message}` },
         ];
       }}

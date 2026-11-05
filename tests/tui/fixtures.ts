@@ -11,6 +11,7 @@ export const ids = {
   blocked: "tsk_blocked",
   review: "tsk_review",
   approval: "apr_review",
+  proposal: "prp_docs",
   liveRun: "run_live",
   reviewRun: "run_review",
 } as const;
@@ -30,6 +31,20 @@ const space = (over: Partial<Space>): Space => ({
   reviewBy: null,
   createdAt: now - 3 * 24 * 60 * min,
   updatedAt: now - 60 * min,
+  ...over,
+});
+
+// A pending "Stop asking about …?" suggestion in atrium, for tests that need one.
+export const proposal = (over: Partial<State["proposals"][number]> = {}): State["proposals"][number] => ({
+  id: ids.proposal,
+  spaceId: ids.atrium,
+  fingerprint: "docs:markdown",
+  label: "docs-only changes",
+  evidence: [1, 2, 3, 4, 5].map((i) => ({ id: `apr_old${i}`, title: `Review: Update README ${i}`, resolvedAt: now - i * 60 * min })),
+  status: "pending",
+  createdAt: now - 5 * min,
+  answeredAt: null,
+  liftedAt: null,
   ...over,
 });
 

@@ -19,7 +19,8 @@ export type Intent =
   | { type: "private"; spaceId: string; on: boolean }
   | { type: "goal"; spaceId: string; goal: string }
   | { type: "reviewer"; spaceId: string; reviewBy: ReviewerId | null }
-  | { type: "archive"; spaceId: string };
+  | { type: "archive"; spaceId: string }
+  | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string };
 
 export type Command = { kind: "ui"; action: Action } | { kind: "intent"; intent: Intent } | { kind: "quit" };
 
@@ -43,6 +44,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Act", keys: "n", does: "new task" },
   { section: "Act", keys: "N", does: "new space" },
   { section: "Act", keys: "A", does: "change agent" },
+  { section: "Act", keys: "y n N", does: "suggestion: yes/later/never" },
   { section: "Space", keys: "p", does: "private on / off" },
   { section: "Space", keys: "e", does: "edit goal" },
   { section: "Space", keys: "v", does: "pick reviewer" },
@@ -79,6 +81,7 @@ export function hints(ui: Ui, view: View): string {
   const pane = ui.focus === "detail" || ui.focus === "live" ? null : ui.focus;
   const list = pane ? listOf(view, pane) : [];
   if (pane && list.length > 0 && !pick(list, ui.selected[pane]).item) keys.unshift("j k select an item");
+  if (pane === "needs" && pinnedSuggestion(ui, view)) return ["? help", "y yes", "n not now", "N never", "enter open"].join("  ");
   return keys.join("  ");
 }
 
@@ -96,6 +99,8 @@ const isList = (p: Pane): p is ListPane => p !== "detail" && p !== "live";
 // Detail and Live act on whatever the left column last selected.
 const leftOf = (u: Ui): ListPane => (isList(u.focus) ? u.focus : u.lastLeft);
 
+const pinnedSuggestion = (u: Ui, view: View) => view.proposal && u.selected.needs.id === view.proposal.id;
+
 // Actions act only on a row pinned by id, never on whatever happens to sit at the cursor's position.
 const pinned = <T extends { id: string }>(u: Ui, pane: ListPane, item: T | null): T | null =>
   item && u.selected[pane].id === item.id ? item : null;
@@ -106,6 +111,12 @@ function approvalOf(u: Ui, view: View) {
   const task = pane === "tasks" ? pinned(u, "tasks", view.task) : null;
   return task?.approvalId ? (view.state.approvals.find((a) => a.id === task.approvalId) ?? null) : null;
 }
+
+function proposalOf(u: Ui, view: View) {
+  return leftOf(u) === "needs" ? pinned(u, "needs", view.proposal) : null;
+}
+
+const ANSWERS = { y: "yes", n: "not_now", N: "never" } as const;
 
 function taskOf(u: Ui, view: View) {
   const pane = leftOf(u);
@@ -153,6 +164,14 @@ function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
   }
   const space = pinned(u, "spaces", view.space);
   const task = taskOf(u, view);
+  // On a suggestion in Needs you, y / n / N answer it; everywhere else n and N make a task and a space.
+  const suggestion = proposalOf(u, view);
+  if (suggestion) {
+    if (input === "y" || input === "n" || input === "N") {
+      return [intent({ type: "answer", proposalId: suggestion.id, answer: ANSWERS[input], label: suggestion.label })];
+    }
+    if (input === "a" || input === "r") return [info("That's a suggestion: y yes, n not now, N never.")];
+  }
   switch (input) {
     case "1":
       return [ui({ type: "focus", pane: "spaces" })];

@@ -95,7 +95,7 @@ export function taskDetail(view: View, messages: Message[] | null): DetailLine[]
 
 export function approvalDetail(view: View, messages: Message[] | null): DetailLine[] {
   const approval = view.approval;
-  if (!approval) return [muted(view.approvals.length ? PICK : "Nothing needs you right now.")];
+  if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
   const space = view.state.spaces.find((s) => s.id === approval.spaceId);
   const review = reviewLine(approval, view.state, messages);
   const lines: DetailLine[] = [muted(space?.name ?? "Unknown space"), plain(approval.title, { bold: true })];
@@ -105,6 +105,31 @@ export function approvalDetail(view: View, messages: Message[] | null): DetailLi
   lines.push(muted("a approve · r send back · enter on the task in [2] for runs · t transcript"));
   return lines;
 }
+
+export function proposalDetail(view: View): DetailLine[] {
+  const p = view.proposal;
+  if (!p) return [muted(PICK)];
+  const space = view.state.spaces.find((s) => s.id === p.spaceId)?.name ?? "this space";
+  return [
+    muted(space),
+    plain(`Stop asking about ${p.label}?`, { bold: true }),
+    plain(`You approved the last ${p.evidence.length} without changes.`),
+    blank,
+    // The dashboard's wording, so both front-ends promise the same thing.
+    plain(
+      `If you say yes, Atrium approves these in ${space} on its own from now on. It never merges or pushes, each one shows up in Activity, and you can undo any of them or turn the rule off on the dashboard's Rules page. It still always asks before merging, deploying, deleting, messaging someone new, spending money, or touching secrets.`,
+      { color: color.muted },
+    ),
+    blank,
+    heading("Approved without changes"),
+    ...p.evidence.map((e): DetailLine => [{ text: `${relative(e.resolvedAt)}  `, color: color.muted }, { text: e.title }]),
+    blank,
+    muted("y yes · n not now · N never"),
+  ];
+}
+
+// The engine logs a rule's decision as Atrium's, in these words; it's the only record of it the state carries.
+export const ruleApproved = (row: State["activity"][number]) => row.message.startsWith("Approved by your rule");
 
 export function spaceDetail(view: View, reviewers: Record<string, string | null> | null): DetailLine[] {
   const space = view.space;
@@ -145,11 +170,15 @@ export function activityDetail(view: View): DetailLine[] {
   const row = view.activityRow;
   if (!row) return [muted(view.activity.length ? PICK : "No activity yet. Agent runs and your decisions will show up here.")];
   const space = row.spaceId ? view.state.spaces.find((s) => s.id === row.spaceId) : undefined;
+  const byRule = ruleApproved(row);
   return [
-    [{ text: actorName(row.actor), bold: true }, ...(space ? [{ text: ` · ${space.name}`, color: color.info }] : [])],
+    [{ text: byRule ? "Your rule" : actorName(row.actor), bold: true }, ...(space ? [{ text: ` · ${space.name}`, color: color.info }] : [])],
     muted(absolute(row.createdAt)),
     blank,
     ...block(row.message),
+    ...(byRule
+      ? [blank, plain("This was approved by your rule, not by you. Undo it, or turn the rule off, on the dashboard's Rules page.", { color: color.info })]
+      : []),
     ...(space ? [blank, muted("enter opens this space")] : []),
   ];
 }

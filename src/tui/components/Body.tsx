@@ -16,7 +16,7 @@ type Props = { view: View; ui: Ui; lay: Layout; detailLines: DetailLine[]; liveL
 function detailTitle(view: View): string | undefined {
   if (view.subject === "space") return view.space?.name;
   if (view.subject === "task") return view.task?.title;
-  if (view.subject === "approval") return view.approval?.title;
+  if (view.subject === "approval") return view.proposal ? `Suggestion · ${view.proposal.label}` : view.approval?.title;
   return view.activityRow ? "Activity" : undefined;
 }
 
@@ -33,7 +33,7 @@ export function Body({ view, ui, lay, detailLines, liveLines, online }: Props) {
     height: lay.heights[p],
     online,
   });
-  const needs = view.state.approvals.length;
+  const needs = view.state.approvals.length + view.state.proposals.length;
   const subject = detailTitle(view);
   return (
     <Box>

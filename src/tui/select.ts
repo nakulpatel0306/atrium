@@ -7,6 +7,7 @@ type Space = State["spaces"][number];
 type Task = State["tasks"][number];
 type Run = State["runs"][number];
 type Approval = State["approvals"][number];
+type Proposal = State["proposals"][number];
 type ActivityRow = State["activity"][number];
 
 export type Subject = "space" | "task" | "approval" | "activity";
@@ -16,10 +17,13 @@ export type View = {
   spaces: Space[];
   tasks: Task[];
   approvals: Approval[];
+  // "Stop asking about …?" suggestions; they share Needs you with approvals and list first.
+  proposals: Proposal[];
   activity: ActivityRow[];
   space: Space | null;
   task: Task | null;
   approval: Approval | null;
+  proposal: Proposal | null;
   activityRow: ActivityRow | null;
   subject: Subject;
   live: { task: Task; run: Run } | null;
@@ -57,16 +61,20 @@ export function deriveView(raw: State, ui: Ui): View {
   const spaceTasks = space ? state.tasks.filter((t) => t.spaceId === space.id) : [];
   const tasks = orderedTasks(spaceTasks).filter((t) => matches(ui.filters.tasks, t.title));
   const approvals = state.approvals.filter((a) => matches(ui.filters.needs, a.title, names.get(a.spaceId)));
+  const proposals = state.proposals.filter((p) => matches(ui.filters.needs, p.label, names.get(p.spaceId)));
+  const needs = pick<Approval | Proposal>([...proposals, ...approvals], ui.selected.needs).item;
   const activity = state.activity.filter((r) => matches(ui.filters.activity, r.message));
   return {
     state,
     spaces,
     tasks,
     approvals,
+    proposals,
     activity,
     space,
     task: pick(tasks, ui.selected.tasks).item,
-    approval: pick(approvals, ui.selected.needs).item,
+    approval: needs && "title" in needs ? needs : null,
+    proposal: needs && "label" in needs ? needs : null,
     activityRow: pick(activity, ui.selected.activity).item,
     subject: SUBJECT[ui.lastLeft],
     live: liveRun(state, spaceTasks),
@@ -74,5 +82,6 @@ export function deriveView(raw: State, ui: Ui): View {
 }
 
 export function listOf(view: View, pane: ListPane): { id: string }[] {
-  return pane === "spaces" ? view.spaces : pane === "tasks" ? view.tasks : pane === "needs" ? view.approvals : view.activity;
+  if (pane === "needs") return [...view.proposals, ...view.approvals];
+  return pane === "spaces" ? view.spaces : pane === "tasks" ? view.tasks : view.activity;
 }
