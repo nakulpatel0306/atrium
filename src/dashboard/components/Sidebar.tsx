@@ -1,7 +1,8 @@
-import { Activity, BatteryMedium, House, Inbox, Moon, Plug, Plus } from "lucide-react";
+import { Activity, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus } from "lucide-react";
 import { post, type State } from "../api";
 import { bytes, tokens } from "../format";
 import { navigate, type Route } from "../route";
+import { WindowBar } from "./Agents";
 import { Logo } from "./Logo";
 
 type Props = {
@@ -16,6 +17,9 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
   const pendingBySpace = new Map<string, number>();
   for (const a of state.approvals) pendingBySpace.set(a.spaceId, (pendingBySpace.get(a.spaceId) ?? 0) + 1);
   const battery = state.power.source === "battery";
+  // Agents that can't take work right now: missing, signed out, or at a limit.
+  const held = Object.values(state.agents).filter((a) => !a.installed || a.loggedIn === false || a.limitedUntil).length;
+  const window = state.claudeWindow;
 
   return (
     <aside>
@@ -35,6 +39,15 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
       <button className="nav" onClick={() => onJump("activity")}>
         <Activity />
         Activity
+      </button>
+      <button className={`nav${route.name === "agents" ? " on" : ""}`} onClick={() => navigate("/agents")}>
+        <Bot />
+        Agents
+        {held > 0 && (
+          <span className="ct warn" title={`${held} can't take work right now`}>
+            {held}
+          </span>
+        )}
       </button>
 
       <div className="sec">
@@ -63,6 +76,15 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
           <span>Claude · last 24h</span>
           <span className="val">{tokens(state.usage.claudeTokens24h)} tokens</span>
         </div>
+        {window && (
+          <button className="window-mini" onClick={() => navigate("/agents")} title="Claude's five-hour window, estimated">
+            <span className="row">
+              <span>Claude · 5h window</span>
+              <span className="val">{Math.round(window.utilization * 100)}%</span>
+            </span>
+            <WindowBar state={state} compact />
+          </button>
+        )}
         <div className={`power${battery ? " battery" : ""}`}>
           {battery ? <BatteryMedium /> : <Plug />}
           {battery ? "On battery · heavy work waits" : "Plugged in"}

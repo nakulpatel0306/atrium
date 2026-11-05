@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LucideProvider, ChevronRight, Unplug } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { activeOnly, post, type State, useEngineState, useOnline } from "./api";
+import { Agents } from "./components/Agents";
 import { CommandBar } from "./components/CommandBar";
 import { Home } from "./components/Home";
 import { Logo } from "./components/Logo";
@@ -91,7 +92,7 @@ function App() {
                 Home
               </button>
               <ChevronRight className="sep" />
-              <b>{space?.name ?? "Unknown space"}</b>
+              <b>{route.name === "agents" ? "Agents" : (space?.name ?? "Unknown space")}</b>
             </>
           )}
           {offline}
@@ -99,6 +100,8 @@ function App() {
         </div>
         {route.name === "home" ? (
           <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
+        ) : route.name === "agents" ? (
+          <Agents state={state} />
         ) : (
           <SpaceView key={route.id} state={state} space={space} focusTask={route.task} />
         )}

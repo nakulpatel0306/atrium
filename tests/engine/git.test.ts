@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { branchOffDirty, branchSummary, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
 import { tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
@@ -267,5 +267,208 @@ describe("branchSummary", () => {
     const path = repo();
     const branch = await prepareBranch(path, "tsk_1");
     await expect(branchSummary(path, branch, "nope")).rejects.toThrow();
+  });
+});
+
+describe("commitAll", () => {
+  test("commits all changes with the given message", async () => {
+    const path = repo();
+    writeFileSync(join(path, "README.md"), "# changed\n");
+    writeFileSync(join(path, "new.txt"), "new\n");
+    expect(await commitAll(path, "Add things", await gitSettingsFingerprint(path))).toEqual({ committed: true, files: 2 });
+    expect(git(path, "log", "-1", "--format=%s")).toBe("Add things");
+    expect(git(path, "status", "--porcelain")).toBe("");
+  });
+
+  test("with no changes does nothing", async () => {
+    const path = repo();
+    const head = git(path, "rev-parse", "HEAD");
+    expect(await commitAll(path, "Nothing", await gitSettingsFingerprint(path))).toEqual({ committed: false, files: 0 });
+    expect(git(path, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  test("refuses .env files at any depth and stages nothing", async () => {
+    const path = repo();
+    // A global ignore file would hide .env.local, and the test needs it visible to git.
+    git(path, "config", "core.excludesFile", "/dev/null");
+    writeFileSync(join(path, "ok.txt"), "ok\n");
+    mkdirSync(join(path, "config"));
+    writeFileSync(join(path, "config", ".env.local"), "SECRET=1\n");
+    await expect(commitAll(path, "Oops", await gitSettingsFingerprint(path))).rejects.toThrow("Refusing to commit a .env file: config/.env.local");
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  test("refuses prod.env and .ENV.local", async () => {
+    for (const name of ["prod.env", ".ENV.local"]) {
+      const path = repo();
+      git(path, "config", "core.excludesFile", "/dev/null");
+      writeFileSync(join(path, name), "SECRET=1\n");
+      await expect(commitAll(path, "Oops", await gitSettingsFingerprint(path))).rejects.toThrow(`Refusing to commit a .env file: ${name}`);
+    }
+  });
+
+  test("refuses a rename whose source is a .env file", async () => {
+    const path = repo();
+    git(path, "config", "core.excludesFile", "/dev/null");
+    writeFileSync(join(path, ".env"), "SECRET=1\n");
+    git(path, "add", ".env");
+    git(path, "commit", "-m", "env");
+    git(path, "mv", ".env", "x.txt");
+    await expect(commitAll(path, "Oops", await gitSettingsFingerprint(path))).rejects.toThrow("Refusing to commit a .env file: .env");
+  });
+
+  test("ignores hooks", async () => {
+    const path = repo();
+    const hook = join(path, ".git", "hooks", "pre-commit");
+    writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+    chmodSync(hook, 0o755);
+    writeFileSync(join(path, "a.txt"), "a\n");
+    expect(await commitAll(path, "Hooked", await gitSettingsFingerprint(path))).toEqual({ committed: true, files: 1 });
+  });
+
+  test("refuses a custom filter driver", async () => {
+    const path = repo();
+    const pwned = join(tempDir(), "pwned");
+    git(path, "config", "filter.evil.clean", `touch ${pwned}`);
+    writeFileSync(join(path, ".gitattributes"), "* filter=evil\n");
+    writeFileSync(join(path, "README.md"), "# changed\n");
+    await expect(commitAll(path, "Evil", await gitSettingsFingerprint(path))).rejects.toThrow(
+      'Refusing to commit: this repo\'s git config defines a "evil" filter that would run a program during commit. Commit these changes yourself if you trust it.',
+    );
+    expect(existsSync(pwned)).toBe(false);
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  test("refuses lfs-style filter config too", async () => {
+    const path = repo();
+    git(path, "config", "filter.lfs.clean", "git-lfs clean -- %f");
+    writeFileSync(join(path, "a.txt"), "a\n");
+    await expect(commitAll(path, "Lfs", await gitSettingsFingerprint(path))).rejects.toThrow('defines a "lfs" filter');
+  });
+
+  test("refuses a repo whose .gitattributes selects a filter", async () => {
+    const path = repo();
+    writeFileSync(join(path, ".gitattributes"), "*.bin filter=lfs diff=lfs merge=lfs -text\n");
+    git(path, "add", ".gitattributes");
+    git(path, "commit", "-m", "attrs");
+    writeFileSync(join(path, "big.bin"), "x\n");
+    await expect(commitAll(path, "Bin", await gitSettingsFingerprint(path))).rejects.toThrow(
+      "Refusing to commit: this repo uses git filters (e.g. LFS). Commit these changes yourself.",
+    );
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  test("refuses a repo whose info/attributes selects a filter", async () => {
+    const path = repo();
+    mkdirSync(join(path, ".git", "info"), { recursive: true });
+    appendFileSync(join(path, ".git", "info", "attributes"), "*.bin filter=lfs\n");
+    writeFileSync(join(path, "big.bin"), "x\n");
+    await expect(commitAll(path, "Bin", await gitSettingsFingerprint(path))).rejects.toThrow("this repo uses git filters");
+  });
+
+  test("a filter planted after the checks does not run", async () => {
+    const path = repo();
+    const pwned = join(tempDir(), "pwned");
+    writeFileSync(join(path, "a.txt"), "a\n");
+    const plant = () => {
+      git(path, "config", "filter.evil.clean", `touch ${pwned}`);
+      writeFileSync(join(path, ".gitattributes"), "* filter=evil\n");
+    };
+    // The config change is caught afterwards, but the driver must never have run in between.
+    await expect(commitAll(path, "Late", await gitSettingsFingerprint(path), { beforeStage: plant })).rejects.toThrow(
+      "Refusing to commit: git settings changed while committing.",
+    );
+    expect(existsSync(pwned)).toBe(false);
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  test("refuses when settings changed since the baseline", async () => {
+    const path = repo();
+    const baseline = await gitSettingsFingerprint(path);
+    git(path, "config", "core.editor", "vi");
+    writeFileSync(join(path, "a.txt"), "a\n");
+    await expect(commitAll(path, "Gap", baseline)).rejects.toThrow("git settings changed while committing");
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  // A nested repo whose own config and info/attributes carry a filter; the outer repo's checks never see it.
+  function nestedRepo(path: string, pwned: string) {
+    const sub = join(path, "sub");
+    mkdirSync(sub);
+    git(sub, "init", "-q");
+    writeFileSync(join(sub, "f"), "hi\n");
+    git(sub, "add", "f");
+    git(sub, "commit", "-qm", "s");
+    git(sub, "config", "filter.evil.clean", `touch ${pwned}; cat`);
+    mkdirSync(join(sub, ".git", "info"), { recursive: true });
+    writeFileSync(join(sub, ".git", "info", "attributes"), "* filter=evil\n");
+    // Same size, newer mtime: git must re-hash it, which runs the clean filter.
+    writeFileSync(join(sub, "f"), "ho\n");
+    return sub;
+  }
+
+  test("refuses a nested repo already in the index and never runs its filter", async () => {
+    const path = repo();
+    const pwned = join(tempDir(), "pwned");
+    nestedRepo(path, pwned);
+    git(path, "add", "sub");
+    await expect(commitAll(path, "Sub", await gitSettingsFingerprint(path))).rejects.toThrow("submodules or nested repos");
+    expect(existsSync(pwned)).toBe(false);
+  });
+
+  test("refuses an untracked nested repo and never runs its filter", async () => {
+    const path = repo();
+    const pwned = join(tempDir(), "pwned");
+    nestedRepo(path, pwned);
+    await expect(commitAll(path, "Sub", await gitSettingsFingerprint(path))).rejects.toThrow("submodules or nested repos");
+    expect(existsSync(pwned)).toBe(false);
+  });
+
+  test("never runs a repo-local signing program", async () => {
+    const path = repo();
+    const dir = tempDir();
+    const key = join(dir, "key");
+    const pwned = join(dir, "pwned");
+    const program = join(dir, "sign.sh");
+    Bun.spawnSync(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key]);
+    writeFileSync(program, `#!/bin/sh\ntouch ${pwned}\nexit 1\n`);
+    chmodSync(program, 0o755);
+    git(path, "config", "commit.gpgsign", "true");
+    git(path, "config", "gpg.format", "ssh");
+    git(path, "config", "user.signingkey", `${key}.pub`);
+    git(path, "config", "gpg.ssh.program", program);
+    writeFileSync(join(path, "a.txt"), "a\n");
+    // Whether the commit signs with the real ssh-keygen or fails is up to the machine's global config.
+    await commitAll(path, "Signed", await gitSettingsFingerprint(path)).catch(() => {});
+    expect(existsSync(pwned)).toBe(false);
+  });
+
+  test("unstages and refuses if settings change during staging", async () => {
+    const path = repo();
+    writeFileSync(join(path, "a.txt"), "a\n");
+    const head = git(path, "rev-parse", "HEAD");
+    // Each call returns a new value, as if config changed between the first read and the one after staging.
+    let n = 0;
+    await expect(commitAll(path, "Racy", "fp0", { fingerprint: async () => `fp${n++}` })).rejects.toThrow(
+      "Refusing to commit: git settings changed while committing.",
+    );
+    expect(git(path, "diff", "--cached", "--name-only")).toBe("");
+    expect(git(path, "rev-parse", "HEAD")).toBe(head);
+    expect(readFileSync(join(path, "a.txt"), "utf8")).toBe("a\n");
+  });
+});
+
+describe("branchOffDirty", () => {
+  test("picks a fresh name when the fix's branch already exists from an earlier run", async () => {
+    const path = repo();
+    writeFileSync(join(path, "a.txt"), "a\n");
+    expect(await branchOffDirty(path, "tsk_fix")).toBe("atrium/tsk_fix");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "first");
+    git(path, "checkout", "main");
+    writeFileSync(join(path, "b.txt"), "b\n");
+    expect(await branchOffDirty(path, "tsk_fix")).toBe("atrium/tsk_fix-2");
+    expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_fix-2");
+    expect(existsSync(join(path, "b.txt"))).toBe(true);
   });
 });

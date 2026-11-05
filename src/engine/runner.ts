@@ -1,13 +1,29 @@
 import type { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clock, createRegistry, type Registry, type TaskWait } from "./agents/registry";
 import type { AgentAdapter, AgentRunResult } from "./agents/types";
-import { createApproval } from "./approvals";
+import { correctBranchHead, createApproval, getApproval } from "./approvals";
 import { config } from "./config";
 import { bus, logActivity } from "./events";
-import { branchSummary, gitSettingsFingerprint, headRef, prepareBranch, repoReady, returnToBranch } from "./git";
+import {
+  branchOffDirty,
+  branchSummary,
+  commitAll,
+  gitSettingsFingerprint,
+  headRef,
+  moveLateCommit,
+  prepareBranch,
+  repoReady,
+  returnToBranch,
+  reviewDiff,
+} from "./git";
+import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
+import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
+import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
 import { getTask, listTasks, setTaskStatus, type Task } from "./tasks";
@@ -16,24 +32,42 @@ import { enforceTranscriptCap, openTranscript } from "./storage";
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
 const MAX_LIMIT_RETRIES = 3;
+const TEMP_SWEEP_AGE_MS = 86_400_000;
 
-const SYSTEM_PROMPT = [
+const REPO_SYSTEM_PROMPT = [
   "You are working for Nakul through Atrium.",
   "Work only on the current git branch. Do not switch, create, or delete branches.",
-  "Commit your work with clear, descriptive messages.",
+  "Leave your changes uncommitted; Atrium commits them for you.",
   "Never push or merge.",
   "Never read, print, or edit .env files, keys, or tokens.",
   "Finish with a 2–4 sentence summary of what changed and anything Nakul should check.",
 ].join("\n");
 
+// Away from a repo there is no git: instructions about branches send agents looking for one.
+function generalSystemPrompt(scratch: boolean): string {
+  return [
+    "You are working for Nakul through Atrium.",
+    "Work in the current folder.",
+    ...(scratch ? ["This folder is temporary. Atrium keeps a copy of the files you leave in it with this run's results."] : []),
+    "Never read, print, or edit .env files, keys, or tokens.",
+    "Finish with a 2–4 sentence summary of what you did and anything Nakul should check.",
+  ].join("\n");
+}
+
+// The diff is in a review's prompt, so the reviewer reads and changes nothing on disk.
+const REVIEW_SYSTEM_PROMPT = [
+  "You are reviewing another agent's work for Nakul through Atrium.",
+  "Everything you need is in the prompt. Don't create or change any files.",
+  "Never read, print, or edit .env files, keys, or tokens.",
+].join("\n");
+
+const REVIEW_TOOLS = ["Read", "Glob", "Grep"];
 const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
 const REPO_TOOLS = [
   ...BASE_TOOLS,
   "Bash(bun test*)",
   "Bash(bun install --ignore-scripts*)",
   "Bash(bunx tsc*)",
-  "Bash(git add *)",
-  "Bash(git commit *)",
   "Bash(git status*)",
   "Bash(git diff*)",
   "Bash(git log*)",
@@ -47,14 +81,16 @@ type RepoRun = { path: string; start: string; branch: string; fingerprint: strin
 export function createRunner(deps: {
   db: Database;
   adapters: Record<string, AgentAdapter>;
+  registry?: Registry;
   power: () => Promise<PowerSource>;
   keepAwake: KeepAwake;
   maxConcurrent?: number;
   stopTimeoutMs?: number;
-}): { start(): void; stop(): Promise<void>; kick(): void } {
+}): { start(): void; stop(): Promise<void>; kick(): void; registry: Registry } {
   const { db, adapters, keepAwake } = deps;
+  const registry = deps.registry ?? createRegistry(db, adapters);
   const maxConcurrent = deps.maxConcurrent ?? 1;
-  const active = new Map<string, { done: Promise<void>; controller: AbortController }>();
+  const active = new Map<string, { taskId: string; done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
   // Consecutive usage-limit outcomes per task, so a misread limit can't requeue a task forever.
   const limitHits = new Map<string, number>();
@@ -119,60 +155,109 @@ export function createRunner(deps: {
     }
   }
 
-  function pausedUntil(): number {
-    return Number(getSetting(db, "runner.pausedUntil") ?? 0);
-  }
-
-  // Oldest queued task in an active space that power allows, plus the first one power holds back.
-  function candidates(source: PowerSource): { runnable: Task[]; waiting: { taskId: string; reason: string } | null } {
-    const runnable: Task[] = [];
-    let waiting: { taskId: string; reason: string } | null = null;
+  // Queued tasks in active spaces that power and the registry allow, each with the agent it resolved to,
+  // plus every task held back and why. A limited agent's tasks stay in `runnable` so the queue counts as work.
+  function candidates(source: PowerSource): { runnable: { task: Task; agent: string }[]; waits: TaskWait[] } {
+    const runnable: { task: Task; agent: string }[] = [];
+    const waits: TaskWait[] = [];
     for (const task of listTasks(db, { status: ["queued"] })) {
-      if (getSpace(db, task.spaceId)?.status !== "active") continue;
+      const space = getSpace(db, task.spaceId);
+      if (space?.status !== "active") continue;
       const check = canRun(task, source);
       if (!check.ok) {
-        waiting ??= { taskId: task.id, reason: check.reason };
+        waits.push({ taskId: task.id, agent: task.agent, kind: "power", reason: check.reason });
         continue;
       }
-      runnable.push(task);
+      const pick = registry.resolve(task, space);
+      if ("wait" in pick) {
+        // A reviewer or fixer the space shuts out would wait forever. The review is skipped and Nakul decides
+        // alone; the fix is blocked and its approval says so.
+        const refused = task.kind !== "work" ? registry.refusal(task.agent, task.kind, space) : null;
+        if (refused && task.kind === "review") skipReview(task, refused.reason);
+        else if (refused) block(task, refused.reason);
+        else waits.push({ taskId: task.id, ...pick.wait });
+        continue;
+      }
+      // Nakul can repoint a queued review (say, to auto) at the agent that did the work, which reviews nothing.
+      const parent = task.kind === "review" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
+      if (parent && resolvedAgent(db, parent) === pick.agent) {
+        skipReview(task, `${agentName(pick.agent)} did the work, so it can't review it too. Decide on it yourself as usual.`);
+        continue;
+      }
+      const until = registry.limitedUntil(pick.agent);
+      if (until > Date.now()) {
+        const name = adapters[pick.agent]?.label ?? pick.agent;
+        const reason = `${name} hit its usage limit and picks up again at ${clock(until)}. Pick another agent to run it sooner.`;
+        waits.push({ taskId: task.id, agent: pick.agent, kind: "limited", reason, until });
+      }
+      runnable.push({ task, agent: pick.agent });
     }
-    return { runnable, waiting };
+    return { runnable, waits };
+  }
+
+  function busyWait(task: Task, agent: string): TaskWait {
+    const reason = activeSpaces.has(task.spaceId)
+      ? "Waiting for the task already running in this space to finish."
+      : maxConcurrent === 1
+        ? "Waiting for the running task to finish: Atrium runs one task at a time."
+        : `Waiting for a free slot: Atrium runs ${maxConcurrent} tasks at once.`;
+    return { taskId: task.id, agent, kind: "busy", reason };
   }
 
   async function tick() {
+    // A run whose task was taken out from under it (Nakul decided on its parent) has nothing left to do.
+    for (const run of active.values()) {
+      if (getTask(db, run.taskId)?.status !== "running") run.controller.abort();
+    }
     const source = await readPower();
     if (!running) return;
     setSetting(db, "power.source", source);
+    await registry.refresh();
+    if (!running) return;
 
-    const { runnable, waiting } = candidates(source);
-    setSetting(db, "runner.waiting", waiting ? JSON.stringify(waiting) : "");
-
-    if (pausedUntil() <= Date.now()) {
-      for (const task of runnable) {
-        if (!running || active.size >= maxConcurrent || pausedUntil() > Date.now()) break;
-        // Two runs in one space would share a working tree.
-        if (activeSpaces.has(task.spaceId)) continue;
-        await launch(task);
+    const { runnable, waits } = candidates(source);
+    for (const { task, agent } of runnable) {
+      if (!running) break;
+      // One agent at its limit leaves the others free to run; its tasks already carry the limit as their wait.
+      if (registry.limitedUntil(agent) > Date.now()) continue;
+      // Two runs in one space would share a working tree.
+      if (active.size >= maxConcurrent || activeSpaces.has(task.spaceId)) {
+        waits.push(busyWait(task, agent));
+        continue;
       }
+      const held = await launch(task, agent);
+      if (held) waits.push(held);
     }
+    // Written once per tick: a second, different write would emit `changed` and wake the runner into a loop.
+    setSetting(db, "runner.waiting", JSON.stringify(waits));
 
-    // A paused queue still counts as work: overnight mode should be awake when the limit resets.
+    // A limited agent's queue still counts as work: overnight mode should be awake when the limit resets.
     const hasWork = active.size > 0 || candidates(source).runnable.length > 0;
     if (getSetting(db, "overnight") === "true" && source === "ac" && hasWork) keepAwake.start();
     else keepAwake.stop();
     setSetting(db, "power.keepAwake", String(keepAwake.active()));
   }
 
-  function block(task: Task, reason: string) {
-    setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
-    logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`);
+  function skipReview(task: Task, reason: string) {
+    setTaskStatus(db, task.id, "done");
+    afterReview(db, task, { status: "error", kind: "failed", message: reason });
+    logActivity(db, task.spaceId, "atrium", `Skipped: ${task.title}. ${reason}`);
+  }
+
+  // `saved` is the branch Atrium committed the agent's unfinished edits to, if it did.
+  function block(task: Task, reason: string, saved: string | null = null) {
+    const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
+    setTaskStatus(db, task.id, "blocked", { blockedReason: full });
+    logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`);
+    if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: reason });
+    if (task.kind === "fix") fixFailed(db, task, reason, saved);
   }
 
   // Puts the repo back on the starting branch; returns a block reason if it can't.
   async function leaveRepo(repo: RepoRun): Promise<string | null> {
     try {
       const res = await returnToBranch(repo.path, repo.start);
-      return res === "dirty" ? `The agent left uncommitted changes on ${repo.branch} in ${repo.path}` : null;
+      return res === "dirty" ? leftoversReason(repo.branch, repo.path, repo.start) : null;
     } catch (e) {
       return `${(e as Error).message}. Switch ${repo.path} back to ${repo.start} yourself, then requeue.`;
     }
@@ -185,21 +270,23 @@ export function createRunner(deps: {
     return leaveRepo(repo);
   }
 
-  async function launch(task: Task) {
+  // Returns why the task went back to waiting when it was resolved again just before starting.
+  async function launch(task: Task, agent: string): Promise<TaskWait | void> {
     const space = getSpace(db, task.spaceId)!;
-    const adapter = adapters[task.agent];
-    if (!adapter) return block(task, `No agent called "${task.agent}" is set up. Pick another agent and requeue.`);
+    const adapter = adapters[agent];
+    if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
 
     let repo: RepoRun | null = null;
-    if (space.kind === "repo") {
+    // A review never touches the repo: the diff it needs is already in its prompt.
+    if (space.kind === "repo" && task.kind !== "review") {
       if (!space.repoPath) return block(task, "This space has no repo folder set. Add one in the space settings.");
       const path = space.repoPath;
-      const own = `atrium/${task.id}`;
+      const own = `atrium/${branchTaskId(task)}`;
       const ready = await repoReady(path);
       if (!ready.ok) {
         // Uncommitted work on this task's own branch is what a killed run leaves behind, not the user's.
         if (ready.dirty && (await headRef(path).catch(() => null))?.branch === own) {
-          return block(task, `The agent left uncommitted changes on ${own} in ${path}`);
+          return block(task, leftoversReason(own, path, lastRepoRun(db, task.id)?.start ?? null));
         }
         return block(task, ready.reason);
       }
@@ -216,46 +303,57 @@ export function createRunner(deps: {
         // Branching from a leftover agent branch would stack unreviewed work.
         else if (start.startsWith("atrium/")) return block(task, `Repo is on ${start}; switch back to your branch first.`);
         const fingerprint = last?.fingerprint ?? (await gitSettingsFingerprint(path));
-        repo = { path, start, fingerprint, branch: await prepareBranch(path, task.id) };
+        const branch = await prepareBranch(path, branchTaskId(task), { existing: task.kind === "fix" });
+        repo = { path, start, fingerprint, branch };
       } catch (e) {
         return block(task, (e as Error).message);
       }
     }
 
-    // The task may have left the queue, or the engine begun stopping, while git was busy.
-    if (!running || getTask(db, task.id)?.status !== "queued") {
+    // The task may have left the queue, the engine begun stopping, or the space changed (say, turned private)
+    // while git was busy. The agent is resolved again from fresh rows so a privacy change can't slip through.
+    const current = getTask(db, task.id);
+    const fresh = getSpace(db, task.spaceId);
+    const recheck =
+      running && current?.status === "queued" && fresh?.status === "active" ? registry.resolve(current, fresh) : null;
+    if (!recheck || !("agent" in recheck) || recheck.agent !== agent) {
       if (repo) await leaveRepo(repo);
-      return;
+      return recheck && "wait" in recheck ? { taskId: task.id, ...recheck.wait } : undefined;
     }
     setTaskStatus(db, task.id, "running", repo ? { branch: repo.branch } : {});
 
+    // Codex and Gemini reads aren't sandboxed like Claude's: away from a repo each run gets an empty folder of
+    // its own instead of the space folder, where earlier runs' files collect.
+    const scratch = !repo && agent !== "claude";
     let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript> };
+    let cwd: string | null = null;
     try {
-      const cwd = repo ? repo.path : join(config().home, "spaces", space.id);
-      if (!repo) mkdirSync(cwd, { recursive: true });
+      cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : join(config().home, "spaces", space.id);
+      if (!repo && !scratch) mkdirSync(cwd, { recursive: true });
       const runId = newId("run");
       const transcript = openTranscript(runId);
       db.query(
         "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(runId, task.id, adapter.id, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null);
+      ).run(runId, task.id, agent, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null);
       started = { cwd, runId, transcript };
     } catch (e) {
+      if (scratch && cwd) rmSync(cwd, { recursive: true, force: true });
       // Blocking takes the task out of the queue, so a broken disk can't retry it every tick.
       const left = repo ? await leaveRepo(repo) : null;
       return block(task, left ?? `Atrium couldn't start the run: ${(e as Error).message}`);
     }
-    logActivity(db, space.id, task.agent, `Started: ${task.title}`);
+    logActivity(db, space.id, agent, `Started: ${task.title}`);
 
     activeSpaces.add(space.id);
     const controller = new AbortController();
-    const done = execute({ task, space, adapter, repo, signal: controller.signal, ...started })
+    const done = execute({ task: current!, space: fresh!, adapter, repo, scratch, signal: controller.signal, ...started })
       .catch(report)
       .finally(() => {
         active.delete(started.runId);
         activeSpaces.delete(space.id);
         kick();
       });
-    active.set(started.runId, { done, controller });
+    active.set(started.runId, { taskId: task.id, done, controller });
   }
 
   async function execute(r: {
@@ -263,6 +361,7 @@ export function createRunner(deps: {
     space: Space;
     adapter: AgentAdapter;
     repo: RepoRun | null;
+    scratch: boolean;
     signal: AbortSignal;
     cwd: string;
     runId: string;
@@ -274,8 +373,9 @@ export function createRunner(deps: {
       result = await adapter.run({
         prompt: buildPrompt(task, space),
         cwd: r.cwd,
-        systemPrompt: SYSTEM_PROMPT,
-        allowedTools: repo ? REPO_TOOLS : BASE_TOOLS,
+        systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : repo ? REPO_SYSTEM_PROMPT : generalSystemPrompt(r.scratch),
+        allowedTools: task.kind === "review" ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
+        mode: task.kind === "review" ? "review" : "work",
         signal: r.signal,
         onChunk(chunk) {
           try {
@@ -290,8 +390,53 @@ export function createRunner(deps: {
       result = { status: "error", kind: "failed", message: `${adapter.label} could not start: ${(e as Error).message}` };
     }
 
+    // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
+    // below can block or discard it.
+    if (result.usage) registry.recordUsage(adapter.id, result.usage);
+    if (result.status === "error" && result.kind === "rate_limited") {
+      registry.setLimited(adapter.id, result.retryAfter ?? Date.now() + 30 * 60_000);
+    }
+
     let leftRepo: string | null = null;
+    let commitError: string | null = null;
+    let lateBranch: string | null = null;
+    // Where the agent's unfinished edits were committed when the run ended without finishing.
+    let saved: string | null = null;
+    // Where a scratch run's files were copied before its folder went away.
+    let kept: Kept | null = null;
     try {
+      const stopped = result.status !== "ok";
+      // A fix still running after Nakul decided must not add to the branch he decided on, and one that didn't
+      // finish must not leave half its work there either: its edits go on a branch of its own.
+      const late = task.kind === "fix" && !fixStillWanted(task);
+      // Before settleRepo switches branches, so the repo always goes back clean. Skipped when git settings
+      // changed: staging can run filter drivers from config the agent planted, and settleRepo reports the tampering.
+      if (repo && (await settingsUnchanged(repo.path, repo.fingerprint))) {
+        const message = stopped ? `WIP (stopped): ${task.title}` : task.title;
+        let on = repo.branch;
+        try {
+          if (task.kind === "fix" && (late || stopped)) {
+            const side = await branchOffDirty(repo.path, task.id);
+            if (side) on = side;
+            if (side && (await commitAll(repo.path, message, repo.fingerprint)).committed) {
+              if (late) lateBranch = side;
+              else saved = side;
+            }
+          } else {
+            const pre = task.kind === "fix" ? (await headRef(repo.path)).sha : null;
+            const res = await commitAll(repo.path, message, repo.fingerprint);
+            if (stopped && res.committed) saved = repo.branch;
+            // Nakul can decide between the check above and the commit landing; that commit is moved off too.
+            if (pre && res.committed && !fixStillWanted(task)) {
+              const post = (await headRef(repo.path)).sha;
+              lateBranch = await moveLateCommit(repo.path, task.id, repo.branch, pre, post);
+              if (task.approvalId) correctBranchHead(db, task.approvalId, post, pre);
+            }
+          }
+        } catch (e) {
+          commitError = `${sentence((e as Error).message)} The changes are still uncommitted on ${on} in ${repo.path}. Commit or stash them on that branch, switch back to ${repo.start}, then retry.`;
+        }
+      }
       transcript.close();
       const tokens = result.status === "ok" ? [result.inputTokens, result.outputTokens] : [0, 0];
       db.query("UPDATE runs SET ended_at = ?, exit_code = ?, input_tokens = ?, output_tokens = ? WHERE id = ?").run(
@@ -303,41 +448,101 @@ export function createRunner(deps: {
       );
     } finally {
       if (repo) leftRepo = await settleRepo(repo);
+      if (r.scratch) {
+        kept = await keepScratchFiles(space, runId, r.cwd);
+        rmSync(r.cwd, { recursive: true, force: true });
+      }
     }
 
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
     try {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
-        logActivity(db, space.id, "atrium", `Discarded the result for ${task.title}: the task was moved while it ran.`);
-      } else if (leftRepo) {
-        block(task, leftRepo);
+        const problem = commitError ?? leftRepo;
+        const message =
+          lateBranch && !problem
+            ? `Kept the late fix on ${lateBranch}; the branch you decided on is unchanged.`
+            : `Discarded the result for ${task.title}: the task was moved while it ran.${problem ? ` ${problem}` : ""}${saved ? ` Its unfinished edits are on ${saved}.` : ""}`;
+        logActivity(db, space.id, "atrium", message);
+      } else if (commitError ?? leftRepo) {
+        // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
+        block(task, (commitError ?? leftRepo)!);
       } else if (result.status !== "ok" && r.signal.aborted) {
         setTaskStatus(db, task.id, "queued");
-        logActivity(db, space.id, "atrium", `Engine stopped; requeued ${task.title}`);
+        logActivity(db, space.id, "atrium", `Engine stopped; requeued ${task.title}${saved ? `. Its unfinished edits are saved on ${saved}.` : ""}`);
+      } else if (result.status === "ok" && task.kind === "review") {
+        setTaskStatus(db, task.id, "done");
+        afterReview(db, task, result);
+        logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
+      } else if (result.status === "ok" && task.kind === "fix") {
+        // The parent's approval covers the branch, so the fix reports there instead of asking on its own. The
+        // count starts where the work did, even if Nakul has since moved the repo to another branch.
+        const base = (task.parentTaskId && lastRepoRun(db, task.parentTaskId)?.start) || null;
+        const report = repo ? await repoReport(base ? { ...repo, start: base } : repo) : null;
+        setTaskStatus(db, task.id, "done");
+        afterFix(db, task, result.summary, report?.lines[0] ?? "");
+        logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
       } else if (result.status === "ok") {
         const lines = [result.summary.trim()];
-        if (repo) lines.push(...(await repoReport(repo)));
+        const report = repo ? await repoReport(repo) : null;
+        if (report) lines.push(...report.lines);
+        if (kept) lines.push(keptLine(kept));
         setTaskStatus(db, task.id, "review");
-        createApproval(db, { spaceId: space.id, taskId: task.id, kind: "review", title: task.title, detail: lines.join("\n\n") });
-        logActivity(db, space.id, task.agent, `Ready for review: ${task.title}`);
+        const approval = createApproval(db, {
+          spaceId: space.id,
+          taskId: task.id,
+          kind: "review",
+          title: task.title,
+          detail: lines.join("\n\n"),
+        });
+        logActivity(db, space.id, adapter.id, `Ready for review: ${task.title}`);
+        if (repo && report?.commits) await handOff(task, repo, approval.id);
       } else if (result.kind === "rate_limited") {
-        setSetting(db, "runner.pausedUntil", String(result.retryAfter ?? Date.now() + 30 * 60_000));
         const hits = (limitHits.get(task.id) ?? 0) + 1;
         if (hits >= MAX_LIMIT_RETRIES) {
           limitHits.delete(task.id);
-          block(task, "Claude kept reporting a usage limit for this task; retry when you're ready.");
+          block(task, `${agentName(adapter.id)} kept reporting a usage limit for this task; retry when you're ready.`, saved);
         } else {
           limitHits.set(task.id, hits);
           // The task did nothing wrong; it goes back in line and runs when the limit resets.
           setTaskStatus(db, task.id, "queued");
-          logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.`);
+          const kept = saved ? ` ${savedNote(task, saved)}` : "";
+          logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.${kept}`);
         }
       } else {
-        block(task, result.message);
+        block(task, result.message, saved);
       }
     } finally {
       enforceTranscriptCap();
+    }
+  }
+
+  // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
+  // A copy that fails must not lose the run's outcome; the approval says the files couldn't be kept.
+  async function keepScratchFiles(space: Space, runId: string, cwd: string): Promise<Kept | null> {
+    const dir = join(config().home, "spaces", space.id, "runs", runId);
+    try {
+      const res = await keepScratch(cwd, dir);
+      return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;
+    } catch (e) {
+      logActivity(db, space.id, "atrium", `Couldn't keep the files from a run's temporary folder: ${(e as Error).message}`);
+      return { files: 0, truncated: false, skipped: 0, dir, failed: (e as Error).message };
+    }
+  }
+
+  function fixStillWanted(task: Task): boolean {
+    if (getTask(db, task.id)?.status !== "running" || !task.approvalId) return false;
+    return getApproval(db, task.approvalId)?.status === "pending";
+  }
+
+  // A review is extra: if it can't be set up, the work still waits for Nakul as usual.
+  async function handOff(task: Task, repo: RepoRun, approvalId: string) {
+    const space = getSpace(db, task.spaceId);
+    if (!space?.reviewBy) return;
+    try {
+      afterWork(db, getTask(db, task.id)!, space, approvalId, await reviewDiff(repo.path, repo.start, repo.branch));
+    } catch (e) {
+      logActivity(db, space.id, "atrium", `Couldn't send ${task.title} for review: ${(e as Error).message}. Check it yourself as usual.`);
     }
   }
 
@@ -371,6 +576,7 @@ export function createRunner(deps: {
       setSetting(db, "power.keepAwake", "false");
     },
     kick,
+    registry,
   };
 }
 
@@ -381,21 +587,49 @@ function buildPrompt(task: Task, space: Space): string {
   return parts.join("\n\n");
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
 // A summary failure is reported in the review, not fatal: the work is done and worth reviewing.
-async function repoReport(repo: RepoRun): Promise<string[]> {
+async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: number }> {
   let summaryLine: string;
+  let commits = 0;
   try {
     // Against the starting branch, so a retry reports all the work on the task branch.
     const s = await branchSummary(repo.path, repo.branch, repo.start);
-    summaryLine = `${plural(s.commits, "commit")}, ${plural(s.filesChanged, "file")} (+${s.insertions} −${s.deletions}) on ${repo.branch}`;
+    commits = s.commits;
+    summaryLine =
+      s.commits === 0
+        ? "No file changes"
+        : `${plural(s.commits, "commit")}, ${plural(s.filesChanged, "file")} (+${s.insertions} −${s.deletions}) on ${repo.branch}`;
   } catch (e) {
     summaryLine = `Couldn't summarise the changes on ${repo.branch}: ${(e as Error).message}`;
   }
   // Atrium never pushes as Nakul; sharing the branch is his call.
-  return [summaryLine, `Branch ${repo.branch} is on your machine — push it when you're ready.`];
+  return { lines: [summaryLine, `Branch ${repo.branch} is on your machine — push it when you're ready.`], commits };
 }
+
+// A fix adds to the branch its parent's work is on.
+const branchTaskId = (task: Task) => (task.kind === "fix" && task.parentTaskId) || task.id;
+
+type Kept = KeptScratch & { dir: string; failed?: string };
+
+function keptLine(kept: Kept): string {
+  if (kept.failed) return `Atrium couldn't keep the files it left: ${kept.failed}. They were removed with the temporary folder.`;
+  const parts = [kept.files > 0 ? `Files it left are kept in ${kept.dir}.` : "None of the files it left were kept."];
+  if (kept.truncated) parts.push("Some were cut short or left out to stay under 5 MB each and 50 MB in all.");
+  if (kept.skipped > 0) {
+    const one = kept.skipped === 1;
+    parts.push(`Left out ${plural(kept.skipped, "item")} that ${one ? "was a link" : "were links"} or changed while being copied.`);
+  }
+  return parts.join(" ");
+}
+
+// A work task's retry resumes on its own branch; a fix's retry starts again from the branch under review.
+const savedNote = (task: Task, saved: string) =>
+  task.kind === "fix"
+    ? `Its unfinished edits are on ${saved}.`
+    : `Atrium saved the agent's unfinished edits as a WIP commit on ${saved}; retry to carry on from there.`;
+
+const leftoversReason = (branch: string, path: string, start: string | null) =>
+  `The agent left uncommitted changes on ${branch} in ${path}. Commit or stash them on that branch, switch back to ${start ?? "your own branch"}, then retry.`;
 
 const tamperedReason = (path: string) =>
   `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`;
@@ -420,12 +654,28 @@ async function settingsUnchanged(path: string, expected: string | null): Promise
   }
 }
 
+// Scratch and per-run temp folders a crashed engine never removed. A day is far longer than any run lasts.
+function sweepTempDirs() {
+  const dir = tmpdir();
+  for (const name of readdirSync(dir)) {
+    if (!/^atrium-(run|agent)-/.test(name)) continue;
+    const path = join(dir, name);
+    try {
+      const st = lstatSync(path);
+      if (st.isDirectory() && Date.now() - st.mtimeMs > TEMP_SWEEP_AGE_MS) rmSync(path, { recursive: true, force: true });
+    } catch {
+      // Gone already, or not ours to remove; the next boot tries again.
+    }
+  }
+}
+
 export async function recoverOnBoot(db: Database): Promise<number> {
+  sweepTempDirs();
   const stuck = listTasks(db, { status: ["running"] });
   for (const task of stuck) {
     const path = getSpace(db, task.spaceId)?.repoPath;
     const last = lastRepoRun(db, task.id);
-    if (path && last && (await headRef(path).catch(() => null))?.branch === `atrium/${task.id}`) {
+    if (path && last && (await headRef(path).catch(() => null))?.branch === `atrium/${branchTaskId(task)}`) {
       // A checkout could run hooks or filters the crashed agent planted, so only a repo with untouched settings is switched.
       if (!(await settingsUnchanged(path, last.fingerprint))) {
         const reason = tamperedReason(path);

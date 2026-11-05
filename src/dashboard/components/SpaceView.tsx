@@ -1,11 +1,16 @@
-import { Hourglass, Lock, PlugZap } from "lucide-react";
+import { CornerDownRight, Lock, Play, SearchCheck, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { patch, post, type State, useRunOutput } from "../api";
+import { type AgentChoice, agentName, agentText, byPriority, needsAction, ranAgent, type Wait, waitOf } from "../agents";
+import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { navigate } from "../route";
 import { Activity } from "./Activity";
+import { AgentPicker } from "./AgentPicker";
+import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
+import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
+import { WaitLine } from "./WaitLine";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -20,13 +25,77 @@ const STATUS_TEXT: Record<Task["status"], string> = {
   blocked: "blocked",
 };
 
-const agentLabel = (agent: string) => (agent === "claude" ? "Claude Code" : agent);
+const REVIEWER_CHOICES = ["none", "codex", "gemini", "claude"] as const;
 
-function Avatar({ agent, live }: { agent: string; live: boolean }) {
+const KIND: Record<Exclude<Task["kind"], "work">, { label: string; icon: typeof SearchCheck; prefix: string }> = {
+  review: { label: "Review", icon: SearchCheck, prefix: "Review: " },
+  fix: { label: "Fix", icon: Wrench, prefix: "Fix: " },
+};
+
+// The engine titles child tasks "Review: …" and "Fix: …"; the badge says that, so the title needn't.
+function shownTitle(task: Task): string {
+  if (task.kind === "work") return task.title;
+  const { prefix } = KIND[task.kind];
+  return task.title.startsWith(prefix) ? task.title.slice(prefix.length) : task.title;
+}
+
+function KindBadge({ kind }: { kind: Task["kind"] }) {
+  if (kind === "work") return null;
+  const { label, icon: Icon } = KIND[kind];
   return (
-    <span className={`av ${agent === "claude" ? "c-claude" : "c-other"}${live ? " live" : ""}`} title={agentLabel(agent)}>
-      {agent.charAt(0).toUpperCase()}
+    <span className={`tag kind ${kind}`}>
+      <Icon />
+      {label}
     </span>
+  );
+}
+
+function reviewHint(reviewBy: Space["reviewBy"]): string {
+  if (!reviewBy) return "A second agent can read each finished change before you approve it.";
+  // The engine skips the review when the reviewer is the agent that did the work.
+  return `${agentName(reviewBy)} reads each finished change it didn't make and can ask for one round of fixes. You still decide.`;
+}
+
+function ReviewSetting({ space }: { space: Space }) {
+  const reasons = useReviewers(space);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const reason = space.reviewBy ? reasons?.[space.reviewBy] : null;
+
+  const choose = async (value: (typeof REVIEWER_CHOICES)[number]) => {
+    setBusy(true);
+    setError(null);
+    const res = await patch<Space>(`/api/spaces/${space.id}`, { reviewBy: value === "none" ? null : value });
+    setBusy(false);
+    if (!res.ok) setError(res.error);
+  };
+
+  return (
+    <div className="review-setting">
+      <label>
+        <SearchCheck />
+        Review finished work with
+        <select
+          className="pick"
+          value={space.reviewBy ?? "none"}
+          disabled={busy}
+          onChange={(e) => void choose(e.target.value as (typeof REVIEWER_CHOICES)[number])}
+        >
+          {REVIEWER_CHOICES.map((id) => (
+            <option key={id} value={id}>
+              {id === "none" ? "No one" : agentName(id)}
+              {id !== "none" && reasons?.[id] ? " (can't work here)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      {reason ? (
+        <span className="why bad">{reason} Reviews will be skipped until you pick another reviewer.</span>
+      ) : (
+        <span className="hint">{reviewHint(space.reviewBy)}</span>
+      )}
+      {error && <span className="err">{error}</span>}
+    </div>
   );
 }
 
@@ -137,6 +206,8 @@ function Header({ space }: { space: Space }) {
         </button>
       )}
       {error && <div className="err">{error}</div>}
+      {/* Reviews read the branch diff, so only repo spaces have anything to review. */}
+      {space.kind === "repo" && <ReviewSetting space={space} />}
     </div>
   );
 }
@@ -170,34 +241,48 @@ function RunRow({ run, onOpen }: { run: Run; onOpen: () => void }) {
 
 type TaskRowProps = {
   task: Task;
-  runs: Run[];
+  state: State;
   open: boolean;
   onToggle: () => void;
   onTranscript: (run: Run) => void;
 };
 
-function TaskRow({ task, runs, open, onToggle, onTranscript }: TaskRowProps) {
+function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stuck = task.status === "blocked" || task.status === "failed";
+  const runs = state.runs.filter((r) => r.taskId === task.id);
+  const wait = waitOf(task, state);
+  const parent = task.parentTaskId ? state.tasks.find((t) => t.id === task.parentTaskId) : undefined;
+  const agent = agentText(task, state.runs);
 
-  const retry = async () => {
+  const act = async (fn: () => ReturnType<typeof post>) => {
     setBusy(true);
     setError(null);
-    const res = await post(`/api/tasks/${task.id}/retry`);
+    const res = await fn();
     setBusy(false);
     if (!res.ok) setError(res.error);
   };
+  const retry = () => act(() => post(`/api/tasks/${task.id}/retry`));
+  const runNow = () => act(() => post(`/api/tasks/${task.id}/run-now`));
+  const setAgent = (value: AgentChoice) => act(() => patch(`/api/tasks/${task.id}`, { agent: value }));
 
   return (
     <div className="entry" id={`task-${task.id}`}>
       <div className={`item task${task.status === "done" ? " done" : ""}`} onClick={onToggle} aria-expanded={open}>
         <StatusIcon status={task.status} />
-        <span className="t">{task.title}</span>
-        <span className={`tag${stuck ? " bad" : ""}`} title={task.blockedReason ?? undefined}>
-          {STATUS_TEXT[task.status]}
-          {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
-        </span>
+        <KindBadge kind={task.kind} />
+        <span className="t">{shownTitle(task)}</span>
+        {wait ? (
+          <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
+            waiting
+          </span>
+        ) : (
+          <span className={`tag${stuck ? " bad" : ""}`} title={task.blockedReason ?? undefined}>
+            {STATUS_TEXT[task.status]}
+            {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
+          </span>
+        )}
         {stuck && (
           <button
             className="btn"
@@ -210,18 +295,49 @@ function TaskRow({ task, runs, open, onToggle, onTranscript }: TaskRowProps) {
             Retry
           </button>
         )}
-        <Avatar agent={task.agent} live={task.status === "running"} />
+        {wait?.kind === "reserve" && (
+          <button
+            className="btn"
+            disabled={busy}
+            title="Start this task now, using Claude's reserved window"
+            onClick={(e) => {
+              e.stopPropagation();
+              void runNow();
+            }}
+          >
+            <Play />
+            Run now
+          </button>
+        )}
+        <Avatar agent={ranAgent(task, state.runs)} live={task.status === "running"} title={agent} />
       </div>
       {open && (
         <div className="detail">
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
+          {wait && <WaitLine wait={wait} />}
+          {parent && (
+            <p className="follows">
+              <CornerDownRight />
+              {task.kind === "review" ? "Reviews" : "Fixes what the review found in"} “{parent.title}”
+            </p>
+          )}
           <pre>{task.detail || task.title}</pre>
           <div className="meta">
+            <span className="agent-meta">
+              Agent
+              {task.status === "queued" && task.kind === "work" ? (
+                <AgentPicker value={task.agent} disabled={busy} onChange={(v) => void setAgent(v)} label="Agent for this task" />
+              ) : (
+                <b>{agent}</b>
+              )}
+            </span>
             <span title={absolute(task.createdAt)}>Added {relative(task.createdAt)}</span>
             <span title={absolute(task.updatedAt)}>Updated {relative(task.updatedAt)}</span>
             {task.branch && <span className="mono">Branch {task.branch}</span>}
             <span>{task.weight === "heavy" ? "Heavy · runs when plugged in" : "Light · runs anytime"}</span>
+            {task.ignoreReserve && <span>Runs during Claude's reserve</span>}
           </div>
+          {task.kind === "work" && <Thread taskId={task.id} />}
           {runs.length === 0 ? (
             <p className="runs-empty">No runs yet.</p>
           ) : (
@@ -267,26 +383,17 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
   const run = task && state.runs.find((r) => r.taskId === task.id && r.endedAt === null);
 
   if (!task || !run) {
-    const waiting = state.power.waiting && tasks.some((t) => t.id === state.power.waiting!.taskId);
-    const paused = state.power.pausedUntil && tasks.some((t) => t.status === "queued");
+    // One line per distinct reason, so three tasks held by the same limit don't repeat it.
+    const waits = new Map<string, Wait>();
+    for (const wait of tasks.flatMap((t) => waitOf(t, state) ?? []).sort(byPriority)) {
+      if (!waits.has(wait.reason)) waits.set(wait.reason, wait);
+    }
     return (
       <div className="idle">
         <p>No agent working right now</p>
-        {waiting && (
-          <p className="why waiting">
-            <PlugZap />
-            {state.power.waiting!.reason}
-          </p>
-        )}
-        {paused && (
-          <p className="why waiting">
-            <Hourglass />
-            <span>
-              Paused for the Claude usage limit. Queued work starts again around{" "}
-              {new Date(state.power.pausedUntil!).toLocaleTimeString(undefined, { timeStyle: "short" })}.
-            </span>
-          </p>
-        )}
+        {[...waits.values()].map((w) => (
+          <WaitLine key={w.reason} wait={w} />
+        ))}
       </div>
     );
   }
@@ -294,13 +401,15 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
   return (
     <>
       <div className="agentrow">
-        <Avatar agent={task.agent} live />
-        {agentLabel(task.agent)}
+        <Avatar agent={run.agent} live />
+        {agentText(task, state.runs)}
         <span className="st" title={`Started ${absolute(run.startedAt)}`}>
           running {duration(Date.now() - run.startedAt)}
         </span>
       </div>
-      <div className="agent-task">{task.title}</div>
+      <div className="agent-task">
+        <KindBadge kind={task.kind} /> {shownTitle(task)}
+      </div>
       <Terminal runId={run.id} />
     </>
   );
@@ -368,7 +477,7 @@ export function SpaceView({ state, space, focusTask }: Props) {
                 <TaskRow
                   key={t.id}
                   task={t}
-                  runs={state.runs.filter((r) => r.taskId === t.id)}
+                  state={state}
                   open={expanded.has(t.id)}
                   onToggle={() => toggle(t.id)}
                   onTranscript={(run) => setTranscript({ run, title: t.title })}

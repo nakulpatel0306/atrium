@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { appendFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TaskWait } from "../../src/engine/agents/registry";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import * as gitOps from "../../src/engine/git";
+import * as scratch from "../../src/engine/scratch";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { createRunner, recoverOnBoot } from "../../src/engine/runner";
@@ -77,15 +79,18 @@ function fakeKeepAwake() {
   };
 }
 
+const waits = () => JSON.parse(getSetting(db, "runner.waiting") || "[]") as TaskWait[];
+
 function start(opts: {
   adapter: AgentAdapter;
+  extra?: Record<string, AgentAdapter>;
   power?: () => Promise<"ac" | "battery">;
   keepAwake?: ReturnType<typeof fakeKeepAwake>;
   stopTimeoutMs?: number;
 }) {
   runner = createRunner({
     db,
-    adapters: { claude: opts.adapter },
+    adapters: { claude: opts.adapter, ...opts.extra },
     power: opts.power ?? (async () => "ac"),
     keepAwake: opts.keepAwake ?? fakeKeepAwake(),
     stopTimeoutMs: opts.stopTimeoutMs,
@@ -123,7 +128,9 @@ test("runs a queued task to review and creates a review approval", async () => {
   expect(calls[0]!.prompt).toContain("Write intro");
   expect(calls[0]!.prompt).toContain("Keep it short");
   expect(calls[0]!.prompt).toContain("Write clear docs");
-  expect(calls[0]!.systemPrompt).toContain("Never push or merge");
+  // Away from a repo there's no git to talk about.
+  expect(calls[0]!.systemPrompt).toContain("Work in the current folder.");
+  expect(calls[0]!.systemPrompt).not.toMatch(/git|branch|commit|push|merge/i);
   expect(calls[0]!.allowedTools).toEqual(["Read", "Edit", "Write", "Glob", "Grep"]);
   expect(calls[0]!.cwd).toBe(join(home.home, "spaces", s.id));
   expect(existsSync(calls[0]!.cwd)).toBe(true);
@@ -148,8 +155,6 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   const t = createTask(db, { spaceId: s.id, title: "Add file" });
   const { adapter, calls } = fakeAdapter((input) => {
     writeFileSync(join(input.cwd, "new.txt"), "hello\n");
-    git(input.cwd, "add", "new.txt");
-    git(input.cwd, "commit", "-m", "add new");
     return ok("Added new.txt.");
   });
   start({ adapter });
@@ -160,10 +165,12 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   expect(git(path, "branch", "--list", "atrium/" + task.id)).toContain("atrium/" + task.id);
   expect(git(path, "branch", "--show-current")).toBe("main");
   expect(calls[0]!.cwd).toBe(path);
+  expect(calls[0]!.systemPrompt).toContain("Work only on the current git branch.");
+  expect(calls[0]!.systemPrompt).toContain("Atrium commits them for you.");
   expect(calls[0]!.allowedTools).toEqual([
     "Read", "Edit", "Write", "Glob", "Grep",
     "Bash(bun test*)", "Bash(bun install --ignore-scripts*)", "Bash(bunx tsc*)",
-    "Bash(git add *)", "Bash(git commit *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
+    "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
   ]);
   const [a] = listPending(db);
   expect(a!.detail).toContain("Added new.txt.");
@@ -226,8 +233,6 @@ test("never pushes the task branch, even with a remote", async () => {
   start({
     adapter: fakeAdapter((input) => {
       writeFileSync(join(input.cwd, "x.txt"), "x\n");
-      git(input.cwd, "add", "x.txt");
-      git(input.cwd, "commit", "-m", "x");
       return ok();
     }).adapter,
   });
@@ -282,8 +287,6 @@ test("summary counts against the starting branch", async () => {
   start({
     adapter: fakeAdapter((input) => {
       writeFileSync(join(input.cwd, "g.txt"), "g\n");
-      git(input.cwd, "add", "g.txt");
-      git(input.cwd, "commit", "-m", "agent work");
       return ok();
     }).adapter,
   });
@@ -328,19 +331,47 @@ test("a leftover Atrium branch blocks instead of stacking", async () => {
   expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_old");
 });
 
-test("uncommitted changes left by the agent block and stay on the task branch", async () => {
+test("successful repo run is committed by the engine", async () => {
   const path = repo();
   const s = repoSpace(path);
-  const t = createTask(db, { spaceId: s.id, title: "Messy" });
+  const t = createTask(db, { spaceId: s.id, title: "Add greeting" });
   start({
     adapter: fakeAdapter((input) => {
-      writeFileSync(join(input.cwd, "half.txt"), "wip");
+      writeFileSync(join(input.cwd, "greeting.txt"), "hi\n");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "review");
+  expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("1");
+  expect(git(path, "log", "-1", "--format=%s", `atrium/${t.id}`)).toBe("Add greeting");
+  expect(listPending(db)[0]!.detail).toContain("1 commit");
+});
+
+test("run with no changes reaches review without a commit", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Look around" });
+  start({ adapter: fakeAdapter(() => ok("Nothing to change.")).adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("0");
+  expect(listPending(db)[0]!.detail).toContain("No file changes");
+});
+
+test(".env change blocks the task without a commit", async () => {
+  const path = repo();
+  // A global ignore file would hide .env.local from git, and the guard only sees what git reports.
+  git(path, "config", "core.excludesFile", "/dev/null");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Configure" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, ".env.local"), "SECRET=1\n");
       return ok();
     }).adapter,
   });
   await waitFor(() => status(t.id) === "blocked");
-  expect(getTask(db, t.id)!.blockedReason).toBe(`The agent left uncommitted changes on atrium/${t.id} in ${path}`);
-  expect(git(path, "branch", "--show-current")).toBe(`atrium/${t.id}`);
+  expect(getTask(db, t.id)!.blockedReason).toContain(".env");
+  expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("0");
   expect(listPending(db)).toHaveLength(0);
 });
 
@@ -393,12 +424,11 @@ test("heavy task waits on battery and stays queued with reason in runner.waiting
   const t = createTask(db, { spaceId: s.id, title: "Big job", weight: "heavy" });
   const { adapter, calls } = fakeAdapter();
   start({ adapter, power: async () => "battery" });
-  await waitFor(() => getSetting(db, "runner.waiting") !== null);
+  await waitFor(() => waits().length > 0);
 
-  expect(JSON.parse(getSetting(db, "runner.waiting")!)).toEqual({
-    taskId: t.id,
-    reason: "Waiting for power: heavy work runs when plugged in",
-  });
+  expect(waits()).toEqual([
+    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power: heavy work runs when plugged in" },
+  ]);
   expect(getSetting(db, "power.source")).toBe("battery");
   expect(status(t.id)).toBe("queued");
   expect(calls).toHaveLength(0);
@@ -426,7 +456,7 @@ test("waiting on power does not spin the runner", async () => {
       return "battery";
     },
   });
-  await waitFor(() => getSetting(db, "runner.waiting") !== null);
+  await waitFor(() => waits().length > 0);
   for (let i = 0; i < 50; i++) {
     r.kick();
     bus.emit({ type: "changed" });
@@ -506,23 +536,176 @@ test("rate limit pauses the runner until retryAfter", async () => {
     retryAfter,
   }));
   const r = start({ adapter });
-  await waitFor(() => getSetting(db, "runner.pausedUntil") !== null);
+  await waitFor(() => getSetting(db, "agent.claude.limitedUntil") !== null);
   r.kick();
   await Bun.sleep(50);
 
-  expect(getSetting(db, "runner.pausedUntil")).toBe(String(retryAfter));
+  expect(getSetting(db, "agent.claude.limitedUntil")).toBe(String(retryAfter));
+  expect(getSetting(db, "runner.pausedUntil")).toBeNull();
   expect(calls).toHaveLength(1);
   expect(status(first.id)).toBe("queued");
   expect(status(second.id)).toBe("queued");
 });
 
-test("runner resumes once pausedUntil has passed", async () => {
+test("runner resumes once limitedUntil has passed", async () => {
   const s = generalSpace();
   const t = createTask(db, { spaceId: s.id, title: "One" });
-  setSetting(db, "runner.pausedUntil", String(Date.now() - 1000));
+  setSetting(db, "agent.claude.limitedUntil", String(Date.now() - 1000));
   const { adapter } = fakeAdapter();
   start({ adapter });
   await waitFor(() => status(t.id) === "review");
+});
+
+test("a limited codex does not pause claude tasks", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const viaCodex = createTask(db, { spaceId: s.id, title: "Codex job", agent: "codex" });
+  const viaClaude = createTask(db, { spaceId: s.id, title: "Claude job", agent: "claude" });
+  setSetting(db, "agent.codex.limitedUntil", String(Date.now() + 3600_000));
+  const claude = fakeAdapter();
+  const codex = fakeAdapter();
+  start({ adapter: claude.adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(viaClaude.id) === "review");
+  expect(status(viaCodex.id)).toBe("queued");
+  expect(codex.calls).toHaveLength(0);
+});
+
+test("a review task runs its agent in review mode", async () => {
+  const s = generalSpace();
+  const review = createTask(db, { spaceId: s.id, title: "Review it", kind: "review" });
+  const work = createTask(db, { spaceId: s.id, title: "Do it" });
+  const { adapter, calls } = fakeAdapter();
+  start({ adapter });
+  await waitFor(() => status(review.id) === "done" && status(work.id) === "review");
+  expect(calls.map((c) => [c.prompt.includes("Review it"), c.mode])).toEqual([[true, "review"], [false, "work"]]);
+  expect(calls[0]!.systemPrompt).toContain("You are reviewing another agent's work");
+  // Reviews read the diff in their prompt, so Claude gets no edit tools for them.
+  expect(calls[0]!.allowedTools).toEqual(["Read", "Glob", "Grep"]);
+});
+
+test("a general-space codex run uses a fresh scratch folder that is removed afterwards", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Codex job", agent: "codex" });
+  let seen = "";
+  const codex = fakeAdapter((input) => {
+    seen = input.cwd;
+    expect(existsSync(input.cwd)).toBe(true);
+    return ok();
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  expect(seen).not.toBe(join(home.home, "spaces", s.id));
+  expect(existsSync(seen)).toBe(false);
+  expect(codex.calls[0]!.systemPrompt).toContain("This folder is temporary");
+  expect(codex.calls[0]!.systemPrompt).not.toMatch(/git|branch|commit/i);
+});
+
+test("files a scratch run leaves are kept with the run, and the approval says where", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Write notes", agent: "codex" });
+  const codex = fakeAdapter((input) => {
+    writeFileSync(join(input.cwd, "notes.md"), "# notes\n");
+    mkdirSync(join(input.cwd, "sub"));
+    writeFileSync(join(input.cwd, "sub", "more.txt"), "more\n");
+    symlinkSync("/etc/hosts", join(input.cwd, "link"));
+    return ok("Wrote notes.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  const kept = join(home.home, "spaces", s.id, "runs", run.id);
+  expect(readFileSync(join(kept, "notes.md"), "utf8")).toBe("# notes\n");
+  expect(readFileSync(join(kept, "sub", "more.txt"), "utf8")).toBe("more\n");
+  expect(existsSync(join(kept, "link"))).toBe(false);
+  expect(listPending(db)[0]!.detail).toContain(
+    `Files it left are kept in ${kept}. Left out 1 item that was a link or changed while being copied.`,
+  );
+});
+
+test("launch re-checks the agent and holds a task the space no longer allows", async () => {
+  const path = repo();
+  const s = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: path, private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Codex job", agent: "codex" });
+  const codex = fakeAdapter();
+  const real = gitOps.prepareBranch;
+  let flipped = false;
+  // The space turns private while git is busy, after the queue check passed.
+  const spy = spyOn(gitOps, "prepareBranch").mockImplementation(async (...args) => {
+    flipped = true;
+    updateSpace(db, s.id, { private: true });
+    return real(...args);
+  });
+  try {
+    start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+    await waitFor(() => waits().length > 0);
+  } finally {
+    spy.mockRestore();
+  }
+  expect(flipped).toBe(true);
+  expect(codex.calls).toHaveLength(0);
+  expect(status(t.id)).toBe("queued");
+  expect(git(path, "branch", "--show-current")).toBe("main");
+  expect(waits()).toEqual([
+    {
+      taskId: t.id,
+      agent: "codex",
+      kind: "private_space",
+      reason: "Codex can't work here: this space is private, so only Claude works in it.",
+    },
+  ]);
+});
+
+test("run row records the resolved agent for auto tasks", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Auto job", agent: "auto" });
+  start({ adapter: fakeAdapter().adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect((db.query("SELECT agent FROM runs WHERE task_id = ?").get(t.id) as any).agent).toBe("claude");
+  expect(getTask(db, t.id)!.agent).toBe("auto");
+});
+
+test("a task the registry holds back shows its reason as the waiting line", async () => {
+  const s = createSpace(db, { name: "Notes", kind: "general", goal: "", private: true });
+  const t = createTask(db, { spaceId: s.id, title: "Secret job", agent: "codex" });
+  const codex = fakeAdapter();
+  const r = start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  r.kick();
+  await waitFor(() => waits().length > 0);
+  expect(waits()).toEqual([
+    {
+      taskId: t.id,
+      agent: "codex",
+      kind: "private_space",
+      reason: "Codex can't work here: this space is private, so only Claude works in it.",
+    },
+  ]);
+  expect(status(t.id)).toBe("queued");
+  expect(codex.calls).toHaveLength(0);
+});
+
+test("a run that reports usage feeds the claude reserve", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Usage job" });
+  const resetsAt = Date.now() + 3600_000;
+  const { adapter } = fakeAdapter(() => ({ ...ok(), usage: { fiveHour: { utilization: 0.7, resetsAt } } }));
+  const r = start({ adapter });
+  await waitFor(() => status(t.id) === "review");
+  expect(r.registry.inReserve()).toEqual({ until: resetsAt });
+});
+
+test("legacy runner.pausedUntil migrates to agent.claude.limitedUntil", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Waits" });
+  const until = Date.now() + 3600_000;
+  setSetting(db, "runner.pausedUntil", String(until));
+  const { adapter, calls } = fakeAdapter();
+  const r = start({ adapter });
+  await waitFor(() => getSetting(db, "agent.claude.limitedUntil") !== null);
+  r.kick();
+  await Bun.sleep(50);
+  expect(getSetting(db, "agent.claude.limitedUntil")).toBe(String(until));
+  expect(getSetting(db, "runner.pausedUntil")).toBeNull();
+  expect(calls).toHaveLength(0);
+  expect(status(t.id)).toBe("queued");
 });
 
 test("recoverOnBoot requeues running tasks", async () => {
@@ -724,8 +907,6 @@ test("a task whose repo is still on its own branch resumes from the stored start
   start({
     adapter: fakeAdapter((input) => {
       writeFileSync(join(input.cwd, "late.txt"), "late\n");
-      git(input.cwd, "add", "late.txt");
-      git(input.cwd, "commit", "-m", "late agent work");
       return ok();
     }).adapter,
   });
@@ -742,7 +923,9 @@ test("agent leftovers on the task's own branch block with the agent message", as
   const { adapter, calls } = fakeAdapter();
   start({ adapter });
   await waitFor(() => status(t.id) === "blocked");
-  expect(getTask(db, t.id)!.blockedReason).toBe(`The agent left uncommitted changes on atrium/${t.id} in ${path}`);
+  expect(getTask(db, t.id)!.blockedReason).toBe(
+    `The agent left uncommitted changes on atrium/${t.id} in ${path}. Commit or stash them on that branch, switch back to feature, then retry.`,
+  );
   expect(calls).toHaveLength(0);
 });
 
@@ -845,4 +1028,210 @@ test("a resume without stored git settings is blocked", async () => {
   await waitFor(() => status(t.id) === "blocked");
   expect(getTask(db, t.id)!.blockedReason).toBe(tampered(path));
   expect(calls).toHaveLength(0);
+});
+
+test("every held-back task gets its own wait, with the kind the dashboard shows", async () => {
+  const path = repo();
+  writeFileSync(join(path, ".env"), "X=1\n");
+  const secretRepo = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: path, private: false });
+  const open = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const busyRepo = createSpace(db, { name: "Busy", kind: "repo", goal: "", repoPath: repo(), private: false });
+  const resetsAt = Date.now() + 3600_000;
+  setSetting(db, "usage.claude.fiveHour", JSON.stringify({ utilization: 0.9, resetsAt }));
+  const limit = Date.now() + 600_000;
+  setSetting(db, "agent.codex.limitedUntil", String(limit));
+  // Repo work on auto goes to Claude, so the reserve holds it.
+  const auto = createTask(db, { spaceId: busyRepo.id, title: "Auto repo job", agent: "auto" });
+  const secret = createTask(db, { spaceId: secretRepo.id, title: "Codex in a repo with .env", agent: "codex" });
+  const limited = createTask(db, { spaceId: open.id, title: "Limited codex", agent: "codex" });
+  const signedOut = createTask(db, { spaceId: open.id, title: "Signed-out gemini", agent: "gemini" });
+  const codex = fakeAdapter();
+  const gemini: AgentAdapter = {
+    ...fakeAdapter().adapter,
+    id: "gemini",
+    label: "Gemini",
+    probe: async () => ({ installed: true, loggedIn: false, detail: "Run `agy` once in a terminal to sign in." }),
+  };
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" }, gemini } });
+  await waitFor(() => waits().length === 4);
+
+  const byTask = Object.fromEntries(waits().map((w) => [w.taskId, w]));
+  expect(byTask[auto.id]).toMatchObject({ agent: "claude", kind: "reserve", until: resetsAt });
+  expect(byTask[secret.id]).toMatchObject({ agent: "codex", kind: "env_files" });
+  expect(byTask[limited.id]).toMatchObject({ agent: "codex", kind: "limited", until: limit });
+  expect(byTask[signedOut.id]).toMatchObject({
+    agent: "gemini",
+    kind: "signed_out",
+    reason: "Gemini is signed out. Run `agy` once in a terminal to sign in.",
+  });
+  expect(codex.calls).toHaveLength(0);
+});
+
+test("a task queued behind a running one waits as busy", async () => {
+  const s = generalSpace();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const { adapter } = fakeAdapter(async () => {
+    await gate;
+    return ok();
+  });
+  const first = createTask(db, { spaceId: s.id, title: "First", weight: "light" });
+  const second = createTask(db, { spaceId: s.id, title: "Second", weight: "light" });
+  start({ adapter });
+  await waitFor(() => status(first.id) === "running" && waits().length === 1);
+  expect(waits()).toEqual([
+    { taskId: second.id, agent: "claude", kind: "busy", reason: "Waiting for the task already running in this space to finish." },
+  ]);
+  release();
+  await waitFor(() => status(second.id) === "review");
+  await waitFor(() => waits().length === 0);
+});
+
+const clean = (path: string) => git(path, "status", "--porcelain") === "";
+const subject = (path: string, ref: string) => git(path, "log", "-1", "--format=%s", ref);
+
+test("a repo run that hits the usage limit saves its edits as a WIP commit and resumes on that branch", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Half done" });
+  const resetsAt = Date.now() + 3600_000;
+  const outcomes: Array<(input: AgentRunInput) => AgentRunResult> = [
+    (input) => {
+      writeFileSync(join(input.cwd, "a.txt"), "a\n");
+      return {
+        status: "error",
+        kind: "rate_limited",
+        message: "Claude usage limit reached",
+        retryAfter: Date.now() + 3600_000,
+        usage: { fiveHour: { utilization: 1, resetsAt } },
+      };
+    },
+    (input) => {
+      writeFileSync(join(input.cwd, "b.txt"), "b\n");
+      return ok();
+    },
+  ];
+  const r = start({ adapter: fakeAdapter((input) => outcomes.shift()!(input)).adapter });
+  await waitFor(() => getSetting(db, "agent.claude.limitedUntil") !== null && status(t.id) === "queued");
+  expect(git(path, "branch", "--show-current")).toBe("main");
+  expect(clean(path)).toBe(true);
+  expect(subject(path, `atrium/${t.id}`)).toBe("WIP (stopped): Half done");
+  expect(git(path, "show", `atrium/${t.id}:a.txt`)).toBe("a");
+  // Usage carried on the error result still feeds the reserve.
+  expect(r.registry.inReserve()).toEqual({ until: resetsAt });
+
+  setSetting(db, "agent.claude.limitedUntil", String(Date.now() - 1000));
+  setSetting(db, "usage.claude.fiveHour", JSON.stringify({ utilization: 0, resetsAt }));
+  r.kick();
+  await waitFor(() => status(t.id) === "review");
+  expect(listPending(db)[0]!.detail).toContain(`2 commits, 2 files (+2 −0) on atrium/${t.id}`);
+});
+
+test("stopping the engine mid-run saves the agent's edits on its branch and requeues", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Long edit" });
+  const r = start({
+    adapter: fakeAdapter(async (input) => {
+      writeFileSync(join(input.cwd, "partial.txt"), "partial\n");
+      return untilAborted(input);
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "running");
+  await Bun.sleep(20);
+  await r.stop();
+  runner = null;
+  expect(status(t.id)).toBe("queued");
+  expect(git(path, "branch", "--show-current")).toBe("feature");
+  expect(clean(path)).toBe(true);
+  expect(subject(path, `atrium/${t.id}`)).toBe("WIP (stopped): Long edit");
+  expect(listActivity(db).some((a) => a.message.startsWith("Blocked"))).toBe(false);
+});
+
+test("a failed repo run saves its edits, puts the repo back, and says how to carry on", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Crashy" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, "c.txt"), "c\n");
+      return { status: "error", kind: "failed", message: "boom" };
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe(
+    `boom. Atrium saved the agent's unfinished edits as a WIP commit on atrium/${t.id}; retry to carry on from there.`,
+  );
+  expect(git(path, "branch", "--show-current")).toBe("main");
+  expect(clean(path)).toBe(true);
+  expect(subject(path, `atrium/${t.id}`)).toBe("WIP (stopped): Crashy");
+});
+
+test("a commit refusal says where the changes are and what to do next", async () => {
+  const path = repo();
+  git(path, "config", "core.excludesFile", "/dev/null");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Secrets" });
+  start({
+    adapter: fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, ".env"), "X=1\n");
+      return ok();
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe(
+    `Refusing to commit a .env file: .env. The changes are still uncommitted on atrium/${t.id} in ${path}. Commit or stash them on that branch, switch back to main, then retry.`,
+  );
+});
+
+test("a review that would go to the agent that did the work is skipped at launch", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const parent = createTask(db, { spaceId: s.id, title: "Work", agent: "codex" });
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run(
+    "run_w", parent.id, "codex", Date.now(), "/tmp/x.log",
+  );
+  setTaskStatus(db, parent.id, "running");
+  setTaskStatus(db, parent.id, "review");
+  // Nakul switched the review to auto, which resolves to the free agent that did the work.
+  const review = createTask(db, { spaceId: s.id, title: "Review: Work", kind: "review", parentTaskId: parent.id, agent: "auto" });
+  const codex = fakeAdapter();
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(review.id) === "done");
+  expect(codex.calls).toHaveLength(0);
+  expect(listActivity(db).some((a) => a.message.includes("Codex did the work, so it can't review it too"))).toBe(true);
+});
+
+test("a scratch copy whose sandbox won't start keeps nothing and the approval says so", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Write notes", agent: "codex" });
+  const real = scratch.keepScratch;
+  const spy = spyOn(scratch, "keepScratch").mockImplementation((src, dest) => real(src, dest, { sandboxExec: "/nonexistent/sandbox-exec" }));
+  cleanups.push(() => spy.mockRestore());
+  const codex = fakeAdapter((input) => {
+    writeFileSync(join(input.cwd, "notes.md"), "# notes\n");
+    return ok("Wrote notes.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  expect(existsSync(join(home.home, "spaces", s.id, "runs", run.id))).toBe(false);
+  expect(listPending(db)[0]!.detail).toContain(
+    "Atrium couldn't keep the files it left: the sandbox for copying them didn't start. They were removed with the temporary folder.",
+  );
+});
+
+test("recoverOnBoot sweeps Atrium temp folders older than a day", async () => {
+  const old = mkdtempSync(join(tmpdir(), "atrium-run-"));
+  const oldAgent = mkdtempSync(join(tmpdir(), "atrium-agent-"));
+  const fresh = mkdtempSync(join(tmpdir(), "atrium-run-"));
+  const other = mkdtempSync(join(tmpdir(), "atrium-repo-"));
+  cleanups.push(() => [old, oldAgent, fresh, other].forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000);
+  for (const d of [old, oldAgent, other]) utimesSync(d, twoDaysAgo, twoDaysAgo);
+  await recoverOnBoot(db);
+  expect(existsSync(old)).toBe(false);
+  expect(existsSync(oldAgent)).toBe(false);
+  expect(existsSync(fresh)).toBe(true);
+  expect(existsSync(other)).toBe(true);
 });

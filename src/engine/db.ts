@@ -61,6 +61,15 @@ CREATE TABLE IF NOT EXISTS activity (
   message TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  from_agent TEXT NOT NULL,
+  to_agent TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -87,4 +96,18 @@ function migrate(db: Database) {
   if (!has("runs", "start_ref")) db.exec("ALTER TABLE runs ADD COLUMN start_ref TEXT");
   // The repo's git settings before the run, so recovery and resume can tell if the agent changed them.
   if (!has("runs", "git_fingerprint")) db.exec("ALTER TABLE runs ADD COLUMN git_fingerprint TEXT");
+  // Lets one task run during the Claude window reserve ("Run now").
+  if (!has("tasks", "ignore_reserve")) db.exec("ALTER TABLE tasks ADD COLUMN ignore_reserve INTEGER NOT NULL DEFAULT 0");
+  if (!has("tasks", "kind")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'work' CHECK (kind IN ('work','review','fix'))");
+  }
+  // A review or fix task points at the work task it follows.
+  if (!has("tasks", "parent_task_id")) db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id)");
+  // Which agent reviews this space's finished work; NULL means no automatic review.
+  if (!has("spaces", "review_by")) db.exec("ALTER TABLE spaces ADD COLUMN review_by TEXT");
+  // The approval a review or fix reports to, so a late one can't land on a newer approval.
+  if (!has("tasks", "approval_id")) db.exec("ALTER TABLE tasks ADD COLUMN approval_id TEXT REFERENCES approvals(id)");
+  // The task branch's commit when Nakul decided, so what he approved stays checkable.
+  if (!has("approvals", "branch_head")) db.exec("ALTER TABLE approvals ADD COLUMN branch_head TEXT");
 }
+

@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import index from "../dashboard/index.html";
+import type { Registry } from "../engine/agents/registry";
 import { AlreadyResolved, resolveApproval } from "../engine/approvals";
 import { markSeen } from "../engine/briefing";
 import { config } from "../engine/config";
@@ -8,13 +9,14 @@ import { bus } from "../engine/events";
 import type { setupSpace } from "../engine/setup";
 import { SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
-import { createSpace, getSpace, updateSpace } from "../engine/spaces";
+import { listMessages } from "../engine/messages";
+import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { snapshot } from "../engine/state";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 
 type Deps = {
   db: Database;
-  runner: { kick(): void };
+  runner: { kick(): void; registry?: Registry };
   setup: (text: string) => ReturnType<typeof setupSpace>;
   port?: number;
 };
@@ -42,6 +44,14 @@ const opt = <T>(v: unknown, ok: (x: unknown) => x is T, field: string): T | unde
 };
 const isBool = (x: unknown): x is boolean => typeof x === "boolean";
 const isString = (x: unknown): x is string => typeof x === "string";
+
+const AGENTS = ["auto", "claude", "codex", "gemini"];
+const agentField = (v: unknown): string | undefined => {
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || !AGENTS.includes(v)) throw new HttpError(400, "agent must be auto, claude, codex, or gemini.");
+  return v;
+};
+const RESERVE_STEPS = [0.25, 0.5, 0.75];
 
 export function startServer(deps: Deps): Server<undefined> {
   const { db, runner } = deps;
@@ -79,7 +89,7 @@ export function startServer(deps: Deps): Server<undefined> {
     const method = req.method;
     const hit = (m: string, pattern: RegExp) => (method === m ? pathname.match(pattern) : null);
 
-    if (hit("GET", /^\/api\/state$/)) return json(snapshot(db));
+    if (hit("GET", /^\/api\/state$/)) return json(snapshot(db, runner.registry));
 
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);
@@ -105,14 +115,27 @@ export function startServer(deps: Deps): Server<undefined> {
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
       }
+      const reviewBy = b.reviewBy;
+      if (reviewBy !== undefined && reviewBy !== null && !REVIEWERS.includes(reviewBy as ReviewerId)) {
+        throw new HttpError(400, "reviewBy must be codex, gemini, claude, or null.");
+      }
       return json(
         updateSpace(db, id, {
           ...(b.name !== undefined && { name: str(b.name, "name") }),
           ...(b.goal !== undefined && { goal: str(b.goal, "goal") }),
           ...(b.private !== undefined && { private: opt(b.private, isBool, "private") }),
           ...(status !== undefined && { status }),
+          ...(reviewBy !== undefined && { reviewBy: reviewBy as ReviewerId | null }),
         }),
       );
+    }
+
+    // Lets space settings say up front why a reviewer would be skipped, instead of after the work finishes.
+    const reviewersM = hit("GET", /^\/api\/spaces\/([^/]+)\/reviewers$/);
+    if (reviewersM) {
+      const space = getSpace(db, reviewersM[1]!);
+      if (!space) throw new HttpError(404, "No such space.");
+      return json(Object.fromEntries(REVIEWERS.map((id) => [id, runner.registry?.refusal(id, "review", space)?.reason ?? null])));
     }
 
     if (hit("POST", /^\/api\/tasks$/)) {
@@ -129,6 +152,7 @@ export function startServer(deps: Deps): Server<undefined> {
         detail: opt(b.detail, isString, "detail"),
         weight,
         allowOnBattery: opt(b.allowOnBattery, isBool, "allowOnBattery"),
+        agent: agentField(b.agent),
       });
       runner.kick();
       return json(task);
@@ -146,6 +170,37 @@ export function startServer(deps: Deps): Server<undefined> {
       const task = setTaskStatus(db, id, "queued");
       runner.kick();
       return json(task);
+    }
+
+    // Changing the agent after a run started would misattribute that run, so only queued tasks change.
+    const taskM = hit("PATCH", /^\/api\/tasks\/([^/]+)$/);
+    if (taskM) {
+      const id = taskM[1]!;
+      if (!getTask(db, id)) throw new HttpError(404, "No such task.");
+      const agent = agentField((await readBody(req)).agent);
+      if (!agent) throw new HttpError(400, "agent is required.");
+      const res = db.query("UPDATE tasks SET agent = ?, updated_at = ? WHERE id = ? AND status = 'queued'").run(agent, Date.now(), id);
+      if (res.changes === 0) throw new HttpError(409, "This task has already started, so its agent can't change.");
+      bus.emit({ type: "changed" });
+      runner.kick();
+      return json(getTask(db, id));
+    }
+
+    const nowM = hit("POST", /^\/api\/tasks\/([^/]+)\/run-now$/);
+    if (nowM) {
+      const id = nowM[1]!;
+      if (!getTask(db, id)) throw new HttpError(404, "No such task.");
+      const res = db.query("UPDATE tasks SET ignore_reserve = 1, updated_at = ? WHERE id = ? AND status = 'queued'").run(Date.now(), id);
+      if (res.changes === 0) throw new HttpError(409, "This task isn't waiting to start, so there's nothing to run now.");
+      bus.emit({ type: "changed" });
+      runner.kick();
+      return json(getTask(db, id));
+    }
+
+    const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
+    if (msgM) {
+      if (!getTask(db, msgM[1]!)) throw new HttpError(404, "No such task.");
+      return json(listMessages(db, msgM[1]!));
     }
 
     const apprM = hit("POST", /^\/api\/approvals\/([^/]+)$/);
@@ -172,6 +227,7 @@ export function startServer(deps: Deps): Server<undefined> {
         title: text.split("\n")[0]!.slice(0, 80),
         detail: text,
         weight: space.kind === "repo" ? "heavy" : "light",
+        agent: agentField(b.agent),
       });
       runner.kick();
       return json({ task });
@@ -179,10 +235,19 @@ export function startServer(deps: Deps): Server<undefined> {
 
     if (hit("POST", /^\/api\/settings$/)) {
       const b = await readBody(req);
-      if (typeof b.overnight !== "boolean") throw new HttpError(400, "overnight must be true or false.");
-      setSetting(db, "overnight", String(b.overnight));
+      if (b.overnight === undefined && b.claudeReserve === undefined) {
+        throw new HttpError(400, "Send overnight or claudeReserve.");
+      }
+      if (b.overnight !== undefined && typeof b.overnight !== "boolean") {
+        throw new HttpError(400, "overnight must be true or false.");
+      }
+      if (b.claudeReserve !== undefined && !RESERVE_STEPS.includes(b.claudeReserve as number)) {
+        throw new HttpError(400, "claudeReserve must be 0.25, 0.5, or 0.75.");
+      }
+      if (b.overnight !== undefined) setSetting(db, "overnight", String(b.overnight));
+      if (b.claudeReserve !== undefined) setSetting(db, "usage.claude.reserve", String(b.claudeReserve));
       runner.kick();
-      return json({ overnight: b.overnight });
+      return json({ overnight: b.overnight, claudeReserve: b.claudeReserve });
     }
 
     if (hit("POST", /^\/api\/seen$/)) {
@@ -211,7 +276,7 @@ export function startServer(deps: Deps): Server<undefined> {
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index },
+    routes: { "/": index, "/space/*": index, "/agents": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";

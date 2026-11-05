@@ -23,7 +23,11 @@ export function tempRepo(): { path: string; cleanup(): void } {
     if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
   };
   git("init", "-b", "main");
+  // Local config so engine commits in fixtures neither sign with the developer's key nor depend on their identity.
+  git("config", "user.name", "Atrium Test");
+  git("config", "user.email", "test@atrium.local");
+  git("config", "commit.gpgsign", "false");
   git("add", "-A");
-  git("-c", "user.name=Atrium Test", "-c", "user.email=test@atrium.local", "-c", "commit.gpgsign=false", "commit", "-m", "init");
+  git("commit", "-m", "init");
   return { path, cleanup: () => rmSync(path, { recursive: true, force: true }) };
 }

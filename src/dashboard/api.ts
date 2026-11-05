@@ -1,7 +1,8 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
 
-export type { State };
+export type { Message, State };
 
 // Archived spaces leave Home, so their tasks and approvals must not linger in its counts and lists.
 export function activeOnly(state: State): State {
@@ -114,6 +115,33 @@ export function useRunOutput(runId: string): string {
   }, [runId]);
   return useSyncExternalStore(subscribe, () => outputs.get(runId) ?? "");
 }
+
+// Reads data that isn't part of the pushed state, again whenever `version` changes.
+function useFetched<T>(path: string | null, version: unknown): T | null {
+  const [data, setData] = useState<{ path: string; value: T } | null>(null);
+  useEffect(() => {
+    if (!path) return;
+    let live = true;
+    fetch(path)
+      .then((res) => (res.ok ? (res.json() as Promise<T>) : null))
+      .then((value) => live && value !== null && setData({ path, value }))
+      // A failed read keeps what's shown; the next change tries again.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [path, version]);
+  return data && data.path === path ? data.value : null;
+}
+
+// A thread grows as agents hand work back and forth, which any state push can mean.
+export const useMessages = (taskId: string | null) =>
+  useFetched<Message[]>(taskId ? `/api/tasks/${encodeURIComponent(taskId)}/messages` : null, useEngineState());
+
+// Why each agent would be skipped as this space's reviewer, or null where it can review. Only the space's own
+// settings change the answer, so it's read again when the space is saved rather than on every push.
+export const useReviewers = (space: { id: string; updatedAt: number }) =>
+  useFetched<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(space.id)}/reviewers`, space.updatedAt);
 
 export async function fetchTranscript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   try {

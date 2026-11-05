@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { createApproval, listPending } from "../../src/engine/approvals";
+import { addMessage } from "../../src/engine/messages";
 import { openDb } from "../../src/engine/db";
+import { createRegistry } from "../../src/engine/agents/registry";
 import { createRunner } from "../../src/engine/runner";
 import { SetupFailed } from "../../src/engine/setup";
 import { createSpace } from "../../src/engine/spaces";
@@ -47,6 +49,39 @@ const post = (path: string, body?: unknown, headers: Record<string, string> = {}
     headers: { origin, "content-type": "application/json", ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+
+const patch = (path: string, body: unknown) =>
+  fetch(base + path, { method: "PATCH", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body) });
+
+test("PATCH reviewBy validates the agent id", async () => {
+  const s = createSpace(db, { name: "App", kind: "general", goal: "g" });
+  const bad = await patch(`/api/spaces/${s.id}`, { reviewBy: "bogus" });
+  expect(bad.status).toBe(400);
+  expect(((await bad.json()) as { error: string }).error).toBe("reviewBy must be codex, gemini, claude, or null.");
+  const set = await patch(`/api/spaces/${s.id}`, { reviewBy: "codex" });
+  expect(set.status).toBe(200);
+  expect(((await set.json()) as { reviewBy: string }).reviewBy).toBe("codex");
+  const cleared = await patch(`/api/spaces/${s.id}`, { reviewBy: null });
+  expect(((await cleared.json()) as { reviewBy: string | null }).reviewBy).toBeNull();
+  // Leaving it out keeps what's there.
+  await patch(`/api/spaces/${s.id}`, { reviewBy: "gemini" });
+  expect(((await (await patch(`/api/spaces/${s.id}`, { name: "Renamed" })).json()) as { reviewBy: string }).reviewBy).toBe("gemini");
+});
+
+test("GET messages returns the thread in order", async () => {
+  const s = createSpace(db, { name: "App", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Work" });
+  addMessage(db, { spaceId: s.id, taskId: t.id, fromAgent: "claude", toAgent: "codex", body: "Please review 2 files on atrium/x." });
+  addMessage(db, { spaceId: s.id, taskId: t.id, fromAgent: "codex", toAgent: "claude", body: "VERDICT: approve" });
+  const res = await fetch(`${base}/api/tasks/${t.id}/messages`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { fromAgent: string; body: string }[];
+  expect(body.map((m) => [m.fromAgent, m.body])).toEqual([
+    ["claude", "Please review 2 files on atrium/x."],
+    ["codex", "VERDICT: approve"],
+  ]);
+  expect((await fetch(`${base}/api/tasks/nope/messages`)).status).toBe(404);
+});
 
 test("GET /api/state returns spaces and briefing", async () => {
   createSpace(db, { name: "Docs", kind: "general", goal: "write" });
@@ -217,7 +252,7 @@ test("a second server on the same port fails instead of sharing it", () => {
 });
 
 test("dashboard routes serve html", async () => {
-  for (const p of ["/", "/space/spc_1"]) {
+  for (const p of ["/", "/space/spc_1", "/agents"]) {
     const res = await fetch(base + p);
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("<title>Atrium</title>");
@@ -278,4 +313,86 @@ test("ws receives changed after a mutation", async () => {
 test("ws upgrade with a foreign Origin is rejected", async () => {
   const { ok } = await openWs({ origin: "http://evil.example" });
   expect(ok).toBe(false);
+});
+
+test("run-now sets ignore_reserve and requires Origin", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  const t = createTask(db, { spaceId: s.id, title: "T", agent: "claude" });
+  const noOrigin = await fetch(`${base}/api/tasks/${t.id}/run-now`, { method: "POST" });
+  expect(noOrigin.status).toBe(403);
+  expect(getTask(db, t.id)!.ignoreReserve).toBe(false);
+  const ok = await post(`/api/tasks/${t.id}/run-now`);
+  expect(ok.status).toBe(200);
+  expect(getTask(db, t.id)!.ignoreReserve).toBe(true);
+  expect(kicks).toBe(1);
+  expect((await post("/api/tasks/tsk_nope/run-now")).status).toBe(404);
+  // Only a task still waiting to start can skip the reserve.
+  setTaskStatus(db, t.id, "running");
+  expect((await post(`/api/tasks/${t.id}/run-now`)).status).toBe(409);
+});
+
+test("task creation accepts a valid agent and rejects others", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  const res = await post("/api/tasks", { spaceId: s.id, title: "Draft", agent: "codex" });
+  expect(((await res.json()) as { agent: string }).agent).toBe("codex");
+  const bad = await post("/api/tasks", { spaceId: s.id, title: "Draft", agent: "gpt" });
+  expect(bad.status).toBe(400);
+  expect(await bad.json()).toEqual({ error: "agent must be auto, claude, codex, or gemini." });
+  const cmd = await post("/api/command", { text: "Draft the intro", spaceId: s.id, agent: "gemini" });
+  expect(((await cmd.json()) as { task: { agent: string } }).task.agent).toBe("gemini");
+  expect((await post("/api/command", { text: "x", spaceId: s.id, agent: "gpt" })).status).toBe(400);
+  const plain = await post("/api/tasks", { spaceId: s.id, title: "Draft" });
+  expect(((await plain.json()) as { agent: string }).agent).toBe("auto");
+});
+
+test("PATCH a queued task's agent; started tasks are 409", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  const t = createTask(db, { spaceId: s.id, title: "T" });
+  const res = await patch(`/api/tasks/${t.id}`, { agent: "claude" });
+  expect(res.status).toBe(200);
+  expect(getTask(db, t.id)!.agent).toBe("claude");
+  expect(kicks).toBe(1);
+  expect((await patch(`/api/tasks/${t.id}`, { agent: "gpt" })).status).toBe(400);
+  expect((await patch("/api/tasks/tsk_nope", { agent: "claude" })).status).toBe(404);
+  setTaskStatus(db, t.id, "running");
+  const started = await patch(`/api/tasks/${t.id}`, { agent: "codex" });
+  expect(started.status).toBe(409);
+  expect(getTask(db, t.id)!.agent).toBe("claude");
+});
+
+test("settings writes the Claude reserve from the allowed steps", async () => {
+  const res = await post("/api/settings", { claudeReserve: 0.75 });
+  expect(res.status).toBe(200);
+  expect(getSetting(db, "usage.claude.reserve")).toBe("0.75");
+  expect(getSetting(db, "overnight")).toBeNull();
+  expect(kicks).toBe(1);
+  expect((await post("/api/settings", { claudeReserve: 0.6 })).status).toBe(400);
+  expect((await post("/api/settings", {})).status).toBe(400);
+});
+
+test("reviewers lists why each agent can't review in a space", async () => {
+  server.stop(true);
+  const adapter = (id: string, label: string) => ({ id, label, run: async () => ({ status: "error" as const, kind: "failed" as const, message: "" }) });
+  const registry = createRegistry(db, { claude: adapter("claude", "Claude Code"), codex: adapter("codex", "Codex"), gemini: adapter("gemini", "Gemini") });
+  server = startServer({ db, runner: { kick: () => void kicks++, registry }, setup: (t) => setupImpl(t), port: 0 });
+  base = `http://127.0.0.1:${server.port}`;
+  origin = base;
+  const priv = createSpace(db, { name: "Notes", kind: "general", goal: "g", private: true });
+  const res = await fetch(`${base}/api/spaces/${priv.id}/reviewers`);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    claude: null,
+    codex: "Codex can't work here: this space is private, so only Claude works in it.",
+    gemini: "Gemini can't work here: this space is private, so only Claude works in it.",
+  });
+  const open = createSpace(db, { name: "Docs", kind: "general", goal: "g", private: false });
+  expect(await (await fetch(`${base}/api/spaces/${open.id}/reviewers`)).json()).toEqual({ claude: null, codex: null, gemini: null });
+  expect((await fetch(`${base}/api/spaces/spc_nope/reviewers`)).status).toBe(404);
+});
+
+test("state reports the Claude reserve even without a window reading", async () => {
+  const body = (await (await fetch(`${base}/api/state`)).json()) as { usage: { claudeReserve: number } };
+  expect(body.usage.claudeReserve).toBe(0.5);
+  await post("/api/settings", { claudeReserve: 0.25 });
+  expect(((await (await fetch(`${base}/api/state`)).json()) as { usage: { claudeReserve: number } }).usage.claudeReserve).toBe(0.25);
 });
