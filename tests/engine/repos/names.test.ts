@@ -18,7 +18,7 @@ test("valid repo names pass", () => {
 });
 
 test("invalid repo names throw BadDraft", () => {
-  for (const n of ["--foo", "-x", ".hidden", "../evil", "a/b", "a..b", "x.git", "X.GIT", "has space", "naïve", "名前", "", "a".repeat(101), "a\u0000b", "a\nb"]) {
+  for (const n of ["x.", "trailing..", "--foo", "-x", ".hidden", "../evil", "a/b", "a..b", "x.git", "X.GIT", "has space", "naïve", "名前", "", "a".repeat(101), "a\u0000b", "a\nb"]) {
     expect(() => validateRepoName(n)).toThrow(BadDraft);
   }
   expect(() => validateRepoName("--foo")).toThrow(
@@ -55,4 +55,10 @@ test("validateDraft is strict about values and drops unknown keys", () => {
   expect(() => validateDraft(null)).toThrow(BadDraft);
   const d = validateDraft({ ...ok, path: "/etc", approved: true });
   expect(d).toEqual({ name: "demo", description: "A demo", visibility: "private", template: "bun-ts" });
+});
+
+test("descriptions can't hide text with direction marks or line separators", () => {
+  for (const c of ["\u200E", "\u200F", "\u202A", "\u202E", "\u2066", "\u2069", "\u2028", "\u2029"]) {
+    expect(() => validateDescription(`safe${c}text`)).toThrow(BadDraft);
+  }
 });

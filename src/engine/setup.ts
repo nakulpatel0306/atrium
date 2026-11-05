@@ -7,6 +7,7 @@ import { config } from "./config";
 import type { Approval } from "./approvals";
 import { git } from "./git";
 import { GhProblem, ghViewRepo } from "./repos/gh";
+import { HIDDEN_TEXT } from "./repos/rules";
 import { BadDraft, type ProjectDraft, sameGithubRepo, slugifyName, validateDescription, validateGithubSlug, validateRepoName } from "./repos/names";
 import { draftProject, type RepoAction } from "./repos/store";
 import { createSpace, listSpaces, type Space } from "./spaces";
@@ -163,8 +164,8 @@ export function parseSetupReply(text: string, projectsRoot = defaultProjectsRoot
     if (e instanceof BadDraft) throw new BadPlan(e.message);
     throw e;
   }
-  const firstLine = typeof obj.description === "string" ? (obj.description.split(/[\r\n]/)[0] ?? "") : "";
-  const description = validateDescription(firstLine.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 350));
+  const firstLine = typeof obj.description === "string" ? (obj.description.split(/[\r\n\u2028\u2029]/)[0] ?? "") : "";
+  const description = validateDescription(firstLine.replace(/[\u0000-\u001f\u007f]/g, "").replace(HIDDEN_TEXT, "").slice(0, 350));
   return {
     kind: "new_project",
     draft: { name, description, visibility: obj.visibility === "public" ? "public" : "private", template: obj.template === "empty" ? "empty" : "bun-ts" },

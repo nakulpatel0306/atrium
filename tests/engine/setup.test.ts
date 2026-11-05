@@ -240,6 +240,11 @@ describe("new projects and GitHub repos", () => {
     expect(multi.draft.draft!.description).toBe("line one");
   });
 
+  test("direction marks and line separators are stripped from a drafted description", async () => {
+    const out = asDraft(await run({ kind: "new_project", name: "ok", description: "evil\u202Etxt.exe\u2028more" }));
+    expect(out.draft.draft!.description).toBe("eviltxt.exe");
+  });
+
   test("a name with nothing usable fails plainly", async () => {
     const err = await run({ kind: "new_project", name: "✨", description: "x" }).catch((e) => e);
     expect(err).toBeInstanceOf(SetupFailed);
