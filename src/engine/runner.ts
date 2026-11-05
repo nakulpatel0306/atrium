@@ -23,6 +23,7 @@ import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./ha
 import { newId } from "./ids";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
+import { keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
 import { getTask, listTasks, setTaskStatus, type Task } from "./tasks";
@@ -33,7 +34,7 @@ const STOP_TIMEOUT_MS = 10_000;
 const MAX_LIMIT_RETRIES = 3;
 const TEMP_SWEEP_AGE_MS = 86_400_000;
 
-const SYSTEM_PROMPT = [
+const REPO_SYSTEM_PROMPT = [
   "You are working for Nakul through Atrium.",
   "Work only on the current git branch. Do not switch, create, or delete branches.",
   "Leave your changes uncommitted; Atrium commits them for you.",
@@ -41,6 +42,17 @@ const SYSTEM_PROMPT = [
   "Never read, print, or edit .env files, keys, or tokens.",
   "Finish with a 2–4 sentence summary of what changed and anything Nakul should check.",
 ].join("\n");
+
+// Away from a repo there is no git: instructions about branches send agents looking for one.
+function generalSystemPrompt(scratch: boolean): string {
+  return [
+    "You are working for Nakul through Atrium.",
+    "Work in the current folder.",
+    ...(scratch ? ["This folder is temporary. Atrium keeps a copy of the files you leave in it with this run's results."] : []),
+    "Never read, print, or edit .env files, keys, or tokens.",
+    "Finish with a 2–4 sentence summary of what you did and anything Nakul should check.",
+  ].join("\n");
+}
 
 // The diff is in a review's prompt, so the reviewer reads and changes nothing on disk.
 const REVIEW_SYSTEM_PROMPT = [
@@ -361,7 +373,7 @@ export function createRunner(deps: {
       result = await adapter.run({
         prompt: buildPrompt(task, space),
         cwd: r.cwd,
-        systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : SYSTEM_PROMPT,
+        systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : repo ? REPO_SYSTEM_PROMPT : generalSystemPrompt(r.scratch),
         allowedTools: task.kind === "review" ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
         mode: task.kind === "review" ? "review" : "work",
         signal: r.signal,
@@ -390,6 +402,8 @@ export function createRunner(deps: {
     let lateBranch: string | null = null;
     // Where the agent's unfinished edits were committed when the run ended without finishing.
     let saved: string | null = null;
+    // Where a scratch run's files were copied before its folder went away.
+    let kept: { dir: string; truncated: boolean } | null = null;
     try {
       const stopped = result.status !== "ok";
       // A fix still running after Nakul decided must not add to the branch he decided on, and one that didn't
@@ -434,7 +448,10 @@ export function createRunner(deps: {
       );
     } finally {
       if (repo) leftRepo = await settleRepo(repo);
-      if (r.scratch) rmSync(r.cwd, { recursive: true, force: true });
+      if (r.scratch) {
+        kept = keepScratchFiles(space, runId, r.cwd);
+        rmSync(r.cwd, { recursive: true, force: true });
+      }
     }
 
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
@@ -469,6 +486,10 @@ export function createRunner(deps: {
         const lines = [result.summary.trim()];
         const report = repo ? await repoReport(repo) : null;
         if (report) lines.push(...report.lines);
+        if (kept) {
+          const cut = kept.truncated ? " Some were cut short or left out to stay under 5 MB each and 50 MB in all." : "";
+          lines.push(`Files it left are kept in ${kept.dir}.${cut}`);
+        }
         setTaskStatus(db, task.id, "review");
         const approval = createApproval(db, {
           spaceId: space.id,
@@ -496,6 +517,18 @@ export function createRunner(deps: {
       }
     } finally {
       enforceTranscriptCap();
+    }
+  }
+
+  // A copy that fails must not lose the run's outcome; the agent's summary still reaches Nakul.
+  function keepScratchFiles(space: Space, runId: string, cwd: string): { dir: string; truncated: boolean } | null {
+    const dir = join(config().home, "spaces", space.id, "runs", runId);
+    try {
+      const res = keepScratch(cwd, dir);
+      return res.files > 0 ? { dir, truncated: res.truncated } : null;
+    } catch (e) {
+      logActivity(db, space.id, "atrium", `Couldn't keep the files from a run's temporary folder: ${(e as Error).message}`);
+      return null;
     }
   }
 

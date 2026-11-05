@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { appendFileSync, existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskWait } from "../../src/engine/agents/registry";
@@ -127,7 +127,9 @@ test("runs a queued task to review and creates a review approval", async () => {
   expect(calls[0]!.prompt).toContain("Write intro");
   expect(calls[0]!.prompt).toContain("Keep it short");
   expect(calls[0]!.prompt).toContain("Write clear docs");
-  expect(calls[0]!.systemPrompt).toContain("Never push or merge");
+  // Away from a repo there's no git to talk about.
+  expect(calls[0]!.systemPrompt).toContain("Work in the current folder.");
+  expect(calls[0]!.systemPrompt).not.toMatch(/git|branch|commit|push|merge/i);
   expect(calls[0]!.allowedTools).toEqual(["Read", "Edit", "Write", "Glob", "Grep"]);
   expect(calls[0]!.cwd).toBe(join(home.home, "spaces", s.id));
   expect(existsSync(calls[0]!.cwd)).toBe(true);
@@ -162,6 +164,8 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   expect(git(path, "branch", "--list", "atrium/" + task.id)).toContain("atrium/" + task.id);
   expect(git(path, "branch", "--show-current")).toBe("main");
   expect(calls[0]!.cwd).toBe(path);
+  expect(calls[0]!.systemPrompt).toContain("Work only on the current git branch.");
+  expect(calls[0]!.systemPrompt).toContain("Atrium commits them for you.");
   expect(calls[0]!.allowedTools).toEqual([
     "Read", "Edit", "Write", "Glob", "Grep",
     "Bash(bun test*)", "Bash(bun install --ignore-scripts*)", "Bash(bunx tsc*)",
@@ -572,6 +576,7 @@ test("a review task runs its agent in review mode", async () => {
   start({ adapter });
   await waitFor(() => status(review.id) === "done" && status(work.id) === "review");
   expect(calls.map((c) => [c.prompt.includes("Review it"), c.mode])).toEqual([[true, "review"], [false, "work"]]);
+  expect(calls[0]!.systemPrompt).toContain("You are reviewing another agent's work");
   // Reviews read the diff in their prompt, so Claude gets no edit tools for them.
   expect(calls[0]!.allowedTools).toEqual(["Read", "Glob", "Grep"]);
 });
@@ -589,6 +594,28 @@ test("a general-space codex run uses a fresh scratch folder that is removed afte
   await waitFor(() => status(t.id) === "review");
   expect(seen).not.toBe(join(home.home, "spaces", s.id));
   expect(existsSync(seen)).toBe(false);
+  expect(codex.calls[0]!.systemPrompt).toContain("This folder is temporary");
+  expect(codex.calls[0]!.systemPrompt).not.toMatch(/git|branch|commit/i);
+});
+
+test("files a scratch run leaves are kept with the run, and the approval says where", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Write notes", agent: "codex" });
+  const codex = fakeAdapter((input) => {
+    writeFileSync(join(input.cwd, "notes.md"), "# notes\n");
+    mkdirSync(join(input.cwd, "sub"));
+    writeFileSync(join(input.cwd, "sub", "more.txt"), "more\n");
+    symlinkSync("/etc/hosts", join(input.cwd, "link"));
+    return ok("Wrote notes.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  const kept = join(home.home, "spaces", s.id, "runs", run.id);
+  expect(readFileSync(join(kept, "notes.md"), "utf8")).toBe("# notes\n");
+  expect(readFileSync(join(kept, "sub", "more.txt"), "utf8")).toBe("more\n");
+  expect(existsSync(join(kept, "link"))).toBe(false);
+  expect(listPending(db)[0]!.detail).toContain(`Files it left are kept in ${kept}.`);
 });
 
 test("launch re-checks the agent and holds a task the space no longer allows", async () => {
