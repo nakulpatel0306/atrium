@@ -4,15 +4,7 @@ import type { State } from "../engine/state";
 
 export type { Message, State };
 
-// Archived spaces leave Home, so their tasks and approvals must not linger in its counts and lists.
-export function activeOnly(state: State): State {
-  const ids = new Set(state.spaces.map((s) => s.id));
-  return {
-    ...state,
-    tasks: state.tasks.filter((t) => ids.has(t.spaceId)),
-    approvals: state.approvals.filter((a) => ids.has(a.spaceId)),
-  };
-}
+export { activeOnly } from "./summary";
 
 type EngineMessage = { type: "changed" } | { type: "run-output"; runId: string; taskId: string; chunk: string };
 
