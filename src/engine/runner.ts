@@ -403,7 +403,7 @@ export function createRunner(deps: {
     // Where the agent's unfinished edits were committed when the run ended without finishing.
     let saved: string | null = null;
     // Where a scratch run's files were copied before its folder went away.
-    let kept: (KeptScratch & { dir: string }) | null = null;
+    let kept: Kept | null = null;
     try {
       const stopped = result.status !== "ok";
       // A fix still running after Nakul decided must not add to the branch he decided on, and one that didn't
@@ -449,7 +449,7 @@ export function createRunner(deps: {
     } finally {
       if (repo) leftRepo = await settleRepo(repo);
       if (r.scratch) {
-        kept = keepScratchFiles(space, runId, r.cwd);
+        kept = await keepScratchFiles(space, runId, r.cwd);
         rmSync(r.cwd, { recursive: true, force: true });
       }
     }
@@ -517,16 +517,16 @@ export function createRunner(deps: {
     }
   }
 
-  // A copy that fails must not lose the run's outcome; the agent's summary still reaches Nakul.
   // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
-  function keepScratchFiles(space: Space, runId: string, cwd: string): (KeptScratch & { dir: string }) | null {
+  // A copy that fails must not lose the run's outcome; the approval says the files couldn't be kept.
+  async function keepScratchFiles(space: Space, runId: string, cwd: string): Promise<Kept | null> {
     const dir = join(config().home, "spaces", space.id, "runs", runId);
     try {
-      const res = keepScratch(cwd, dir);
+      const res = await keepScratch(cwd, dir);
       return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;
     } catch (e) {
       logActivity(db, space.id, "atrium", `Couldn't keep the files from a run's temporary folder: ${(e as Error).message}`);
-      return null;
+      return { files: 0, truncated: false, skipped: 0, dir, failed: (e as Error).message };
     }
   }
 
@@ -609,7 +609,10 @@ async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: nu
 // A fix adds to the branch its parent's work is on.
 const branchTaskId = (task: Task) => (task.kind === "fix" && task.parentTaskId) || task.id;
 
-function keptLine(kept: KeptScratch & { dir: string }): string {
+type Kept = KeptScratch & { dir: string; failed?: string };
+
+function keptLine(kept: Kept): string {
+  if (kept.failed) return `Atrium couldn't keep the files it left: ${kept.failed}. They were removed with the temporary folder.`;
   const parts = [kept.files > 0 ? `Files it left are kept in ${kept.dir}.` : "None of the files it left were kept."];
   if (kept.truncated) parts.push("Some were cut short or left out to stay under 5 MB each and 50 MB in all.");
   if (kept.skipped > 0) {

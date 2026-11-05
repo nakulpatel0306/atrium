@@ -8,6 +8,7 @@ import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engi
 import { listPending } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import * as gitOps from "../../src/engine/git";
+import * as scratch from "../../src/engine/scratch";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { createRunner, recoverOnBoot } from "../../src/engine/runner";
@@ -1199,6 +1200,25 @@ test("a review that would go to the agent that did the work is skipped at launch
   await waitFor(() => status(review.id) === "done");
   expect(codex.calls).toHaveLength(0);
   expect(listActivity(db).some((a) => a.message.includes("Codex did the work, so it can't review it too"))).toBe(true);
+});
+
+test("a scratch copy whose sandbox won't start keeps nothing and the approval says so", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+  const t = createTask(db, { spaceId: s.id, title: "Write notes", agent: "codex" });
+  const real = scratch.keepScratch;
+  const spy = spyOn(scratch, "keepScratch").mockImplementation((src, dest) => real(src, dest, { sandboxExec: "/nonexistent/sandbox-exec" }));
+  cleanups.push(() => spy.mockRestore());
+  const codex = fakeAdapter((input) => {
+    writeFileSync(join(input.cwd, "notes.md"), "# notes\n");
+    return ok("Wrote notes.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  expect(existsSync(join(home.home, "spaces", s.id, "runs", run.id))).toBe(false);
+  expect(listPending(db)[0]!.detail).toContain(
+    "Atrium couldn't keep the files it left: the sandbox for copying them didn't start. They were removed with the temporary folder.",
+  );
 });
 
 test("recoverOnBoot sweeps Atrium temp folders older than a day", async () => {

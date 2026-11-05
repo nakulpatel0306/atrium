@@ -40,6 +40,8 @@ export interface SeatbeltOptions {
   extraDenyRead?: string[];
   // Single files re-allowed inside a denied path, for a CLI that can't start without them.
   allowRead?: string[];
+  // Whole folders re-allowed inside a denied path: the engine-made folder a sandboxed copy writes into.
+  allowReadDirs?: string[];
 }
 
 // Seatbelt matches resolved paths (/private/var, never /var), so an unresolved path would silently never match.
@@ -80,6 +82,7 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     `(deny file-read* ${denyRead.join(" ")} (regex #"${ENV_FILE_PATTERN}"))`,
     // Later rules win in Seatbelt, so these literals reopen just the named files.
     ...(opts.allowRead?.length ? [`(allow file-read* ${opts.allowRead.map((p) => `(literal ${str(canonical(p))})`).join(" ")})`] : []),
+    ...(opts.allowReadDirs?.length ? [`(allow file-read* ${opts.allowReadDirs.map(subpath).join(" ")})`] : []),
     `(deny file-write* (require-not (require-any ${writable.join(" ")} ${DEVICES.map((d) => `(literal "${d}")`).join(" ")} (regex #"^/dev/fd/[0-9]+$"))))`,
     // Writes to .env names are denied too, or an agent could rename .env to a readable name.
     `(deny file-write* ${PROTECTED_IN_CWD.map((d) => subpath(join(cwd, d))).join(" ")} (regex #"${ENV_FILE_PATTERN}"))`,
