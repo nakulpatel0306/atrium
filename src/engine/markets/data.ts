@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { getSetting } from "../settings";
-import { dailyBudget, meteredFetch, noteSourceResult } from "./budget";
+import { dailyBudget, hourlyBudget, meteredFetch, noteSourceResult } from "./budget";
 import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
 import { recordCloses } from "./closes";
 import { etDate, etInstant, lastCompletedSession } from "./calendar";
@@ -10,6 +10,7 @@ import { alpacaProvider } from "./providers/alpaca";
 import { alphaVantageProvider } from "./providers/alphavantage";
 import { demoProvider } from "./providers/demo";
 import { finnhubProvider } from "./providers/finnhub";
+import { tiingoProvider, tiingoSymbols, type TiingoProvider } from "./providers/tiingo";
 import { ProviderError, type Bar, type Freshness, type MarketProvider, type NewsItem, type ProviderId, type Quote, type Timeframe } from "./providers/types";
 import { redact } from "./redact";
 
@@ -19,7 +20,9 @@ export type DataStatus = {
   usProvider: "alpaca" | "finnhub" | "demo";
   us: { ready: boolean; message: string };
   ca: { ready: boolean; message: string };
-  keys: { alpaca: boolean; finnhub: boolean; alphavantage: boolean };
+  keys: { alpaca: boolean; finnhub: boolean; alphavantage: boolean; tiingo: boolean };
+  // Where US daily history (charts, performance, indicators) comes from.
+  history: { ready: boolean; message: string };
 };
 export type MarketData = {
   quotes(list: Instrument[]): Promise<{ quotes: Quote[]; missing: { key: string; reason: string }[] }>;
@@ -36,9 +39,14 @@ export type MarketData = {
   // Why nothing prices this instrument right now; null when a provider covers it.
   reasonFor(i: Instrument): string | null;
   secrets(): string[];
+  // The Tiingo provider for the end-of-day job, or null without a key.
+  tiingo?(): TiingoProvider | null;
 };
 
 export const AV_DAILY_LIMIT = 25;
+// Tiingo's free plan allows 1,000 a day and 50 an hour; Atrium stops a little short.
+export const TIINGO_DAILY_LIMIT = 950;
+export const TIINGO_HOURLY_LIMIT = 48;
 const DAY_MS = 86_400_000;
 const RANGE_DAYS: Record<Exclude<ChartRange, "5D">, number> = { "1M": 31, "3M": 92, "6M": 183, "1Y": 366 };
 // Enough calendar days to hold five sessions across a long weekend.
@@ -50,11 +58,12 @@ export const MISSING = {
   ca: "Canadian prices need a free Alpha Vantage key (Settings → Market data).",
   neo: "No free source covers NEO-listed CDRs.",
   otc: "Alpaca's free plan doesn't include OTC stocks.",
+  history: "Add a free Tiingo key for daily history (Settings → Market data).",
 };
 
 const FRESHNESS: Record<ProviderId, Freshness> = { alpaca: "live", finnhub: "live", alphavantage: "eod", tiingo: "eod", demo: "demo" };
 
-type Keys = { alpacaKeyId: string | null; alpacaSecret: string | null; finnhub: string | null; alphavantage: string | null };
+type Keys = { alpacaKeyId: string | null; alpacaSecret: string | null; finnhub: string | null; alphavantage: string | null; tiingo: string | null };
 
 export function createMarketData(deps: {
   db: Database;
@@ -66,7 +75,7 @@ export function createMarketData(deps: {
 }): MarketData {
   const { db } = deps;
   const now = deps.now ?? Date.now;
-  let keys: Keys = { alpacaKeyId: null, alpacaSecret: null, finnhub: null, alphavantage: null };
+  let keys: Keys = { alpacaKeyId: null, alpacaSecret: null, finnhub: null, alphavantage: null, tiingo: null };
   let loaded: Promise<void> | null = null;
   let built: Partial<Record<ProviderId, MarketProvider>> = {};
   // A provider that rejected its key says so in the status until the keys change, or until the next session's first
@@ -92,6 +101,7 @@ export function createMarketData(deps: {
       alpacaSecret: await read(KEY_ACCOUNTS.alpacaSecret),
       finnhub: await read(KEY_ACCOUNTS.finnhub),
       alphavantage: await read(KEY_ACCOUNTS.alphavantage),
+      tiingo: await read(KEY_ACCOUNTS.tiingo),
     };
     built = {};
   };
@@ -112,7 +122,12 @@ export function createMarketData(deps: {
     for (const id of Object.keys(rejected) as ProviderId[]) if (rejected[id]!.date !== today) delete rejected[id];
   };
 
-  const has = { alpaca: () => !!(keys.alpacaKeyId && keys.alpacaSecret), finnhub: () => !!keys.finnhub, alphavantage: () => !!keys.alphavantage };
+  const has = {
+    alpaca: () => !!(keys.alpacaKeyId && keys.alpacaSecret),
+    finnhub: () => !!keys.finnhub,
+    alphavantage: () => !!keys.alphavantage,
+    tiingo: () => !!keys.tiingo,
+  };
   const mode = (): DataStatus["usProvider"] => {
     const v = getSetting(db, "markets.provider");
     return v === "finnhub" || v === "demo" ? v : "alpaca";
@@ -140,7 +155,14 @@ export function createMarketData(deps: {
           ? finnhubProvider(keys.finnhub!, io)
           : id === "alphavantage"
             ? alphaVantageProvider(keys.alphavantage!, { budget: dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now), fetch: metered, now, onDaily: keepDaily })
-            : demoProvider({ now });
+            : id === "tiingo"
+              ? tiingoProvider(keys.tiingo!, {
+                  fetch: metered,
+                  now,
+                  budget: { day: dailyBudget(db, "tiingo", TIINGO_DAILY_LIMIT, now), hour: hourlyBudget(db, "tiingo", TIINGO_HOURLY_LIMIT, now) },
+                  symbols: tiingoSymbols(db, now),
+                })
+              : demoProvider({ now });
     built[id] = made;
     return made;
   };
@@ -154,7 +176,15 @@ export function createMarketData(deps: {
     return has.alphavantage() ? { provider: provider("alphavantage"), reason: "" } : { provider: null, reason: MISSING.ca };
   };
 
-  const secrets = () => [keys.alpacaKeyId, keys.alpacaSecret, keys.finnhub, keys.alphavantage].filter((k): k is string => !!k);
+  const secrets = () => [keys.alpacaKeyId, keys.alpacaSecret, keys.finnhub, keys.alphavantage, keys.tiingo].filter((k): k is string => !!k);
+  // US daily bars: Alpaca when that's the mode and its keys are there, else Tiingo when it has a key.
+  const historyFor = (i: Instrument): { provider: MarketProvider | null; reason: string } => {
+    const m = mode();
+    if (m === "demo" || i.exchange !== "US") return route(i);
+    if (m === "alpaca" && has.alpaca()) return { provider: provider("alpaca"), reason: "" };
+    if (has.tiingo()) return { provider: provider("tiingo"), reason: "" };
+    return { provider: null, reason: MISSING.history };
+  };
   const message = (e: unknown) => redact(e instanceof Error ? e.message : String(e), secrets());
   const note = (p: MarketProvider, ok: boolean, msg?: string) => {
     if (p.id !== "demo") noteSourceResult(db, p.id, ok, msg, now());
@@ -230,7 +260,7 @@ export function createMarketData(deps: {
       await ensure();
       const key = instrumentKey(i);
       const timeframe: Timeframe = range === "5D" ? "5Min" : "1Day";
-      const r = route(i);
+      const r = range === "5D" ? route(i) : historyFor(i);
       if (!r.provider) return { key, timeframe, bars: [], source: null, freshness: null, note: r.reason };
       const p = r.provider;
       const base = { key, timeframe, source: p.id, freshness: FRESHNESS[p.id] };
@@ -274,8 +304,20 @@ export function createMarketData(deps: {
     },
     async status() {
       const m = mode();
-      const keysPresent = { alpaca: has.alpaca(), finnhub: has.finnhub(), alphavantage: has.alphavantage() };
-      if (m === "demo") return { usProvider: m, us: { ready: true, message: "Demo data" }, ca: { ready: true, message: "Demo data" }, keys: keysPresent };
+      const keysPresent = { alpaca: has.alpaca(), finnhub: has.finnhub(), alphavantage: has.alphavantage(), tiingo: has.tiingo() };
+      if (m === "demo") {
+        const demo = { ready: true, message: "Demo data" };
+        return { usProvider: m, us: demo, ca: demo, keys: keysPresent, history: demo };
+      }
+      const tiingoLeft = dailyBudget(db, "tiingo", TIINGO_DAILY_LIMIT, now).remaining();
+      const history =
+        m === "alpaca" && has.alpaca()
+          ? { ready: true, message: "Alpaca · daily history" }
+          : rejected.tiingo
+            ? { ready: false, message: rejected.tiingo.message }
+            : has.tiingo()
+              ? { ready: true, message: `Tiingo · end of day (${tiingoLeft} of ${TIINGO_DAILY_LIMIT} requests left today)` }
+              : { ready: false, message: MISSING.history };
       const us = !has[m]()
         ? { ready: false, message: readFailed ? KEYCHAIN_LOCKED : MISSING[m] }
         : rejected[m]
@@ -287,7 +329,7 @@ export function createMarketData(deps: {
         : has.alphavantage()
         ? { ready: true, message: `Alpha Vantage · end of day (${left} of ${AV_DAILY_LIMIT} requests left today)` }
         : { ready: false, message: MISSING.ca };
-      return { usProvider: m, us, ca, keys: keysPresent };
+      return { usProvider: m, us, ca, keys: keysPresent, history };
     },
     prepare: ensure,
     refreshKeys: (force = false) => readIfDue(30_000, force),
@@ -303,6 +345,9 @@ export function createMarketData(deps: {
       return r.provider ? null : r.reason;
     },
     secrets,
+    tiingo() {
+      return has.tiingo() ? (provider("tiingo") as TiingoProvider) : null;
+    },
   };
 }
 

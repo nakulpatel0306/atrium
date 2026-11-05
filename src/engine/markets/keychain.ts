@@ -6,6 +6,7 @@ export const KEY_ACCOUNTS = {
   alpacaSecret: "alpaca.secret",
   finnhub: "finnhub.token",
   alphavantage: "alphavantage.key",
+  tiingo: "tiingo.token",
 } as const;
 
 export type Keychain = {

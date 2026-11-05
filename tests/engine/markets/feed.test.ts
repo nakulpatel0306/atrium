@@ -78,7 +78,8 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
       usProvider: "alpaca",
       us: { ready: opts.ready ?? true, message: opts.ready === false ? "Add your Alpaca key in Settings → Market data." : "ok" },
       ca: { ready: true, message: "ok" },
-      keys: { alpaca: true, finnhub: false, alphavantage: true },
+      keys: { alpaca: true, finnhub: false, alphavantage: true, tiingo: false },
+      history: { ready: true, message: "ok" },
     }),
     reload: async () => {},
     prepare: async () => {},
@@ -400,7 +401,7 @@ test("no Keychain reads while the market is closed and nobody is looking", async
     timers.fireAll();
     await feed.idle();
     const first = readFileSync(join(dir, "argv.log"), "utf8").trim().split("\n").length;
-    expect(first).toBe(4);
+    expect(first).toBe(5); // one read per key account, Tiingo included
     now += POLL_MS;
     timers.fireAll();
     await feed.idle();

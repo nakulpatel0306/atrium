@@ -13,6 +13,7 @@ import { evaluateQuotes } from "./engine/markets/alerts";
 import { marketNow } from "./engine/markets/calendar";
 import { createMarketData } from "./engine/markets/data";
 import { createFeed } from "./engine/markets/feed";
+import { eodJob } from "./engine/markets/eod";
 import { fxJob } from "./engine/markets/fx";
 import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
@@ -32,7 +33,11 @@ const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "alpac
 const keychain = createKeychain();
 const data = createMarketData({ db, keychain, now: marketClock });
 // Daily and weekly market jobs, run from the feed's own timer.
-const jobs = createJobs(db, [fxJob(db, { now: marketClock })], marketClock);
+const jobs = createJobs(
+  db,
+  [fxJob(db, { now: marketClock }), eodJob(db, { data, tiingo: () => data.tiingo?.() ?? null, now: marketClock })],
+  marketClock,
+);
 const runner = createRunner({ db, adapters, power: powerSource, keepAwake, markets: createMarketsHooks(db, { data, now: marketClock }) });
 const feed = createFeed({
   db,

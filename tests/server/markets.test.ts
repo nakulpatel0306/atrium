@@ -227,6 +227,22 @@ test("key canary: keys never leave the Keychain", async () => {
   }
 });
 
+test("a Tiingo key is validated, saved to the Keychain and removable", async () => {
+  const { stubFetch, jsonResponse } = await import("../engine/markets/fakes");
+  const tiingoRows = JSON.parse(readFileSync(join(FIXTURES, "investing/tiingo-spy.json"), "utf8"));
+  const s = stubFetch((url) => (url.host === "api.tiingo.com" ? jsonResponse(tiingoRows) : new Response("no", { status: 500 })));
+  const { keychain } = boot({ fetch: s.fetch });
+  const saved = await call("POST", "/api/settings/market-data/keys", { provider: "tiingo", token: "TGTESTTOKEN99" });
+  expect(saved.status).toBe(200);
+  expect(await keychain.get("tiingo.token")).toBe("TGTESTTOKEN99");
+  expect(s.calls[0]!.headers.authorization).toBe("Token TGTESTTOKEN99");
+  const st = await (await get("/api/settings/market-data")).json();
+  expect(st.data.keys.tiingo).toBe(true);
+  expect(JSON.stringify(st)).not.toContain("TGTESTTOKEN99");
+  expect((await call("DELETE", "/api/settings/market-data/keys/tiingo")).status).toBe(200);
+  expect(await keychain.get("tiingo.token")).toBeNull();
+});
+
 test("no trading hosts anywhere in the source", () => {
   const banned = ["paper-api.alpaca.markets", "api.alpaca.markets", "/v2/orders"];
   const walk = (dir: string): string[] =>
