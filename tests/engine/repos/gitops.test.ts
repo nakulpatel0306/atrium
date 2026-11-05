@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -8,6 +8,9 @@ import { cloneRepo, fetchOrigin, initialCommit, remoteIsEmpty } from "../../../s
 import { PushRefused, pushInitialMain } from "../../../src/engine/repos/push";
 import { tempHome } from "../../helpers";
 import { type FakeGitHub, fakeGitHub, seedRemote } from "../../repos-helpers";
+
+// Each test spawns git, the fake gh and sometimes ssh-keygen several times; slow under load.
+setDefaultTimeout(30_000);
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;

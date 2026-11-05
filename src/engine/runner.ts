@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clock, createRegistry, type Registry, type TaskWait } from "./agents/registry";
@@ -95,6 +95,8 @@ export function createRunner(deps: {
   stopTimeoutMs?: number;
   // Market context in prompts and the atrium-markets block afterwards; absent, markets spaces run like general ones.
   markets?: MarketsHooks;
+  // Local copies of attached GitHub repos: cloned on demand, marked used, and checked for cleanup once a day.
+  repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
 }): { start(): void; stop(): Promise<void>; kick(): void; registry: Registry } {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
@@ -172,6 +174,12 @@ export function createRunner(deps: {
     for (const task of listTasks(db, { status: ["queued"] })) {
       const space = getSpace(db, task.spaceId);
       if (space?.status !== "active") continue;
+      // A repo space attached from GitHub gets its local copy first; the task waits rather than blocks meanwhile.
+      if (deps.repos && space.kind === "repo" && space.github && task.kind !== "review" && (!space.repoPath || !existsSync(space.repoPath))) {
+        deps.repos.requestClone(space);
+        waits.push({ taskId: task.id, agent: task.agent, kind: "cloning", reason: `Getting a local copy of ${space.github} from GitHub…` });
+        continue;
+      }
       const check = canRun(task, source);
       if (!check.ok) {
         waits.push({ taskId: task.id, agent: task.agent, kind: "power", reason: check.reason });
@@ -314,6 +322,7 @@ export function createRunner(deps: {
         const fingerprint = last?.fingerprint ?? (await gitSettingsFingerprint(path));
         const branch = await prepareBranch(path, branchTaskId(task), { existing: task.kind === "fix" });
         repo = { path, start, fingerprint, branch };
+        deps.repos?.touch(path);
       } catch (e) {
         return block(task, (e as Error).message);
       }
@@ -608,7 +617,10 @@ export function createRunner(deps: {
       unsubscribe = bus.on((e) => {
         if (e.type === "changed") kick();
       });
-      interval = setInterval(kick, POWER_CHECK_MS);
+      interval = setInterval(() => {
+        deps.repos?.daily(Date.now());
+        kick();
+      }, POWER_CHECK_MS);
       kick();
     },
     async stop() {

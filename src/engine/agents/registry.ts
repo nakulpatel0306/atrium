@@ -22,6 +22,7 @@ export type WaitKind =
   | "private_space"
   | "env_files"
   | "gemini_repo"
+  | "cloning"
   | "busy";
 // `agent` is the one the task is waiting on; `until` is when the wait ends on its own, if it does.
 export type Wait = { agent: string; kind: WaitKind; reason: string; until?: number };
