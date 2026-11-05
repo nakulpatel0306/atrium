@@ -21,6 +21,7 @@ import {
 } from "./git";
 import { afterFix, afterReview, afterWork, fixFailed } from "./handoff";
 import { newId } from "./ids";
+import { agentName, plural } from "./names";
 import { canRun, type PowerSource } from "./power";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
@@ -452,7 +453,7 @@ export function createRunner(deps: {
         const hits = (limitHits.get(task.id) ?? 0) + 1;
         if (hits >= MAX_LIMIT_RETRIES) {
           limitHits.delete(task.id);
-          block(task, `${adapter.id === "claude" ? "Claude" : adapter.label} kept reporting a usage limit for this task; retry when you're ready.`);
+          block(task, `${agentName(adapter.id)} kept reporting a usage limit for this task; retry when you're ready.`);
         } else {
           limitHits.set(task.id, hits);
           // The task did nothing wrong; it goes back in line and runs when the limit resets.
@@ -523,8 +524,6 @@ function buildPrompt(task: Task, space: Space): string {
   if (space.goal.trim()) parts.push(`Space goal: ${space.goal.trim()}`);
   return parts.join("\n\n");
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // A summary failure is reported in the review, not fatal: the work is done and worth reviewing.
 async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: number }> {

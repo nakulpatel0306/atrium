@@ -1,3 +1,4 @@
+import { agentName } from "../engine/names";
 import type { State } from "./api";
 
 type Task = State["tasks"][number];
@@ -7,8 +8,8 @@ export const AGENT_IDS = ["claude", "codex", "gemini"] as const;
 export const AGENT_CHOICES = ["auto", ...AGENT_IDS] as const;
 export type AgentChoice = (typeof AGENT_CHOICES)[number];
 
-const NAMES: Record<string, string> = { auto: "Auto", claude: "Claude", codex: "Codex", gemini: "Gemini", atrium: "Atrium" };
-export const agentName = (id: string) => NAMES[id] ?? id;
+export { agentName } from "../engine/names";
+export { verdictOf } from "../engine/verdict";
 
 // `auto` is resolved at launch and only the run row keeps the answer; runs arrive newest first.
 export const ranAgent = (task: Task, runs: Run[]) => runs.find((r) => r.taskId === task.id)?.agent ?? task.agent;
@@ -46,10 +47,4 @@ export const waitOf = (task: Task, state: State): Wait | null =>
 export function inReserve(state: State): { until: number } | null {
   const w = state.claudeWindow;
   return w && w.utilization >= w.reserve ? { until: w.resetsAt } : null;
-}
-
-// A reviewer's last line is `VERDICT: approve` or `VERDICT: changes`, the same line the engine acts on.
-export function verdictOf(body: string): "approve" | "changes" | null {
-  const m = body.trim().split("\n").at(-1)!.trim().match(/^VERDICT:\s*(approve|changes)\.?$/i);
-  return m ? (m[1]!.toLowerCase() as "approve" | "changes") : null;
 }

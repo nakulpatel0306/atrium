@@ -4,13 +4,12 @@ import type { AgentRunResult } from "./agents/types";
 import { type Approval, appendApprovalDetail, getApproval } from "./approvals";
 import type { ReviewDiff } from "./git";
 import { addMessage } from "./messages";
+import { agentName as name, plural } from "./names";
 import type { Space } from "./spaces";
 import { createTask, getTask, type Task } from "./tasks";
+import { verdictOf } from "./verdict";
 
 const CLIP_CHARS = 600;
-const NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", gemini: "Gemini" };
-const name = (id: string) => NAMES[id] ?? id;
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 // Agent and git messages don't always end in a full stop; the next sentence follows them.
 const sentence = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 const clip = (text: string) => (text.length > CLIP_CHARS ? `${text.slice(0, CLIP_CHARS)}…` : text);
@@ -34,13 +33,6 @@ function child(db: Database, parentId: string, kind: Task["kind"]): Task | null 
 function openApproval(db: Database, id: string | null): Approval | null {
   const a = id ? getApproval(db, id) : null;
   return a?.status === "pending" ? a : null;
-}
-
-function verdict(summary: string): "approve" | "changes" | null {
-  // Agents often dress the line up as `code` or **bold**; the markers don't change the verdict.
-  const last = summary.trim().split("\n").at(-1)!.trim().replace(/^[`*_\s]+|[`*_\s]+$/g, "");
-  const m = last.match(/^VERDICT:\s*(approve|changes)\.?$/i);
-  return m ? (m[1]!.toLowerCase() as "approve" | "changes") : null;
 }
 
 function reviewPrompt(task: Task, worker: string, diff: string): string {
@@ -117,7 +109,7 @@ export function afterReview(db: Database, reviewTask: Task, result: AgentRunResu
     });
     return;
   }
-  const said = verdict(summary);
+  const said = verdictOf(summary);
   appendApprovalDetail(db, approval.id, `\n\n${name(reviewer)} reviewed${said ? "" : " (no verdict given)"}: ${clip(summary)}`);
   // One fix round at most, and no second review after it, so the loop always ends with Nakul.
   if (said !== "changes" || child(db, parent.id, "fix")) return;

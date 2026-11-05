@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { shortCommand } from "./short";
 import { SANDBOX_EXEC, codexStateDir, geminiStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
 
@@ -37,11 +38,6 @@ export function geminiArgv(bin: string, input: AgentRunInput, tmp: string, sandb
     allowRead: [LOGIN_KEYCHAIN],
     sandboxExec,
   });
-}
-
-function shortCommand(command: unknown): string {
-  const s = String(command ?? "").replace(/\s+/g, " ");
-  return s.length > 80 ? `${s.slice(0, 77)}...` : s;
 }
 
 // Only the CLI's own words (result error and stderr) are classified, never the agent's response.

@@ -3,13 +3,9 @@ import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { shortCommand } from "./short";
 import { SANDBOX_EXEC, codexStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
-
-function shortCommand(command: unknown): string {
-  const s = String(command ?? "").replace(/\s+/g, " ");
-  return s.length > 80 ? `${s.slice(0, 77)}...` : s;
-}
 
 // Only the CLI's own words (error events and stderr) are classified, never the agent's message,
 // which talks about the user's code.

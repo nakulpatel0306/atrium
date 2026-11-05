@@ -1,6 +1,7 @@
 import { config } from "../config";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
 const denyRules = () => [
@@ -45,9 +46,7 @@ export function sandboxSettings(cwd: string): string {
 
 function shortInput(input: Record<string, unknown> | undefined): string {
   if (!input) return "";
-  const pick = input.file_path ?? input.command ?? input.pattern ?? input.path ?? input.url ?? JSON.stringify(input);
-  const s = String(pick).replace(/\s+/g, " ");
-  return s.length > 80 ? `${s.slice(0, 77)}...` : s;
+  return shortCommand(input.file_path ?? input.command ?? input.pattern ?? input.path ?? input.url ?? JSON.stringify(input));
 }
 
 // Only the CLI's own words (stderr and the result line) are classified. The agent's text

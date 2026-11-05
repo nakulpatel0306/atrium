@@ -1,7 +1,6 @@
 import type { Database } from "bun:sqlite";
+import { plural } from "./names";
 import { getSetting, setSetting } from "./settings";
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 function greetingFor(now: number): string {
   const hour = new Date(now).getHours();
