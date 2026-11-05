@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 24" fill="currentColor" role="img" aria-label="Atrium">
+  <style>:root{color:#1b1b21}@media (prefers-color-scheme:dark){:root{color:#e6e6ea}}</style>
+  <clipPath id="court"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath>
+  <g clip-path="url(#court)">
+    <path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/>
+    <path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/>
+    <path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/>
+    <path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/>
+  </g>
+  <rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1"/>
+  <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="35.5" cy="13" r="3.5"/>
+    <path d="M39 9.5v7"/>
+    <path d="M45 6.5V14a2.5 2.5 0 0 0 2.5 2.5h.5M42.5 9.5H48"/>
+    <path d="M51.5 16.5v-7M51.5 13A3.5 3.5 0 0 1 55 9.5h.5"/>
+    <path d="M59.5 9.5v7"/>
+    <circle cx="59.5" cy="6" r="1.25" fill="currentColor" stroke="none"/>
+    <path d="M63.5 9.5V13a3.5 3.5 0 0 0 7 0V9.5M70.5 9.5v7"/>
+    <path d="M74.5 16.5v-7M74.5 12.5a3 3 0 0 1 6 0v4M80.5 12.5a3 3 0 0 1 6 0v4"/>
+  </g>
+</svg>

@@ -1,3 +1,4 @@
+import { LoaderCircle, Sparkle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { post, type State } from "../api";
 import { navigate } from "../route";
@@ -77,7 +78,7 @@ export function CommandBar({ space, setupRequest }: Props) {
           void submit();
         }}
       >
-        {busy ? <span className="spinner" /> : <span aria-hidden>✦</span>}
+        {busy ? <LoaderCircle className="spinner" /> : <Sparkle />}
         <input
           ref={input}
           value={text}

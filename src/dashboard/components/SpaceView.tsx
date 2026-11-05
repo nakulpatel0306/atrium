@@ -1,8 +1,10 @@
+import { Hourglass, Lock, PlugZap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { patch, post, type State, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { navigate } from "../route";
 import { Activity } from "./Activity";
+import { StatusIcon } from "./StatusIcon";
 import { Transcript } from "./Transcript";
 
 type Space = State["spaces"][number];
@@ -76,6 +78,7 @@ function Header({ space }: { space: Space }) {
               onClick={() => void save({ private: !space.private })}
             >
               <span className="switch" />
+              <Lock />
               Private
             </button>
             <span className="hint">Private spaces only use Claude</span>
@@ -189,7 +192,7 @@ function TaskRow({ task, runs, open, onToggle, onTranscript }: TaskRowProps) {
   return (
     <div className="entry" id={`task-${task.id}`}>
       <div className={`item task${task.status === "done" ? " done" : ""}`} onClick={onToggle} aria-expanded={open}>
-        <i className={`stat ${task.status}`} />
+        <StatusIcon status={task.status} />
         <span className="t">{task.title}</span>
         <span className={`tag${stuck ? " bad" : ""}`} title={task.blockedReason ?? undefined}>
           {STATUS_TEXT[task.status]}
@@ -269,11 +272,19 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
     return (
       <div className="idle">
         <p>No agent working right now</p>
-        {waiting && <p className="why waiting">{state.power.waiting!.reason}</p>}
+        {waiting && (
+          <p className="why waiting">
+            <PlugZap />
+            {state.power.waiting!.reason}
+          </p>
+        )}
         {paused && (
           <p className="why waiting">
-            Paused for the Claude usage limit. Queued work starts again around{" "}
-            {new Date(state.power.pausedUntil!).toLocaleTimeString(undefined, { timeStyle: "short" })}.
+            <Hourglass />
+            <span>
+              Paused for the Claude usage limit. Queued work starts again around{" "}
+              {new Date(state.power.pausedUntil!).toLocaleTimeString(undefined, { timeStyle: "short" })}.
+            </span>
           </p>
         )}
       </div>

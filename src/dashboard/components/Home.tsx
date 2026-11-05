@@ -1,8 +1,11 @@
+import { ArrowDown, Plus } from "lucide-react";
 import type { State } from "../api";
 import { clock, relative } from "../format";
 import { navigate } from "../route";
 import { Activity } from "./Activity";
+import { Logo } from "./Logo";
 import { NeedsYou } from "./NeedsYou";
+import { StatusIcon } from "./StatusIcon";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -69,7 +72,7 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
         <ul className="tasks">
           {open.slice(0, SHOWN_TASKS).map((t) => (
             <li key={t.id}>
-              <i className={`stat ${t.status}`} />
+              <StatusIcon status={t.status} />
               <span>{t.title}</span>
             </li>
           ))}
@@ -111,9 +114,10 @@ export function Home({ state, briefing, onNewSpace }: Props) {
     return (
       <div className="wrap">
         <div className="hero-empty">
+          <Logo className="big" />
           <h1>{briefing.greeting}</h1>
           <p>Nothing here yet. Describe your first space below.</p>
-          <span className="arrow">↓</span>
+          <ArrowDown className="arrow" />
         </div>
       </div>
     );
@@ -135,7 +139,10 @@ export function Home({ state, briefing, onNewSpace }: Props) {
           <SpaceCard key={s.id} space={s} state={state} />
         ))}
         <button className="new" onClick={onNewSpace}>
-          + New space
+          <span className="new-label">
+            <Plus />
+            New space
+          </span>
           <small>just describe it</small>
         </button>
       </div>

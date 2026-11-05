@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <style>:root{color:#1b1b21}@media (prefers-color-scheme:dark){:root{color:#e6e6ea}}</style>
+  <clipPath id="court"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath>
+  <g clip-path="url(#court)">
+    <path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/>
+    <path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/>
+    <path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/>
+    <path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/>
+  </g>
+  <rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1"/>
+</svg>

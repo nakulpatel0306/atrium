@@ -1,6 +1,8 @@
+import { Activity, BatteryMedium, House, Inbox, Moon, Plug, Plus } from "lucide-react";
 import { post, type State } from "../api";
 import { bytes, tokens } from "../format";
 import { navigate, type Route } from "../route";
+import { Logo } from "./Logo";
 
 type Props = {
   state: State;
@@ -18,24 +20,27 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
   return (
     <aside>
       <div className="ws">
-        <div className="logo" />
+        <Logo />
         Atrium
       </div>
       <button className={`nav${route.name === "home" ? " on" : ""}`} onClick={() => navigate("/")}>
-        <span className="ic">⌂</span>Home
+        <House />
+        Home
       </button>
       <button className="nav" onClick={() => onJump("needs")}>
-        <span className="ic">◎</span>Needs you
+        <Inbox />
+        Needs you
         {pending > 0 && <span className="ct hot">{pending}</span>}
       </button>
       <button className="nav" onClick={() => onJump("activity")}>
-        <span className="ic">≡</span>Activity
+        <Activity />
+        Activity
       </button>
 
       <div className="sec">
         <span>Spaces</span>
         <button className="add" onClick={onNewSpace} title="New space" aria-label="New space">
-          +
+          <Plus />
         </button>
       </div>
       {state.spaces.map((s) => {
@@ -59,7 +64,7 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
           <span className="val">{tokens(state.usage.claudeTokens24h)} tokens</span>
         </div>
         <div className={`power${battery ? " battery" : ""}`}>
-          <i />
+          {battery ? <BatteryMedium /> : <Plug />}
           {battery ? "On battery · heavy work waits" : "Plugged in"}
         </div>
         <div>
@@ -70,6 +75,7 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
             onClick={() => void post("/api/settings", { overnight: !state.power.overnight })}
           >
             <span className="switch" />
+            <Moon />
             Overnight mode
           </button>
           <div className="hint">Keeps your Mac awake while plugged in and work is queued. Leave the lid open.</div>
