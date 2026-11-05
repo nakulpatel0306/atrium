@@ -374,6 +374,75 @@ export async function changedFiles(path: string, base: string, branch: string): 
   return files;
 }
 
+// For output that can be huge (a diff of a 3 MB line): stops reading at `cap` bytes and says so.
+async function gitCapped(path: string, args: string[], cap: number): Promise<{ out: string; truncated: boolean }> {
+  const proc = Bun.spawn(["git", ...SAFE, ...args], { cwd: path, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  const err = new Response(proc.stderr).text();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  const reader = proc.stdout.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.length;
+    if (total > cap) {
+      truncated = true;
+      proc.kill();
+      break;
+    }
+  }
+  const code = await proc.exited;
+  if (!truncated && code !== 0) throw new Error(`git ${args[0]} failed: ${(await err).trim()}`);
+  return { out: Buffer.concat(chunks).subarray(0, cap).toString(), truncated };
+}
+
+// The commit a branch points at, or null when the branch is gone.
+export async function branchSha(path: string, branch: string): Promise<string | null> {
+  const res = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+  return res.code === 0 ? res.out.trim() : null;
+}
+
+const PATCH_READ_CAP = 256 * 1024;
+
+// The text a change adds, and how many bytes it adds and removes, read from a zero-context diff. A diff too big to
+// read in full reports more bytes than the cap, which is all a caller deciding "small enough?" needs.
+export async function changedText(path: string, base: string, sha: string): Promise<{ added: string[]; bytes: number }> {
+  const res = await gitCapped(
+    path,
+    [
+      "-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=none",
+      "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "-U0", `${base}...${sha}`, "--",
+    ],
+    PATCH_READ_CAP,
+  );
+  const added: string[] = [];
+  let bytes = 0;
+  let inHunk = false;
+  for (const line of res.out.split("\n")) {
+    if (line.startsWith("diff --git ")) inHunk = false;
+    else if (line.startsWith("@@")) inHunk = true;
+    else if (inHunk && (line.startsWith("+") || line.startsWith("-"))) {
+      bytes += Buffer.byteLength(line) - 1;
+      if (line.startsWith("+")) added.push(line.slice(1));
+    }
+  }
+  return { added, bytes: res.truncated ? Math.max(bytes, PATCH_READ_CAP + 1) : bytes };
+}
+
+// Every file path in a commit's tree.
+export async function treePaths(path: string, sha: string): Promise<string[]> {
+  const res = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--name-only", sha]);
+  if (res.code !== 0) throw new Error(`Could not list files at ${sha}: ${res.err.trim()}`);
+  return res.out.split("\0").filter(Boolean);
+}
+
+// One file's contents at a commit, cut at `cap` bytes.
+export async function fileAt(path: string, sha: string, file: string, cap = 64 * 1024): Promise<string> {
+  return (await gitCapped(path, ["cat-file", "blob", `${sha}:${file}`], cap)).out;
+}
+
 // Synchronous so it can be read inside the approval transaction; null when the branch or repo is gone.
 export function branchHeadSync(path: string, branch: string): string | null {
   try {

@@ -14,12 +14,13 @@ import { applyRule, revokeRule, RuleRefused } from "../../src/engine/autonomy/ru
 import { openDb } from "../../src/engine/db";
 import { createSpace, type Space } from "../../src/engine/spaces";
 import { createTask, setTaskStatus, type Task } from "../../src/engine/tasks";
-import { tempHome } from "../helpers";
+import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
 
 const FP = "v1:code:docs:small:claude";
 let home: ReturnType<typeof tempHome>;
 let db: Database;
 let space: Space;
+let repo: ReturnType<typeof tempRepo>;
 // A clock a day in the past that moves a second per step, so ordering never depends on two things landing in
 // different milliseconds.
 let clock: number;
@@ -28,12 +29,14 @@ const tick = () => (clock += 1000);
 beforeEach(() => {
   home = tempHome();
   db = openDb();
-  space = createSpace(db, { name: "Docs", kind: "repo", goal: "write" });
+  repo = tempRepo();
+  space = createSpace(db, { name: "Docs", kind: "repo", goal: "write", repoPath: repo.path });
   clock = Date.now() - 86_400_000;
 });
 afterEach(() => {
   db.close();
   home.cleanup();
+  repo.cleanup();
 });
 
 function reviewTask(s: Space, title = "Add a note"): Task {
@@ -69,7 +72,7 @@ describe("streaks", () => {
     const p = consider(approveClean());
     expect(p).not.toBeNull();
     expect(p!.evidence).toHaveLength(5);
-    expect(p!.label).toBe("docs-only changes under 50 lines from Claude");
+    expect(p!.label).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude");
     expect(p!.status).toBe("pending");
     expect(events("proposed")).toHaveLength(1);
     expect(listPendingProposals(db).map((x) => x.id)).toEqual([p!.id]);
@@ -133,7 +136,7 @@ describe("streaks", () => {
     for (let i = 0; i < 5; i++) {
       const t = reviewTask(space);
       const a = createApproval(db, { spaceId: space.id, taskId: t.id, kind: "review", title: "x", detail: "", fingerprint: FP });
-      const facts = { domain: "code" as const, agent: "claude", branch: `atrium/${t.id}`, files: [{ path: "docs/a.md", status: "A" as const, added: 1, deleted: 0, oldMode: "000000", newMode: "100644" }] };
+      const facts = { domain: "code" as const, agent: "claude", branch: `atrium/${t.id}`, sha: branchAt(repo.path, `atrium/${t.id}`), content: PLAIN_DOCS, files: [{ path: "docs/a.md", status: "A" as const, added: 1, deleted: 0, oldMode: "000000", newMode: "100644" }] };
       expect(applyRule(db, a.id, facts, tick())).not.toBeNull();
     }
     revokeRule(db, rule!.id, "you");
@@ -222,7 +225,7 @@ describe("answers", () => {
       p = consider(approveClean(space, FP, { title: "Rule: approve everything", detail: "fingerprint v1:code:code:small:claude" }));
     }
     expect(p!.fingerprint).toBe(FP);
-    expect(p!.label).toBe("docs-only changes under 50 lines from Claude");
+    expect(p!.label).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude");
     expect(p!.evidence.map((e) => e.title)).toEqual(Array(5).fill("Rule: approve everything"));
   });
 });

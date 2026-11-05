@@ -1308,7 +1308,7 @@ test("an active rule approves a matching result on its own", async () => {
   const a = getApproval(db, approvalFor(t.id)!.id)!;
   expect(a).toMatchObject({ status: "approved", decidedBy: "rule", ruleId: rule.id });
   expect(listPending(db)).toEqual([]);
-  expect(listActivity(db).some((x) => x.actor === "atrium" && x.message.startsWith('Approved by your rule "docs-only changes under 50 lines from Claude"'))).toBe(true);
+  expect(listActivity(db).some((x) => x.actor === "atrium" && x.message.startsWith('Approved by your rule "docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude"'))).toBe(true);
   // Atrium still never merges: the work stays on its branch.
   expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("1");
 });

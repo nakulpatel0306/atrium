@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { type Approval, appendApprovalDetail, createApproval, getApproval, resolveApproval } from "../approvals";
 import { bus } from "../events";
+import { branchHeadSync } from "../git";
+import { getSpace } from "../spaces";
 import { newId } from "../ids";
 import { getTask, reopenForReview } from "../tasks";
 import { type ActionFacts, DAILY_CAP, fingerprintOf, forbiddenFor, labelOf, parseFingerprint, RULE_TTL_MS } from "./kinds";
@@ -128,30 +130,43 @@ export function activeRuleFor(db: Database, spaceId: string, fingerprint: string
   return row ? toRule(row, now) : null;
 }
 
-// Facts are re-read from git by the caller just before this, so what gets approved is what is on the branch
-// now, not what it was when the approval was made. Any doubt leaves the item waiting for Nakul.
+// Facts are re-read from git by the caller just before this, at one commit; the branch must still be there when the
+// rule decides, so what gets approved is exactly what was classified. Any doubt leaves the item waiting for Nakul.
 export function applyRule(db: Database, approvalId: string, facts: ActionFacts | null, now = Date.now()): Approval | null {
   let capped = false;
   const result = db.transaction((): Approval | null => {
     const a = getApproval(db, approvalId);
     if (a?.status !== "pending" || a.kind !== "review" || !a.fingerprint || !facts) return null;
     if (forbiddenFor(facts).length > 0 || fingerprintOf(facts) !== a.fingerprint) return null;
+    // Once Nakul has sent a task back, or undone a rule's approval of it, only he decides on it again.
+    const doubted = db
+      .query("SELECT 1 FROM approvals WHERE task_id = ? AND id != ? AND (status = 'rejected' OR undone_at IS NOT NULL)")
+      .get(a.taskId, a.id);
+    if (doubted) return null;
+    let head: string | undefined;
+    if (facts.domain === "code") {
+      const task = a.taskId ? getTask(db, a.taskId) : null;
+      const repo = getSpace(db, a.spaceId)?.repoPath;
+      if (!repo || task?.branch !== facts.branch || branchHeadSync(repo, facts.branch) !== facts.sha) return null;
+      head = facts.sha;
+    }
     const rule = activeRuleFor(db, a.spaceId, a.fingerprint, now);
     // A rule covers results that arrive after it, never ones already waiting when Nakul said yes.
     if (!rule || rule.createdAt >= a.createdAt) return null;
+    // Per space, across all its rules: a burst of automatic approvals is worth a look whichever rule made them.
     const today = db
-      .query("SELECT COUNT(*) AS n FROM rule_events WHERE rule_id = ? AND event = 'applied' AND created_at > ?")
-      .get(rule.id, now - DAY_MS) as { n: number };
+      .query("SELECT COUNT(*) AS n FROM rule_events WHERE space_id = ? AND event = 'applied' AND created_at > ?")
+      .get(a.spaceId, now - DAY_MS) as { n: number };
     if (today.n >= DAILY_CAP) {
       const seen = db.query("SELECT 1 FROM rule_events WHERE approval_id = ? AND event = 'skipped_cap'").get(a.id);
       if (!seen) {
         logRuleEvent(db, { spaceId: a.spaceId, event: "skipped_cap", actor: "atrium", ruleId: rule.id, approvalId: a.id }, now);
-        appendApprovalDetail(db, a.id, `\n\nYour rule "${rule.label}" already approved ${DAILY_CAP} today, so this one waits for you.`);
+        appendApprovalDetail(db, a.id, `\n\nYour rules already approved ${DAILY_CAP} results in this space today, so this one waits for you.`);
         capped = true;
       }
       return null;
     }
-    const resolved = resolveApproval(db, a.id, "approve", undefined, { id: rule.id, label: rule.label });
+    const resolved = resolveApproval(db, a.id, "approve", undefined, { id: rule.id, label: rule.label, head });
     logRuleEvent(db, { spaceId: a.spaceId, event: "applied", actor: "atrium", ruleId: rule.id, approvalId: a.id }, now);
     return resolved;
   })();

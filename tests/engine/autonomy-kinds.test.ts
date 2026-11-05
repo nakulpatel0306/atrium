@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type ActionFacts, fingerprintOf, forbiddenFor, labelOf, parseFingerprint } from "../../src/engine/autonomy/kinds";
+import { type ActionFacts, type DocsContent, fingerprintOf, forbiddenFor, isSiteConfig, labelOf, parseFingerprint, referencesIn } from "../../src/engine/autonomy/kinds";
+import { PLAIN_DOCS } from "../helpers";
 import type { ChangedFile } from "../../src/engine/git";
 
 const MODES: Record<ChangedFile["status"], [string, string]> = { A: ["000000", "100644"], M: ["100644", "100644"], D: ["100644", "000000"], T: ["100644", "120000"] };
@@ -11,19 +12,27 @@ const f = (path: string, added: number | null = 1, deleted: number | null = 0, s
   oldMode: MODES[status][0],
   newMode: MODES[status][1],
 });
-const code = (files: ChangedFile[], agent = "claude", branch = "atrium/tsk_1"): ActionFacts => ({ domain: "code", agent, branch, files });
+const code = (files: ChangedFile[], agent = "claude", branch = "atrium/tsk_1", content: DocsContent = PLAIN_DOCS): ActionFacts => ({
+  domain: "code",
+  agent,
+  branch,
+  sha: "0123abc",
+  files,
+  content,
+});
+const withContent = (over: Partial<DocsContent>) => code([f("docs/a.md")], "claude", "atrium/tsk_1", { ...PLAIN_DOCS, ...over });
 
 describe("fingerprintOf", () => {
   test("docs-only small diff", () => {
     const fp = fingerprintOf(code([f("README.md", 10, 2, "M"), f("docs/a.md", 30, 0)]));
     expect(fp).toBe("v1:code:docs:small:claude");
-    expect(labelOf(fp!)).toBe("docs-only changes under 50 lines from Claude");
+    expect(labelOf(fp!)).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude");
   });
 
   test("medium docs diff", () => {
     const fp = fingerprintOf(code([f("docs/guide.md", 120, 40, "M")], "codex"));
     expect(fp).toBe("v1:code:docs:medium:codex");
-    expect(labelOf(fp!)).toBe("docs-only changes under 200 lines from Codex");
+    expect(labelOf(fp!)).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) of 51–200 lines from Codex");
   });
 
   test("tests are code: never eligible", () => {
@@ -120,6 +129,41 @@ describe("fingerprintOf", () => {
   });
 });
 
+describe("docs that execute", () => {
+  test("a repo with a docs site generator or Rust build never gets a docs kind", () => {
+    expect(fingerprintOf(withContent({ siteConfig: true }))).toBeNull();
+    for (const p of ["docusaurus.config.js", "web/docusaurus.config.ts", "docs/.vitepress/config.mts", "astro.config.mjs", "mkdocs.yml", "Cargo.toml", "nuxt.config.ts", "gatsby-config.js"]) {
+      expect(isSiteConfig(p)).toBe(true);
+    }
+    for (const p of ["docs/a.md", "README.md", "package.json", "docs/mkdocs.md", "vitepress.md"]) expect(isSiteConfig(p)).toBe(false);
+  });
+
+  test("added lines that a docs tool would run never get a docs kind", () => {
+    for (const line of ["import Chart from './chart'", "  export const x = 1", "<script>alert(1)</script>", "<SCRIPT src=x>", "Hello {{ secret }}", "{% include 'x.html' %}"]) {
+      expect(fingerprintOf(withContent({ added: ["fine", line] }))).toBeNull();
+    }
+    expect(fingerprintOf(withContent({ added: ["Important: exports are listed below.", "Use `{ a }` braces."] }))).toBe("v1:code:docs:small:claude");
+  });
+
+  test("a file an agent's instructions import never gets a docs kind", () => {
+    expect(fingerprintOf(withContent({ referenced: ["docs/a.md"] }))).toBeNull();
+    expect(fingerprintOf(withContent({ referenced: ["DOCS/A.md"] }))).toBeNull();
+    expect(fingerprintOf(withContent({ referenced: ["docs/other.md"] }))).toBe("v1:code:docs:small:claude");
+  });
+
+  test("references resolve from the instruction file's folder", () => {
+    expect(referencesIn("CLAUDE.md", "See @docs/rules.md and @README.md.\nEmail me@example.com")).toEqual(["docs/rules.md", "README.md"]);
+    expect(referencesIn("pkg/AGENTS.md", "Follow @./guide.md, (@../docs/x.md)")).toEqual(["pkg/guide.md", "guide.md", "docs/x.md", "../docs/x.md"]);
+    expect(referencesIn("CLAUDE.md", "@~/notes.md @/etc/hosts")).toEqual([]);
+  });
+
+  test("more than 20 KB of changed text never gets a docs kind", () => {
+    expect(fingerprintOf(withContent({ bytes: 20 * 1024 }))).toBe("v1:code:docs:small:claude");
+    expect(fingerprintOf(withContent({ bytes: 20 * 1024 + 1 }))).toBeNull();
+    expect(fingerprintOf(withContent({ bytes: 3_000_000 }))).toBeNull();
+  });
+});
+
 describe("forbiddenFor", () => {
   test("forbidden: delete", () => {
     const facts = code([f("docs/old.md", 0, 3, "D")]);
@@ -155,6 +199,11 @@ describe("forbiddenFor", () => {
 
   test("general work is never forbidden by files", () => {
     expect(forbiddenFor({ domain: "general", agent: "claude", filesKept: 0 })).toEqual([]);
+  });
+
+  test("labels say exactly what a rule covers", () => {
+    expect(labelOf("v1:code:docs:small:claude")).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude");
+    expect(labelOf("v1:code:docs:medium:gemini")).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) of 51–200 lines from Gemini");
   });
 });
 

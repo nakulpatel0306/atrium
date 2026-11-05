@@ -125,16 +125,17 @@ function taskBranchHead(db: Database, taskId: string | null): string | null {
   return path && task?.branch ? branchHeadSync(path, task.branch) : null;
 }
 
-// With `rule`, one of Nakul's rules is deciding in his place, and a rule can only ever approve.
+// With `rule`, one of Nakul's rules is deciding in his place, and a rule can only ever approve. Its `head` is the
+// commit the rule checked, recorded as what was approved.
 export function resolveApproval(
   db: Database,
   id: string,
   decision: "approve" | "reject",
   note?: string,
-  rule?: { id: string; label: string },
+  rule?: { id: string; label: string; head?: string },
 ): Approval {
   if (rule && decision !== "approve") throw new Error("A rule can only approve.");
-  const head = taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
+  const head = rule?.head ?? taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
   const resolve = db.transaction((): Approval => {
     const res = db
       .query(

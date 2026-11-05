@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
 import { fingerprintOf } from "../../src/engine/autonomy/kinds";
-import { tempRepo } from "../helpers";
+import { PLAIN_DOCS, tempRepo } from "../helpers";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -313,7 +313,7 @@ describe("changedFiles", () => {
     git(path, "config", "diff.ignoreSubmodules", "all");
     const files = await changedFiles(path, "main", branch);
     expect(files.map((x) => [x.path, x.newMode])).toEqual([["sub", "160000"]]);
-    expect(fingerprintOf({ domain: "code", agent: "claude", branch, files })).toBeNull();
+    expect(fingerprintOf({ domain: "code", agent: "claude", branch, sha: "x", files, content: PLAIN_DOCS })).toBeNull();
   });
 
   test("throws when the branch is gone", async () => {

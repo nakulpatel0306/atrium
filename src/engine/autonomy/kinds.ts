@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import type { ALWAYS_ASK } from "../approvals";
 import { isEnvPath } from "../envpath";
 import type { ChangedFile } from "../git";
@@ -9,10 +10,22 @@ export const STREAK = 5;
 export const STREAK_WINDOW_MS = 14 * 86_400_000;
 export const RULE_TTL_MS = 60 * 86_400_000;
 export const DAILY_CAP = 10;
+export const DOCS_BYTES = 20 * 1024;
 
-// What the engine itself saw about a result. Nothing here comes from the agent's own words.
+// What a docs change contains and where it lands, read from the commit that was classified.
+export type DocsContent = {
+  added: string[];
+  // Bytes added plus bytes removed, over every changed line.
+  bytes: number;
+  // The tree has a docs site generator or build that runs Markdown (Docusaurus, VitePress, mkdocs, Cargo doc tests…).
+  siteConfig: boolean;
+  // Paths that CLAUDE.md, AGENTS.md or GEMINI.md files pull in with @, so an edit there edits an agent's instructions.
+  referenced: string[];
+};
+
+// What the engine itself saw about a result, at one commit (`sha`). Nothing here comes from the agent's own words.
 export type ActionFacts =
-  | { domain: "code"; agent: string; branch: string; files: ChangedFile[] }
+  | { domain: "code"; agent: string; branch: string; sha: string; files: ChangedFile[]; content: DocsContent }
   | { domain: "general"; agent: string; filesKept: number };
 
 export type ForbiddenReason = (typeof ALWAYS_ASK)[number];
@@ -39,6 +52,29 @@ const INSTRUCTIONS = [
 // imports and JSX), either in the top-level docs/ folder or a well-known file such as a README. Tests are code.
 const DOCS_EXT = /\.(md|markdown|rst)$/i;
 const DOCS_NAME = /^(readme|changelog|contributing|history)[^/]*$/i;
+// Markdown that a docs tool would run or expand: MDX-style imports and exports, script tags, template tags.
+const EXECUTES = [/^\s*(import|export)\s/, /<script/i, /\{\{/, /\{%/];
+const SITE_CONFIG =
+  /(^|\/)(docusaurus\.config\.[^/]+|astro\.config\.[^/]+|nuxt\.config\.[^/]+|gatsby-config\.[^/]+|mkdocs\.ya?ml|cargo\.toml)$|(^|\/)\.vitepress(\/|$)/i;
+const INSTRUCTION_FILE = /(^|\/)(claude|agents|gemini)(\.local)?\.md$/i;
+
+export const isSiteConfig = (path: string) => SITE_CONFIG.test(path);
+export const isInstructionFile = (path: string) => INSTRUCTION_FILE.test(path);
+
+// The repo paths an instruction file imports with `@path`, resolved from its own folder and, in case a tool reads
+// them from the root, as written. Home and absolute paths are outside the repo and left out.
+export function referencesIn(file: string, text: string): string[] {
+  const dir = posix.dirname(file);
+  const out = new Set<string>();
+  for (const m of text.matchAll(/(?:^|[\s(\[])@([^\s`'"()<>\[\]]+)/g)) {
+    const ref = m[1]!.replace(/[.,;:!?]+$/, "");
+    if (!ref || ref.startsWith("~") || ref.startsWith("/")) continue;
+    out.add(posix.normalize(posix.join(dir, ref)));
+    out.add(ref.replace(/^(\.\/)+/, ""));
+  }
+  return [...out];
+}
+
 // Only ordinary files: symlinks, gitlinks, executable bits and type changes always go to Nakul.
 const PLAIN_MODES = new Set(["100644", "000000"]);
 
@@ -73,6 +109,10 @@ export function fingerprintOf(facts: ActionFacts): string | null {
     lines += f.added + f.deleted;
   }
   if (lines > MEDIUM_LINES || !facts.files.every(isDocs)) return null;
+  const c = facts.content;
+  if (c.siteConfig || c.bytes > DOCS_BYTES || c.added.some((line) => EXECUTES.some((re) => re.test(line)))) return null;
+  const referenced = new Set(c.referenced.map((p) => p.toLowerCase()));
+  if (facts.files.some((f) => referenced.has(f.path.toLowerCase()))) return null;
   return `v1:code:docs:${lines <= SMALL_LINES ? "small" : "medium"}:${facts.agent}`;
 }
 
@@ -97,5 +137,6 @@ export function labelOf(fp: string): string {
   const k = parseFingerprint(fp);
   if (!k) return fp;
   if (k.domain === "general") return `text answers with no files from ${agentName(k.agent)}`;
-  return `docs-only changes under ${k.size === "small" ? SMALL_LINES : MEDIUM_LINES} lines from ${agentName(k.agent)}`;
+  const size = k.size === "small" ? `up to ${SMALL_LINES} lines` : `of ${SMALL_LINES + 1}–${MEDIUM_LINES} lines`;
+  return `docs changes (Markdown in docs/ or a README/CHANGELOG) ${size} from ${agentName(k.agent)}`;
 }

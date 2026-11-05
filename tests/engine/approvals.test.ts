@@ -73,7 +73,7 @@ function insertRule(spaceId: string, fp = "v1:code:docs:small:claude") {
     fp,
     Date.now() + 86_400_000,
   );
-  return { id: "rul_1", label: "docs-only changes under 50 lines from Claude" };
+  return { id: "rul_1", label: "docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude" };
 }
 
 test("a rule approval is recorded as the rule's", () => {
@@ -85,7 +85,7 @@ test("a rule approval is recorded as the rule's", () => {
   expect(getTask(db, t.id)!.status).toBe("done");
   const act = listActivity(db)[0]!;
   expect(act.actor).toBe("atrium");
-  expect(act.message.startsWith('Approved by your rule "docs-only')).toBe(true);
+  expect(act.message.startsWith('Approved by your rule "docs changes')).toBe(true);
   expect(act.message.endsWith(": Review Draft")).toBe(true);
 });
 

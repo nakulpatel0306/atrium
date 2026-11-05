@@ -30,7 +30,7 @@ export function briefing(db: Database, now: number): { greeting: string; summary
   }
 
   const byRules = db
-    .query("SELECT COUNT(*) AS n FROM approvals WHERE decided_by = 'rule' AND resolved_at > ?")
+    .query("SELECT COUNT(*) AS n FROM approvals WHERE decided_by = 'rule' AND undone_at IS NULL AND resolved_at > ?")
     .get(lastSeen) as { n: number };
   if (byRules.n > 0) summary += ` ${plural(byRules.n, "result")} approved by your rules.`;
 

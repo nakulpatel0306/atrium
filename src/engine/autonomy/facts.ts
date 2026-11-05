@@ -1,11 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { changedFiles } from "../git";
+import { branchSha, changedFiles, changedText, fileAt, treePaths } from "../git";
 import { resolvedAgent } from "../handoff";
 import type { Space } from "../spaces";
 import type { Task } from "../tasks";
-import type { ActionFacts } from "./kinds";
+import { type ActionFacts, isInstructionFile, isSiteConfig, referencesIn } from "./kinds";
 
 // The branch a task's latest repo run started from, which is what its whole diff is measured against.
 export function runStart(db: Database, taskId: string): string | null {
@@ -15,15 +15,24 @@ export function runStart(db: Database, taskId: string): string | null {
   return row?.start_ref ?? null;
 }
 
-// Read fresh from git every time, so a rule decides on what the branch holds now. Null (ask Nakul) when the
-// branch, the repo or the run's start can't be read.
+// Read fresh from git every time, and all at one commit, so a rule decides on exactly what it classified. Null
+// (ask Nakul) when the branch, the repo or the run's start can't be read.
 export async function factsFor(db: Database, task: Task, space: Space, filesKept = 0): Promise<ActionFacts | null> {
   const agent = resolvedAgent(db, task);
   if (space.kind === "general") return { domain: "general", agent, filesKept };
   const start = runStart(db, task.id);
   if (!space.repoPath || !task.branch || !start) return null;
+  const repo = space.repoPath;
   try {
-    return { domain: "code", agent, branch: task.branch, files: await changedFiles(space.repoPath, start, task.branch) };
+    const sha = await branchSha(repo, task.branch);
+    if (!sha) return null;
+    const files = await changedFiles(repo, start, sha);
+    const text = await changedText(repo, start, sha);
+    const paths = await treePaths(repo, sha);
+    const referenced: string[] = [];
+    for (const p of paths.filter(isInstructionFile)) referenced.push(...referencesIn(p, await fileAt(repo, sha, p)));
+    const content = { added: text.added, bytes: text.bytes, siteConfig: paths.some(isSiteConfig), referenced };
+    return { domain: "code", agent, branch: task.branch, sha, files, content };
   } catch {
     return null;
   }

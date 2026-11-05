@@ -12,7 +12,7 @@ import { createSpace } from "../../src/engine/spaces";
 import { getSetting } from "../../src/engine/settings";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
 import { startServer } from "../../src/server/server";
-import { tempHome } from "../helpers";
+import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
@@ -399,6 +399,10 @@ test("state reports the Claude reserve even without a window reading", async () 
 });
 
 // Earned autonomy: five results of the same kind approved through the API, as the dashboard does.
+const repos: ReturnType<typeof tempRepo>[] = [];
+afterEach(() => {
+  while (repos.length) repos.pop()!.cleanup();
+});
 const FP = "v1:code:docs:small:claude";
 function reviewItem(spaceId: string, title = "Add a note") {
   const t = createTask(db, { spaceId, title });
@@ -426,7 +430,7 @@ test("approving the fifth clean result returns a proposal in state", async () =>
   await post(`/api/approvals/${reviewItem(s.id).id}`, { decision: "approve" });
   const p = (await state()).proposals;
   expect(p).toHaveLength(1);
-  expect(p[0]!.label).toBe("docs-only changes under 50 lines from Claude");
+  expect(p[0]!.label).toBe("docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude");
 });
 
 test("answering yes creates a rule; a second answer is 409", async () => {
@@ -510,13 +514,15 @@ test("never, then suggest again", async () => {
 });
 
 async function appliedRule() {
-  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g" });
+  const repo = tempRepo();
+  repos.push(repo);
+  const s = createSpace(db, { name: "Docs", kind: "repo", goal: "g", repoPath: repo.path });
   const p = await proposed(s.id);
   const { rule } = (await (await post(`/api/proposals/${p.id}`, { answer: "yes" })).json()) as { rule: RuleBody };
   // Approvals made in the same millisecond as the rule would count as already waiting.
   await Bun.sleep(5);
   const a = reviewItem(s.id, "Auto one");
-  const facts = { domain: "code" as const, agent: "claude", branch: `atrium/${a.taskId}`, files: [{ path: "docs/a.md", status: "A" as const, added: 2, deleted: 0, oldMode: "000000", newMode: "100644" }] };
+  const facts = { domain: "code" as const, agent: "claude", branch: `atrium/${a.taskId}`, sha: branchAt(repo.path, `atrium/${a.taskId}`), content: PLAIN_DOCS, files: [{ path: "docs/a.md", status: "A" as const, added: 2, deleted: 0, oldMode: "000000", newMode: "100644" }] };
   expect(applyRule(db, a.id, facts)).not.toBeNull();
   return { rule, a };
 }

@@ -31,3 +31,17 @@ export function tempRepo(): { path: string; cleanup(): void } {
   git("commit", "-m", "init");
   return { path, cleanup: () => rmSync(path, { recursive: true, force: true }) };
 }
+
+// Content facts for a plain docs change: nothing that executes, nothing an agent's instructions import.
+export const PLAIN_DOCS = { added: ["A plain note."], bytes: 14, siteConfig: false, referenced: [] as string[] };
+
+// A branch at the repo's current commit, as an agent's finished task leaves it; returns that commit.
+export function branchAt(path: string, branch: string): string {
+  const run = (...args: string[]) => {
+    const r = Bun.spawnSync(["git", ...args], { cwd: path });
+    if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+    return r.stdout.toString().trim();
+  };
+  run("branch", "-f", branch);
+  return run("rev-parse", branch);
+}

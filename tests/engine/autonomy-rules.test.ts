@@ -17,21 +17,24 @@ import { openDb } from "../../src/engine/db";
 import type { ChangedFile } from "../../src/engine/git";
 import { createSpace, type Space } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskStatus } from "../../src/engine/tasks";
-import { tempHome } from "../helpers";
+import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
 
 const FP = "v1:code:docs:small:claude";
 let home: ReturnType<typeof tempHome>;
 let db: Database;
 let space: Space;
+let repo: ReturnType<typeof tempRepo>;
 
 beforeEach(() => {
   home = tempHome();
   db = openDb();
-  space = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  repo = tempRepo();
+  space = createSpace(db, { name: "Docs", kind: "repo", goal: "write", repoPath: repo.path });
 });
 afterEach(() => {
   db.close();
   home.cleanup();
+  repo.cleanup();
 });
 
 const file = (path: string, added = 5, status: ChangedFile["status"] = "A"): ChangedFile => ({
@@ -48,7 +51,8 @@ function pending(s: Space = space) {
   setTaskStatus(db, t.id, "running");
   setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
   const a = createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title: "Add a note", detail: "1 commit", fingerprint: FP });
-  const facts: ActionFacts = { domain: "code", agent: "claude", branch: `atrium/${t.id}`, files: [file("docs/a.md")] };
+  const branch = `atrium/${t.id}`;
+  const facts: ActionFacts = { domain: "code", agent: "claude", branch, sha: branchAt(repo.path, branch), files: [file("docs/a.md")], content: PLAIN_DOCS };
   return { t, a, facts };
 }
 
@@ -75,12 +79,12 @@ describe("createRule", () => {
   test("a new rule is active for 60 days and logged", () => {
     const now = Date.now();
     const r = createRule(db, proposal(), now);
-    expect(r).toMatchObject({ state: "active", expiresAt: now + RULE_TTL_MS, label: "docs-only changes under 50 lines from Claude", appliedCount: 0 });
+    expect(r).toMatchObject({ state: "active", expiresAt: now + RULE_TTL_MS, label: "docs changes (Markdown in docs/ or a README/CHANGELOG) up to 50 lines from Claude", appliedCount: 0 });
     expect(events("created")).toHaveLength(1);
   });
 
   test("a rule covers exactly its proposal's space and kind", () => {
-    const other = createSpace(db, { name: "Other", kind: "general", goal: "" });
+    const other = createSpace(db, { name: "Other", kind: "repo", goal: "", repoPath: repo.path });
     const r = createRule(db, proposal(other, "v1:general:text:codex"));
     expect(r).toMatchObject({ spaceId: other.id, fingerprint: "v1:general:text:codex" });
   });
@@ -164,7 +168,8 @@ describe("applyRule", () => {
     setTaskStatus(db, t.id, "running");
     setTaskStatus(db, t.id, "review");
     const a = createApproval(db, { spaceId: space.id, taskId: t.id, kind: "review", title: "x", detail: "" });
-    expect(applyRule(db, a.id, { domain: "code", agent: "claude", branch: `atrium/${t.id}`, files: [file("docs/a.md")] })).toBeNull();
+    const branch = `atrium/${t.id}`;
+    expect(applyRule(db, a.id, { domain: "code", agent: "claude", branch, sha: branchAt(repo.path, branch), files: [file("docs/a.md")], content: PLAIN_DOCS })).toBeNull();
   });
 
   test("revoked rule stops applying immediately", () => {
@@ -193,7 +198,7 @@ describe("applyRule", () => {
 
   test("rule in one space doesn't apply in another", () => {
     rule();
-    const other = createSpace(db, { name: "Other", kind: "general", goal: "" });
+    const other = createSpace(db, { name: "Other", kind: "repo", goal: "", repoPath: repo.path });
     const { a, facts } = pending(other);
     expect(applyRule(db, a.id, facts)).toBeNull();
   });
@@ -209,9 +214,77 @@ describe("applyRule", () => {
     expect(applyRule(db, a.id, facts)).toBeNull();
     const after = getApproval(db, a.id)!;
     expect(after.status).toBe("pending");
-    expect(after.detail).toContain('Your rule "docs-only changes under 50 lines from Claude" already approved 10 today, so this one waits for you.');
-    expect(after.detail.match(/already approved 10 today/g)).toHaveLength(1);
+    expect(after.detail).toContain("Your rules already approved 10 results in this space today, so this one waits for you.");
+    expect(after.detail.match(/already approved 10 results/g)).toHaveLength(1);
     expect(events("skipped_cap")).toHaveLength(1);
+  });
+
+  test("the daily cap counts every rule in the space", () => {
+    rule();
+    for (let i = 0; i < 10; i++) {
+      const { a, facts } = pending();
+      expect(applyRule(db, a.id, facts)).not.toBeNull();
+    }
+    // A second rule for another kind in the same space shares the space's ten.
+    rule(space, "v1:code:docs:medium:claude");
+    const t = createTask(db, { spaceId: space.id, title: "Bigger note" });
+    setTaskStatus(db, t.id, "running");
+    setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
+    const a = createApproval(db, { spaceId: space.id, taskId: t.id, kind: "review", title: "Bigger note", detail: "", fingerprint: "v1:code:docs:medium:claude" });
+    const branch = `atrium/${t.id}`;
+    const facts: ActionFacts = { domain: "code", agent: "claude", branch, sha: branchAt(repo.path, branch), files: [file("docs/a.md", 80)], content: PLAIN_DOCS };
+    expect(applyRule(db, a.id, facts)).toBeNull();
+    // Another space keeps its own ten.
+    const otherRepo = tempRepo();
+    try {
+      const other = createSpace(db, { name: "Other", kind: "repo", goal: "", repoPath: otherRepo.path });
+      createRule(db, proposal(other), Date.now() - 1000);
+      const t2 = createTask(db, { spaceId: other.id, title: "Note" });
+      setTaskStatus(db, t2.id, "running");
+      setTaskStatus(db, t2.id, "review", { branch: `atrium/${t2.id}` });
+      const a2 = createApproval(db, { spaceId: other.id, taskId: t2.id, kind: "review", title: "Note", detail: "", fingerprint: FP });
+      const b2 = `atrium/${t2.id}`;
+      expect(applyRule(db, a2.id, { domain: "code", agent: "claude", branch: b2, sha: branchAt(otherRepo.path, b2), files: [file("docs/a.md")], content: PLAIN_DOCS })).not.toBeNull();
+    } finally {
+      otherRepo.cleanup();
+    }
+  });
+
+  test("a task with an earlier send-back is never auto-approved", () => {
+    rule();
+    const { t, a, facts } = pending();
+    resolveApproval(db, a.id, "reject", "tighten the wording");
+    setTaskStatus(db, t.id, "running");
+    setTaskStatus(db, t.id, "review");
+    const redo = createApproval(db, { spaceId: space.id, taskId: t.id, kind: "review", title: "Add a note", detail: "", fingerprint: FP });
+    expect(applyRule(db, redo.id, facts)).toBeNull();
+    expect(getApproval(db, redo.id)!.status).toBe("pending");
+  });
+
+  test("a task whose automatic approval was undone is never auto-approved again", () => {
+    rule();
+    const { a, facts } = pending();
+    applyRule(db, a.id, facts);
+    const reopened = undoAutoApproval(db, a.id);
+    rule();
+    expect(applyRule(db, reopened.id, facts)).toBeNull();
+    expect(getApproval(db, reopened.id)!.status).toBe("pending");
+  });
+
+  test("the branch must still be at the commit that was classified", () => {
+    rule();
+    const { t, a, facts } = pending();
+    Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "later"], { cwd: repo.path });
+    branchAt(repo.path, `atrium/${t.id}`);
+    expect(applyRule(db, a.id, facts)).toBeNull();
+    expect(getApproval(db, a.id)!.status).toBe("pending");
+  });
+
+  test("the approval records the commit that was classified", () => {
+    rule();
+    const { a, facts } = pending();
+    const res = applyRule(db, a.id, facts)!;
+    expect(res.branchHead).toBe((facts as { sha: string }).sha);
   });
 
   test("a manual decision is never overridden", () => {
