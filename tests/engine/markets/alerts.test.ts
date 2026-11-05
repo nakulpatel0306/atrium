@@ -150,3 +150,50 @@ test("no second item while the first is still waiting in Needs you", () => {
   evaluateQuotes(db, [q(101)], NOW + 240_000);
   expect(alerts()).toHaveLength(1);
 });
+
+test("earnings_within fires once per earnings date", async () => {
+  const { saveEarnings } = await import("../../../src/engine/markets/events");
+  const { evaluateEvents } = await import("../../../src/engine/markets/alerts");
+  expect(describeRule({ kind: "earnings_within", days: 5 })).toBe("earnings within 5 days");
+  expect(() => createAlert(db, { spaceId, key: "RKLB", rule: { kind: "earnings_within", days: 0 } })).toThrow("The number of days must be a whole number from 1 to 30.");
+  expect(() => createAlert(db, { spaceId, key: "RKLB", rule: { kind: "earnings_within", days: 31 } })).toThrow("The number of days must be a whole number from 1 to 30.");
+  createAlert(db, { spaceId, key: "RKLB", rule: { kind: "earnings_within", days: 5 } });
+  saveEarnings(db, [{ key: "RKLB", date: "2026-11-08", hour: "amc", epsEstimate: 1.23 }], "finnhub");
+  expect(evaluateEvents(db, NOW)).toBe(1);
+  const a = alerts()[0]!;
+  expect(a.topic).toBe("earnings");
+  expect(a.title).toBe("RKLB earnings within 5 days");
+  expect(a.detail).toBe("Earnings on Sun, Nov 8 (after close). EPS estimate 1.23. Source: Finnhub.");
+  expect(evaluateEvents(db, NOW + 3_600_000)).toBe(0);
+  saveEarnings(db, [{ key: "RKLB", date: "2026-11-09", hour: "bmo", epsEstimate: null }], "you");
+  expect(evaluateEvents(db, NOW + 7_200_000)).toBe(1);
+  expect(alerts()[0]!.detail).toBe("Earnings on Mon, Nov 9 (before open). Source: Entered by you.");
+  // Too far out: nothing.
+  createAlert(db, { spaceId, key: "NOW", rule: { kind: "earnings_within", days: 2 } });
+  saveEarnings(db, [{ key: "NOW", date: "2026-11-20", hour: null, epsEstimate: null }], "finnhub");
+  expect(evaluateEvents(db, NOW + 7_200_000)).toBe(0);
+});
+
+test("big_news fires for a matching headline, once per key per day", async () => {
+  const { saveNews } = await import("../../../src/engine/markets/events");
+  const { evaluateEvents } = await import("../../../src/engine/markets/alerts");
+  expect(describeRule({ kind: "big_news" })).toBe("big news");
+  createAlert(db, { spaceId, key: "RKLB", rule: { kind: "big_news" } });
+  const at = Date.now();
+  saveNews(db, [
+    { key: "RKLB", headline: "Five stocks to watch", source: "Blog", url: "https://x/1", at: at + 1000 },
+    { key: "RKLB", headline: "Rocket Lab wins NASA contract", source: "Reuters", url: "https://x/2", at: at + 2000 },
+  ], at + 3000);
+  expect(evaluateEvents(db, at + 3000)).toBe(1);
+  const a = alerts()[0]!;
+  expect(a.topic).toBe("news");
+  expect(a.detail.split("\n")).toEqual(["Rocket Lab wins NASA contract", expect.stringMatching(/^Reuters · \d{1,2}:\d{2} [AP]M ET$/), "https://x/2"]);
+  saveNews(db, [{ key: "RKLB", headline: "Rocket Lab CEO on the launch backlog", source: "CNBC", url: "https://x/3", at: at + 4000 }], at + 5000);
+  expect(evaluateEvents(db, at + 5000)).toBe(0);
+});
+
+test("price and indicator alerts carry their topic", () => {
+  createAlert(db, { spaceId, key: "AAPL", rule: { kind: "price_above", level: 100 } });
+  evaluateQuotes(db, [q(150)], NOW);
+  expect(alerts()[0]!.topic).toBe("price");
+});

@@ -62,7 +62,11 @@ test("the news job fetches hourly in session, never on a Saturday", async () => 
   const job = newsJob(db, { data, now: () => clock });
   expect(job.slot).toEqual({ everyMinutes: 60, from: "10:00", to: "16:00", days: "weekdays" });
   const jobs = createJobs(db, [job], () => clock);
+  const { createAlert } = await import("../../../src/engine/markets/alerts");
+  createAlert(db, { spaceId: space.id, key: "RKLB", rule: { kind: "big_news" } });
+  db.query("UPDATE market_alerts SET created_at = 0").run();
   expect(await jobs.runDue(clock)).toEqual(["news"]);
+  expect(db.query("SELECT topic FROM approvals WHERE kind = 'alert'").all()).toEqual([{ topic: "news" }]);
   // ETFs aren't asked for company news; the first fetch looks back a day.
   expect(asked).toEqual([{ list: ["RKLB"], since: clock - DAY }]);
   clock = Date.parse("2026-11-07T15:00:00Z"); // Sat 10:00 ET

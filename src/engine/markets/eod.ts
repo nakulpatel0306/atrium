@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { evaluateEvents } from "./alerts";
 import { AV_RESERVE, dailyBudget, noteSourceResult, planAlphaVantage } from "./budget";
 import { etDate } from "./calendar";
 import { recordCloses } from "./closes";
@@ -91,6 +92,7 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
           const rows = await research.earnings(stocks, today, shift(today, 30));
           saveEarnings(db, rows, "finnhub", { replaceFrom: { keys: stocks.map(instrumentKey), from: today } });
         }
+        evaluateEvents(db, now);
       } catch (e) {
         console.error(`End-of-day earnings dates: ${errorText(e, secrets)}`);
       }

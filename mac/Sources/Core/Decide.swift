@@ -32,7 +32,7 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
   var notes: [Note] = next.needs.filter { !seenNeeds.contains($0.id) }.map {
     Note(
       // A suggestion ("stop asking about this?") waits on an answer, like a question.
-      id: $0.id, title: $0.kind == "review" ? "Ready for review" : $0.kind == "alert" ? "Price alert" : "Atrium has a question",
+      id: $0.id, title: $0.kind == "review" ? "Ready for review" : $0.kind == "alert" ? alertTitle($0.topic) : "Atrium has a question",
       body: "\($0.title) · \($0.spaceName)", path: $0.path)
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {
@@ -108,4 +108,13 @@ func isOfflineLoadError(domain: String, code: Int) -> Bool {
 
 func nextBackoff(_ current: TimeInterval) -> TimeInterval {
   max(minBackoff, min(current * 2, maxBackoff))
+}
+
+func alertTitle(_ topic: String?) -> String {
+  switch topic {
+  case "earnings": return "Earnings soon"
+  case "news": return "Big news"
+  case "flag": return "Flagged by Claude"
+  default: return "Price alert"
+  }
 }

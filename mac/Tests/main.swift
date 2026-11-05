@@ -34,6 +34,7 @@ let json = """
   """
 let decoded = try? JSONDecoder().decode(Summary.self, from: Data(json.utf8))
 check(decoded != nil, "decode: summary")
+check(decoded?.alerts == nil && decoded?.needs.first?.topic == nil, "decode: a summary without topic or alerts still decodes")
 check(decoded?.needs.first?.path == "/space/spc_1?task=tsk_1", "decode: need path")
 check(decoded != nil && decoded!.stopped.first!.reason == nil, "decode: null reason")
 
@@ -59,6 +60,19 @@ check(
 check(newNotes(previous: sug, next: sug).isEmpty, "notes: a seen suggestion doesn't repeat")
 let alert = summary(needs: [need("apr_7", kind: "alert", title: "AAPL price above $200.00")])
 check(newNotes(previous: summary(), next: alert).first?.title == "Price alert", "notes: price alert title")
+let earnings = summary(needs: [Need(id: "apr_e", kind: "alert", title: "RKLB earnings within 5 days", spaceName: "Investing", path: "/space/spc_2", topic: "earnings")])
+check(newNotes(previous: summary(), next: earnings).first?.title == "Earnings soon", "notes: earnings title")
+let news = summary(needs: [Need(id: "apr_n", kind: "alert", title: "RKLB big news", spaceName: "Investing", path: "/space/spc_2", topic: "news")])
+check(newNotes(previous: summary(), next: news).first?.title == "Big news", "notes: news title")
+let flag = summary(needs: [Need(id: "apr_f", kind: "alert", title: "Claude flagged NOW", spaceName: "Investing", path: "/space/spc_2", topic: "flag")])
+check(newNotes(previous: summary(), next: flag).first?.title == "Flagged by Claude", "notes: flag title")
+let indicator = summary(needs: [Need(id: "apr_i", kind: "alert", title: "AAPL RSI(14) below 30", spaceName: "Investing", path: "/space/spc_2", topic: "indicator")])
+check(newNotes(previous: summary(), next: indicator).first?.title == "Price alert", "notes: indicator alert reads as a price alert")
+let withAlerts = try? JSONDecoder().decode(
+  Summary.self,
+  from: Data(#"{"needsYou":1,"needs":[{"id":"a","kind":"alert","title":"t","spaceName":"s","path":"/","topic":"news"}],"stopped":[],"overnight":false,"alerts":{"price":0,"earnings":0,"news":1,"flag":0}}"#.utf8))
+check(withAlerts?.needs.first?.topic == "news", "decode: need topic")
+check(withAlerts?.alerts == AlertCounts(price: 0, earnings: 0, news: 1, flag: 0), "decode: alert counts")
 let blocked = Stopped(id: "tsk_2", title: "Ship", spaceName: "atrium", status: "blocked", reason: "Claude is signed out", path: "/space/spc_1?task=tsk_2")
 let blockedNotes = newNotes(previous: summary(), next: summary(stopped: [blocked]))
 check(blockedNotes.first?.title == "Blocked" && blockedNotes.first?.body == "Ship · Claude is signed out", "notes: blocked uses reason")

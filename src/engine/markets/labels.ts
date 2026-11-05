@@ -26,7 +26,9 @@ export type AlertRule =
   | { kind: "price_above" | "price_below"; level: number }
   | { kind: "pct_move"; pct: number }
   | { kind: "rsi_below" | "rsi_above"; level: number; period: number }
-  | { kind: "cross_above_sma" | "cross_below_sma"; period: number };
+  | { kind: "cross_above_sma" | "cross_below_sma"; period: number }
+  | { kind: "earnings_within"; days: number }
+  | { kind: "big_news" };
 
 export function describeRule(rule: AlertRule): string {
   switch (rule.kind) {
@@ -44,5 +46,9 @@ export function describeRule(rule: AlertRule): string {
       return `crosses above SMA ${rule.period}`;
     case "cross_below_sma":
       return `crosses below SMA ${rule.period}`;
+    case "earnings_within":
+      return `earnings within ${rule.days} days`;
+    case "big_news":
+      return "big news";
   }
 }

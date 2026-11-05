@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { newId } from "../ids";
+import { evaluateEvents } from "./alerts";
 import type { MarketData } from "./data";
 import { trackedInstruments } from "./feed";
 import { isFund } from "./funds/sources";
@@ -37,7 +38,9 @@ export function upcomingEarnings(db: Database, keys: string[], fromDate: string,
   const rows = db
     .query(`SELECT key, date, hour, eps_estimate, source FROM market_earnings WHERE key IN (${marks(keys.length)}) AND date >= ? AND date <= ? ORDER BY date, key`)
     .all(...keys, fromDate, plus(fromDate, days)) as { key: string; date: string; hour: string | null; eps_estimate: number | null; source: Earnings["source"] }[];
-  return rows.map((r) => ({ key: r.key, date: r.date, hour: r.hour, epsEstimate: r.eps_estimate, source: r.source }));
+  // Once Nakul has entered a date for a key, Finnhub's guesses for it are set aside.
+  const mine = new Set(rows.filter((r) => r.source === "you").map((r) => r.key));
+  return rows.filter((r) => r.source === "you" || !mine.has(r.key)).map((r) => ({ key: r.key, date: r.date, hour: r.hour, epsEstimate: r.eps_estimate, source: r.source }));
 }
 
 export function saveNews(db: Database, items: NewsItem[], now: number = Date.now()): void {
@@ -64,6 +67,7 @@ export async function fetchNews(db: Database, data: MarketData, now: number): Pr
   const since = Math.max(newest ?? 0, now - DAY_MS);
   const items = await data.news(list, since);
   saveNews(db, items, now);
+  evaluateEvents(db, now);
   return items.length;
 }
 

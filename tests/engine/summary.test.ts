@@ -94,7 +94,7 @@ test("summary counts pending suggestions as things that need you", () => {
 
   const sum = summary(db);
   expect(sum.needsYou).toBe(2);
-  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/" });
+  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null });
   expect(sum.needs[1]!.id).toBe(a.id);
 });
 
@@ -112,4 +112,16 @@ test("summary counts price alerts like any other approval", () => {
     needsYou: 1,
     needs: [{ kind: "alert", title: "AAPL price above $200.00", spaceName: "Stocks", path: `/space/${s.id}` }],
   });
+});
+
+test("summary counts alert kinds and gives each need its topic", () => {
+  const s = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
+  for (const topic of ["price", "indicator", "earnings", "news", "news", "flag"] as const) {
+    createApproval(db, { spaceId: s.id, kind: "alert", title: `x ${topic}`, detail: "", topic });
+  }
+  createApproval(db, { spaceId: s.id, kind: "question", title: "q", detail: "" });
+  const sum = summary(db);
+  expect(sum.alerts).toEqual({ price: 2, earnings: 1, news: 2, flag: 1 });
+  expect(sum.needs.find((n) => n.title === "x earnings")!.topic).toBe("earnings");
+  expect(sum.needs.find((n) => n.title === "q")!.topic).toBeNull();
 });

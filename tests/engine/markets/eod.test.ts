@@ -107,7 +107,10 @@ test("after the close: the next 30 days of earnings for US stocks, and one news 
     research: () => research,
     prepare: async () => {},
   } as unknown as MarketData;
+  const { createAlert } = await import("../../../src/engine/markets/alerts");
+  createAlert(db, { spaceId, key: "RKLB", rule: { kind: "earnings_within", days: 10 } });
   await eodJob(db, { data, tiingo: () => null, now: () => clock.now }).run(clock.now);
   expect(asked).toEqual(["RKLB 2026-11-04..2026-12-04", "news RKLB"]);
+  expect(db.query("SELECT topic FROM approvals WHERE kind = 'alert'").all()).toEqual([{ topic: "earnings" }]);
   expect(db.query("SELECT key, date, source FROM market_earnings").all()).toEqual([{ key: "RKLB", date: "2026-11-10", source: "finnhub" }]);
 });
