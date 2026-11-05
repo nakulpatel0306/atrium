@@ -123,3 +123,21 @@ test("o toggles overnight from anywhere", async () => {
   await new Promise((r) => setTimeout(r, 30));
   expect(client.calls.filter((c) => c.path === "/api/settings").map((c) => c.body)).toEqual([{ overnight: true }, { overnight: true }]);
 });
+
+test("a transcript opened mid-run is fetched in full once the run ends", async () => {
+  const state = makeState();
+  const client = fakeClient(state);
+  client.respond(`/api/runs/${ids.liveRun}/transcript`, { ok: true, data: "early lines" });
+  const app = openApp(client);
+  await app.frame((f) => f.includes("[1] Spaces"));
+  client.emitOutput(ids.liveRun, "early lines\nstill going");
+  await app.type("2", "t");
+  await app.frame((f) => f.includes("still going"));
+  await app.type("q");
+  await app.frame((f) => f.includes("[1] Spaces"));
+  client.respond(`/api/runs/${ids.liveRun}/transcript`, { ok: true, data: "early lines\nstill going\nall done" });
+  const ended = { ...state, runs: state.runs.map((r) => (r.id === ids.liveRun ? { ...r, endedAt: Date.now(), exitCode: 0 } : r)) };
+  client.push(ended);
+  await app.type("t");
+  await app.frame((f) => f.includes("all done"));
+});

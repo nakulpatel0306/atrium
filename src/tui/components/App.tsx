@@ -1,5 +1,5 @@
 import { Box, type Key, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { absolute } from "../../dashboard/format";
 import { reviewTarget } from "../../dashboard/summary";
 import type { State } from "../../engine/state";
@@ -28,6 +28,12 @@ const SETTING_UP = "Setting up your space. This usually takes under a minute.";
 const inPrompt = (u: Ui) => u.overlay?.kind === "prompt";
 
 type Size = { columns: number; rows: number };
+
+// Cleaning and wrapping a long transcript is the costly part of a frame, so it's done once per text and width,
+// not on every keypress.
+function useWrapped(text: string, cols: number): string[] {
+  return useMemo(() => (text ? wrapLines(clean(text).replace(/\n$/, ""), cols) : []), [text, cols]);
+}
 
 // The agent thread a subject needs: a work task's own, or an approval's once its review has finished.
 function threadOf(view: View): string | null {
@@ -85,23 +91,20 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const view = state ? deriveView(state, ui) : null;
   const messages = useMessages(client, view ? threadOf(view) : null);
   const reviewers = useReviewers(client, view?.subject === "space" && view.space?.kind === "repo" ? view.space : null);
-  const output = useRunOutput(client, view?.live?.run.id ?? null);
+  // Live is only drawn on the main screen; under a full-screen view its output isn't read or wrapped.
+  const fullScreen = ui.overlay?.kind === "transcript" || ui.overlay?.kind === "agents";
+  const output = useRunOutput(client, fullScreen ? null : (view?.live?.run.id ?? null));
   const detailLines = view ? detailOf(view, messages, reviewers).flatMap((l) => wrapStyled(l, inner)) : [];
-  const liveLines = output ? wrapLines(clean(output).replace(/\n$/, ""), inner) : [];
+  const liveLines = useWrapped(output, inner);
   // Full-screen views: the header, one pane, and the status bar.
   const viewRows = height - 4;
   const fullInner = cols - 4;
   const transcript = ui.overlay?.kind === "transcript" ? ui.overlay : null;
   const transcriptRuns = transcript && state ? state.runs.filter((r) => r.taskId === transcript.taskId) : [];
   const transcriptRun = transcript ? (transcriptRuns[transcript.runIndex] ?? null) : null;
-  const loaded = useTranscript(client, transcriptRun?.id ?? null);
-  const transcriptLines = !transcriptRun
-    ? []
-    : !loaded
-      ? ["Loading the transcript…"]
-      : loaded.ok
-        ? wrapLines(clean(loaded.text).replace(/\n$/, ""), fullInner)
-        : [loaded.error];
+  const loaded = useTranscript(client, transcriptRun);
+  const wrappedTranscript = useWrapped(loaded?.ok ? loaded.text : "", fullInner);
+  const transcriptLines = !transcriptRun ? [] : !loaded ? ["Loading the transcript…"] : loaded.ok ? wrappedTranscript : [loaded.error];
   const agentLines = ui.overlay?.kind === "agents" && view ? agentsLines(view.state).flatMap((l) => wrapStyled(l, fullInner)) : [];
 
   const rows: Rows =

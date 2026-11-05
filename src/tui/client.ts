@@ -124,7 +124,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
       const res = await fetch(`${base}/api/runs/${encodeURIComponent(runId)}/transcript`);
       if (res.status === 404) return { ok: false, error: MISSING_TRANSCRIPT };
       if (!res.ok) return { ok: false, error: engineError(res.status) };
-      return { ok: true, text: await res.text() };
+      return { ok: true, text: clean(await res.text()) };
     } catch {
       return { ok: false, error: OFFLINE_ERROR };
     }

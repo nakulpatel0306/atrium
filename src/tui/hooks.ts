@@ -40,19 +40,25 @@ export function useReviewers(c: EngineClient, space: Space | null): Record<strin
 }
 
 type Transcript = { ok: true; text: string } | { ok: false; error: string };
+type RunRef = { id: string; endedAt: number | null };
 
-// Fetched once per run opened; a transcript only grows while its run is live, and Live shows that. Null while loading.
-export function useTranscript(c: EngineClient, runId: string | null): Transcript | null {
+// A finished run's transcript never changes, so it's fetched once and kept. A live run's isn't cached: its
+// transcript is still growing, and the client's live output (seeded from the transcript) is the current text.
+export function useTranscript(c: EngineClient, run: RunRef | null): Transcript | null {
   const cache = useRef(new Map<string, Transcript>());
   const [, setLoaded] = useState(0);
+  const live = useRunOutput(c, run && run.endedAt === null ? run.id : null);
+  const key = run && run.endedAt !== null ? `${run.id}:${run.endedAt}` : null;
   useEffect(() => {
-    if (!runId || cache.current.has(runId)) return;
-    void c.transcript(runId).then((res) => {
-      cache.current.set(runId, res);
-      setLoaded(cache.current.size);
+    if (!key || !run || cache.current.has(key)) return;
+    void c.transcript(run.id).then((res) => {
+      cache.current.set(key, res);
+      setLoaded((n) => n + 1);
     });
-  }, [runId, c]);
-  return runId ? (cache.current.get(runId) ?? null) : null;
+  }, [key, c]);
+  if (!run) return null;
+  if (run.endedAt === null) return { ok: true, text: live };
+  return cache.current.get(key!) ?? null;
 }
 
 // Redraws on an interval so relative times stay true; only while `active`, so an idle screen does no work.

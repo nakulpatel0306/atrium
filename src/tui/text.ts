@@ -47,6 +47,16 @@ export function truncate(s: string, max: number): string {
 export function wrapLines(text: string, cols: number): string[] {
   const out: string[] = [];
   for (const line of text.split("\n")) {
+    // Fast paths for the common cases, so a 5 MB transcript wraps in well under a second.
+    if (/^[\x20-\x7e]*$/.test(line)) {
+      if (line.length === 0) out.push("");
+      for (let i = 0; i < line.length; i += cols) out.push(line.slice(i, i + cols));
+      continue;
+    }
+    if (width(line) <= cols) {
+      out.push(line);
+      continue;
+    }
     let cur = "";
     let used = 0;
     for (const g of graphemes(line)) {
