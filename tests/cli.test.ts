@@ -55,9 +55,18 @@ test("trimLog keeps only the last bytes of an oversized log", () => {
 test("openArgs picks the app, passes a dev port, and falls back to the browser", () => {
   const appPath = "/Users/x/Applications/Atrium.app";
   const url = "http://127.0.0.1:7420";
-  expect(openArgs({ appInstalled: true, appPath, port: 7420, url })).toEqual(["open", appPath]);
-  expect(openArgs({ appInstalled: true, appPath, port: 7431, url })).toEqual(["open", "--env", "ATRIUM_PORT=7431", appPath]);
-  expect(openArgs({ appInstalled: false, appPath, port: 7420, url })).toEqual(["open", url]);
+  expect(openArgs({ appInstalled: true, appRunning: false, appPath, port: 7420, url })).toEqual(["open", appPath]);
+  expect(openArgs({ appInstalled: true, appRunning: false, appPath, port: 7431, url })).toEqual(["open", "--env", "ATRIUM_PORT=7431", appPath]);
+  expect(openArgs({ appInstalled: false, appRunning: false, appPath, port: 7420, url })).toEqual(["open", url]);
+});
+
+// open --env only reaches a fresh launch; a running copy would just come forward still pointing at its old port.
+test("openArgs refuses a dev port while Atrium is already running", () => {
+  const appPath = "/Users/x/Applications/Atrium.app";
+  expect(openArgs({ appInstalled: true, appRunning: true, appPath, port: 7431, url: "http://127.0.0.1:7431" })).toEqual({
+    error: "Quit Atrium first to open it on port 7431.",
+  });
+  expect(openArgs({ appInstalled: true, appRunning: true, appPath, port: 7420, url: "http://127.0.0.1:7420" })).toEqual(["open", appPath]);
 });
 
 test("usage lists tui", async () => {

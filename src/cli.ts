@@ -18,10 +18,19 @@ const USAGE = "Usage: atrium [tui|start|status|open|install|uninstall|app instal
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
-// A dev engine's port has to reach the app, which otherwise points at the installed engine on 7420.
-export function openArgs(o: { appInstalled: boolean; appPath: string; port: number; url: string }): string[] {
+// A dev engine's port has to reach the app, which otherwise points at the installed engine on 7420. `open --env`
+// only reaches a fresh launch: a running copy would just come forward on its old port.
+export function openArgs(o: {
+  appInstalled: boolean;
+  appRunning: boolean;
+  appPath: string;
+  port: number;
+  url: string;
+}): string[] | { error: string } {
   if (!o.appInstalled) return ["open", o.url];
-  return o.port === 7420 ? ["open", o.appPath] : ["open", "--env", `ATRIUM_PORT=${o.port}`, o.appPath];
+  if (o.port === 7420) return ["open", o.appPath];
+  if (o.appRunning) return { error: `Quit Atrium first to open it on port ${o.port}.` };
+  return ["open", "--env", `ATRIUM_PORT=${o.port}`, o.appPath];
 }
 
 export type PlistOpts = { bunPath: string; mainPath: string; logPath: string; workingDir?: string; pathEnv?: string };
@@ -100,11 +109,28 @@ function uninstall(): number {
 }
 
 const quitApp = () => run(["osascript", "-e", `quit app id "${APP_ID}"`]);
+// Asking whether it's running never launches it, unlike most other Apple events.
+const appRunning = () => run(["osascript", "-e", `application id "${APP_ID}" is running`]).out === "true";
+
+function openApp(): number {
+  const installed = existsSync(appPath());
+  const args = openArgs({
+    appInstalled: installed,
+    appRunning: installed && config().port !== 7420 && appRunning(),
+    appPath: appPath(),
+    port: config().port,
+    url: url(),
+  });
+  if (!Array.isArray(args)) return fail(args.error);
+  return run(args).ok ? 0 : fail("Couldn't open Atrium.");
+}
 
 async function appInstall(): Promise<number> {
   const out = mkdtempSync(join(tmpdir(), "atrium-app-"));
+  let wasRunning = false;
   try {
     const built = await buildApp({ outDir: out });
+    wasRunning = appRunning();
     quitApp();
     rmSync(appPath(), { recursive: true, force: true });
     mkdirSync(dirname(appPath()), { recursive: true });
@@ -116,7 +142,11 @@ async function appInstall(): Promise<number> {
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
-  console.log("Installed Atrium in ~/Applications. Open it with: atrium open");
+  if (wasRunning && run(["open", appPath()]).ok) {
+    console.log("Installed Atrium in ~/Applications and reopened it.");
+  } else {
+    console.log("Installed Atrium in ~/Applications. Open it with: atrium open");
+  }
   return 0;
 }
 
@@ -152,9 +182,7 @@ export async function main(cmd: string | undefined): Promise<number> {
       console.log(statusLine(await fetchState(), url()));
       return 0;
     case "open":
-      return run(openArgs({ appInstalled: existsSync(appPath()), appPath: appPath(), port: config().port, url: url() })).ok
-        ? 0
-        : fail("Couldn't open Atrium.");
+      return openApp();
     case "install":
       return install();
     case "uninstall":
