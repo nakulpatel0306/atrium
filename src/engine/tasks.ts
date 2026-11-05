@@ -167,3 +167,18 @@ export function appendTaskDetail(db: Database, id: string, text: string): Task {
   bus.emit({ type: "changed" });
   return getTask(db, id)!;
 }
+
+// Undoing an automatic approval is the one way back from done. It is kept out of ALLOWED so nothing else can
+// reopen a finished task, and guarded in SQL so it can't reopen anything but finished work.
+export function reopenForReview(db: Database, id: string): Task {
+  const res = db
+    .query("UPDATE tasks SET status = 'review', updated_at = ? WHERE id = ? AND status = 'done' AND kind = 'work'")
+    .run(Date.now(), id);
+  if (res.changes === 0) {
+    const cur = getTask(db, id);
+    if (!cur) throw new Error(`No task with id ${id}`);
+    throw new InvalidTransition("done", "review");
+  }
+  bus.emit({ type: "changed" });
+  return getTask(db, id)!;
+}
