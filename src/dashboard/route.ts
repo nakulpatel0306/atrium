@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "agents" } | { name: "space"; id: string; task: string | null };
+export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "space"; id: string; task: string | null };
 
 const listeners = new Set<() => void>();
 
@@ -27,6 +27,7 @@ export function usePath(): string {
 export function parseRoute(path: string): Route {
   const [pathname = "", search = ""] = path.split("?");
   if (pathname === "/agents") return { name: "agents" };
+  if (pathname === "/rules") return { name: "rules" };
   const m = pathname.match(/^\/space\/([^/]+)$/);
   if (!m) return { name: "home" };
   try {

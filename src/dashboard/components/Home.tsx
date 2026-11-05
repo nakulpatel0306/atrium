@@ -95,7 +95,7 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
 // Composed from live state on every render so counts never go stale while the page stays open.
 function liveStatus(state: State): string {
   const parts: string[] = [];
-  const pending = state.approvals.length;
+  const pending = state.approvals.length + state.proposals.length;
   if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
   const blocked = state.tasks.filter((t) => t.status === "blocked");
   if (blocked.length > 0) {

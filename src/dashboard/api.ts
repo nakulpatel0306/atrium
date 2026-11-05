@@ -1,16 +1,21 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import type { Approval } from "../engine/approvals";
+import type { Proposal } from "../engine/autonomy/proposals";
+import type { Rule, RuleEventRow } from "../engine/autonomy/rules";
 import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
 
 export type { Message, State };
+export type RuleDetail = { rule: Rule; proposal: Proposal | null; approvals: Approval[]; events: RuleEventRow[] };
 
-// Archived spaces leave Home, so their tasks and approvals must not linger in its counts and lists.
+// Archived spaces leave Home, so their tasks, approvals and suggestions must not linger in its counts and lists.
 export function activeOnly(state: State): State {
   const ids = new Set(state.spaces.map((s) => s.id));
   return {
     ...state,
     tasks: state.tasks.filter((t) => ids.has(t.spaceId)),
     approvals: state.approvals.filter((a) => ids.has(a.spaceId)),
+    proposals: state.proposals.filter((p) => ids.has(p.spaceId)),
   };
 }
 
@@ -142,6 +147,10 @@ export const useMessages = (taskId: string | null) =>
 // settings change the answer, so it's read again when the space is saved rather than on every push.
 export const useReviewers = (space: { id: string; updatedAt: number }) =>
   useFetched<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(space.id)}/reviewers`, space.updatedAt);
+
+// A rule's history changes with every automatic approval, undo or renewal, which any state push can mean.
+export const useRule = (id: string | null) =>
+  useFetched<RuleDetail>(id ? `/api/rules/${encodeURIComponent(id)}` : null, useEngineState());
 
 export async function fetchTranscript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   try {

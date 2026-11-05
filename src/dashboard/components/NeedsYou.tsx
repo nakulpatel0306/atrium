@@ -4,6 +4,7 @@ import { agentName, ranAgent, verdictOf } from "../agents";
 import { post, type State, useMessages } from "../api";
 import { absolute, firstLine, relative } from "../format";
 import { navigate } from "../route";
+import { ProposalRow } from "./Proposal";
 
 type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
@@ -141,16 +142,24 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
 
 export function NeedsYou({ state }: { state: State }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
+  const count = state.approvals.length + state.proposals.length;
   return (
     <>
       <h2 id="needs">
         <Inbox />
-        Needs you{state.approvals.length > 0 && ` · ${state.approvals.length}`}</h2>
+        Needs you{count > 0 && ` · ${count}`}</h2>
       <div className="list">
-        {state.approvals.length === 0 ? (
+        {count === 0 ? (
           <div className="empty-row">You're all caught up.</div>
         ) : (
-          state.approvals.map((a) => <Row key={a.id} approval={a} space={spaces.get(a.spaceId)} state={state} />)
+          <>
+            {state.proposals.map((p) => (
+              <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
+            ))}
+            {state.approvals.map((a) => (
+              <Row key={a.id} approval={a} space={spaces.get(a.spaceId)} state={state} />
+            ))}
+          </>
         )}
       </div>
     </>

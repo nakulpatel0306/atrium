@@ -553,8 +553,15 @@ test("GET /api/rules/:id returns the rule, its applied approvals and events in o
   const { rule, a } = await appliedRule();
   const res = await fetch(`${base}/api/rules/${rule.id}`);
   expect(res.status).toBe(200);
-  const body = (await res.json()) as { rule: RuleBody; approvals: { id: string }[]; events: { event: string; actor: string }[] };
+  const body = (await res.json()) as {
+    rule: RuleBody;
+    proposal: { evidence: { title: string }[] };
+    approvals: { id: string }[];
+    events: { event: string; actor: string }[];
+  };
   expect(body.rule.id).toBe(rule.id);
+  // The suggestion's evidence, so the rule's page can show why it exists.
+  expect(body.proposal.evidence).toHaveLength(5);
   expect(body.approvals.map((x) => x.id)).toEqual([a.id]);
   expect(body.events.map((e) => [e.event, e.actor])).toEqual([
     ["proposed", "atrium"],

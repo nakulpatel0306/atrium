@@ -263,7 +263,12 @@ export function startServer(deps: Deps): Server<undefined> {
     if (ruleM) {
       const rule = getRule(db, ruleM[1]!);
       if (!rule) throw new HttpError(404, "No such rule.");
-      return json({ rule, approvals: ruleApprovals(db, rule.id), events: ruleEvents(db, rule.id) });
+      return json({
+        rule,
+        proposal: getProposal(db, rule.proposalId),
+        approvals: ruleApprovals(db, rule.id),
+        events: ruleEvents(db, rule.id),
+      });
     }
 
     if (hit("POST", /^\/api\/command$/)) {
