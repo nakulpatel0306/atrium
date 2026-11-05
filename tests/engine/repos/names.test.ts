@@ -13,7 +13,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 const ok = { name: "demo", description: "A demo", visibility: "private", template: "bun-ts" };
 
 test("valid repo names pass", () => {
-  expect(validateRepoName("atrium-flow-check-20261105")).toBe("atrium-flow-check-20261105");
+  expect(validateRepoName("my-new-repo")).toBe("my-new-repo");
   expect(validateRepoName("My.Repo_2")).toBe("My.Repo_2");
 });
 
