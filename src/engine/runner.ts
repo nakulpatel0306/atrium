@@ -399,8 +399,9 @@ export function createRunner(deps: {
         cwd: r.cwd,
         systemPrompt:
           task.kind === "review" ? REVIEW_SYSTEM_PROMPT : repo ? REPO_SYSTEM_PROMPT : markets ? [general, ...MARKETS_SYSTEM_LINES].join("\n") : general,
-        allowedTools: task.kind === "review" ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
-        mode: task.kind === "review" ? "review" : "work",
+        // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
+        allowedTools: task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
+        mode: task.kind === "review" || task.purpose ? "review" : "work",
         signal: r.signal,
         onChunk(chunk) {
           try {
