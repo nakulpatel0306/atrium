@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
+import { runAgentProcess } from "./process";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./types";
 
 const DENY = [
@@ -72,34 +73,6 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       const flagLike = input.allowedTools.find((t) => t.startsWith("-"));
       if (flagLike) throw new Error(`Invalid allowedTools entry: ${flagLike}`);
 
-      let proc: ReturnType<typeof Bun.spawn>;
-      try {
-        proc = Bun.spawn(
-          [
-            bin, "-p",
-            "--setting-sources", "project,local",
-            "--settings", sandboxSettings(input.cwd),
-            "--strict-mcp-config", "--no-session-persistence",
-            "--output-format", "stream-json", "--verbose",
-            "--permission-mode", "dontAsk",
-            "--append-system-prompt", input.systemPrompt,
-            "--allowedTools", ...input.allowedTools,
-            "--disallowedTools", ...DENY,
-          ],
-          { cwd: input.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env, signal: input.signal },
-        );
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-          return { status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" };
-        }
-        throw e;
-      }
-
-      // The prompt goes over stdin so a leading "-" can never be parsed as a flag.
-      const stdin = proc.stdin as import("bun").FileSink;
-      stdin.write(input.prompt);
-      stdin.end();
-
       let limitResetsAt: number | undefined;
       let limitRejected = false;
       let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number } | undefined;
@@ -135,28 +108,25 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         }
       };
 
-      const readStdout = async () => {
-        const decoder = new TextDecoder();
-        let buf = "";
-        for await (const part of proc.stdout as ReadableStream<Uint8Array>) {
-          buf += decoder.decode(part, { stream: true });
-          let nl: number;
-          while ((nl = buf.indexOf("\n")) >= 0) {
-            handle(buf.slice(0, nl));
-            buf = buf.slice(nl + 1);
-          }
-        }
-        if (buf.trim()) handle(buf);
-      };
-
-      const [, stderr, exitCode] = await Promise.all([
-        readStdout(),
-        new Response(proc.stderr as ReadableStream).text(),
-        proc.exited,
-      ]);
+      const proc = await runAgentProcess(
+        [
+          bin, "-p",
+          "--setting-sources", "project,local",
+          "--settings", sandboxSettings(input.cwd),
+          "--strict-mcp-config", "--no-session-persistence",
+          "--output-format", "stream-json", "--verbose",
+          "--permission-mode", "dontAsk",
+          "--append-system-prompt", input.systemPrompt,
+          "--allowedTools", ...input.allowedTools,
+          "--disallowedTools", ...DENY,
+        ],
+        { cwd: input.cwd, stdin: input.prompt, signal: input.signal, onLine: handle },
+      );
+      if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" };
+      const { stderr, exitCode } = proc;
 
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
-      if (input.signal?.aborted) return { status: "error", kind: "failed", message: "Stopped" };
+      if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped" };
 
       // Warning-style statuses ("allowed_warning") only count if the run actually failed.
       const succeeded = exitCode === 0 && final !== undefined && !final.isError;

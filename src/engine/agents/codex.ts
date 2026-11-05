@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
+import { runAgentProcess } from "./process";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./types";
 
 function shortCommand(command: unknown): string {
@@ -11,7 +12,7 @@ function shortCommand(command: unknown): string {
 // which talks about the user's code.
 function classify(message: string, stderr: string, exitCode: number): AgentRunResult {
   const text = `${message}\n${stderr}`;
-  if (/hit your usage limit|usage limit/i.test(text)) {
+  if (/usage limit/i.test(text)) {
     const retryAfter = parseRetryAfter(text);
     const at = new Date(retryAfter).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     return { status: "error", kind: "rate_limited", message: `Codex usage limit reached; resets at ${at}`, retryAfter };
@@ -28,28 +29,13 @@ export function codexAdapter(bin: string = config().codexBin): AgentAdapter {
     id: "codex",
     label: "Codex",
     async run(input: AgentRunInput): Promise<AgentRunResult> {
-      let proc: ReturnType<typeof Bun.spawn>;
-      try {
-        proc = Bun.spawn(
-          [
-            bin, "exec", "-", "-C", input.cwd,
-            "--sandbox", input.mode === "review" ? "read-only" : "workspace-write",
-            "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
-            "-c", 'approval_policy="never"',
-          ],
-          { cwd: input.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env, signal: input.signal },
-        );
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-          return { status: "error", kind: "not_installed", message: "Codex isn't installed or not on PATH" };
-        }
-        throw e;
-      }
-
       // Codex has no system-prompt flag, so the instructions ride in front of the task.
-      const stdin = proc.stdin as import("bun").FileSink;
-      stdin.write(`${input.systemPrompt}\n\n${input.prompt}`);
-      stdin.end();
+      const argv = [
+        bin, "exec", "-", "-C", input.cwd,
+        "--sandbox", input.mode === "review" ? "read-only" : "workspace-write",
+        "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+        "-c", 'approval_policy="never"',
+      ];
 
       let lastMessage = "";
       let errorMessage = "";
@@ -71,6 +57,7 @@ export function codexAdapter(bin: string = config().codexBin): AgentAdapter {
             input.onChunk(`→ bash ${shortCommand(item.command)}`.trimEnd());
           }
         } else if (msg.type === "turn.completed") {
+          // Cached input is a subset of input_tokens, not extra, so only the two totals are reported.
           usage = { inputTokens: msg.usage?.input_tokens ?? 0, outputTokens: msg.usage?.output_tokens ?? 0 };
         } else if (msg.type === "turn.failed") {
           errorMessage = String(msg.error?.message ?? "turn failed");
@@ -79,28 +66,17 @@ export function codexAdapter(bin: string = config().codexBin): AgentAdapter {
         }
       };
 
-      const readStdout = async () => {
-        const decoder = new TextDecoder();
-        let buf = "";
-        for await (const part of proc.stdout as ReadableStream<Uint8Array>) {
-          buf += decoder.decode(part, { stream: true });
-          let nl: number;
-          while ((nl = buf.indexOf("\n")) >= 0) {
-            handle(buf.slice(0, nl));
-            buf = buf.slice(nl + 1);
-          }
-        }
-        if (buf.trim()) handle(buf);
-      };
-
-      const [, stderr, exitCode] = await Promise.all([
-        readStdout(),
-        new Response(proc.stderr as ReadableStream).text(),
-        proc.exited,
-      ]);
+      const proc = await runAgentProcess(argv, {
+        cwd: input.cwd,
+        stdin: `${input.systemPrompt}\n\n${input.prompt}`,
+        signal: input.signal,
+        onLine: handle,
+      });
+      if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Codex isn't installed or not on PATH" };
+      const { stderr, exitCode } = proc;
 
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
-      if (input.signal?.aborted) return { status: "error", kind: "failed", message: "Stopped" };
+      if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped" };
 
       if (exitCode === 0 && usage && !errorMessage) {
         return { status: "ok", summary: lastMessage, ...usage };

@@ -2,6 +2,7 @@
 // Stands in for the `codex` CLI; mirrors the `exec --json` lines Codex 0.147 emits.
 const scenario = process.env.FAKE_CODEX_SCENARIO ?? "ok";
 const out = (o: unknown) => console.log(JSON.stringify(o));
+const agentMessage = (text: string) => out({ type: "item.completed", item: { id: "item_0", type: "agent_message", text } });
 
 if (process.env.FAKE_CODEX_ARGV) await Bun.write(process.env.FAKE_CODEX_ARGV, JSON.stringify(process.argv.slice(2)));
 const stdin = await Bun.stdin.text();
@@ -25,9 +26,18 @@ if (scenario === "fail") {
   out({ type: "turn.failed", error: { message: "boom" } });
   process.exit(1);
 }
+if (scenario === "no-turn") {
+  agentMessage("Half done.");
+  process.exit(0);
+}
+if (scenario === "stray") {
+  // A background child that would outlive the CLI; its pid lets the test check it was reaped.
+  const child = Bun.spawn(["sleep", "30"], { stdout: "ignore", stderr: "ignore", stdin: "ignore" });
+  child.unref();
+  await Bun.write(process.env.FAKE_CODEX_PIDFILE!, String(child.pid));
+}
 if (scenario === "slow") await Bun.sleep(30_000);
 
-const agentMessage = (text: string) => out({ type: "item.completed", item: { id: "item_0", type: "agent_message", text } });
 if (scenario === "echo") {
   agentMessage(stdin);
 } else {

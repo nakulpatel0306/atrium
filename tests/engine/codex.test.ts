@@ -14,6 +14,7 @@ function input(chunks: string[] = [], extra: Partial<AgentRunInput> = {}): Agent
 afterEach(() => {
   delete process.env.FAKE_CODEX_SCENARIO;
   delete process.env.FAKE_CODEX_ARGV;
+  delete process.env.FAKE_CODEX_PIDFILE;
 });
 
 describe("codexAdapter", () => {
@@ -86,5 +87,25 @@ describe("codexAdapter", () => {
     const run = codexAdapter(FAKE).run(input([], { signal: ctl.signal }));
     setTimeout(() => ctl.abort(), 300);
     expect(await run).toEqual({ status: "error", kind: "failed", message: "Stopped" });
+  });
+
+  test("exit 0 without turn.completed is a failure", async () => {
+    process.env.FAKE_CODEX_SCENARIO = "no-turn";
+    const r = await codexAdapter(FAKE).run(input());
+    expect(r).toMatchObject({ status: "error", kind: "failed" });
+  });
+
+  test("background children are killed when the run ends", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atrium-codex-"));
+    try {
+      process.env.FAKE_CODEX_SCENARIO = "stray";
+      process.env.FAKE_CODEX_PIDFILE = join(dir, "pid");
+      const r = await codexAdapter(FAKE).run(input());
+      expect(r.status).toBe("ok");
+      const pid = Number(readFileSync(process.env.FAKE_CODEX_PIDFILE, "utf8"));
+      expect(() => process.kill(pid, 0)).toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
