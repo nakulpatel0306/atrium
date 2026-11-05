@@ -18,3 +18,28 @@ export function money(n: number, currency: "CAD" | "USD"): string {
   const s = moneyFmt[currency].format(Math.abs(n));
   return n < 0 ? `−${s}` : s;
 }
+
+export type AlertRule =
+  | { kind: "price_above" | "price_below"; level: number }
+  | { kind: "pct_move"; pct: number }
+  | { kind: "rsi_below" | "rsi_above"; level: number; period: number }
+  | { kind: "cross_above_sma" | "cross_below_sma"; period: number };
+
+export function describeRule(rule: AlertRule): string {
+  switch (rule.kind) {
+    case "price_above":
+      return `price above ${money(rule.level, "USD")}`;
+    case "price_below":
+      return `price below ${money(rule.level, "USD")}`;
+    case "pct_move":
+      return `moves ${rule.pct}% in a day`;
+    case "rsi_below":
+      return `RSI(${rule.period}) below ${rule.level}`;
+    case "rsi_above":
+      return `RSI(${rule.period}) above ${rule.level}`;
+    case "cross_above_sma":
+      return `crosses above SMA ${rule.period}`;
+    case "cross_below_sma":
+      return `crosses below SMA ${rule.period}`;
+  }
+}

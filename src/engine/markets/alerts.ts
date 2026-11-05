@@ -6,14 +6,11 @@ import { cachedBars } from "./cache";
 import { etClock, etDate, etInstant } from "./calendar";
 import { rsi, sma } from "./indicators";
 import { instrumentKey, parseInstrumentKey } from "./instrument";
-import { currencyOfKey, freshnessText, money } from "./labels";
+import { currencyOfKey, describeRule, freshnessText, money, type AlertRule } from "./labels";
 import type { Quote } from "./providers/types";
 
-export type AlertRule =
-  | { kind: "price_above" | "price_below"; level: number }
-  | { kind: "pct_move"; pct: number }
-  | { kind: "rsi_below" | "rsi_above"; level: number; period: number }
-  | { kind: "cross_above_sma" | "cross_below_sma"; period: number };
+export type { AlertRule };
+export { describeRule };
 
 export type Alert = {
   id: string;
@@ -45,25 +42,6 @@ const toAlert = (r: Row): Alert => ({
   lastFiredAt: r.last_fired_at,
   createdAt: r.created_at,
 });
-
-export function describeRule(rule: AlertRule): string {
-  switch (rule.kind) {
-    case "price_above":
-      return `price above ${money(rule.level, "USD")}`;
-    case "price_below":
-      return `price below ${money(rule.level, "USD")}`;
-    case "pct_move":
-      return `moves ${rule.pct}% in a day`;
-    case "rsi_below":
-      return `RSI(${rule.period}) below ${rule.level}`;
-    case "rsi_above":
-      return `RSI(${rule.period}) above ${rule.level}`;
-    case "cross_above_sma":
-      return `crosses above SMA ${rule.period}`;
-    case "cross_below_sma":
-      return `crosses below SMA ${rule.period}`;
-  }
-}
 
 function validate(rule: AlertRule): void {
   const finite = (n: unknown) => typeof n === "number" && Number.isFinite(n);

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import type { MarketsBriefing } from "../engine/markets/briefing";
 import type { DataStatus } from "../engine/markets/data";
 import type { FeedStatus } from "../engine/markets/feed";
 import { freshnessText } from "../engine/markets/labels";
 import type { Quote } from "../engine/markets/providers/types";
 import type { MarketsView } from "../server/markets";
 import { onQuotes, useEngineState, useFetched } from "./api";
+import { money, signedPct } from "./format";
 
 export type { MarketsView };
 export type Tone = "live" | "delayed" | "demo" | "none";
@@ -43,3 +45,27 @@ export function useMarkets(spaceId: string): MarketsView | null {
 }
 
 export const useMarketDataSettings = () => useFetched<{ data: DataStatus; feed: FeedStatus }>("/api/settings/market-data", useEngineState());
+
+const signedMoney = (n: number) => `${n >= 0 ? "+" : "−"}${money(Math.abs(n), "USD")}`;
+const closeDay = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
+
+// One line for Home: paper P&L, then the biggest holding moves, each move saying how fresh it is.
+export function briefingMarketsLine(m: MarketsBriefing): string | null {
+  const parts: string[] = [];
+  if (m.paper) parts.push(`Paper ${signedMoney(m.paper.dayPnl)} today (${signedMoney(m.paper.totalPnl)} total)`);
+  if (m.holdings.length) {
+    const moves = m.holdings.map((h) => {
+      const tag = h.freshness === "eod" ? ` (close ${closeDay.format(h.asOf)})` : h.freshness === "demo" ? " (demo)" : "";
+      return `${h.key} ${signedPct(h.dayPct, 1)}${tag}`;
+    });
+    parts.push(`Your holdings: ${moves.join(", ")}`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
+const etClockFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+export const etClockText = (ms: number) => `${etClockFmt.format(ms)} ET`;
+
+// Market-clock stamps (fills, alert fires) shown in market time rather than "ago", which reads oddly in demo mode.
+const etDateTimeFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+export const etDateTimeText = (ms: number) => `${etDateTimeFmt.format(ms)} ET`;

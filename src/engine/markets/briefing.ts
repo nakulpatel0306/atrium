@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
+import { getSetting } from "../settings";
 import { cachedQuotes } from "./cache";
+import { marketNow } from "./calendar";
 import { instrumentKey, type Exchange } from "./instrument";
 import { paperState } from "./paper";
 import type { Freshness } from "./providers/types";
@@ -10,7 +12,9 @@ export type MarketsBriefing = {
 };
 
 // Cache only: the briefing renders on every state read and must never touch the network.
-export function marketsBriefing(db: Database, now: number): MarketsBriefing | null {
+export function marketsBriefing(db: Database, wallNow: number): MarketsBriefing | null {
+  // Paper fills are stamped with the market clock, which demo mode can shift; "today" must use the same clock.
+  const now = wallNow + (marketNow(getSetting(db, "markets.provider") ?? "alpaca") - Date.now());
   const spaces = db.query("SELECT id FROM spaces WHERE kind = 'markets' AND status = 'active'").all() as { id: string }[];
   if (!spaces.length) return null;
   const ids = spaces.map((s) => s.id);

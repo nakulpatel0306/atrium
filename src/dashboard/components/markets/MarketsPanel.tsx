@@ -1,7 +1,10 @@
 import { Radio } from "lucide-react";
 import { useState } from "react";
 import { useMarkets } from "../../markets";
+import { AdviceTag } from "./AdviceTag";
+import { Alerts } from "./Alerts";
 import { Holdings } from "./Holdings";
+import { Paper } from "./Paper";
 import { PriceChart } from "./PriceChart";
 import { Watchlist } from "./Watchlist";
 
@@ -31,6 +34,9 @@ export function MarketsPanel({ spaceId }: { spaceId: string }) {
             {view.feed.streamError && <span className="faint"> · {view.feed.streamError}</span>}
           </span>
         )}
+        <span className="mk-advice">
+          <AdviceTag />
+        </span>
       </div>
       {!view ? (
         <div className="list">
@@ -49,10 +55,10 @@ export function MarketsPanel({ spaceId }: { spaceId: string }) {
         </>
       ) : tab === "chart" ? (
         <PriceChart key={chartKey ?? ""} view={view} initialKey={chartKey} />
+      ) : tab === "alerts" ? (
+        <Alerts view={view} />
       ) : (
-        <div className="list">
-          <div className="empty-row">Coming next.</div>
-        </div>
+        <Paper view={view} />
       )}
     </div>
   );

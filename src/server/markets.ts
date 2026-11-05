@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { createAlert, listAlerts, removeAlert, setAlertStatus, type Alert, type AlertRule } from "../engine/markets/alerts";
+import { getApproval } from "../engine/approvals";
+import { createAlert, describeRule, listAlerts, removeAlert, setAlertStatus, type Alert, type AlertRule } from "../engine/markets/alerts";
 import { backtest, type BacktestTemplate } from "../engine/markets/backtest";
 import { dailyBudget } from "../engine/markets/budget";
 import { cachedQuotes } from "../engine/markets/cache";
@@ -273,6 +274,15 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
         }),
       ),
     );
+  }
+  // Alert items carry no alert id; their title is the alert's key and rule, which is how they're matched back.
+  if (sub("POST", /^\/alerts\/off-from-approval$/)) {
+    const b = await readBody(req);
+    const a = typeof b.approvalId === "string" ? getApproval(db, b.approvalId) : null;
+    const matches = a && a.spaceId === spaceId && a.kind === "alert" ? listAlerts(db, spaceId).filter((x) => `${x.key} ${describeRule(x.rule)}` === a.title) : [];
+    if (!matches.length) throw new HttpError(404, "That alert no longer exists.");
+    for (const x of matches) setAlertStatus(db, x.id, "off");
+    return json({ ok: true });
   }
   const ap = sub("PATCH", /^\/alerts\/([^/]+)$/);
   if (ap) {

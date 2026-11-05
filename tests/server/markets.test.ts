@@ -241,3 +241,18 @@ test("no trading hosts anywhere in the source", () => {
     for (const b of banned) expect(`${f}: ${text.includes(b)}`).toBe(`${f}: false`);
   }
 });
+
+test("an alert's Needs-you item can turn the alert off", async () => {
+  boot();
+  const s = markets();
+  const a = await (await call("POST", `/api/markets/${s.id}/alerts`, { key: "AAPL", rule: { kind: "price_above", level: 1 } })).json();
+  const { evaluateQuotes } = await import("../../src/engine/markets/alerts");
+  const { listPending } = await import("../../src/engine/approvals");
+  evaluateQuotes(db, [{ key: "AAPL", price: 5, prevClose: 4, at: now, source: "demo", freshness: "demo" }], now);
+  const approval = listPending(db).find((x) => x.kind === "alert")!;
+  const r = await call("POST", `/api/markets/${s.id}/alerts/off-from-approval`, { approvalId: approval.id });
+  expect(r.status).toBe(200);
+  const view = await (await get(`/api/markets/${s.id}`)).json();
+  expect(view.alerts.find((x: { id: string }) => x.id === a.id).status).toBe("off");
+  expect((await call("POST", `/api/markets/${s.id}/alerts/off-from-approval`, { approvalId: "apr_nope" })).status).toBe(404);
+});

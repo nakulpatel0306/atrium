@@ -1794,3 +1794,83 @@ code {
   margin-right: 5px;
   vertical-align: middle;
 }
+.tag.advice {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 30%, var(--line));
+}
+.mk-advice {
+  margin-left: auto;
+}
+.advice-line {
+  margin: 4px 0 8px;
+}
+.briefing-markets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -14px;
+}
+.briefing-markets svg {
+  color: var(--faint);
+}
+.mk-lead {
+  margin: -2px 0 8px;
+}
+.mk-input.wide {
+  width: 260px;
+}
+.mk-form label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding-bottom: 4px;
+}
+.mk-form.col {
+  flex-direction: column;
+  align-items: stretch;
+}
+.mk-form.col > label {
+  font-size: 11px;
+}
+.mk-rules.mk-input {
+  width: 100%;
+  resize: vertical;
+}
+.mk-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mk-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mk-card > span {
+  font-size: 11px;
+  color: var(--faint);
+}
+.mk-card b {
+  font-size: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.btn.link {
+  background: none;
+  border-color: transparent;
+  color: var(--dim);
+}
+.btn.link:hover {
+  color: var(--text);
+}
+.mk-row .t b {
+  font-weight: 600;
+  color: var(--text);
+  margin-right: 2px;
+}

@@ -11,6 +11,7 @@ import { StatusIcon } from "./StatusIcon";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
+import { AdviceTag } from "./markets/AdviceTag";
 import { MarketsPanel } from "./markets/MarketsPanel";
 
 type Space = State["spaces"][number];
@@ -316,6 +317,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
       </div>
       {open && (
         <div className="detail">
+          {state.spaces.find((s) => s.id === task.spaceId)?.kind === "markets" && (
+            <p className="advice-line">
+              <AdviceTag />
+            </p>
+          )}
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {wait && <WaitLine wait={wait} />}
           {parent && (
