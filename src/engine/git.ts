@@ -71,23 +71,53 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
 // lingering agent process could still change things.
 type CommitSeams = { fingerprint?: (path: string) => Promise<string>; beforeStage?: () => void | Promise<void> };
 
+// Applied to every git call that touches the worktree: no attributes from the user's global file, and no
+// descending into submodules, whose own config and info/attributes the outer checks and fingerprint never see.
+const STAGE_FLAGS = ["-c", "core.attributesFile=/dev/null", "-c", "diff.ignoreSubmodules=all"];
+
+const SUBMODULES_REFUSAL = "Refusing to commit: this repo has submodules or nested repos. Commit these changes yourself.";
+
+// Programs a signed commit can exec. A repo-local value would run with the engine's privileges, so they are
+// pinned to the user's global/system value, or git's own default.
+const SIGNING_PROGRAMS: Array<[string, string]> = [
+  ["gpg.program", "gpg"],
+  ["gpg.openpgp.program", "gpg"],
+  ["gpg.ssh.program", "ssh-keygen"],
+  ["gpg.x509.program", "gpgsm"],
+  ["gpg.ssh.defaultKeyCommand", ""],
+];
+
+async function signingPins(path: string): Promise<string[]> {
+  const pins: string[] = [];
+  for (const [key, fallback] of SIGNING_PROGRAMS) {
+    const global = await git(path, ["config", "--global", "--get", key]);
+    const system = global.code === 0 ? global : await git(path, ["config", "--system", "--get", key]);
+    pins.push("-c", `${key}=${system.code === 0 ? system.out.replace(/\n$/, "") : fallback}`);
+  }
+  return pins;
+}
+
+// The baseline is the fingerprint taken before the agent ran, so a change made at any point since is caught.
 // Commits whatever the agent left in the tree. Signing is left to commit.gpgsign in the user's git config:
 // forcing -S would fail in repos and machines where signing isn't set up.
 export async function commitAll(
   path: string,
   message: string,
+  baseline: string,
   seams: CommitSeams = {},
 ): Promise<{ committed: boolean; files: number }> {
   const fingerprint = seams.fingerprint ?? gitSettingsFingerprint;
-  const before = await fingerprint(path);
+  const changed = () => new Error("Refusing to commit: git settings changed while committing.");
+  if ((await fingerprint(path)) !== baseline) throw changed();
   await refuseFilterConfig(path);
   // Hashed rather than hardcoded so sha256 repos get their own empty tree.
   const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
   if (empty.code !== 0) throw new Error(`Could not read git objects: ${empty.err.trim()}`);
-  // Reading attributes from the empty tree means no .gitattributes or info/attributes can select a filter
-  // driver, however late the agent writes one. Config checks alone can't close that window.
-  const noAttrs = `--attr-source=${empty.out.trim()}`;
-  const status = await git(path, [noAttrs, "status", "--porcelain", "-z", "--untracked-files=all"]);
+  // Reading attributes from the empty tree means no .gitattributes can select a filter driver, however late
+  // the agent writes one. Config checks alone can't close that window.
+  const flags = [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`];
+  await refuseGitlinks(path);
+  const status = await git(path, [...flags, "status", "--porcelain", "-z", "--untracked-files=all", "--ignore-submodules=all"]);
   if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
   const entries = status.out.split("\0").filter(Boolean);
   const paths: string[] = [];
@@ -100,19 +130,36 @@ export async function commitAll(
   const env = paths.find((p) => /^\.env/.test(p.split("/").pop()!));
   if (env) throw new Error(`Refusing to commit a .env file: ${env}`);
   if (paths.length === 0) return { committed: false, files: 0 };
+  // add would record an untracked repo as a gitlink and run git inside it.
+  for (const p of paths) {
+    if (p.endsWith("/") && existsSync(join(path, p, ".git"))) throw new Error(SUBMODULES_REFUSAL);
+  }
   await refuseFilterAttributes(path, paths);
   await seams.beforeStage?.();
-  const add = await git(path, [noAttrs, "add", "-A"]);
-  // Config can change under a running agent child after the checks above. If it did, nothing gets committed.
-  // reset refreshes the index, which can re-run clean filters on files git can't prove unchanged, so it needs the flag too.
-  if ((await fingerprint(path)) !== before) {
-    await git(path, [noAttrs, "reset", "-q"]);
-    throw new Error("Refusing to commit: git settings changed while committing.");
+  const add = await git(path, [...flags, "add", "-A"]);
+  // reset refreshes the index, which can re-run clean filters on files git can't prove unchanged, so it needs the flags too.
+  if ((await fingerprint(path)) !== baseline) {
+    await git(path, [...flags, "reset", "-q"]);
+    throw changed();
   }
   if (add.code !== 0) throw new Error(`Could not stage changes: ${add.err.trim()}`);
-  const commit = await git(path, [noAttrs, "commit", "-m", message]);
+  const commit = await git(path, [...flags, ...(await signingPins(path)), "commit", "-m", message]);
   if (commit.code !== 0) throw new Error(`Could not commit: ${(commit.err || commit.out).trim()}`);
   return { committed: true, files: paths.length };
+}
+
+// git runs inside a gitlink's repo during status and add, where that repo's own filters and attributes apply.
+async function refuseGitlinks(path: string): Promise<void> {
+  const index = await git(path, ["ls-files", "-s", "-z"]);
+  if (index.code !== 0) throw new Error(`Could not list files: ${index.err.trim()}`);
+  let tree = "";
+  // An empty repo has no HEAD to list.
+  if ((await git(path, ["rev-parse", "--verify", "--quiet", "HEAD"])).code === 0) {
+    const res = await git(path, ["ls-tree", "-r", "-z", "HEAD"]);
+    if (res.code !== 0) throw new Error(`Could not list files: ${res.err.trim()}`);
+    tree = res.out;
+  }
+  if (/(^|\0)160000 /.test(index.out) || /(^|\0)160000 /.test(tree)) throw new Error(SUBMODULES_REFUSAL);
 }
 
 // Staging ignores attributes (see commitAll), so a repo that relies on filters such as LFS would get raw

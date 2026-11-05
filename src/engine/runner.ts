@@ -296,7 +296,7 @@ export function createRunner(deps: {
       // filter drivers from config the agent planted, and settleRepo reports the tampering.
       if (repo && result.status === "ok" && (await settingsUnchanged(repo.path, repo.fingerprint))) {
         try {
-          await commitAll(repo.path, task.title);
+          await commitAll(repo.path, task.title, repo.fingerprint);
         } catch (e) {
           commitError = (e as Error).message;
         }
