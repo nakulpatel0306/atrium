@@ -7,6 +7,10 @@ const denyRules = () => [
   "Read(**/.env*)",
   "Edit(**/.env*)",
   "Write(**/.env*)",
+  // Names ending in .env, such as prod.env.
+  "Read(**/*.env)",
+  "Edit(**/*.env)",
+  "Write(**/*.env)",
   "Bash(cat *.env*)",
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
@@ -32,7 +36,7 @@ export function sandboxSettings(cwd: string): string {
       allowUnsandboxedCommands: false,
       autoAllowBashIfSandboxed: false,
       filesystem: {
-        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", `${cwd}/**/.env*`, config().home],
+        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains", "~/**/.env*", "~/**/*.env", `${cwd}/**/.env*`, `${cwd}/**/*.env`, config().home],
       },
       network: { allowedDomains: ["registry.npmjs.org"] },
     },

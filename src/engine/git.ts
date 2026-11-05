@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { isEnvPath } from "./envpath";
 
 const PROTECTED = new Set(["main", "master"]);
 
@@ -124,13 +125,15 @@ export async function commitAll(
   if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
   const entries = status.out.split("\0").filter(Boolean);
   const paths: string[] = [];
+  // Rename and copy sources too: committing `.env → x.txt` would publish the secret under a new name.
+  const sources: string[] = [];
   for (let i = 0; i < entries.length; i++) {
     paths.push(entries[i]!.slice(3));
     // A rename or copy is followed by its source path as a separate entry.
-    if (/^[RC]/.test(entries[i]!)) i++;
+    if (/^[RC]/.test(entries[i]!)) sources.push(entries[++i]!);
   }
   // Checked before staging so a refusal leaves the index untouched.
-  const env = paths.find((p) => /^\.env/.test(p.split("/").pop()!));
+  const env = [...paths, ...sources].find(isEnvPath);
   if (env) throw new Error(`Refusing to commit a .env file: ${env}`);
   if (paths.length === 0) return { committed: false, files: 0 };
   // add would record an untracked repo as a gitlink and run git inside it.
@@ -292,8 +295,8 @@ export async function branchSummary(
 
 const REVIEW_DIFF_CAP = 60 * 1024;
 
-// Any path segment, so a file inside a `.env.d/` folder is caught as well as `.env.local` and `prod.env`.
-const touchesEnv = (header: string) => header.split(/[\s"/]+/).some((seg) => /^\.env/i.test(seg) || /\.env$/i.test(seg));
+// Every path in the header, so a file inside a `.env.d/` folder is caught as well as `.env.local` and `prod.env`.
+const touchesEnv = (header: string) => header.split(/[\s"]+/).some(isEnvPath);
 
 // The branch's changes for a reviewer who never sees the repo. .env paths are left out twice over: by
 // pathspec, and by dropping any file section whose header still names one (e.g. a `.env.d/` folder).

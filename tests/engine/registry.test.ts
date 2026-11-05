@@ -161,6 +161,12 @@ test("a .env under a different name pattern or in a subfolder counts", () => {
   expect(codexWaitsOn(space.id)).toEqual(SECRET_WAIT);
 });
 
+test("an upper-case .ENV.local counts", () => {
+  const { space, path } = repoSpace();
+  writeFileSync(join(path, ".ENV.local"), "X=1\n");
+  expect(codexWaitsOn(space.id)).toEqual(SECRET_WAIT);
+});
+
 test("a space pointing at a subfolder checks the whole repo", () => {
   const { space, path } = repoSpace();
   mkdirSync(join(path, "pkg"));

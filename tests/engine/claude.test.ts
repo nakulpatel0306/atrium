@@ -125,6 +125,9 @@ describe("claudeAdapter", () => {
       "Read(**/.env*)",
       "Edit(**/.env*)",
       "Write(**/.env*)",
+      "Read(**/*.env)",
+      "Edit(**/*.env)",
+      "Write(**/*.env)",
       "Bash(cat *.env*)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
@@ -171,6 +174,8 @@ describe("claudeAdapter", () => {
   test("sandboxSettings embeds the run directory", () => {
     const { sandbox } = JSON.parse(sandboxSettings("/x/repo"));
     expect(sandbox.filesystem.denyRead).toContain("/x/repo/**/.env*");
+    expect(sandbox.filesystem.denyRead).toContain("/x/repo/**/*.env");
+    expect(sandbox.filesystem.denyRead).toContain("~/**/*.env");
     expect(sandbox.filesystem.denyRead).toContain("~/.ssh");
     expect(sandbox.filesystem.denyRead).toContain(config().home);
     expect(sandbox.enabled).toBe(true);

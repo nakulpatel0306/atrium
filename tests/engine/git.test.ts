@@ -298,6 +298,25 @@ describe("commitAll", () => {
     expect(git(path, "diff", "--cached", "--name-only")).toBe("");
   });
 
+  test("refuses prod.env and .ENV.local", async () => {
+    for (const name of ["prod.env", ".ENV.local"]) {
+      const path = repo();
+      git(path, "config", "core.excludesFile", "/dev/null");
+      writeFileSync(join(path, name), "SECRET=1\n");
+      await expect(commitAll(path, "Oops", await gitSettingsFingerprint(path))).rejects.toThrow(`Refusing to commit a .env file: ${name}`);
+    }
+  });
+
+  test("refuses a rename whose source is a .env file", async () => {
+    const path = repo();
+    git(path, "config", "core.excludesFile", "/dev/null");
+    writeFileSync(join(path, ".env"), "SECRET=1\n");
+    git(path, "add", ".env");
+    git(path, "commit", "-m", "env");
+    git(path, "mv", ".env", "x.txt");
+    await expect(commitAll(path, "Oops", await gitSettingsFingerprint(path))).rejects.toThrow("Refusing to commit a .env file: .env");
+  });
+
   test("ignores hooks", async () => {
     const path = repo();
     const hook = join(path, ".git", "hooks", "pre-commit");

@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { basename } from "node:path";
+import { isEnvPath } from "../envpath";
 import { getSetting, setSetting } from "../settings";
 import type { Space } from "../spaces";
 import type { Task } from "../tasks";
@@ -44,8 +44,6 @@ export type Registry = {
 
 export const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-const isEnvFile = (file: string) => /^\.env/.test(basename(file)) || /\.env$/.test(basename(file));
-
 // Only paths are listed, never contents. Tracked and untracked-unignored files come from one call and
 // ignored ones from another, because git prints only the ignored files when --ignored is combined with --cached.
 // Anything git can't list through (unreadable repo, nested repo, submodule) counts as having .env files,
@@ -61,13 +59,13 @@ function repoHasEnvFiles(path: string): boolean {
   if (staged.exitCode !== 0) return true;
   const entries = staged.stdout.toString().split("\0").filter(Boolean);
   if (entries.some((e) => e.startsWith("160000 "))) return true;
-  if (entries.some((e) => isEnvFile(e.slice(e.indexOf("\t") + 1)))) return true;
+  if (entries.some((e) => isEnvPath(e.slice(e.indexOf("\t") + 1)))) return true;
 
   for (const args of [["--others"], ["--others", "--ignored"]]) {
     const r = git(root, "ls-files", "-z", ...args, "--exclude-standard");
     if (r.exitCode !== 0) return true;
     // ls-files doesn't descend into an untracked nested repo and lists it as "dir/".
-    if (r.stdout.toString().split("\0").filter(Boolean).some((f) => f.endsWith("/") || isEnvFile(f))) return true;
+    if (r.stdout.toString().split("\0").filter(Boolean).some((f) => f.endsWith("/") || isEnvPath(f))) return true;
   }
   return false;
 }
