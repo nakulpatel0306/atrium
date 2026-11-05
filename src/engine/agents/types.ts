@@ -20,6 +20,8 @@ export type AgentRunResult =
       kind: "not_installed" | "not_logged_in" | "rate_limited" | "failed";
       message: string;
       retryAfter?: number;
+      // A limit hit still reports how much of the window is used.
+      usage?: AgentUsage;
     };
 
 export type AgentStatus = { installed: boolean; loggedIn: boolean | null; detail: string };

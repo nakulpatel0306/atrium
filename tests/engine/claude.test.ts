@@ -71,6 +71,12 @@ describe("claudeAdapter", () => {
     expect(r.retryAfter).toBe(1893456000 * 1000);
   });
 
+  test("a rate limit still carries the window usage", async () => {
+    process.env.FAKE_CLAUDE_MODE = "rate_limited_usage";
+    const r = await claudeAdapter(FAKE).run(input());
+    expect(r).toMatchObject({ status: "error", kind: "rate_limited", usage: { fiveHour: { utilization: 1, resetsAt: 1893456000_000 } } });
+  });
+
   test("rate limit text without an event still maps, parsing the epoch", async () => {
     process.env.FAKE_CLAUDE_MODE = "rate_limited_text";
     const r = await claudeAdapter(FAKE).run(input());

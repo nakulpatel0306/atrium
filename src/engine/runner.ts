@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clock, createRegistry, type Registry, type TaskWait } from "./agents/registry";
@@ -19,9 +19,9 @@ import {
   returnToBranch,
   reviewDiff,
 } from "./git";
-import { afterFix, afterReview, afterWork, fixFailed } from "./handoff";
+import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
-import { agentName, plural } from "./names";
+import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
@@ -31,6 +31,7 @@ import { enforceTranscriptCap, openTranscript } from "./storage";
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
 const MAX_LIMIT_RETRIES = 3;
+const TEMP_SWEEP_AGE_MS = 86_400_000;
 
 const SYSTEM_PROMPT = [
   "You are working for Nakul through Atrium.",
@@ -157,10 +158,18 @@ export function createRunner(deps: {
       }
       const pick = registry.resolve(task, space);
       if ("wait" in pick) {
-        // A reviewer the space shuts out would wait forever, so the review is skipped and Nakul decides alone.
-        const refused = task.kind === "review" ? registry.refusal(task.agent, task.kind, space) : null;
-        if (refused) skipReview(task, refused.reason);
+        // A reviewer or fixer the space shuts out would wait forever. The review is skipped and Nakul decides
+        // alone; the fix is blocked and its approval says so.
+        const refused = task.kind !== "work" ? registry.refusal(task.agent, task.kind, space) : null;
+        if (refused && task.kind === "review") skipReview(task, refused.reason);
+        else if (refused) block(task, refused.reason);
         else waits.push({ taskId: task.id, ...pick.wait });
+        continue;
+      }
+      // Nakul can repoint a queued review (say, to auto) at the agent that did the work, which reviews nothing.
+      const parent = task.kind === "review" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
+      if (parent && resolvedAgent(db, parent) === pick.agent) {
+        skipReview(task, `${agentName(pick.agent)} did the work, so it can't review it too. Decide on it yourself as usual.`);
         continue;
       }
       const until = registry.limitedUntil(pick.agent);
@@ -223,18 +232,20 @@ export function createRunner(deps: {
     logActivity(db, task.spaceId, "atrium", `Skipped: ${task.title}. ${reason}`);
   }
 
-  function block(task: Task, reason: string) {
-    setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
-    logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`);
+  // `saved` is the branch Atrium committed the agent's unfinished edits to, if it did.
+  function block(task: Task, reason: string, saved: string | null = null) {
+    const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
+    setTaskStatus(db, task.id, "blocked", { blockedReason: full });
+    logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`);
     if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: reason });
-    if (task.kind === "fix") fixFailed(db, task, reason);
+    if (task.kind === "fix") fixFailed(db, task, reason, saved);
   }
 
   // Puts the repo back on the starting branch; returns a block reason if it can't.
   async function leaveRepo(repo: RepoRun): Promise<string | null> {
     try {
       const res = await returnToBranch(repo.path, repo.start);
-      return res === "dirty" ? `The agent left uncommitted changes on ${repo.branch} in ${repo.path}` : null;
+      return res === "dirty" ? leftoversReason(repo.branch, repo.path, repo.start) : null;
     } catch (e) {
       return `${(e as Error).message}. Switch ${repo.path} back to ${repo.start} yourself, then requeue.`;
     }
@@ -263,7 +274,7 @@ export function createRunner(deps: {
       if (!ready.ok) {
         // Uncommitted work on this task's own branch is what a killed run leaves behind, not the user's.
         if (ready.dirty && (await headRef(path).catch(() => null))?.branch === own) {
-          return block(task, `The agent left uncommitted changes on ${own} in ${path}`);
+          return block(task, leftoversReason(own, path, lastRepoRun(db, task.id)?.start ?? null));
         }
         return block(task, ready.reason);
       }
@@ -367,31 +378,49 @@ export function createRunner(deps: {
       result = { status: "error", kind: "failed", message: `${adapter.label} could not start: ${(e as Error).message}` };
     }
 
-    // Usage is the account's, whatever became of the task.
-    if (result.status === "ok" && result.usage) registry.recordUsage(adapter.id, result.usage);
+    // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
+    // below can block or discard it.
+    if (result.usage) registry.recordUsage(adapter.id, result.usage);
+    if (result.status === "error" && result.kind === "rate_limited") {
+      registry.setLimited(adapter.id, result.retryAfter ?? Date.now() + 30 * 60_000);
+    }
 
     let leftRepo: string | null = null;
     let commitError: string | null = null;
     let lateBranch: string | null = null;
+    // Where the agent's unfinished edits were committed when the run ended without finishing.
+    let saved: string | null = null;
     try {
-      // A fix still running after Nakul decided must not add to the branch he decided on; whatever it
-      // did, finished or stopped, is kept on a branch of its own so the repo goes back clean.
+      const stopped = result.status !== "ok";
+      // A fix still running after Nakul decided must not add to the branch he decided on, and one that didn't
+      // finish must not leave half its work there either: its edits go on a branch of its own.
       const late = task.kind === "fix" && !fixStillWanted(task);
-      // Before settleRepo switches branches. Skipped when git settings changed: staging can run
-      // filter drivers from config the agent planted, and settleRepo reports the tampering.
-      if (repo && (result.status === "ok" || late) && (await settingsUnchanged(repo.path, repo.fingerprint))) {
+      // Before settleRepo switches branches, so the repo always goes back clean. Skipped when git settings
+      // changed: staging can run filter drivers from config the agent planted, and settleRepo reports the tampering.
+      if (repo && (await settingsUnchanged(repo.path, repo.fingerprint))) {
+        const message = stopped ? `WIP (stopped): ${task.title}` : task.title;
+        let on = repo.branch;
         try {
-          if (late) lateBranch = await branchOffDirty(repo.path, task.id);
-          const pre = task.kind === "fix" && !late ? (await headRef(repo.path)).sha : null;
-          const res = !late || lateBranch ? await commitAll(repo.path, task.title, repo.fingerprint) : null;
-          // Nakul can decide between the check above and the commit landing; that commit is moved off too.
-          if (pre && res?.committed && !fixStillWanted(task)) {
-            const post = (await headRef(repo.path)).sha;
-            lateBranch = await moveLateCommit(repo.path, task.id, repo.branch, pre, post);
-            if (task.approvalId) correctBranchHead(db, task.approvalId, post, pre);
+          if (task.kind === "fix" && (late || stopped)) {
+            const side = await branchOffDirty(repo.path, task.id);
+            if (side) on = side;
+            if (side && (await commitAll(repo.path, message, repo.fingerprint)).committed) {
+              if (late) lateBranch = side;
+              else saved = side;
+            }
+          } else {
+            const pre = task.kind === "fix" ? (await headRef(repo.path)).sha : null;
+            const res = await commitAll(repo.path, message, repo.fingerprint);
+            if (stopped && res.committed) saved = repo.branch;
+            // Nakul can decide between the check above and the commit landing; that commit is moved off too.
+            if (pre && res.committed && !fixStillWanted(task)) {
+              const post = (await headRef(repo.path)).sha;
+              lateBranch = await moveLateCommit(repo.path, task.id, repo.branch, pre, post);
+              if (task.approvalId) correctBranchHead(db, task.approvalId, post, pre);
+            }
           }
         } catch (e) {
-          commitError = (e as Error).message;
+          commitError = `${sentence((e as Error).message)} The changes are still uncommitted on ${on} in ${repo.path}. Commit or stash them on that branch, switch back to ${repo.start}, then retry.`;
         }
       }
       transcript.close();
@@ -416,21 +445,23 @@ export function createRunner(deps: {
         const message =
           lateBranch && !problem
             ? `Kept the late fix on ${lateBranch}; the branch you decided on is unchanged.`
-            : `Discarded the result for ${task.title}: the task was moved while it ran.${problem ? ` ${problem}` : ""}`;
+            : `Discarded the result for ${task.title}: the task was moved while it ran.${problem ? ` ${problem}` : ""}${saved ? ` Its unfinished edits are on ${saved}.` : ""}`;
         logActivity(db, space.id, "atrium", message);
       } else if (commitError ?? leftRepo) {
         // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
         block(task, (commitError ?? leftRepo)!);
       } else if (result.status !== "ok" && r.signal.aborted) {
         setTaskStatus(db, task.id, "queued");
-        logActivity(db, space.id, "atrium", `Engine stopped; requeued ${task.title}`);
+        logActivity(db, space.id, "atrium", `Engine stopped; requeued ${task.title}${saved ? `. Its unfinished edits are saved on ${saved}.` : ""}`);
       } else if (result.status === "ok" && task.kind === "review") {
         setTaskStatus(db, task.id, "done");
         afterReview(db, task, result);
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
       } else if (result.status === "ok" && task.kind === "fix") {
-        // The parent's approval covers the branch, so the fix reports there instead of asking on its own.
-        const report = repo ? await repoReport(repo) : null;
+        // The parent's approval covers the branch, so the fix reports there instead of asking on its own. The
+        // count starts where the work did, even if Nakul has since moved the repo to another branch.
+        const base = (task.parentTaskId && lastRepoRun(db, task.parentTaskId)?.start) || null;
+        const report = repo ? await repoReport(base ? { ...repo, start: base } : repo) : null;
         setTaskStatus(db, task.id, "done");
         afterFix(db, task, result.summary, report?.lines[0] ?? "");
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
@@ -449,19 +480,19 @@ export function createRunner(deps: {
         logActivity(db, space.id, adapter.id, `Ready for review: ${task.title}`);
         if (repo && report?.commits) await handOff(task, repo, approval.id);
       } else if (result.kind === "rate_limited") {
-        registry.setLimited(adapter.id, result.retryAfter ?? Date.now() + 30 * 60_000);
         const hits = (limitHits.get(task.id) ?? 0) + 1;
         if (hits >= MAX_LIMIT_RETRIES) {
           limitHits.delete(task.id);
-          block(task, `${agentName(adapter.id)} kept reporting a usage limit for this task; retry when you're ready.`);
+          block(task, `${agentName(adapter.id)} kept reporting a usage limit for this task; retry when you're ready.`, saved);
         } else {
           limitHits.set(task.id, hits);
           // The task did nothing wrong; it goes back in line and runs when the limit resets.
           setTaskStatus(db, task.id, "queued");
-          logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.`);
+          const kept = saved ? ` ${savedNote(task, saved)}` : "";
+          logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.${kept}`);
         }
       } else {
-        block(task, result.message);
+        block(task, result.message, saved);
       }
     } finally {
       enforceTranscriptCap();
@@ -547,6 +578,15 @@ async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: nu
 // A fix adds to the branch its parent's work is on.
 const branchTaskId = (task: Task) => (task.kind === "fix" && task.parentTaskId) || task.id;
 
+// A work task's retry resumes on its own branch; a fix's retry starts again from the branch under review.
+const savedNote = (task: Task, saved: string) =>
+  task.kind === "fix"
+    ? `Its unfinished edits are on ${saved}.`
+    : `Atrium saved the agent's unfinished edits as a WIP commit on ${saved}; retry to carry on from there.`;
+
+const leftoversReason = (branch: string, path: string, start: string | null) =>
+  `The agent left uncommitted changes on ${branch} in ${path}. Commit or stash them on that branch, switch back to ${start ?? "your own branch"}, then retry.`;
+
 const tamperedReason = (path: string) =>
   `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`;
 
@@ -570,7 +610,23 @@ async function settingsUnchanged(path: string, expected: string | null): Promise
   }
 }
 
+// Scratch and per-run temp folders a crashed engine never removed. A day is far longer than any run lasts.
+function sweepTempDirs() {
+  const dir = tmpdir();
+  for (const name of readdirSync(dir)) {
+    if (!/^atrium-(run|agent)-/.test(name)) continue;
+    const path = join(dir, name);
+    try {
+      const st = lstatSync(path);
+      if (st.isDirectory() && Date.now() - st.mtimeMs > TEMP_SWEEP_AGE_MS) rmSync(path, { recursive: true, force: true });
+    } catch {
+      // Gone already, or not ours to remove; the next boot tries again.
+    }
+  }
+}
+
 export async function recoverOnBoot(db: Database): Promise<number> {
+  sweepTempDirs();
   const stuck = listTasks(db, { status: ["running"] });
   for (const task of stuck) {
     const path = getSpace(db, task.spaceId)?.repoPath;

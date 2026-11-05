@@ -1,4 +1,4 @@
-import { agentName } from "../engine/names";
+import { agentName } from "../engine/text";
 import type { State } from "./api";
 
 type Task = State["tasks"][number];
@@ -8,7 +8,7 @@ export const AGENT_IDS = ["claude", "codex", "gemini"] as const;
 export const AGENT_CHOICES = ["auto", ...AGENT_IDS] as const;
 export type AgentChoice = (typeof AGENT_CHOICES)[number];
 
-export { agentName } from "../engine/names";
+export { agentName } from "../engine/text";
 export { verdictOf } from "../engine/verdict";
 
 // `auto` is resolved at launch and only the run row keeps the answer; runs arrive newest first.

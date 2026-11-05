@@ -492,3 +492,71 @@ test("a fix commit that lands just as you decide is moved off the branch you dec
     ),
   ).toBe(true);
 });
+
+test("a fix that fails after editing keeps its edits on its own branch, not the one you're deciding on", async () => {
+  const path = repo();
+  const s = reviewSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Add file", agent: "claude" });
+  let decided = "";
+  const claude = fake("claude", "Claude Code", (input) => {
+    if (!input.prompt.startsWith("Task: Fix:")) {
+      writeFileSync(join(input.cwd, "new.txt"), "hello\n");
+      return ok("Added new.txt.");
+    }
+    decided = git(path, "rev-parse", `atrium/${t.id}`);
+    writeFileSync(join(input.cwd, "fix.txt"), "half\n");
+    return { status: "error", kind: "failed", message: "Claude crashed." };
+  });
+  start({ claude: claude.adapter, codex: fake("codex", "Codex", () => ok("Broken.\nVERDICT: changes")).adapter });
+  await waitFor(() => children(t.id, "fix").some((c) => c.status === "blocked"));
+  const [fix] = children(t.id, "fix");
+  expect(git(path, "rev-parse", `atrium/${t.id}`)).toBe(decided);
+  expect(git(path, "show", `atrium/${fix!.id}:fix.txt`)).toBe("half");
+  expect(git(path, "log", "-1", "--format=%s", `atrium/${fix!.id}`)).toBe("WIP (stopped): Fix: Add file");
+  expect(git(path, "branch", "--show-current")).toBe("main");
+  expect(git(path, "status", "--porcelain")).toBe("");
+  expect(listPending(db)[0]!.detail).toContain(
+    `The fix didn't finish: Claude crashed. Its unfinished edits are on atrium/${fix!.id}; the branch you're deciding on has only the original work. Decide on it as is or retry the fix.`,
+  );
+});
+
+test("a fix the space no longer allows is blocked and the approval says so", async () => {
+  const path = repo();
+  const s = reviewSpace(path, "claude");
+  const t = createTask(db, { spaceId: s.id, title: "Add file", agent: "codex" });
+  const codex = fake("codex", "Codex", (input) => {
+    writeFileSync(join(input.cwd, "new.txt"), "hello\n");
+    return ok("Added new.txt.");
+  });
+  // The review turns the space private, so Codex may not make the fix.
+  const claude = fake("claude", "Claude Code", () => {
+    updateSpace(db, s.id, { private: true });
+    return ok("Broken.\nVERDICT: changes");
+  });
+  start({ claude: claude.adapter, codex: codex.adapter });
+  await waitFor(() => children(t.id, "fix").some((c) => c.status === "blocked"));
+  expect(codex.calls).toHaveLength(1);
+  const [fix] = children(t.id, "fix");
+  expect(fix!.blockedReason).toContain("this space is private");
+  expect(listPending(db)[0]!.detail).toContain("The fix didn't finish: Codex can't work here: this space is private");
+  expect(listMessages(db, t.id).at(-1)!.body).toContain("Codex's fix didn't finish");
+});
+
+test("the branch report after a fix counts from where the work started", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  writeFileSync(join(path, "f.txt"), "f\n");
+  git(path, "add", "f.txt");
+  git(path, "commit", "-m", "feature work");
+  const s = reviewSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Add file", agent: "claude" });
+  // Nakul moves back to main while the review runs, so the fix starts from main.
+  const codex = fake("codex", "Codex", () => {
+    git(path, "checkout", "main");
+    return ok("Broken.\nVERDICT: changes");
+  });
+  start({ claude: worker().adapter, codex: codex.adapter });
+  await waitFor(() => children(t.id, "fix").some((c) => c.status === "done"));
+  expect(listPending(db)[0]!.detail).toContain(`2 commits, 2 files (+2 −0) on atrium/${t.id}`);
+  expect(git(path, "branch", "--show-current")).toBe("main");
+});

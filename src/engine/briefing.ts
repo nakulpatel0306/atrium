@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { plural } from "./names";
+import { plural } from "./text";
 import { getSetting, setSetting } from "./settings";
 
 function greetingFor(now: number): string {

@@ -41,10 +41,11 @@ if (mode === "logged_out") {
   result("Invalid API key · Please run /login", true);
   process.exit(1);
 }
-if (mode === "rate_limited") {
+if (mode === "rate_limited" || mode === "rate_limited_usage") {
+  const windows = mode === "rate_limited_usage" ? { unifiedWindows: { five_hour: { utilization: 1, resetsAt: 1893456000 } } } : {};
   out({
     type: "rate_limit_event",
-    rate_limit_info: { status: "rejected", resetsAt: 1893456000, rateLimitType: "five_hour" },
+    rate_limit_info: { status: "rejected", resetsAt: 1893456000, rateLimitType: "five_hour", ...windows },
   });
   result("Claude AI usage limit reached", true);
   process.exit(1);

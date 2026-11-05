@@ -4,18 +4,16 @@ import type { AgentRunResult } from "./agents/types";
 import { type Approval, appendApprovalDetail, getApproval } from "./approvals";
 import type { ReviewDiff } from "./git";
 import { addMessage } from "./messages";
-import { agentName as name, plural } from "./names";
+import { agentName as name, plural, sentence } from "./text";
 import type { Space } from "./spaces";
 import { createTask, getTask, type Task } from "./tasks";
 import { verdictOf } from "./verdict";
 
 const CLIP_CHARS = 600;
-// Agent and git messages don't always end in a full stop; the next sentence follows them.
-const sentence = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 const clip = (text: string) => (text.length > CLIP_CHARS ? `${text.slice(0, CLIP_CHARS)}…` : text);
 
 // `auto` is resolved per run and only the run row keeps the answer.
-function resolvedAgent(db: Database, task: Task): string {
+export function resolvedAgent(db: Database, task: Task): string {
   const row = db
     .query("SELECT agent FROM runs WHERE task_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1")
     .get(task.id) as { agent: string } | null;
@@ -149,7 +147,8 @@ export function afterFix(db: Database, fixTask: Task, summary: string, report: s
 }
 
 // Replaces "Fix in progress" with what happened, so Nakul isn't left waiting on a fix that won't come.
-export function fixFailed(db: Database, fixTask: Task, reason: string): void {
+// `saved` is the fix's own branch when Atrium kept its unfinished edits there.
+export function fixFailed(db: Database, fixTask: Task, reason: string, saved: string | null = null): void {
   const parent = fixTask.parentTaskId ? getTask(db, fixTask.parentTaskId) : null;
   if (!parent) return;
   const worker = resolvedAgent(db, fixTask);
@@ -165,6 +164,8 @@ export function fixFailed(db: Database, fixTask: Task, reason: string): void {
   appendApprovalDetail(
     db,
     approval.id,
-    `\n\nThe fix didn't finish: ${sentence(reason)} The branch has only the original work; decide on it as is or retry the fix.`,
+    saved
+      ? `\n\nThe fix didn't finish: ${sentence(reason)} Its unfinished edits are on ${saved}; the branch you're deciding on has only the original work. Decide on it as is or retry the fix.`
+      : `\n\nThe fix didn't finish: ${sentence(reason)} The branch has only the original work; decide on it as is or retry the fix.`,
   );
 }

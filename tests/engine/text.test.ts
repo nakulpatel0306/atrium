@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { shortCommand } from "../../src/engine/agents/short";
-import { agentName, plural } from "../../src/engine/names";
+import { agentName, plural } from "../../src/engine/text";
 import { verdictOf } from "../../src/engine/verdict";
 
 test("verdictOf reads the last line, with or without formatting", () => {

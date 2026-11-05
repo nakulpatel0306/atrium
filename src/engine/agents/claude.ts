@@ -155,6 +155,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           kind: "rate_limited",
           message: `Claude usage limit reached; resets at ${new Date(when).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`,
           retryAfter: when,
+          ...(usage && { usage }),
         };
       }
       if (succeeded && final) {
