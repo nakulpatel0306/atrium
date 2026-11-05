@@ -77,6 +77,8 @@ test("build output, even with a package's .env inside node_modules, doesn't bloc
   expect(await reasons()).toEqual([]);
 });
 
+const UNPUSHED_1 = "1 commit on local branches, tags or the checked-out commit isn't on GitHub.";
+
 const cases: [string, () => void, string][] = [
   ["a modified tracked file", () => write("README.md", "changed"), "There are uncommitted changes."],
   ["an untracked file", () => write("notes.txt"), "There are files git doesn't track: notes.txt."],
@@ -99,7 +101,7 @@ const cases: [string, () => void, string][] = [
       git(path, "commit", "-q", "--allow-empty", "-m", "local");
       git(path, "checkout", "-q", "main");
     },
-    "1 commit on atrium/tsk_1 isn't on GitHub.",
+    UNPUSHED_1,
   ],
   [
     "a detached HEAD on an unpushed commit",
@@ -107,7 +109,26 @@ const cases: [string, () => void, string][] = [
       git(path, "checkout", "-q", "--detach");
       git(path, "commit", "-q", "--allow-empty", "-m", "detached");
     },
-    "The checked-out commit isn't on GitHub.",
+    UNPUSHED_1,
+  ],
+  [
+    "a local branch named like a remote branch",
+    () => {
+      git(path, "checkout", "-q", "-b", "origin/main");
+      git(path, "commit", "-q", "--allow-empty", "-m", "hidden");
+      git(path, "checkout", "-q", "main");
+    },
+    UNPUSHED_1,
+  ],
+  [
+    "an unpushed tag",
+    () => {
+      git(path, "checkout", "-q", "--detach");
+      git(path, "commit", "-q", "--allow-empty", "-m", "tagged");
+      git(path, "tag", "v-local");
+      git(path, "checkout", "-q", "main");
+    },
+    UNPUSHED_1,
   ],
   ["GitHub out of reach", () => rmSync(join(gh.remotes, "fakeuser", "demo.git"), { recursive: true }), "Couldn't reach GitHub to confirm everything is pushed."],
   ["a queued task", () => void createTask(db, { spaceId: space.id, title: "t" }), "A task is queued or running in Demo."],

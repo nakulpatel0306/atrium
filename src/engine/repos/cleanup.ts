@@ -160,14 +160,12 @@ export async function checkRemovable(db: Database, cloneId: string): Promise<{ o
   const fetched = await fetchOrigin(path);
   if (!fetched.ok) reasons.push("Couldn't reach GitHub to confirm everything is pushed.");
   else {
-    const heads = (await git(path, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])).out.split("\n").filter(Boolean);
-    for (const b of heads) {
-      const n = Number((await git(path, ["rev-list", "--count", `refs/heads/${b}`, "--not", "--remotes=origin"])).out.trim());
-      if (n > 0) reasons.push(`${plural(n, "commit")} on ${b} ${n === 1 ? "isn't" : "aren't"} on GitHub.`);
-    }
-    const detached = (await git(path, ["symbolic-ref", "-q", "HEAD"])).code !== 0;
-    const loose = (await git(path, ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"])).out.trim();
-    if (detached && Number(loose) > 0) reasons.push("The checked-out commit isn't on GitHub.");
+    // One walk over every local branch, every tag and HEAD: naming refs one by one lets an ambiguous name (a local
+    // branch called "origin/main") resolve to the wrong ref and hide its commits.
+    const res = await git(path, ["rev-list", "--count", "--branches", "--tags", "HEAD", "--not", "--remotes=origin"]);
+    const n = res.code === 0 && /^\d+$/.test(res.out.trim()) ? Number(res.out.trim()) : null;
+    if (n === null) reasons.push("Couldn't confirm every commit is on GitHub.");
+    else if (n > 0) reasons.push(`${plural(n, "commit")} on local branches, tags or the checked-out commit ${n === 1 ? "isn't" : "aren't"} on GitHub.`);
   }
   if (reasons.length > 0) return { ok: false, reasons };
   return { ok: true, bytes: await dirBytes(path) };
