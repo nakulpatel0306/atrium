@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import type { AgentRunResult } from "./agents/types";
-import { type Approval, appendApprovalDetail, getApproval } from "./approvals";
+import { type Approval, appendApprovalDetail, getApproval, replaceApprovalDetail } from "./approvals";
 import type { ReviewDiff } from "./git";
 import { addMessage } from "./messages";
 import { agentName as name, plural, sentence } from "./text";
@@ -74,11 +74,17 @@ export function afterWork(db: Database, task: Task, space: Space, approvalId: st
     toAgent: reviewer,
     body: `Please review ${plural(diff.files, "file")} on ${task.branch}.`,
   });
-  const partial = diff.truncated ? " The change is over 60 KB, so it sees only the first 60 KB of the diff." : "";
+  const partial = diff.truncated ? ` ${PARTIAL}` : "";
   appendApprovalDetail(db, approvalId, `\n\n${name(reviewer)} is reviewing this.${partial} You can decide now without waiting.`);
 }
 
-// A failed or skipped review only adds to the thread: the approval Nakul sees stays as the work left it.
+const PARTIAL = "The change is over 60 KB, so it sees only the first 60 KB of the diff.";
+
+// The line afterWork adds while the review runs; afterReview puts what happened in its place.
+const reviewingLine = (reviewer: string) =>
+  new RegExp(`\\n\\n${name(reviewer)} is reviewing this\\.( ${PARTIAL.replace(/\./g, "\\.")})? You can decide now without waiting\\.`);
+
+// A failed or skipped review adds to the thread; on the approval it only replaces the "is reviewing" line.
 export function afterReview(db: Database, reviewTask: Task, result: AgentRunResult): void {
   const parent = reviewTask.parentTaskId ? getTask(db, reviewTask.parentTaskId) : null;
   if (!parent) return;
@@ -86,6 +92,8 @@ export function afterReview(db: Database, reviewTask: Task, result: AgentRunResu
   const reviewer = reviewTask.agent;
   const thread = { spaceId: parent.spaceId, taskId: parent.id };
   if (result.status !== "ok") {
+    const pending = openApproval(db, reviewTask.approvalId);
+    if (pending) replaceApprovalDetail(db, pending.id, reviewingLine(reviewer), `\n\n${name(reviewer)}'s review didn't happen; decide on it as usual.`, false);
     addMessage(db, {
       ...thread,
       fromAgent: "atrium",
@@ -108,7 +116,10 @@ export function afterReview(db: Database, reviewTask: Task, result: AgentRunResu
     return;
   }
   const said = verdictOf(summary);
-  appendApprovalDetail(db, approval.id, `\n\n${name(reviewer)} reviewed${said ? "" : " (no verdict given)"}: ${clip(summary)}`);
+  const line = reviewingLine(reviewer);
+  const partial = line.exec(approval.detail)?.[1] ? " the first 60 KB of the diff" : "";
+  const review = `\n\n${name(reviewer)} reviewed${partial}${said ? "" : " (no verdict given)"}: ${clip(summary)}`;
+  replaceApprovalDetail(db, approval.id, line, review);
   // One fix round at most, and no second review after it, so the loop always ends with Nakul.
   if (said !== "changes" || child(db, parent.id, "fix")) return;
   createTask(db, {

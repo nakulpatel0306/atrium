@@ -190,6 +190,9 @@ test("approve verdict appends the review to the approval", async () => {
   const [a] = listPending(db);
   expect(a!.taskId).toBe(t.id);
   expect(a!.detail).toContain("Codex reviewed: Clean change, tests cover it.");
+  // The "is reviewing" line is replaced by the review, not left behind it.
+  expect(a!.detail).not.toContain("is reviewing this");
+  expect(a!.detail.match(/Codex reviewed/g)).toHaveLength(1);
   // Approval detail renders as plain text, so no markdown markers.
   expect(a!.detail).not.toContain("**");
   expect(children(t.id, "fix")).toHaveLength(0);
@@ -315,6 +318,8 @@ test("a failed review adds a message and leaves the approval untouched", async (
   expect(listMessages(db, t.id).at(-1)!.body).toContain("Codex crashed");
   const [a] = listPending(db);
   expect(a!.detail).not.toContain("reviewed:");
+  expect(a!.detail).not.toContain("is reviewing this");
+  expect(a!.detail).toContain("Codex's review didn't happen; decide on it as usual.");
   expect(a!.detail).not.toContain("Fix in progress");
 });
 
@@ -439,6 +444,10 @@ test("a truncated diff tells you the reviewer saw only part of the change", () =
   afterWork(db, getTask(db, t.id)!, s, a.id, { diff: "x", files: 3, truncated: true });
   expect(getApproval(db, a.id)!.detail).toContain("sees only the first 60 KB");
   expect(children(t.id, "review")[0]!.approvalId).toBe(a.id);
+  afterReview(db, children(t.id, "review")[0]!, ok("Fine.\nVERDICT: approve"));
+  const detail = getApproval(db, a.id)!.detail;
+  expect(detail).not.toContain("is reviewing this");
+  expect(detail).toContain("Codex reviewed the first 60 KB of the diff: Fine.");
 });
 
 test("a fix that fails says so on the approval and in the thread", async () => {

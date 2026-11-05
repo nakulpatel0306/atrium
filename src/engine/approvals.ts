@@ -85,6 +85,18 @@ export function appendApprovalDetail(db: Database, id: string, text: string): vo
   bus.emit({ type: "changed" });
 }
 
+// Swaps one piece of a pending approval's text for another, or appends `text` when `old` isn't there. Guarded on
+// the text read, so a change that lands in between isn't overwritten.
+export function replaceApprovalDetail(db: Database, id: string, old: string | RegExp, text: string, appendIfMissing = true): void {
+  const a = getApproval(db, id);
+  if (a?.status !== "pending") return;
+  const found = typeof old === "string" ? a.detail.includes(old) : old.test(a.detail);
+  if (!found && !appendIfMissing) return;
+  const next = found ? a.detail.replace(old, () => text) : a.detail + text;
+  db.query("UPDATE approvals SET detail = ? WHERE id = ? AND status = 'pending' AND detail = ?").run(next, id, a.detail);
+  bus.emit({ type: "changed" });
+}
+
 // After a late fix commit is moved off the branch, the recorded head goes back to what Nakul decided on;
 // only if it recorded that late commit.
 export function correctBranchHead(db: Database, id: string, from: string, to: string): void {
