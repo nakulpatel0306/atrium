@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { marketsBriefing, type MarketsBriefing } from "./markets/briefing";
 import { plural } from "./text";
 import { getSetting, setSetting } from "./settings";
 
@@ -8,7 +9,7 @@ function greetingFor(now: number): string {
   return `Good ${part}, Nakul.`;
 }
 
-export function briefing(db: Database, now: number): { greeting: string; summary: string } {
+export function briefing(db: Database, now: number): { greeting: string; summary: string; markets: MarketsBriefing | null } {
   const lastSeen = Number(getSetting(db, "lastSeen") ?? 0);
   const ended = db
     .query(
@@ -34,7 +35,7 @@ export function briefing(db: Database, now: number): { greeting: string; summary
     .get(lastSeen) as { n: number };
   if (byRules.n > 0) summary += ` ${plural(byRules.n, "result")} approved by your rules.`;
 
-  return { greeting: greetingFor(now), summary };
+  return { greeting: greetingFor(now), summary, markets: marketsBriefing(db, now) };
 }
 
 export function markSeen(db: Database, now: number): void {
