@@ -59,3 +59,16 @@ test("openArgs picks the app, passes a dev port, and falls back to the browser",
   expect(openArgs({ appInstalled: true, appPath, port: 7431, url })).toEqual(["open", "--env", "ATRIUM_PORT=7431", appPath]);
   expect(openArgs({ appInstalled: false, appPath, port: 7420, url })).toEqual(["open", url]);
 });
+
+test("usage lists tui", async () => {
+  const { main } = await import("../src/cli");
+  const lines: string[] = [];
+  const err = console.error;
+  console.error = (m: string) => void lines.push(m);
+  try {
+    expect(await main("bogus")).toBe(1);
+  } finally {
+    console.error = err;
+  }
+  expect(lines).toEqual(["Usage: atrium [tui|start|status|open|install|uninstall|app install|app uninstall]"]);
+});

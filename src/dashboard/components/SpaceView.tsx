@@ -1,9 +1,10 @@
 import { CornerDownRight, Lock, Play, SearchCheck, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { type AgentChoice, agentName, agentText, byPriority, needsAction, ranAgent, type Wait, waitOf } from "../agents";
+import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { navigate } from "../route";
+import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { Activity } from "./Activity";
 import { AgentPicker } from "./AgentPicker";
 import { Avatar } from "./Avatar";
@@ -16,28 +17,12 @@ type Space = State["spaces"][number];
 type Task = State["tasks"][number];
 type Run = State["runs"][number];
 
-const STATUS_TEXT: Record<Task["status"], string> = {
-  queued: "queued",
-  running: "running",
-  review: "in review",
-  done: "done",
-  failed: "failed",
-  blocked: "blocked",
-};
-
 const REVIEWER_CHOICES = ["none", "codex", "gemini", "claude"] as const;
 
-const KIND: Record<Exclude<Task["kind"], "work">, { label: string; icon: typeof SearchCheck; prefix: string }> = {
-  review: { label: "Review", icon: SearchCheck, prefix: "Review: " },
-  fix: { label: "Fix", icon: Wrench, prefix: "Fix: " },
+const KIND: Record<Exclude<Task["kind"], "work">, { label: string; icon: typeof SearchCheck }> = {
+  review: { label: "Review", icon: SearchCheck },
+  fix: { label: "Fix", icon: Wrench },
 };
-
-// The engine titles child tasks "Review: …" and "Fix: …"; the badge says that, so the title needn't.
-function shownTitle(task: Task): string {
-  if (task.kind === "work") return task.title;
-  const { prefix } = KIND[task.kind];
-  return task.title.startsWith(prefix) ? task.title.slice(prefix.length) : task.title;
-}
 
 function KindBadge({ kind }: { kind: Task["kind"] }) {
   if (kind === "work") return null;
@@ -48,12 +33,6 @@ function KindBadge({ kind }: { kind: Task["kind"] }) {
       {label}
     </span>
   );
-}
-
-function reviewHint(reviewBy: Space["reviewBy"]): string {
-  if (!reviewBy) return "A second agent can read each finished change before you approve it.";
-  // The engine skips the review when the reviewer is the agent that did the work.
-  return `${agentName(reviewBy)} reads each finished change it didn't make and can ask for one round of fixes. You still decide.`;
 }
 
 function ReviewSetting({ space }: { space: Space }) {
@@ -213,7 +192,7 @@ function Header({ space }: { space: Space }) {
 }
 
 function RunRow({ run, onOpen }: { run: Run; onOpen: () => void }) {
-  const outcome = run.endedAt === null ? "running" : run.exitCode === 0 ? "finished" : "ended without finishing";
+  const outcome = runOutcome(run);
   return (
     <li>
       <span title={absolute(run.startedAt)}>
@@ -379,25 +358,20 @@ function Terminal({ runId }: { runId: string }) {
 }
 
 function Live({ state, tasks }: { state: State; tasks: Task[] }) {
-  const task = tasks.find((t) => t.status === "running");
-  const run = task && state.runs.find((r) => r.taskId === task.id && r.endedAt === null);
+  const live = liveRun(state, tasks);
 
-  if (!task || !run) {
-    // One line per distinct reason, so three tasks held by the same limit don't repeat it.
-    const waits = new Map<string, Wait>();
-    for (const wait of tasks.flatMap((t) => waitOf(t, state) ?? []).sort(byPriority)) {
-      if (!waits.has(wait.reason)) waits.set(wait.reason, wait);
-    }
+  if (!live) {
     return (
       <div className="idle">
         <p>No agent working right now</p>
-        {[...waits.values()].map((w) => (
+        {distinctWaits(tasks, state).map((w) => (
           <WaitLine key={w.reason} wait={w} />
         ))}
       </div>
     );
   }
 
+  const { task, run } = live;
   return (
     <>
       <div className="agentrow">
@@ -414,8 +388,6 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
     </>
   );
 }
-
-const ORDER: Task["status"][] = ["running", "blocked", "failed", "review", "queued"];
 
 type Props = {
   state: State;
@@ -453,9 +425,6 @@ export function SpaceView({ state, space, focusTask }: Props) {
     );
   }
 
-  // Open work in queue order, finished work newest first underneath.
-  const open = ORDER.flatMap((s) => tasks.filter((t) => t.status === s));
-  const done = tasks.filter((t) => t.status === "done").reverse();
   const toggle = (id: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -473,7 +442,7 @@ export function SpaceView({ state, space, focusTask }: Props) {
             {tasks.length === 0 ? (
               <div className="empty-row">No tasks yet. Give {space.name} one in the bar below.</div>
             ) : (
-              [...open, ...done].map((t) => (
+              orderedTasks(tasks).map((t) => (
                 <TaskRow
                   key={t.id}
                   task={t}

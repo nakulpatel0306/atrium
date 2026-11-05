@@ -14,7 +14,7 @@ const root = resolve(import.meta.dir, "..");
 const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const USAGE = "Usage: atrium <start|status|open|install|uninstall|app install|app uninstall>";
+const USAGE = "Usage: atrium [tui|start|status|open|install|uninstall|app install|app uninstall]";
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
@@ -139,8 +139,12 @@ function fail(message: string): number {
   return 1;
 }
 
-async function main(cmd: string | undefined): Promise<number> {
+export async function main(cmd: string | undefined): Promise<number> {
   switch (cmd) {
+    case undefined:
+    case "tui":
+      await import("./tui/main");
+      return -1;
     case "start":
       await import("./main");
       return -1;
