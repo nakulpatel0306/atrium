@@ -1,12 +1,15 @@
 // Pure: shared by the engine and the dashboard, so it imports types only.
-import type { Quote } from "./providers/types";
+import type { ProviderId, Quote } from "./providers/types";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 
+const PROVIDER_NAMES: Record<ProviderId, string> = { alpaca: "Alpaca", finnhub: "Finnhub", alphavantage: "Alpha Vantage", tiingo: "Tiingo", demo: "Demo" };
+
+// The provider and how fresh its number is, e.g. "Finnhub · real-time" or "Alpha Vantage · close of Nov 4".
 export function freshnessText(q: Pick<Quote, "freshness" | "source" | "at">): string {
   if (q.freshness === "demo") return "Demo data";
-  if (q.freshness === "eod") return `Delayed · close of ${dayFmt.format(q.at)}`;
-  return q.source === "finnhub" ? "Finnhub real-time" : "IEX real-time";
+  if (q.freshness === "eod") return `${PROVIDER_NAMES[q.source]} · close of ${dayFmt.format(q.at)}`;
+  return q.source === "alpaca" ? "Alpaca · IEX real-time" : `${PROVIDER_NAMES[q.source]} · real-time`;
 }
 
 const moneyFmt = { CAD: new Intl.NumberFormat("en-US", { style: "currency", currency: "CAD" }), USD: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }) };

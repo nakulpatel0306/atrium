@@ -8,8 +8,8 @@ import type { Quote } from "../../src/engine/markets/providers/types";
 const q = (extra: Partial<Quote>): Quote => ({ key: "AAPL", price: 100, prevClose: 99, at: Date.parse("2026-11-04T21:00:00Z"), source: "alpaca", freshness: "live", ...extra });
 
 test("freshnessLabel", () => {
-  expect(freshnessLabel(q({}), null)).toEqual({ text: "IEX real-time", tone: "live" });
-  expect(freshnessLabel(q({ freshness: "eod", source: "alphavantage" }), null)).toEqual({ text: "Delayed · close of Nov 4", tone: "delayed" });
+  expect(freshnessLabel(q({}), null)).toEqual({ text: "Alpaca · IEX real-time", tone: "live" });
+  expect(freshnessLabel(q({ freshness: "eod", source: "alphavantage" }), null)).toEqual({ text: "Alpha Vantage · close of Nov 4", tone: "delayed" });
   expect(freshnessLabel(q({ freshness: "demo", source: "demo" }), null)).toEqual({ text: "Demo data", tone: "demo" });
   expect(freshnessLabel(null, "No free source covers NEO-listed CDRs.")).toEqual({ text: "No live data: No free source covers NEO-listed CDRs.", tone: "none" });
 });

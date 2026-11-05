@@ -51,7 +51,7 @@ export const MISSING = {
   otc: "Alpaca's free plan doesn't include OTC stocks.",
 };
 
-const FRESHNESS: Record<ProviderId, Freshness> = { alpaca: "live", finnhub: "live", alphavantage: "eod", demo: "demo" };
+const FRESHNESS: Record<ProviderId, Freshness> = { alpaca: "live", finnhub: "live", alphavantage: "eod", tiingo: "eod", demo: "demo" };
 
 type Keys = { alpacaKeyId: string | null; alpacaSecret: string | null; finnhub: string | null; alphavantage: string | null };
 

@@ -1,6 +1,6 @@
 import type { Instrument } from "../instrument";
 
-export type ProviderId = "alpaca" | "finnhub" | "alphavantage" | "demo";
+export type ProviderId = "alpaca" | "finnhub" | "alphavantage" | "tiingo" | "demo";
 export type Freshness = "live" | "eod" | "demo";
 export type Quote = { key: string; price: number; prevClose: number | null; at: number; source: ProviderId; freshness: Freshness };
 // t is epoch seconds; a daily bar sits at its session date's ET midnight.

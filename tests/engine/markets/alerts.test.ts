@@ -54,7 +54,7 @@ test("price_above fires once while hovering, re-arms after a 0.5% move back", ()
   expect(alerts()).toHaveLength(1);
   const a = alerts()[0]!;
   expect(a.title).toBe("AAPL price above $200.00");
-  expect(a.detail).toContain("AAPL at $200.10 (IEX real-time, 10:00 AM ET). Your alert: price above $200.00. Note: take profit");
+  expect(a.detail).toContain("AAPL at $200.10 (Alpaca · IEX real-time, 10:00 AM ET). Your alert: price above $200.00. Note: take profit");
   expect(a.detail).toContain("Analysis, not advice.");
   resolveApproval(db, a.id, "approve");
   evaluateQuotes(db, [q(198.9)], NOW);
@@ -111,7 +111,7 @@ test("demo and eod labels; eod evaluates once per new at", () => {
   createAlert(db, { spaceId, key: "SHOP.TO", rule: { kind: "price_below", level: 100 } });
   const eod = { key: "SHOP.TO", price: 90, prevClose: 95, at: Date.parse("2026-11-04T21:00:00Z"), source: "alphavantage" as const, freshness: "eod" as const };
   expect(evaluateQuotes(db, [eod], NOW)).toBe(1);
-  expect(alerts()[0]!.detail).toContain("SHOP.TO at CA$90.00 (Delayed · close of Nov 4, 4:00 PM ET)");
+  expect(alerts()[0]!.detail).toContain("SHOP.TO at CA$90.00 (Alpha Vantage · close of Nov 4, 4:00 PM ET)");
 });
 
 test("off alerts and archived spaces never fire", () => {
