@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderPlist, statusLine } from "../src/cli";
+import { openArgs, renderPlist, statusLine } from "../src/cli";
 import { trimLog } from "../src/engine/logfile";
 import type { State } from "../src/engine/state";
 import { tempHome } from "./helpers";
@@ -50,4 +50,12 @@ test("trimLog keeps only the last bytes of an oversized log", () => {
   trimLog(path, 50);
   expect(statSync(path).size).toBe(50);
   trimLog(join(h.home, "missing.log"), 50);
+});
+
+test("openArgs picks the app, passes a dev port, and falls back to the browser", () => {
+  const appPath = "/Users/x/Applications/Atrium.app";
+  const url = "http://127.0.0.1:7420";
+  expect(openArgs({ appInstalled: true, appPath, port: 7420, url })).toEqual(["open", appPath]);
+  expect(openArgs({ appInstalled: true, appPath, port: 7431, url })).toEqual(["open", "--env", "ATRIUM_PORT=7431", appPath]);
+  expect(openArgs({ appInstalled: false, appPath, port: 7420, url })).toEqual(["open", url]);
 });
