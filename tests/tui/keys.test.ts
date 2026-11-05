@@ -57,7 +57,7 @@ test("arrows, numbers, and tab focus panes", () => {
 });
 
 test("a approves the selected approval", () => {
-  const approve = { type: "approve", approvalId: ids.approval, title: "Review: Fix login redirect" };
+  const approve = { type: "approve" as const, approvalId: ids.approval, title: "Review: Fix login redirect" };
   expect(play(["3", "a"]).intents).toEqual([approve]);
   expect(play(["a"], onTask(1, ids.review)).intents).toEqual([approve]);
   const queued = play(["a"], onTask(2, ids.queued));
