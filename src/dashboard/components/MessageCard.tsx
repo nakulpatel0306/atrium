@@ -1,5 +1,5 @@
 import { MessageSquare, Search, Settings2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Candidate } from "../../engine/messaging/store";
 import { displayHandle, handleProblem, MAX_TEXT, textLength, textProblem } from "../../engine/messaging/rules";
 import { post, type State } from "../api";
@@ -23,13 +23,23 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"send" | "decline" | "lookup" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Until Nakul types in the number field, a lookup the engine finishes later (or one from another app) fills it in.
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (touched) return;
+    if (action.handle) setHandle(displayHandle(action.handle));
+    if (action.candidates) setCandidates(action.candidates);
+  }, [action.handle, action.candidates, touched]);
 
   const textIssue = textProblem(text);
   const handleIssue = handle.trim() ? handleProblem(handle) : null;
   const canSend = !busy && !textIssue && handle.trim() !== "" && !handleIssue;
   const shown = handle.trim() && !handleIssue ? handle.trim() : null;
   const stored = action.handle && shown === displayHandle(action.handle);
-  const source = stored ? SOURCE[action.handleSource ?? ""] : candidates.some((c) => displayHandle(c.handle) === shown) ? SOURCE.contacts : shown ? SOURCE.you : null;
+  // A number from Contacts names the card it came from, so a match on the wrong person shows.
+  const match = shown ? candidates.find((c) => displayHandle(c.handle) === shown) : undefined;
+  const fromContacts = match ? `from Contacts · ${[match.name, match.label].filter(Boolean).join(", ")}` : SOURCE.contacts;
+  const source = match || (stored && action.handleSource === "contacts") ? fromContacts : stored ? SOURCE[action.handleSource ?? ""] : shown ? SOURCE.you : null;
 
   const send = async () => {
     if (!canSend) return;
@@ -123,6 +133,7 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
             aria-label="Phone number or email"
             onChange={(e) => {
               setHandle(e.target.value);
+              setTouched(true);
               setError(null);
             }}
           />
@@ -145,7 +156,10 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
                   type="radio"
                   name={`to-${action.id}`}
                   checked={shown === displayHandle(c.handle)}
-                  onChange={() => setHandle(displayHandle(c.handle))}
+                  onChange={() => {
+                    setHandle(displayHandle(c.handle));
+                    setTouched(true);
+                  }}
                 />
                 {candidateLine(c)}
               </label>

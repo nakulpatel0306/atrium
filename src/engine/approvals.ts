@@ -223,13 +223,27 @@ export function resolveApproval(
     return a;
   });
   const a = resolve();
-  for (const fn of [...resolvedListeners]) {
+  // Listeners act on the decision (a send, a repo push), so they wait until it's committed. Inside a caller's
+  // transaction (the Send route saves Nakul's edits and his yes together) they run once that transaction has
+  // finished, and only if the decision is still there; a rolled-back yes runs nothing.
+  const fire = () => {
+    if (db.inTransaction) return queueMicrotask(fire);
+    let current: Approval | null;
     try {
-      fn(a, decision);
-    } catch (e) {
-      console.error(`An approval listener failed: ${e instanceof Error ? e.message : String(e)}`);
+      current = getApproval(db, a.id);
+    } catch {
+      return;
     }
-  }
+    if (current?.status !== a.status) return;
+    for (const fn of [...resolvedListeners]) {
+      try {
+        fn(a, decision);
+      } catch (e) {
+        console.error(`An approval listener failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  };
+  fire();
   bus.emit({ type: "changed" });
   return a;
 }

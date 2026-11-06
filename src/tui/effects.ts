@@ -21,6 +21,18 @@ function said<T>(res: PostResult<T>, ok: (data: T) => string): Outcome {
   return { tone: "ok", text: ok(res.data) };
 }
 
+// What became of a text after "Sending…": read from the engine's own activity rows once they arrive.
+export function sendFollowUp(state: State, pending: { toName: string; at: number }): Flash | null {
+  for (const row of state.activity) {
+    if (row.createdAt < pending.at) continue;
+    if (row.message.startsWith(`Sent via Messages to ${pending.toName} (`)) return { tone: "ok", text: `Sent to ${pending.toName}. Atrium can't confirm delivery.` };
+    if (row.message.startsWith(`Couldn't send the text to ${pending.toName}:`)) {
+      return { tone: "bad", text: `Couldn't send the text to ${pending.toName}. It's back in Needs you with what went wrong.` };
+    }
+  }
+  return null;
+}
+
 export async function runIntent(client: EngineClient, intent: Intent, state: State): Promise<Outcome> {
   const taskTitle = (id: string) => state.tasks.find((t) => t.id === id)?.title ?? "the task";
   const spaceName = (id: string) => state.spaces.find((s) => s.id === id)?.name ?? "the space";
@@ -36,7 +48,7 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       const text = state.messageActions.find((m) => m.id === intent.actionId);
       if (!text?.handle) return { tone: "bad", text: "Pick who this goes to on the dashboard first." };
       const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: text.text, handle: text.handle, service: text.service });
-      return said(res, () => `Sending to ${intent.toName} via Messages. Atrium can't confirm delivery.`);
+      return said(res, () => `Sending to ${intent.toName}… If it doesn't go, the text comes back in Needs you.`);
     }
     case "reject": {
       const note = intent.note.trim();

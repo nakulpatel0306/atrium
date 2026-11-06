@@ -154,3 +154,20 @@ test("state and history carry the drafts", async () => {
   const hist = (await (await fetch(`${base}/api/spaces/${space.id}/messages`)).json()) as { status: string }[];
   expect(hist.map((h) => h.status)).toEqual(["sent"]);
 });
+
+test("M3: the send listener runs after the Send transaction has committed", async () => {
+  let inTx = null as boolean | null;
+  const offA = onApprovalResolved(() => {
+    inTx = db.inTransaction;
+  });
+  try {
+    const { action } = draft();
+    const r = await post(`/api/message-actions/${action.id}/send`, fields);
+    expect(r.status).toBe(200);
+    await messaging.settle();
+    expect(inTx).toBe(false);
+    expect(sends()).toHaveLength(1);
+  } finally {
+    offA();
+  }
+});

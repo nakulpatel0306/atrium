@@ -4,6 +4,7 @@ import { candidateLine, MessageCard } from "../../src/dashboard/components/Messa
 import { contactsLine, sendingLine } from "../../src/dashboard/components/MessagingSettings";
 import { NeedsYou } from "../../src/dashboard/components/NeedsYou";
 import { SentList, sentLine } from "../../src/dashboard/components/SentMessages";
+import { spaceStatus } from "../../src/dashboard/summary";
 import type { MessageAction } from "../../src/engine/messaging/store";
 import type { State } from "../../src/engine/state";
 import { ids, makeState } from "../tui/fixtures";
@@ -86,4 +87,18 @@ test("settings lines", () => {
   expect(sendingLine("untested").text).toBe("Not tried yet. The first send asks macOS whether Atrium may control Messages.");
   expect(sendingLine("needs_automation").tone).toBe("bad");
   expect(contactsLine(null).text).toBe("Not tried yet. Atrium only looks after you press Look up on a text.");
+});
+
+test("M5: a number picked from Contacts names the contact it came from", () => {
+  const candidates = [{ personId: "p9", name: "Dana's Landlord", kind: "phone" as const, label: "Mobile", handle: "+15550100134" }];
+  const t = text(renderToStaticMarkup(<MessageCard approval={approval()} action={action({ candidates })} />));
+  expect(t).toContain("from Contacts · Dana's Landlord, Mobile");
+});
+
+test("space card counts a text waiting to send apart from reviews", () => {
+  const s = makeState();
+  s.approvals.unshift(approval());
+  const space = s.spaces.find((x) => x.id === ids.jobHunt)!;
+  const jobTasks = s.tasks.filter((x) => x.spaceId === ids.jobHunt && x.status !== "blocked");
+  expect(spaceStatus(space, jobTasks, s).text).toBe("1 text ready to send");
 });

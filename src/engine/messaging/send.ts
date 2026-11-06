@@ -10,6 +10,7 @@ import { SEND_SCRIPT } from "./scripts";
 import { draftMessage, getMessageAction, type MessageAction, setMessageStatus } from "./store";
 
 export const REFUSED_COPY = "Only your own yes can send a message.";
+export const NO_HANDLE_COPY = "Pick who this goes to first.";
 export const STOPPED_COPY = "Atrium stopped while sending this. Check Messages to see whether it went out before you send it again.";
 export const NOT_STARTED_COPY = "Atrium stopped before sending this, so nothing went out. Press Send again when you're ready.";
 
@@ -45,8 +46,9 @@ export async function sendMessage(db: Database, actionId: string, opts: { timeou
   const approval = getApproval(db, action.approvalId);
   if (approval?.status === "pending") return action;
   if (!approval || !isOwnYes(approval) || approval.alwaysAsk !== "send_message" || !action.handle) {
-    logActivity(db, action.spaceId, "atrium", `Didn't send the text to ${action.toName}: ${REFUSED_COPY}`);
-    return setMessageStatus(db, action.id, "failed", { error: REFUSED_COPY });
+    const why = approval && isOwnYes(approval) && approval.alwaysAsk === "send_message" ? NO_HANDLE_COPY : REFUSED_COPY;
+    logActivity(db, action.spaceId, "atrium", `Didn't send the text to ${action.toName}: ${why}`);
+    return setMessageStatus(db, action.id, "failed", { error: why });
   }
   try {
     setMessageStatus(db, action.id, "sending");

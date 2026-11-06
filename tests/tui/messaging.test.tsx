@@ -4,7 +4,7 @@ import { cleanup } from "ink-testing-library";
 import type { State } from "../../src/engine/state";
 import { confirmLines } from "../../src/tui/components/Confirm";
 import { approvalDetail, taskDetail } from "../../src/tui/detail";
-import { runIntent } from "../../src/tui/effects";
+import { runIntent, sendFollowUp } from "../../src/tui/effects";
 import { type Command, commandsFor } from "../../src/tui/keys";
 import { deriveView } from "../../src/tui/select";
 import { initialUi, pin, reduce, type Ui } from "../../src/tui/ui";
@@ -68,7 +68,7 @@ test("a on a text opens the confirm with the exact words; y sends the stored dra
   const client = fakeClient(s);
   const flash = await runIntent(client, sent.intents[0]!, s);
   expect(client.calls).toEqual([{ method: "POST", path: "/api/message-actions/msa_1/send", body: { text: "you free sat?\nlet me know", handle: "+15550100134", service: "iMessage" } }]);
-  expect(flash).toEqual({ tone: "ok", text: "Sending to Dana via Messages. Atrium can't confirm delivery." });
+  expect(flash).toEqual({ tone: "ok", text: "Sending to Dana… If it doesn't go, the text comes back in Needs you." });
   expect(play(["a", "n"], onNeed(MSG_APR), s).intents).toEqual([]);
 });
 
@@ -113,4 +113,15 @@ test("the panes mark a couldn't result and a text", async () => {
   expect(f).toContain("! Review: Fix login redirect");
   const tasks = await app.frame((f) => f.includes("Send the text to Dana"));
   expect(tasks).toMatch(/Send the text to Dana\s+not done/);
+});
+
+test("after Sending…, the activity says whether it went", () => {
+  const s = withText();
+  const at = Date.now() - 1000;
+  expect(sendFollowUp(s, { toName: "Dana", at })).toBeNull();
+  s.activity.unshift({ id: "act_s", spaceId: ids.jobHunt, actor: "atrium", message: "Sent via Messages to Dana (+1 555 010 0134). Atrium can't confirm delivery.", createdAt: Date.now() });
+  expect(sendFollowUp(s, { toName: "Dana", at })).toEqual({ tone: "ok", text: "Sent to Dana. Atrium can't confirm delivery." });
+  s.activity[0] = { ...s.activity[0]!, message: "Couldn't send the text to Dana: Messages didn't answer." };
+  expect(sendFollowUp(s, { toName: "Dana", at })?.tone).toBe("bad");
+  expect(sendFollowUp(s, { toName: "Dana", at: Date.now() + 60_000 })).toBeNull();
 });

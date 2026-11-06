@@ -8,7 +8,7 @@ import { openDb } from "../../../src/engine/db";
 import { listActivity } from "../../../src/engine/events";
 import { createMessaging } from "../../../src/engine/messaging";
 import { PROBLEM_COPY } from "../../../src/engine/messaging/problems";
-import { recoverMessageActions, REFUSED_COPY, sendMessage, STOPPED_COPY } from "../../../src/engine/messaging/send";
+import { NO_HANDLE_COPY, recoverMessageActions, REFUSED_COPY, sendMessage, STOPPED_COPY } from "../../../src/engine/messaging/send";
 import { draftMessage, getMessageAction, pendingMessageActions, setMessageStatus } from "../../../src/engine/messaging/store";
 import { createSpace, type Space } from "../../../src/engine/spaces";
 import { createTask, getTask, setTaskStatus } from "../../../src/engine/tasks";
@@ -89,7 +89,8 @@ test("no handle never sends", async () => {
   const { action, approval } = draft({ handle: null });
   off();
   resolveApproval(db, approval.id, "approve");
-  expect((await sendMessage(db, action.id)).status).toBe("failed");
+  const res = await sendMessage(db, action.id);
+  expect([res.status, res.error]).toEqual(["failed", NO_HANDLE_COPY]);
   expect(calls()).toEqual([]);
 });
 
