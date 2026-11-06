@@ -17,60 +17,60 @@ this page is the record of the reading pass.
 
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
-| Views | `src/dashboard/components/Activity.tsx` | activity rows, empty state | no | |
-| Views | `src/dashboard/components/AgentPicker.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/Agents.tsx` | agent cards, status lines, reserve | no | |
-| Views | `src/dashboard/components/Avatar.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/CommandBar.tsx` | placeholder, hints, errors | no | |
-| Investing | `src/dashboard/components/DataBudget.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/FilesTab.tsx` | folder line, file rows, empty states | no | |
-| Views | `src/dashboard/components/Home.tsx` | greeting, briefing, space cards, new-space card | no | |
-| Views | `src/dashboard/components/Logo.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/Markdown.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state | no | |
-| Views | `src/dashboard/components/PreviewPane.tsx` | preview notes, calendar list | no | |
-| Views | `src/dashboard/components/ProjectDraft.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/Proposal.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/RepoRemoval.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/Rules.tsx` | rule list, rule detail, undo, empty states | no | |
-| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | no | |
-| Views | `src/dashboard/components/Sidebar.tsx` | nav labels, footer status | no | |
-| Views | `src/dashboard/components/SpaceView.tsx` | tabs, task rows, task detail, not-found page, live column | no | |
-| Views | `src/dashboard/components/StatusIcon.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/Storage.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/Thread.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/Transcript.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/WaitLine.tsx` | labels, buttons, empty states, errors | no | |
-| Views | `src/dashboard/components/WhatItMade.tsx` | summary heading, decided line, file rows, actions | no | |
-| Investing | `src/dashboard/components/markets/AdviceTag.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Alerts.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/AllocationBars.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Digest.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Freshness.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Health.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Holdings.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Ideas.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/ImportDialog.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/MarketsPanel.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Paper.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/PriceChart.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Research.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Screener.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/SourceTag.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Strategies.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/TfsaCard.tsx` | labels, buttons, empty states, errors | no | |
-| Investing | `src/dashboard/components/markets/Watchlist.tsx` | labels, buttons, empty states, errors | no | |
-| Shared | `src/dashboard/agents.ts` | agent names, wait reasons | no | |
-| Shared | `src/dashboard/api.ts` | client error messages | no | |
-| Investing | `src/dashboard/chart-data.ts` | messages | no | |
-| Shared | `src/dashboard/files.ts` | action labels, feedback lines | no | |
-| Shared | `src/dashboard/format.ts` | relative times, sizes | no | |
-| Investing | `src/dashboard/investing.ts` | messages | no | |
-| Shared | `src/dashboard/markdown.ts` | messages | no | |
-| Investing | `src/dashboard/markets.ts` | messages | no | |
-| Shared | `src/dashboard/repos.ts` | messages | no | |
-| Shared | `src/dashboard/route.ts` | messages | no | |
-| Shared | `src/dashboard/summary.ts` | status text, review lines, briefing lines | no | |
+| Views | `src/dashboard/components/Activity.tsx` | activity rows, empty state | yes | No change needed |
+| Views | `src/dashboard/components/AgentPicker.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/Agents.tsx` | agent cards, status lines, reserve | yes | Cards say Claude, not Claude Code; straight quotes around "Run now" |
+| Views | `src/dashboard/components/Avatar.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/CommandBar.tsx` | placeholder, hints, errors | yes | "e.g." became "like" |
+| Investing | `src/dashboard/components/DataBudget.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
+| Views | `src/dashboard/components/FilesTab.tsx` | folder line, file rows, empty states | yes | New in this plan; written to the rules |
+| Views | `src/dashboard/components/Home.tsx` | greeting, briefing, space cards, new-space card | yes | New-space card: "just describe it" became "Describe it in a sentence and Atrium sets it up."; centred, balanced, focus ring; card titles carry a full title |
+| Views | `src/dashboard/components/Logo.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/Markdown.tsx` | labels, buttons, empty states, errors | yes | New in this plan |
+| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state | yes | Row summary is the first paragraph as plain text (no markdown); detail shows What it made; "View transcript in" became "Open the task in"; full title on hover |
+| Views | `src/dashboard/components/PreviewPane.tsx` | preview notes, calendar list | yes | New in this plan; written to the rules |
+| Views | `src/dashboard/components/ProjectDraft.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/Proposal.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/RepoRemoval.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/Rules.tsx` | rule list, rule detail, undo, empty states | yes | Em dash in the prose warning became a comma |
+| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | "Markets spaces" became "investing spaces" |
+| Views | `src/dashboard/components/Sidebar.tsx` | nav labels, footer status | yes | No change needed |
+| Views | `src/dashboard/components/SpaceView.tsx` | tabs, task rows, task detail, not-found page, live column | yes | "Space not found" became "This space isn't here" with what to do; Tasks/Files tabs; "You asked" renders markdown; straight quotes around the parent task; full title on hover |
+| Views | `src/dashboard/components/StatusIcon.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/Storage.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/Thread.tsx` | labels, buttons, empty states, errors | yes | Message bodies render as markdown |
+| Views | `src/dashboard/components/Transcript.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/WaitLine.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/WhatItMade.tsx` | summary heading, decided line, file rows, actions | yes | New in this plan; written to the rules |
+| Investing | `src/dashboard/components/markets/AdviceTag.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/Alerts.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/AllocationBars.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
+| Investing | `src/dashboard/components/markets/Digest.tsx` | labels, buttons, empty states, errors | yes | Body renders as markdown; clamp works on any block |
+| Investing | `src/dashboard/components/markets/Freshness.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/Health.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
+| Investing | `src/dashboard/components/markets/Holdings.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/Ideas.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
+| Investing | `src/dashboard/components/markets/ImportDialog.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/MarketsPanel.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/Paper.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/PriceChart.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/Research.tsx` | labels, buttons, empty states, errors | yes | Thesis draft and check render as markdown (layout deferred to the investing redesign) |
+| Investing | `src/dashboard/components/markets/Screener.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
+| Investing | `src/dashboard/components/markets/SourceTag.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/Strategies.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/TfsaCard.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
+| Investing | `src/dashboard/components/markets/Watchlist.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Shared | `src/dashboard/agents.ts` | agent names, wait reasons | yes | No change needed |
+| Shared | `src/dashboard/api.ts` | client error messages | yes | "Atrium answered with an error (500). Try again." became "Atrium couldn't do that (error 500). Try again, and check the engine log if it keeps happening." |
+| Investing | `src/dashboard/chart-data.ts` | messages | yes | No change needed |
+| Shared | `src/dashboard/files.ts` | action labels, feedback lines | yes | New in this plan; action labels and feedback lines |
+| Shared | `src/dashboard/format.ts` | relative times, sizes | yes | No change needed |
+| Investing | `src/dashboard/investing.ts` | messages | yes | No change needed |
+| Shared | `src/dashboard/markdown.ts` | messages | yes | New in this plan |
+| Investing | `src/dashboard/markets.ts` | messages | yes | No change needed |
+| Shared | `src/dashboard/repos.ts` | messages | yes | No change needed |
+| Shared | `src/dashboard/route.ts` | messages | yes | No change needed |
+| Shared | `src/dashboard/summary.ts` | status text, review lines, briefing lines | yes | summaryLine() for one-line agent text |
 
 ### Terminal app
 
@@ -241,6 +241,7 @@ this page is the record of the reading pass.
 | `src/tui/**` | Two spaces between hint groups (`j k move  q quit`). | The terminal has no other way to separate groups in one line. |
 | Status tags and kind chips | Lowercase (`queued`, `in review`, `new`, `changed`). | They read as tags, not sentences. |
 | Transcript viewer and live terminal | Agent output shown raw, monospace. | They are the record of what happened. |
+| Table cells | `—` for a value Atrium doesn't have. | A standard empty-cell mark in numeric tables. |
 | Strings with no letters | Not checked (`...` in a git range, `. ` as a separator). | They are code. |
 
 ## Starting point

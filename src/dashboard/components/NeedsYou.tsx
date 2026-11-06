@@ -57,7 +57,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
       <div className="item">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
         <span className="who">{space?.name ?? (approval.spaceId === null ? "Atrium" : "Unknown space")}</span>
-        <span className="t">
+        <span className="t" title={approval.detail ? `${approval.title}\n${summaryLine(approval.detail)}` : approval.title}>
           {approval.title}
           {approval.detail && <span>{summaryLine(approval.detail)}</span>}
         </span>
@@ -105,7 +105,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           <div className="meta">
             <span title={absolute(approval.createdAt)}>Asked {relative(approval.createdAt)}</span>
             {approval.taskId && space && (
-              // Runs and their transcripts are listed per task in the space view.
+              // The task shows its runs, transcripts and files in full.
               <a
                 href={`/space/${space.id}?task=${approval.taskId}`}
                 onClick={(e) => {
@@ -113,7 +113,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
                   navigate(`/space/${space.id}?task=${approval.taskId}`);
                 }}
               >
-                View transcript in {space.name}
+                Open the task in {space.name}
               </a>
             )}
           </div>

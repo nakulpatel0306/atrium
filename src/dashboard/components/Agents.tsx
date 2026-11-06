@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { AGENT_IDS } from "../agents";
+import { AGENT_IDS, agentName } from "../agents";
 import { post, type State } from "../api";
 import { absolute, clock, duration, tokens } from "../format";
 import { navigate } from "../route";
@@ -61,7 +61,7 @@ function ClaudeWindow({ state }: { state: State }) {
             </button>
           ))}
         </div>
-        <span>used, so the rest stays yours. “Run now” on a task skips this.</span>
+        <span>used, so the rest stays yours. "Run now" on a task skips this.</span>
       </div>
       {error && <div className="err">{error}</div>}
       <p className="note-line">Estimated from Claude's own limit reports; Atrium can't see your exact quota.</p>
@@ -117,7 +117,7 @@ function AgentRow({ id, info, state, open, onToggle }: { id: string; info: Info;
       <div className="item agent" onClick={onToggle} aria-expanded={open}>
         <ChevronRight className={`chev${open ? " open" : ""}`} />
         <Avatar agent={id} live={state.runs.some((r) => r.agent === id && r.endedAt === null)} />
-        <span className="name">{info.label}</span>
+        <span className="name">{agentName(id)}</span>
         <span className={`t status${line.tone ? ` ${line.tone}` : ""}`}>
           <Plain text={line.text} />
         </span>

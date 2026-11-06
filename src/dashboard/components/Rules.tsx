@@ -242,7 +242,7 @@ export function Rules({ state }: { state: State }) {
         {ALWAYS_ASK}
       </p>
       <p className="note-line rules-note">
-        Rules can't see instructions written in plain prose — keep agent instructions out of docs you let rules approve.
+        Rules can't see instructions written in plain prose, so keep agent instructions out of docs you let rules approve.
       </p>
       {empty ? (
         <div className="list">

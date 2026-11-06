@@ -86,7 +86,7 @@ export function CommandBar({ space, setupRequest }: Props) {
   };
 
   const placeholder = setup
-    ? 'Describe something new, e.g. "keep my job search organized" or "start a new project called…"'
+    ? 'Describe something new, like "keep my job search organized" or "start a new project called…"'
     : `Give ${space!.name} a task…`;
 
   return (

@@ -37,7 +37,9 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
     >
       <div className="n">
         <span className="sd" style={{ background: space.color }} />
-        <span className="name">{space.name}</span>
+        <span className="name" title={space.name}>
+          {space.name}
+        </span>
         <span className="tags">
           {space.private && <span className="tag private">Private</span>}
           <span className="tag">{space.kind}</span>
@@ -116,7 +118,7 @@ export function Home({ state, briefing, onNewSpace }: Props) {
             <Plus />
             New space
           </span>
-          <small>just describe it</small>
+          <small>Describe it in a sentence and Atrium sets it up.</small>
         </button>
       </div>
 

@@ -37,7 +37,7 @@ export function DigestList({ digests, open, all, onOpen, onAll }: { digests: Wri
           <div key={d.id} className="rs-writeup digest">
             <div className="rs-writeup-head">
               <b>{dateText(d.forDate)}</b>
-              <span className="faint">Claude, from today's prices and headlines</span>
+              <span className="faint">Claude, from that day's prices and headlines</span>
             </div>
             <Markdown className={open || all || n > 0 ? undefined : "clamp"} text={d.body} />
             {!all && (

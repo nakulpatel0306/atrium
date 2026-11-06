@@ -171,7 +171,7 @@ export async function fetchTranscript(runId: string): Promise<{ ok: true; text: 
     if (res.status === 404) {
       return { ok: false, error: "This transcript isn't stored anymore. Atrium keeps the newest 200 MB of transcripts." };
     }
-    if (!res.ok) return { ok: false, error: `Atrium answered with an error (${res.status}). Try again.` };
+    if (!res.ok) return { ok: false, error: `Atrium couldn't do that (error ${res.status}). Try again, and check the engine log if it keeps happening.` };
     return { ok: true, text: await res.text() };
   } catch {
     return { ok: false, error: "Can't reach the Atrium engine. Check that it's running, then try again." };
@@ -192,7 +192,7 @@ async function send<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string
       ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     });
     const data = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
-    if (!res.ok) return { ok: false, error: data?.error ?? `Atrium answered with an error (${res.status}). Try again.` };
+    if (!res.ok) return { ok: false, error: data?.error ?? `Atrium couldn't do that (error ${res.status}). Try again, and check the engine log if it keeps happening.` };
     return { ok: true, data: data as T };
   } catch {
     return { ok: false, error: "Can't reach the Atrium engine. Check that it's running, then try again." };

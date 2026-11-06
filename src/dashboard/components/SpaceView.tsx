@@ -260,7 +260,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
       <div className={`item task${task.status === "done" ? " done" : ""}`} onClick={onToggle} aria-expanded={open}>
         <StatusIcon status={task.status} />
         <KindBadge kind={task.kind} />
-        <span className="t">{shownTitle(task)}</span>
+        <span className="t" title={shownTitle(task)}>
+          {shownTitle(task)}
+        </span>
         {wait ? (
           <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
             waiting
@@ -311,7 +313,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
           {parent && (
             <p className="follows">
               <CornerDownRight />
-              {task.kind === "review" ? "Reviews" : "Fixes what the review found in"} “{parent.title}”
+              {task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "{parent.title}"
             </p>
           )}
           <section className="asked">
@@ -454,8 +456,8 @@ export function SpaceView({ state, space, focusTask, tab = "tasks" }: Props) {
   if (!space) {
     return (
       <div className="wrap">
-        <h1>Space not found</h1>
-        <p className="brief">It may have been archived. Pick another space from the sidebar.</p>
+        <h1>This space isn't here</h1>
+        <p className="brief">It may have been archived, or the link is old. Pick a space from the sidebar, or go back to Home.</p>
       </div>
     );
   }
