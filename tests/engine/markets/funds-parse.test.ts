@@ -189,3 +189,19 @@ test("a zip bomb is refused before it's inflated, and other parts of the file ar
   const withJunk = zipSync({ "xl/worksheets/sheet1.xml": sheet, "xl/media/huge.bin": zeros }, { level: 9 });
   expect(readXlsxRows(withJunk)).toEqual([["ok"]]);
 });
+
+test("a zip that lies about its size is cut off while inflating, not after", () => {
+  const bomb = zipSync({ "xl/worksheets/sheet1.xml": new Uint8Array(120 * 1024 * 1024) }, { level: 9 });
+  const view = new DataView(bomb.buffer, bomb.byteOffset, bomb.byteLength);
+  // Both the local header and the central directory claim the sheet inflates to 1 KB.
+  view.setUint32(22, 1024, true);
+  for (let i = bomb.length - 22; i >= 0; i--) {
+    if (view.getUint32(i, true) === 0x02014b50) {
+      view.setUint32(i + 24, 1024, true);
+      break;
+    }
+  }
+  const started = performance.now();
+  expect(() => readXlsxRows(bomb)).toThrow(new FundFileError("That holdings file is too large to be a holdings spreadsheet."));
+  expect(performance.now() - started).toBeLessThan(2000);
+});
