@@ -158,6 +158,16 @@ test("the retry happens once per session, and never after a real daily-limit not
   expect(once.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toHaveLength(1);
 });
 
+test("during TSX hours the retry waits, since Yahoo prices the day and keeps no closes", async () => {
+  const r = tsxRig();
+  r.at(Date.parse("2026-11-09T15:00:00Z")); // Mon 10:00 AM ET, Friday's closes still missing
+  await r.catchUp.run(true);
+  expect(r.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toEqual([]);
+  r.at(Date.parse("2026-11-09T21:30:00Z"));
+  await r.catchUp.run(true);
+  expect(r.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toHaveLength(1);
+});
+
 test("a real daily limit (the budget is used up) waits for tomorrow", async () => {
   const r = tsxRig({ daily: true });
   await r.catchUp.run(true);

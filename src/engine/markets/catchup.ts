@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { AV_RESERVE, dailyBudget } from "./budget";
-import { lastCompletedSession, tsxTrading } from "./calendar";
+import { lastCompletedSession, tsxOpen, tsxTrading } from "./calendar";
 import { AV_DAILY_LIMIT } from "./data";
 import { EARNINGS_CHECKED, heldKeys } from "./eod";
 import { trackedInstruments } from "./feed";
@@ -39,7 +39,9 @@ export function tsxClosesMissing(db: Database, now: number): { date: string; key
 
 // Once per session, and only while today's budget has room beyond Nakul's reserve: a real daily-limit notice uses
 // the budget up, so it waits for tomorrow, while a throttle misread as one gets its retry.
+// While Toronto trades, Canadian prices route to Yahoo, which keeps no closes, so the retry waits for the close.
 function tsxRetryDue(db: Database, now: number): string | null {
+  if (tsxOpen(now)) return null;
   const missing = tsxClosesMissing(db, now);
   if (!missing) return null;
   const retried = (db.query("SELECT value FROM settings WHERE key = ?").get(TSX_RETRIED) as { value: string } | null)?.value;
