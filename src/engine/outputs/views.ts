@@ -55,8 +55,12 @@ const isFileOnDisk = (abs: string) => {
   }
 };
 
-const onBranch = async (repo: string | null, ref: string, path: string) =>
-  repo !== null && (await git(repo, ["cat-file", "-e", `${ref}:${path}`]).catch(() => ({ code: 1 }))).code === 0;
+// Every path on a branch, read once per branch: a task can list hundreds of files, and each refresh asks again.
+async function branchPaths(repo: string | null, ref: string): Promise<Set<string>> {
+  if (repo === null) return new Set();
+  const res = await git(repo, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--name-only", ref]).catch(() => null);
+  return new Set(res && res.code === 0 ? res.out.split("\0").filter(Boolean) : []);
+}
 
 // The newest review of the task (whatever was decided) is its summary; files are the newest change to each.
 export async function taskOutputs(db: Database, taskId: string): Promise<TaskOutputs | null> {
@@ -68,27 +72,28 @@ export async function taskOutputs(db: Database, taskId: string): Promise<TaskOut
     .get(taskId) as { id: string } | null;
   const a = row ? getApproval(db, row.id) : null;
   const summary = a ? { text: a.detail, status: a.status, decidedBy: a.decidedBy, at: a.resolvedAt ?? a.createdAt } : null;
-  const files = await Promise.all(
-    taskFiles(db, taskId).map(async (f): Promise<OutputFile> => {
-      const absPath = f.root === "space" ? join(spaceFolder(space), f.path) : join(space.repoPath ?? "", f.path);
-      const exists = f.change !== "deleted" && (f.root === "space" ? isFileOnDisk(absPath) : await onBranch(space.repoPath, f.ref!, f.path));
-      return {
-        id: f.id,
-        runId: f.runId,
-        root: f.root,
-        ref: f.ref,
-        path: f.path,
-        absPath,
-        change: f.change,
-        size: f.size,
-        insertions: f.insertions,
-        deletions: f.deletions,
-        kind: kindOf(f.path),
-        exists,
-        at: f.createdAt,
-      };
-    }),
-  );
+  const rows = taskFiles(db, taskId);
+  const onBranch = new Map<string, Set<string>>();
+  for (const ref of new Set(rows.flatMap((f) => (f.root === "branch" && f.ref ? [f.ref] : [])))) onBranch.set(ref, await branchPaths(space.repoPath, ref));
+  const files = rows.map((f): OutputFile => {
+    const absPath = f.root === "space" ? join(spaceFolder(space), f.path) : join(space.repoPath ?? "", f.path);
+    const exists = f.change !== "deleted" && (f.root === "space" ? isFileOnDisk(absPath) : (onBranch.get(f.ref!)?.has(f.path) ?? false));
+    return {
+      id: f.id,
+      runId: f.runId,
+      root: f.root,
+      ref: f.ref,
+      path: f.path,
+      absPath,
+      change: f.change,
+      size: f.size,
+      insertions: f.insertions,
+      deletions: f.deletions,
+      kind: kindOf(f.path),
+      exists,
+      at: f.createdAt,
+    };
+  });
   return { summary, files };
 }
 

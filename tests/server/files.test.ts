@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -38,6 +38,7 @@ afterEach(() => {
 const get = (path: string, headers: Record<string, string> = {}) => fetch(base + path, { headers });
 const post = (path: string, body: unknown, headers: Record<string, string> = { origin: base }) =>
   fetch(base + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+const getTaskSpace = (taskId: string) => (db.query("SELECT space_id FROM tasks WHERE id = ?").get(taskId) as { space_id: string }).space_id;
 const logged = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 let runN = 0;
@@ -191,4 +192,27 @@ test("branch preview reads from the task branch", async () => {
   const none = await get(`/api/tasks/${plain.id}/file?path=a.md`);
   expect(none.status).toBe(404);
   expect((await none.json()).error).toBe("This task has no branch to read from.");
+});
+
+test("branch files are checked against the branch with one git call, and a file a later commit deleted reads as gone", async () => {
+  const { task, repo } = repoSpaceWithBranch();
+  const git = (...a: string[]) => Bun.spawnSync(["git", ...a], { cwd: repo });
+  git("checkout", `atrium/${task.id}`);
+  git("rm", "-q", "docs/a.md");
+  git("commit", "-qm", "drop");
+  git("checkout", "main");
+  recordRunFiles(db, { runId: "run_r", taskId: task.id, spaceId: getTaskSpace(task.id), root: "branch", ref: `atrium/${task.id}` }, [
+    { path: "README.md", change: "changed", size: null },
+    { path: "docs/b.md", change: "created", size: null },
+  ]);
+  const spawn = spyOn(Bun, "spawn");
+  try {
+    const out = await (await get(`/api/tasks/${task.id}/outputs`)).json();
+    const byPath = Object.fromEntries(out.files.map((f: { path: string; exists: boolean }) => [f.path, f.exists]));
+    expect(byPath).toEqual({ "docs/a.md": false, "README.md": true, "docs/b.md": false });
+    const gitCalls = spawn.mock.calls.filter((c) => Array.isArray(c[0]) && c[0][0] === "git");
+    expect(gitCalls.length).toBeLessThanOrEqual(1);
+  } finally {
+    spawn.mockRestore();
+  }
 });
