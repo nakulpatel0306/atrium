@@ -34,7 +34,7 @@ export function periodStart(period: Period, today: string): string {
   return mm >= 1 ? iso(y, mm, d) : iso(y - 1, mm + 12, d);
 }
 
-type Leg = { key: string; startCad: number; endCad: number; adjusted: boolean } | { key: string; reason: string; endCad: number | null };
+type Leg = { key: string; startCad: number; endCad: number; endDate: string; adjusted: boolean } | { key: string; reason: string; endCad: number | null };
 
 const shiftIso = (iso: string, days: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 // Weekdays after `from` up to and including `to`.
@@ -70,7 +70,7 @@ function leg(key: string, ccy: "CAD" | "USD", i: { closes: (key: string, from: s
   const s = cad(first, pick(first));
   const e = cad(last!, pick(last!));
   if (s === null || e === null) return { key, reason: `n/a: no USD/CAD rate for ${s === null ? first.date : last!.date}`, endCad: endPlain };
-  return { key, startCad: s, endCad: e, adjusted };
+  return { key, startCad: s, endCad: e, endDate: last!.date, adjusted };
 }
 
 export function performance(
@@ -95,14 +95,19 @@ export function performance(
   const portfolioPct = used.length && startValue > 0 && !tooMuchMissing ? (usedNow / startValue - 1) * 100 : null;
   const bench = benchmarks.map((k) => {
     const l = leg(k, currencyOfKey(k), i, start, i.today, period);
-    return "reason" in l ? { key: k, pct: null, reason: l.reason, adjusted: true } : { key: k, pct: (l.endCad / l.startCad - 1) * 100, reason: null, adjusted: l.adjusted };
+    return "reason" in l
+      ? { key: k, pct: null, reason: l.reason, adjusted: true, endDate: null }
+      : { key: k, pct: (l.endCad / l.startCad - 1) * 100, reason: null, adjusted: l.adjusted, endDate: l.endDate };
   });
+  // The last close every measured leg reaches. Adjusted closes usually lag a day behind the feed's own capture,
+  // which can't be mixed into them, so the result often ends yesterday and says so.
+  const ends = [...used.map((l) => l.endDate), ...bench.flatMap((b) => (b.endDate ? [b.endDate] : []))].sort();
   const bases = [...used.map((l) => l.adjusted), ...bench.filter((b) => b.pct !== null).map((b) => b.adjusted)];
   const basis = bases.every(Boolean) ? "total return" : bases.some(Boolean) ? "mixed" : "price";
   return {
     period,
     start,
-    end: i.today,
+    end: ends[0] ?? i.today,
     portfolioPct,
     benchmarks: bench.map(({ key, pct, reason }) => ({ key, pct, reason })),
     basis,

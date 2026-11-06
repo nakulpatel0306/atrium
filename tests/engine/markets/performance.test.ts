@@ -82,3 +82,14 @@ test("legs on different bases are labelled mixed", () => {
   // Each leg on its own basis: SPY adjusted, XEQT raw.
   expect(r.portfolioPct!).toBeCloseTo(((110 * 1.4 + 33) / (100 * 1.4 + 30) - 1) * 100, 9);
 });
+
+test("the end date is the last close used, not today", () => {
+  // Adjusted closes run to yesterday; today's raw capture can't be mixed in, so the result ends yesterday.
+  const toYesterday = series(month.slice(0, -1), 100, 110);
+  const r = run({ SPY: [...toYesterday, { date: TODAY, close: 120, adjClose: null, source: "feed" }] }, [{ key: "SPY", quantity: 1, listingCcy: "USD" }], () => 1.4);
+  expect(r.end).toBe(month.at(-2)!);
+  expect(r.portfolioPct!).toBeCloseTo(10, 9);
+  // Legs that end on different days: the result says the earliest, which every leg reaches.
+  const mixed = run({ SPY: toYesterday, "XEQT.TO": series(month, 30, 33) }, [{ key: "XEQT.TO", quantity: 1, listingCcy: "CAD" }], () => 1.4, "1M", ["SPY"]);
+  expect(mixed.end).toBe(month.at(-2)!);
+});
