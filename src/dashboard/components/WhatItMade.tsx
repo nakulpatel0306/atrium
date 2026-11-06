@@ -23,6 +23,8 @@ export function middle(path: string, max = 56): string {
 function decided(s: NonNullable<TaskOutputs["summary"]>): string {
   if (s.status === "pending") return "Waiting for you";
   if (s.status === "rejected") return `Sent back · ${relative(s.at)}`;
+  if (s.outcome === "couldnt") return `Accepted anyway by you · ${relative(s.at)}`;
+  if (s.outcome === "partial") return `Accepted as is by you · ${relative(s.at)}`;
   return `${s.decidedBy === "rule" ? "Approved by your rule" : "Approved by you"} · ${relative(s.at)}`;
 }
 

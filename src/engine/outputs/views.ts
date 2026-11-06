@@ -9,6 +9,7 @@ import { getTask } from "../tasks";
 import { type FileKind, kindOf } from "./files";
 import { snapshotFolder } from "./snapshot";
 import { latestMakers, taskFiles } from "./store";
+import type { Outcome } from "../outcome";
 
 // What the dashboard, terminal app and (later) the conversation read about a task's results and a space's folder.
 
@@ -29,7 +30,8 @@ export type OutputFile = {
 };
 
 export type TaskOutputs = {
-  summary: { text: string; status: "pending" | "approved" | "rejected"; decidedBy: "you" | "rule"; at: number } | null;
+  // `outcome` is what the agent said about the task, so an accepted "couldn't" never reads as a plain approval.
+  summary: { text: string; status: "pending" | "approved" | "rejected"; decidedBy: "you" | "rule"; at: number; outcome?: Outcome | null } | null;
   files: OutputFile[];
 };
 
@@ -71,7 +73,7 @@ export async function taskOutputs(db: Database, taskId: string): Promise<TaskOut
     .query("SELECT id FROM approvals WHERE task_id = ? AND kind = 'review' ORDER BY created_at DESC, rowid DESC LIMIT 1")
     .get(taskId) as { id: string } | null;
   const a = row ? getApproval(db, row.id) : null;
-  const summary = a ? { text: a.detail, status: a.status, decidedBy: a.decidedBy, at: a.resolvedAt ?? a.createdAt } : null;
+  const summary = a ? { text: a.detail, status: a.status, decidedBy: a.decidedBy, at: a.resolvedAt ?? a.createdAt, outcome: task.outcome } : null;
   const rows = taskFiles(db, taskId);
   const onBranch = new Map<string, Set<string>>();
   for (const ref of new Set(rows.flatMap((f) => (f.root === "branch" && f.ref ? [f.ref] : [])))) onBranch.set(ref, await branchPaths(space.repoPath, ref));

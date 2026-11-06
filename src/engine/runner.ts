@@ -75,12 +75,18 @@ const REVIEW_SYSTEM_PROMPT = [
 ].join("\n");
 
 // Titles that ask for something only the engine can do. An agent saying "done" to one of these, with nothing for
-// the engine to act on, hasn't done it.
+// the engine to act on, hasn't done it. A send needs a person after the verb ("Text Dana", "Send the text to
+// Dana", "send him a message"), so "Text formatting fixes" or "Send button styling" aren't sends.
+const PERSON = "(?:him|her|them|me|mom|dad|my \\w+)";
 export function engineOnlyClaim(title: string): "message" | "repo" | null {
-  if (/^(send|text|message|imessage|email|e-mail|dm)\b/i.test(title) || /\b(send|text)\s+(him|her|them|\w+)?\s*(a |the )?(text|message|email)\b/i.test(title)) {
-    return "message";
-  }
-  if (/\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(title)) return "repo";
+  const t = title.trim();
+  const verb = /^(?:send|text|message|imessage|email|e-mail|dm)\s+(.*)$/i.exec(t);
+  const rest = verb?.[1] ?? "";
+  const toPerson = new RegExp(`^(?:to\\s+)?${PERSON}\\b`, "i").test(rest) || /^(?:to\s+)?[A-Z][\w'-]*\b/.test(rest) || new RegExp(`\\bto\\s+(?:${PERSON}|[A-Z][\\w'-]*)\\b`).test(rest);
+  if (verb && toPerson && !/^(?:to\s+)?(?:[A-Z]{2,}|PR|CI)\b/.test(rest)) return "message";
+  if (new RegExp(`\\b(?:send|text)\\s+(?:${PERSON}|[A-Z][\\w'-]*)\\s+(?:a |the )?(?:text|message|email)\\b`, "i").test(t)) return "message";
+  if (/^(?:[Ll]et\s+[A-Z][\w'-]*\s+know|[Rr]each\s+out\s+to\s+[A-Z])/.test(t)) return "message";
+  if (/\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(t)) return "repo";
   return null;
 }
 
@@ -630,8 +636,10 @@ export function createRunner(deps: {
     // and the result goes to review as usual, with a note saying what the agent asked for.
     const body = block ? `${parsed.body}\n\n${IGNORED_BLOCK}` : parsed.body;
     const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
-    const claim = engineOnlyClaim((parent ?? task).title);
-    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, body, outcome: "unknown", reason: ENGINE_ONLY[claim] }, message: null };
+    // A repo task's title is about code ("Send button styling"), never a send Atrium would make.
+    const claim = getSpace(db, task.spaceId)?.kind === "repo" ? null : engineOnlyClaim((parent ?? task).title);
+    // Atrium knows for certain that nothing was sent or created, so this is "couldn't", not "can't tell".
+    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, body, outcome: "couldnt", reason: ENGINE_ONLY[claim] }, message: null };
     return { outcome: { ...parsed, body }, message: null };
   }
 

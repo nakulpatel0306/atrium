@@ -4,6 +4,7 @@ import { NeedsYou } from "../../src/dashboard/components/NeedsYou";
 import { approveLabel, OutcomeBanner, outcomeText } from "../../src/dashboard/components/OutcomeBanner";
 import { SpaceView } from "../../src/dashboard/components/SpaceView";
 import { StatusIcon } from "../../src/dashboard/components/StatusIcon";
+import { WhatItMadeList } from "../../src/dashboard/components/WhatItMade";
 import type { Outcome } from "../../src/engine/outcome";
 import { ids, makeState } from "../tui/fixtures";
 
@@ -55,4 +56,21 @@ test("a done task that wasn't done never shows the done check", () => {
   expect(text(html)).toContain("not done");
   expect(html).not.toContain('aria-label="Done"');
   expect(text(html)).toContain("Couldn't do this: no number.");
+});
+
+test("an accepted couldn't reads as accepted anyway, not approved", () => {
+  const html = renderToStaticMarkup(
+    <WhatItMadeList outputs={{ summary: { text: "Couldn't open it.", status: "approved", decidedBy: "you", at: Date.now() - 7_200_000, outcome: "couldnt" }, files: [] }} spaceId="s" taskId="t" spaceKind="general" />,
+  );
+  expect(text(html)).toContain("Accepted anyway by you · 2h ago");
+  const partial = renderToStaticMarkup(
+    <WhatItMadeList outputs={{ summary: { text: "Two of three.", status: "approved", decidedBy: "you", at: Date.now() - 7_200_000, outcome: "partial" }, files: [] }} spaceId="s" taskId="t" spaceKind="general" />,
+  );
+  expect(text(partial)).toContain("Accepted as is by you · 2h ago");
+});
+
+test("I1: an engine-certain couldn't asks to accept anyway and shows its reason", () => {
+  const t = text(renderToStaticMarkup(<NeedsYou state={withOutcome("couldnt", "Only Atrium can send messages, and nothing was sent.")} />));
+  expect(t).toContain("Couldn't do this: Only Atrium can send messages, and nothing was sent.");
+  expect(t).toContain("Accept anyway");
 });

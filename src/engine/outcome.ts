@@ -40,11 +40,10 @@ export function parseOutcome(summary: string): ParsedOutcome {
   if (last < 0) return { outcome: "unknown", reason: null, body: whole };
   const m = LINE.exec(lines[last]!.replace(EDGES, ""));
   if (!m) return { outcome: "unknown", reason: null, body: whole };
-  return {
-    outcome: WORDS[m[1]!.toLowerCase().replace("’", "'")] ?? "unknown",
-    reason: cleanReason(m[2]!),
-    body: lines.slice(0, last).join("\n").trim(),
-  };
+  const word = WORDS[m[1]!.toLowerCase().replace("’", "'")] ?? "unknown";
+  const reason = cleanReason(m[2]!);
+  // The grammar gives done no reason; "done - but nothing was sent" is the agent hedging, so it isn't done.
+  return { outcome: word === "done" && reason ? "unknown" : word, reason, body: lines.slice(0, last).join("\n").trim() };
 }
 
 export function outcomeLabel(o: Outcome): string | null {
@@ -57,6 +56,8 @@ export function outcomeLabel(o: Outcome): string | null {
 export function outcomeText(outcome: Outcome | null, reason: string | null): string | null {
   if (outcome === "couldnt") return `Couldn't do this: ${reason ?? "The agent didn't say why."}`;
   if (outcome === "partial") return `Partly done: ${reason ?? "The agent didn't say what's left."}`;
-  if (outcome === "unknown") return "Atrium can't tell whether this was done. The agent didn't say, so check the summary.";
+  if (outcome === "unknown") {
+    return reason ? `Atrium can't tell whether this was done: ${reason}` : "Atrium can't tell whether this was done. The agent didn't say, so check the summary.";
+  }
   return null;
 }

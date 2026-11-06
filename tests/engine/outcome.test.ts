@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { OUTCOME_INSTRUCTION, outcomeLabel, parseOutcome } from "../../src/engine/outcome";
+import { OUTCOME_INSTRUCTION, outcomeLabel, outcomeText, parseOutcome } from "../../src/engine/outcome";
 
 describe("parseOutcome", () => {
   test("a plain done line is removed from the body", () => {
@@ -72,4 +72,15 @@ test("labels and instruction", () => {
   expect(outcomeLabel("done")).toBeNull();
   expect(OUTCOME_INSTRUCTION.split("\n")[0]).toBe("Your very last line must be exactly one of:");
   expect(OUTCOME_INSTRUCTION).toContain("Drafting something is not sending it.");
+});
+
+test("M2: 'done' followed by a reason that says otherwise isn't done", () => {
+  const p = parseOutcome("Wrote it.\nOUTCOME: done - but nothing was sent, the sandbox blocked Messages");
+  expect(p.outcome).toBe("unknown");
+  expect(p.reason).toBe("but nothing was sent, the sandbox blocked Messages");
+});
+
+test("an unknown with a reason says the reason", () => {
+  expect(outcomeText("unknown", "it hedged.")).toBe("Atrium can't tell whether this was done: it hedged.");
+  expect(outcomeText("couldnt", "Only Atrium can send messages, and nothing was sent.")).toBe("Couldn't do this: Only Atrium can send messages, and nothing was sent.");
 });

@@ -22,7 +22,7 @@ import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { BASE_TOOLS, createRunner, engineOnlyClaim, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
 import { capabilityLines } from "../../src/engine/capabilities";
-import { OUTCOME_INSTRUCTION } from "../../src/engine/outcome";
+import { OUTCOME_INSTRUCTION, outcomeLabel, outcomeText } from "../../src/engine/outcome";
 import { pendingMessageActions } from "../../src/engine/messaging/store";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
@@ -1779,7 +1779,7 @@ describe("honest outcomes", () => {
 
   test("done can't stand for something only Atrium can do", async () => {
     const msg = await finish("Send the text to Dana", "Here's the text.\nOUTCOME: done");
-    expect([msg.t.outcome, msg.t.outcomeReason]).toEqual(["unknown", "Only Atrium can send messages, and nothing was sent."]);
+    expect([msg.t.outcome, msg.t.outcomeReason]).toEqual(["couldnt", "Only Atrium can send messages, and nothing was sent."]);
     expect(getApproval(db, msg.a.id)!.fingerprint).toBeNull();
     await runner!.stop();
     runner = null;
@@ -1788,11 +1788,11 @@ describe("honest outcomes", () => {
   });
 
   test("engineOnlyClaim", () => {
-    for (const t of ["Send the text to Dana", "Text mom happy birthday", "email the landlord", "Can you send him a message", "iMessage Dana"]) {
-      expect(engineOnlyClaim(t)).toBe("message");
+    for (const t of ["Send the text to Dana", "Text mom happy birthday", "Can you send him a message", "iMessage Dana", "Let Dana know dinner is at 8", "Reach out to Dana"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, "message"]);
     }
     for (const t of ["Create a new GitHub repo", "set up the repository", "make a repo for notes"]) expect(engineOnlyClaim(t)).toBe("repo");
-    for (const t of ["Draft a text to Dana", "Summarise notes.md", "Write the message copy"]) expect(engineOnlyClaim(t)).toBeNull();
+    for (const t of ["Draft a text to Dana", "Summarise notes.md", "Write the message copy", "Send PR to review"]) expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
   });
 
   test("a markets work task settles on the text without the outcome line", async () => {
@@ -1869,5 +1869,36 @@ describe("message blocks", () => {
     await waitFor(() => status(t.id) === "review");
     expect(pendingMessageActions(db)).toEqual([]);
     expect(listPending(db)[0]!.kind).toBe("review");
+  });
+});
+
+describe("final review", () => {
+  test("I1: an agent claiming done on 'Send the text to Dana' never ends up looking done", async () => {
+    const space = createSpace(db, { name: "Text Dana", kind: "general", goal: "" });
+    const t = createTask(db, { spaceId: space.id, title: "Send the text to Dana" });
+    start({ adapter: fakeAdapter(() => ok("Here's the text: hey!\nOUTCOME: done")).adapter });
+    await waitFor(() => status(t.id) === "review");
+    const task = getTask(db, t.id)!;
+    // What Nakul reads on the card must say nothing was sent, not "the agent didn't say".
+    expect(outcomeText(task.outcome, task.outcomeReason)).toContain("nothing was sent");
+    resolveApproval(db, approvalFor(t.id)!.id, "approve");
+    // After he accepts it, the task list must not show a plain done check.
+    expect(outcomeLabel(getTask(db, t.id)!.outcome!)).not.toBeNull();
+    expect(listActivity(db, { spaceId: space.id }).map((r) => r.message)).toContain("Accepted anyway: Send the text to Dana. It says it couldn't do this.");
+  });
+
+  test("M1: ordinary repo task titles aren't treated as sends", () => {
+    for (const t of ["Text formatting fixes in the editor", "Message queue retry logic", "Email template redesign", "Send button styling", "DM inbox layout"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
+    }
+  });
+
+  test("M1: a repo space never applies the send check", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Text Dana's avatar fallback" });
+    start({ adapter: writesDoc().adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(getTask(db, t.id)!.outcome).toBe("done");
   });
 });
