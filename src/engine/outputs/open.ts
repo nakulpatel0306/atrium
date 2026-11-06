@@ -61,7 +61,7 @@ export async function openFile(t: Target, how: OpenHow): Promise<{ app: string; 
       if (st.size > OPEN_CAP) throw new FileRefused(413, "This file is too big to open from Atrium. Use Reveal in Finder to open it.");
       return readBytes(fd, st.size);
     });
-    const safe = app === "Calendar" ? new TextEncoder().encode(safeAlarms(new TextDecoder().decode(bytes))) : bytes;
+    const safe = app === "Calendar" ? new TextEncoder().encode(safeAlarms(bytes)) : bytes;
     argv = ["-a", app, privateCopy(basename(t.absPath), safe)];
     result = { app, copy: true };
   }
@@ -73,33 +73,101 @@ export async function openFile(t: Target, how: OpenHow): Promise<{ app: string; 
   return result;
 }
 
-// Calendar would keep an agent's alarms: a PROCEDURE alarm runs a file, an EMAIL alarm mails someone, and an
-// ATTACH or URL fetches from wherever it points. Only plain display and sound alarms stay. Folded lines (a line
-// starting with a space or tab continues the one before) are kept with the property they belong to.
-export function safeAlarms(ics: string): string {
-  const eol = ics.includes("\r\n") ? "\r\n" : "\n";
-  const logical: string[][] = [];
-  for (const line of ics.split(/\r?\n/)) {
-    if ((line.startsWith(" ") || line.startsWith("\t")) && logical.length) logical.at(-1)!.push(line);
-    else logical.push([line]);
+const NOT_UTF8 = "This calendar file isn't plain UTF-8 text, so Atrium won't send it to Calendar. Use Reveal in Finder to look at it.";
+const DURATION = /^[+-]?P(\d+W|(\d+D)?(T(\d+H)?(\d+M)?(\d+S)?)?)$/;
+const DATE_TIME = /^\d{8}T\d{6}Z$/;
+
+type Prop = { name: string; params: Record<string, string>; value: string };
+
+// "NAME;PARAM=x;P2=\"a:b\":value", with quoted parameter values allowed to hold ":" and ";". Null when malformed.
+function parseLine(line: string): Prop | null {
+  let i = 0;
+  let quoted = false;
+  const parts: string[] = [];
+  let cur = "";
+  for (; i < line.length; i++) {
+    const c = line[i]!;
+    if (c === '"') quoted = !quoted;
+    if (!quoted && (c === ";" || c === ":")) {
+      parts.push(cur);
+      cur = "";
+      if (c === ":") break;
+      continue;
+    }
+    cur += c;
   }
-  const out: string[][] = [];
-  let alarm: string[][] | null = null;
-  for (const l of logical) {
-    const name = l.join("").split(/[;:]/)[0]!.toUpperCase();
+  if (i >= line.length || quoted) return null;
+  const [name, ...params] = parts;
+  if (!name || !/^[A-Za-z0-9-]+$/.test(name)) return null;
+  const out: Record<string, string> = {};
+  for (const p of params) {
+    const eq = p.indexOf("=");
+    if (eq <= 0) return null;
+    out[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1).replace(/^"|"$/g, "");
+  }
+  return { name: name.toUpperCase(), params: out, value: line.slice(i + 1) };
+}
+
+// An alarm survives only as a fresh display alarm built from its trigger and a plain description.
+function rebuiltAlarm(props: Prop[]): string[] | null {
+  const actions = props.filter((p) => p.name === "ACTION");
+  const triggers = props.filter((p) => p.name === "TRIGGER");
+  if (actions.length !== 1 || actions[0]!.value.trim().toUpperCase() !== "DISPLAY" || triggers.length !== 1) return null;
+  if (props.some((p) => p.name === "ATTACH" || p.name === "URL" || p.name.startsWith("X-"))) return null;
+  const t = triggers[0]!;
+  const value = t.value.trim().toUpperCase();
+  const absolute = t.params.VALUE?.toUpperCase() === "DATE-TIME";
+  if (absolute ? !DATE_TIME.test(value) : !DURATION.test(value) || value.replace(/[+-]?P/, "").replace("T", "") === "") return null;
+  const related = t.params.RELATED?.toUpperCase();
+  const params = absolute ? ";VALUE=DATE-TIME" : related === "END" ? ";RELATED=END" : "";
+  const said = props.find((p) => p.name === "DESCRIPTION")?.value ?? "";
+  const description = said.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 200).trim() || "Reminder";
+  return ["BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER${params}:${value}`, `DESCRIPTION:${description}`, "END:VALARM"];
+}
+
+// Calendar would keep an agent's alarms: a PROCEDURE alarm runs a file, an EMAIL alarm mails someone, an ATTACH or
+// URL fetches from wherever it points. This fails closed: odd encodings are refused, lines are unfolded before
+// anything is read, names are matched in any case, only plain display alarms come back (rebuilt, never copied),
+// and any alarm structure that doesn't parse cleanly drops every alarm while the events stay.
+export function safeAlarms(bytes: Uint8Array): string {
+  const bom = (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) || (bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0xff && bytes[1] === 0xfe);
+  if (bom || bytes.includes(0)) throw new FileRefused(403, NOT_UTF8);
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new FileRefused(403, NOT_UTF8);
+  }
+  const lines: string[] = [];
+  for (const raw of text.split(/\r\n|\n|\r/)) {
+    if ((raw.startsWith(" ") || raw.startsWith("\t")) && lines.length) lines[lines.length - 1] += raw.slice(1);
+    else lines.push(raw);
+  }
+  const out: (string | string[])[] = [];
+  let alarm: Prop[] | null = null;
+  let broken = false;
+  for (const line of lines) {
+    if (line === "") continue;
+    const prop = parseLine(line);
+    const begin = prop?.name === "BEGIN" && prop.value.trim().toUpperCase() === "VALARM";
+    const end = prop?.name === "END" && prop.value.trim().toUpperCase() === "VALARM";
     if (alarm) {
-      alarm.push(l);
-      if (l[0]!.toUpperCase() === "END:VALARM") {
-        const props = alarm.map((x) => x.join(""));
-        const action = props.find((p) => /^ACTION:/i.test(p))?.slice(7).trim().toUpperCase();
-        const fetches = props.some((p) => /^(ATTACH|URL)[;:]/i.test(p));
-        if ((action === "DISPLAY" || action === "AUDIO") && !fetches) out.push(...alarm);
+      if (!prop || begin) {
+        broken = true;
         alarm = null;
-      }
-    } else if (name === "BEGIN" && l[0]!.toUpperCase() === "BEGIN:VALARM") alarm = [l];
-    else out.push(l);
+      } else if (end) {
+        const rebuilt = rebuiltAlarm(alarm);
+        if (rebuilt) out.push(rebuilt);
+        alarm = null;
+      } else alarm.push(prop);
+      continue;
+    }
+    if (begin) alarm = [];
+    else if (end || !prop) broken = true;
+    else out.push(line);
   }
-  return out.map((l) => l.join(eol)).join(eol);
+  if (alarm) broken = true;
+  return out.flatMap((x) => (Array.isArray(x) ? (broken ? [] : x) : [x])).join("\r\n") + "\r\n";
 }
 
 function privateCopy(name: string, bytes: Uint8Array): string {

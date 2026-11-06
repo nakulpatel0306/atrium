@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { config } from "../../../src/engine/config";
 import { resolveTarget } from "../../../src/engine/outputs/files";
-import { openFile } from "../../../src/engine/outputs/open";
+import { openFile, safeAlarms } from "../../../src/engine/outputs/open";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -55,7 +55,7 @@ test("open launches a private copy in a named app; reveal uses the real path", a
   expect(statSync(join(md![2]!, "..")).mode & 0o777).toBe(0o700);
   expect(reveal).toEqual(["-R", join(dir, "run.command")]);
   expect(ics!.slice(0, 2)).toEqual(["-a", "Calendar"]);
-  expect(readFileSync(ics![2]!, "utf8")).toBe("BEGIN:VCALENDAR\n");
+  expect(readFileSync(ics![2]!, "utf8")).toBe("BEGIN:VCALENDAR\r\n");
   expect(pdf!.slice(0, 2)).toEqual(["-a", "Preview"]);
   expect(png!.slice(0, 2)).toEqual(["-a", "Preview"]);
 });
@@ -148,11 +148,62 @@ test("Add to Calendar drops alarms that could run, mail or fetch something", asy
   file("week.ics", 0o644, ics);
   await openFile(target("week.ics"), "calendar");
   const copy = readFileSync(logged()[0]![2]!, "utf8");
-  expect(copy.match(/BEGIN:VALARM/g)?.length).toBe(2);
-  expect(copy).toContain("DESCRIPTION:Gym in 15 minutes");
-  expect(copy).toContain("TRIGGER:-PT3M");
+  // Only plain display alarms survive (sound ones too could carry a fetch), rebuilt from their parts.
+  expect(copy.match(/BEGIN:VALARM/g)?.length).toBe(1);
+  expect(copy).toContain("BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nDESCRIPTION:Gym in 15 minutes\r\nEND:VALARM");
   for (const gone of ["PROCEDURE", "evil.sh", "EMAIL", "someone@", "tracker.example", "ound.aiff"]) expect(copy).not.toContain(gone);
   expect(copy).toContain("SUMMARY:Gym\r\n");
   // The file in the space is untouched.
   expect(readFileSync(join(dir, "week.ics"), "utf8")).toBe(ics);
+});
+
+
+describe("calendar copies fail closed", () => {
+  const event = (alarm: string, eol = "\r\n") =>
+    ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "SUMMARY:Gym", alarm, "END:VEVENT", "END:VCALENDAR", ""].join(eol);
+  const alarms = (text: string) => text.match(/BEGIN:VALARM/gi)?.length ?? 0;
+  const fresh = "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nDESCRIPTION:Reminder\r\nEND:VALARM";
+
+  test("tricks in the alarm text drop the alarm", () => {
+    const cases = [
+      "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT1M\r\nAT\r\n TACH:file:///evil.sh\r\nEND:VALARM",
+      "BEGIN:VALARM\r\nACTION;X=1:PROCEDURE\r\nTRIGGER:-PT1M\r\nEND:VALARM",
+      "begin:valarm\r\naction:procedure\r\ntrigger:-PT1M\r\nattach:file:///evil.sh\r\nend:valarm",
+      "BEGIN:VALARM\r\nACTION:DISPLAY\r\nACTION:PROCEDURE\r\nTRIGGER:-PT1M\r\nEND:VALARM",
+      "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:soon\r\nEND:VALARM",
+      "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT1M\r\nX-APPLE-THING:1\r\nEND:VALARM",
+    ];
+    for (const alarm of cases) {
+      const out = safeAlarms(new TextEncoder().encode(event(alarm)));
+      expect(alarms(out)).toBe(0);
+      expect(out).toContain("SUMMARY:Gym");
+      expect(out.toLowerCase()).not.toContain("evil");
+      expect(out.toLowerCase()).not.toContain("procedure");
+    }
+  });
+
+  test("bare CR line breaks parse like any other", () => {
+    const out = safeAlarms(new TextEncoder().encode(event("BEGIN:VALARM\rACTION:PROCEDURE\rTRIGGER:-PT1M\rEND:VALARM", "\r")));
+    expect(alarms(out)).toBe(0);
+    expect(out).toContain("SUMMARY:Gym");
+    const ok = safeAlarms(new TextEncoder().encode(event("BEGIN:VALARM\rACTION:DISPLAY\rTRIGGER:-PT15M\rEND:VALARM", "\r")));
+    expect(ok).toContain(fresh);
+  });
+
+  test("unbalanced alarms drop every alarm, events stay", () => {
+    const text = event("BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nBEGIN:VALARM\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT1M\r\nEND:VALARM");
+    const out = safeAlarms(new TextEncoder().encode(text));
+    expect(alarms(out)).toBe(0);
+    expect(out).toContain("SUMMARY:Gym");
+  });
+
+  test("a BOM, UTF-16, a NUL byte or invalid UTF-8 is refused", async () => {
+    const msg = "This calendar file isn't plain UTF-8 text, so Atrium won't send it to Calendar. Use Reveal in Finder to look at it.";
+    const utf16 = Buffer.from("\ufeff" + event(""), "utf16le");
+    const bad = [utf16, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(event(""))]), Buffer.from(event("X\u0000Y")), Buffer.from([0x42, 0x45, 0xff, 0x47])];
+    for (const b of bad) expect(() => safeAlarms(new Uint8Array(b))).toThrow(msg);
+    writeFileSync(join(dir, "u16.ics"), utf16);
+    await expect(openFile(target("u16.ics"), "calendar")).rejects.toThrow(msg);
+    expect(logged()).toEqual([]);
+  });
 });
