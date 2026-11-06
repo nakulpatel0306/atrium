@@ -124,7 +124,7 @@ const GLANCE = {
   paper: null,
 };
 
-test("a markets space's detail shows the portfolio, each list and the next two weeks of earnings", () => {
+test("a markets space's detail shows the portfolio, each list and the next 30 days of earnings", () => {
   const view = deriveView(marketsState(), initialUi);
   const lines = spaceDetail(view, null, GLANCE);
   const all = text(lines).split("\n");
@@ -137,7 +137,7 @@ test("a markets space's detail shows the portfolio, each list and the next two w
     "  AMZN     US$250.00  +2.0%",
     "  XEQT.TO   CA$35.00  +0.3%  close Nov 4",
     "",
-    "Earnings in the next 2 weeks",
+    "Earnings in the next 30 days",
     "  Thu, Nov 12  NOW  after close  · you hold this",
     "Open the app for the chart.",
     "",
@@ -150,7 +150,7 @@ test("a markets space with no holdings or earnings says so plainly", () => {
   const view = deriveView(marketsState(), initialUi);
   const all = text(spaceDetail(view, null, { ...GLANCE, portfolio: null, earnings: [] }));
   expect(all).toContain("No holdings yet. Import them in the app.");
-  expect(all).toContain("No earnings in the next two weeks.");
+  expect(all).toContain("No earnings in the next 30 days.");
   const paper = text(spaceDetail(view, null, { ...GLANCE, advanced: true, paper: { dayPnl: 12.3, totalPnl: -4 } }));
   expect(paper).toContain("Paper +$12.30 today (−$4.00 total)");
 });

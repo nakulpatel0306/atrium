@@ -209,7 +209,7 @@ const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "sho
 const hourText = (h: string | null) => (h === "bmo" ? "before open" : h === "amc" ? "after close" : "time not set");
 
 // The investing glance: the portfolio's value and day, each list with symbols padded and prices right-aligned, and
-// the next two weeks of earnings.
+// the next 30 days of earnings (the window Atrium fetches).
 function marketsLines(g: MarketsGlance): DetailLine[] {
   const out: DetailLine[] = [];
   const p = g.portfolio;
@@ -234,8 +234,8 @@ function marketsLines(g: MarketsGlance): DetailLine[] {
       out.push(line);
     });
   }
-  out.push(blank, heading("Earnings in the next 2 weeks"));
-  if (!g.earnings.length) out.push(muted("No earnings in the next two weeks."));
+  out.push(blank, heading("Earnings in the next 30 days"));
+  if (!g.earnings.length) out.push(muted("No earnings in the next 30 days."));
   for (const e of g.earnings) {
     const when = dayFmt.format(Date.parse(`${e.date}T12:00:00Z`));
     const line: DetailLine = [{ text: `  ${when}  ${e.key}  ${hourText(e.hour)}` }];

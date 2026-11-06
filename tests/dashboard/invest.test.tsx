@@ -97,6 +97,7 @@ test("Earnings: grouped by day, with time, estimate and a held chip", () => {
       { key: "ATZ.TO", name: "Aritzia", date: "2026-11-13", hour: null, epsEstimate: null, source: "you" as const, held: true },
     ],
     source: "Finnhub earnings calendar · checked Nov 4",
+    days: 30,
   };
   const html = renderToStaticMarkup(<Earnings spaceId="spc_x" view={view} />);
   expect(html).toContain("Thu, Nov 12");
@@ -108,7 +109,7 @@ test("Earnings: grouped by day, with time, estimate and a held chip", () => {
   expect(html.match(/you hold this/g)).toHaveLength(2);
   expect(html).toContain("Finnhub earnings calendar · checked Nov 4");
   clean(html);
-  expect(renderToStaticMarkup(<Earnings spaceId="spc_x" view={{ rows: [], source: "x" }} />)).toContain("No earnings in the next two weeks for your holdings or watchlists.");
+  expect(renderToStaticMarkup(<Earnings spaceId="spc_x" view={{ rows: [], source: "x", days: 30 }} />)).toContain("No earnings in the next 30 days for your holdings or watchlists.");
 });
 
 test("AlertsSimple: indicator alerts are paused while Advanced is off", () => {

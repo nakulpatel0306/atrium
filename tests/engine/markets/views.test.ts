@@ -89,10 +89,12 @@ test("earningsView covers two weeks of holdings and lists; your own date wins", 
     ["NVDA", "2026-11-10", "finnhub", false],
     ["NOW", "2026-11-11", "you", false],
     ["AMZN", "2026-11-12", "finnhub", true],
+    ["AMZN", "2026-11-25", "finnhub", true],
   ]);
+  expect(v.days).toBe(30);
   expect(v.source).toMatch(/^Finnhub earnings calendar · checked [A-Z][a-z]{2} \d{1,2}$/);
   const empty = createSpace(db, { name: "E", kind: "markets", goal: "g" });
-  expect(earningsView(db, empty.id, NOW)).toEqual({ rows: [], source: "No earnings dates yet. Atrium checks Finnhub after each close." });
+  expect(earningsView(db, empty.id, NOW)).toEqual({ rows: [], days: 30, source: "Not checked yet. Atrium checks Finnhub's calendar after each close and as soon as a Finnhub key is added." });
 });
 
 test("glanceView tags closing prices", () => {

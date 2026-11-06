@@ -4,6 +4,7 @@ import { cachedBars } from "./cache";
 import { etDate, lastCompletedSession } from "./calendar";
 import { adjustedCloses, closes } from "./closes";
 import { currentQuote, type MarketData } from "./data";
+import { EARNINGS_CHECKED, EARNINGS_DAYS_AHEAD } from "./eod";
 import { upcomingEarnings } from "./events";
 import { latestFx } from "./fx";
 import { portfolioHealth } from "./health";
@@ -154,9 +155,10 @@ export function listsView(db: Database, data: MarketData, spaceId: string, now: 
 }
 
 export type EarningsRow = { key: string; name: string; date: string; hour: string | null; epsEstimate: number | null; source: "finnhub" | "you"; held: boolean };
-export const EARNINGS_DAYS = 14;
+// The same window the end-of-day job and catch-up fetch from Finnhub, so the tab shows everything Atrium knows.
+export const EARNINGS_DAYS = EARNINGS_DAYS_AHEAD;
 
-export function earningsView(db: Database, spaceId: string, now: number): { rows: EarningsRow[]; source: string } {
+export function earningsView(db: Database, spaceId: string, now: number): { rows: EarningsRow[]; source: string; days: number } {
   const held = new Set(listHoldings(db, spaceId).map((h) => h.key));
   const names = new Map<string, string>();
   for (const h of listHoldings(db, spaceId)) if (h.name) names.set(h.key, h.name);
@@ -172,11 +174,16 @@ export function earningsView(db: Database, spaceId: string, now: number): { rows
     source: e.source,
     held: held.has(e.key),
   }));
-  const checked = keys.length
+  // The last check counts even when it found no dates; older Finnhub rows say when they were fetched.
+  const raw = (db.query("SELECT value FROM settings WHERE key = ?").get(EARNINGS_CHECKED) as { value: string } | null)?.value;
+  const fetched = keys.length
     ? (db.query(`SELECT MAX(fetched_at) AS at FROM market_earnings WHERE source = 'finnhub' AND key IN (${keys.map(() => "?").join(",")})`).get(...keys) as { at: number | null }).at
     : null;
-  const source = checked ? `Finnhub earnings calendar · checked ${closeDayText(checked)}` : "No earnings dates yet. Atrium checks Finnhub after each close.";
-  return { rows, source };
+  const checked = Math.max(raw ? (JSON.parse(raw) as { at: number }).at : 0, fetched ?? 0) || null;
+  const source = checked
+    ? `Finnhub earnings calendar · checked ${closeDayText(checked)}`
+    : "Not checked yet. Atrium checks Finnhub's calendar after each close and as soon as a Finnhub key is added.";
+  return { rows, source, days: EARNINGS_DAYS };
 }
 
 export type GlanceView = {
