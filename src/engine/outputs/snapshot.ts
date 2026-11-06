@@ -3,10 +3,13 @@ import { join } from "node:path";
 import { isEnvPath } from "../envpath";
 
 export type Entry = { size: number; mtimeMs: number; hash: string | null };
-export type Snapshot = { files: Map<string, Entry>; truncated: boolean };
+// `last` is the last path the walk reached, so a capped snapshot says how far it got.
+export type Snapshot = { files: Map<string, Entry>; truncated: boolean; last: string | null };
 export type FileChange = { path: string; change: "created" | "changed" | "deleted"; size: number | null };
 
-export const SNAPSHOT_LIMITS = { hashBytes: 1_048_576, maxFiles: 2_000, maxDepth: 8 };
+// hashTotalBytes caps the reading one snapshot does (a folder of 2,000 one-megabyte files would otherwise be read
+// in full, twice per run); files past it are compared by size and mtime.
+export const SNAPSHOT_LIMITS = { hashBytes: 1_048_576, hashTotalBytes: 64 * 1024 * 1024, maxFiles: 2_000, maxDepth: 8 };
 
 // Dot-entries are tool state (.claude/, .git, .DS_Store), never something an agent made for Nakul, and Atrium
 // never reads a .env file to show it.
@@ -23,6 +26,8 @@ export function snapshotFolder(
   let truncated = false;
   // Too deep only skips that branch; too many files ends the walk.
   let full = false;
+  let hashed = 0;
+  let last: string | null = null;
 
   const walk = (abs: string, rel: string, depth: number) => {
     let names: string[];
@@ -50,12 +55,15 @@ export function snapshotFolder(
           truncated = full = true;
           return;
         }
-        files.set(childRel, { size: st.size, mtimeMs: st.mtimeMs, hash: st.size <= limits.hashBytes ? hashOf(childAbs, st, limits.hashBytes) : null });
+        const hashIt = st.size <= limits.hashBytes && hashed + st.size <= limits.hashTotalBytes;
+        if (hashIt) hashed += st.size;
+        files.set(childRel, { size: st.size, mtimeMs: st.mtimeMs, hash: hashIt ? hashOf(childAbs, st, limits.hashBytes) : null });
+        last = childRel;
       }
     }
   };
   walk(dir, "", 0);
-  return { files, truncated };
+  return { files, truncated, last };
 }
 
 function hashOf(path: string, seen: Stats, cap: number): string | null {
@@ -91,9 +99,20 @@ export function readRegular(path: string, seen: Pick<Stats, "dev" | "ino">, cap:
   }
 }
 
+// The walk's order: names sorted within each folder, a folder's contents before the names after it.
+function walkOrder(x: string, y: string): number {
+  const a = x.split("/");
+  const b = y.split("/");
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i]! < b[i]! ? -1 : 1;
+  return a.length - b.length;
+}
+
 export function diffSnapshots(before: Snapshot, after: Snapshot): FileChange[] {
   const out: FileChange[] = [];
+  // A capped before-walk never saw what lies past its last path, so nothing there can be called new.
+  const seen = (path: string) => !before.truncated || (before.last !== null && walkOrder(path, before.last) <= 0);
   for (const [path, a] of after.files) {
+    if (!seen(path)) continue;
     const b = before.files.get(path);
     if (!b) out.push({ path, change: "created", size: a.size });
     else if (changed(b, a)) out.push({ path, change: "changed", size: a.size });

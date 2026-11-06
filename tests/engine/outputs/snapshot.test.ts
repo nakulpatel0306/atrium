@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { diffSnapshots, readRegular, snapshotFolder } from "../../../src/engine/outputs/snapshot";
+import { diffSnapshots, readRegular, SNAPSHOT_LIMITS, snapshotFolder } from "../../../src/engine/outputs/snapshot";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -111,4 +111,32 @@ test("a file swapped for a link after lstat is never read through the link", () 
   writeFileSync(join(d, "notes.md"), "swapped");
   expect(readRegular(join(d, "notes.md"), seen, 1024)).toBeNull();
   expect(new TextDecoder().decode(readRegular(join(d, "notes.md"), lstatSync(join(d, "notes.md")), 1024)!)).toBe("swapped");
+});
+
+test("hashing stops at a total budget; later files fall back to size and mtime", () => {
+  const d = temp();
+  for (let i = 0; i < 12; i++) put(d, `f${String(i).padStart(2, "0")}.bin`, Buffer.alloc(1_000_000, i));
+  const s = snapshotFolder(d, { limits: { hashTotalBytes: 5_000_000 } });
+  const hashed = [...s.files.values()].filter((e) => e.hash !== null).length;
+  expect(hashed).toBe(5);
+  expect(s.files.size).toBe(12);
+  expect(SNAPSHOT_LIMITS.hashTotalBytes).toBe(64 * 1024 * 1024);
+  // An unhashed file with new bytes, the same size and a new mtime still counts as changed.
+  const before = s;
+  put(d, "f11.bin", Buffer.alloc(1_000_000, 99));
+  const later = new Date(Date.now() + 60_000);
+  utimesSync(join(d, "f11.bin"), later, later);
+  expect(diffSnapshots(before, snapshotFolder(d, { limits: { hashTotalBytes: 5_000_000 } }))).toEqual([{ path: "f11.bin", change: "changed", size: 1_000_000 }]);
+});
+
+test("a truncated before-snapshot doesn't call files past where it stopped new", () => {
+  const d = temp();
+  for (const n of ["a.md", "b.md", "c.md", "d.md"]) put(d, n);
+  put(d, "sub/z.md");
+  const before = snapshotFolder(d, { limits: { maxFiles: 2 } });
+  expect(before.truncated).toBe(true);
+  put(d, "a2.md");
+  const changes = diffSnapshots(before, snapshotFolder(d));
+  // a2.md sorts within what the first walk saw (a.md, a2.md, b.md); c.md, d.md and sub/z.md were never seen.
+  expect(changes).toEqual([{ path: "a2.md", change: "created", size: 1 }]);
 });
