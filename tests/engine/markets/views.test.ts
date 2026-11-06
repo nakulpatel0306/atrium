@@ -116,9 +116,9 @@ test("a sparkline falls back to cached daily bars until Atrium has closes", asyn
 
 test("holdings without a price are named under the total", () => {
   db.query("DELETE FROM market_quotes WHERE key = 'XEQT.TO'").run();
-  const noAv = viewData({ reasonFor: (i) => (i.exchange === "TSX" ? "Canadian prices need a free Alpha Vantage key (Settings → Market data)." : null) });
+  const noAv = viewData({ reasonFor: (i) => (i.exchange === "TSX" ? "Not priced yet. Yahoo Finance fills in during TSX hours (9:30 AM to 4:00 PM ET)." : null) });
   const v = portfolioView(db, noAv, fx.spaceId, NOW);
-  expect(v.left).toBe("1 Canadian holding isn't in the total. Add a free Alpha Vantage key in Settings → Market data to include it.");
+  expect(v.left).toBe("1 Canadian holding isn't in the total yet. Yahoo Finance prices it during TSX hours (9:30 AM to 4:00 PM ET).");
   expect(v.total!.value).toBeCloseTo(10 * 250 * FX, 2);
   expect(portfolioView(db, viewData(), fx.spaceId, NOW).left).toBe("1 holding has no price yet and isn't in the total.");
 });

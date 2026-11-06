@@ -122,7 +122,7 @@ test("refresh is throttled to once per 10 minutes per key", async () => {
 
 test("a TSX key makes no network call and says when prices update", async () => {
   const { data, calls } = rig();
-  expect(await refreshSymbol(db, data, "XEQT.TO", NOW)).toEqual({ refreshed: false, note: "Canadian prices update after the close from Alpha Vantage." });
+  expect(await refreshSymbol(db, data, "XEQT.TO", NOW)).toEqual({ refreshed: false, note: "Canadian prices refresh every 3 minutes during TSX hours." });
   expect(calls).toEqual([]);
   expect(symbolView(db, data, fx.spaceId, "XEQT.TO", NOW)).toMatchObject({ tv: "TSX:XEQT", kind: "etf" });
   expect(symbolView(db, data, fx.spaceId, "AMZN", NOW).kind).toBe("stock");

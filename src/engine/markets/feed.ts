@@ -3,7 +3,7 @@ import { advancedSpaces, anyAdvanced } from "./advanced";
 import { bus } from "../events";
 import { saveQuotes } from "./cache";
 import { recordCloses } from "./closes";
-import { etClock, etDate, usSession, type Session } from "./calendar";
+import { etClock, etDate, tsxNextOpen, usSession, type Session } from "./calendar";
 import type { MarketData } from "./data";
 import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } from "./instrument";
 import type { Quote, QuoteStream } from "./providers/types";
@@ -110,6 +110,8 @@ export function createFeed(deps: {
   let streamKeys = "";
   let lastKeys = "";
   let barsDate: string | null = null;
+  // When Yahoo's TSX prices were last fetched; they keep the poll cadence on days New York is closed.
+  let torontoAt: number | null = null;
   let mainTimer: ReturnType<typeof setTimeout> | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let debounce: ReturnType<typeof setTimeout> | null = null;
@@ -191,10 +193,16 @@ export function createFeed(deps: {
     });
     const streamer = data.streamer();
     const canStream = !!streamer?.stream && !streamBlocked;
+    // Only what the streamer prices can stream; the rest (TSX listings from Yahoo) is polled on every tick.
+    const streamable = pollable.filter((i) => data.providerFor(i)?.id === streamer?.id);
+    const polledOnly = pollable.filter((i) => !streamable.includes(i));
+    // Yahoo routes a listing only while Toronto is open, so this follows the TSX calendar, not New York's.
+    const toronto = polledOnly.filter((i) => data.providerFor(i)?.id === "yahoo");
     const next = feedMode({
       session,
       hasSymbols: tracked.length > 0,
-      ready: status.us.ready,
+      // Yahoo needs no key, so TSX prices keep coming even before a US source is set up.
+      ready: status.us.ready || toronto.length > 0,
       viewers,
       strategyActive: deps.strategyActive(),
       canStream,
@@ -215,20 +223,37 @@ export function createFeed(deps: {
         const closesAt = session.closesAt;
         const date = etDate(closesAt);
         // Prices from the last minute of the session are that day's close, kept as Atrium's own history.
+        // Yahoo's price isn't a close here: the TSX can close later than New York (on a US early close).
         for (const q of await fetchQuotes(pollable)) {
-          if (q.at >= closesAt - 60_000) recordCloses(db, q.key, [{ date, close: q.price, adjClose: null, source: q.source }]);
+          if (q.at >= closesAt - 60_000 && q.source !== "yahoo") recordCloses(db, q.key, [{ date, close: q.price, adjClose: null, source: q.source }]);
+        }
+        if (toronto.length) torontoAt = at;
+      }
+      // New York closed (a US holiday, an early close) while Toronto trades: TSX prices keep the same cadence.
+      let torontoDue = false;
+      if (toronto.length) {
+        reason = `Checking TSX prices every 3 minutes · ${reason.replace(/^Stopped · /, "")}`;
+        torontoDue = torontoAt === null || at - torontoAt >= POLL_MS || trackedChanged;
+        if (torontoDue) {
+          await fetchQuotes(toronto);
+          torontoAt = at;
         }
       }
       if (tracked.length) await deps.jobs?.runDue(at);
       if (!tracked.length) clearMain();
-      else schedule(Math.min(session.nextOpen - at, OFF_RECHECK_MS), trigger !== "timer" && prev === "off");
+      else if (toronto.length) schedule(torontoAt! + POLL_MS - at, !torontoDue);
+      else {
+        const canadian = tracked.some((i) => i.exchange === "TSX" || i.exchange === "TSXV");
+        const wake = Math.min(session.nextOpen, canadian ? tsxNextOpen(at) : Infinity);
+        schedule(Math.min(wake - at, OFF_RECHECK_MS), trigger !== "timer" && prev === "off");
+      }
       return;
     }
 
     const max = streamer?.maxStreamSymbols ?? 0;
     let stale: Instrument[] = [];
     if (mode === "stream" && streamer?.stream) {
-      const wanted = pollable.slice(0, max);
+      const wanted = streamable.slice(0, max);
       const wantedKeys = wanted.map(instrumentKey).join(",");
       if (stream && trigger === "timer") {
         const quiet = (i: Instrument) => at - (tickAt.get(instrumentKey(i)) ?? streamSince);
@@ -259,8 +284,9 @@ export function createFeed(deps: {
 
     const fresh = prev === "off" || trigger === "timer" || trackedChanged;
     if (fresh) {
-      const list = mode === "stream" && prev !== "off" && !trackedChanged ? [...stale, ...pollable.slice(max)] : pollable;
+      const list = mode === "stream" && prev !== "off" && !trackedChanged ? [...stale, ...streamable.slice(max), ...polledOnly] : pollable;
       await fetchQuotes(list);
+      if (toronto.length) torontoAt = at;
     }
     const today = etDate(at);
     if (barsDate !== today) {

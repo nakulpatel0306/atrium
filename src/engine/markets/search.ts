@@ -37,8 +37,8 @@ export function finnhubHits(rows: { description: string; symbol: string; type: s
 
 const PREFIXED = /^(TSX|TSXV|NEO):([A-Z0-9][A-Z0-9.\-]{0,14})$/;
 const TYPED_NOTE: Partial<Record<Exchange, string>> = {
-  TSX: "Not in Finnhub's search. Atrium will price it from Alpha Vantage after the close.",
-  TSXV: "Not in Finnhub's search. Atrium will price it from Alpha Vantage after the close.",
+  TSX: "Not in Finnhub's search. Atrium prices it from Yahoo Finance during TSX hours.",
+  TSXV: "Not in Finnhub's search. Atrium prices it from Yahoo Finance during TSX hours.",
   NEO: "Not in Finnhub's search. No free source prices NEO listings.",
 };
 

@@ -261,10 +261,22 @@ test("no unlicensed sources anywhere in the source", () => {
     readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : /\.(ts|tsx)$/.test(e.name) ? [join(dir, e.name)] : []));
   const files = walk(resolve(import.meta.dir, "../../src"));
   expect(files.length).toBeGreaterThan(50);
+  // Yahoo's public chart feed is allowed in one place only (the 2026-11-06 design addendum): the keyless intraday
+  // TSX provider, which names exactly one Yahoo URL, its chart endpoint. No other yahoo.com host appears anywhere.
+  const yahooFile = resolve(import.meta.dir, "../../src/engine/markets/providers/yahoo.ts");
   for (const f of files) {
     const text = readFileSync(f, "utf8");
-    for (const b of banned) expect(`${f}: ${b}: ${text.includes(b)}`).toBe(`${f}: ${b}: false`);
+    if (f === yahooFile) {
+      expect(text.match(/yahoo\.com/g)).toHaveLength(1);
+      expect(text).toContain('const API = "https://query1.finance.yahoo.com/v8/finance/chart";');
+      for (const b of banned.filter((x) => !["finance.yahoo.com", "query1.finance"].includes(x))) expect(`${f}: ${b}: ${text.includes(b)}`).toBe(`${f}: ${b}: false`);
+      continue;
+    }
+    for (const b of [...banned, "yahoo.com"]) expect(`${f}: ${b}: ${text.includes(b)}`).toBe(`${f}: ${b}: false`);
   }
+  // Only the market data router builds it, and that only routes Canadian listings to it.
+  const importers = files.filter((f) => /from "(?:[^"]*\/providers|\.)\/yahoo"/.test(readFileSync(f, "utf8")));
+  expect(importers.map((f) => f.slice(f.indexOf("/src/") + 1))).toEqual(["src/engine/markets/data.ts"]);
 });
 
 test("only TradingView's widget is loaded from outside", async () => {

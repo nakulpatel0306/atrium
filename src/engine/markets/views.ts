@@ -9,14 +9,14 @@ import { latestFx } from "./fx";
 import { portfolioHealth } from "./health";
 import { listHoldings } from "./holdings";
 import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } from "./instrument";
-import { currencyOfKey } from "./labels";
+import { CA_NOT_PRICED, currencyOfKey } from "./labels";
 import { listItems, listLists, type WatchList } from "./lists";
 import { getMeta } from "./meta";
 import { paperState } from "./paper";
 import { portfolioDay, positionsFor } from "./portfolio";
 import type { Quote } from "./providers/types";
 import { latestWriteups, type Writeup } from "./research";
-import { closeDayText, quoteSourced, type Sourced } from "./sourced";
+import { closeDayText, priceTag, quoteSourced, type Sourced } from "./sourced";
 import { tvSymbol } from "./tradingview";
 
 // The simple investing views. SQLite only: cached quotes, closes, holdings and earnings, never the network.
@@ -132,14 +132,15 @@ export function portfolioView(db: Database, data: MarketData, spaceId: string, n
   };
 }
 
-const CANADIAN = /Alpha Vantage/;
+// Keyed on the reason itself: a Canadian holding with no price yet is waiting for the TSX to open, whether or not
+// there's an Alpha Vantage key.
 function leftOut(rows: PriceRow[]): string | null {
   const unpriced = rows.filter((r) => !r.price);
   if (!unpriced.length) return null;
-  const ca = unpriced.filter((r) => r.missing && CANADIAN.test(r.missing)).length;
+  const ca = unpriced.filter((r) => r.missing === CA_NOT_PRICED).length;
   const other = unpriced.length - ca;
   const parts: string[] = [];
-  if (ca) parts.push(ca === 1 ? "1 Canadian holding isn't in the total. Add a free Alpha Vantage key in Settings → Market data to include it." : `${ca} Canadian holdings aren't in the total. Add a free Alpha Vantage key in Settings → Market data to include them.`);
+  if (ca) parts.push(ca === 1 ? "1 Canadian holding isn't in the total yet. Yahoo Finance prices it during TSX hours (9:30 AM to 4:00 PM ET)." : `${ca} Canadian holdings aren't in the total yet. Yahoo Finance prices them during TSX hours (9:30 AM to 4:00 PM ET).`);
   if (other) parts.push(other === 1 ? "1 holding has no price yet and isn't in the total." : `${other} holdings have no price yet and aren't in the total.`);
   return parts.join(" ");
 }
@@ -187,7 +188,6 @@ export type GlanceView = {
   paper: { dayPnl: number; totalPnl: number } | null;
 };
 
-const tagOf = (p: Sourced | null): string | null => (!p || p.tone === "live" ? null : p.tone === "demo" ? "demo" : `close ${closeDayText(p.asOf)}`);
 
 export function glanceView(db: Database, data: MarketData, spaceId: string, now: number): GlanceView {
   const p = portfolioView(db, data, spaceId, now);
@@ -195,7 +195,7 @@ export function glanceView(db: Database, data: MarketData, spaceId: string, now:
     portfolio: p.empty ? null : { totalCad: p.total?.value ?? null, dayCad: p.dayCad, dayPct: p.dayPct, dayLabel: p.dayLabel, mix: p.mix },
     lists: listsView(db, data, spaceId, now).lists.map((l) => ({
       name: l.name,
-      rows: l.rows.map((r) => ({ key: r.key, price: r.price?.value ?? null, ccy: currencyOfKey(r.key), dayPct: r.dayPct, tag: tagOf(r.price) })),
+      rows: l.rows.map((r) => ({ key: r.key, price: r.price?.value ?? null, ccy: currencyOfKey(r.key), dayPct: r.dayPct, tag: r.price ? priceTag(r.price, now) : null })),
     })),
     earnings: earningsView(db, spaceId, now).rows.map((e) => ({ key: e.key, date: e.date, hour: e.hour, held: e.held })),
     advanced: isAdvanced(db, spaceId),

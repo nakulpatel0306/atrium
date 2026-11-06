@@ -1,6 +1,7 @@
 import { KeyRound, PlugZap, Radio } from "lucide-react";
 import { useState } from "react";
 import type { DataStatus } from "../../engine/markets/data";
+import type { Quote } from "../../engine/markets/providers/types";
 import { del, post, put } from "../api";
 import { absolute, money } from "../format";
 import { useMarketDataSettings } from "../markets";
@@ -13,6 +14,10 @@ const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }
   { id: "finnhub", label: "Finnhub", covers: "US stocks and ETFs. Real-time quotes, symbol search, earnings dates and the news Claude reads. Atrium keeps its own daily closes from these prices." },
   { id: "demo", label: "Demo", covers: "Made-up prices for every market, to try Atrium out. Every price is labelled Demo data." },
 ];
+
+// Once a key is saved there's nothing left to add.
+export const tsxSourceHint = (hasAlphaVantage: boolean): string =>
+  `TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). ${hasAlphaVantage ? "Alpha Vantage supplies the official closing prices." : "Add a free Alpha Vantage key for official closing prices."}`;
 
 type KeyProvider = "finnhub" | "alphavantage" | "tiingo";
 const KEY_FORMS: { id: KeyProvider; label: string; need: string; fields: { name: string; label: string }[]; help: string }[] = [
@@ -28,7 +33,7 @@ const KEY_FORMS: { id: KeyProvider; label: string; need: string; fields: { name:
     label: "Alpha Vantage",
     need: "Optional · Canadian prices",
     fields: [{ name: "key", label: "Key" }],
-    help: "Adds your TSX and TSX-V holdings to the portfolio total, at end-of-day prices. Without it they still show TradingView's chart. The free key allows 25 requests a day, so Canadian prices refresh once after the close.",
+    help: "Adds the official end-of-day close for your TSX and TSX-V holdings, and their charts. The free key allows 25 requests a day, so Canadian closes refresh once after the close.",
   },
   {
     id: "tiingo",
@@ -124,7 +129,7 @@ function AlpacaRemoval() {
   );
 }
 
-type Probe = { ok: boolean; message: string; sample?: { key: string; price: number; at: number; freshness: "live" | "eod" | "demo" } };
+type Probe = { ok: boolean; message: string; sample?: { key: string; price: number; at: number; freshness: Quote["freshness"]; source: Quote["source"] } };
 
 export function Settings() {
   const s = useMarketDataSettings();
@@ -182,6 +187,7 @@ export function Settings() {
               {s.feed.reason}
             </span>
           </div>
+          <p className="hint">{tsxSourceHint(s.data.keys.alphavantage)}</p>
           <div className="mk-form">
             <button className="btn" onClick={() => void runTest()} disabled={testing}>
               <PlugZap />
@@ -198,7 +204,7 @@ export function Settings() {
                   {test[k].sample && (
                     <>
                       <span className="num">{money(test[k].sample!.price, k === "us" ? "USD" : "CAD")}</span>
-                      <Freshness quote={{ key: test[k].sample!.key, price: test[k].sample!.price, prevClose: null, at: test[k].sample!.at, source: s.data.usProvider === "demo" ? "demo" : k === "us" ? s.data.usProvider : "alphavantage", freshness: test[k].sample!.freshness }} missing={null} />
+                      <Freshness quote={{ key: test[k].sample!.key, price: test[k].sample!.price, prevClose: null, at: test[k].sample!.at, source: test[k].sample!.source, freshness: test[k].sample!.freshness }} missing={null} />
                       <span className="faint" title={absolute(test[k].sample!.at)}>
                         {absolute(test[k].sample!.at)}
                       </span>

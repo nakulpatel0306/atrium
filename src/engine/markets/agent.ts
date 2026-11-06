@@ -199,7 +199,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     if (live.length && session.open) await data.quotes(live).catch(() => null);
     const quotes = cachedQuotes(db, [...instruments.keys()]);
     const line = (key: string, q: Quote | undefined) =>
-      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} ${dayOf(q.at, at, session.open)}` : ""} (${freshnessText(q, at)}, ${etClock(q.at)})` : `${key}: no price yet`;
+      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} ${dayOf(q.at, at, session.open)}` : ""} (${freshnessText(q, at)}${q.source === "yahoo" ? "" : `, ${etClock(q.at)}`})` : `${key}: no price yet`;
 
     const out: string[] = [];
     out.push(`Market data as of ${etClock(at)} on ${etDate(at)}. US market ${session.open ? "open" : session.holiday ? `closed (${session.holiday})` : "closed"}.`);

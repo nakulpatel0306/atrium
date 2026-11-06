@@ -12,7 +12,8 @@ export const TONE_RANK: Tone[] = ["live", "official", "entered", "delayed", "est
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 export const closeDayText = (ms: number): string => dayFmt.format(ms);
 
-// With `now`, a live quote that has gone stale (after the close, or a quiet symbol) is labelled delayed.
+// With `now`, a live quote that has gone stale (after the close, a quiet symbol, a Yahoo price not fetched lately)
+// is labelled delayed.
 export function quoteSourced(q: Quote, now?: number): Sourced {
   const tone: Tone = q.freshness === "live" ? (isStaleLive(q, now) ? "delayed" : "live") : q.freshness === "eod" ? "delayed" : "demo";
   return { value: q.price, source: freshnessText(q, now), asOf: q.at, tone };
@@ -22,6 +23,24 @@ const etDayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York"
 // The ET calendar date of an instant, "2026-11-04".
 export const etDay = (ms: number): string => etDayFmt.format(ms);
 
+const clockFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+const hhmmFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+// The short tag beside a day change: none for a live price; "as of 12:18 PM" for a stale price from today's
+// session; otherwise what it is ("close Nov 6", or Yahoo's "last price Nov 6", which is never called a close).
+export function priceTag(s: Sourced<unknown>, now?: number): string | null {
+  if (s.tone === "live") return null;
+  if (s.tone === "demo") return "demo";
+  const today = now !== undefined && etDay(s.asOf) === etDay(now);
+  if (s.source.startsWith("Yahoo Finance · last price")) return today ? `as of ${clockFmt.format(s.asOf)}` : `last price ${closeDayText(s.asOf)}`;
+  // A stale live price from earlier in today's session; an official close always reads as one.
+  if (s.tone === "delayed" && today && !s.source.includes(" · close of ") && hhmmFmt.format(s.asOf) < "15:59") return `as of ${clockFmt.format(s.asOf)}`;
+  return `close ${closeDayText(s.asOf)}`;
+}
+
+// A tag that means the price is an earlier session's, not today's.
+export const isEarlierDay = (tag: string | null): boolean => !!tag && (tag.startsWith("close ") || tag.startsWith("last price "));
+
 export const worstTone = (tones: Tone[]): Tone =>
   tones.reduce<Tone>((w, t) => (TONE_RANK.indexOf(t) > TONE_RANK.indexOf(w) ? t : w), "live");
 
@@ -29,7 +48,7 @@ export const worstTone = (tones: Tone[]): Tone =>
 function shortSource(s: Sourced<unknown>): string {
   if (s.tone === "live") return "real-time";
   if (s.tone === "estimate") return "estimate";
-  const close = s.source.match(/^(?:Alpha Vantage|Tiingo|Alpaca|Finnhub) · (close of .+)$/);
+  const close = s.source.match(/^(?:Alpha Vantage|Tiingo|Alpaca|Finnhub|Yahoo Finance) · (close of .+|last price .+)$/);
   return close ? close[1]! : s.source;
 }
 

@@ -13,7 +13,7 @@ import { currencyOfKey } from "./labels";
 import { getMeta } from "./meta";
 import type { Quote } from "./providers/types";
 import { etInstant } from "./calendar";
-import { closeDayText, etDay, mixLabel, quoteSourced, type Sourced, type Tone } from "./sourced";
+import { closeDayText, etDay, isEarlierDay, mixLabel, priceTag, quoteSourced, type Sourced, type Tone } from "./sourced";
 
 // The DB glue for health: cached prices only (through currentQuote, so a demo price never passes for a real one),
 // the latest Bank of Canada rate, saved fund files and metadata. Nothing here touches the network.
@@ -132,11 +132,11 @@ function dayOf(db: Database, all: PricedPosition[], now: number): PortfolioDay |
     .map((p) => ({
       key: p.key,
       dayPct: (p.price!.value / p.prevClose! - 1) * 100,
-      tag: p.price!.tone === "live" ? null : p.freshness === "demo" ? "demo" : `close ${closeDayText(p.quoteAt!)}`,
+      tag: priceTag(p.price!, now),
     }))
     .sort((a, b) => Math.abs(b.dayPct) - Math.abs(a.dayPct))
     .slice(0, 3);
-  const closes = new Set(positions.filter((p) => p.price!.tone === "delayed").map((p) => p.key)).size;
+  const closes = new Set(positions.filter((p) => isEarlierDay(priceTag(p.price!, now))).map((p) => p.key)).size;
   const dayLabel = h.dayOf === etDay(now) ? "today" : `on ${sessionFmt.format(Date.parse(`${h.dayOf}T12:00:00Z`))}`;
   return { dayPct: h.dayPct, dayCad: h.dayCad.value, mix: mix.text, tone: mix.tone, closes, dayLabel, movers };
 }

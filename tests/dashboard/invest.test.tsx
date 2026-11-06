@@ -152,7 +152,7 @@ test("SearchResults: US first, a typed TSX hit with its note, Open and Add on ea
   const result = {
     hits: [
       { key: "SHOP", symbol: "SHOP", exchange: "US" as const, name: "Shopify Inc", type: "Common Stock", note: null },
-      { key: "XEQT.TO", symbol: "XEQT", exchange: "TSX" as const, name: "XEQT.TO", type: "typed", note: "Not in Finnhub's search. Atrium will price it from Alpha Vantage after the close." },
+      { key: "XEQT.TO", symbol: "XEQT", exchange: "TSX" as const, name: "XEQT.TO", type: "typed", note: "Not in Finnhub's search. Atrium prices it from Yahoo Finance during TSX hours." },
     ],
     note: null,
   };
@@ -160,7 +160,7 @@ test("SearchResults: US first, a typed TSX hit with its note, Open and Add on ea
   const html = renderToStaticMarkup(<SearchResults result={result} lists={lists} active={0} onOpen={() => {}} onAdd={() => {}} />);
   expect(html).toContain('role="listbox"');
   expect(html.indexOf("SHOP")).toBeLessThan(html.indexOf("XEQT.TO"));
-  expect(html).toContain("Not in Finnhub&#x27;s search. Atrium will price it from Alpha Vantage after the close.");
+  expect(html).toContain("Not in Finnhub&#x27;s search. Atrium prices it from Yahoo Finance during TSX hours.");
   expect(html.match(/>Open</g)).toHaveLength(2);
   expect(html.match(/>Add to Holdings</g)).toHaveLength(2);
   expect(html).toContain(">US<");
@@ -178,11 +178,12 @@ test("nextSearch only sends trimmed, changed queries", () => {
 
 test("Portfolio says which holdings the total leaves out, and a Canadian row says how to include it", () => {
   const view = portfolioView(db, viewData(), fx.spaceId, NOW);
-  const row = { ...view.holdings.find((h) => h.key === "XEQT.TO")!, price: null, dayPct: null, missing: "Canadian prices need a free Alpha Vantage key (Settings → Market data)." };
-  const left = "1 Canadian holding isn't in the total. Add a free Alpha Vantage key in Settings → Market data to include it.";
+  const row = { ...view.holdings.find((h) => h.key === "XEQT.TO")!, price: null, dayPct: null, missing: "Not priced yet. Yahoo Finance fills in during TSX hours (9:30 AM to 4:00 PM ET)." };
+  const left = "1 Canadian holding isn't in the total yet. Yahoo Finance prices it during TSX hours (9:30 AM to 4:00 PM ET).";
   const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={{ ...view, holdings: [row], left }} />);
-  expect(html).toContain("1 Canadian holding isn&#x27;t in the total. Add a free Alpha Vantage key in Settings → Market data to include it.");
-  expect(html).toContain("Add Alpha Vantage to include in totals");
+  expect(html).toContain("1 Canadian holding isn&#x27;t in the total yet. Yahoo Finance prices it during TSX hours (9:30 AM to 4:00 PM ET).");
+  expect(html).toContain("Priced during TSX hours");
+  expect(html).not.toContain("Alpha Vantage");
 });
 
 // ---- Task 15: the Symbol page ----
@@ -292,4 +293,10 @@ test("Portfolio says once what TradingView sees, since its rows show TradingView
   const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={portfolioView(db, viewData(), fx.spaceId, NOW)} />);
   expect(html.split("TradingView sees which tickers you view, including the ones you hold. It never sees how much you own or what it&#x27;s worth.")).toHaveLength(2);
   expect(html).not.toContain("never your holdings");
+});
+
+test("the Settings TSX hint asks for an Alpha Vantage key only when there isn't one", async () => {
+  const { tsxSourceHint } = await import("../../src/dashboard/components/Settings");
+  expect(tsxSourceHint(false)).toBe("TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Add a free Alpha Vantage key for official closing prices.");
+  expect(tsxSourceHint(true)).toBe("TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Alpha Vantage supplies the official closing prices.");
 });

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { currencyOfKey } from "../../../engine/markets/labels";
+import { CA_NOT_PRICED, currencyOfKey } from "../../../engine/markets/labels";
 import type { PriceRow as Row } from "../../../engine/markets/views";
 import { priceText, signedPct, toneOf } from "../../simple";
 import { Sparkline } from "./Sparkline";
@@ -29,7 +29,7 @@ export function PriceRow({ row, onOpen, extra, actions }: { row: Row; onOpen: ()
             </>
           ) : (
             <span className="inv-missing" title={row.missing ?? undefined}>
-              {row.missing && /Alpha Vantage/.test(row.missing) ? "Add Alpha Vantage to include in totals" : "No price yet"}
+              {row.missing === CA_NOT_PRICED ? "Priced during TSX hours" : "No price yet"}
             </span>
           )}
         </span>

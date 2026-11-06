@@ -141,7 +141,7 @@ function failureNote(e: unknown, secrets: string[]): string {
 export async function refreshSymbol(db: Database, data: MarketData, key: string, now: number): Promise<{ refreshed: boolean; note: string | null }> {
   const i = parseInstrumentKey(key);
   if (!i) return { refreshed: false, note: null };
-  if (i.exchange !== "US") return { refreshed: false, note: data.reasonFor(i) ?? "Canadian prices update after the close from Alpha Vantage." };
+  if (i.exchange !== "US") return { refreshed: false, note: data.reasonFor(i) ?? "Canadian prices refresh every 3 minutes during TSX hours." };
   const k = instrumentKey(i);
   const last = db.query("SELECT value FROM settings WHERE key = ?").get(refreshedKey(k)) as { value: string } | null;
   if (last && now - Number(last.value) < REFRESH_EVERY_MS) return { refreshed: false, note: null };
