@@ -99,9 +99,9 @@ export function makeState(over: Partial<State> = {}): State {
     rules: [],
     neverAsk: [],
     activity: [
-      { id: "act_1", spaceId: ids.atrium, actor: "claude", message: "finished Fix login redirect", createdAt: now - 2 * min },
-      { id: "act_2", spaceId: ids.jobHunt, actor: "you", message: "added Summarize postings", createdAt: now - 15 * min },
-      { id: "act_3", spaceId: null, actor: "atrium", message: "Overnight mode off", createdAt: now - 90 * min },
+      { id: "act_1", spaceId: ids.atrium, taskId: null, actor: "claude", message: "finished Fix login redirect", createdAt: now - 2 * min },
+      { id: "act_2", spaceId: ids.jobHunt, taskId: null, actor: "you", message: "added Summarize postings", createdAt: now - 15 * min },
+      { id: "act_3", spaceId: null, taskId: null, actor: "atrium", message: "Overnight mode off", createdAt: now - 90 * min },
     ],
     briefing: { greeting: "Good evening, Nakul.", summary: "2 tasks finished across 1 space.", markets: null },
     power: { source: "ac", overnight: false, keepAwake: false },

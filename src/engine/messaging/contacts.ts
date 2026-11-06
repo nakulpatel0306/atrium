@@ -66,6 +66,6 @@ export async function autoLookup(db: Database, actionId: string): Promise<void> 
     await lookup(db, actionId);
   } catch (e) {
     const why = e instanceof MessagingProblem ? e.message : `${(e as Error).message}.`;
-    logActivity(db, action.spaceId, "atrium", `Couldn't look up ${action.toName} in Contacts. ${why}`);
+    logActivity(db, action.spaceId, "atrium", `Couldn't look up ${action.toName} in Contacts. ${why}`, { taskId: action.taskId });
   }
 }

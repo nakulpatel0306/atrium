@@ -214,12 +214,12 @@ export function resolveApproval(
       for (const child of listTasks(db, { status: ["queued", "running", "blocked", "failed"] })) {
         if (child.parentTaskId !== parentId) continue;
         setTaskStatus(db, child.id, "done");
-        logActivity(db, a.spaceId, "atrium", `Skipped: you already decided. ${child.title}`);
+        logActivity(db, a.spaceId, "atrium", `Skipped: you already decided. ${child.title}`, { taskId: child.id });
       }
     }
-    if (rule) logActivity(db, a.spaceId, "atrium", `Approved by your rule "${rule.label}": ${a.title}`);
-    else if (a.kind === "alert") logActivity(db, a.spaceId, "you", `Dismissed: ${a.title}`);
-    else logActivity(db, a.spaceId, "you", decisionLine(db, a, decision));
+    if (rule) logActivity(db, a.spaceId, "atrium", `Approved by your rule "${rule.label}": ${a.title}`, { taskId: a.taskId });
+    else if (a.kind === "alert") logActivity(db, a.spaceId, "you", `Dismissed: ${a.title}`, { taskId: a.taskId });
+    else logActivity(db, a.spaceId, "you", decisionLine(db, a, decision), { taskId: a.taskId });
     return a;
   });
   const a = resolve();

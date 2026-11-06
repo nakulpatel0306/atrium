@@ -64,6 +64,15 @@ CREATE TABLE IF NOT EXISTS messages (
   body TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+-- Files a delete still has to remove once its rows are gone; boot finishes any a crash left behind.
+CREATE TABLE IF NOT EXISTS pending_deletes (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('folder','transcript','file','clone')),
+  path TEXT NOT NULL,
+  root TEXT NOT NULL,
+  clone_id TEXT,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -236,6 +245,9 @@ function migrate(db: Database) {
     db.exec("ALTER TABLE tasks ADD COLUMN outcome TEXT CHECK (outcome IS NULL OR outcome IN ('done','partial','couldnt','unknown'))");
   }
   if (!has("tasks", "outcome_reason")) db.exec("ALTER TABLE tasks ADD COLUMN outcome_reason TEXT");
+  // The task an activity line is about, so the feed can fold one task's routine lines together.
+  if (!has("activity", "task_id")) db.exec("ALTER TABLE activity ADD COLUMN task_id TEXT REFERENCES tasks(id)");
+  db.exec("CREATE INDEX IF NOT EXISTS activity_space ON activity(space_id, created_at)");
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
   migrateWatchlists(db);

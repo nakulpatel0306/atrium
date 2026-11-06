@@ -22,15 +22,18 @@ export const bus = {
 export type ActivityRow = {
   id: string;
   spaceId: string | null;
+  // Null for lines that aren't about one task, and for lines logged before tasks were recorded.
+  taskId: string | null;
   actor: string;
   message: string;
   createdAt: number;
 };
 
-export function logActivity(db: Database, spaceId: string | null, actor: string, message: string): void {
-  db.query("INSERT INTO activity (id, space_id, actor, message, created_at) VALUES (?, ?, ?, ?, ?)").run(
+export function logActivity(db: Database, spaceId: string | null, actor: string, message: string, about: { taskId?: string | null } = {}): void {
+  db.query("INSERT INTO activity (id, space_id, task_id, actor, message, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(
     newId("act"),
     spaceId,
+    about.taskId ?? null,
     actor,
     message,
     Date.now(),
@@ -44,12 +47,13 @@ export function listActivity(db: Database, opts: { spaceId?: string; limit?: num
   // rowid breaks ties between rows logged in the same millisecond
   const rows = db
     .query(
-      `SELECT id, space_id, actor, message, created_at FROM activity ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      `SELECT id, space_id, task_id, actor, message, created_at FROM activity ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`,
     )
-    .all(...params) as { id: string; space_id: string | null; actor: string; message: string; created_at: number }[];
+    .all(...params) as { id: string; space_id: string | null; task_id: string | null; actor: string; message: string; created_at: number }[];
   return rows.map((r) => ({
     id: r.id,
     spaceId: r.space_id,
+    taskId: r.task_id,
     actor: r.actor,
     message: r.message,
     createdAt: r.created_at,
