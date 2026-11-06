@@ -8,6 +8,8 @@ export type PerfResult = {
   start: string;
   end: string;
   portfolioPct: number | null;
+  // Why there's no portfolio number, or which holdings a number leaves out; null when it covers everything.
+  portfolioNote: string | null;
   benchmarks: { key: string; pct: number | null; reason: string | null }[];
   // Per leg: adjusted closes where Atrium has them (total return), raw closes otherwise; "mixed" when legs differ.
   basis: "total return" | "price" | "mixed";
@@ -73,26 +75,43 @@ function leg(key: string, ccy: "CAD" | "USD", i: { closes: (key: string, from: s
   return { key, startCad: s, endCad: e, endDate: last!.date, adjusted };
 }
 
+// valueCad is each holding's value now, from its current price: it weighs a holding with no closes at all.
 export function performance(
-  i: { holdings: { key: string; quantity: number; listingCcy: "CAD" | "USD" }[]; closes: (key: string, from: string) => Close[]; fxOn: (date: string) => number | null; today: string },
+  i: { holdings: { key: string; quantity: number; listingCcy: "CAD" | "USD"; valueCad?: number | null }[]; closes: (key: string, from: string) => Close[]; fxOn: (date: string) => number | null; today: string },
   period: Period,
   benchmarks = ["SPY", "XEQT.TO"],
 ): PerfResult {
   const start = periodStart(period, i.today);
   const qty = new Map<string, number>();
   const ccy = new Map<string, "CAD" | "USD">();
+  const current = new Map<string, number | null>();
   for (const h of i.holdings) {
     qty.set(h.key, (qty.get(h.key) ?? 0) + h.quantity);
     ccy.set(h.key, h.listingCcy);
+    const v = h.valueCad ?? null;
+    current.set(h.key, current.has(h.key) ? (current.get(h.key) === null || v === null ? null : current.get(h.key)! + v) : v);
   }
   const legs = [...qty.keys()].map((k) => leg(k, ccy.get(k)!, i, start, i.today, period));
   const missing = legs.filter((l): l is Extract<Leg, { reason: string }> => "reason" in l).map((l) => ({ key: l.key, reason: l.reason }));
   const used = legs.filter((l): l is Extract<Leg, { startCad: number }> => "startCad" in l);
   const usedNow = used.reduce((a, l) => a + qty.get(l.key)! * l.endCad, 0);
-  const missingNow = legs.filter((l) => "reason" in l).reduce((a, l) => a + qty.get(l.key)! * (l.endCad ?? 0), 0);
+  // Shares are weighed by today's value; a leg with neither a price nor a close can't be weighed at all, so the
+  // missing share is unknown and there's no portfolio number rather than one from whatever happens to have history.
+  const weight = (l: Leg): number | null => current.get(l.key) ?? ("endCad" in l && l.endCad !== null ? qty.get(l.key)! * l.endCad : null);
+  const missingLegs = legs.filter((l) => "reason" in l);
+  const weights = legs.map(weight);
+  const known = weights.every((w) => w !== null);
+  const totalNow = known ? weights.reduce<number>((a, w) => a + w!, 0) : 0;
+  const missingNow = known ? missingLegs.reduce((a, l) => a + weight(l)!, 0) : 0;
   const startValue = used.reduce((a, l) => a + qty.get(l.key)! * l.startCad, 0);
-  const tooMuchMissing = missingNow > MISSING_SHARE * (usedNow + missingNow);
+  const tooMuchMissing = !known || missingNow > MISSING_SHARE * totalNow;
   const portfolioPct = used.length && startValue > 0 && !tooMuchMissing ? (usedNow / startValue - 1) * 100 : null;
+  let portfolioNote: string | null = null;
+  if (legs.length && portfolioPct === null) portfolioNote = `Not enough history yet: Atrium has closes for ${used.length} of ${legs.length} holdings.`;
+  else if (missingLegs.length) {
+    const share = Math.max(1, Math.round((missingNow / totalNow) * 100));
+    portfolioNote = `Leaves out ${missingLegs.map((l) => l.key).join(", ")} (${share}% of the portfolio): not enough history yet.`;
+  }
   const bench = benchmarks.map((k) => {
     const l = leg(k, currencyOfKey(k), i, start, i.today, period);
     return "reason" in l
@@ -109,6 +128,7 @@ export function performance(
     start,
     end: ends[0] ?? i.today,
     portfolioPct,
+    portfolioNote,
     benchmarks: bench.map(({ key, pct, reason }) => ({ key, pct, reason })),
     basis,
     missing,

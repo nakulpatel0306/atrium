@@ -24,6 +24,7 @@ test("a performance row explains an n/a", () => {
     start: "2025-11-05",
     end: "2026-11-05",
     portfolioPct: 12.34,
+    portfolioNote: null,
     benchmarks: [
       { key: "SPY", pct: 18.2, reason: null },
       { key: "XEQT.TO", pct: null, reason: "n/a: Atrium has 100 days of XEQT.TO closes" },
@@ -36,6 +37,10 @@ test("a performance row explains an n/a", () => {
   expect(row).toMatchObject({ label: "1Y", you: "+12.3%", spy: "+18.2%", xeqt: "n/a" });
   expect(row.title).toContain("n/a: Atrium has 100 days of XEQT.TO closes");
   expect(row.title).toContain("price");
+  expect(perfRow({ ...r, portfolioPct: null, portfolioNote: "Not enough history yet: Atrium has closes for 1 of 14 holdings." }).you).toBe("not enough history yet");
+  const part = perfRow({ ...r, portfolioNote: "Leaves out RKLB (5% of the portfolio): not enough history yet." });
+  expect(part.you).toBe("+12.3%*");
+  expect(part.title).toContain("Leaves out RKLB");
 });
 
 test("sortRows puts nulls last in both directions and sorts sourced values by value", async () => {

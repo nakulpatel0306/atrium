@@ -17,7 +17,7 @@ const series = (dates: string[], from: number, to: number, adj = true): Close[] 
     const c = from + ((to - from) * i) / (dates.length - 1);
     return { date, close: c, adjClose: adj ? c : null, source: "tiingo" };
   });
-const run = (data: Record<string, Close[]>, holdings: { key: string; quantity: number; listingCcy: "CAD" | "USD" }[], fx: (d: string) => number | null, period: Parameters<typeof performance>[1] = "1M", benchmarks: string[] = []) =>
+const run = (data: Record<string, Close[]>, holdings: { key: string; quantity: number; listingCcy: "CAD" | "USD"; valueCad?: number | null }[], fx: (d: string) => number | null, period: Parameters<typeof performance>[1] = "1M", benchmarks: string[] = []) =>
   performance({ holdings, closes: (k, from) => (data[k] ?? []).filter((c) => c.date >= from), fxOn: fx, today: TODAY }, period, benchmarks);
 
 const month = weekdays(TODAY, 24); // Mon Oct 5 to Thu Nov 5
@@ -92,4 +92,35 @@ test("the end date is the last close used, not today", () => {
   // Legs that end on different days: the result says the earliest, which every leg reaches.
   const mixed = run({ SPY: toYesterday, "XEQT.TO": series(month, 30, 33) }, [{ key: "XEQT.TO", quantity: 1, listingCcy: "CAD" }], () => 1.4, "1M", ["SPY"]);
   expect(mixed.end).toBe(month.at(-2)!);
+});
+
+// The audit's case: only ATZ has closes, so the other holdings' current value counts as missing, not as nothing.
+test("holdings with no closes count at their current value, so a one-holding history isn't the portfolio's return", () => {
+  const holdings = [
+    { key: "ATZ.TO", quantity: 10, listingCcy: "CAD" as const, valueCad: 1_100 },
+    { key: "SPY", quantity: 3, listingCcy: "USD" as const, valueCad: 2_000 },
+    { key: "QQQ", quantity: 2, listingCcy: "USD" as const, valueCad: 1_800 },
+  ];
+  const r = run({ "ATZ.TO": series(month, 85, 110, false) }, holdings, () => 1.4);
+  expect(r.portfolioPct).toBeNull();
+  expect(r.portfolioNote).toBe("Not enough history yet: Atrium has closes for 1 of 3 holdings.");
+  expect(r.missing.map((m) => m.key)).toEqual(["SPY", "QQQ"]);
+});
+
+test("a return that leaves a small holding out says which one", () => {
+  const holdings = [
+    { key: "SPY", quantity: 10, listingCcy: "USD" as const, valueCad: 9_500 },
+    { key: "RKLB", quantity: 1, listingCcy: "USD" as const, valueCad: 500 },
+  ];
+  const r = run({ SPY: series(month, 100, 110) }, holdings, () => 1.4);
+  expect(r.portfolioPct!).toBeCloseTo(10, 9);
+  expect(r.portfolioNote).toBe("Leaves out RKLB (5% of the portfolio): not enough history yet.");
+  const all = run({ SPY: series(month, 100, 110) }, [holdings[0]!], () => 1.4);
+  expect(all.portfolioNote).toBeNull();
+});
+
+test("a holding with no closes and no price makes the return unknown rather than guessed", () => {
+  const r = run({ SPY: series(month, 100, 110) }, [{ key: "SPY", quantity: 10, listingCcy: "USD" }, { key: "DRAM", quantity: 5, listingCcy: "USD" }], () => 1.4);
+  expect(r.portfolioPct).toBeNull();
+  expect(r.portfolioNote).toBe("Not enough history yet: Atrium has closes for 1 of 2 holdings.");
 });
