@@ -87,7 +87,7 @@ export function icsEvents(text: string): { summary: string; start: string; end: 
   return events;
 }
 
-const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+const nameOf = (path: string) => (path === "." ? "the folder" : path.slice(path.lastIndexOf("/") + 1));
 
 // Runs one action and returns the line to show under the row.
 export async function runFileAction(action: FileAction, f: FileRef & { absPath: string }): Promise<{ ok: boolean; text: string }> {

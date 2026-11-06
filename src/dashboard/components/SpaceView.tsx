@@ -3,10 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
-import { navigate } from "../route";
+import { navigate, type SpaceTab } from "../route";
+import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { Activity } from "./Activity";
 import { AgentPicker } from "./AgentPicker";
+import { FilesTab } from "./FilesTab";
 import { Markdown } from "./Markdown";
 import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
@@ -410,9 +412,26 @@ type Props = {
   space: Space | undefined;
   // Task to open expanded, from a `?task=` link such as Needs you's "View transcript".
   focusTask: string | null;
+  tab?: SpaceTab;
 };
 
-export function SpaceView({ state, space, focusTask }: Props) {
+// The Files count comes from the same listing the tab shows, so it's read whichever tab is open.
+function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
+  const files = useSpaceFiles(space.id);
+  const go = (t: SpaceTab) => navigate(`/space/${space.id}${t === "files" ? "?tab=files" : ""}`);
+  return (
+    <div className="tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "tasks"} className={tab === "tasks" ? "on" : ""} onClick={() => go("tasks")}>
+        Tasks
+      </button>
+      <button role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => go("files")}>
+        Files{files ? ` · ${files.files.length}` : ""}
+      </button>
+    </div>
+  );
+}
+
+export function SpaceView({ state, space, focusTask, tab = "tasks" }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
   const [, setTick] = useState(0);
@@ -454,7 +473,10 @@ export function SpaceView({ state, space, focusTask }: Props) {
       {space.kind === "markets" && <MarketsPanel spaceId={space.id} />}
       <div className="cols">
         <div>
-          <h2>Tasks</h2>
+          <Tabs space={space} tab={tab} />
+          {tab === "files" ? (
+            <FilesTab space={space} />
+          ) : (
           <div className="list">
             {tasks.length === 0 ? (
               <div className="empty-row">No tasks yet. Give {space.name} one in the bar below.</div>
@@ -471,6 +493,7 @@ export function SpaceView({ state, space, focusTask }: Props) {
               ))
             )}
           </div>
+          )}
           <Activity state={state} spaceId={space.id} />
         </div>
         <div className="live">

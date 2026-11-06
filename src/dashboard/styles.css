@@ -2566,3 +2566,70 @@ code {
 .asked .md {
   color: var(--text);
 }
+
+/* Space tabs: Tasks and Files, in place of the "Tasks" heading. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin: 22px 0 8px;
+}
+.tabs button {
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font: 500 12px/1.4 inherit;
+  font-family: inherit;
+  color: var(--dim);
+  cursor: pointer;
+}
+.tabs button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.tabs button.on {
+  color: var(--text);
+  background: var(--raised);
+}
+.tabs button:focus-visible,
+.made-acts .btn:focus-visible,
+.files-head .btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.files-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+  color: var(--dim);
+}
+.files-head .mono {
+  color: var(--text);
+}
+.files-head .made-said {
+  flex-basis: 100%;
+  padding: 0;
+}
+.files-tab .made-files {
+  background: var(--panel);
+}
+.made-by {
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.made-by a {
+  color: var(--dim);
+  text-decoration: none;
+}
+.made-by a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.kept {
+  color: var(--dim);
+}

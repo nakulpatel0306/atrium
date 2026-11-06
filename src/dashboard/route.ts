@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "space"; id: string; task: string | null };
+export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "space"; id: string; task: string | null; tab: SpaceTab };
+export type SpaceTab = "tasks" | "files";
 
 const listeners = new Set<() => void>();
 
@@ -32,7 +33,8 @@ export function parseRoute(path: string): Route {
   const m = pathname.match(/^\/space\/([^/]+)$/);
   if (!m) return { name: "home" };
   try {
-    return { name: "space", id: decodeURIComponent(m[1]!), task: new URLSearchParams(search).get("task") };
+    const q = new URLSearchParams(search);
+    return { name: "space", id: decodeURIComponent(m[1]!), task: q.get("task"), tab: q.get("tab") === "files" ? "files" : "tasks" };
   } catch {
     // A hand-typed URL with a stray "%" shouldn't crash the page.
     return { name: "home" };

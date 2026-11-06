@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { getApproval } from "../approvals";
-import { spaceFolder } from "../folders";
+import { spaceFolder, tildePath } from "../folders";
 import { git } from "../git";
 import { getSpace, type Space } from "../spaces";
 import { getTask } from "../tasks";
@@ -44,7 +44,8 @@ export type SpaceFile = {
   madeBy: { taskId: string; title: string } | null;
 };
 
-export type SpaceFiles = { folder: string | null; files: SpaceFile[]; truncated: boolean };
+// `shown` is the folder as Nakul would type it ("~/Atrium/weekly-planning").
+export type SpaceFiles = { folder: string | null; shown: string | null; files: SpaceFile[]; truncated: boolean };
 
 const isFileOnDisk = (abs: string) => {
   try {
@@ -103,7 +104,8 @@ export async function spaceFiles(db: Database, spaceId: string): Promise<SpaceFi
   };
   if (space.kind === "repo") return repoFiles(db, space, madeBy);
   const folder = spaceFolder(space);
-  const snap = snapshotFolder(folder);
+  // Listing only: no hashes, which would read every file on each refresh.
+  const snap = snapshotFolder(folder, { limits: { hashBytes: -1 } });
   const makers = latestMakers(db, space.id);
   const files = [...snap.files]
     .map(([path, e]): SpaceFile => {
@@ -111,7 +113,7 @@ export async function spaceFiles(db: Database, spaceId: string): Promise<SpaceFi
       return { root: "space", ref: null, path, absPath: join(folder, path), size: e.size, at: e.mtimeMs, kind: kindOf(path), madeBy: maker ? madeBy(maker.taskId) : null };
     })
     .sort((a, b) => b.at - a.at);
-  return { folder, files, truncated: snap.truncated };
+  return { folder, shown: tildePath(folder), files, truncated: snap.truncated };
 }
 
 function repoFiles(db: Database, space: Space, madeBy: (taskId: string) => { taskId: string; title: string }): SpaceFiles {
@@ -135,5 +137,5 @@ function repoFiles(db: Database, space: Space, madeBy: (taskId: string) => { tas
       madeBy: madeBy(r.task_id),
     });
   }
-  return { folder: space.repoPath, files, truncated: false };
+  return { folder: space.repoPath, shown: space.repoPath && tildePath(space.repoPath), files, truncated: false };
 }

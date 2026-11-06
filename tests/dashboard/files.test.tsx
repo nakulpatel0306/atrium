@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { FilesList } from "../../src/dashboard/components/FilesTab";
 import { PreviewPane } from "../../src/dashboard/components/PreviewPane";
 import { WhatItMadeList } from "../../src/dashboard/components/WhatItMade";
 import { fileActions, fileUrl, icsEvents, sizeText } from "../../src/dashboard/files";
-import type { OutputFile, TaskOutputs } from "../../src/engine/outputs/views";
+import type { OutputFile, SpaceFile, SpaceFiles, TaskOutputs } from "../../src/engine/outputs/views";
+import type { State } from "../../src/engine/state";
 
 const row = (path: string, over: Partial<OutputFile> = {}): OutputFile => ({
   id: `rf_${path}`,
@@ -112,4 +114,64 @@ test("PreviewPane shows the cut note and images from the raw route", () => {
   expect(img).toContain('<img src="/api/spaces/s1/file/raw?path=chart.png"');
   const json = renderToStaticMarkup(<PreviewPane preview={{ ...base, path: "a.json", text: '{"a":1}', truncated: false }} rawUrl="" />);
   expect(json).toContain("&quot;a&quot;: 1");
+});
+
+type Space = State["spaces"][number];
+const space = (over: Partial<Space> = {}): Space => ({
+  id: "spc_1",
+  name: "Weekly Planning",
+  kind: "general",
+  goal: "",
+  color: "#fff",
+  repoPath: null,
+  private: true,
+  status: "active",
+  reviewBy: null,
+  github: null,
+  folder: "/Users/n/Atrium/weekly-planning",
+  createdAt: 0,
+  updatedAt: 0,
+  ...over,
+});
+const file = (path: string, over: Partial<SpaceFile> = {}): SpaceFile => ({
+  root: "space",
+  ref: null,
+  path,
+  absPath: `/Users/n/Atrium/weekly-planning/${path}`,
+  size: 2662,
+  at: Date.now() - 120_000,
+  kind: "markdown",
+  madeBy: { taskId: "tsk_1", title: "Make a grocery list" },
+  ...over,
+});
+
+test("FilesList credits the task that made each file", () => {
+  const files: SpaceFiles = {
+    folder: "/Users/n/Atrium/weekly-planning",
+    shown: "~/Atrium/weekly-planning",
+    truncated: false,
+    files: [file("grocery-list.md"), file("mine.txt", { madeBy: null, kind: "text" }), file("runs/run_1/notes.md")],
+  };
+  const html = renderToStaticMarkup(<FilesList files={files} space={space()} />);
+  expect(html).toContain("by &quot;Make a grocery list&quot;");
+  expect(html).toContain("added outside Atrium");
+  expect(html).toContain("kept from a run ·");
+  expect(html).toContain("Reveal folder");
+  expect(html).toContain("~/Atrium/weekly-planning");
+  expect(html).toContain("2.6 KB");
+  expect(html).not.toContain("Showing the newest 2,000 files.");
+  expect(renderToStaticMarkup(<FilesList files={{ ...files, truncated: true }} space={space()} />)).toContain("Showing the newest 2,000 files.");
+});
+
+test("FilesList empty states say what will appear", () => {
+  const empty = { folder: "/x", shown: "/x", truncated: false, files: [] };
+  expect(renderToStaticMarkup(<FilesList files={empty} space={space()} />)).toContain(
+    "No files yet. Files the agents make in Weekly Planning show up here.",
+  );
+  expect(renderToStaticMarkup(<FilesList files={{ ...empty, folder: "/r" }} space={space({ kind: "repo", repoPath: "/r", folder: null, name: "App" })} />)).toContain(
+    "No changes yet. Files a task changes on its branch show up here.",
+  );
+  expect(renderToStaticMarkup(<FilesList files={{ ...empty, folder: "/r/app", shown: "~/dev/app" }} space={space({ kind: "repo", repoPath: "/r/app", folder: null, name: "App" })} />)).toContain(
+    "Files Atrium&#x27;s tasks changed in ~/dev/app",
+  );
 });
