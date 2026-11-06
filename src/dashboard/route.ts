@@ -21,7 +21,7 @@ export function navigate(path: string): void {
 
 // Includes the query so `?task=` links re-render when only the query changes.
 export function usePath(): string {
-  return useSyncExternalStore(subscribe, () => location.pathname + location.search);
+  return useSyncExternalStore(subscribe, () => location.pathname + location.search, () => "/");
 }
 
 export function parseRoute(path: string): Route {

@@ -105,7 +105,7 @@ function subscribe(fn: () => void): () => void {
 }
 
 export function useEngineState(): State | null {
-  return useSyncExternalStore(subscribe, () => state);
+  return useSyncExternalStore(subscribe, () => state, () => state);
 }
 
 export function onQuotes(fn: (quotes: Quote[]) => void): () => void {
@@ -114,7 +114,7 @@ export function onQuotes(fn: (quotes: Quote[]) => void): () => void {
 }
 
 export function useOnline(): boolean {
-  return useSyncExternalStore(subscribe, () => online);
+  return useSyncExternalStore(subscribe, () => online, () => online);
 }
 
 // A run that started before this page opened has output only in its transcript, so start from that.
@@ -131,7 +131,7 @@ export function useRunOutput(runId: string): string {
   useEffect(() => {
     if (!seeded.has(runId)) void seedOutput(runId);
   }, [runId]);
-  return useSyncExternalStore(subscribe, () => outputs.get(runId) ?? "");
+  return useSyncExternalStore(subscribe, () => outputs.get(runId) ?? "", () => outputs.get(runId) ?? "");
 }
 
 // Reads data that isn't part of the pushed state, again whenever `version` changes.
