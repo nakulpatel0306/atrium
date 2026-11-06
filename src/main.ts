@@ -96,6 +96,7 @@ try {
     onViewers: (n) => void feed.setViewers(n),
     markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs },
     repos,
+    messaging,
   });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;

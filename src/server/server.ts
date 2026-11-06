@@ -28,6 +28,8 @@ import type { Repos } from "../engine/repos";
 import { BadDraft } from "../engine/repos/names";
 import { PushRefused } from "../engine/repos/push";
 import { reposRoute } from "./repos";
+import type { Messaging } from "../engine/messaging";
+import { messagingRoute } from "./messaging";
 
 type Deps = {
   db: Database;
@@ -38,6 +40,7 @@ type Deps = {
   onViewers?: (n: number) => void;
   markets?: MarketsDeps;
   repos?: Repos;
+  messaging?: Messaging;
 };
 
 
@@ -228,7 +231,12 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       if (b.decision !== "approve" && b.decision !== "reject") {
         throw new HttpError(400, "decision must be approve or reject.");
       }
-      if (!db.query("SELECT 1 FROM approvals WHERE id = ?").get(id)) throw new HttpError(404, "No such approval.");
+      const current = getApproval(db, id);
+      if (!current) throw new HttpError(404, "No such approval.");
+      // A text is sent only from its card, so the yes always covers the exact words and recipient on screen.
+      if (b.decision === "approve" && current.alwaysAsk === "send_message") {
+        throw new HttpError(409, "Press Send on the message card, so Atrium sends exactly what you saw.");
+      }
       const approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"));
       // Nakul's decision stands whatever happens here; a suggestion is only ever extra.
       if (b.decision === "approve") {
@@ -348,6 +356,10 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     }
     if (deps.repos) {
       const res = await reposRoute(db, deps.repos, req, url);
+      if (res) return res;
+    }
+    if (deps.messaging) {
+      const res = await messagingRoute(db, deps.messaging, req, url);
       if (res) return res;
     }
 

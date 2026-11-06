@@ -11,6 +11,7 @@ import { atriumDiskUsage } from "./storage";
 import { config } from "./config";
 import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
+import { type Candidate, type HandleSource, pendingMessageActions, type Service } from "./messaging/store";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
 
@@ -63,7 +64,43 @@ export type State = {
   disk: ReturnType<typeof atriumDiskUsage>;
   // Pending new-project drafts and clone removals, for the forms in Needs you.
   repoActions: RepoActionView[];
+  // Pending texts, for the send cards in Needs you.
+  messageActions: MessageActionView[];
 };
+
+export type MessageActionView = {
+  id: string;
+  approvalId: string;
+  spaceId: string;
+  taskId: string | null;
+  toName: string;
+  handle: string | null;
+  handleSource: HandleSource | null;
+  candidates: Candidate[] | null;
+  service: Service;
+  text: string;
+  lastError: string | null;
+  // Whether a Contacts lookup has worked before, so the card knows macOS won't ask again.
+  contactsReady: boolean;
+};
+
+function messageActionViews(db: Database): MessageActionView[] {
+  const contactsReady = getSetting(db, "messaging.contactsReady") === "true";
+  return pendingMessageActions(db).map((a) => ({
+    id: a.id,
+    approvalId: a.approvalId,
+    spaceId: a.spaceId,
+    taskId: a.taskId,
+    toName: a.toName,
+    handle: a.handle,
+    handleSource: a.handleSource,
+    candidates: a.candidates,
+    service: a.service,
+    text: a.text,
+    lastError: a.error,
+    contactsReady,
+  }));
+}
 
 export type RepoActionView = {
   id: string;
@@ -155,5 +192,6 @@ export function snapshot(db: Database, registry?: Registry): State {
         : null,
     disk: atriumDiskUsage(),
     repoActions: repoActionViews(db),
+    messageActions: messageActionViews(db),
   };
 }
