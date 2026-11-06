@@ -234,12 +234,28 @@ test("Symbol page: an ask answer renders markdown with advice and what it made; 
   db.query("DELETE FROM market_writeups").run();
 });
 
-test("Symbol page: a TSX key with no earnings offers to add a date", () => {
+test("Symbol page: a TSX stock with no earnings offers to add a date; a fund has no earnings section", () => {
+  const atz = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "ATZ.TO", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(atz).toContain("No date yet");
+  expect(atz).toContain("Add a date");
   const html = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "XEQT.TO", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
-  expect(html).toContain("No date yet");
-  expect(html).toContain("Add a date");
+  expect(html).not.toContain("Next earnings");
+  expect(html).not.toContain("Add a date");
   expect(html).toContain("CA$35.00");
   clean(html);
+});
+
+test("Symbol page: Finnhub's dated news comes first; TradingView's feed only fills in, under its own name", () => {
+  db.query("DELETE FROM market_news").run();
+  const none = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "AMZN", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(none).toContain("TradingView news");
+  expect(none).toContain("Its newest stories can be weeks old.");
+  saveNews(db, [{ key: "AMZN", headline: "Amazon beats on AWS", source: "Reuters", url: "https://example.com/aws", at: NOW - 3600_000 }], NOW);
+  const some = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "AMZN", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(some).toContain("Amazon beats on AWS");
+  expect(some).toContain("Reuters · 1h ago");
+  expect(some).not.toContain("TradingView news");
+  db.query("DELETE FROM market_news").run();
 });
 
 test("Symbol page: no chart listener means Atrium's chart and no frame", () => {
