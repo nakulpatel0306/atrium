@@ -19,6 +19,7 @@ import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
 import { filesRoute } from "./files";
+import { embedResponse } from "./embed";
 import { investingRoute } from "./investing";
 import { simpleRoute } from "./investing-simple";
 import { marketsRoute, type MarketsDeps } from "./markets";
@@ -350,6 +351,8 @@ export function startServer(deps: Deps): Server<WsData> {
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";
       const denied = guard(req, srv.port as number, needsOrigin, url.pathname.startsWith("/api/") || url.pathname === "/ws");
       if (denied) return denied;
+      // TradingView's isolated chart page: behind the Host check above, outside the /api rules.
+      if (req.method === "GET" && url.pathname === "/embed/tradingview") return embedResponse(req, url, srv.port as number);
       if (url.pathname === "/ws") {
         const topic = url.searchParams.get("events") === "changed" ? "changed" : "engine";
         if (srv.upgrade(req, { data: { topic } })) return undefined as unknown as Response;

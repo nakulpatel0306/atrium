@@ -267,6 +267,29 @@ test("no unlicensed sources anywhere in the source", () => {
   }
 });
 
+test("only TradingView's widget is loaded from outside", async () => {
+  const { TV_SCRIPT, TV_FRAME_HOSTS } = await import("../../src/server/embed");
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : /\.(ts|tsx|css|html)$/.test(e.name) ? [join(dir, e.name)] : []));
+  const root = resolve(import.meta.dir, "../../src");
+  const files = ["dashboard", "server", "tui"].flatMap((d) => walk(join(root, d)));
+  expect(files.length).toBeGreaterThan(30);
+  const allowed = (u: string) =>
+    /^https?:\/\/(127\.0\.0\.1|localhost)([:/]|$)/.test(u) ||
+    // Loopback URLs built from the engine's own host list or config.
+    /^https?:\/\/\$\{/.test(u) ||
+    u === TV_SCRIPT ||
+    // The embed page's CSP names the script's origin, and the widget config names TradingView as its support host.
+    u === new URL(TV_SCRIPT).origin ||
+    u === "https://www.tradingview.com" ||
+    TV_FRAME_HOSTS.includes(u) ||
+    u.startsWith("https://www.tradingview.com/symbols/");
+  const found: string[] = [];
+  for (const f of files) for (const u of readFileSync(f, "utf8").match(/https?:\/\/[^\s"'`)<>\\]+/g) ?? []) if (!allowed(u)) found.push(`${f}: ${u}`);
+  expect(found).toEqual([]);
+  for (const f of walk(root)) expect(`${f}: ${readFileSync(f, "utf8").includes("fonts.googleapis.com")}`).toBe(`${f}: false`);
+});
+
 test("an alert's Needs-you item can turn the alert off", async () => {
   boot();
   const s = markets();
