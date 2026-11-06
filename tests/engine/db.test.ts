@@ -287,3 +287,20 @@ test("an always-ask approval can only ever be decided by you", () => {
   db.close();
   t.cleanup();
 });
+
+test("run_files exists and refuses a branch row without ref", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  openDb(path).close();
+  const db = openDb(path);
+  const now = Date.now();
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.query("INSERT INTO run_files (id, run_id, task_id, space_id, root, ref, path, change, created_at) VALUES ('f1','r','t','s','space',NULL,'a.md','created',?)").run(now);
+  expect(() =>
+    db.query("INSERT INTO run_files (id, run_id, task_id, space_id, root, ref, path, change, created_at) VALUES ('f2','r','t','s','branch',NULL,'a.md','created',?)").run(now),
+  ).toThrow();
+  const idx = (db.query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='run_files'").all() as { name: string }[]).map((r) => r.name);
+  expect(idx).toEqual(expect.arrayContaining(["run_files_task", "run_files_space"]));
+  db.close();
+  t.cleanup();
+});

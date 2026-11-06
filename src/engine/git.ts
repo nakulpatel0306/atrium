@@ -374,6 +374,50 @@ export async function changedFiles(path: string, base: string, branch: string): 
   return files;
 }
 
+export type BranchFile = { path: string; change: "created" | "changed" | "deleted"; insertions: number | null; deletions: number | null };
+
+// What a task branch changed, for showing Nakul what it made. .env paths are left out: Atrium never shows them.
+export async function branchFiles(path: string, base: string, branch: string): Promise<BranchFile[]> {
+  const flags = ["-c", "core.quotePath=false", "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-z"];
+  const range = `${base}...${branch}`;
+  const names = await git(path, [...flags, "--name-status", range, "--"]);
+  if (names.code !== 0) throw new Error(`Couldn't list the files on ${branch}: ${firstLine(names.err)}`);
+  const nums = await git(path, [...flags, "--numstat", range, "--"]);
+  if (nums.code !== 0) throw new Error(`Couldn't list the files on ${branch}: ${firstLine(nums.err)}`);
+  const counts = new Map<string, [number | null, number | null]>();
+  for (const record of nums.out.split("\0").filter(Boolean)) {
+    const [added, deleted, ...rest] = record.split("\t");
+    counts.set(rest.join("\t"), [added === "-" ? null : Number(added), deleted === "-" ? null : Number(deleted)]);
+  }
+  const CHANGE: Record<string, BranchFile["change"]> = { A: "created", M: "changed", T: "changed", D: "deleted" };
+  const fields = names.out.split("\0");
+  const files: BranchFile[] = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const change = CHANGE[fields[i]!];
+    const file = fields[i + 1]!;
+    if (!change || isEnvPath(file)) continue;
+    const [insertions, deletions] = counts.get(file) ?? [null, null];
+    files.push({ path: file, change, insertions, deletions });
+  }
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+// One file from a branch without checking it out. Its bytes are read only when it fits the cap.
+export async function showBlob(path: string, ref: string, file: string, capBytes: number): Promise<{ size: number; bytes: Uint8Array | null }> {
+  if (isEnvPath(file)) throw new Error("Atrium never shows .env files.");
+  const spec = `${ref}:${file}`;
+  const size = await git(path, ["cat-file", "-s", spec]);
+  if (size.code !== 0) throw new Error(`Couldn't read ${file} on ${ref}: ${firstLine(size.err)}`);
+  const n = Number(size.out.trim());
+  if (n > capBytes) return { size: n, bytes: null };
+  const proc = Bun.spawn(["git", ...SAFE, "cat-file", "blob", spec], { cwd: path, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  const bytes = new Uint8Array(await new Response(proc.stdout).arrayBuffer());
+  if ((await proc.exited) !== 0) throw new Error(`Couldn't read ${file} on ${ref}.`);
+  return { size: n, bytes };
+}
+
+const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
+
 // For output that can be huge (a diff of a 3 MB line): stops reading at `cap` bytes and says so.
 async function gitCapped(path: string, args: string[], cap: number): Promise<{ out: string; truncated: boolean }> {
   const proc = Bun.spawn(["git", ...SAFE, ...args], { cwd: path, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });

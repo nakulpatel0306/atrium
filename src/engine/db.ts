@@ -115,6 +115,23 @@ CREATE TABLE IF NOT EXISTS repo_actions (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS run_files (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  root TEXT NOT NULL CHECK (root IN ('space','branch')),
+  ref TEXT,
+  path TEXT NOT NULL,
+  change TEXT NOT NULL CHECK (change IN ('created','changed','deleted')),
+  size INTEGER,
+  insertions INTEGER,
+  deletions INTEGER,
+  created_at INTEGER NOT NULL,
+  CHECK (root = 'space' OR ref IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS run_files_task ON run_files(task_id, created_at);
+CREATE INDEX IF NOT EXISTS run_files_space ON run_files(space_id, created_at);
 CREATE TABLE IF NOT EXISTS rule_events (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),

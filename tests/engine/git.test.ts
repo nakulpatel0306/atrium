@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch } from "../../src/engine/git";
+import { branchFiles, branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch, showBlob } from "../../src/engine/git";
 import { fingerprintOf } from "../../src/engine/autonomy/kinds";
 import { PLAIN_DOCS, tempRepo } from "../helpers";
 
@@ -521,5 +521,40 @@ describe("branchOffDirty", () => {
     expect(await branchOffDirty(path, "tsk_fix")).toBe("atrium/tsk_fix-2");
     expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_fix-2");
     expect(existsSync(join(path, "b.txt"))).toBe(true);
+  });
+});
+
+describe("branch files", () => {
+  test("branchFiles lists added, modified and deleted files with counts", async () => {
+    const path = repo();
+    const run = (...args: string[]) => {
+      const r = Bun.spawnSync(["git", ...args], { cwd: path });
+      if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+    };
+    writeFileSync(join(path, "old.txt"), "old\n");
+    run("add", "-A");
+    run("commit", "-m", "old");
+    run("checkout", "-b", "atrium/t1");
+    writeFileSync(join(path, "new.md"), "a\nb\nc\n");
+    appendFileSync(join(path, "README.md"), "more\n");
+    rmSync(join(path, "old.txt"));
+    writeFileSync(join(path, "img.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 0, 3]));
+    writeFileSync(join(path, ".env.local"), "X=1\n");
+    run("add", "-A");
+    run("commit", "-m", "work");
+    run("checkout", "main");
+    const files = await branchFiles(path, "main", "atrium/t1");
+    expect(files).toEqual([
+      { path: "README.md", change: "changed", insertions: 1, deletions: 0 },
+      { path: "img.png", change: "created", insertions: null, deletions: null },
+      { path: "new.md", change: "created", insertions: 3, deletions: 0 },
+      { path: "old.txt", change: "deleted", insertions: 0, deletions: 1 },
+    ]);
+    const blob = await showBlob(path, "atrium/t1", "new.md", 1024);
+    expect(blob.size).toBe(6);
+    expect(new TextDecoder().decode(blob.bytes!)).toBe("a\nb\nc\n");
+    expect(await showBlob(path, "atrium/t1", "new.md", 2)).toEqual({ size: 6, bytes: null });
+    await expect(showBlob(path, "atrium/t1", ".env.local", 1024)).rejects.toThrow("Atrium never shows .env files.");
+    await expect(branchFiles(path, "main", "atrium/nope")).rejects.toThrow("Couldn't list the files on atrium/nope:");
   });
 });
