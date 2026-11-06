@@ -10,7 +10,7 @@ import { KEY_ACCOUNTS, KEYCHAIN_LOCKED, type Keychain } from "./keychain";
 import { alpacaProvider } from "./providers/alpaca";
 import { alphaVantageProvider } from "./providers/alphavantage";
 import { demoProvider } from "./providers/demo";
-import { finnhubProvider } from "./providers/finnhub";
+import { FINNHUB_PER_MINUTE, finnhubProvider, pacer } from "./providers/finnhub";
 import { tiingoProvider, tiingoSymbols, type TiingoProvider } from "./providers/tiingo";
 import { yahooProvider, type YahooProvider } from "./providers/yahoo";
 import { ProviderError, type Bar, type Freshness, type MarketProvider, type NewsItem, type ProviderId, type Quote, type Timeframe } from "./providers/types";
@@ -100,6 +100,8 @@ export function createMarketData(deps: {
   // fetch, which tries once more.
   let rejected: Partial<Record<ProviderId, { message: string; date: string }>> = {};
   let lastRead = 0;
+  // Shared across rebuilt providers, so a key change doesn't reset the count.
+  const finnhubPace = pacer(FINNHUB_PER_MINUTE, 60_000);
   let readFailed = false;
   // Keyless, so it lives outside `built`. Its pause is kept in settings (written directly, no `changed`) so a restart
   // doesn't ask Yahoo again early. Substituted providers replace it too: a caller passing fakes reaches nothing else.
@@ -186,7 +188,7 @@ export function createMarketData(deps: {
       id === "alpaca"
         ? alpacaProvider({ keyId: keys.alpacaKeyId!, secret: keys.alpacaSecret! }, io)
         : id === "finnhub"
-          ? finnhubProvider(keys.finnhub!, io)
+          ? finnhubProvider(keys.finnhub!, { ...io, pace: finnhubPace })
           : id === "alphavantage"
             ? alphaVantageProvider(keys.alphavantage!, { budget: dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now), fetch: metered, now, onDaily: keepDaily })
             : id === "tiingo"

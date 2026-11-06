@@ -9,10 +9,33 @@ const AUTH_MESSAGE = "Finnhub rejected the token. Check it in Settings → Marke
 
 type Deps = {
   fetch?: typeof fetch;
+  // Waits before each REST call; one pacer is shared by every Finnhub provider the engine builds.
+  pace?: () => Promise<void>;
   WebSocket?: typeof WebSocket;
   now?: () => number;
   timers?: { set: typeof setTimeout; clear: typeof clearTimeout };
 };
+
+// Finnhub's free plan allows 60 calls a minute; Atrium keeps to 50 across every caller (feed, jobs, Symbol pages).
+export const FINNHUB_PER_MINUTE = 50;
+
+// At most `limit` calls in any `windowMs`: a call that would exceed it waits until the oldest one leaves the window.
+export function pacer(limit: number, windowMs: number, clock: () => number = Date.now, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))) {
+  const sent: number[] = [];
+  let chain: Promise<void> = Promise.resolve();
+  return (): Promise<void> => {
+    const turn = chain.then(async () => {
+      while (sent.length && clock() - sent[0]! >= windowMs) sent.shift();
+      if (sent.length >= limit) {
+        await sleep(sent[0]! + windowMs - clock());
+        sent.shift();
+      }
+      sent.push(clock());
+    });
+    chain = turn;
+    return turn;
+  };
+}
 
 // The token travels in the query string, so URLs are never logged or echoed (see http.ts).
 export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider {
@@ -22,8 +45,10 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
   const timers = deps.timers ?? { set: setTimeout, clear: clearTimeout };
   const prevCloses = new Map<string, number>();
 
-  const get = (path: string, params: Record<string, string>, signal?: AbortSignal) =>
-    fetchJson(`${API}${path}?${new URLSearchParams({ ...params, token })}`, { fetch: f, name: "Finnhub", authMessage: AUTH_MESSAGE, now, signal });
+  const get = async (path: string, params: Record<string, string>, signal?: AbortSignal) => {
+    await deps.pace?.();
+    return fetchJson(`${API}${path}?${new URLSearchParams({ ...params, token })}`, { fetch: f, name: "Finnhub", authMessage: AUTH_MESSAGE, now, signal });
+  };
 
   const quotes = async (list: Instrument[], signal?: AbortSignal): Promise<Quote[]> => {
     const out: Quote[] = [];
@@ -69,12 +94,21 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
   };
   const earnings = async (list: Instrument[], from: string, to: string): Promise<EarningsDate[]> => {
     const out: EarningsDate[] = [];
+    const done: string[] = [];
     for (const i of list) {
-      const r = (await get("/calendar/earnings", { from, to, symbol: i.symbol })) as { earningsCalendar?: { date: string; hour: string; epsEstimate: number | null; symbol: string }[] };
+      let r: { earningsCalendar?: { date: string; hour: string; epsEstimate: number | null; symbol: string }[] };
+      try {
+        r = (await get("/calendar/earnings", { from, to, symbol: i.symbol })) as typeof r;
+      } catch (e) {
+        // What came back before the failure is kept, so the caller can save it and ask for the rest later.
+        if (e instanceof ProviderError) e.partial = { done, rows: out };
+        throw e;
+      }
       for (const e of r?.earningsCalendar ?? []) {
         if (e.symbol !== i.symbol || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) continue;
         out.push({ key: instrumentKey(i), date: e.date, hour: e.hour || null, epsEstimate: numOrNull(e.epsEstimate) });
       }
+      done.push(instrumentKey(i));
     }
     return out;
   };
