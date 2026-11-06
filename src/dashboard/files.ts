@@ -95,14 +95,16 @@ export async function runFileAction(action: FileAction, f: FileRef & { absPath: 
   if (action === "copyPath" || action === "copyText") {
     try {
       let text = f.absPath;
+      let cut = false;
       if (action === "copyText") {
         const res = await fetch(fileUrl(f));
         const preview = res.ok ? ((await res.json()) as FilePreview) : null;
         if (preview?.text == null) return { ok: false, text: "Couldn't copy. Select the text in the preview instead." };
         text = preview.text;
+        cut = preview.truncated;
       }
       await navigator.clipboard.writeText(text);
-      return { ok: true, text: action === "copyPath" ? "Copied the path." : "Copied the text." };
+      return { ok: true, text: action === "copyPath" ? "Copied the path." : cut ? "Copied the first 256 KB. Open the file for the rest." : "Copied the text." };
     } catch {
       return { ok: false, text: "Couldn't copy. Select the text in the preview instead." };
     }
