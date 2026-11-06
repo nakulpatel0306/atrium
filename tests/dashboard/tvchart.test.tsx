@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ChartCard, TvChart } from "../../src/dashboard/components/invest/TvChart";
 import { CHART_TIMEOUT_MS, chartReducer, embedOrigin, embedUrl, type ChartEvent, type ChartState } from "../../src/dashboard/simple";
 
-const PRIVACY = "TradingView sees which symbols you open, never your holdings.";
+const PRIVACY = "TradingView sees which tickers you view, including the ones you hold. It never sees how much you own or what it&#x27;s worth.";
 
 test("chartReducer", () => {
   const table: [ChartState, ChartEvent, ChartState][] = [
@@ -50,7 +50,7 @@ test("renders the frame with the sandbox, the labels and the privacy line once",
   expect(out).toContain('<iframe title="NASDAQ:AMZN chart by TradingView" src="http://localhost:7571/fake"');
   expect(out).toContain('sandbox="allow-scripts allow-same-origin allow-popups"');
   expect(out.split(PRIVACY)).toHaveLength(2);
-  expect(out).toContain("TradingView · delayed");
+  expect(out).toContain("TradingView chart · may be delayed");
   expect(out).toContain("Show Atrium&#x27;s chart");
   expect(out).not.toContain("tradingview.com");
   expect(out).not.toContain("s3.");

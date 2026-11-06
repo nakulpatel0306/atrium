@@ -7,6 +7,7 @@ import { AdviceTag } from "../markets/AdviceTag";
 import { ImportDialog } from "../markets/ImportDialog";
 import { SourceTag } from "../markets/SourceTag";
 import { PriceRow } from "./PriceRow";
+import { PRIVACY } from "./TvChart";
 
 export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioView }) {
   const [importing, setImporting] = useState(false);
@@ -78,6 +79,7 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
           Import an updated holdings file
         </button>
       </p>
+      <p className="inv-foot faint">{PRIVACY}</p>
       {dialog}
     </section>
   );

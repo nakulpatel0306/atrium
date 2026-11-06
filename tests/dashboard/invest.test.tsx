@@ -191,7 +191,7 @@ import { requestAsk, symbolView } from "../../src/engine/markets/symbol";
 import { SymbolBody } from "../../src/dashboard/components/invest/SymbolPage";
 
 const fake = () => "http://localhost:7571/fake";
-const PRIVACY = "TradingView sees which symbols you open, never your holdings.";
+const PRIVACY = "TradingView sees which tickers you view, including the ones you hold. It never sees how much you own or what it&#x27;s worth.";
 
 test("Symbol page for a held US stock", () => {
   db.query("INSERT OR REPLACE INTO instrument_meta (key, name, kind, pe, high52, low52, market_cap, metrics_at, listing) VALUES ('AMZN', 'Amazon.com Inc', 'stock', 40.1, 260, 160, 2410000, ?, 'NASDAQ NMS - GLOBAL MARKET')").run(NOW);
@@ -209,7 +209,7 @@ test("Symbol page for a held US stock", () => {
   expect(html).toContain("Thu, Nov 12 · after close · EPS est. 1.23");
   expect(html.match(/rel="noopener noreferrer"/g)?.length).toBe(5);
   expect(html.split(PRIVACY)).toHaveLength(2);
-  expect(html).toContain("TradingView · delayed");
+  expect(html).toContain("TradingView chart · may be delayed");
   expect(html).toContain("Ask Claude about this");
   expect(html).toContain("Anything specific? Leave blank for a quick overview.");
   clean(html);
@@ -286,4 +286,10 @@ test("Money: the month by category, recurring and unusual charges, Wealthsimple 
   db.query("DELETE FROM tasks").run();
   db.query("DELETE FROM market_writeups").run();
   db.query("DELETE FROM money_transactions").run();
+});
+
+test("Portfolio says once what TradingView sees, since its rows show TradingView charts", () => {
+  const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={portfolioView(db, viewData(), fx.spaceId, NOW)} />);
+  expect(html.split("TradingView sees which tickers you view, including the ones you hold. It never sees how much you own or what it&#x27;s worth.")).toHaveLength(2);
+  expect(html).not.toContain("never your holdings");
 });

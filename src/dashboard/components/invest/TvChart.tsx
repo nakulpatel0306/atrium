@@ -3,7 +3,8 @@ import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { useEngineState } from "../../api";
 import { CHART_TIMEOUT_MS, chartReducer, embedUrl, type ChartState } from "../../simple";
 
-const PRIVACY = "TradingView sees which symbols you open, never your holdings.";
+// TradingView's charts on holdings rows mean it learns which tickers Nakul holds; it never learns amounts.
+export const PRIVACY = "TradingView sees which tickers you view, including the ones you hold. It never sees how much you own or what it's worth.";
 const UNAVAILABLE = "TradingView's chart couldn't start this time, so this is Atrium's chart from daily closes.";
 const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
 
@@ -105,7 +106,7 @@ export function TvChart({
         </div>
       )}
       <div className="tv-labels">
-        <span>{ours ? "Atrium · daily closes" : "TradingView · delayed"}</span>
+        <span>{ours ? "Atrium · daily closes" : "TradingView chart · may be delayed"}</span>
         <button className="btn link" onClick={() => setOurs(!ours)}>
           {ours ? "Show TradingView" : "Show Atrium's chart"}
         </button>
