@@ -191,7 +191,7 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   const [a] = listPending(db);
   expect(a!.detail).toContain("Added new.txt.");
   expect(a!.detail).toContain(`1 commit, 1 file (+1 −0) on atrium/${task.id}`);
-  expect(a!.detail.endsWith(`Branch atrium/${task.id} is on your machine — push it when you're ready.`)).toBe(true);
+  expect(a!.detail.endsWith(`Branch atrium/${task.id} is on your machine. Push it when you're ready.`)).toBe(true);
 });
 
 test("dirty repo blocks the task without touching files", async () => {
@@ -219,7 +219,7 @@ test("missing repo folder blocks with the folder reason", async () => {
   const { adapter, calls } = fakeAdapter();
   start({ adapter });
   await waitFor(() => status(t.id) === "blocked");
-  expect(getTask(db, t.id)!.blockedReason).toBe(`Folder not found: ${path}`);
+  expect(getTask(db, t.id)!.blockedReason).toBe(`The folder ${path} doesn't exist. Check the repo folder in the space settings.`);
   expect(calls).toHaveLength(0);
 });
 
@@ -227,13 +227,13 @@ test("branch summary failure still moves to review and says so", async () => {
   const path = repo();
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Rename" });
-  const spy = spyOn(gitOps, "branchSummary").mockRejectedValue(new Error("Could not count commits: bad revision"));
+  const spy = spyOn(gitOps, "branchSummary").mockRejectedValue(new Error("Couldn't count commits: bad revision"));
   cleanups.push(() => spy.mockRestore());
   start({ adapter: fakeAdapter(() => ok("Renamed things.")).adapter });
   await waitFor(() => status(t.id) === "review");
   const [a] = listPending(db);
   expect(a!.detail).toContain("Renamed things.");
-  expect(a!.detail).toContain(`Couldn't summarise the changes on atrium/${t.id}: Could not count commits: bad revision`);
+  expect(a!.detail).toContain(`Couldn't summarise the changes on atrium/${t.id}: Couldn't count commits: bad revision`);
 });
 
 test("never pushes the task branch, even with a remote", async () => {
@@ -255,7 +255,7 @@ test("never pushes the task branch, even with a remote", async () => {
   await waitFor(() => status(t.id) === "review");
   expect(push).not.toHaveBeenCalled();
   expect(git(bare, "branch", "--list", `atrium/${t.id}`)).toBe("");
-  expect(listPending(db)[0]!.detail).toContain(`Branch atrium/${t.id} is on your machine — push it when you're ready.`);
+  expect(listPending(db)[0]!.detail).toContain(`Branch atrium/${t.id} is on your machine. Push it when you're ready.`);
   expect(git(path, "branch", "--show-current")).toBe("main");
 });
 
@@ -326,7 +326,7 @@ test("git settings changed by the agent stop the run before switching branches",
   });
   await waitFor(() => status(t.id) === "blocked");
   expect(getTask(db, t.id)!.blockedReason).toBe(
-    `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`,
+    `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches. Check them, then retry.`,
   );
   expect(push).not.toHaveBeenCalled();
   expect(back).not.toHaveBeenCalled();
@@ -342,7 +342,7 @@ test("a leftover Atrium branch blocks instead of stacking", async () => {
   const { adapter, calls } = fakeAdapter();
   start({ adapter });
   await waitFor(() => status(t.id) === "blocked");
-  expect(getTask(db, t.id)!.blockedReason).toBe("Repo is on atrium/tsk_old; switch back to your branch first.");
+  expect(getTask(db, t.id)!.blockedReason).toBe("The repo is on atrium/tsk_old, an Atrium branch. Switch back to your own branch, then retry.");
   expect(calls).toHaveLength(0);
   expect(git(path, "branch", "--show-current")).toBe("atrium/tsk_old");
 });
@@ -430,7 +430,7 @@ test("a tick that keeps failing does not spin", async () => {
   });
   await Bun.sleep(150);
   expect(ticks).toBeLessThanOrEqual(3);
-  expect(listActivity(db).filter((r) => r.message.startsWith("Runner error:")).length).toBeLessThanOrEqual(3);
+  expect(listActivity(db).filter((r) => r.message.startsWith("Atrium hit a problem starting the next task:")).length).toBeLessThanOrEqual(3);
   broken = false;
   db.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 });
@@ -443,7 +443,7 @@ test("heavy task waits on battery and stays queued with reason in runner.waiting
   await waitFor(() => waits().length > 0);
 
   expect(waits()).toEqual([
-    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power: heavy work runs when plugged in" },
+    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power. Heavy work runs when your Mac is plugged in." },
   ]);
   expect(getSetting(db, "power.source")).toBe("battery");
   expect(status(t.id)).toBe("queued");
@@ -743,7 +743,7 @@ test("recoverOnBoot requeues running tasks", async () => {
   const run = db.query("SELECT * FROM runs WHERE id = 'run_1'").get() as any;
   expect(run.exit_code).toBe(-1);
   expect(run.ended_at).not.toBeNull();
-  expect(listActivity(db).map((r) => r.message)).toContain("Engine restarted; requeued Interrupted");
+  expect(listActivity(db).map((r) => r.message)).toContain("The engine restarted, so Interrupted is back in the queue.");
 });
 
 test("overnight mode starts keep-awake on AC with work and stops when queue empties", async () => {
@@ -819,7 +819,7 @@ test("an outcome for a task moved off running mid-run is discarded", async () =>
   expect(messages.filter((m) => m.startsWith("Discarded"))).toEqual([
     "Discarded the result for Moved away: the task was moved while it ran.",
   ]);
-  expect(messages.some((m) => m.startsWith("Runner error:"))).toBe(false);
+  expect(messages.some((m) => m.startsWith("Atrium hit a problem starting the next task:"))).toBe(false);
 });
 
 // Resolves when the run is aborted, the way the Claude adapter does after killing its child.
@@ -849,7 +849,7 @@ test("stop aborts a running task, requeues it, and puts the repo back", async ()
   expect(aborted).toBe(true);
   expect(status(t.id)).toBe("queued");
   expect(git(path, "branch", "--show-current")).toBe("feature");
-  expect(listActivity(db).map((a) => a.message)).toContain("Engine stopped; requeued Long job");
+  expect(listActivity(db).map((a) => a.message)).toContain("The engine stopped, so Long job is back in the queue.");
   expect(listActivity(db).some((a) => a.message.startsWith("Blocked"))).toBe(false);
 });
 
@@ -889,7 +889,7 @@ test("a repo run records the branch it started from and its git settings", async
 });
 
 const tampered = (path: string) =>
-  `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`;
+  `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches. Check them, then retry.`;
 
 // Mirrors what launch records: the starting branch and the git settings as they were before the run.
 async function crashedRun(path: string, startRef: string, opts: { fingerprint?: boolean } = {}) {
@@ -1490,7 +1490,7 @@ describe("markets spaces", () => {
     expect(db.query("SELECT COUNT(*) AS n FROM paper_fills").get()).toEqual({ n: 1 });
     expect(listActivity(db).map((a) => a.message)).toContain("Paper strategy run: 1 filled, 0 refused");
     // What happened to each order stays with the task, since there's no review to carry it.
-    expect(getTask(db, task.id)!.detail).toMatch(/Filled: buy 5 AAPL @ \$[\d.]+ — Above SMA20/);
+    expect(getTask(db, task.id)!.detail).toMatch(/Filled: buy 5 AAPL @ \$[\d.]+ · Above SMA20/);
     expect(calls[0]!.prompt).toContain("Market data as of");
     expect(calls[0]!.systemPrompt).toContain("Analysis, not advice");
   });

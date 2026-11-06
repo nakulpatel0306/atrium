@@ -53,8 +53,8 @@ test("EDGAR is off until Nakul gives a contact, then asked politely, for US stoc
   const deps = { fetch: s.fetch, now: () => NOW, sleep: async (ms: number) => void sleeps.push(ms) };
   await refreshEdgar(db, deps);
   expect(s.calls).toHaveLength(0);
-  expect(edgarStatus(db, NOW)).toEqual({ on: false, contact: null, pausedUntil: null, note: "Off — add a contact email" });
-  expect(dataBudget(db, NOW).find((r) => r.source === "edgar")).toMatchObject({ lastError: null, note: "Off — add a contact email" });
+  expect(edgarStatus(db, NOW)).toEqual({ on: false, contact: null, pausedUntil: null, note: "Off · add a contact email to turn it on" });
+  expect(dataBudget(db, NOW).find((r) => r.source === "edgar")).toMatchObject({ lastError: null, note: "Off · add a contact email to turn it on" });
   expect(() => setEdgarContact(db, "not an email")).toThrow("Type an email address like you@example.com.");
   setEdgarContact(db, "nakul@example.com");
   await refreshEdgar(db, deps);

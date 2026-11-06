@@ -77,7 +77,7 @@ export function edgarStatus(db: Database, now: number): EdgarStatus {
   const contact = getSetting(db, CONTACT);
   const paused = Number(getSetting(db, PAUSED) ?? 0);
   const pausedUntil = paused > now ? paused : null;
-  if (!contact) return { on: false, contact: null, pausedUntil: null, note: "Off — add a contact email" };
+  if (!contact) return { on: false, contact: null, pausedUntil: null, note: "Off · add a contact email to turn it on" };
   if (getSetting(db, "markets.edgar") === "off") return { on: false, contact, pausedUntil, note: "Off" };
   if (pausedUntil) return { on: true, contact, pausedUntil, note: `Paused: SEC refused requests from this contact. Atrium tries again on ${pausedFmt.format(pausedUntil)}.` };
   return { on: true, contact, pausedUntil: null, note: null };

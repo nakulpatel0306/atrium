@@ -34,11 +34,11 @@ function isProtected(branch: string): boolean {
 }
 
 export async function repoReady(path: string): Promise<{ ok: true } | { ok: false; reason: string; dirty?: true }> {
-  if (!existsSync(path) || !statSync(path).isDirectory()) return { ok: false, reason: `Folder not found: ${path}` };
+  if (!existsSync(path) || !statSync(path).isDirectory()) return { ok: false, reason: `The folder ${path} doesn't exist. Check the repo folder in the space settings.` };
   const inside = await git(path, ["rev-parse", "--is-inside-work-tree"]);
-  if (inside.code !== 0) return { ok: false, reason: `Not a git repo: ${path}` };
+  if (inside.code !== 0) return { ok: false, reason: `${path} isn't a git repo. Pick the repo's own folder in the space settings.` };
   const status = await git(path, ["status", "--porcelain"]);
-  if (status.code !== 0) return { ok: false, reason: `Not a git repo: ${path}` };
+  if (status.code !== 0) return { ok: false, reason: `${path} isn't a git repo. Pick the repo's own folder in the space settings.` };
   if (status.out.trim() !== "") return { ok: false, reason: `You have uncommitted changes in ${path}`, dirty: true };
   return { ok: true };
 }
@@ -47,7 +47,7 @@ export async function repoReady(path: string): Promise<{ ok: true } | { ok: fals
 export async function headRef(path: string): Promise<{ branch: string | null; sha: string }> {
   const name = await git(path, ["branch", "--show-current"]);
   const sha = await git(path, ["rev-parse", "HEAD"]);
-  if (sha.code !== 0) throw new Error(`Could not read HEAD: ${sha.err.trim()}`);
+  if (sha.code !== 0) throw new Error(`Couldn't read HEAD: ${sha.err.trim()}`);
   return { branch: name.out.trim() || null, sha: sha.out.trim() };
 }
 
@@ -60,14 +60,14 @@ export async function prepareBranch(path: string, taskId: string, opts: { existi
   if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
   // checkout carries non-conflicting uncommitted changes along, which would put the user's WIP on the agent branch.
   const status = await git(path, ["status", "--porcelain"]);
-  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
   if (status.out.trim() !== "") throw new Error(`You have uncommitted changes in ${path}`);
   // A retry after a send-back reuses the existing branch. Plain checkout (never --force)
   // fails rather than overwrite local changes.
   const exists = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
   if (opts.existing && exists.code !== 0) throw new Error(`${branch} no longer exists, so there's no work left to fix.`);
   const res = await git(path, exists.code === 0 ? ["checkout", branch] : ["checkout", "-b", branch]);
-  if (res.code !== 0) throw new Error(`Could not switch to ${branch}: ${res.err.trim()}`);
+  if (res.code !== 0) throw new Error(`Couldn't switch to ${branch}: ${res.err.trim()}`);
   return branch;
 }
 
@@ -116,13 +116,13 @@ export async function commitAll(
   await refuseFilterConfig(path);
   // Hashed rather than hardcoded so sha256 repos get their own empty tree.
   const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
-  if (empty.code !== 0) throw new Error(`Could not read git objects: ${empty.err.trim()}`);
+  if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
   // Reading attributes from the empty tree means no .gitattributes can select a filter driver, however late
   // the agent writes one. Config checks alone can't close that window.
   const flags = [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`];
   await refuseGitlinks(path);
   const status = await git(path, [...flags, "status", "--porcelain", "-z", "--untracked-files=all", "--ignore-submodules=all"]);
-  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
   const entries = status.out.split("\0").filter(Boolean);
   const paths: string[] = [];
   // Rename and copy sources too: committing `.env → x.txt` would publish the secret under a new name.
@@ -148,21 +148,21 @@ export async function commitAll(
     await git(path, [...flags, "reset", "-q"]);
     throw changed();
   }
-  if (add.code !== 0) throw new Error(`Could not stage changes: ${add.err.trim()}`);
+  if (add.code !== 0) throw new Error(`Couldn't stage changes: ${add.err.trim()}`);
   const commit = await git(path, [...flags, ...(await signingPins(path)), "commit", "-m", message]);
-  if (commit.code !== 0) throw new Error(`Could not commit: ${(commit.err || commit.out).trim()}`);
+  if (commit.code !== 0) throw new Error(`Couldn't commit: ${(commit.err || commit.out).trim()}`);
   return { committed: true, files: paths.length };
 }
 
 // git runs inside a gitlink's repo during status and add, where that repo's own filters and attributes apply.
 async function refuseGitlinks(path: string): Promise<void> {
   const index = await git(path, ["ls-files", "-s", "-z"]);
-  if (index.code !== 0) throw new Error(`Could not list files: ${index.err.trim()}`);
+  if (index.code !== 0) throw new Error(`Couldn't list files: ${index.err.trim()}`);
   let tree = "";
   // An empty repo has no HEAD to list.
   if ((await git(path, ["rev-parse", "--verify", "--quiet", "HEAD"])).code === 0) {
     const res = await git(path, ["ls-tree", "-r", "-z", "HEAD"]);
-    if (res.code !== 0) throw new Error(`Could not list files: ${res.err.trim()}`);
+    if (res.code !== 0) throw new Error(`Couldn't list files: ${res.err.trim()}`);
     tree = res.out;
   }
   if (/(^|\0)160000 /.test(index.out) || /(^|\0)160000 /.test(tree)) throw new Error(SUBMODULES_REFUSAL);
@@ -174,11 +174,11 @@ const FILTERS_REFUSAL = "Refusing to commit: this repo uses git filters (e.g. LF
 
 async function refuseFilterAttributes(path: string, changed: string[]): Promise<void> {
   const tracked = await git(path, ["ls-files", "-z", "--", ".gitattributes", "*.gitattributes"]);
-  if (tracked.code !== 0) throw new Error(`Could not list files: ${tracked.err.trim()}`);
+  if (tracked.code !== 0) throw new Error(`Couldn't list files: ${tracked.err.trim()}`);
   const files = new Set([...tracked.out.split("\0"), ...changed].filter((f) => f && f.split("/").pop() === ".gitattributes"));
   // --attr-source does not cover info/attributes, so it is the one place a filter selection can still arrive from.
   const info = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "info/attributes"]);
-  if (info.code !== 0) throw new Error(`Could not read git dir: ${info.err.trim()}`);
+  if (info.code !== 0) throw new Error(`Couldn't read git dir: ${info.err.trim()}`);
   const full = [...[...files].map((f) => join(path, f)), info.out.trim()];
   for (const file of full) {
     if (existsSync(file) && statSync(file).isFile() && /(^|\s)filter\s*=/m.test(readFileSync(file, "utf8"))) {
@@ -193,7 +193,7 @@ async function refuseFilterConfig(path: string): Promise<void> {
   // NUL-separated so a value containing newlines can't pass for several config entries.
   const res = await git(path, ["config", "--null", "--get-regexp", "^filter\\."]);
   // Exit 1 just means no filter is configured.
-  if (res.code > 1) throw new Error(`Could not read git config: ${res.err.trim()}`);
+  if (res.code > 1) throw new Error(`Couldn't read git config: ${res.err.trim()}`);
   for (const record of res.out.split("\0").filter(Boolean)) {
     const key = record.split("\n")[0]!;
     const dot = key.lastIndexOf(".");
@@ -218,7 +218,7 @@ export async function gitSettingsFingerprint(path: string): Promise<string> {
   // Absolute: from a subfolder, --git-common-dir is otherwise relative to the repo root, not cwd.
   const dirs = await git(path, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel"]);
   const [gitDirPath, commonDir, top] = dirs.out.trim().split("\n");
-  if (dirs.code !== 0 || !gitDirPath || !commonDir || !top) throw new Error(`Not a git repo: ${path}`);
+  if (dirs.code !== 0 || !gitDirPath || !commonDir || !top) throw new Error(`${path} isn't a git repo. Pick the repo's own folder in the space settings.`);
   // Effective config catches include files, which the raw config file only points at.
   const local = await git(path, ["config", "--list", "--show-origin", "--includes", "--local"]);
   // Fails unless extensions.worktreeConfig is on; then there is no worktree config to hash.
@@ -268,10 +268,10 @@ export async function pushBranch(
 // Plain checkout (never --force); a dirty tree is reported rather than carried along.
 export async function returnToBranch(path: string, ref: string): Promise<"ok" | "dirty"> {
   const status = await git(path, ["status", "--porcelain"]);
-  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
   if (status.out.trim() !== "") return "dirty";
   const res = await git(path, ["checkout", ref]);
-  if (res.code !== 0) throw new Error(`Could not switch back to ${ref}: ${res.err.trim()}`);
+  if (res.code !== 0) throw new Error(`Couldn't switch back to ${ref}: ${res.err.trim()}`);
   return "ok";
 }
 
@@ -282,8 +282,8 @@ export async function branchSummary(
 ): Promise<{ commits: number; filesChanged: number; insertions: number; deletions: number }> {
   const count = await git(path, ["rev-list", "--count", `${base}..${branch}`]);
   const stat = await git(path, ["diff", "--shortstat", `${base}...${branch}`]);
-  if (count.code !== 0) throw new Error(`Could not count commits: ${count.err.trim()}`);
-  if (stat.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${stat.err.trim()}`);
+  if (count.code !== 0) throw new Error(`Couldn't count commits: ${count.err.trim()}`);
+  if (stat.code !== 0) throw new Error(`Couldn't diff ${base}...${branch}: ${stat.err.trim()}`);
   const num = (re: RegExp) => Number(stat.out.match(re)?.[1] ?? 0);
   return {
     commits: Number(count.out.trim()),
@@ -311,7 +311,7 @@ export async function reviewDiff(path: string, base: string, branch: string): Pr
     `${base}...${branch}`,
     "--", ".", ":(exclude,glob,icase)**/.env*", ":(exclude,glob,icase)**/*.env",
   ]);
-  if (res.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${res.err.trim()}`);
+  if (res.code !== 0) throw new Error(`Couldn't diff ${base}...${branch}: ${res.err.trim()}`);
   const sections = res.out.split(/^(?=diff --git )/m).filter((s) => s.startsWith("diff --git ") && !touchesEnv(s.split("\n")[0]!));
   const full = Buffer.from(sections.join(""));
   if (full.length <= REVIEW_DIFF_CAP) return { diff: full.toString(), files: sections.length, truncated: false };
@@ -348,9 +348,9 @@ export async function changedFiles(path: string, base: string, branch: string): 
     "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--ignore-submodules=none",
   ];
   const names = await git(path, [...flags, "--raw", "-z", `${base}...${branch}`, "--"]);
-  if (names.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${names.err.trim()}`);
+  if (names.code !== 0) throw new Error(`Couldn't diff ${base}...${branch}: ${names.err.trim()}`);
   const nums = await git(path, [...flags, "--numstat", "-z", `${base}...${branch}`, "--"]);
-  if (nums.code !== 0) throw new Error(`Could not diff ${base}...${branch}: ${nums.err.trim()}`);
+  if (nums.code !== 0) throw new Error(`Couldn't diff ${base}...${branch}: ${nums.err.trim()}`);
   const counts = new Map<string, { added: number | null; deleted: number | null }>();
   for (const record of nums.out.split("\0").filter(Boolean)) {
     const [added, deleted, ...rest] = record.split("\t");
@@ -478,7 +478,7 @@ export async function changedText(path: string, base: string, sha: string): Prom
 // Every entry in a commit's tree with its git mode ("100644" plain, "120000" symlink, "160000" gitlink…).
 export async function treeEntries(path: string, sha: string): Promise<{ path: string; mode: string }[]> {
   const res = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", sha]);
-  if (res.code !== 0) throw new Error(`Could not list files at ${sha}: ${res.err.trim()}`);
+  if (res.code !== 0) throw new Error(`Couldn't list files at ${sha}: ${res.err.trim()}`);
   return res.out
     .split("\0")
     .filter(Boolean)
@@ -510,7 +510,7 @@ export function branchHeadSync(path: string, branch: string): string | null {
 // numbered branch each time, since its earlier edits already sit on `atrium/<id>`.
 export async function branchOffDirty(path: string, taskId: string): Promise<string | null> {
   const status = await git(path, ["status", "--porcelain"]);
-  if (status.code !== 0) throw new Error(`Could not read git status: ${status.err.trim()}`);
+  if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
   if (status.out.trim() === "") return null;
   let branch = `atrium/${taskId}`;
   for (let n = 2; (await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0; n++) {
@@ -519,7 +519,7 @@ export async function branchOffDirty(path: string, taskId: string): Promise<stri
   const valid = await git(path, ["check-ref-format", "--branch", branch]);
   if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
   const res = await git(path, ["checkout", "-b", branch]);
-  if (res.code !== 0) throw new Error(`Could not create ${branch}: ${res.err.trim()}`);
+  if (res.code !== 0) throw new Error(`Couldn't create ${branch}: ${res.err.trim()}`);
   return branch;
 }
 
@@ -531,8 +531,8 @@ export async function moveLateCommit(path: string, taskId: string, decided: stri
   const valid = await git(path, ["check-ref-format", "--branch", branch]);
   if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
   const res = await git(path, ["checkout", "-b", branch, post]);
-  if (res.code !== 0) throw new Error(`Could not create ${branch}: ${res.err.trim()}`);
+  if (res.code !== 0) throw new Error(`Couldn't create ${branch}: ${res.err.trim()}`);
   const back = await git(path, ["update-ref", `refs/heads/${decided}`, pre, post]);
-  if (back.code !== 0) throw new Error(`Could not move ${decided} back to the commit you decided on: ${back.err.trim()}`);
+  if (back.code !== 0) throw new Error(`Couldn't move ${decided} back to the commit you decided on: ${back.err.trim()}`);
   return branch;
 }

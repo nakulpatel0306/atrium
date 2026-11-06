@@ -1,4 +1,4 @@
-import { AGENT_IDS } from "../../dashboard/agents";
+import { AGENT_IDS, agentName } from "../../dashboard/agents";
 import { bytes, clock, tokens } from "../../dashboard/format";
 import { AGENT_ROLES, agentStatus, runOutcome } from "../../dashboard/summary";
 import type { State } from "../../engine/state";
@@ -26,7 +26,7 @@ export function agentsLines(state: State): DetailLine[] {
     const status = agentStatus(id, info, state);
     lines.push(
       [
-        { text: info.label, bold: true, color: color.accent },
+        { text: agentName(id), bold: true, color: color.accent },
         { text: "  " },
         { text: status.text, color: status.tone ? TONE[status.tone] : color.ok },
         { text: `  · ${tokens(info.tokensToday)} tokens today`, color: color.muted },

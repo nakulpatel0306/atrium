@@ -76,146 +76,146 @@ this page is the record of the reading pass.
 
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
-| Shared | `src/tui/client.ts` | messages | no | |
-| Shared | `src/tui/detail.ts` | messages | no | |
-| Shared | `src/tui/edit.ts` | messages | no | |
-| Shared | `src/tui/effects.ts` | messages | no | |
-| Shared | `src/tui/hooks.ts` | messages | no | |
-| Shared | `src/tui/keys.ts` | messages | no | |
-| Shared | `src/tui/layout.ts` | messages | no | |
-| Shared | `src/tui/markdown.ts` | messages | no | |
-| Shared | `src/tui/select.ts` | messages | no | |
-| Shared | `src/tui/text.ts` | messages | no | |
-| Shared | `src/tui/theme.ts` | messages | no | |
-| Shared | `src/tui/ui.ts` | messages | no | |
-| Panes | `src/tui/components/ActivityPane.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/AgentsView.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/App.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Body.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Confirm.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/DetailPane.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Float.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Header.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Help.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Lines.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/List.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/LivePane.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/NeedsPane.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Pane.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Picker.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Prompt.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Row.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/SpacesPane.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/StatusBar.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/TasksPane.tsx` | labels, buttons, empty states, errors | no | |
-| Panes | `src/tui/components/Transcript.tsx` | labels, buttons, empty states, errors | no | |
-| Shared | `src/tui/main.tsx` | labels, buttons, empty states, errors | no | |
+| Shared | `src/tui/client.ts` | messages | yes | Error copy matches the dashboard ("Atrium couldn't do that (error 500). Try again…") |
+| Shared | `src/tui/detail.ts` | messages | yes | Summary and What it made; agent text through markdownLines; straight quotes around the parent task |
+| Shared | `src/tui/edit.ts` | messages | yes | No change needed |
+| Shared | `src/tui/effects.ts` | messages | yes | Open and reveal flashes |
+| Shared | `src/tui/hooks.ts` | messages | yes | No change needed |
+| Shared | `src/tui/keys.ts` | messages | yes | f F, o and R file keys in help and hints |
+| Shared | `src/tui/layout.ts` | messages | yes | No change needed |
+| Shared | `src/tui/markdown.ts` | messages | yes | New in this plan |
+| Shared | `src/tui/select.ts` | messages | yes | No change needed |
+| Shared | `src/tui/text.ts` | messages | yes | No change needed |
+| Shared | `src/tui/theme.ts` | messages | yes | No change needed |
+| Shared | `src/tui/ui.ts` | messages | yes | No change needed |
+| Panes | `src/tui/components/ActivityPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/AgentsView.tsx` | labels, buttons, empty states, errors | yes | Agents are named Claude, Codex, Gemini, not Claude Code |
+| Panes | `src/tui/components/App.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Body.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Confirm.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/DetailPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Float.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Header.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Help.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Lines.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/List.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/LivePane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/NeedsPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Pane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Picker.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Prompt.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Row.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/SpacesPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/StatusBar.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/TasksPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/Transcript.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Shared | `src/tui/main.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 
 ### Mac app
 
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
-| App | `mac/Sources/App/AppDelegate.swift` | messages | no | |
-| App | `mac/Sources/App/EngineClient.swift` | messages | no | |
-| App | `mac/Sources/App/MainWindow.swift` | messages | no | |
-| App | `mac/Sources/App/Notifier.swift` | messages | no | |
-| App | `mac/Sources/App/OfflineView.swift` | messages | no | |
-| App | `mac/Sources/App/StatusMenu.swift` | messages | no | |
-| App | `mac/Sources/App/WebController.swift` | messages | no | |
-| App | `mac/Sources/App/main.swift` | messages | no | |
-| Core | `mac/Sources/Core/Decide.swift` | messages | no | |
-| Core | `mac/Sources/Core/Model.swift` | messages | no | |
+| App | `mac/Sources/App/AppDelegate.swift` | messages | yes | Sentence case: "Hide others", "Select all" |
+| App | `mac/Sources/App/EngineClient.swift` | messages | yes | No change needed |
+| App | `mac/Sources/App/MainWindow.swift` | messages | yes | No change needed |
+| App | `mac/Sources/App/Notifier.swift` | messages | yes | No change needed |
+| App | `mac/Sources/App/OfflineView.swift` | messages | yes | No change needed |
+| App | `mac/Sources/App/StatusMenu.swift` | messages | yes | Sentence case: "Open at login", "Open notification settings…" |
+| App | `mac/Sources/App/WebController.swift` | messages | yes | No change needed |
+| App | `mac/Sources/App/main.swift` | messages | yes | No change needed |
+| Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made |
+| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files |
 
 ### Engine messages that reach the UI
 
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
-| Runs | `src/engine/runner.ts` | messages | no | |
-| Runs | `src/engine/approvals.ts` | messages | no | |
-| Runs | `src/engine/handoff.ts` | messages | no | |
-| Agents | `src/engine/agents/atrium-paths.ts` | messages | no | |
-| Agents | `src/engine/agents/claude.ts` | messages | no | |
-| Agents | `src/engine/agents/codex.ts` | messages | no | |
-| Agents | `src/engine/agents/gemini.ts` | messages | no | |
-| Agents | `src/engine/agents/limits.ts` | messages | no | |
-| Agents | `src/engine/agents/process.ts` | messages | no | |
-| Agents | `src/engine/agents/registry.ts` | messages | no | |
-| Agents | `src/engine/agents/seatbelt.ts` | messages | no | |
-| Agents | `src/engine/agents/short.ts` | messages | no | |
-| Agents | `src/engine/agents/types.ts` | messages | no | |
-| Runs | `src/engine/setup.ts` | messages | no | |
-| Runs | `src/engine/git.ts` | messages | no | |
-| Runs | `src/engine/scratch.ts` | messages | no | |
-| Repos | `src/engine/repos/cleanup.ts` | messages | no | |
-| Repos | `src/engine/repos/clones.ts` | messages | no | |
-| Repos | `src/engine/repos/create.ts` | messages | no | |
-| Repos | `src/engine/repos/gh.ts` | messages | no | |
-| Repos | `src/engine/repos/gitops.ts` | messages | no | |
-| Repos | `src/engine/repos/index.ts` | messages | no | |
-| Repos | `src/engine/repos/names.ts` | messages | no | |
-| Repos | `src/engine/repos/push.ts` | messages | no | |
-| Repos | `src/engine/repos/rules.ts` | messages | no | |
-| Repos | `src/engine/repos/store.ts` | messages | no | |
-| Repos | `src/engine/repos/templates.ts` | messages | no | |
-| Investing | `src/engine/markets/agent.ts` | messages | no | |
-| Investing | `src/engine/markets/alerts.ts` | messages | no | |
-| Investing | `src/engine/markets/backtest.ts` | messages | no | |
-| Investing | `src/engine/markets/briefing.ts` | messages | no | |
-| Investing | `src/engine/markets/budget.ts` | messages | no | |
-| Investing | `src/engine/markets/cache.ts` | messages | no | |
-| Investing | `src/engine/markets/calendar.ts` | messages | no | |
-| Investing | `src/engine/markets/closes.ts` | messages | no | |
-| Investing | `src/engine/markets/csv.ts` | messages | no | |
-| Investing | `src/engine/markets/data.ts` | messages | no | |
-| Investing | `src/engine/markets/edgar.ts` | messages | no | |
-| Investing | `src/engine/markets/eod.ts` | messages | no | |
-| Investing | `src/engine/markets/estimate.ts` | messages | no | |
-| Investing | `src/engine/markets/events.ts` | messages | no | |
-| Investing | `src/engine/markets/feed.ts` | messages | no | |
-| Investing | `src/engine/markets/fx.ts` | messages | no | |
-| Investing | `src/engine/markets/health.ts` | messages | no | |
-| Investing | `src/engine/markets/holdings.ts` | messages | no | |
-| Investing | `src/engine/markets/ideas.ts` | messages | no | |
-| Investing | `src/engine/markets/import.ts` | messages | no | |
-| Investing | `src/engine/markets/indicators.ts` | messages | no | |
-| Investing | `src/engine/markets/instrument.ts` | messages | no | |
-| Investing | `src/engine/markets/jobs.ts` | messages | no | |
-| Investing | `src/engine/markets/keychain.ts` | messages | no | |
-| Investing | `src/engine/markets/labels.ts` | messages | no | |
-| Investing | `src/engine/markets/meta.ts` | messages | no | |
-| Investing | `src/engine/markets/paper.ts` | messages | no | |
-| Investing | `src/engine/markets/performance.ts` | messages | no | |
-| Investing | `src/engine/markets/portfolio.ts` | messages | no | |
-| Investing | `src/engine/markets/redact.ts` | messages | no | |
-| Investing | `src/engine/markets/research.ts` | messages | no | |
-| Investing | `src/engine/markets/schema.ts` | messages | no | |
-| Investing | `src/engine/markets/screen.ts` | messages | no | |
-| Investing | `src/engine/markets/screener.ts` | messages | no | |
-| Investing | `src/engine/markets/seed.ts` | messages | no | |
-| Investing | `src/engine/markets/sourced.ts` | messages | no | |
-| Investing | `src/engine/markets/strategies.ts` | messages | no | |
-| Investing | `src/engine/markets/tfsa.ts` | messages | no | |
-| Investing | `src/engine/markets/watchlist.ts` | messages | no | |
-| Rules | `src/engine/autonomy/facts.ts` | messages | no | |
-| Rules | `src/engine/autonomy/kinds.ts` | messages | no | |
-| Rules | `src/engine/autonomy/proposals.ts` | messages | no | |
-| Rules | `src/engine/autonomy/rules.ts` | messages | no | |
-| Runs | `src/engine/briefing.ts` | messages | no | |
-| Runs | `src/engine/summary.ts` | status text, review lines, briefing lines | no | |
-| Runs | `src/engine/folders.ts` | messages | no | |
-| Files | `src/engine/outputs/files.ts` | action labels, feedback lines | no | |
-| Files | `src/engine/outputs/kinds.ts` | messages | no | |
-| Files | `src/engine/outputs/open.ts` | messages | no | |
-| Files | `src/engine/outputs/snapshot.ts` | messages | no | |
-| Files | `src/engine/outputs/store.ts` | messages | no | |
-| Files | `src/engine/outputs/views.ts` | messages | no | |
-| API errors | `src/server/files.ts` | action labels, feedback lines | no | |
-| API errors | `src/server/http.ts` | messages | no | |
-| API errors | `src/server/investing.ts` | messages | no | |
-| API errors | `src/server/markets.ts` | messages | no | |
-| API errors | `src/server/repos.ts` | messages | no | |
-| API errors | `src/server/server.ts` | messages | no | |
-| Runs | `src/cli.ts` | messages | no | |
+| Runs | `src/engine/runner.ts` | messages | yes | "Runner error:" became a sentence with a next step; "Atrium couldn't start the run" says what to check; "Repo is on …" says what to do; requeue lines are sentences; em dashes removed; made line added to reviews; kept-files path shown with ~ |
+| Runs | `src/engine/approvals.ts` | messages | yes | No change needed |
+| Runs | `src/engine/handoff.ts` | messages | yes | No change needed |
+| Agents | `src/engine/agents/atrium-paths.ts` | messages | yes | No change needed |
+| Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
+| Agents | `src/engine/agents/codex.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
+| Agents | `src/engine/agents/gemini.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
+| Agents | `src/engine/agents/limits.ts` | messages | yes | No change needed |
+| Agents | `src/engine/agents/process.ts` | messages | yes | No change needed |
+| Agents | `src/engine/agents/registry.ts` | messages | yes | Straight quotes around "Run now"; "to override" became "to skip the wait" |
+| Agents | `src/engine/agents/seatbelt.ts` | messages | yes | No change needed |
+| Agents | `src/engine/agents/short.ts` | messages | yes | No change needed |
+| Agents | `src/engine/agents/types.ts` | messages | yes | No change needed |
+| Runs | `src/engine/setup.ts` | messages | yes | No change needed |
+| Runs | `src/engine/git.ts` | messages | yes | "Could not" became "Couldn't" (git's detail kept after the colon); "Folder not found" and "Not a git repo" say where to fix it |
+| Runs | `src/engine/scratch.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/cleanup.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/clones.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/create.ts` | messages | yes | "Could not" became "Couldn't" |
+| Repos | `src/engine/repos/gh.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/gitops.ts` | messages | yes | "Could not" became "Couldn't" |
+| Repos | `src/engine/repos/index.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/names.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/push.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/rules.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/store.ts` | messages | yes | No change needed |
+| Repos | `src/engine/repos/templates.ts` | messages | yes | No change needed |
+| Investing | `src/engine/markets/agent.ts` | messages | yes | Filled/Refused lines use · instead of an em dash; moves say "on Fri, Nov 6" when the market is closed |
+| Investing | `src/engine/markets/alerts.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/backtest.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/briefing.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/budget.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/cache.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/calendar.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/closes.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/csv.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/data.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/edgar.ts` | messages | yes | "Off — add a contact email" became "Off · add a contact email to turn it on" |
+| Investing | `src/engine/markets/eod.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/estimate.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/events.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/feed.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/fx.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/health.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/holdings.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/ideas.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/import.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/indicators.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/instrument.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/jobs.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/keychain.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/labels.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/meta.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/paper.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/performance.ts` | messages | yes | Results end on the last close used, not today |
+| Investing | `src/engine/markets/portfolio.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/redact.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/research.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/schema.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/screen.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/screener.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/seed.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/sourced.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/strategies.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/tfsa.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Investing | `src/engine/markets/watchlist.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
+| Rules | `src/engine/autonomy/facts.ts` | messages | yes | No change needed |
+| Rules | `src/engine/autonomy/kinds.ts` | messages | yes | No change needed |
+| Rules | `src/engine/autonomy/proposals.ts` | messages | yes | No change needed |
+| Rules | `src/engine/autonomy/rules.ts` | messages | yes | No change needed |
+| Runs | `src/engine/briefing.ts` | messages | yes | No change needed |
+| Runs | `src/engine/summary.ts` | status text, review lines, briefing lines | yes | Need.files for the Mac app |
+| Runs | `src/engine/folders.ts` | messages | yes | New: moved-folder activity line |
+| Files | `src/engine/outputs/files.ts` | action labels, feedback lines | yes | New in this plan; every refusal says what to do |
+| Files | `src/engine/outputs/kinds.ts` | messages | yes | New in this plan; no user strings |
+| Files | `src/engine/outputs/open.ts` | messages | yes | New in this plan; every refusal says what to do |
+| Files | `src/engine/outputs/snapshot.ts` | messages | yes | New in this plan; no user strings |
+| Files | `src/engine/outputs/store.ts` | messages | yes | New: made line ("Made 3 files: a, b and c.") |
+| Files | `src/engine/outputs/views.ts` | messages | yes | New in this plan |
+| API errors | `src/server/files.ts` | action labels, feedback lines | yes | New in this plan; errors say what to do |
+| API errors | `src/server/http.ts` | messages | yes | No change needed |
+| API errors | `src/server/investing.ts` | messages | yes | No change needed |
+| API errors | `src/server/markets.ts` | messages | yes | No change needed |
+| API errors | `src/server/repos.ts` | messages | yes | No change needed |
+| API errors | `src/server/server.ts` | messages | yes | No change needed |
+| Runs | `src/cli.ts` | messages | yes | No change needed |
 
 ## Glossary
 
@@ -259,4 +259,6 @@ Run on 2026-11-05 before the copy pass:
 | claude-code-only-for-cli | 0 |
 | contrast (`--faint` on every surface, 2.45 to 2.94:1) | 4 |
 
-The mechanical rules were already clean; the reading pass below is where the real changes are.
+The mechanical rules were already clean; the reading pass below is where the real changes are. After Tasks 13 and
+14 every rule is at 0, contrast included, so the baseline file and its mechanism are gone: the lint now fails on any
+offence.

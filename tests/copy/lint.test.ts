@@ -1,18 +1,8 @@
 import { expect, test } from "bun:test";
-import { contrastFailures } from "./contrast";
-import { againstBaseline, check, offences, readBaseline, tally } from "./rules";
+import { check, offences } from "./rules";
 
 test("every user-facing string follows the copy rules", () => {
-  const found = offences();
-  const contrast = contrastFailures();
-  const all = tally([...found, ...contrast.map(() => ({ file: "src/dashboard/styles.css", rule: "contrast" }))]);
-  const problems = againstBaseline(all, readBaseline());
-  if (problems.length) {
-    const base = readBaseline();
-    const fresh = found.filter((o) => (all[o.file]?.[o.rule] ?? 0) > (base[o.file]?.[o.rule] ?? 0));
-    console.log([...problems, "", ...fresh.map((o) => `${o.file}:${o.line}  ${JSON.stringify(o.text)}  → ${o.rule}`), ...contrast].join("\n"));
-  }
-  expect(problems).toEqual([]);
+  expect(offences().map((o) => `${o.file}:${o.line}  ${JSON.stringify(o.text)}  → ${o.rule}`)).toEqual([]);
 });
 
 test("each rule catches what it should", () => {

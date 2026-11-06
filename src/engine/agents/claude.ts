@@ -150,7 +150,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         ],
         { cwd: input.cwd, stdin: input.prompt, env: agentEnv(process.env), signal: input.signal, onLine: handle },
       );
-      if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" };
+      if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Claude Code isn't installed, or `claude` isn't on your PATH. Install it, then retry." };
       const { stderr, exitCode } = proc;
 
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
@@ -182,7 +182,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
     // `claude` has no cheap sign-in check, so a logged-out CLI shows up when a run fails.
     async probe(signal?: AbortSignal): Promise<AgentStatus> {
       const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", signal, onLine() {} });
-      if (proc.notInstalled || proc.exitCode !== 0) return { installed: false, loggedIn: null, detail: "Claude Code isn't installed or not on PATH" };
+      if (proc.notInstalled || proc.exitCode !== 0) return { installed: false, loggedIn: null, detail: "Install Claude Code and make sure `claude` is on your PATH." };
       return { installed: true, loggedIn: null, detail: "Installed" };
     },
   };

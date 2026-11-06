@@ -57,7 +57,7 @@ export async function createProject(db: Database, actionId: string, deps: { kick
     if (slug.split("/")[0]!.toLowerCase() !== owner.toLowerCase()) throw new Error(`${url} isn't on your account (${owner}), so Atrium won't push to it.`);
     if (state === "empty") {
       const remote = await git(staging, ["remote", "add", "origin", `${url}.git`]);
-      if (remote.code !== 0) throw new Error(`Could not set the GitHub remote: ${remote.err.trim()}`);
+      if (remote.code !== 0) throw new Error(`Couldn't set the GitHub remote: ${remote.err.trim()}`);
       await pushInitialMain(db, action.approvalId, staging, `${url}.git`);
       db.query("UPDATE repo_actions SET pushed_sha = ?, updated_at = ? WHERE id = ?").run(sha, Date.now(), actionId);
     }

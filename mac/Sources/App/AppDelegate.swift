@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item("About Atrium", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
         .separator(),
         item("Hide Atrium", #selector(NSApplication.hide(_:)), "h"),
-        item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+        item("Hide others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
         .separator(),
         item("Quit Atrium", #selector(NSApplication.terminate(_:)), "q"),
       ])
@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item("Cut", #selector(NSText.cut(_:)), "x"),
         item("Copy", #selector(NSText.copy(_:)), "c"),
         item("Paste", #selector(NSText.paste(_:)), "v"),
-        item("Select All", #selector(NSText.selectAll(_:)), "a"),
+        item("Select all", #selector(NSText.selectAll(_:)), "a"),
       ])
     let reload = item("Reload", #selector(reload(_:)), "r")
     reload.target = self

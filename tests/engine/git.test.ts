@@ -46,9 +46,9 @@ describe("repoReady", () => {
   });
 
   test("missing folder and non-repo are reported", async () => {
-    expect(await repoReady("/nonexistent/atrium-nope")).toEqual({ ok: false, reason: "Folder not found: /nonexistent/atrium-nope" });
+    expect(await repoReady("/nonexistent/atrium-nope")).toEqual({ ok: false, reason: "The folder /nonexistent/atrium-nope doesn't exist. Check the repo folder in the space settings." });
     const plain = tempDir();
-    expect(await repoReady(plain)).toEqual({ ok: false, reason: `Not a git repo: ${plain}` });
+    expect(await repoReady(plain)).toEqual({ ok: false, reason: `${plain} isn't a git repo. Pick the repo's own folder in the space settings.` });
   });
 });
 

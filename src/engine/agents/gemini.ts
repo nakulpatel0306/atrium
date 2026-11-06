@@ -99,7 +99,7 @@ export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: str
       );
       const failure = seatbeltFailure(proc);
       if (proc.notInstalled || failure === "sandbox") return sandboxFailed("Gemini");
-      if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Antigravity (agy) isn't installed or not on PATH" };
+      if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Antigravity isn't installed, or `agy` isn't on your PATH. Install it, then retry." };
 
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
       if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped" };
@@ -120,7 +120,7 @@ export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: str
     async probe(signal?: AbortSignal): Promise<AgentStatus> {
       let stdout = "";
       const proc = await runAgentProcess([bin, "models"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => (stdout += `${l}\n`) });
-      if (proc.notInstalled) return { installed: false, loggedIn: null, detail: "Antigravity (agy) isn't installed or not on PATH" };
+      if (proc.notInstalled) return { installed: false, loggedIn: null, detail: "Install Antigravity and make sure `agy` is on your PATH." };
       if (proc.exitCode === 0 && /^gemini-/m.test(stdout)) return { installed: true, loggedIn: true, detail: "Signed in" };
       if (proc.exitCode !== 0 && /authentication|sign in|not (logged|signed) in/i.test(`${stdout}\n${proc.stderr}`)) {
         return { installed: true, loggedIn: false, detail: SIGN_IN };

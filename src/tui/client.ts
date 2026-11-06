@@ -33,7 +33,7 @@ export const engineBase = () => `http://${config().host}:${config().port}`;
 
 export const OFFLINE_ERROR = "Can't reach the Atrium engine. Check that it's running, then try again.";
 const MISSING_TRANSCRIPT = "This transcript isn't stored anymore. Atrium keeps the newest 200 MB of transcripts.";
-const engineError = (status: number) => `Atrium answered with an error (${status}). Try again.`;
+const engineError = (status: number) => `Atrium couldn't do that (error ${status}). Try again, and check the engine log if it keeps happening.`;
 
 type EngineMessage = { type: "changed" } | { type: "run-output"; runId: string; taskId: string; chunk: string };
 

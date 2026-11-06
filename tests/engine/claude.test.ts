@@ -60,7 +60,7 @@ describe("claudeAdapter", () => {
 
   test("missing binary maps to not_installed", async () => {
     const r = await claudeAdapter("/nonexistent/claude").run(input());
-    expect(r).toEqual({ status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" });
+    expect(r).toEqual({ status: "error", kind: "not_installed", message: "Claude Code isn't installed, or `claude` isn't on your PATH. Install it, then retry." });
   });
 
   test("rate limit maps to rate_limited with retryAfter in the future", async () => {

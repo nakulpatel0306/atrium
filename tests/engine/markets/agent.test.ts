@@ -76,15 +76,15 @@ test("settle on an active strategy task honours limits", async () => {
   const task = createTask(db, { spaceId: space.id, title: "Paper strategy: Momentum", agent: "claude", strategyId: s.id });
   const r = await hooks().settle(task, space, "claude", block({ orders: [order(5), order(50), order(1, "MSFT"), order(1), order(1), order(1)] }));
   expect(r.done).toBe(true);
-  expect(r.lines[0]).toBe("Filled: buy 5 AAPL @ $100.00 — buy 5");
-  expect(r.lines[1]).toBe("Refused: buy 50 AAPL — that would put $5,500.00 in AAPL; this strategy's limit is $2,000.00.");
-  expect(r.lines[2]).toBe("Refused: buy 1 MSFT — MSFT isn't one of this strategy's symbols.");
+  expect(r.lines[0]).toBe("Filled: buy 5 AAPL @ $100.00 · buy 5");
+  expect(r.lines[1]).toBe("Refused: buy 50 AAPL · that would put $5,500.00 in AAPL; this strategy's limit is $2,000.00.");
+  expect(r.lines[2]).toBe("Refused: buy 1 MSFT · MSFT isn't one of this strategy's symbols.");
   expect(r.lines[3]).toStartWith("Filled: buy 1 AAPL");
   expect(r.lines[4]).toStartWith("Filled: buy 1 AAPL");
   expect(r.lines).toHaveLength(5);
   expect(r.activity).toBe("Paper strategy run: 3 filled, 2 refused");
   const r2 = await hooks().settle(task, space, "claude", block({ orders: [order(1)] }));
-  expect(r2.lines[0]).toBe("Refused: buy 1 AAPL — this strategy already made its 3 trades today.");
+  expect(r2.lines[0]).toBe("Refused: buy 1 AAPL · this strategy already made its 3 trades today.");
   const fills = db.query("SELECT reasoning, strategy_id, task_id FROM paper_fills").all() as { reasoning: string; strategy_id: string; task_id: string }[];
   expect(fills).toHaveLength(3);
   for (const f of fills) expect(f).toMatchObject({ strategy_id: s.id, task_id: task.id });
@@ -120,7 +120,7 @@ test("a strategy never fills from a price the current provider didn't give", asy
   saveQuotes(db, [{ key: "AAPL", price: 100, prevClose: 99, at: NOW, source: "alpaca", freshness: "live" }]);
   const task = createTask(db, { spaceId: space.id, title: "Paper strategy: Momentum", agent: "claude", strategyId: s.id });
   const r = await hooks().settle(task, space, "claude", block({ orders: [order(1)] }));
-  expect(r.lines).toEqual(["Refused: buy 1 AAPL — No live price for AAPL right now."]);
+  expect(r.lines).toEqual(["Refused: buy 1 AAPL · No live price for AAPL right now."]);
 });
 
 test("an investing digest gets the portfolio and the news, for Claude only", async () => {

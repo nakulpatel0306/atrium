@@ -138,7 +138,7 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
     if (missing) return { wait: missing };
     const reserve = inReserve();
     if (reserve && !task.ignoreReserve) {
-      const reason = `Saving the rest of your Claude window for you (resets ${clock(reserve.until)}). Use “Run now” to override.`;
+      const reason = `Saving the rest of your Claude window for you (resets ${clock(reserve.until)}). Use "Run now" to skip the wait.`;
       return { wait: { agent: "claude", kind: "reserve", reason, until: reserve.until } };
     }
     return { agent: "claude" };

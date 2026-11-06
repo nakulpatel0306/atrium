@@ -111,7 +111,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   // Wait reasons can name a command in backticks; they're kept as written so it can be copied.
   if (wait) lines.push(plain(wait.reason, { color: needsAction(wait) ? color.bad : color.warn }));
   if (parent) {
-    lines.push(muted(`${task.kind === "review" ? "Reviews" : "Fixes what the review found in"} “${parent.title}”`));
+    lines.push(muted(`${task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "${parent.title}"`));
   }
   lines.push(blank, ...block(task.detail || task.title), blank, ...made(outputs, selectedFile, width));
   lines.push(

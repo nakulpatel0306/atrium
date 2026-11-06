@@ -9,15 +9,15 @@ const UNSIGNED = "Git couldn't sign the first commit, so nothing was pushed. Che
 // The first commit of a new project, as Nakul: his global identity and signing setup, a bare message, no trailers.
 export async function initialCommit(path: string): Promise<string> {
   const init = await git(path, ["init", "-q", "-b", "main"]);
-  if (init.code !== 0) throw new Error(`Could not set up git in the new folder: ${init.err.trim()}`);
+  if (init.code !== 0) throw new Error(`Couldn't set up git in the new folder: ${init.err.trim()}`);
   if ((await git(path, ["config", "--get", "user.email"])).code !== 0) throw new Error(IDENTITY);
   const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
   const flags = [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`];
   const add = await git(path, [...flags, "add", "-A"]);
-  if (add.code !== 0) throw new Error(`Could not stage the template: ${add.err.trim()}`);
+  if (add.code !== 0) throw new Error(`Couldn't stage the template: ${add.err.trim()}`);
   const signs = (await git(path, ["config", "--bool", "--get", "commit.gpgsign"])).out.trim() === "true";
   const commit = await git(path, [...flags, ...(await signingPins(path)), "commit", "-q", "-m", "Initial commit"]);
-  if (commit.code !== 0) throw new Error(signs ? UNSIGNED : `Could not make the first commit: ${(commit.err || commit.out).trim()}`);
+  if (commit.code !== 0) throw new Error(signs ? UNSIGNED : `Couldn't make the first commit: ${(commit.err || commit.out).trim()}`);
   if (signs) {
     const obj = await git(path, ["cat-file", "commit", "HEAD"]);
     const header = obj.out.split("\n\n")[0] ?? "";

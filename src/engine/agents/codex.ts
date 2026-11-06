@@ -90,7 +90,7 @@ export function codexAdapter(bin: string = config().codexBin, sandboxExec: strin
       );
       const failure = seatbeltFailure(proc);
       if (proc.notInstalled || failure === "sandbox") return sandboxFailed("Codex");
-      if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Codex isn't installed or not on PATH" };
+      if (failure === "agent_missing") return { status: "error", kind: "not_installed", message: "Codex isn't installed, or `codex` isn't on your PATH. Install it, then retry." };
       const { stderr, exitCode } = proc;
 
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
@@ -104,7 +104,7 @@ export function codexAdapter(bin: string = config().codexBin, sandboxExec: strin
     async probe(signal?: AbortSignal): Promise<AgentStatus> {
       let stdout = "";
       const proc = await runAgentProcess([bin, "login", "status"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => (stdout += `${l}\n`) });
-      if (proc.notInstalled) return { installed: false, loggedIn: null, detail: "Codex isn't installed or not on PATH" };
+      if (proc.notInstalled) return { installed: false, loggedIn: null, detail: "Install Codex and make sure `codex` is on your PATH." };
       // Codex 0.147 prints this line to stderr, so both streams are read.
       if (proc.exitCode === 0 && `${stdout}\n${proc.stderr}`.includes("Logged in")) return { installed: true, loggedIn: true, detail: "Signed in" };
       return { installed: true, loggedIn: false, detail: "Run `codex login` once in a terminal to sign in." };

@@ -63,9 +63,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
       let off = NSMenuItem(title: "Notifications are off", action: nil, keyEquivalent: "")
       off.isEnabled = false
       menu.addItem(off)
-      menu.addItem(action("Open Notification Settings…", #selector(openNotificationSettings)))
+      menu.addItem(action("Open notification settings…", #selector(openNotificationSettings)))
     }
-    let login = action("Open at Login", #selector(toggleLogin))
+    let login = action("Open at login", #selector(toggleLogin))
     login.state = SMAppService.mainApp.status == .enabled ? .on : .off
     menu.addItem(login)
 
@@ -116,7 +116,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         try SMAppService.mainApp.register()
       }
     } catch {
-      alert("Couldn't change Open at Login: \(error.localizedDescription). You can set it in System Settings › General › Login Items.")
+      alert("Couldn't change Open at login: \(error.localizedDescription). You can set it in System Settings › General › Login Items.")
     }
   }
 

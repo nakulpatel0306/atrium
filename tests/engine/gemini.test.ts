@@ -162,7 +162,7 @@ describe("geminiAdapter", () => {
     expect(none.installed).toBe(true);
     expect(none.loggedIn).toBeNull();
     expect(await geminiAdapter("/nonexistent/agy").probe!()).toEqual({
-      installed: false, loggedIn: null, detail: "Antigravity (agy) isn't installed or not on PATH",
+      installed: false, loggedIn: null, detail: "Install Antigravity and make sure `agy` is on your PATH.",
     });
   });
 });

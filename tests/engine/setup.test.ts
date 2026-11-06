@@ -174,7 +174,7 @@ test("adapter error creates nothing", async () => {
 
 test("adapter setup problems pass the adapter's plain message through", async () => {
   const cases: Extract<AgentRunResult, { status: "error" }>[] = [
-    { status: "error", kind: "not_installed", message: "Claude Code isn't installed or not on PATH" },
+    { status: "error", kind: "not_installed", message: "Claude Code isn't installed, or `claude` isn't on your PATH. Install it, then retry." },
     { status: "error", kind: "not_logged_in", message: "Claude Code is logged out. Run `claude` once to log in." },
     { status: "error", kind: "rate_limited", message: "Claude usage limit reached; resets at 3:00 PM", retryAfter: 1 },
   ];

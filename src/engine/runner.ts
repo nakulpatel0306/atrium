@@ -9,7 +9,7 @@ import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
 import { applyRule } from "./autonomy/rules";
 import { bus, logActivity } from "./events";
-import { spaceFolder } from "./folders";
+import { spaceFolder, tildePath } from "./folders";
 import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from "./outputs/snapshot";
 import { madeLine, recordRunFiles } from "./outputs/store";
 import {
@@ -154,7 +154,7 @@ export function createRunner(deps: {
   // An escaped error would be an unhandled rejection and take the whole engine down.
   function report(e: unknown) {
     try {
-      logActivity(db, null, "atrium", `Runner error: ${(e as Error).message}`);
+      logActivity(db, null, "atrium", `Atrium hit a problem starting the next task: ${(e as Error).message.trim().replace(/\.$/, "")}. It will try again on the next change; restart the engine if this repeats.`);
     } catch {
       // Nowhere left to record it; staying alive matters more.
     }
@@ -321,7 +321,7 @@ export function createRunner(deps: {
           start = last.start;
         }
         // Branching from a leftover agent branch would stack unreviewed work.
-        else if (start.startsWith("atrium/")) return block(task, `Repo is on ${start}; switch back to your branch first.`);
+        else if (start.startsWith("atrium/")) return block(task, `The repo is on ${start}, an Atrium branch. Switch back to your own branch, then retry.`);
         const fingerprint = last?.fingerprint ?? (await gitSettingsFingerprint(path));
         const branch = await prepareBranch(path, branchTaskId(task), { existing: task.kind === "fix" });
         repo = { path, start, fingerprint, branch };
@@ -361,7 +361,7 @@ export function createRunner(deps: {
       if (scratch && cwd) rmSync(cwd, { recursive: true, force: true });
       // Blocking takes the task out of the queue, so a broken disk can't retry it every tick.
       const left = repo ? await leaveRepo(repo) : null;
-      return block(task, left ?? `Atrium couldn't start the run: ${(e as Error).message}`);
+      return block(task, left ?? `Atrium couldn't start the run: ${sentence((e as Error).message)} Check that the Atrium folder isn't full or read-only, then retry.`);
     }
     logActivity(db, space.id, agent, `Started: ${task.title}`);
 
@@ -426,7 +426,7 @@ export function createRunner(deps: {
         },
       });
     } catch (e) {
-      result = { status: "error", kind: "failed", message: `${adapter.label} could not start: ${(e as Error).message}` };
+      result = { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
     }
 
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
@@ -512,7 +512,7 @@ export function createRunner(deps: {
         block(task, (commitError ?? leftRepo)!);
       } else if (result.status !== "ok" && r.signal.aborted) {
         setTaskStatus(db, task.id, "queued");
-        logActivity(db, space.id, "atrium", `Engine stopped; requeued ${task.title}${saved ? `. Its unfinished edits are saved on ${saved}.` : ""}`);
+        logActivity(db, space.id, "atrium", `The engine stopped, so ${task.title} is back in the queue.${saved ? ` Its unfinished edits are saved on ${saved}.` : ""}`);
       } else if (result.status === "ok" && task.kind === "review") {
         setTaskStatus(db, task.id, "done");
         afterReview(db, task, result);
@@ -737,7 +737,7 @@ async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: nu
     summaryLine = `Couldn't summarise the changes on ${repo.branch}: ${(e as Error).message}`;
   }
   // Atrium never pushes as Nakul; sharing the branch is his call.
-  return { lines: [summaryLine, `Branch ${repo.branch} is on your machine — push it when you're ready.`], commits };
+  return { lines: [summaryLine, `Branch ${repo.branch} is on your machine. Push it when you're ready.`], commits };
 }
 
 // A fix adds to the branch its parent's work is on.
@@ -747,7 +747,7 @@ type Kept = KeptScratch & { dir: string; failed?: string };
 
 function keptLine(kept: Kept): string {
   if (kept.failed) return `Atrium couldn't keep the files it left: ${kept.failed}. They were removed with the temporary folder.`;
-  const parts = [kept.files > 0 ? `Files it left are kept in ${kept.dir}.` : "None of the files it left were kept."];
+  const parts = [kept.files > 0 ? `Files it left are kept in ${tildePath(kept.dir)}.` : "None of the files it left were kept."];
   if (kept.truncated) parts.push("Some were cut short or left out to stay under 5 MB each and 50 MB in all.");
   if (kept.skipped > 0) {
     const one = kept.skipped === 1;
@@ -766,7 +766,7 @@ const leftoversReason = (branch: string, path: string, start: string | null) =>
   `The agent left uncommitted changes on ${branch} in ${path}. Commit or stash them on that branch, switch back to ${start ?? "your own branch"}, then retry.`;
 
 const tamperedReason = (path: string) =>
-  `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches — check them before retrying.`;
+  `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches. Check them, then retry.`;
 
 // The last repo run of a task: where it started and the git settings it started with (null for older rows).
 function lastRepoRun(db: Database, taskId: string): { start: string; fingerprint: string | null } | null {
@@ -826,7 +826,7 @@ export async function recoverOnBoot(db: Database): Promise<number> {
       }
     }
     setTaskStatus(db, task.id, "queued");
-    logActivity(db, task.spaceId, "atrium", `Engine restarted; requeued ${task.title}`);
+    logActivity(db, task.spaceId, "atrium", `The engine restarted, so ${task.title} is back in the queue.`);
   }
   db.query("UPDATE runs SET ended_at = ?, exit_code = -1 WHERE ended_at IS NULL").run(Date.now());
   return stuck.length;

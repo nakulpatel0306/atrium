@@ -19,7 +19,7 @@ describe("canRun", () => {
   test("heavy task blocked on battery with plain reason", () => {
     expect(canRun({ weight: "heavy", allowOnBattery: false }, "battery")).toEqual({
       ok: false,
-      reason: "Waiting for power: heavy work runs when plugged in",
+      reason: "Waiting for power. Heavy work runs when your Mac is plugged in.",
     });
   });
 

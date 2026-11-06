@@ -245,7 +245,7 @@ test("claude in reserve waits; ignore_reserve runs", async () => {
     wait: {
       agent: "claude",
       kind: "reserve",
-      reason: `Saving the rest of your Claude window for you (resets ${time}). Use “Run now” to override.`,
+      reason: `Saving the rest of your Claude window for you (resets ${time}). Use "Run now" to skip the wait.`,
       until: resetsAt,
     },
   });

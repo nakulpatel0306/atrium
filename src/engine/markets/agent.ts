@@ -238,7 +238,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
           const label = `${side} ${o?.qty} ${key}`;
           const refuse = (why: string) => {
             refused++;
-            lines.push(`Refused: ${label} — ${why}`);
+            lines.push(`Refused: ${label} · ${why}`);
           };
           if (o?.side !== "buy" && o?.side !== "sell") {
             refuse("an order's side must be buy or sell.");
@@ -269,7 +269,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
           );
           if (r.ok) {
             filled++;
-            lines.push(`Filled: ${side} ${r.fill.qty} ${key} @ ${money(r.fill.price, "USD")} — ${r.fill.reasoning}`);
+            lines.push(`Filled: ${side} ${r.fill.qty} ${key} @ ${money(r.fill.price, "USD")} · ${r.fill.reasoning}`);
           } else refuse(r.reason);
         }
       } else if (orders.length) {
