@@ -54,7 +54,10 @@ test("the shifted market clock only applies in demo mode", () => {
   process.env.ATRIUM_MARKET_NOW = "2026-11-04T10:00:00-05:00";
   try {
     const demo = marketNow("demo");
-    expect(Math.abs(demo - Date.parse("2026-11-04T15:00:00Z"))).toBeLessThan(120_000);
+    // The shift is fixed when the module loads, so the demo clock has run on by however long this process has.
+    const target = Date.parse("2026-11-04T15:00:00Z");
+    expect(demo).toBeGreaterThanOrEqual(target - 1000);
+    expect(demo).toBeLessThanOrEqual(target + process.uptime() * 1000 + 1000);
     expect(Math.abs(marketNow("alpaca") - Date.now())).toBeLessThan(1000);
   } finally {
     delete process.env.ATRIUM_MARKET_NOW;
