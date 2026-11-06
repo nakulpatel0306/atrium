@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { spaceFolder } from "../engine/folders";
-import { branchPreview, branchRaw, readPreview, readRaw, resolveTarget } from "../engine/outputs/files";
+import { branchPreview, branchRaw, FileRefused, readPreview, readRaw, resolveTarget } from "../engine/outputs/files";
 import { type OpenHow, openFile } from "../engine/outputs/open";
 import { spaceFiles, taskOutputs } from "../engine/outputs/views";
 import { getSpace } from "../engine/spaces";
@@ -72,7 +72,17 @@ export async function filesRoute(db: Database, req: Request, url: URL): Promise<
         );
       }
       if (!space.repoPath) throw new HttpError(404, "This space has no repo folder set.");
-      return json({ ok: true, ...(await openFile(resolveTarget(space.repoPath, rel), how)) });
+      let target: ReturnType<typeof resolveTarget>;
+      try {
+        target = resolveTarget(space.repoPath, rel);
+      } catch (e) {
+        // A file a task made exists only on its branch until Nakul checks it out.
+        if (e instanceof FileRefused && e.status === 404) {
+          throw new HttpError(404, "This file is only on its task branch so far, so Finder can't show it. Check out the branch to see it.");
+        }
+        throw e;
+      }
+      return json({ ok: true, ...(await openFile(target, how)) });
     }
     return json({ ok: true, ...(await openFile(resolveTarget(spaceFolder(space), rel), how)) });
   }

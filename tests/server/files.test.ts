@@ -173,6 +173,9 @@ test("repo spaces reveal only", async () => {
   );
   expect((await post(`/api/spaces/${s.id}/file/open`, { path: "README.md", how: "reveal" })).status).toBe(200);
   expect(logged()).toEqual([["-R", join(realpathSync(repo), "README.md")]]);
+  const onlyOnBranch = await post(`/api/spaces/${s.id}/file/open`, { path: "docs/a.md", how: "reveal" });
+  expect(onlyOnBranch.status).toBe(404);
+  expect((await onlyOnBranch.json()).error).toBe("This file is only on its task branch so far, so Finder can't show it. Check out the branch to see it.");
   const files = await (await get(`/api/spaces/${s.id}/files`)).json();
   expect(files.folder).toBe(repo);
   expect(files.files.map((f: { path: string; root: string }) => [f.path, f.root])).toEqual([["docs/a.md", "branch"]]);
