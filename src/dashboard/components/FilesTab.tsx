@@ -82,7 +82,7 @@ function FolderLine({ files, space }: { files: SpaceFiles; space: Space }) {
       </span>
       <span className="made-acts">
         <button className="btn" onClick={() => void reveal()}>
-          Reveal folder
+          Reveal in Finder
         </button>
         <button className="btn" onClick={() => void copy()}>
           Copy path

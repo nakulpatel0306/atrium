@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { FilesList } from "../../src/dashboard/components/FilesTab";
 import { PreviewPane } from "../../src/dashboard/components/PreviewPane";
 import { WhatItMadeList } from "../../src/dashboard/components/WhatItMade";
-import { fileActions, fileUrl, icsEvents, sizeText } from "../../src/dashboard/files";
+import { fileActions, fileUrl, icsEvents, runFileAction, sizeText } from "../../src/dashboard/files";
 import type { OutputFile, SpaceFile, SpaceFiles, TaskOutputs } from "../../src/engine/outputs/views";
 import type { State } from "../../src/engine/state";
 
@@ -156,7 +156,8 @@ test("FilesList credits the task that made each file", () => {
   expect(html).toContain("by &quot;Make a grocery list&quot;");
   expect(html).toContain("added outside Atrium");
   expect(html).toContain("kept from a run ·");
-  expect(html).toContain("Reveal folder");
+  expect(html).toContain(">Reveal in Finder<");
+  expect(html).not.toContain("Reveal folder");
   expect(html).toContain("~/Atrium/weekly-planning");
   expect(html).toContain("2.6 KB");
   expect(html).not.toContain("Showing the newest 2,000 files.");
@@ -174,4 +175,25 @@ test("FilesList empty states say what will appear", () => {
   expect(renderToStaticMarkup(<FilesList files={{ ...empty, folder: "/r/app", shown: "~/dev/app" }} space={space({ kind: "repo", repoPath: "/r/app", folder: null, name: "App" })} />)).toContain(
     "Files Atrium&#x27;s tasks changed in ~/dev/app",
   );
+});
+
+
+test("copying a cut preview says only the start was copied", async () => {
+  const realFetch = globalThis.fetch;
+  const nav = globalThis.navigator as { clipboard?: unknown };
+  const realClip = nav.clipboard;
+  let copied = "";
+  Object.defineProperty(globalThis.navigator, "clipboard", { value: { writeText: async (t: string) => void (copied = t) }, configurable: true });
+  const preview = (truncated: boolean) => ({ path: "big.txt", absPath: "/a/big.txt", size: 2_000_000, kind: "text", text: "start", truncated, note: null });
+  try {
+    globalThis.fetch = (async () => Response.json(preview(true))) as unknown as typeof fetch;
+    const ref = { spaceId: "s", taskId: "t", root: "space" as const, path: "big.txt", absPath: "/a/big.txt" };
+    expect(await runFileAction("copyText", ref)).toEqual({ ok: true, text: "Copied the first 256 KB. Open the file for the rest." });
+    expect(copied).toBe("start");
+    globalThis.fetch = (async () => Response.json(preview(false))) as unknown as typeof fetch;
+    expect((await runFileAction("copyText", ref)).text).toBe("Copied the text.");
+  } finally {
+    globalThis.fetch = realFetch;
+    Object.defineProperty(globalThis.navigator, "clipboard", { value: realClip, configurable: true });
+  }
 });
