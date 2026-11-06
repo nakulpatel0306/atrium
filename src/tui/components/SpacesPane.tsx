@@ -15,6 +15,13 @@ export function SpacesPane(p: ListProps) {
       pane="spaces"
       empty="No spaces yet. Press N to describe one."
       render={(space) => {
+        if (space.status === "archived") {
+          return [
+            { text: "○ ", color: color.muted },
+            { text: `${pad(space.name, nameWidth)} `, color: color.muted },
+            { text: "archived", color: color.muted },
+          ];
+        }
         const status = spaceStatus(space, state.tasks.filter((t) => t.spaceId === space.id), state);
         return [
           { text: "● ", color: spaceColor(state.spaces.indexOf(space)) },

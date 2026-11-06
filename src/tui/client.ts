@@ -4,6 +4,7 @@ import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import type { GlanceView } from "../engine/markets/views";
+import type { SpaceDeletePreview } from "../engine/delete";
 import { clean, scrub } from "./text";
 
 export type EngineClient = {
@@ -16,9 +17,11 @@ export type EngineClient = {
   outputs(taskId: string): Promise<TaskOutputs | null>;
   reviewers(spaceId: string): Promise<Record<string, string | null> | null>;
   markets(spaceId: string): Promise<MarketsGlance | null>;
+  deletePreview(spaceId: string): Promise<SpaceDeletePreview | null>;
   transcript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
   post<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>>;
   patch<T = unknown>(path: string, body: unknown): Promise<PostResult<T>>;
+  del<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>>;
   close(): void;
 };
 
@@ -190,7 +193,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     }
   }
 
-  async function send<T>(method: "POST" | "PATCH", path: string, body?: unknown): Promise<PostResult<T>> {
+  async function send<T>(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<PostResult<T>> {
     try {
       const res = await fetch(base + path, {
         method,
@@ -222,9 +225,11 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     outputs: (taskId) => read<TaskOutputs>(`/api/tasks/${encodeURIComponent(taskId)}/outputs`),
     reviewers: (spaceId) => read<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`),
     markets: (spaceId) => read<GlanceView>(`/api/investing/${encodeURIComponent(spaceId)}/glance`),
+    deletePreview: (spaceId) => read<SpaceDeletePreview>(`/api/spaces/${encodeURIComponent(spaceId)}/delete-preview`),
     transcript,
     post: (path, body) => send("POST", path, body),
     patch: (path, body) => send("PATCH", path, body),
+    del: (path, body) => send("DELETE", path, body),
     close() {
       closed = true;
       if (retry) clearTimeout(retry);

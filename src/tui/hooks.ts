@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
+import type { SpaceDeletePreview } from "../engine/delete";
 import type { EngineClient, MarketsGlance } from "./client";
 
 type Space = State["spaces"][number];
@@ -85,4 +86,9 @@ export function useTick(ms: number, active: boolean): void {
     const id = setInterval(() => setTick((n) => n + 1), ms);
     return () => clearInterval(id);
   }, [ms, active]);
+}
+
+// What deleting a space would remove, read once when the delete box opens.
+export function useDeletePreview(c: EngineClient, spaceId: string | null): SpaceDeletePreview | null {
+  return useFetched(spaceId, spaceId, () => c.deletePreview(spaceId!));
 }

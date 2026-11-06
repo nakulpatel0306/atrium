@@ -1,5 +1,6 @@
 // What each pane lists and which item is selected, derived fresh from the engine's state on every render.
 import { activeOnly, liveRun, orderedTasks } from "../dashboard/summary";
+import { type ActivityGroup, groupActivity } from "../engine/activity-groups";
 import type { State } from "../engine/state";
 import type { ListPane, Ui } from "./ui";
 
@@ -8,7 +9,6 @@ type Task = State["tasks"][number];
 type Run = State["runs"][number];
 type Approval = State["approvals"][number];
 type Proposal = State["proposals"][number];
-type ActivityRow = State["activity"][number];
 
 export type Subject = "space" | "task" | "approval" | "activity";
 
@@ -19,12 +19,13 @@ export type View = {
   approvals: Approval[];
   // "Stop asking about …?" suggestions; they share Needs you with approvals and list first.
   proposals: Proposal[];
-  activity: ActivityRow[];
+  // The feed folded into groups (see activity-groups.ts); the detail shows a group's full lines.
+  activity: ActivityGroup[];
   space: Space | null;
   task: Task | null;
   approval: Approval | null;
   proposal: Proposal | null;
-  activityRow: ActivityRow | null;
+  activityRow: ActivityGroup | null;
   subject: Subject;
   live: { task: Task; run: Run } | null;
 };
@@ -56,14 +57,17 @@ const matches = (filter: string, ...fields: (string | null | undefined)[]) => {
 export function deriveView(raw: State, ui: Ui): View {
   const state = activeOnly(raw);
   const names = new Map(state.spaces.map((s) => [s.id, s.name]));
-  const spaces = state.spaces.filter((s) => matches(ui.filters.spaces, s.name));
+  // Archived spaces list after the active ones, so they can be restored or deleted from here.
+  const spaces = [...state.spaces, ...(raw.archived ?? [])].filter((s) => matches(ui.filters.spaces, s.name));
   const space = pick(spaces, ui.selected.spaces).item;
   const spaceTasks = space ? state.tasks.filter((t) => t.spaceId === space.id) : [];
   const tasks = orderedTasks(spaceTasks).filter((t) => matches(ui.filters.tasks, t.title));
   const approvals = state.approvals.filter((a) => matches(ui.filters.needs, a.title, a.spaceId ? names.get(a.spaceId) : "Atrium"));
   const proposals = state.proposals.filter((p) => matches(ui.filters.needs, p.label, names.get(p.spaceId)));
   const needs = pick<Approval | Proposal>([...proposals, ...approvals], ui.selected.needs).item;
-  const activity = state.activity.filter((r) => matches(ui.filters.activity, r.message));
+  const activity = groupActivity(state.activity, { tasks: state.tasks, files: state.activityFiles }).filter((g) =>
+    matches(ui.filters.activity, g.text, g.title, ...g.events.map((e) => e.message)),
+  );
   return {
     state,
     spaces,

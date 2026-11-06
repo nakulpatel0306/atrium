@@ -254,6 +254,10 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
   return out.sort((a, b) => b.at - a.at || order.get(a.id)! - order.get(b.id)!);
 }
 
+// The task a line leads with: a folded stretch names its task; a line of its own already does, in its text.
+export const leadOf = (g: ActivityGroup): string | null =>
+  g.title && (g.events.length > 1 || !g.text.includes(g.title)) ? g.title : null;
+
 export function byDay(groups: ActivityGroup[]): { day: string; dayKey: string; groups: ActivityGroup[] }[] {
   const days: { day: string; dayKey: string; groups: ActivityGroup[] }[] = [];
   for (const g of groups) {

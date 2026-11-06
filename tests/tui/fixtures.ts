@@ -19,7 +19,7 @@ export const ids = {
 const now = Date.now();
 const min = 60_000;
 
-const space = (over: Partial<Space>): Space => ({
+export const space = (over: Partial<Space>): Space => ({
   id: "spc_x",
   name: "x",
   kind: "general",

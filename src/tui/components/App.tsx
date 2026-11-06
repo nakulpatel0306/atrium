@@ -6,7 +6,7 @@ import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
 import { activityDetail, approvalDetail, type DetailLine, proposalDetail, spaceDetail, taskDetail, wrapStyled } from "../detail";
 import { runIntent, sendFollowUp } from "../effects";
-import { useEngineState, useMarketsGlance, useMessages, useOnline, useOutputs, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
+import { useEngineState, useDeletePreview, useMarketsGlance, useMessages, useOnline, useOutputs, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, hints, type Intent } from "../keys";
 import { layout } from "../layout";
 import { deriveView, type View } from "../select";
@@ -16,6 +16,7 @@ import { type Action, type Flash, initialUi, pin, reduce, type Rows, type Ui } f
 import { AgentsView, agentsLines } from "./AgentsView";
 import { Body } from "./Body";
 import { Confirm } from "./Confirm";
+import { DeleteBox } from "./DeleteBox";
 import { Help } from "./Help";
 import { Header } from "./Header";
 import { Picker } from "./Picker";
@@ -25,7 +26,7 @@ import { Transcript } from "./Transcript";
 
 const NO_KEY = {} as Key;
 const SETTING_UP = "Setting up your space. This usually takes under a minute.";
-const inPrompt = (u: Ui) => u.overlay?.kind === "prompt";
+const inPrompt = (u: Ui) => u.overlay?.kind === "prompt" || u.overlay?.kind === "delete";
 
 type Size = { columns: number; rows: number };
 
@@ -106,6 +107,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const output = useRunOutput(client, fullScreen ? null : (view?.live?.run.id ?? null));
   const outputs = useOutputs(client, view?.subject === "task" ? (view.task?.id ?? null) : null);
   const madeFiles = outputs?.files ?? [];
+  const deletePreview = useDeletePreview(client, ui.overlay?.kind === "delete" ? ui.overlay.spaceId : null);
   const detailLines = view ? detailOf(view, messages, reviewers, markets, { outputs, selected: ui.detailFile }, inner).flatMap((l) => wrapStyled(l, inner)) : [];
   const liveLines = useWrapped(output, inner);
   // Full-screen views: the header, one pane, and the status bar.
@@ -264,6 +266,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
         <Picker picker={ui.overlay} state={view.state} reviewers={reviewers} cols={cols} rows={height} />
       )}
       {ui.overlay?.kind === "help" && <Help cols={cols} rows={height} />}
+      {ui.overlay?.kind === "delete" && <DeleteBox overlay={ui.overlay} state={view.state} preview={deletePreview} cols={cols} rows={height} />}
       {ui.overlay?.kind === "confirm" && <Confirm confirm={ui.overlay} state={view.state} cols={cols} rows={height} />}
     </Box>
   );

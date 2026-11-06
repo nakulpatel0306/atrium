@@ -13,6 +13,8 @@ export type Overlay =
   | { kind: "picker"; purpose: "agent" | "reviewer"; targetId: string; options: string[]; index: number }
   | { kind: "transcript"; taskId: string; runIndex: number; scroll: number }
   | { kind: "confirm"; purpose: "archive"; targetId: string }
+  // Deleting a space for good waits for its name, typed in full.
+  | { kind: "delete"; spaceId: string; value: string; cursor: number }
   // Sending a text, or accepting a result the agent said it didn't finish, waits for a y.
   | { kind: "confirm"; purpose: "send"; targetId: string }
   | { kind: "confirm"; purpose: "accept"; targetId: string };

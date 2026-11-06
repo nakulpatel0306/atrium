@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { ACTIVITY_MORE, ACTIVITY_PAGE, type ActivityGroup, byDay, groupActivity } from "../../engine/activity-groups";
+import { ACTIVITY_MORE, ACTIVITY_PAGE, type ActivityGroup, byDay, groupActivity, leadOf } from "../../engine/activity-groups";
 import type { State } from "../api";
 import { absolute, clock, relative } from "../format";
 import { actorName } from "../summary";
@@ -12,8 +12,7 @@ const when = (g: ActivityGroup) => (g.day === "Today" ? relative(g.at) : clock(g
 
 function Group({ group, spaceName, showTitle = true }: { group: ActivityGroup; spaceName: string | undefined; showTitle?: boolean }) {
   const [open, setOpen] = useState(false);
-  // A task's folded line leads with the task; a line of its own already names it.
-  const lead = showTitle && group.title && (group.events.length > 1 || !group.text.includes(group.title)) ? group.title : null;
+  const lead = showTitle ? leadOf(group) : null;
   const src = [spaceName, lead ?? (group.title ? null : actorName(group.actor))].filter(Boolean).join(" · ");
   return (
     <div className={`group tone-${group.tone}${open ? " open" : ""}`}>

@@ -119,6 +119,14 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return said(res, (d) => (intent.how === "reveal" ? `Showing ${intent.name} in Finder.` : `Opened a copy of ${intent.name} in ${d.app}.`));
     }
     case "archive":
-      return space(intent.spaceId, { status: "archived" }, `Archived ${spaceName(intent.spaceId)}. Its agents stop picking up tasks.`);
+      return space(intent.spaceId, { status: "archived" }, `Archived ${spaceName(intent.spaceId)}. It's at the end of Spaces; press X there to restore it.`);
+    case "restore": {
+      const name = state.archived?.find((s) => s.id === intent.spaceId)?.name ?? "the space";
+      return space(intent.spaceId, { status: "active" }, `Restored ${name}. Press X to archive it again.`);
+    }
+    case "deleteSpace": {
+      const res = await client.del<{ name: string; kept: string[] }>(`/api/spaces/${enc(intent.spaceId)}`, { name: intent.name });
+      return said(res, (d) => (d.kept.length ? `Deleted ${d.name}. ${d.kept[0]}` : `Deleted ${d.name}.`));
+    }
   }
 }
