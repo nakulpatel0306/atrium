@@ -23,9 +23,14 @@ export const DEFAULT_RULES: Rule[] = [
 
 const words = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
 
+// Normalised once per rule list, not once per transaction.
+const prepared = new WeakMap<Rule[], { match: string; category: string }[]>();
+
 export function categorize(description: string, rules: Rule[]): string {
+  let list = prepared.get(rules);
+  if (!list) prepared.set(rules, (list = rules.map((r) => ({ match: words(r.match), category: r.category }))));
   const text = words(description);
-  return rules.find((r) => text.includes(words(r.match)))?.category ?? "Other";
+  return list.find((r) => text.includes(r.match))?.category ?? "Other";
 }
 
 // "LOBLAWS #1234" → "Loblaws", "UBER* EATS" → "Uber Eats": the first two words without digits, in title case.

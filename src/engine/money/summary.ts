@@ -4,6 +4,7 @@ import { etDate } from "../markets/calendar";
 import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
 import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
+import { maskNumbers } from "./import";
 
 type Tx = { date: string; account: string; description: string; merchant: string; amount: number; currency: string; kind: string; source: string };
 
@@ -46,6 +47,9 @@ export const STARTERS = [
 export const MONEY_ASK_MAX = 500;
 const DAY_MS = 86_400_000;
 const UNUSUAL_DAYS = 90;
+const UNUSUAL_SHOWN = 10;
+const USUAL_WINDOW = 20;
+const TWIN_MIN = 20;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
@@ -64,10 +68,19 @@ const txs = (db: Database, spaceId: string, source: "bank" | "wealthsimple") =>
     .query("SELECT date, account, description, merchant, amount, currency, kind, source FROM money_transactions WHERE space_id = ? AND source = ? ORDER BY date, rowid")
     .all(spaceId, source) as Tx[];
 
-// Fixed amounts (within 5%) at least three times, each about a month apart: subscriptions, rent, phone bills.
-function recurring(spend: Tx[]): Recurring[] {
+// Each merchant's charges in date order; rows arrive sorted, so one pass keeps the summary linear.
+function byMerchant(spend: Tx[]): Map<string, Tx[]> {
   const by = new Map<string, Tx[]>();
-  for (const t of spend) by.set(t.merchant, [...(by.get(t.merchant) ?? []), t]);
+  for (const t of spend) {
+    const list = by.get(t.merchant);
+    if (list) list.push(t);
+    else by.set(t.merchant, [t]);
+  }
+  return by;
+}
+
+// Fixed amounts (within 5%) at least three times, each about a month apart: subscriptions, rent, phone bills.
+function recurring(by: Map<string, Tx[]>): Recurring[] {
   const out: Recurring[] = [];
   for (const [merchant, list] of by) {
     if (list.length < 3) continue;
@@ -81,21 +94,32 @@ function recurring(spend: Tx[]): Recurring[] {
   return out.sort((a, b) => b.amount - a.amount);
 }
 
-// In the last 90 days of data: the same amount at the same place within 3 days, or more than 3× the usual there.
-function unusual(spend: Tx[]): Unusual[] {
-  const end = spend.at(-1)?.date;
+// In the last 90 days of data, the most unusual few: more than 3× the usual at that place (the median of its
+// previous charges), ranked by how far over, then a repeat of the same amount there within 3 days. Repeats under
+// CA$20 (a daily coffee) aren't worth a look.
+function unusual(by: Map<string, Tx[]>, end: string | undefined): Unusual[] {
   if (!end) return [];
-  const out: Unusual[] = [];
-  spend.forEach((t, i) => {
-    if (days(t.date, end) > UNUSUAL_DAYS) return;
-    const before = spend.slice(0, i).filter((p) => p.merchant === t.merchant);
-    const twin = before.find((p) => p.amount === t.amount && days(p.date, t.date) <= 3);
-    if (twin) return out.push({ date: t.date, merchant: t.merchant, amount: round2(-t.amount), reason: `Same amount at ${t.merchant} within 3 days.` });
-    if (before.length >= 2 && -t.amount > 3 * median(before.map((p) => -p.amount))) {
-      out.push({ date: t.date, merchant: t.merchant, amount: round2(-t.amount), reason: `More than 3× your usual at ${t.merchant}.` });
-    }
-  });
-  return out.sort((a, b) => b.date.localeCompare(a.date));
+  const found: (Unusual & { score: number })[] = [];
+  for (const [merchant, list] of by) {
+    const lastSeen = new Map<number, string>();
+    list.forEach((t, i) => {
+      const amount = -t.amount;
+      const previous = lastSeen.get(t.amount);
+      lastSeen.set(t.amount, t.date);
+      if (days(t.date, end) > UNUSUAL_DAYS) return;
+      const before = list.slice(Math.max(0, i - USUAL_WINDOW), i).map((p) => -p.amount);
+      const usual = before.length >= 2 ? median(before) : null;
+      if (usual && amount > 3 * usual) {
+        found.push({ date: t.date, merchant, amount: round2(amount), reason: `More than 3× your usual at ${merchant}.`, score: amount / usual });
+      } else if (previous && amount >= TWIN_MIN && days(previous, t.date) <= 3) {
+        found.push({ date: t.date, merchant, amount: round2(amount), reason: `Same amount at ${merchant} within 3 days.`, score: 1 });
+      }
+    });
+  }
+  return found
+    .sort((a, b) => b.score - a.score || b.amount - a.amount || b.date.localeCompare(a.date))
+    .slice(0, UNUSUAL_SHOWN)
+    .map(({ score: _score, ...u }) => u);
 }
 
 function wsYears(rows: Tx[]): WsYear[] {
@@ -159,12 +183,13 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
   const current = etDate(now).slice(0, 7);
   const picked = month && months.includes(month) ? month : months.includes(current) ? current : (months[0] ?? null);
   const spend = bank.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
+  const merchants = byMerchant(spend);
   return {
     months,
     month: picked,
     ...spendingIn(bank, picked, rules),
-    recurring: recurring(spend),
-    unusual: unusual(spend),
+    recurring: recurring(merchants),
+    unusual: unusual(merchants, spend.at(-1)?.date),
     ws: wsYears(ws),
     counts: { bank: bank.length, wealthsimple: ws.length },
     range: bank.length ? { from: bank[0]!.date, to: bank.at(-1)!.date } : null,
@@ -177,8 +202,6 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
 const cad = (n: number) => `CA$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const usd = (n: number) => `US$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const both = (c: number, u: number) => (c && u ? `${cad(c)} + ${usd(u)}` : u ? usd(u) : cad(c));
-// "MasterCard 5191XXXXXXXX4021" → "MasterCard ··4021": Claude never needs a full account number.
-const accountLabel = (a: string) => a.replace(/\s+[\dX*-]*(\d{4})$/i, " ··$1");
 
 // Compact, sourced facts for "Ask about my money": Claude only, read-only, from Nakul's own files on this Mac.
 export function moneyFacts(db: Database, spaceId: string, now: number): string[] {
@@ -201,7 +224,7 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
   }
   if (!bank.length) out.push("No bank or card transactions imported.");
   else {
-    out.push(`Bank and card: ${bank.length} transactions from ${v.range!.from} to ${v.range!.to} in ${v.accounts.map(accountLabel).join(" and ")}.`);
+    out.push(`Bank and card: ${bank.length} ${bank.length === 1 ? "transaction" : "transactions"} from ${v.range!.from} to ${v.range!.to} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
     for (const m of v.months.slice(0, 3)) {
       const s = spendingIn(bank, m, rules);
       const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");

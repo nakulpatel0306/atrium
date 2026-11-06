@@ -68,7 +68,7 @@ function detect(headers: string[]): MoneyMap {
 
 // "$1,234.50" → 1234.5, "(20)" → −20, "" → NaN.
 function num(raw: string | undefined): number {
-  let t = (raw ?? "").replace(/[$,\s]/g, "").replace(/^CA\$|^US\$/i, "");
+  let t = (raw ?? "").replace(/[,\s]/g, "").replace(/(CA|US)\$/i, "").replace(/\$/g, "");
   let sign = 1;
   if (/^\(.*\)$/.test(t)) {
     sign = -1;
@@ -86,14 +86,30 @@ function isoDate(raw: string, order: DateOrder): string | null {
   const parsed = Date.parse(t);
   return Number.isNaN(parsed) || !/[a-z]/i.test(t) ? null : new Date(parsed).toISOString().slice(0, 10);
 }
+// Round-tripped through a real date, so February 31 is refused rather than stored.
 function valid(y: number, mo: number, d: number): string | null {
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  if (t.getUTCFullYear() !== y || t.getUTCMonth() !== mo - 1 || t.getUTCDate() !== d) return null;
+  return t.toISOString().slice(0, 10);
 }
 
-// A cell starting with =, +, @ or a control character could run as a formula if the text were ever opened in a
+// Card and account numbers keep their last four digits only ("4510 1234 5678 9012" → "··9012"), wherever they
+// appear: a run of six or more digits, with spaces, dashes or masking X and * between them.
+export function maskNumbers(s: string): string {
+  return s.replace(/\d[\dX*\s-]{4,}\d/gi, (run) => {
+    const digits = run.replace(/\D/g, "");
+    return digits.length >= 6 ? `··${digits.slice(-4)}` : run;
+  });
+}
+
+// A cell starting (after any spaces) with =, +, -, @ or a control character could run as a formula if the text were ever opened in a
 // spreadsheet; Atrium keeps it as text without the trigger.
-const safeText = (s: string) => s.replace(/^[=+@\t\r]+/, "").trim().slice(0, MAX_DESCRIPTION);
+const safeText = (s: string) =>
+  s
+    .trim()
+    .replace(/^[=+\-@\t\r]+/, "")
+    .trim()
+    .slice(0, MAX_DESCRIPTION);
 
 const WS_KINDS: Record<string, MoneyKind> = { deposit: "deposit", withdrawal: "withdrawal", dividend: "dividend", fee: "fee", buy: "buy", sell: "sell", interest: "interest" };
 
@@ -184,12 +200,12 @@ export function previewMoney(text: string, opts: { mapping?: MoneyMap; signs?: S
       amount = !Number.isNaN(credit) && credit !== 0 ? Math.abs(credit) : -Math.abs(debit);
     }
     if (Number.isNaN(amount)) return skipped.push({ line, reason: "No amount Atrium can read." });
-    const d1 = safeText(cell(r, "description"));
-    const d2 = safeText(cell(r, "description2"));
+    const d1 = maskNumbers(safeText(cell(r, "description")));
+    const d2 = maskNumbers(safeText(cell(r, "description2")));
     const account = [cell(r, "account"), cell(r, "accountNumber")].filter(Boolean).join(" ") || "Imported";
     rows.push({
       source: "bank",
-      account: safeText(account),
+      account: maskNumbers(safeText(account)),
       date,
       description: [d1, d2].filter(Boolean).join(" "),
       merchant: merchantOf(d1 || d2),

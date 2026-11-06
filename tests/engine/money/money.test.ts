@@ -32,9 +32,10 @@ test("an RBC export: dates, both description columns, signed amounts and account
   expect(p.format).toBe("bank");
   expect(p.signs).toBe("negative-out");
   expect(p.rows).toHaveLength(40);
-  expect(p.rows[0]).toMatchObject({ source: "bank", date: "2026-08-01", account: "Chequing 00102-5551234", amount: 3150, merchant: "Payroll Deposit", kind: "income" });
+  expect(p.rows[0]).toMatchObject({ source: "bank", date: "2026-08-01", account: "Chequing ··1234", amount: 3150, merchant: "Payroll Deposit", kind: "income" });
   expect(p.rows.find((r) => r.description.startsWith("LOBLAWS"))).toMatchObject({ amount: -86.42, merchant: "Loblaws", kind: "spend" });
-  expect(p.accounts).toEqual(["Chequing 00102-5551234", "MasterCard 5191XXXXXXXX4021"]);
+  // Account and card numbers keep their last four digits only.
+  expect(p.accounts).toEqual(["Chequing ··1234", "MasterCard ··4021"]);
 });
 
 test("a formula in a cell is stored as plain text", () => {
@@ -173,4 +174,59 @@ test("Ask about my money queues one read-only Claude task", () => {
   expect(() => requestMoneyAsk(db, spaceId, "Again?")).toThrow("Claude is already looking at your money.");
   expect(() => requestMoneyAsk(db, spaceId, "x".repeat(501))).toThrow();
   expect(listTasks(db).filter((x) => x.purpose === "money")).toHaveLength(1);
+});
+
+// ---- Final-review fixes ----
+
+test("Claude's money facts never carry more than the last four digits of a card or account number", () => {
+  const csv = ["Date,Description,Amount,Card Number", "2026-10-02,LOBLAWS,-20.00,4510 1234 5678 9012", "2026-10-03,PAYMENT TO 00123456789,-50.00,4510 1234 5678 9012"].join("\n");
+  importMoney(db, spaceId, previewMoney(csv));
+  const stored = db.query("SELECT account, description FROM money_transactions ORDER BY date").all() as { account: string; description: string }[];
+  expect(stored[0]!.account).toBe("··9012");
+  expect(stored[1]!.description).toBe("PAYMENT TO ··6789");
+  const facts = moneyFacts(db, spaceId, Date.UTC(2026, 9, 15)).join("\n");
+  expect(facts).toContain("··9012");
+  for (const part of ["4510", "1234", "5678", "00123456789"]) expect(facts).not.toContain(part);
+});
+
+test("the money summary stays fast on one 20,000-row file and keeps its worth-a-look list short", () => {
+  const lines = ["Date,Description,Amount"];
+  for (let i = 0; i < 20000; i++) lines.push(new Date(Date.UTC(2026, 7, 1) + (i % 90) * 86400000).toISOString().slice(0, 10) + ",STARBUCKS " + i + ",-5.25");
+  importMoney(db, spaceId, previewMoney(lines.join("\n")));
+  const t = performance.now();
+  const v = moneyView(db, spaceId, Date.UTC(2026, 9, 15));
+  expect(performance.now() - t).toBeLessThan(500);
+  expect(v.unusual.length).toBeLessThanOrEqual(10);
+  expect(new Set(v.unusual.map((u) => `${u.date}|${u.merchant}|${u.amount}|${u.reason}`)).size).toBe(v.unusual.length);
+}, 60000);
+
+test("worth a look ranks the most unusual first", () => {
+  const rows = ["Date,Description,Amount"];
+  for (const [d, a] of [["2026-09-01", "-10"], ["2026-09-08", "-11"], ["2026-09-15", "-10"], ["2026-09-22", "-45"], ["2026-09-29", "-200"]]) rows.push(`${d},CORNER STORE,${a}`);
+  importMoney(db, spaceId, previewMoney(rows.join("\n")));
+  expect(moneyView(db, spaceId, NOW).unusual.map((u) => u.amount)).toEqual([200, 45]);
+});
+
+test("a CA$- or US$-prefixed amount is read", () => {
+  const p = previewMoney(["Date,Description,Amount", '2026-10-02,LOBLAWS,"-CA$20.00"', "2026-10-03,LOBLAWS,CA$-21.50", "2026-10-04,AMAZON,-US$5"].join("\n"));
+  expect(p.skipped).toEqual([]);
+  expect(p.rows.map((r) => r.amount)).toEqual([-20, -21.5, -5]);
+});
+
+test("a formula trigger is stripped even after a leading space, and a leading minus too", () => {
+  const p = previewMoney(["Date,Description,Amount", '2026-10-02," =HYPERLINK(""x"")",-1', "2026-10-03,-cmd|calc,-1"].join("\n"));
+  expect(p.rows.map((r) => r.description)).toEqual(['HYPERLINK("x")', "cmd|calc"]);
+  const ws = previewMoney(["transaction_date,account_type,activity_type,activity_sub_type,symbol,name,currency,net_cash_amount", '2026-01-05,TFSA,Dividend,,," =1+1",CAD,5'].join("\n"));
+  expect(ws.rows[0]!.merchant.startsWith("=")).toBe(false);
+});
+
+test("an impossible date is skipped", () => {
+  const p = previewMoney("Date,Description,Amount\n2026-02-31,X,-1\n02/30/2026,Y,-1\n2026-02-28,Z,-1\n");
+  expect(p.rows.map((r) => r.date)).toEqual(["2026-02-28"]);
+  expect(p.skipped.map((s) => s.reason)).toEqual(["No date Atrium can read.", "No date Atrium can read."]);
+});
+
+test("one transaction reads as one", () => {
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-02,LOBLAWS,-20\n"));
+  expect(moneyFacts(db, spaceId, NOW).join("\n")).toContain("Bank and card: 1 transaction from 2026-10-02 to 2026-10-02");
 });
