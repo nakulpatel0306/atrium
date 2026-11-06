@@ -11,7 +11,7 @@ type Space = State["spaces"][number];
 type Approval = RuleDetail["approvals"][number];
 type Event = RuleDetail["events"][number];
 
-const ALWAYS_ASK = "Merging to main or deploying · Messaging someone for the first time · Deleting anything · Anything that costs money · Touching secrets, .env files or keys · Creating GitHub repos, pushing, or removing local repo copies";
+const ALWAYS_ASK = "Merging to main or deploying · Sending any message or text · Deleting anything · Anything that costs money · Touching secrets, .env files or keys · Creating GitHub repos, pushing, or removing local repo copies";
 
 const EVENT_TEXT: Record<Event["event"], string> = {
   proposed: "Suggested",
