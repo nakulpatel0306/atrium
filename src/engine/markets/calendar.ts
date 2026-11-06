@@ -114,6 +114,46 @@ export function usEarlyCloses(year: number): string[] {
   return out.sort();
 }
 
+// Weekend holidays move to the Monday after (TSX doesn't close the Friday before).
+function observedMonday(y: number, m: number, d: number): string {
+  const dow = weekday(y, m, d);
+  const t = new Date(Date.UTC(y, m - 1, d + (dow === 6 ? 2 : dow === 0 ? 1 : 0)));
+  return iso(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+}
+
+const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T12:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+
+export function tsxHolidays(year: number): { date: string; name: string }[] {
+  const e = easter(year);
+  const gf = new Date(Date.UTC(year, e.m - 1, e.d - 2));
+  const christmas = observedMonday(year, 12, 25);
+  // Boxing Day is the next weekday after Christmas is observed.
+  const boxing = observedMonday(...(addDays(christmas, 1).split("-").map(Number) as [number, number, number]));
+  const out = [
+    { date: observedMonday(year, 1, 1), name: "New Year's Day" },
+    { date: nthWeekday(year, 2, 1, 3), name: "Family Day" },
+    { date: iso(year, gf.getUTCMonth() + 1, gf.getUTCDate()), name: "Good Friday" },
+    // The Monday before May 25.
+    { date: iso(year, 5, 24 - ((weekday(year, 5, 24) + 6) % 7)), name: "Victoria Day" },
+    { date: observedMonday(year, 7, 1), name: "Canada Day" },
+    { date: nthWeekday(year, 8, 1, 1), name: "Civic Holiday" },
+    { date: nthWeekday(year, 9, 1, 1), name: "Labour Day" },
+    { date: nthWeekday(year, 10, 1, 2), name: "Thanksgiving Day" },
+    { date: christmas, name: "Christmas Day" },
+    { date: boxing, name: "Boxing Day" },
+  ];
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Toronto's regular session, in ET. Early closes aren't modelled: a late price just stops being live.
+export function tsxOpen(now: number): boolean {
+  const { date, hhmm } = etParts(now);
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const dow = weekday(y, m, d);
+  if (dow === 0 || dow === 6 || tsxHolidays(y).some((h) => h.date === date)) return false;
+  return hhmm >= "09:30" && hhmm < "16:00";
+}
+
 type Day = { trading: boolean; holiday: string | null; early: boolean };
 
 function dayInfo(date: string): Day {

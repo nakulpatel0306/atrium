@@ -51,7 +51,11 @@ export function hourlyBudget(db: Database, name: string, limit: number, now: () 
   };
 }
 
-export type DataSource = "alpaca" | "finnhub" | "alphavantage" | "tiingo" | "boc" | "ishares" | "ssga" | "roundhill" | "invesco" | "wikipedia" | "edgar";
+export type DataSource = "alpaca" | "finnhub" | "alphavantage" | "tiingo" | "yahoo" | "boc" | "ishares" | "ssga" | "roundhill" | "invesco" | "wikipedia" | "edgar";
+
+// Yahoo publishes no limit for its public feed, so Atrium sets its own: three TSX holdings polled every 3 minutes in
+// session is about 400 a day.
+export const YAHOO_DAILY_CAP = 2000;
 
 const FUND_FILE = "one file a week per fund";
 export const SOURCE_INFO: Record<DataSource, { label: string; limit: string; perDay?: number }> = {
@@ -59,6 +63,7 @@ export const SOURCE_INFO: Record<DataSource, { label: string; limit: string; per
   finnhub: { label: "Finnhub", limit: "60 a minute" },
   alphavantage: { label: "Alpha Vantage", limit: "25 a day", perDay: 25 },
   tiingo: { label: "Tiingo", limit: "1,000 a day, 50 an hour", perDay: 1000 },
+  yahoo: { label: "Yahoo Finance", limit: `unofficial, no fixed limit; Atrium stops at ${YAHOO_DAILY_CAP.toLocaleString("en-US")} a day and pauses 15 minutes after an error`, perDay: YAHOO_DAILY_CAP },
   boc: { label: "Bank of Canada", limit: "no published limit; Atrium uses ≤ 4 a day" },
   ishares: { label: "iShares", limit: FUND_FILE },
   ssga: { label: "SSGA", limit: FUND_FILE },

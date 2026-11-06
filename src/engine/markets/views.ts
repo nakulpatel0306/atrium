@@ -16,7 +16,7 @@ import { paperState } from "./paper";
 import { portfolioDay, positionsFor } from "./portfolio";
 import type { Quote } from "./providers/types";
 import { latestWriteups, type Writeup } from "./research";
-import { closeDayText, quoteSourced, type Sourced } from "./sourced";
+import { closeDayText, isIntraday, quoteSourced, type Sourced } from "./sourced";
 import { tvSymbol } from "./tradingview";
 
 // The simple investing views. SQLite only: cached quotes, closes, holdings and earnings, never the network.
@@ -187,7 +187,7 @@ export type GlanceView = {
   paper: { dayPnl: number; totalPnl: number } | null;
 };
 
-const tagOf = (p: Sourced | null): string | null => (!p || p.tone === "live" ? null : p.tone === "demo" ? "demo" : `close ${closeDayText(p.asOf)}`);
+const tagOf = (p: Sourced | null): string | null => (!p || isIntraday(p) ? null : p.tone === "demo" ? "demo" : `close ${closeDayText(p.asOf)}`);
 
 export function glanceView(db: Database, data: MarketData, spaceId: string, now: number): GlanceView {
   const p = portfolioView(db, data, spaceId, now);

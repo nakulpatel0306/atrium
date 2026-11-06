@@ -195,7 +195,7 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
       const r = await m.data.quotes([i]);
       const q = r.quotes[0];
       if (!q) return { ok: false, message: r.missing[0]?.reason ?? "No price came back." };
-      return { ok: true, message: `${m.data.providerFor(i)?.label ?? q.source} answered.`, sample: { key: q.key, price: q.price, at: q.at, freshness: q.freshness } };
+      return { ok: true, message: `${m.data.providerFor(i)?.label ?? q.source} answered.`, sample: { key: q.key, price: q.price, at: q.at, freshness: q.freshness, source: q.source } };
     };
     // History is probed with one small Tiingo request: five days of SPY.
     const history = async () => {

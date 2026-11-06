@@ -3,12 +3,14 @@ import type { ProviderId, Quote } from "./providers/types";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 
-const PROVIDER_NAMES: Record<ProviderId, string> = { alpaca: "Alpaca", finnhub: "Finnhub", alphavantage: "Alpha Vantage", tiingo: "Tiingo", demo: "Demo" };
+const PROVIDER_NAMES: Record<ProviderId, string> = { alpaca: "Alpaca", finnhub: "Finnhub", alphavantage: "Alpha Vantage", tiingo: "Tiingo", yahoo: "Yahoo Finance", demo: "Demo" };
 
 // A live price this old isn't real-time any more: it was the last trade before the close, or a quiet symbol.
 export const STALE_LIVE_MS = 20 * 60_000;
 const timeFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
 const hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+export const YAHOO_INTRADAY = "Yahoo Finance · a few minutes delayed";
 
 export const isStaleLive = (q: Pick<Quote, "freshness" | "at">, now?: number) => q.freshness === "live" && now !== undefined && now - q.at > STALE_LIVE_MS;
 
@@ -17,6 +19,11 @@ export const isStaleLive = (q: Pick<Quote, "freshness" | "at">, now?: number) =>
 export function freshnessText(q: Pick<Quote, "freshness" | "source" | "at">, now?: number): string {
   if (q.freshness === "demo") return "Demo data";
   const name = q.source === "alpaca" ? "Alpaca · IEX" : PROVIDER_NAMES[q.source];
+  // Yahoo is never real-time: fresh, it's minutes behind; older, it says when it's from like a stale live price.
+  if (q.source === "yahoo") {
+    if (q.freshness === "live" && !isStaleLive(q, now)) return YAHOO_INTRADAY;
+    return hourFmt.format(q.at) >= "15:59" ? `${name} · close of ${dayFmt.format(q.at)}` : `${name} as of ${timeFmt.format(q.at)} ET`;
+  }
   if (q.freshness === "eod") return `${PROVIDER_NAMES[q.source]} · close of ${dayFmt.format(q.at)}`;
   if (isStaleLive(q, now)) {
     return hourFmt.format(q.at) >= "15:59" ? `${PROVIDER_NAMES[q.source]} · close of ${dayFmt.format(q.at)}` : `${name} as of ${timeFmt.format(q.at)} ET`;

@@ -39,12 +39,16 @@ test("dataBudget lists every source in a fixed order with its last result", () =
   noteSourceResult(db, "boc", false, "Couldn't reach Bank of Canada.", WED_NOON);
   noteSourceResult(db, "ishares", true, undefined, WED_NOON);
   const rows = dataBudget(db, WED_NOON);
-  expect(rows.map((r) => r.source)).toEqual(["alpaca", "finnhub", "alphavantage", "tiingo", "boc", "ishares", "ssga", "roundhill", "invesco", "wikipedia", "edgar"]);
+  expect(rows.map((r) => r.source)).toEqual(["alpaca", "finnhub", "alphavantage", "tiingo", "yahoo", "boc", "ishares", "ssga", "roundhill", "invesco", "wikipedia", "edgar"]);
   expect(rows.find((r) => r.source === "boc")!.lastError).toBe("Couldn't reach Bank of Canada.");
   expect(rows.find((r) => r.source === "ishares")!.lastOkAt).toBe(WED_NOON);
   expect(rows.find((r) => r.source === "alphavantage")!.perDay).toBe(25);
   expect(rows.find((r) => r.source === "edgar")!.perDay).toBeNull();
   expect(SOURCE_INFO.tiingo.limit).toBe("1,000 a day, 50 an hour");
+  const yahoo = rows.find((r) => r.source === "yahoo")!;
+  expect(yahoo.label).toBe("Yahoo Finance");
+  expect(yahoo.perDay).toBe(2000);
+  expect(yahoo.limit).toBe("unofficial, no fixed limit; Atrium stops at 2,000 a day and pauses 15 minutes after an error");
 });
 
 test("hourlyBudget refuses past its limit until the next hour", () => {

@@ -1,6 +1,6 @@
 // Pure: shared by the engine and the dashboard, so it imports types only. Every number Atrium shows carries
 // where it came from and how fresh it is.
-import { freshnessText, isStaleLive } from "./labels";
+import { freshnessText, isStaleLive, YAHOO_INTRADAY } from "./labels";
 import type { Quote } from "./providers/types";
 
 export type Tone = "live" | "delayed" | "estimate" | "official" | "entered" | "demo" | "none";
@@ -12,15 +12,19 @@ export const TONE_RANK: Tone[] = ["live", "official", "entered", "delayed", "est
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 export const closeDayText = (ms: number): string => dayFmt.format(ms);
 
-// With `now`, a live quote that has gone stale (after the close, or a quiet symbol) is labelled delayed.
+// With `now`, a live quote that has gone stale (after the close, or a quiet symbol) is labelled delayed. Yahoo's
+// minutes-old price is always delayed.
 export function quoteSourced(q: Quote, now?: number): Sourced {
-  const tone: Tone = q.freshness === "live" ? (isStaleLive(q, now) ? "delayed" : "live") : q.freshness === "eod" ? "delayed" : "demo";
+  const tone: Tone = q.freshness === "live" ? (isStaleLive(q, now) || q.source === "yahoo" ? "delayed" : "live") : q.freshness === "eod" ? "delayed" : "demo";
   return { value: q.price, source: freshnessText(q, now), asOf: q.at, tone };
 }
 
 const etDayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 // The ET calendar date of an instant, "2026-11-04".
 export const etDay = (ms: number): string => etDayFmt.format(ms);
+
+// Today's price, even if delayed (Yahoo's intraday TSX price), rather than an earlier close.
+export const isIntraday = (s: Sourced<unknown>): boolean => s.tone === "live" || s.source === YAHOO_INTRADAY;
 
 export const worstTone = (tones: Tone[]): Tone =>
   tones.reduce<Tone>((w, t) => (TONE_RANK.indexOf(t) > TONE_RANK.indexOf(w) ? t : w), "live");
@@ -29,7 +33,7 @@ export const worstTone = (tones: Tone[]): Tone =>
 function shortSource(s: Sourced<unknown>): string {
   if (s.tone === "live") return "real-time";
   if (s.tone === "estimate") return "estimate";
-  const close = s.source.match(/^(?:Alpha Vantage|Tiingo|Alpaca|Finnhub) · (close of .+)$/);
+  const close = s.source.match(/^(?:Alpha Vantage|Tiingo|Alpaca|Finnhub|Yahoo Finance) · (close of .+|a few minutes delayed)$/);
   return close ? close[1]! : s.source;
 }
 

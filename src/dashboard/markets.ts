@@ -14,7 +14,7 @@ export type Tone = "live" | "delayed" | "demo" | "none";
 export function freshnessLabel(q: Quote | null, missing: string | null, now: number = Date.now()): { text: string; tone: Tone } {
   if (!q) return { text: missing ? `No live data: ${missing}` : "No price yet", tone: "none" };
   const tone: Tone = q.freshness === "live" ? "live" : q.freshness === "eod" ? "delayed" : "demo";
-  return { text: freshnessText(q, now), tone: isStaleLive(q, now) ? "delayed" : tone };
+  return { text: freshnessText(q, now), tone: isStaleLive(q, now) || q.source === "yahoo" ? "delayed" : tone };
 }
 
 export const dayPct = (q: Quote): number | null => (q.prevClose ? (q.price / q.prevClose - 1) * 100 : null);

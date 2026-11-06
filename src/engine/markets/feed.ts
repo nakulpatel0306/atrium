@@ -191,10 +191,14 @@ export function createFeed(deps: {
     });
     const streamer = data.streamer();
     const canStream = !!streamer?.stream && !streamBlocked;
+    // Only what the streamer prices can stream; the rest (TSX listings from Yahoo) is polled on every tick.
+    const streamable = pollable.filter((i) => data.providerFor(i)?.id === streamer?.id);
+    const polledOnly = pollable.filter((i) => !streamable.includes(i));
     const next = feedMode({
       session,
       hasSymbols: tracked.length > 0,
-      ready: status.us.ready,
+      // Yahoo needs no key, so TSX prices keep coming even before a US source is set up.
+      ready: status.us.ready || polledOnly.some((i) => data.providerFor(i)?.id === "yahoo"),
       viewers,
       strategyActive: deps.strategyActive(),
       canStream,
@@ -215,8 +219,9 @@ export function createFeed(deps: {
         const closesAt = session.closesAt;
         const date = etDate(closesAt);
         // Prices from the last minute of the session are that day's close, kept as Atrium's own history.
+        // Yahoo's price isn't a close here: the TSX can close later than New York (on a US early close).
         for (const q of await fetchQuotes(pollable)) {
-          if (q.at >= closesAt - 60_000) recordCloses(db, q.key, [{ date, close: q.price, adjClose: null, source: q.source }]);
+          if (q.at >= closesAt - 60_000 && q.source !== "yahoo") recordCloses(db, q.key, [{ date, close: q.price, adjClose: null, source: q.source }]);
         }
       }
       if (tracked.length) await deps.jobs?.runDue(at);
@@ -228,7 +233,7 @@ export function createFeed(deps: {
     const max = streamer?.maxStreamSymbols ?? 0;
     let stale: Instrument[] = [];
     if (mode === "stream" && streamer?.stream) {
-      const wanted = pollable.slice(0, max);
+      const wanted = streamable.slice(0, max);
       const wantedKeys = wanted.map(instrumentKey).join(",");
       if (stream && trigger === "timer") {
         const quiet = (i: Instrument) => at - (tickAt.get(instrumentKey(i)) ?? streamSince);
@@ -259,7 +264,7 @@ export function createFeed(deps: {
 
     const fresh = prev === "off" || trigger === "timer" || trackedChanged;
     if (fresh) {
-      const list = mode === "stream" && prev !== "off" && !trackedChanged ? [...stale, ...pollable.slice(max)] : pollable;
+      const list = mode === "stream" && prev !== "off" && !trackedChanged ? [...stale, ...streamable.slice(max), ...polledOnly] : pollable;
       await fetchQuotes(list);
     }
     const today = etDate(at);

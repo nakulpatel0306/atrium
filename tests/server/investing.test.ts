@@ -152,10 +152,10 @@ test("a fund refresh by hand, then refused the same day", async () => {
   expect(await second.json()).toEqual({ error: "Holdings for XEQT.TO were already refreshed today." });
 });
 
-test("budget lists all 11 sources and Alpha Vantage's reserve", async () => {
+test("budget lists all 12 sources and Alpha Vantage's reserve", async () => {
   boot();
   const b = await (await get("/api/investing/budget")).json();
-  expect(b.sources).toHaveLength(11);
+  expect(b.sources).toHaveLength(12);
   expect(b.alphaVantage).toMatchObject({ reserve: 5, used: 0, plan: [], deferred: [] });
   expect(Array.isArray(b.jobs)).toBe(true);
 });

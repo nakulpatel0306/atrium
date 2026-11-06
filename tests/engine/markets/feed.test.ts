@@ -43,7 +43,7 @@ const watch = (symbol: string, exchange = "US") =>
 
 type Stream = { list: Instrument[]; ev: StreamEvents; closed: boolean; sets: Instrument[][] };
 
-function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boolean } = {}) {
+function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boolean; yahoo?: boolean } = {}) {
   const quoteCalls: Instrument[][] = [];
   const barCalls: { key: string; range: string }[] = [];
   const streams: Stream[] = [];
@@ -67,10 +67,11 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
     },
   };
   const av = { ...streamer, id: "alphavantage" as const, stream: undefined };
+  const yahoo = { ...streamer, id: "yahoo" as const, stream: undefined };
   const data: MarketData = {
     async quotes(list) {
       quoteCalls.push(list);
-      return { quotes: list.map((i): Quote => ({ key: instrumentKey(i), price: 10, prevClose: 9, at: now, source: "alpaca", freshness: "live" })), missing: [] };
+      return { quotes: list.map((i): Quote => ({ key: instrumentKey(i), price: 10, prevClose: 9, at: now, source: i.exchange === "TSX" && opts.yahoo ? "yahoo" : "alpaca", freshness: "live" })), missing: [] };
     },
     async bars(i, range) {
       barCalls.push({ key: instrumentKey(i), range });
@@ -89,7 +90,7 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
     reload: async () => {},
     prepare: async () => {},
     refreshKeys: async () => {},
-    providerFor: (i) => (i.exchange === "US" ? streamer : i.exchange === "TSX" ? av : null),
+    providerFor: (i) => (i.exchange === "US" ? (opts.ready === false ? null : streamer) : i.exchange === "TSX" ? (opts.yahoo ? yahoo : av) : null),
     reasonFor: () => null,
     secrets: () => [],
   };
@@ -247,6 +248,36 @@ test("stream the first symbols while viewed, poll the rest", async () => {
   await s.feed.idle();
   expect(s.streams[1]!.closed).toBe(true);
   expect(s.feed.status()).toMatchObject({ mode: "poll", streamError: "Alpaca allows one live connection on the free plan." });
+  s.feed.stop();
+});
+
+test("TSX listings priced by Yahoo are polled every tick and never sent to the stream", async () => {
+  watch("AAPL");
+  watch("XEQT", "TSX");
+  const s = setup("2026-11-05T15:00:00Z", { yahoo: true });
+  await s.feed.start();
+  expect(s.quoteCalls[0]!.map(instrumentKey)).toEqual(["AAPL", "XEQT.TO"]);
+  await s.feed.setViewers(1);
+  expect(s.streams[0]!.list.map(instrumentKey)).toEqual(["AAPL"]);
+  now += POLL_MS;
+  s.timers.fireAll();
+  await s.feed.idle();
+  expect(s.quoteCalls.at(-1)!.map(instrumentKey)).toEqual(["XEQT.TO"]);
+  s.feed.stop();
+});
+
+test("Yahoo keeps TSX prices coming without a US key, and its last price isn't kept as a close", async () => {
+  watch("AAPL");
+  watch("XEQT", "TSX");
+  const s = setup("2026-11-05T20:57:00Z", { yahoo: true, ready: false });
+  await s.feed.start();
+  expect(s.feed.status().mode).toBe("poll");
+  expect(s.quoteCalls[0]!.map(instrumentKey)).toEqual(["XEQT.TO"]);
+  now = Date.parse("2026-11-05T21:00:30Z");
+  s.timers.fireAll();
+  await s.feed.idle();
+  expect(s.feed.status().mode).toBe("off");
+  expect(db.query("SELECT COUNT(*) AS n FROM market_closes").get()).toEqual({ n: 0 });
   s.feed.stop();
 });
 

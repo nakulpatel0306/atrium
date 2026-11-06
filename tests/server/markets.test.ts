@@ -261,10 +261,17 @@ test("no unlicensed sources anywhere in the source", () => {
     readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : /\.(ts|tsx)$/.test(e.name) ? [join(dir, e.name)] : []));
   const files = walk(resolve(import.meta.dir, "../../src"));
   expect(files.length).toBeGreaterThan(50);
+  // Yahoo's public chart feed is allowed in one place only: the keyless intraday TSX provider, labelled unofficial.
+  const yahooFile = resolve(import.meta.dir, "../../src/engine/markets/providers/yahoo.ts");
+  const yahooHosts = ["finance.yahoo.com", "query1.finance"];
   for (const f of files) {
     const text = readFileSync(f, "utf8");
-    for (const b of banned) expect(`${f}: ${b}: ${text.includes(b)}`).toBe(`${f}: ${b}: false`);
+    for (const b of banned) {
+      if (f === yahooFile && yahooHosts.includes(b)) continue;
+      expect(`${f}: ${b}: ${text.includes(b)}`).toBe(`${f}: ${b}: false`);
+    }
   }
+  expect(readFileSync(yahooFile, "utf8")).toContain("https://query1.finance.yahoo.com/v8/finance/chart");
 });
 
 test("only TradingView's widget is loaded from outside", async () => {

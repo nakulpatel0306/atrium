@@ -1,9 +1,9 @@
 import type { Database } from "bun:sqlite";
 import { getSetting } from "../settings";
-import { dailyBudget, hourlyBudget, meteredFetch, noteSourceResult } from "./budget";
+import { dailyBudget, hourlyBudget, meteredFetch, noteSourceResult, YAHOO_DAILY_CAP } from "./budget";
 import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
 import { closes, recordCloses } from "./closes";
-import { etDate, etInstant, lastCompletedSession } from "./calendar";
+import { etClock, etDate, etInstant, lastCompletedSession } from "./calendar";
 import { instrumentKey, type Instrument } from "./instrument";
 import { KEY_ACCOUNTS, KEYCHAIN_LOCKED, type Keychain } from "./keychain";
 import { alpacaProvider } from "./providers/alpaca";
@@ -11,6 +11,7 @@ import { alphaVantageProvider } from "./providers/alphavantage";
 import { demoProvider } from "./providers/demo";
 import { finnhubProvider } from "./providers/finnhub";
 import { tiingoProvider, tiingoSymbols, type TiingoProvider } from "./providers/tiingo";
+import { yahooProvider, type YahooProvider } from "./providers/yahoo";
 import { ProviderError, type Bar, type Freshness, type MarketProvider, type NewsItem, type ProviderId, type Quote, type Timeframe } from "./providers/types";
 import { redact } from "./redact";
 
@@ -57,13 +58,24 @@ const FIVE_DAY_SPAN_MS = 8 * DAY_MS;
 export const MISSING = {
   alpaca: "Add your Alpaca key in Settings → Market data.",
   finnhub: "Add your Finnhub key in Settings → Market data.",
-  ca: "Canadian prices need a free Alpha Vantage key (Settings → Market data).",
+  ca: "No Canadian price yet. Yahoo Finance fills in during TSX hours; a free Alpha Vantage key (Settings → Market data) adds the official close.",
   neo: "No free source covers NEO-listed CDRs.",
   otc: "No free source covers OTC stocks.",
   history: "Atrium's own daily closes from Finnhub prices. History builds up over time.",
 };
 
-const FRESHNESS: Record<ProviderId, Freshness> = { alpaca: "live", finnhub: "live", alphavantage: "eod", tiingo: "eod", demo: "demo" };
+const FRESHNESS: Record<ProviderId, Freshness> = { alpaca: "live", finnhub: "live", alphavantage: "eod", tiingo: "eod", yahoo: "live", demo: "demo" };
+
+const isCanadian = (i: Instrument) => i.exchange === "TSX" || i.exchange === "TSXV";
+const CA_SOURCES = new Set<ProviderId>(["yahoo", "alphavantage"]);
+
+// Yahoo's intraday price and Alpha Vantage's close share one cached row per listing, and the newer is "price now".
+// A Yahoo price that's no longer live never replaces a stored close from Alpha Vantage.
+function replacesCached(q: Quote, old: Quote | undefined): boolean {
+  if (!old || !CA_SOURCES.has(old.source) || old.source === q.source) return true;
+  if (q.source === "yahoo" && q.freshness !== "live") return false;
+  return q.at > old.at;
+}
 
 type Keys = { alpacaKeyId: string | null; alpacaSecret: string | null; finnhub: string | null; alphavantage: string | null; tiingo: string | null };
 
@@ -85,6 +97,11 @@ export function createMarketData(deps: {
   let rejected: Partial<Record<ProviderId, { message: string; date: string }>> = {};
   let lastRead = 0;
   let readFailed = false;
+  // Keyless, so it lives outside `built` and keeps its pause across key reloads. Substituted providers replace it
+  // too: a caller passing its own fakes reaches nothing else.
+  const yahoo: YahooProvider | null = deps.providers
+    ? ((deps.providers.yahoo as YahooProvider | undefined) ?? null)
+    : yahooProvider({ budget: dailyBudget(db, "yahoo", YAHOO_DAILY_CAP, now), cap: YAHOO_DAILY_CAP, fetch: meteredFetch(db, "yahoo", deps.fetch ?? fetch, now), now });
 
   const read = async (account: string) => {
     try {
@@ -175,13 +192,18 @@ export function createMarketData(deps: {
     if (i.exchange === "NEO") return { provider: null, reason: MISSING.neo };
     if (i.exchange === "OTC") return { provider: null, reason: MISSING.otc };
     if (i.exchange === "US") return has[m]() ? { provider: provider(m), reason: "" } : { provider: null, reason: MISSING[m] };
-    return has.alphavantage() ? { provider: provider("alphavantage"), reason: "" } : { provider: null, reason: MISSING.ca };
+    // Yahoo only while it may be asked (TSX in session, not paused, under its cap); Alpha Vantage's close otherwise.
+    if (yahoo?.live()) return { provider: yahoo, reason: "" };
+    return closesFor();
   };
+  const closesFor = (): { provider: MarketProvider | null; reason: string } =>
+    has.alphavantage() ? { provider: provider("alphavantage"), reason: "" } : { provider: null, reason: MISSING.ca };
 
   const secrets = () => [keys.alpacaKeyId, keys.alpacaSecret, keys.finnhub, keys.alphavantage, keys.tiingo].filter((k): k is string => !!k);
   // US daily bars come from Tiingo when it has a key.
   const historyFor = (i: Instrument): { provider: MarketProvider | null; reason: string } => {
     const m = mode();
+    if (m !== "demo" && isCanadian(i)) return closesFor();
     if (m === "demo" || i.exchange !== "US") return route(i);
     if (has.tiingo()) return { provider: provider("tiingo"), reason: "" };
     return { provider: null, reason: MISSING.history };
@@ -244,8 +266,10 @@ export function createMarketData(deps: {
         try {
           const got = await p.quotes(group);
           note(p, true);
-          saveQuotes(db, got);
-          quotes.push(...got);
+          const cached = cachedQuotes(db, got.map((q) => q.key));
+          const kept = got.map((q) => (replacesCached(q, cached.get(q.key)) ? q : cached.get(q.key)!));
+          saveQuotes(db, kept.filter((q) => q.source === p.id));
+          quotes.push(...kept);
           const seen = new Set(got.map((q) => q.key));
           for (const i of group) if (!seen.has(instrumentKey(i))) missing.push({ key: instrumentKey(i), reason: `${p.label} has no price for ${instrumentKey(i)}.` });
         } catch (e) {
@@ -261,7 +285,8 @@ export function createMarketData(deps: {
       await ensure();
       const key = instrumentKey(i);
       const timeframe: Timeframe = range === "5D" ? "5Min" : "1Day";
-      const r = range === "5D" ? route(i) : historyFor(i);
+      // Canadian charts always come from Alpha Vantage; Yahoo only prices the day.
+      const r = range === "5D" && !isCanadian(i) ? route(i) : historyFor(i);
       if (!r.provider && range !== "5D" && i.exchange === "US" && mode() !== "demo") {
         // Tiingo is optional: without it, US history is the closes Atrium keeps from Finnhub's prices.
         const own = closes(db, key, etDate(now() - RANGE_DAYS[range] * DAY_MS)).map((c) => {
@@ -330,11 +355,15 @@ export function createMarketData(deps: {
           ? { ready: false, message: rejected[m]!.message }
           : { ready: true, message: "Finnhub · real-time" };
       const left = dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now).remaining();
+      const paused = yahoo ? yahoo.pausedUntil() : 0;
+      const day = !yahoo ? null : paused > now() ? `Yahoo Finance paused until ${etClock(paused)} after an error` : "Yahoo Finance during TSX hours (a few minutes delayed)";
       const ca = rejected.alphavantage
         ? { ready: false, message: rejected.alphavantage.message }
         : has.alphavantage()
-        ? { ready: true, message: `Alpha Vantage · end of day (${left} of ${AV_DAILY_LIMIT} requests left today)` }
-        : { ready: false, message: MISSING.ca };
+        ? { ready: true, message: `${day ? `${day}; after the close, ` : ""}Alpha Vantage · end of day (${left} of ${AV_DAILY_LIMIT} requests left today)` }
+        : day
+          ? { ready: true, message: `${day} · add a free Alpha Vantage key for the official close` }
+          : { ready: false, message: MISSING.ca };
       return { usProvider: m, us, ca, keys: keysPresent, history };
     },
     prepare: ensure,
@@ -363,8 +392,12 @@ export function createMarketData(deps: {
 
 // A cached price only counts when today's source for the instrument produced it: after switching from Demo to
 // Alpaca, demo prices must not show, or fill paper orders, as if they were real (and the reverse).
+// Canadian listings have two real sources, Yahoo in the day and Alpha Vantage after it; either counts outside Demo
+// mode, so a Yahoo price still prices a holding after the close or without an Alpha Vantage key.
 export function currentQuote(db: Database, data: MarketData, i: Instrument): Quote | null {
   const p = data.providerFor(i);
   const q = cachedQuotes(db, [instrumentKey(i)]).get(instrumentKey(i));
-  return p && q && q.source === p.id ? q : null;
+  if (!q) return null;
+  if (p && q.source === p.id) return q;
+  return isCanadian(i) && CA_SOURCES.has(q.source) && getSetting(db, "markets.provider") !== "demo" ? q : null;
 }

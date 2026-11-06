@@ -1,6 +1,7 @@
 import { KeyRound, PlugZap, Radio } from "lucide-react";
 import { useState } from "react";
 import type { DataStatus } from "../../engine/markets/data";
+import type { Quote } from "../../engine/markets/providers/types";
 import { del, post, put } from "../api";
 import { absolute, money } from "../format";
 import { useMarketDataSettings } from "../markets";
@@ -28,7 +29,7 @@ const KEY_FORMS: { id: KeyProvider; label: string; need: string; fields: { name:
     label: "Alpha Vantage",
     need: "Optional · Canadian prices",
     fields: [{ name: "key", label: "Key" }],
-    help: "Adds your TSX and TSX-V holdings to the portfolio total, at end-of-day prices. Without it they still show TradingView's chart. The free key allows 25 requests a day, so Canadian prices refresh once after the close.",
+    help: "Adds the official end-of-day close for your TSX and TSX-V holdings, and their charts. The free key allows 25 requests a day, so Canadian closes refresh once after the close.",
   },
   {
     id: "tiingo",
@@ -124,7 +125,7 @@ function AlpacaRemoval() {
   );
 }
 
-type Probe = { ok: boolean; message: string; sample?: { key: string; price: number; at: number; freshness: "live" | "eod" | "demo" } };
+type Probe = { ok: boolean; message: string; sample?: { key: string; price: number; at: number; freshness: Quote["freshness"]; source: Quote["source"] } };
 
 export function Settings() {
   const s = useMarketDataSettings();
@@ -182,6 +183,7 @@ export function Settings() {
               {s.feed.reason}
             </span>
           </div>
+          <p className="hint">TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). After the close, Alpha Vantage's close is used.</p>
           <div className="mk-form">
             <button className="btn" onClick={() => void runTest()} disabled={testing}>
               <PlugZap />
@@ -198,7 +200,7 @@ export function Settings() {
                   {test[k].sample && (
                     <>
                       <span className="num">{money(test[k].sample!.price, k === "us" ? "USD" : "CAD")}</span>
-                      <Freshness quote={{ key: test[k].sample!.key, price: test[k].sample!.price, prevClose: null, at: test[k].sample!.at, source: s.data.usProvider === "demo" ? "demo" : k === "us" ? s.data.usProvider : "alphavantage", freshness: test[k].sample!.freshness }} missing={null} />
+                      <Freshness quote={{ key: test[k].sample!.key, price: test[k].sample!.price, prevClose: null, at: test[k].sample!.at, source: test[k].sample!.source, freshness: test[k].sample!.freshness }} missing={null} />
                       <span className="faint" title={absolute(test[k].sample!.at)}>
                         {absolute(test[k].sample!.at)}
                       </span>
