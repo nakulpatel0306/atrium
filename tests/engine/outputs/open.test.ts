@@ -105,3 +105,54 @@ test("a failed open says what to do", async () => {
   process.env.FAKE_OPEN_EXIT = "1";
   await expect(openFile(target(file("list.md")), "open")).rejects.toThrow("macOS couldn't open list.md. Use Reveal in Finder and open it from there.");
 });
+
+test("Add to Calendar drops alarms that could run, mail or fetch something", async () => {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "SUMMARY:Gym",
+    "BEGIN:VALARM",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Gym in 15 minutes",
+    "TRIGGER:-PT15M",
+    "END:VALARM",
+    "BEGIN:VALARM",
+    "ACTION:PROCEDURE",
+    "ATTACH:file:///Users/n/evil.sh",
+    "TRIGGER:-PT5M",
+    "END:VALARM",
+    "BEGIN:VALARM",
+    "ACTION:EMAIL",
+    "ATTENDEE:mailto:someone@example.com",
+    "TRIGGER:-PT1M",
+    "END:VALARM",
+    "BEGIN:VALARM",
+    "ACTION:AUDIO",
+    "ATTACH;VALUE=URI:https://tracker.example/s",
+    " ound.aiff",
+    "TRIGGER:-PT2M",
+    "END:VALARM",
+    "BEGIN:VALARM",
+    "ACTION:AUDIO",
+    "TRIGGER:-PT3M",
+    "END:VALARM",
+    "BEGIN:VALARM",
+    "ACTION:DISPLAY",
+    "URL:https://tracker.example/x",
+    "TRIGGER:-PT4M",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+    "",
+  ].join("\r\n");
+  file("week.ics", 0o644, ics);
+  await openFile(target("week.ics"), "calendar");
+  const copy = readFileSync(logged()[0]![2]!, "utf8");
+  expect(copy.match(/BEGIN:VALARM/g)?.length).toBe(2);
+  expect(copy).toContain("DESCRIPTION:Gym in 15 minutes");
+  expect(copy).toContain("TRIGGER:-PT3M");
+  for (const gone of ["PROCEDURE", "evil.sh", "EMAIL", "someone@", "tracker.example", "ound.aiff"]) expect(copy).not.toContain(gone);
+  expect(copy).toContain("SUMMARY:Gym\r\n");
+  // The file in the space is untouched.
+  expect(readFileSync(join(dir, "week.ics"), "utf8")).toBe(ics);
+});

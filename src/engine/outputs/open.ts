@@ -61,7 +61,8 @@ export async function openFile(t: Target, how: OpenHow): Promise<{ app: string; 
       if (st.size > OPEN_CAP) throw new FileRefused(413, "This file is too big to open from Atrium. Use Reveal in Finder to open it.");
       return readBytes(fd, st.size);
     });
-    argv = ["-a", app, privateCopy(basename(t.absPath), bytes)];
+    const safe = app === "Calendar" ? new TextEncoder().encode(safeAlarms(new TextDecoder().decode(bytes))) : bytes;
+    argv = ["-a", app, privateCopy(basename(t.absPath), safe)];
     result = { app, copy: true };
   }
   const proc = Bun.spawn([config().openBin, ...argv], { stdin: "ignore", stdout: "ignore", stderr: "pipe", timeout: 10_000, env: { ...process.env } });
@@ -70,6 +71,35 @@ export async function openFile(t: Target, how: OpenHow): Promise<{ app: string; 
     throw new Error(`macOS couldn't open ${basename(t.absPath)}. Use Reveal in Finder and open it from there.`);
   }
   return result;
+}
+
+// Calendar would keep an agent's alarms: a PROCEDURE alarm runs a file, an EMAIL alarm mails someone, and an
+// ATTACH or URL fetches from wherever it points. Only plain display and sound alarms stay. Folded lines (a line
+// starting with a space or tab continues the one before) are kept with the property they belong to.
+export function safeAlarms(ics: string): string {
+  const eol = ics.includes("\r\n") ? "\r\n" : "\n";
+  const logical: string[][] = [];
+  for (const line of ics.split(/\r?\n/)) {
+    if ((line.startsWith(" ") || line.startsWith("\t")) && logical.length) logical.at(-1)!.push(line);
+    else logical.push([line]);
+  }
+  const out: string[][] = [];
+  let alarm: string[][] | null = null;
+  for (const l of logical) {
+    const name = l.join("").split(/[;:]/)[0]!.toUpperCase();
+    if (alarm) {
+      alarm.push(l);
+      if (l[0]!.toUpperCase() === "END:VALARM") {
+        const props = alarm.map((x) => x.join(""));
+        const action = props.find((p) => /^ACTION:/i.test(p))?.slice(7).trim().toUpperCase();
+        const fetches = props.some((p) => /^(ATTACH|URL)[;:]/i.test(p));
+        if ((action === "DISPLAY" || action === "AUDIO") && !fetches) out.push(...alarm);
+        alarm = null;
+      }
+    } else if (name === "BEGIN" && l[0]!.toUpperCase() === "BEGIN:VALARM") alarm = [l];
+    else out.push(l);
+  }
+  return out.map((l) => l.join(eol)).join(eol);
 }
 
 function privateCopy(name: string, bytes: Uint8Array): string {
