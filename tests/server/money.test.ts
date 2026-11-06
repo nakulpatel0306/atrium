@@ -97,3 +97,24 @@ test("a space that isn't markets has no money view", async () => {
   const r = await fetch(`${base}/api/investing/${general.id}/money`);
   expect([r.status, (await r.json()).error]).toEqual([404, "No such markets space."]);
 });
+
+test("an oversized body is refused before it's parsed, with or without a Content-Length", async () => {
+  const huge = JSON.stringify({ csv: "x".repeat(5 * 1024 * 1024) });
+  const sized = await call("POST", money("/preview"), JSON.parse(huge));
+  expect([sized.status, (await sized.json()).error]).toEqual([413, "That file is over 2 MB; export a shorter date range."]);
+  // Streamed with no Content-Length: reading stops at the limit instead of taking in the whole body.
+  const { readBody } = await import("../../src/server/http");
+  const chunk = new Uint8Array(65536).fill(120);
+  let pulled = 0;
+  const stream = new ReadableStream({
+    pull(c) {
+      pulled++;
+      if (pulled > 200) c.close();
+      else c.enqueue(chunk);
+    },
+  });
+  const req = new Request("http://127.0.0.1/x", { method: "POST", headers: { "content-type": "application/json" }, body: stream, duplex: "half" } as RequestInit);
+  const err = await readBody(req, { bytes: 1024 * 1024, message: "too big" }).catch((e) => e);
+  expect([err.status, err.message]).toEqual([413, "too big"]);
+  expect(pulled).toBeLessThan(40);
+});

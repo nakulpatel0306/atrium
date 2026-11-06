@@ -8,6 +8,9 @@ import { HttpError, json, readBody } from "./http";
 import type { MarketsDeps } from "./markets";
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
+const TOO_BIG = "That file is over 2 MB; export a shorter date range.";
+// The JSON around a 2 MB file (escaped quotes and newlines) can be larger than the file itself.
+const BODY_LIMIT = { bytes: 2 * MAX_CSV_BYTES + 64 * 1024, message: TOO_BIG };
 const PREVIEW_ROWS = 20;
 const OWNED = /^\/api\/investing\/([^/]+)\/money(\/(?:preview|import|rules|ask))?$/;
 
@@ -22,7 +25,7 @@ function check<T>(fn: () => T): T {
 
 function previewOf(b: Record<string, unknown>) {
   if (typeof b.csv !== "string" || !b.csv.trim()) throw new HttpError(400, "Pick a CSV file or paste its contents.");
-  if (Buffer.byteLength(b.csv) > MAX_CSV_BYTES) throw new HttpError(413, "That file is over 2 MB; export a shorter date range.");
+  if (Buffer.byteLength(b.csv) > MAX_CSV_BYTES) throw new HttpError(413, TOO_BIG);
   const mapping =
     typeof b.mapping === "object" && b.mapping !== null
       ? (Object.fromEntries(Object.entries(b.mapping).filter(([, v]) => Number.isInteger(v) && (v as number) >= 0)) as MoneyMap)
@@ -45,11 +48,11 @@ export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url
     const now = (m.now ?? Date.now)();
     if (req.method === "GET" && rest === "") return json({ ...moneyView(db, spaceId, now, url.searchParams.get("month") ?? undefined), starters: STARTERS });
     if (req.method === "POST" && rest === "/preview") {
-      const p = previewOf(await readBody(req));
+      const p = previewOf(await readBody(req, BODY_LIMIT));
       return json({ ...p, rows: p.rows.slice(0, PREVIEW_ROWS), total: p.rows.length });
     }
     if (req.method === "POST" && rest === "/import") {
-      const p = previewOf(await readBody(req));
+      const p = previewOf(await readBody(req, BODY_LIMIT));
       if (!p.rows.length) throw new HttpError(400, p.warnings[0] ?? "Nothing in that file could be imported.");
       return json({ ...importMoney(db, spaceId, p), skipped: p.skipped.length });
     }

@@ -22,15 +22,34 @@ export const opt = <T>(v: unknown, ok: (x: unknown) => x is T, field: string): T
 export const isBool = (x: unknown): x is boolean => typeof x === "boolean";
 export const isString = (x: unknown): x is string => typeof x === "string";
 
-export const readBody = async (req: Request): Promise<Record<string, unknown>> => {
+// With a limit, an oversized body is refused before it's parsed: by its Content-Length, or while streaming it in.
+export const readBody = async (req: Request, limit?: { bytes: number; message: string }): Promise<Record<string, unknown>> => {
   if (!req.body) return {};
   if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
     throw new HttpError(415, "Send the request body as application/json.");
   }
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
+    if (!limit) body = await req.json();
+    else {
+      if (Number(req.headers.get("content-length") ?? 0) > limit.bytes) throw new HttpError(413, limit.message);
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      const reader = req.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > limit.bytes) {
+          await reader.cancel();
+          throw new HttpError(413, limit.message);
+        }
+        chunks.push(value);
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    }
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
     throw new HttpError(400, "The request body isn't valid JSON.");
   }
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
