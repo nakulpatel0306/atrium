@@ -1752,14 +1752,14 @@ describe("honest outcomes", () => {
     expect(a.detail.startsWith("Wrote it.")).toBe(true);
     expect(a.detail).not.toContain("OUTCOME");
     expect(getApproval(db, a.id)!.fingerprint).toBeNull();
-    expect(activity(space.id)).toContain("Couldn't do: Summarise notes.md. no number.");
+    expect(activity(space.id)).toContain("Couldn't do: Summarise notes.md. No number.");
   });
 
   test("partial", async () => {
     const { t, a, space } = await finish("Write three files", "Wrote two.\nOUTCOME: partial - the third needs your notes.");
     expect([t.outcome, t.outcomeReason]).toEqual(["partial", "the third needs your notes."]);
     expect(getApproval(db, a.id)!.fingerprint).toBeNull();
-    expect(activity(space.id)).toContain("Partly done: Write three files. the third needs your notes.");
+    expect(activity(space.id)).toContain("Partly done: Write three files. The third needs your notes.");
   });
 
   test("no outcome line is unknown", async () => {

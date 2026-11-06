@@ -783,7 +783,8 @@ function filesLeftIn(dir: string, before: string | null): number {
 }
 
 function readyLine(task: Task, o: ParsedOutcome): string {
-  const why = o.reason ? ` ${o.reason}` : "";
+  // The reason reads as its own sentence after the title.
+  const why = o.reason ? ` ${o.reason[0]!.toUpperCase()}${o.reason.slice(1)}` : "";
   if (o.outcome === "couldnt") return `Couldn't do: ${task.title}.${why}`;
   if (o.outcome === "partial") return `Partly done: ${task.title}.${why}`;
   return `Ready for review: ${task.title}`;

@@ -14,7 +14,7 @@ export const candidateLine = (c: Candidate) => [c.name, c.label, displayHandle(c
 
 // A text waiting to go. What Nakul sees here is exactly what Messages gets: his edits and his Send land together,
 // and nothing else can send it.
-export function MessageCard({ approval, action, firstSend = false }: { approval: Approval; action: Action; firstSend?: boolean }) {
+export function MessageCard({ approval, action, spaceName = "Messages", firstSend = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean }) {
   const [text, setText] = useState(action.text);
   const [handle, setHandle] = useState(action.handle ? displayHandle(action.handle) : "");
   const [service, setService] = useState(action.service);
@@ -65,13 +65,20 @@ export function MessageCard({ approval, action, firstSend = false }: { approval:
     const res = await post("/api/messaging/open-settings", { pane: "automation" });
     if (!res.ok) setLookupError(res.error);
   };
-  const permission = /System Settings/.test(`${lookupError ?? ""} ${action.lastError ?? ""} ${error ?? ""}`);
+  // The button sits under whichever message tells him to open System Settings.
+  const needsPane = (msg: string | null) => !!msg && /System Settings/.test(msg);
+  const settingsButton = (
+    <button className="btn" type="button" onClick={() => void openSettings()}>
+      <Settings2 />
+      Open System Settings
+    </button>
+  );
 
   return (
     <div className="entry msg-entry">
       <div className="item">
         <MessageSquare className="msg-ico" />
-        <span className="who">Messages</span>
+        <span className="who">{spaceName}</span>
         <span className="t" title={approval.title}>
           {approval.title}
           <span>{text.split("\n")[0]}</span>
@@ -93,6 +100,7 @@ export function MessageCard({ approval, action, firstSend = false }: { approval:
         }}
       >
         {action.lastError && <p className="err last-try">Last try failed: {action.lastError}</p>}
+        {needsPane(action.lastError) && settingsButton}
         <p className="msg-to">
           <span className="lbl">To</span>
           <b>{action.toName}</b>
@@ -145,12 +153,7 @@ export function MessageCard({ approval, action, firstSend = false }: { approval:
           </fieldset>
         )}
         {lookupError && <p className="err">{lookupError}</p>}
-        {permission && (
-          <button className="btn" type="button" onClick={() => void openSettings()}>
-            <Settings2 />
-            Open System Settings
-          </button>
-        )}
+        {needsPane(lookupError) && !needsPane(action.lastError) && settingsButton}
         <label className="msg-text">
           <span className="lbl-row">
             Message
@@ -162,20 +165,23 @@ export function MessageCard({ approval, action, firstSend = false }: { approval:
           {textIssue && <span className="err">{textIssue}</span>}
         </label>
         <div className="msg-foot">
-          <div className="seg" role="radiogroup" aria-label="Send as">
+          <span className="via">
             <span className="lbl">Via</span>
-            {(["iMessage", "SMS"] as const).map((v) => (
-              <button key={v} type="button" role="radio" aria-checked={service === v} className={service === v ? "on" : ""} onClick={() => setService(v)}>
-                {v}
-              </button>
-            ))}
-          </div>
+            <span className="seg" role="group" aria-label="Send as">
+              {(["iMessage", "SMS"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={service === v} onClick={() => setService(v)}>
+                  {v}
+                </button>
+              ))}
+            </span>
+          </span>
           <p className="faint">Sends from Messages on this Mac. Atrium can't confirm delivery.</p>
         </div>
         {firstSend && <p className="hint">The first send asks macOS whether Atrium may control Messages. Click OK, and it sends.</p>}
         <button type="submit" hidden />
       </form>
       {error && <div className="row-err err">{error}</div>}
+      {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
     </div>
   );
 }

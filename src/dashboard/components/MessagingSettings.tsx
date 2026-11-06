@@ -6,14 +6,14 @@ type Messaging = NonNullable<ReturnType<typeof useEngineState>>["messaging"];
 
 export function sendingLine(state: Messaging["state"]): { text: string; tone: "ok" | "bad" | null } {
   if (state === "ready") return { text: "Working. Atrium last sent a text without trouble.", tone: "ok" };
-  if (state === "needs_automation") return { text: "Blocked. Turn on Messages for Atrium in System Settings, under Privacy & Security › Automation.", tone: "bad" };
+  if (state === "needs_automation") return { text: 'Blocked. In System Settings › Privacy & Security › Automation, turn on Messages under "bun" (Atrium\'s engine).', tone: "bad" };
   if (state === "signed_out") return { text: "Blocked. Messages isn't signed in to iMessage on this Mac.", tone: "bad" };
   return { text: "Not tried yet. The first send asks macOS whether Atrium may control Messages.", tone: null };
 }
 
 export function contactsLine(ready: boolean | null): { text: string; tone: "ok" | "bad" | null } {
   if (ready === true) return { text: "Allowed. Atrium looks people up when it drafts a text.", tone: "ok" };
-  if (ready === false) return { text: "Not allowed. Type numbers yourself, or turn on Contacts for Atrium in System Settings.", tone: "bad" };
+  if (ready === false) return { text: 'Not allowed. Type numbers yourself, or turn on Contacts under "bun" in System Settings › Privacy & Security › Automation.', tone: "bad" };
   return { text: "Not tried yet. Atrium only looks after you press Look up on a text.", tone: null };
 }
 

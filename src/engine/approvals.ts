@@ -236,6 +236,10 @@ export function resolveApproval(
 
 // Accepting a result the agent said it didn't finish is recorded as exactly that.
 function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
+  if (a.alwaysAsk === "send_message") {
+    const what = a.title.replace(/^Send a /, "").replace(/\?$/, "");
+    return decision === "approve" ? `Pressed Send: ${what}` : `Chose not to send: ${what}`;
+  }
   if (decision === "reject") return `Rejected: ${a.title}`;
   const outcome = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
   if (outcome === "couldnt") return `Accepted anyway: ${a.title}. It says it couldn't do this.`;

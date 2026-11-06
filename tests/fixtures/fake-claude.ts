@@ -109,5 +109,13 @@ out({
   message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/repo/README.md" } }] },
 });
 out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "# fixture" }] } });
-// FAKE_CLAUDE_TEXT stands in for the reply, so a dev engine can drive the setup agent.
-result(process.env.FAKE_CLAUDE_TEXT ?? "All done.");
+// FAKE_CLAUDE_TEXT stands in for the reply, so a dev engine can drive the setup agent. With by_prompt, the reply is
+// the first of FAKE_CLAUDE_REPLIES (a JSON file of [substring, reply] pairs) whose substring is in the prompt.
+if (mode === "by_prompt") {
+  const { readFileSync } = await import("node:fs");
+  const prompt = await Bun.stdin.text();
+  const pairs = JSON.parse(readFileSync(process.env.FAKE_CLAUDE_REPLIES!, "utf8")) as [string, string][];
+  result(pairs.find(([needle]) => prompt.includes(needle))?.[1] ?? process.env.FAKE_CLAUDE_TEXT ?? "All done.");
+} else {
+  result(process.env.FAKE_CLAUDE_TEXT ?? "All done.");
+}

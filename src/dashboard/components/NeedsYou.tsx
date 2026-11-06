@@ -178,7 +178,7 @@ export function NeedsYou({ state }: { state: State }) {
               if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
               if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
               const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
-              if (text) return <MessageCard key={a.id} approval={a} action={text} firstSend={state.messaging.state === "untested"} />;
+              if (text) return <MessageCard key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} />;
               return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
             })}
           </>

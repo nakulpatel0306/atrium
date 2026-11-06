@@ -4020,30 +4020,10 @@ code {
   color: var(--faint);
   font-size: 12px;
 }
-.seg {
+.via {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-}
-.seg button {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--dim);
-  font-size: 12px;
-  padding: 3px 10px;
-  cursor: pointer;
-}
-.seg button:first-of-type {
-  border-radius: 5px 0 0 5px;
-}
-.seg button:last-of-type {
-  border-radius: 0 5px 5px 0;
-  margin-left: -3px;
-}
-.seg button.on {
-  background: var(--raised);
-  border-color: var(--line-strong);
-  color: var(--text);
+  gap: 6px;
 }
 
 /* sent history */

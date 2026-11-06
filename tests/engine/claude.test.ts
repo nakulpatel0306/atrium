@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atriumDenyPaths } from "../../src/engine/agents/atrium-paths";
@@ -283,4 +283,25 @@ describe("fake claude write_files mode", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+test("by_prompt answers by what the prompt says", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "atrium-replies-"));
+  try {
+    const replies = join(dir, "replies.json");
+    writeFileSync(replies, JSON.stringify([["Dana", "texting"], ["Summarise", "OUTCOME: couldnt - no file."]]));
+    process.env.FAKE_CLAUDE_MODE = "by_prompt";
+    process.env.FAKE_CLAUDE_REPLIES = replies;
+    const run = async (prompt: string) => {
+      const r = await claudeAdapter(FAKE).run({ ...input(), prompt });
+      return r.status === "ok" ? r.summary : r.message;
+    };
+    expect(await run("Summarise notes.md")).toBe("OUTCOME: couldnt - no file.");
+    expect(await run("send Dana a message")).toBe("texting");
+    expect(await run("something else")).toBe("All done.");
+  } finally {
+    delete process.env.FAKE_CLAUDE_MODE;
+    delete process.env.FAKE_CLAUDE_REPLIES;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
