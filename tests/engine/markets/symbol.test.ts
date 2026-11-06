@@ -97,16 +97,33 @@ test("an untracked symbol works", async () => {
   expect(before).toMatchObject({ key: "NVDA", price: null, position: null, tv: "NVDA", refreshedAt: null });
   expect(before.lists.map((l) => l.has)).toEqual([false, false]);
   expect(await refreshSymbol(db, data, "NVDA", NOW)).toEqual({ refreshed: true, note: null });
-  // TradingView's widgets show fundamentals and news, so the refresh asks Finnhub only for what Atrium computes with.
-  expect(calls).toEqual(["quotes NVDA", "profile NVDA", "earnings NVDA"]);
+  // With no stats stored yet, opening the page fetches them, plus earnings and recent company news.
+  expect(calls).toEqual(["quotes NVDA", "profile NVDA", "metric NVDA", "earnings NVDA", "news NVDA"]);
   const after = symbolView(db, data, fx.spaceId, "NVDA", NOW);
   expect(after.price!.value).toBe(190);
   expect(after.tv).toBe("NASDAQ:NVDA");
   expect(after.name).toBe("NVIDIA Corp");
-  expect(after.stats).toEqual([]);
+  expect(after.stats.map((x) => x.label)).toEqual(["Market cap", "P/E", "52-week range", "Dividend yield"]);
   expect(after.earnings?.date).toBe("2026-11-19");
-  expect(after.news).toEqual([]);
+  expect(after.news.map((n) => n.headline)).toEqual(["Nvidia ships a new chip"]);
   expect(after.refreshedAt).toBe(NOW);
+});
+
+test("fresh stats and profile aren't fetched again; week-old stats are", async () => {
+  const { data, calls } = rig();
+  await refreshSymbol(db, data, "NVDA", NOW);
+  calls.length = 0;
+  await refreshSymbol(db, data, "NVDA", NOW + 11 * 60_000);
+  expect(calls).toEqual(["quotes NVDA", "earnings NVDA", "news NVDA"]);
+  calls.length = 0;
+  await refreshSymbol(db, data, "NVDA", NOW + 8 * DAY);
+  expect(calls).toEqual(["quotes NVDA", "metric NVDA", "earnings NVDA", "news NVDA"]);
+});
+
+test("a fund's page asks for neither stats, earnings nor news", async () => {
+  const { data, calls } = rig();
+  await refreshSymbol(db, data, "SPY", NOW);
+  expect(calls).toEqual(["quotes SPY", "profile SPY"]);
 });
 
 test("refresh is throttled to once per 10 minutes per key", async () => {
