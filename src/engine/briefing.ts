@@ -35,6 +35,9 @@ export function briefing(db: Database, now: number): { greeting: string; summary
     .get(lastSeen) as { n: number };
   if (byRules.n > 0) summary += ` ${plural(byRules.n, "result")} approved by your rules.`;
 
+  const couldnt = db.query("SELECT COUNT(*) AS n FROM tasks WHERE outcome = 'couldnt' AND updated_at > ?").get(lastSeen) as { n: number };
+  if (couldnt.n > 0) summary += ` ${couldnt.n} couldn't be done; open ${couldnt.n === 1 ? "it" : "them"} to see why.`;
+
   return { greeting: greetingFor(now), summary, markets: marketsBriefing(db, now) };
 }
 

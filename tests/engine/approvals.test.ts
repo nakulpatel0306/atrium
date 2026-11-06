@@ -4,7 +4,7 @@ import { ALWAYS_ASK, AlreadyResolved, RULE_NEVER_DECIDES, createApproval, getApp
 import { openDb } from "../../src/engine/db";
 import { listActivity } from "../../src/engine/events";
 import { createSpace } from "../../src/engine/spaces";
-import { createTask, getTask, InvalidTransition, reopenForReview, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, getTask, InvalidTransition, reopenForReview, setTaskStatus, setTaskOutcome } from "../../src/engine/tasks";
 import { tempHome } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -193,4 +193,24 @@ test("isOwnYes is true only for Nakul's own standing approval", () => {
   const undone = resolveApproval(db, mk().id, "approve");
   db.query("UPDATE approvals SET undone_at = 1 WHERE id = ?").run(undone.id);
   expect(isOwnYes(getApproval(db, undone.id)!)).toBe(false);
+});
+
+test("accepting a result that wasn't done says so", () => {
+  const s = createSpace(db, { name: "Text Dana", kind: "general", goal: "" });
+  const accept = (outcome: "couldnt" | "partial") => {
+    const t = createTask(db, { spaceId: s.id, title: outcome === "couldnt" ? "Send the text to Dana" : "Write three files" });
+    setTaskStatus(db, t.id, "running");
+    setTaskStatus(db, t.id, "review");
+    setTaskOutcome(db, t.id, outcome, "why");
+    const a = createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title: t.title, detail: "" });
+    resolveApproval(db, a.id, "approve");
+    return getTask(db, t.id)!;
+  };
+  const c = accept("couldnt");
+  expect([c.status, c.outcome]).toEqual(["done", "couldnt"]);
+  const p = accept("partial");
+  const msgs = listActivity(db, { spaceId: s.id }).map((r) => r.message);
+  expect(msgs).toContain("Accepted anyway: Send the text to Dana. It says it couldn't do this.");
+  expect(msgs).toContain("Accepted as is: Write three files. It says it's only partly done.");
+  expect(p.outcome).toBe("partial");
 });

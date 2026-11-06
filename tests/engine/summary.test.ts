@@ -6,7 +6,7 @@ import { setSetting } from "../../src/engine/settings";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { summary } from "../../src/engine/summary";
 import { recordRunFiles } from "../../src/engine/outputs/store";
-import { createTask, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { labelOf } from "../../src/engine/autonomy/kinds";
 import { tempHome } from "../helpers";
 
@@ -95,7 +95,7 @@ test("summary counts pending suggestions as things that need you", () => {
 
   const sum = summary(db);
   expect(sum.needsYou).toBe(2);
-  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null, files: 0, symbol: null });
+  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null, files: 0, symbol: null, outcome: null, action: null });
   expect(sum.needs[1]!.id).toBe(a.id);
 });
 
@@ -130,7 +130,7 @@ test("summary counts alert kinds and gives each need its topic", () => {
 test("summary shows an Atrium-wide question as Atrium's", () => {
   const a = createApproval(db, { spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?', detail: "", alwaysAsk: "create_repo" });
   const sum = summary(db);
-  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null, files: 0, symbol: null });
+  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null, files: 0, symbol: null, outcome: null, action: null });
   expect(sum.needsYou).toBe(1);
 });
 
@@ -160,4 +160,23 @@ test("an alert need carries its symbol; a review need has null", () => {
   const needs = summary(db).needs;
   expect(needs.find((n) => n.kind === "alert")?.symbol).toBe("AMZN");
   expect(needs.find((n) => n.kind === "review")?.symbol).toBeNull();
+});
+
+test("needs carry the task's outcome and a send action", () => {
+  const s = createSpace(db, { name: "Text Dana", kind: "general", goal: "" });
+  const t = createTask(db, { spaceId: s.id, title: "Write three files" });
+  setTaskStatus(db, t.id, "running");
+  setTaskStatus(db, t.id, "review");
+  setTaskOutcome(db, t.id, "partial", "one left.");
+  const review = createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title: t.title, detail: "" });
+  const send = createApproval(db, { spaceId: s.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+  const done = createTask(db, { spaceId: s.id, title: "Answer" });
+  setTaskStatus(db, done.id, "running");
+  setTaskStatus(db, done.id, "review");
+  setTaskOutcome(db, done.id, "done", null);
+  const ok = createApproval(db, { spaceId: s.id, taskId: done.id, kind: "review", title: done.title, detail: "" });
+  const needs = new Map(summary(db).needs.map((n) => [n.id, n]));
+  expect(needs.get(review.id)).toMatchObject({ outcome: "partial", action: null });
+  expect(needs.get(send.id)).toMatchObject({ outcome: null, action: "send_message" });
+  expect(needs.get(ok.id)).toMatchObject({ outcome: null, action: null });
 });

@@ -219,7 +219,7 @@ export function resolveApproval(
     }
     if (rule) logActivity(db, a.spaceId, "atrium", `Approved by your rule "${rule.label}": ${a.title}`);
     else if (a.kind === "alert") logActivity(db, a.spaceId, "you", `Dismissed: ${a.title}`);
-    else logActivity(db, a.spaceId, "you", `${decision === "approve" ? "Approved" : "Rejected"}: ${a.title}`);
+    else logActivity(db, a.spaceId, "you", decisionLine(db, a, decision));
     return a;
   });
   const a = resolve();
@@ -232,6 +232,15 @@ export function resolveApproval(
   }
   bus.emit({ type: "changed" });
   return a;
+}
+
+// Accepting a result the agent said it didn't finish is recorded as exactly that.
+function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
+  if (decision === "reject") return `Rejected: ${a.title}`;
+  const outcome = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
+  if (outcome === "couldnt") return `Accepted anyway: ${a.title}. It says it couldn't do this.`;
+  if (outcome === "partial") return `Accepted as is: ${a.title}. It says it's only partly done.`;
+  return `Approved: ${a.title}`;
 }
 
 // Nakul himself said yes and hasn't undone it: the only decision that may run a repo action.
