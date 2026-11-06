@@ -119,8 +119,13 @@ test("open needs our Origin", async () => {
   const { folder } = made(s, "Groceries", { "grocery-list.md": "- milk\n" });
   expect((await post(`/api/spaces/${s.id}/file/open`, { path: "grocery-list.md", how: "open" }, {})).status).toBe(403);
   expect(logged()).toEqual([]);
-  expect((await post(`/api/spaces/${s.id}/file/open`, { path: "grocery-list.md", how: "open" })).status).toBe(200);
-  expect(logged()).toEqual([[join(realpathSync(folder), "grocery-list.md")]]);
+  const opened = await post(`/api/spaces/${s.id}/file/open`, { path: "grocery-list.md", how: "open" });
+  expect(await opened.json()).toEqual({ ok: true, app: "TextEdit", copy: true });
+  const [flag, app, copy] = (logged() as string[][])[0]!;
+  expect([flag, app]).toEqual(["-a", "TextEdit"]);
+  // A private copy, never the agent's file itself.
+  expect(copy!.startsWith(realpathSync(folder))).toBe(false);
+  expect(readFileSync(copy!, "utf8")).toBe("- milk\n");
   const foreign = await fetch(base + `/api/spaces/${s.id}/file/open`, {
     method: "POST",
     headers: { host: "evil.example", origin: base, "content-type": "application/json" },

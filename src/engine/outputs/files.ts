@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, type Stats } from "node:fs";
 import { basename, join, sep } from "node:path";
 import { showBlob } from "../git";
 import { bytes as sizeText } from "../text";
@@ -8,7 +8,7 @@ export type FileKind = "markdown" | "text" | "image" | "calendar" | "other";
 
 export class FileRefused extends Error {
   constructor(
-    readonly status: 400 | 403 | 404 | 413,
+    readonly status: 400 | 403 | 404 | 409 | 413,
     message: string,
   ) {
     super(message);
@@ -62,18 +62,32 @@ function checkRel(rel: string) {
   if (rel.split("/").some((seg) => seg === "" || seg === "..") || isHiddenPath(rel)) throw new FileRefused(400, BAD_PATH);
 }
 
-// The real path of a regular file inside `root`, reached without passing through a link. "." is the folder itself.
+export const CHANGED = "That file changed while Atrium was checking it. Try again.";
+
+// A checked file: its real path and the identity it had when checked, so a later open can tell whether the path
+// still names the same file (an agent's leftover process could swap it for a link in between).
+export type Target = { absPath: string; dev: number; ino: number; isDir: boolean };
+
 export function resolveInside(root: string, rel: string): string {
+  return resolveTarget(root, rel).absPath;
+}
+
+// The real path of a regular file inside `root`, reached without passing through a link. "." is the folder itself.
+export function resolveTarget(root: string, rel: string): Target {
   let real: string;
   try {
     real = realpathSync(root);
   } catch {
     throw new FileRefused(404, GONE);
   }
-  if (rel === ".") return real;
+  if (rel === ".") {
+    const st = lstatSync(real);
+    return { absPath: real, dev: st.dev, ino: st.ino, isDir: true };
+  }
   checkRel(rel);
   const segs = rel.split("/");
   let at = real;
+  let last: ReturnType<typeof lstatSync> | null = null;
   for (let i = 0; i < segs.length; i++) {
     at = join(at, segs[i]!);
     let st: ReturnType<typeof lstatSync>;
@@ -83,11 +97,12 @@ export function resolveInside(root: string, rel: string): string {
       throw new FileRefused(404, GONE);
     }
     if (st.isSymbolicLink()) throw new FileRefused(403, OUTSIDE);
+    last = st;
     if (i < segs.length - 1 ? !st.isDirectory() : !st.isFile()) throw new FileRefused(i < segs.length - 1 ? 404 : 400, i < segs.length - 1 ? GONE : NOT_FILE);
   }
   // A last check in case a folder was swapped for a link mid-walk.
   if (!realpathSync(at).startsWith(real + sep)) throw new FileRefused(403, OUTSIDE);
-  return at;
+  return { absPath: at, dev: last!.dev, ino: last!.ino, isDir: false };
 }
 
 export type FilePreview = {
@@ -121,24 +136,25 @@ export function previewOf(path: string, absPath: string, size: number, bytes: Ui
   }
 }
 
-// Opened without following links, then checked to be the regular file the path resolved to.
-function readOpen<T>(abs: string, read: (fd: number, size: number) => T): T {
+// Opened without following links, then checked to be the very regular file the path resolved to.
+export function readOpen<T>(t: Target, read: (fd: number, st: Stats) => T): T {
   let fd: number;
   try {
-    fd = openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    fd = openSync(t.absPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (e) {
-    throw (e as NodeJS.ErrnoException).code === "ELOOP" ? new FileRefused(403, OUTSIDE) : new FileRefused(404, GONE);
+    throw (e as NodeJS.ErrnoException).code === "ELOOP" ? new FileRefused(409, CHANGED) : new FileRefused(404, GONE);
   }
   try {
     const st = fstatSync(fd);
+    if (st.dev !== t.dev || st.ino !== t.ino) throw new FileRefused(409, CHANGED);
     if (!st.isFile()) throw new FileRefused(400, NOT_FILE);
-    return read(fd, st.size);
+    return read(fd, st);
   } finally {
     closeSync(fd);
   }
 }
 
-function readBytes(fd: number, length: number): Uint8Array {
+export function readBytes(fd: number, length: number): Uint8Array {
   const buf = new Uint8Array(length);
   let off = 0;
   while (off < length) {
@@ -150,20 +166,20 @@ function readBytes(fd: number, length: number): Uint8Array {
 }
 
 export function readPreview(root: string, rel: string): FilePreview {
-  const abs = resolveInside(root, rel);
-  return readOpen(abs, (fd, size) => {
+  const t = resolveTarget(root, rel);
+  return readOpen(t, (fd, { size }) => {
     const kind = kindOf(rel);
     // A huge file that isn't text by name isn't read at all; text is read up to the preview cap.
     const skip = kind === "image" || (size > RAW_CAP && kind === "other");
-    return previewOf(rel, abs, size, skip ? null : readBytes(fd, Math.min(size, PREVIEW_CAP + 4)));
+    return previewOf(rel, t.absPath, size, skip ? null : readBytes(fd, Math.min(size, PREVIEW_CAP + 4)));
   });
 }
 
 export function readRaw(root: string, rel: string): { bytes: Uint8Array; type: string } {
-  const abs = resolveInside(root, rel);
+  const t = resolveTarget(root, rel);
   const type = IMAGE_TYPES[extOf(rel)];
   if (!type) throw new FileRefused(400, "Only images can be shown inline.");
-  return readOpen(abs, (fd, size) => {
+  return readOpen(t, (fd, { size }) => {
     if (size > RAW_CAP) throw new FileRefused(413, "This image is too big to show here. Open it instead.");
     return { bytes: readBytes(fd, size), type };
   });

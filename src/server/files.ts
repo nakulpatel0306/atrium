@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { spaceFolder } from "../engine/folders";
-import { branchPreview, branchRaw, readPreview, readRaw, resolveInside } from "../engine/outputs/files";
+import { branchPreview, branchRaw, readPreview, readRaw, resolveTarget } from "../engine/outputs/files";
 import { type OpenHow, openFile } from "../engine/outputs/open";
 import { spaceFiles, taskOutputs } from "../engine/outputs/views";
 import { getSpace } from "../engine/spaces";
@@ -72,11 +72,9 @@ export async function filesRoute(db: Database, req: Request, url: URL): Promise<
         );
       }
       if (!space.repoPath) throw new HttpError(404, "This space has no repo folder set.");
-      await openFile(resolveInside(space.repoPath, rel), how);
-    } else {
-      await openFile(resolveInside(spaceFolder(space), rel), how);
+      return json({ ok: true, ...(await openFile(resolveTarget(space.repoPath, rel), how)) });
     }
-    return json({ ok: true });
+    return json({ ok: true, ...(await openFile(resolveTarget(spaceFolder(space), rel), how)) });
   }
   return null;
 }
