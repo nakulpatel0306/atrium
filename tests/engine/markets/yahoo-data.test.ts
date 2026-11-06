@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
+import { dailyBudget } from "../../../src/engine/markets/budget";
 import { openDb } from "../../../src/engine/db";
 import { createSpace } from "../../../src/engine/spaces";
 import { setSetting } from "../../../src/engine/settings";
@@ -332,6 +333,11 @@ test("Canadian copy is right with and without an Alpha Vantage key", async () =>
   const withKey = make(world());
   await withKey.reload();
   expect((await withKey.status()).ca.message).toBe("Yahoo Finance during TSX hours; after the close, Alpha Vantage · end of day (25 of 25 requests left today)");
+  // After Alpha Vantage's daily-limit notice the line says so, rather than showing requests left.
+  dailyBudget(db, "alphavantage", 25, () => now).exhaust();
+  expect((await withKey.status()).ca.message).toBe(
+    "Yahoo Finance during TSX hours; after the close, Alpha Vantage · daily limit reached, the official close resumes tomorrow (0 of 25 requests left today)",
+  );
   now = SATURDAY;
   expect(noKey.reasonFor(XEQT)).toBe(CA_NOT_PRICED);
   expect(CA_NOT_PRICED).not.toContain("Alpha Vantage");

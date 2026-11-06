@@ -22,7 +22,15 @@ afterEach(() => {
   home.cleanup();
 });
 
-const provider = (f: typeof fetch, limit = 25) => alphaVantageProvider(KEY, { budget: dailyBudget(db, "alphavantage", limit, () => NOW), fetch: f, now: () => NOW });
+// Pacing waits on a fake clock: each sleep moves it forward, and every wait asked for is recorded.
+let waits: number[] = [];
+let clock = 0;
+const pacing = () => ({ clock: () => clock, sleep: async (ms: number) => void (waits.push(ms), (clock += ms)) });
+beforeEach(() => {
+  waits = [];
+  clock = 1_000_000;
+});
+const provider = (f: typeof fetch, limit = 25) => alphaVantageProvider(KEY, { budget: dailyBudget(db, "alphavantage", limit, () => NOW), fetch: f, now: () => NOW, ...pacing() });
 
 const err = async (p: Promise<unknown>) => {
   const e = (await p.catch((x) => x)) as ProviderError;
@@ -60,12 +68,72 @@ test("bars ascend in seconds; full output only for long ranges", async () => {
   expect((await err(p.bars(SHOP, "5Min", NOW - 86_400_000, NOW))).kind).toBe("no_history");
 });
 
-test("rate limit and unknown symbol replies", async () => {
-  const rl = await err(provider(stubFetch(() => jsonResponse(fixture("av-rate-limit.json"))).fetch).quotes([SHOP]));
+test("the daily-limit notice blocks Alpha Vantage until midnight ET and uses up the day's budget", async () => {
+  const budget = dailyBudget(db, "alphavantage", 25, () => NOW);
+  const f = stubFetch(() => jsonResponse(fixture("av-rate-limit.json")));
+  const p = alphaVantageProvider(KEY, { budget, fetch: f.fetch, now: () => NOW, ...pacing() });
+  const rl = await err(p.quotes([SHOP]));
   expect(rl.kind).toBe("rate_limited");
   expect(rl.retryAfter).toBe(Date.parse("2026-11-06T05:00:00Z"));
-  const note = await err(provider(stubFetch(() => jsonResponse({ Note: `Thank you for using Alpha Vantage! key=${KEY}` })).fetch).quotes([SHOP]));
-  expect(note.kind).toBe("rate_limited");
+  expect(rl.message).toBe("Alpha Vantage's free daily limit is reached; Canadian prices refresh tomorrow.");
+  expect(f.calls).toHaveLength(1);
+  // What Settings reads as "requests left" now agrees with the block.
+  expect(budget.remaining()).toBe(0);
+});
+
+test("the one-request-a-second notice is a pause, not the daily limit: it waits and tries once more", async () => {
+  const budget = dailyBudget(db, "alphavantage", 25, () => NOW);
+  const f = stubFetch((_u, n) => jsonResponse(n === 1 ? fixture("av-burst.json") : fixture("av-daily-shop.json")));
+  const p = alphaVantageProvider(KEY, { budget, fetch: f.fetch, now: () => NOW, ...pacing() });
+  expect((await p.quotes([SHOP]))[0]!.price).toBe(153.9);
+  expect(f.calls).toHaveLength(2);
+  expect(waits.some((w) => w >= 1200)).toBe(true);
+  expect(budget.remaining()).toBe(23);
+});
+
+test("a second throttle notice gives up for a minute and leaves the day's budget alone", async () => {
+  const budget = dailyBudget(db, "alphavantage", 25, () => NOW);
+  const f = stubFetch(() => jsonResponse(fixture("av-burst.json")));
+  const p = alphaVantageProvider(KEY, { budget, fetch: f.fetch, now: () => NOW, ...pacing() });
+  const e = await err(p.quotes([SHOP]));
+  expect(e.kind).toBe("rate_limited");
+  expect(e.retryAfter).toBe(NOW + 60_000);
+  expect(e.message).toBe("Alpha Vantage asked Atrium to slow down; it will try again in a minute.");
+  expect(f.calls).toHaveLength(2);
+  expect(budget.remaining()).toBe(23);
+});
+
+test("an older Note notice or an unrecognized one is treated as a throttle, never as the daily limit", async () => {
+  const budget = dailyBudget(db, "alphavantage", 25, () => NOW);
+  const f = stubFetch(() => jsonResponse({ Note: `Thank you for using Alpha Vantage! key=${KEY}` }));
+  const e = await err(alphaVantageProvider(KEY, { budget, fetch: f.fetch, now: () => NOW, ...pacing() }).quotes([SHOP]));
+  expect(e.kind).toBe("rate_limited");
+  expect(e.retryAfter).toBe(NOW + 60_000);
+  expect(budget.remaining()).toBeGreaterThan(0);
+});
+
+test("full history is premium-only: the premium notice falls back to the free 100 days", async () => {
+  const f = stubFetch((u) => jsonResponse(u.searchParams.get("outputsize") === "full" ? fixture("av-premium-full.json") : fixture("av-daily-shop.json")));
+  const budget = dailyBudget(db, "alphavantage", 25, () => NOW);
+  const p = alphaVantageProvider(KEY, { budget, fetch: f.fetch, now: () => NOW, ...pacing() });
+  const bars = await p.bars(SHOP, "1Day", NOW - 365 * 86_400_000, NOW);
+  expect(bars).toHaveLength(3);
+  expect(f.calls.map((c) => c.url.searchParams.get("outputsize"))).toEqual(["full", "compact"]);
+  // Remembered, so the next long chart asks for compact straight away.
+  await p.bars(SHOP, "1Day", NOW - 365 * 86_400_000, NOW);
+  expect(f.calls.map((c) => c.url.searchParams.get("outputsize"))).toEqual(["full", "compact", "compact"]);
+  expect(budget.remaining()).toBe(22);
+});
+
+test("requests are spaced at least 1.2 seconds apart", async () => {
+  const f = stubFetch(() => jsonResponse(fixture("av-daily-shop.json")));
+  const p = provider(f.fetch);
+  await p.quotes([SHOP, { symbol: "ATZ", exchange: "TSX" }, { symbol: "VFV", exchange: "TSX" }]);
+  expect(f.calls).toHaveLength(3);
+  expect(waits).toEqual([1200, 1200]);
+});
+
+test("unknown symbol and network failures", async () => {
   const unk = await err(provider(stubFetch(() => jsonResponse(fixture("av-unknown.json"))).fetch).quotes([SHOP]));
   expect(unk.kind).toBe("unknown_symbol");
   expect(unk.message).toBe("Alpha Vantage doesn't know SHOP.TO.");

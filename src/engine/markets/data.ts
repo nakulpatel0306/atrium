@@ -390,7 +390,10 @@ export function createMarketData(deps: {
       const ca = rejected.alphavantage
         ? { ready: false, message: rejected.alphavantage.message }
         : has.alphavantage()
-        ? { ready: true, message: `${day ? `${day}; after the close, ` : ""}Alpha Vantage · end of day (${left} of ${AV_DAILY_LIMIT} requests left today)` }
+        ? {
+            ready: true,
+            message: `${day ? `${day}; after the close, ` : ""}Alpha Vantage · ${left === 0 ? "daily limit reached, the official close resumes tomorrow" : "end of day"} (${left} of ${AV_DAILY_LIMIT} requests left today)`,
+          }
         : day
           ? { ready: true, message: `${day} · add a free Alpha Vantage key for the official close` }
           : { ready: false, message: MISSING.ca };
