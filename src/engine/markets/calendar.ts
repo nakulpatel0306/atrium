@@ -145,13 +145,26 @@ export function tsxHolidays(year: number): { date: string; name: string }[] {
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function tsxTrading(date: string): boolean {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const dow = weekday(y, m, d);
+  return dow !== 0 && dow !== 6 && !tsxHolidays(y).some((h) => h.date === date);
+}
+
 // Toronto's regular session, in ET. Early closes aren't modelled: a late price just stops being live.
 export function tsxOpen(now: number): boolean {
   const { date, hhmm } = etParts(now);
-  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  const dow = weekday(y, m, d);
-  if (dow === 0 || dow === 6 || tsxHolidays(y).some((h) => h.date === date)) return false;
-  return hhmm >= "09:30" && hhmm < "16:00";
+  return tsxTrading(date) && hhmm >= "09:30" && hhmm < "16:00";
+}
+
+// The next 9:30 ET open after `now` (today's, if it's still ahead).
+export function tsxNextOpen(now: number): number {
+  let date = etDate(now);
+  for (let i = 0; i < 10; i++, date = addDays(date, 1)) {
+    const open = etInstant(date, "09:30");
+    if (tsxTrading(date) && open > now) return open;
+  }
+  return etInstant(date, "09:30");
 }
 
 type Day = { trading: boolean; holiday: string | null; early: boolean };
