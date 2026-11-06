@@ -17,7 +17,7 @@ import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
 import { WhatItMade } from "./WhatItMade";
 import { AdviceTag } from "./markets/AdviceTag";
-import { MarketsPanel } from "./markets/MarketsPanel";
+import { InvestPanel } from "./invest/InvestPanel";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -415,6 +415,8 @@ type Props = {
   // Task to open expanded, from a `?task=` link such as Needs you's "View transcript".
   focusTask: string | null;
   tab?: SpaceTab;
+  // A markets space's open symbol page, from `?symbol=`.
+  symbol?: string | null;
 };
 
 // The Files count comes from the same listing the tab shows, so it's read whichever tab is open.
@@ -433,7 +435,7 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
   );
 }
 
-export function SpaceView({ state, space, focusTask, tab = "tasks" }: Props) {
+export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
   const [, setTick] = useState(0);
@@ -472,7 +474,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks" }: Props) {
   return (
     <div className="wrap">
       <Header key={space.id} space={space} />
-      {space.kind === "markets" && <MarketsPanel spaceId={space.id} />}
+      {space.kind === "markets" && <InvestPanel spaceId={space.id} symbol={symbol} />}
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />

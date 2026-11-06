@@ -204,9 +204,13 @@ export function Settings() {
             <KeyForm key={f.id} form={f} saved={s.data.keys[f.id]} />
           ))}
           {s.data.keys.alpaca && <AlpacaRemoval />}
-          <h2>Data budget</h2>
-          <p className="brief">Every call Atrium makes, against each free plan's limit. Free tiers only; nothing here costs money.</p>
-          <DataBudget />
+          {s.advanced && (
+            <>
+              <h2>Data budget</h2>
+              <p className="brief">Every call Atrium makes, against each free plan's limit. Free tiers only; nothing here costs money.</p>
+              <DataBudget />
+            </>
+          )}
         </>
       )}
       <Storage />

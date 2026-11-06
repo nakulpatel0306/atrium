@@ -16,7 +16,7 @@ import { alphaVantageProvider } from "../engine/markets/providers/alphavantage";
 import { finnhubProvider } from "../engine/markets/providers/finnhub";
 import { tiingoProvider, tiingoSymbols } from "../engine/markets/providers/tiingo";
 import type { MarketProvider, Quote } from "../engine/markets/providers/types";
-import { isAdvanced } from "../engine/markets/advanced";
+import { anyAdvanced, isAdvanced } from "../engine/markets/advanced";
 import { redact } from "../engine/markets/redact";
 import { estimateFor, ESTIMATED } from "../engine/markets/estimate";
 import { latestFx } from "../engine/markets/fx";
@@ -156,7 +156,8 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
 
   if (hit("GET", /^\/api\/settings\/market-data$/)) {
     await m.data.refreshKeys();
-    return json({ data: await m.data.status(), feed: m.feed.status() });
+    // The data budget is an Advanced tool; Settings shows it only while some space has Advanced on.
+    return json({ data: await m.data.status(), feed: m.feed.status(), advanced: anyAdvanced(db) });
   }
   if (hit("PUT", /^\/api\/settings\/market-data$/)) {
     const b = await readBody(req);

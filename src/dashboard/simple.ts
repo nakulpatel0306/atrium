@@ -1,3 +1,8 @@
+import type { PortfolioView, ListsView, EarningsRow } from "../engine/markets/views";
+import type { SymbolView } from "../engine/markets/symbol";
+import { useEngineState, useFetched } from "./api";
+import { navigate } from "./route";
+
 // The simple investing views' client side: the chart frame's address and state, plus hooks and formatting.
 
 // The TradingView page has a listener of its own on the engine's port + 1, under the other loopback name, so its
@@ -41,3 +46,17 @@ export function chartReducer(s: ChartState, e: ChartEvent): ChartState {
       return s;
   }
 }
+
+export type { EarningsRow, ListsView, PortfolioView, SymbolView };
+export type EarningsView = { rows: EarningsRow[]; source: string };
+
+const base = (spaceId: string) => `/api/investing/${encodeURIComponent(spaceId)}`;
+export const usePortfolio = (spaceId: string) => useFetched<PortfolioView>(`${base(spaceId)}/portfolio`, useEngineState());
+export const useLists = (spaceId: string) => useFetched<ListsView>(`${base(spaceId)}/lists`, useEngineState());
+export const useEarnings = (spaceId: string) => useFetched<EarningsView>(`${base(spaceId)}/earnings`, useEngineState());
+export const useSymbol = (spaceId: string, key: string | null) =>
+  useFetched<SymbolView>(key ? `${base(spaceId)}/symbol/${encodeURIComponent(key)}` : null, useEngineState());
+export const investPath = base;
+
+export const openSymbol = (spaceId: string, key: string) => navigate(`/space/${encodeURIComponent(spaceId)}?symbol=${encodeURIComponent(key)}`);
+export const closeSymbol = (spaceId: string) => navigate(`/space/${encodeURIComponent(spaceId)}`);

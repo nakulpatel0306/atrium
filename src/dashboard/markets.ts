@@ -44,7 +44,7 @@ export function useMarkets(spaceId: string): MarketsView | null {
   return { ...base, watchlist: base.watchlist.map(patch), holdings: base.holdings.map(patch) };
 }
 
-export const useMarketDataSettings = () => useFetched<{ data: DataStatus; feed: FeedStatus }>("/api/settings/market-data", useEngineState());
+export const useMarketDataSettings = () => useFetched<{ data: DataStatus; feed: FeedStatus; advanced: boolean }>("/api/settings/market-data", useEngineState());
 
 const signedMoney = (n: number) => `${n >= 0 ? "+" : "−"}${money(Math.abs(n), "USD")}`;
 

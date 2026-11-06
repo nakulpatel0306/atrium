@@ -111,7 +111,7 @@ function App() {
         ) : route.name === "settings" ? (
           <Settings />
         ) : (
-          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} />
+          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} symbol={route.symbol} />
         )}
         <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} />
       </main>
