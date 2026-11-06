@@ -30,6 +30,7 @@ import { recoverRemovals } from "./engine/repos/cleanup";
 import { recoverRepoActions } from "./engine/repos/create";
 import { createMessaging } from "./engine/messaging";
 import { recoverMessageActions } from "./engine/messaging/send";
+import { fixTalal } from "./engine/fixes/dana-2026-11-05";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
@@ -110,6 +111,7 @@ for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `M
 recoverRepoActions(db);
 recoverRemovals(db);
 recoverMessageActions(db);
+fixTalal(db);
 runner.start();
 repos.daily(Date.now());
 void feed.start();
