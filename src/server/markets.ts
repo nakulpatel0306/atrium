@@ -16,6 +16,7 @@ import { alphaVantageProvider } from "../engine/markets/providers/alphavantage";
 import { finnhubProvider } from "../engine/markets/providers/finnhub";
 import { tiingoProvider, tiingoSymbols } from "../engine/markets/providers/tiingo";
 import type { MarketProvider, Quote } from "../engine/markets/providers/types";
+import { isAdvanced } from "../engine/markets/advanced";
 import { redact } from "../engine/markets/redact";
 import { estimateFor, ESTIMATED } from "../engine/markets/estimate";
 import { latestFx } from "../engine/markets/fx";
@@ -57,6 +58,8 @@ export type MarketsView = {
   estimates: Record<string, Sourced>;
   // Bank of Canada USD/CAD for the CAD column; null until the fx job has run.
   fx: Sourced | null;
+  // Whether this space shows Plan 7's Advanced tools.
+  advanced: boolean;
 };
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
@@ -432,6 +435,7 @@ async function view(db: Database, m: MarketsDeps, spaceId: string, at: number): 
     portfolio: portfolioDay(db, m.data, spaceId, at),
     estimates: estimates(db, m, [...all.keys()], at),
     fx: latestFx(db),
+    advanced: isAdvanced(db, spaceId),
   };
 }
 
