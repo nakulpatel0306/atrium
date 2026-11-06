@@ -68,6 +68,8 @@ export const task = (over: Partial<Task>): Task => ({
   purpose: null,
   subject: null,
   branch: null,
+  outcome: null,
+  outcomeReason: null,
   createdAt: now - 30 * min,
   updatedAt: now - 10 * min,
   ...over,

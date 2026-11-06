@@ -15,6 +15,8 @@ export const ALWAYS_ASK = [
   "create_repo",
   "push",
   "remove_clone",
+  // Every text or message Atrium sends as Nakul, to anyone, every time.
+  "send_message",
 ] as const;
 export type AlwaysAsk = (typeof ALWAYS_ASK)[number];
 

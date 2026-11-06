@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { ALWAYS_ASK, AlreadyResolved, createApproval, getApproval, isOwnYes, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
+import { ALWAYS_ASK, AlreadyResolved, RULE_NEVER_DECIDES, createApproval, getApproval, isOwnYes, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { listActivity } from "../../src/engine/events";
 import { createSpace } from "../../src/engine/spaces";
@@ -63,7 +63,14 @@ test("listPending returns newest first", () => {
 });
 
 test("the always-ask list", () => {
-  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "first_contact", "delete", "spend", "secrets", "create_repo", "push", "remove_clone"]);
+  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "first_contact", "delete", "spend", "secrets", "create_repo", "push", "remove_clone", "send_message"]);
+});
+
+test("a rule never decides a send_message approval", () => {
+  const s = createSpace(db, { name: "Messages", kind: "general", goal: "texts" });
+  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+  expect(() => resolveApproval(db, a.id, "approve", undefined, { id: "rul_x", label: "x" })).toThrow(RULE_NEVER_DECIDES);
+  expect(getApproval(db, a.id)!.status).toBe("pending");
 });
 
 function insertRule(spaceId: string, fp = "v1:code:docs:small:claude") {

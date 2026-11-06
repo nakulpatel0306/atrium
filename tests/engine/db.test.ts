@@ -390,3 +390,68 @@ test("approvals gain subject and keep their rows", () => {
   db.close();
   t.cleanup();
 });
+
+test("approvals rebuild adds send_message", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  openDb(path).close();
+  // The approvals table as plans 8–10 left it (514c0ea), before send_message joined the always-ask kinds.
+  const old = new Database(path);
+  old.exec("PRAGMA foreign_keys = OFF");
+  old.exec(`DROP TABLE approvals;
+  CREATE TABLE approvals (
+    id TEXT PRIMARY KEY, space_id TEXT REFERENCES spaces(id), task_id TEXT REFERENCES tasks(id),
+    kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), note TEXT,
+    created_at INTEGER NOT NULL, resolved_at INTEGER, branch_head TEXT, fingerprint TEXT,
+    decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
+    rule_id TEXT REFERENCES autonomy_rules(id), undone_at INTEGER, topic TEXT, subject TEXT,
+    always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN ('merge_main','deploy','first_contact','delete','spend','secrets','create_repo','push','remove_clone')),
+    CHECK (space_id IS NOT NULL OR kind = 'question'),
+    CHECK (always_ask IS NULL OR fingerprint IS NULL),
+    CHECK (always_ask IS NULL OR decided_by = 'you'));
+  INSERT INTO approvals (id, kind, title, always_ask, created_at) VALUES ('apr_r', 'question', 'Create?', 'create_repo', 1);`);
+  old.close();
+  const db = openDb(path);
+  expect(db.query("SELECT id, always_ask FROM approvals").get()).toEqual({ id: "apr_r", always_ask: "create_repo" });
+  db.exec("INSERT INTO approvals (id, kind, title, always_ask, created_at) VALUES ('apr_m', 'question', 'Send?', 'send_message', 1)");
+  expect(() => db.exec("UPDATE approvals SET status = 'approved', decided_by = 'rule' WHERE id = 'apr_m'")).toThrow();
+  const sql = () => (db.query("SELECT sql FROM sqlite_master WHERE name = 'approvals'").get() as { sql: string }).sql;
+  const before = sql();
+  db.close();
+  const again = openDb(path);
+  expect((again.query("SELECT sql FROM sqlite_master WHERE name = 'approvals'").get() as { sql: string }).sql).toBe(before);
+  expect((again.query("SELECT COUNT(*) AS n FROM approvals").get() as { n: number }).n).toBe(2);
+  again.close();
+  t.cleanup();
+});
+
+test("message_actions refuses sending without a handle", () => {
+  const t = tempHome();
+  const db = openDb();
+  db.exec(`INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_1', 'S', 'general', 'x', 1, 1);
+    INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_1', 'spc_1', 'question', 'Send?', 'send_message', 1);`);
+  const insert = (status: string, handle: string | null) =>
+    db
+      .query("INSERT INTO message_actions (id, approval_id, space_id, to_name, handle, text, status, created_at, updated_at) VALUES (?, 'apr_1', 'spc_1', 'Dana', ?, 'hi', ?, 1, 1)")
+      .run(`msa_${status}`, handle, status);
+  expect(() => insert("sending", null)).toThrow();
+  insert("draft", null);
+  expect(() => db.exec("UPDATE message_actions SET status = 'sent' WHERE id = 'msa_draft'")).toThrow();
+  expect(() => db.exec("UPDATE message_actions SET service = 'WhatsApp' WHERE id = 'msa_draft'")).toThrow();
+  db.close();
+  t.cleanup();
+});
+
+test("tasks gain outcome columns", () => {
+  const t = tempHome();
+  const db = openDb();
+  const cols = (db.query("PRAGMA table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
+  expect(cols).toEqual(expect.arrayContaining(["outcome", "outcome_reason"]));
+  db.exec(`INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_1', 'S', 'general', 'x', 1, 1);
+    INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('tsk_1', 'spc_1', 't', 'claude', 'light', 1, 1);`);
+  db.exec("UPDATE tasks SET outcome = 'couldnt' WHERE id = 'tsk_1'");
+  expect(() => db.exec("UPDATE tasks SET outcome = 'bogus' WHERE id = 'tsk_1'")).toThrow();
+  db.close();
+  t.cleanup();
+});

@@ -9,6 +9,8 @@ export function tempHome(): { home: string; cleanup(): void } {
   process.env.ATRIUM_FILES_HOME = join(home, "files");
   // Tests never launch real apps.
   process.env.ATRIUM_OPEN_BIN ??= join(import.meta.dir, "fixtures", "fake-open.ts");
+  // Tests never script Messages or Contacts.
+  process.env.ATRIUM_OSASCRIPT_BIN ??= join(import.meta.dir, "fixtures", "fake-osascript.ts");
   return {
     home,
     cleanup: () => {

@@ -4,7 +4,7 @@ import { openDb } from "../../src/engine/db";
 import { bus, listActivity, logActivity, type EngineEvent } from "../../src/engine/events";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, listSpaces, setSpaceRepo, updateSpace } from "../../src/engine/spaces";
-import { createTask, InvalidTransition, listTasks, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, getTask, InvalidTransition, listTasks, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { tempHome } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -123,4 +123,20 @@ test("setSpaceRepo sets and clears repoPath and github", () => {
   const cleared = setSpaceRepo(db, s.id, { repoPath: null, github: null });
   expect(cleared.repoPath).toBeNull();
   expect(cleared.github).toBeNull();
+});
+
+test("setTaskOutcome stores outcome and reason", () => {
+  const t = createTask(db, { spaceId: space().id, title: "Send the text to Dana" });
+  expect([t.outcome, t.outcomeReason]).toEqual([null, null]);
+  const seen: EngineEvent[] = [];
+  const off = bus.on((e) => seen.push(e));
+  const set = setTaskOutcome(db, t.id, "couldnt", "no number.");
+  off();
+  expect([set.outcome, set.outcomeReason]).toEqual(["couldnt", "no number."]);
+  expect(seen.some((e) => e.type === "changed")).toBe(true);
+  setTaskStatus(db, t.id, "running");
+  setTaskStatus(db, t.id, "review");
+  setTaskStatus(db, t.id, "done");
+  setTaskOutcome(db, t.id, "done", null);
+  expect([getTask(db, t.id)!.outcome, getTask(db, t.id)!.outcomeReason]).toEqual(["done", null]);
 });
