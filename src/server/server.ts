@@ -17,6 +17,8 @@ import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
+import { FileRefused } from "../engine/outputs/files";
+import { filesRoute } from "./files";
 import { investingRoute } from "./investing";
 import { marketsRoute, type MarketsDeps } from "./markets";
 import type { Repos } from "../engine/repos";
@@ -310,6 +312,9 @@ export function startServer(deps: Deps): Server<WsData> {
       return new Response(file, { headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
     }
 
+    const files = await filesRoute(db, req, url);
+    if (files) return files;
+
     if (deps.markets) {
       const res = (await marketsRoute(db, deps.markets, req, url)) ?? (await investingRoute(db, deps.markets, req, url));
       if (res) return res;
@@ -352,6 +357,7 @@ export function startServer(deps: Deps): Server<WsData> {
         return await route(req, url);
       } catch (e) {
         if (e instanceof HttpError) return fail(e.status, e.message);
+        if (e instanceof FileRefused) return fail(e.status, e.message);
         if (e instanceof AlreadyResolved) return fail(409, "Already handled");
         if (e instanceof InvalidTransition) return fail(409, e.message);
         if (e instanceof RuleRefused) return fail(409, e.message);
