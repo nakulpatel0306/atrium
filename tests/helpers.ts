@@ -7,6 +7,8 @@ export function tempHome(): { home: string; cleanup(): void } {
   process.env.ATRIUM_HOME = home;
   // Space folders stay inside the temp home, never the real ~/Atrium.
   process.env.ATRIUM_FILES_HOME = join(home, "files");
+  // Tests never launch real apps.
+  process.env.ATRIUM_OPEN_BIN ??= join(import.meta.dir, "fixtures", "fake-open.ts");
   return {
     home,
     cleanup: () => {

@@ -21,6 +21,8 @@ export function config() {
     securityBin: process.env.ATRIUM_SECURITY_BIN ?? "/usr/bin/security",
     // GitHub CLI; only src/engine/repos/gh.ts runs it. Tests point this at a fake.
     ghBin: process.env.ATRIUM_GH_BIN ?? "gh",
+    // macOS's open, the only way Atrium launches a file. Tests and dev engines point it at a logging fake.
+    openBin: process.env.ATRIUM_OPEN_BIN ?? "/usr/bin/open",
     // Where new projects and on-demand clones go.
     projectsRoot: process.env.ATRIUM_PROJECTS_ROOT ?? join(homedir(), "dev-workspace", "projects"),
     marketNow: process.env.ATRIUM_MARKET_NOW ?? null,
