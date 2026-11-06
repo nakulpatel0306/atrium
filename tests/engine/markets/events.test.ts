@@ -7,6 +7,7 @@ import { newsJob, recentNews, saveEarnings, saveNews, upcomingEarnings } from ".
 import { createJobs } from "../../../src/engine/markets/jobs";
 import type { Instrument } from "../../../src/engine/markets/instrument";
 import type { NewsItem } from "../../../src/engine/markets/providers/types";
+import { setAdvanced } from "../../../src/engine/markets/advanced";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -78,4 +79,18 @@ test("the news job fetches hourly in session, never on a Saturday", async () => 
   clock += 3600_000;
   await jobs.runDue(clock);
   expect(asked[2]!.since).toBe(Date.parse("2026-11-09T15:29:00Z"));
+});
+
+test("hourly news only with Advanced or a big-news alert", async () => {
+  const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
+  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, 'RKLB', 'US', '', 1)").run(space.id);
+  let calls = 0;
+  const data = { news: async () => (calls++, []) } as unknown as MarketData;
+  const clock = Date.parse("2026-11-06T16:05:00Z");
+  await newsJob(db, { data, now: () => clock }).run(clock);
+  expect(calls).toBe(0);
+  const { createAlert } = await import("../../../src/engine/markets/alerts");
+  createAlert(db, { spaceId: space.id, key: "RKLB", rule: { kind: "big_news" } });
+  await newsJob(db, { data, now: () => clock }).run(clock);
+  expect(calls).toBeGreaterThanOrEqual(1);
 });

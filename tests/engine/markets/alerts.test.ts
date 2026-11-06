@@ -7,6 +7,7 @@ import { createAlert, describeRule, evaluateQuotes, listAlerts, setAlertStatus }
 import { saveBars } from "../../../src/engine/markets/cache";
 import { etInstant } from "../../../src/engine/markets/calendar";
 import type { Quote } from "../../../src/engine/markets/providers/types";
+import { setAdvanced } from "../../../src/engine/markets/advanced";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -18,6 +19,8 @@ beforeEach(() => {
   home = tempHome();
   db = openDb();
   spaceId = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" }).id;
+  // Plan 7 behaviour under test is Advanced-only; the gates themselves are tested with it off.
+  setAdvanced(db, spaceId, true);
 });
 afterEach(() => {
   db.close();
@@ -196,4 +199,14 @@ test("price and indicator alerts carry their topic", () => {
   createAlert(db, { spaceId, key: "AAPL", rule: { kind: "price_above", level: 100 } });
   evaluateQuotes(db, [q(150)], NOW);
   expect(alerts()[0]!.topic).toBe("price");
+});
+
+test("indicator alerts wait for Advanced", () => {
+  setAdvanced(db, spaceId, false);
+  const dates = Array.from({ length: 20 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`);
+  saveBars(db, "AAPL", "1Day", dates.map((d, i) => day(d, 200 - i)));
+  const rsi = createAlert(db, { spaceId, key: "AAPL", rule: { kind: "rsi_below", level: 30, period: 14 } });
+  createAlert(db, { spaceId, key: "AAPL", rule: { kind: "price_above", level: 170 } });
+  expect(evaluateQuotes(db, [q(178)], NOW)).toBe(1);
+  expect(listAlerts(db, spaceId).find((a) => a.id === rsi.id)?.status).toBe("armed");
 });

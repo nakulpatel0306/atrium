@@ -11,6 +11,7 @@ import { saveFundFile } from "../../../src/engine/markets/funds/store";
 import { getMeta, metaFromFunds, metaJob } from "../../../src/engine/markets/meta";
 import type { MarketProvider } from "../../../src/engine/markets/providers/types";
 import { setSetting } from "../../../src/engine/settings";
+import { setAdvanced } from "../../../src/engine/markets/advanced";
 import { tempHome } from "../../helpers";
 import { fixture, jsonResponse, stubFetch } from "./fakes";
 
@@ -22,6 +23,8 @@ beforeEach(() => {
   home = tempHome();
   db = openDb();
   spaceId = createSpace(db, { name: "Investing", kind: "markets", goal: "g" }).id;
+  // Plan 7 behaviour under test is Advanced-only; the gates themselves are tested with it off.
+  setAdvanced(db, spaceId, true);
   for (const [s, e] of [["ATZ", "TSX"], ["NOW", "US"], ["XEQT", "TSX"], ["RKLB", "US"], ["ABCX", "US"]] as const) {
     db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(spaceId, s, e);
   }
@@ -86,4 +89,19 @@ test("with EDGAR off the meta job never asks it", async () => {
   const data = { research: () => null, prepare: async () => {} } as unknown as MarketData;
   await metaJob(db, { data, now: () => NOW, fetch: edgar.fetch }).run(NOW);
   expect(edgar.calls).toHaveLength(0);
+});
+
+test("EDGAR waits for Advanced; Finnhub metrics don't", async () => {
+  setAdvanced(db, spaceId, false);
+  const asked: string[] = [];
+  const research = {
+    profile: async (i: { symbol: string }) => (asked.push(`profile ${i.symbol}`), { name: null, country: null, currency: null, industry: null }),
+    metric: async (i: { symbol: string }) => (asked.push(`metric ${i.symbol}`), { pe: null, high52: null, low52: null, divYield: null }),
+  } as unknown as MarketProvider;
+  const data = { research: () => research, prepare: async () => {} } as unknown as MarketData;
+  const edgar = stubFetch(() => jsonResponse({}));
+  setSetting(db, "markets.edgar.contact", "nakul@example.com");
+  await metaJob(db, { data, now: () => NOW, fetch: edgar.fetch, sleep: async () => {} }).run(NOW);
+  expect(edgar.calls).toHaveLength(0);
+  expect(asked).toContain("metric NOW");
 });

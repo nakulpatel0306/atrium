@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { advancedSpaces, isIndicatorRule } from "./advanced";
 import { createApproval, type AlertTopic } from "../approvals";
 import { bus, logActivity } from "../events";
 import { newId } from "../ids";
@@ -192,6 +193,7 @@ const firedToday = (a: Alert, now: number) => a.lastFiredAt !== null && etDate(a
 
 export function evaluateQuotes(db: Database, quotes: Quote[], now: number): number {
   let fired = 0;
+  const adv = advancedSpaces(db);
   for (const q of quotes) {
     const rows = db
       .query(
@@ -205,7 +207,9 @@ export function evaluateQuotes(db: Database, quotes: Quote[], now: number): numb
         if (lastEodAt.get(a.id) === q.at) continue;
         lastEodAt.set(a.id, q.at);
       }
-      const indicator = a.rule.kind.startsWith("rsi") || a.rule.kind.startsWith("cross");
+      const indicator = isIndicatorRule(a.rule.kind);
+      // Indicator alerts are an Advanced tool: kept armed, not evaluated, while their space has it off.
+      if (indicator && !adv.has(a.spaceId)) continue;
       if (indicator) {
         const last = lastIndicatorEval.get(a.id);
         if (last !== undefined && now - last < INDICATOR_EVERY_MS) continue;

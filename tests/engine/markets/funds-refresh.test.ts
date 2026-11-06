@@ -9,6 +9,7 @@ import { fundsJob, refreshFund } from "../../../src/engine/markets/funds/refresh
 import { FUND_SOURCES, fundUrl, isFund } from "../../../src/engine/markets/funds/sources";
 import { loadFundFile } from "../../../src/engine/markets/funds/store";
 import { FundFileError } from "../../../src/engine/markets/funds/types";
+import { setAdvanced } from "../../../src/engine/markets/advanced";
 import { tempHome } from "../../helpers";
 import { stubFetch } from "./fakes";
 
@@ -114,6 +115,7 @@ test("VFV.TO refreshes SPY", async () => {
 
 test("the weekly job refreshes held and watched funds older than a week", async () => {
   const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
+  setAdvanced(db, space.id, true);
   for (const [sym, ex] of [["XEQT", "TSX"], ["SPY", "US"], ["NOW", "US"]] as const) {
     db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(space.id, sym, ex);
   }
@@ -125,4 +127,16 @@ test("the weekly job refreshes held and watched funds older than a week", async 
   await job.run(NOW);
   expect(s.calls.map((c) => c.url.host)).toEqual(["www.ssga.com"]);
   expect(loadFundFile(db, "SPY")!.fetchedAt).toBe(NOW);
+});
+
+test("funds job makes no requests while Advanced is off", async () => {
+  const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
+  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, 'SPY', 'US', '', 1)").run(space.id);
+  const off = issuers();
+  await fundsJob(db, { fetch: off.fetch, now: () => NOW }).run(NOW);
+  expect(off.calls).toHaveLength(0);
+  setAdvanced(db, space.id, true);
+  const on = issuers();
+  await fundsJob(db, { fetch: on.fetch, now: () => NOW }).run(NOW);
+  expect(on.calls.length).toBeGreaterThan(0);
 });

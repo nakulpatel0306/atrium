@@ -15,6 +15,7 @@ import {
   strategySlots,
   type StrategyInput,
 } from "../../../src/engine/markets/strategies";
+import { setAdvanced } from "../../../src/engine/markets/advanced";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -27,6 +28,8 @@ beforeEach(() => {
   home = tempHome();
   db = openDb();
   spaceId = createSpace(db, { name: "Stocks", kind: "markets", goal: "paper" }).id;
+  // Plan 7 behaviour under test is Advanced-only; the gates themselves are tested with it off.
+  setAdvanced(db, spaceId, true);
   off = onApprovalResolved((a, d) => handleStrategyDecision(db, a, d));
 });
 afterEach(() => {
@@ -85,4 +88,17 @@ test("enqueueDueStrategies runs each due slot once, only for active strategies i
   setStrategyPaused(db, s.id, false);
   expect(enqueueDueStrategies(db, etInstant("2026-11-07", "09:50"), kick)).toBe(0);
   expect(enqueueDueStrategies(db, etInstant("2026-11-09", "12:00"), kick)).toBe(0);
+});
+
+test("strategies don't enqueue while Advanced is off", () => {
+  setAdvanced(db, spaceId, false);
+  const s = proposeStrategy(db, spaceId, INPUT, "claude");
+  resolveApproval(db, s.approvalId!, "approve");
+  const at = etInstant("2026-11-05", "10:01");
+  expect(anyStrategyActive(db)).toBe(false);
+  expect(enqueueDueStrategies(db, at, () => {})).toBe(0);
+  expect(listTasks(db)).toHaveLength(0);
+  setAdvanced(db, spaceId, true);
+  expect(anyStrategyActive(db)).toBe(true);
+  expect(enqueueDueStrategies(db, at, () => {})).toBe(1);
 });

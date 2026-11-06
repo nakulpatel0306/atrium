@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { anyAdvanced, bigNewsArmed } from "./advanced";
 import { bus } from "../events";
 import { newId } from "../ids";
 import { evaluateEvents } from "./alerts";
@@ -79,6 +80,8 @@ export function newsJob(db: Database, deps: { data: MarketData; now: () => numbe
     name: "news",
     slot: { everyMinutes: 60, from: "10:00", to: "16:00", days: "weekdays" },
     async run(now) {
+      // Portfolio and the Symbol page get news from the end-of-day fetch; hourly news only feeds Advanced and big-news alerts.
+      if (!anyAdvanced(db) && !bigNewsArmed(db)) return;
       await fetchNews(db, deps.data, now);
     },
   };

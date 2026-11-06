@@ -9,6 +9,7 @@ import { eodJob } from "../../../src/engine/markets/eod";
 import { instrumentKey, type Instrument } from "../../../src/engine/markets/instrument";
 import { tiingoProvider, tiingoSymbols } from "../../../src/engine/markets/providers/tiingo";
 import { getSetting } from "../../../src/engine/settings";
+import { setAdvanced } from "../../../src/engine/markets/advanced";
 import { tempHome } from "../../helpers";
 import { fixture, jsonResponse, stubFetch } from "./fakes";
 
@@ -19,6 +20,8 @@ beforeEach(() => {
   home = tempHome();
   db = openDb();
   spaceId = createSpace(db, { name: "Investing", kind: "markets", goal: "g" }).id;
+  // Plan 7 behaviour under test is Advanced-only; the gates themselves are tested with it off.
+  setAdvanced(db, spaceId, true);
 });
 afterEach(() => {
   db.close();
@@ -163,4 +166,20 @@ test("a split re-fetches the whole window so stored adjusted closes match (NOW 5
   expect(closes(db, "NOW", "2026-11-03")[0]!.adjClose).toBe(200);
   const r = performance({ holdings: [{ key: "NOW", quantity: 1, listingCcy: "USD" }], closes: (k, f) => closes(db, k, f), fxOn: () => 1.4, today: "2026-11-04" }, "1Y", []);
   expect(r.portfolioPct!).toBeCloseTo(6, 6);
+});
+
+test("no thesis checks while Advanced is off", async () => {
+  setAdvanced(db, spaceId, false);
+  hold("NOW", "US");
+  const { saveNotes } = await import("../../../src/engine/markets/research");
+  saveNotes(db, spaceId, "NOW", { thesis: "Platform wins." });
+  const clock = { now: Date.parse("2026-11-04T21:35:00Z") };
+  const data = {
+    quotes: async () => ({ quotes: [], missing: [] }),
+    news: async () => [],
+    research: () => ({ earnings: async () => [{ key: "NOW", date: "2026-11-06", hour: "amc", epsEstimate: 1 }] }),
+    prepare: async () => {},
+  } as unknown as MarketData;
+  await eodJob(db, { data, tiingo: () => null, now: () => clock.now }).run(clock.now);
+  expect(db.query("SELECT 1 FROM tasks WHERE purpose = 'thesis_check'").all()).toEqual([]);
 });

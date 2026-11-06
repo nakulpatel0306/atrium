@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { advancedSpaces } from "./advanced";
 import { createApproval, type Approval } from "../approvals";
 import { bus, logActivity } from "../events";
 import { newId } from "../ids";
@@ -137,10 +138,10 @@ export function listStrategies(db: Database, spaceId: string): Strategy[] {
   return (db.query("SELECT * FROM market_strategies WHERE space_id = ? ORDER BY created_at, rowid").all(spaceId) as Row[]).map(toStrategy);
 }
 
+// Strategies are an Advanced tool: a space with Advanced off keeps its active strategies but runs none.
 export function anyStrategyActive(db: Database): boolean {
-  return !!db
-    .query("SELECT 1 FROM market_strategies m JOIN spaces s ON s.id = m.space_id WHERE m.status = 'active' AND s.status = 'active' LIMIT 1")
-    .get();
+  const adv = advancedSpaces(db);
+  return (db.query("SELECT m.space_id FROM market_strategies m JOIN spaces s ON s.id = m.space_id WHERE m.status = 'active' AND s.status = 'active'").all() as { space_id: string }[]).some((r) => adv.has(r.space_id));
 }
 
 export function strategySlots(cadence: StrategyInput["cadence"], date: string, early: boolean): number[] {
@@ -162,10 +163,11 @@ export function enqueueDueStrategies(db: Database, now: number, kick: () => void
   const rows = db
     .query("SELECT m.* FROM market_strategies m JOIN spaces s ON s.id = m.space_id WHERE m.status = 'active' AND s.status = 'active'")
     .all() as Row[];
+  const adv = advancedSpaces(db);
   const busy = new Set(listTasks(db, { status: ["queued", "running"] }).map((t) => t.strategyId).filter(Boolean));
   let n = 0;
   for (const r of rows) {
-    if (busy.has(r.id)) continue;
+    if (busy.has(r.id) || !adv.has(r.space_id)) continue;
     const slot = strategySlots(r.cadence, etDate(now), session.earlyClose).filter((t) => t <= now).at(-1);
     if (slot === undefined || now - slot > LATE_SLOT_MS || (r.last_slot_at ?? 0) >= slot) continue;
     const s = toStrategy(r);

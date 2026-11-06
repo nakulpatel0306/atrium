@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { anyAdvanced } from "./advanced";
 import { evaluateEvents } from "./alerts";
 import { AV_RESERVE, dailyBudget, noteSourceResult, planAlphaVantage } from "./budget";
 import { etDate } from "./calendar";
@@ -102,7 +103,8 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
       }
 
       try {
-        thesisChecks(db, now);
+        // Thesis checks are an Advanced tool.
+        if (anyAdvanced(db)) thesisChecks(db, now);
       } catch (e) {
         console.error(`Thesis checks: ${errorText(e, secrets)}`);
       }

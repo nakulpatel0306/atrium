@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { anyAdvanced } from "./advanced";
 import type { MarketData } from "./data";
 import { refreshEdgar } from "./edgar";
 import { trackedInstruments } from "./feed";
@@ -113,7 +114,7 @@ export function metaJob(db: Database, deps: { data: MarketData; now: () => numbe
       }
       metaFromFunds(db);
       try {
-        await refreshEdgar(db, deps);
+        if (anyAdvanced(db)) await refreshEdgar(db, deps);
       } catch (e) {
         console.error(`SEC EDGAR cross-check: ${e instanceof Error ? e.message : String(e)}`);
       }

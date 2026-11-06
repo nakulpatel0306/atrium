@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { advancedSpaces, anyAdvanced } from "./advanced";
 import { bus } from "../events";
 import { saveQuotes } from "./cache";
 import { recordCloses } from "./closes";
@@ -55,11 +56,13 @@ export function trackedInstruments(db: Database): Instrument[] {
     out.push(i);
   };
   const active = "SELECT id FROM spaces WHERE kind = 'markets' AND status = 'active'";
+  const adv = [...advancedSpaces(db)];
+  const advanced = adv.length ? adv.map((id) => `'${id.replace(/'/g, "''")}'`).join(",") : "NULL";
   const paper = db
     .query(
       `SELECT f.symbol, SUM(CASE WHEN f.side = 'buy' THEN f.qty ELSE -f.qty END) AS net, MIN(f.created_at) AS first
        FROM paper_fills f LEFT JOIN paper_accounts a ON a.space_id = f.space_id
-       WHERE f.space_id IN (${active}) AND f.created_at >= COALESCE(a.reset_at, 0)
+       WHERE f.space_id IN (${advanced}) AND f.created_at >= COALESCE(a.reset_at, 0)
        GROUP BY f.space_id, f.symbol HAVING net > 1e-9 ORDER BY first`,
     )
     .all() as { symbol: string }[];
@@ -69,7 +72,7 @@ export function trackedInstruments(db: Database): Instrument[] {
     .all() as { symbol: string; exchange: Exchange }[];
   for (const h of holdings) add({ symbol: h.symbol, exchange: h.exchange });
   const strategies = db
-    .query(`SELECT symbols FROM market_strategies WHERE status = 'active' AND space_id IN (${active}) ORDER BY created_at, rowid`)
+    .query(`SELECT symbols FROM market_strategies WHERE status = 'active' AND space_id IN (${advanced}) ORDER BY created_at, rowid`)
     .all() as { symbols: string }[];
   for (const s of strategies) for (const k of JSON.parse(s.symbols) as string[]) add(parseInstrumentKey(k));
   const watch = db
@@ -262,8 +265,9 @@ export function createFeed(deps: {
     const today = etDate(at);
     if (barsDate !== today) {
       barsDate = today;
-      // Indicator alerts and agent context read cached daily bars; once a day keeps them current.
-      for (const i of tracked) {
+      // Indicator alerts and paper context read cached daily bars; once a day keeps them current. Both are
+      // Advanced tools, so nothing is fetched while no space has Advanced on.
+      for (const i of anyAdvanced(db) ? tracked : []) {
         const p = data.providerFor(i);
         if (!p || p.id === "finnhub") continue;
         try {

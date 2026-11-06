@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createMarketData } from "../../../src/engine/markets/data";
 import { createKeychain } from "../../../src/engine/markets/keychain";
+import { setAdvanced } from "../../../src/engine/markets/advanced";
 import { tempHome } from "../../helpers";
 
 const FAKE_SECURITY = resolve(import.meta.dir, "../../fixtures/fake-security.ts");
@@ -27,6 +28,8 @@ beforeEach(() => {
   home = tempHome();
   db = openDb();
   spaceId = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" }).id;
+  // Plan 7 behaviour under test is Advanced-only; the gates themselves are tested with it off.
+  setAdvanced(db, spaceId, true);
 });
 afterEach(() => {
   db.close();
@@ -412,4 +415,23 @@ test("no Keychain reads while the market is closed and nobody is looking", async
     delete process.env.FAKE_SECURITY_ARGV;
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("paper and strategy symbols are tracked only with Advanced on", () => {
+  setAdvanced(db, spaceId, false);
+  watch("AMZN");
+  db.query("INSERT INTO paper_fills (id, space_id, symbol, side, qty, price, quote_at, source, actor, reasoning, created_at) VALUES ('f1', ?, 'NVDA', 'buy', 2, 100, 1, 'demo', 'you', 'r', 5)").run(spaceId);
+  db.query("INSERT INTO market_strategies (id, space_id, name, rules, symbols, cadence, max_position_value, max_trades_per_day, status, created_at, updated_at) VALUES ('st', ?, 'n', 'r', '[\"AMD\"]', 'open', 1000, 3, 'active', 1, 1)").run(spaceId);
+  expect(trackedInstruments(db).map(instrumentKey)).toEqual(["AMZN"]);
+  setAdvanced(db, spaceId, true);
+  expect(trackedInstruments(db).map(instrumentKey)).toEqual(["NVDA", "AMD", "AMZN"]);
+});
+
+test("no daily 6M prefetch while Advanced is off", async () => {
+  setAdvanced(db, spaceId, false);
+  watch("AAPL");
+  const s = setup("2026-11-05T15:00:00Z");
+  await s.feed.start();
+  expect(s.barCalls).toEqual([]);
+  s.feed.stop();
 });

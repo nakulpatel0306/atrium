@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { anyAdvanced } from "../advanced";
 import { meteredFetch, noteSourceResult, type DataSource } from "../budget";
 import { etDate } from "../calendar";
 import type { Job } from "../jobs";
@@ -111,6 +112,8 @@ export function fundsJob(db: Database, deps: { fetch?: typeof fetch; now: () => 
     name: "funds",
     slot: { at: "10:00", days: [6] },
     async run(now) {
+      // Look-through is an Advanced tool; with it off everywhere the slot passes without a request.
+      if (!anyAdvanced(db)) return;
       const cache = new Map<string, string>();
       const queue = trackedFunds(db);
       const failed: string[] = [];

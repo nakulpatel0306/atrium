@@ -34,6 +34,7 @@ import { listWatchlist } from "../../src/engine/markets/watchlist";
 import { briefingMarketsLine } from "../../src/dashboard/markets";
 import { startServer } from "../../src/server/server";
 import { fakeTimers } from "../engine/markets/fakes";
+import { setAdvanced } from "../../src/engine/markets/advanced";
 import { tempHome } from "../helpers";
 
 const FIX = resolve(import.meta.dir, "../fixtures/markets");
@@ -131,6 +132,8 @@ afterAll(() => {
 
 test("1. the 13 tickers, then a Wealthsimple import with CAD book values and owned ideas", async () => {
   spaceId = seedInvesting(db).spaceId;
+  // Plan 7's tools are Advanced-only since Plan 10; this walkthrough exercises them.
+  setAdvanced(db, spaceId, true);
   expect(listWatchlist(db, spaceId)).toHaveLength(13);
   const csv = readFileSync(join(FIX, "ws-holdings.csv"), "utf8");
   expect((await call("POST", `/api/markets/${spaceId}/import`, { csv })).status).toBe(200);
