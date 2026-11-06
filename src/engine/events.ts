@@ -29,11 +29,15 @@ export type ActivityRow = {
   createdAt: number;
 };
 
+// A line can arrive after its space or task was deleted (a lookup or clone that finished late). It's still worth
+// recording, so it keeps its words and drops the links that would no longer hold.
 export function logActivity(db: Database, spaceId: string | null, actor: string, message: string, about: { taskId?: string | null } = {}): void {
+  const space = spaceId && db.query("SELECT 1 FROM spaces WHERE id = ?").get(spaceId) ? spaceId : null;
+  const task = about.taskId && db.query("SELECT 1 FROM tasks WHERE id = ?").get(about.taskId) ? about.taskId : null;
   db.query("INSERT INTO activity (id, space_id, task_id, actor, message, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(
     newId("act"),
-    spaceId,
-    about.taskId ?? null,
+    space,
+    task,
     actor,
     message,
     Date.now(),

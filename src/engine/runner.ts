@@ -587,7 +587,8 @@ export function createRunner(deps: {
         // The number is never the agent's: Nakul types it or picks it from his own Contacts lookup.
         const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text });
         logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`, { taskId: task.id });
-        void autoLookup(db, action.id);
+        // It catches its own failures; this only guards the engine if one slips past.
+        autoLookup(db, action.id).catch((e) => console.error(`Contacts lookup failed: ${e instanceof Error ? e.message : String(e)}`));
       } else if (result.status === "ok") {
         const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
         // Repo runs already count their files in the branch summary.
