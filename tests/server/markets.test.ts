@@ -155,10 +155,10 @@ test("market data settings: provider, test connection, no keys returned", async 
   expect(t.us.ok).toBe(true);
   expect(t.us.sample.key).toBe("AAPL");
   expect(t.ca.sample.freshness).toBe("demo");
-  const put = await (await call("PUT", "/api/settings/market-data", { provider: "alpaca" })).json();
-  expect(put.data.usProvider).toBe("alpaca");
+  const put = await (await call("PUT", "/api/settings/market-data", { provider: "finnhub" })).json();
+  expect(put.data.usProvider).toBe("finnhub");
   const t2 = await (await call("POST", "/api/settings/market-data/test")).json();
-  expect(t2.us).toEqual({ ok: false, message: "Add your Alpaca key in Settings → Market data." });
+  expect(t2.us).toEqual({ ok: false, message: "Add your Finnhub key in Settings → Market data." });
   const bad = await call("POST", "/api/settings/market-data/keys", { provider: "alpaca", keyId: "bad key", secret: "x" });
   expect(bad.status).toBe(400);
   expect(await bad.json()).toEqual({ error: "That doesn't look like an Alpaca key: keys are letters and numbers only." });
@@ -320,4 +320,30 @@ test("the Alpaca key pair is saved together or not at all", async () => {
   }
   expect(await keychain.get("alpaca.keyId")).toBe("PKOLDKEY12345");
   expect(await keychain.get("alpaca.secret")).toBe("SKOLDSECRET123");
+});
+
+test("PUT provider alpaca is refused with the plain sentence", async () => {
+  boot();
+  const r = await call("PUT", "/api/settings/market-data", { provider: "alpaca" });
+  expect(r.status).toBe(400);
+  expect(await r.json()).toEqual({ error: "Alpaca isn't used anymore. Pick Finnhub or Demo." });
+});
+
+test("the test probe reports history", async () => {
+  const { jsonResponse, fixture } = await import("../engine/markets/fakes");
+  const hosts: string[] = [];
+  const stub = (async (input: string | URL | Request) => {
+    const u = new URL(String(input));
+    hosts.push(u.host);
+    return u.host === "api.tiingo.com" ? jsonResponse(fixture("investing/tiingo-spy.json")) : new Response("no", { status: 500 });
+  }) as unknown as typeof fetch;
+  const { keychain, data } = boot({ demo: false, fetch: stub });
+  setSetting(db, "markets.provider", "finnhub");
+  const before = await (await call("POST", "/api/settings/market-data/test")).json();
+  expect(before.history).toEqual({ ok: false, message: "Add a free Tiingo key for daily history (Settings → Market data)." });
+  await keychain.set("tiingo.token", "TGTESTTOKEN99");
+  await data.reload();
+  const t = await (await call("POST", "/api/settings/market-data/test")).json();
+  expect(t.history).toEqual({ ok: true, message: "Tiingo answered." });
+  expect(hosts).toContain("api.tiingo.com");
 });

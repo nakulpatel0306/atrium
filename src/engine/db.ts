@@ -218,6 +218,13 @@ function migrate(db: Database) {
   if (!has("market_alerts", "fired_for")) db.exec("ALTER TABLE market_alerts ADD COLUMN fired_for TEXT");
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");
+  migrateProvider(db);
+}
+
+// Alpaca left the default path in Plan 10. A stored choice of it becomes Finnhub once; written directly, since
+// nothing is listening while the database opens.
+export function migrateProvider(db: Database): void {
+  db.query("UPDATE settings SET value = 'finnhub' WHERE key = 'markets.provider' AND value = 'alpaca'").run();
 }
 
 

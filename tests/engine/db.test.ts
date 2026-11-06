@@ -304,3 +304,19 @@ test("run_files exists and refuses a branch row without ref", () => {
   db.close();
   t.cleanup();
 });
+
+test("a stored alpaca provider becomes finnhub once", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const first = openDb(path);
+  first.query("INSERT INTO settings (key, value) VALUES ('markets.provider', 'alpaca')").run();
+  first.close();
+  const db = openDb(path);
+  expect(db.query("SELECT value FROM settings WHERE key = 'markets.provider'").get()).toEqual({ value: "finnhub" });
+  db.query("UPDATE settings SET value = 'demo' WHERE key = 'markets.provider'").run();
+  db.close();
+  const again = openDb(path);
+  expect(again.query("SELECT value FROM settings WHERE key = 'markets.provider'").get()).toEqual({ value: "demo" });
+  again.close();
+  t.cleanup();
+});

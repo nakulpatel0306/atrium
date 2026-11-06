@@ -41,7 +41,7 @@ const db = openDb();
 seedOnBoot(db);
 const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: geminiAdapter() };
 // Market time: the real clock, or the demo clock ATRIUM_MARKET_NOW shifts while the provider is Demo.
-const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "alpaca");
+const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "finnhub");
 const keychain = createKeychain();
 const data = createMarketData({ db, keychain, now: marketClock });
 // Daily and weekly market jobs, run from the feed's own timer.

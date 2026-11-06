@@ -17,7 +17,7 @@ import { redact } from "./redact";
 export type ChartRange = "5D" | "1M" | "3M" | "6M" | "1Y";
 export type BarsResult = { key: string; timeframe: Timeframe; bars: Bar[]; source: ProviderId | null; freshness: Freshness | null; note: string | null };
 export type DataStatus = {
-  usProvider: "alpaca" | "finnhub" | "demo";
+  usProvider: "finnhub" | "demo";
   us: { ready: boolean; message: string };
   ca: { ready: boolean; message: string };
   keys: { alpaca: boolean; finnhub: boolean; alphavantage: boolean; tiingo: boolean };
@@ -59,7 +59,7 @@ export const MISSING = {
   finnhub: "Add your Finnhub key in Settings → Market data.",
   ca: "Canadian prices need a free Alpha Vantage key (Settings → Market data).",
   neo: "No free source covers NEO-listed CDRs.",
-  otc: "Alpaca's free plan doesn't include OTC stocks.",
+  otc: "No free source covers OTC stocks.",
   history: "Add a free Tiingo key for daily history (Settings → Market data).",
 };
 
@@ -110,7 +110,7 @@ export function createMarketData(deps: {
   // The Keychain is read only when something needs the keys: the feed about to fetch in market hours (prepare), or
   // Nakul opening Settings or a markets space (refreshKeys). A missing key or a failed (locked) read is retried at
   // most every ten minutes from the feed, half a minute from a user action, and never from status().
-  const missingKey = () => mode() !== "demo" && !has[mode() as "alpaca" | "finnhub"]();
+  const missingKey = () => mode() !== "demo" && !has.finnhub();
   const readIfDue = async (gapMs: number, force = false) => {
     if (loaded) await loaded;
     const due = !loaded || force || ((readFailed || missingKey()) && now() - lastRead > gapMs);
@@ -131,8 +131,8 @@ export function createMarketData(deps: {
     tiingo: () => !!keys.tiingo,
   };
   const mode = (): DataStatus["usProvider"] => {
-    const v = getSetting(db, "markets.provider");
-    return v === "finnhub" || v === "demo" ? v : "alpaca";
+    // Finnhub is the default; Alpaca is off the default path (a stored "alpaca" is migrated at boot).
+    return getSetting(db, "markets.provider") === "demo" ? "demo" : "finnhub";
   };
 
   // Alpha Vantage's daily series cost one of 25 calls a day, so every one fetched is kept: completed sessions go to
@@ -179,11 +179,10 @@ export function createMarketData(deps: {
   };
 
   const secrets = () => [keys.alpacaKeyId, keys.alpacaSecret, keys.finnhub, keys.alphavantage, keys.tiingo].filter((k): k is string => !!k);
-  // US daily bars: Alpaca when that's the mode and its keys are there, else Tiingo when it has a key.
+  // US daily bars come from Tiingo when it has a key.
   const historyFor = (i: Instrument): { provider: MarketProvider | null; reason: string } => {
     const m = mode();
     if (m === "demo" || i.exchange !== "US") return route(i);
-    if (m === "alpaca" && has.alpaca()) return { provider: provider("alpaca"), reason: "" };
     if (has.tiingo()) return { provider: provider("tiingo"), reason: "" };
     return { provider: null, reason: MISSING.history };
   };
@@ -312,19 +311,16 @@ export function createMarketData(deps: {
         return { usProvider: m, us: demo, ca: demo, keys: keysPresent, history: demo };
       }
       const tiingoLeft = dailyBudget(db, "tiingo", TIINGO_DAILY_LIMIT, now).remaining();
-      const history =
-        m === "alpaca" && has.alpaca()
-          ? { ready: true, message: "Alpaca · daily history" }
-          : rejected.tiingo
-            ? { ready: false, message: rejected.tiingo.message }
-            : has.tiingo()
-              ? { ready: true, message: `Tiingo · end of day (${tiingoLeft} of ${TIINGO_DAILY_LIMIT} requests left today)` }
-              : { ready: false, message: MISSING.history };
+      const history = rejected.tiingo
+        ? { ready: false, message: rejected.tiingo.message }
+        : has.tiingo()
+          ? { ready: true, message: `Tiingo · end of day (${tiingoLeft} of ${TIINGO_DAILY_LIMIT} requests left today)` }
+          : { ready: false, message: MISSING.history };
       const us = !has[m]()
         ? { ready: false, message: readFailed ? KEYCHAIN_LOCKED : MISSING[m] }
         : rejected[m]
           ? { ready: false, message: rejected[m]!.message }
-          : { ready: true, message: m === "alpaca" ? "Alpaca · IEX real-time" : "Finnhub · real-time" };
+          : { ready: true, message: "Finnhub · real-time" };
       const left = dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now).remaining();
       const ca = rejected.alphavantage
         ? { ready: false, message: rejected.alphavantage.message }

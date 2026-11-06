@@ -78,7 +78,7 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
     news: async () => [],
     streamer: () => (opts.canStream === false ? null : streamer),
     status: async (): Promise<DataStatus> => ({
-      usProvider: "alpaca",
+      usProvider: "finnhub",
       us: { ready: opts.ready ?? true, message: opts.ready === false ? "Add your Alpaca key in Settings → Market data." : "ok" },
       ca: { ready: true, message: "ok" },
       keys: { alpaca: true, finnhub: false, alphavantage: true, tiingo: false },

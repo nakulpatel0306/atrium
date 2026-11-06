@@ -9,22 +9,12 @@ import { Freshness } from "./markets/Freshness";
 import { Storage } from "./Storage";
 
 const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }[] = [
-  { id: "alpaca", label: "Alpaca", covers: "US stocks and ETFs. Real-time prices from IEX (a few percent of all trading) and full daily history for charts. Free account." },
-  { id: "finnhub", label: "Finnhub", covers: "US stocks. Real-time quotes and company news, but no price history on the free plan, so no charts." },
+  { id: "finnhub", label: "Finnhub", covers: "US stocks and ETFs. Real-time quotes, symbol search, earnings dates and company news. Daily history comes from Tiingo." },
   { id: "demo", label: "Demo", covers: "Made-up prices for every market, to try Atrium out. Every price is labelled Demo data." },
 ];
 
-type KeyProvider = "alpaca" | "finnhub" | "alphavantage" | "tiingo";
+type KeyProvider = "finnhub" | "alphavantage" | "tiingo";
 const KEY_FORMS: { id: KeyProvider; label: string; fields: { name: string; label: string }[]; help: string }[] = [
-  {
-    id: "alpaca",
-    label: "Alpaca",
-    fields: [
-      { name: "keyId", label: "Key ID" },
-      { name: "secret", label: "Secret" },
-    ],
-    help: "Create a free Alpaca account, open the paper dashboard, and generate API keys. Atrium only reads market data; it never uses Alpaca's trading endpoints.",
-  },
   { id: "finnhub", label: "Finnhub", fields: [{ name: "token", label: "Token" }], help: "Sign up at finnhub.io and copy the API token from your dashboard." },
   {
     id: "alphavantage",
@@ -99,11 +89,36 @@ function KeyForm({ form, saved }: { form: (typeof KEY_FORMS)[number]; saved: boo
   );
 }
 
+// Alpaca is off the default path. A key saved earlier can still be removed; nothing new can be added.
+function AlpacaRemoval() {
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const remove = async () => {
+    const res = await del<{ message: string }>("/api/settings/market-data/keys/alpaca");
+    setMsg(res.ok ? { ok: true, text: res.data.message } : { ok: false, text: res.error });
+  };
+  return (
+    <div className="set-card">
+      <div className="set-title">
+        <KeyRound />
+        <b>Alpaca</b>
+        <span className="tag">Not used anymore</span>
+      </div>
+      <p className="hint">Atrium gets US prices from Finnhub now. You can remove the old Alpaca key from your Keychain.</p>
+      <div className="mk-form">
+        <button className="btn" type="button" onClick={() => void remove()}>
+          Remove
+        </button>
+        {msg && <span className={msg.ok ? "ok-line" : "err"}>{msg.text}</span>}
+      </div>
+    </div>
+  );
+}
+
 type Probe = { ok: boolean; message: string; sample?: { key: string; price: number; at: number; freshness: "live" | "eod" | "demo" } };
 
 export function Settings() {
   const s = useMarketDataSettings();
-  const [test, setTest] = useState<{ us: Probe; ca: Probe } | null>(null);
+  const [test, setTest] = useState<{ us: Probe; ca: Probe; history: Probe } | null>(null);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,7 +129,7 @@ export function Settings() {
   };
   const runTest = async () => {
     setTesting(true);
-    const res = await post<{ us: Probe; ca: Probe }>("/api/settings/market-data/test");
+    const res = await post<{ us: Probe; ca: Probe; history: Probe }>("/api/settings/market-data/test");
     setTesting(false);
     if (res.ok) setTest(res.data);
     else setError(res.error);
@@ -166,9 +181,9 @@ export function Settings() {
           </div>
           {test && (
             <div className="list">
-              {(["us", "ca"] as const).map((k) => (
+              {(["us", "ca", "history"] as const).map((k) => (
                 <div key={k} className="item">
-                  <span className="who">{k === "us" ? "US (AAPL)" : "Canada (SHOP.TO)"}</span>
+                  <span className="who">{k === "us" ? "US (AAPL)" : k === "ca" ? "Canada (SHOP.TO)" : "History (SPY)"}</span>
                   <span className="t">{test[k].message}</span>
                   {test[k].sample && (
                     <>
@@ -188,6 +203,7 @@ export function Settings() {
           {KEY_FORMS.map((f) => (
             <KeyForm key={f.id} form={f} saved={s.data.keys[f.id]} />
           ))}
+          {s.data.keys.alpaca && <AlpacaRemoval />}
           <h2>Data budget</h2>
           <p className="brief">Every call Atrium makes, against each free plan's limit. Free tiers only; nothing here costs money.</p>
           <DataBudget />

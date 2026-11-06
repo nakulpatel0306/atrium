@@ -35,7 +35,7 @@ function portfolioOf(db: Database, now: number): MarketsBriefing["portfolio"] {
 // Cache only: the briefing renders on every state read and must never touch the network.
 export function marketsBriefing(db: Database, wallNow: number): MarketsBriefing | null {
   // Paper fills are stamped with the market clock, which demo mode can shift; "today" must use the same clock.
-  const now = wallNow + (marketNow(getSetting(db, "markets.provider") ?? "alpaca") - Date.now());
+  const now = wallNow + (marketNow(getSetting(db, "markets.provider") ?? "finnhub") - Date.now());
   const spaces = db.query("SELECT id FROM spaces WHERE kind = 'markets' AND status = 'active'").all() as { id: string }[];
   if (!spaces.length) return null;
   const ids = spaces.map((s) => s.id);

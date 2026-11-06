@@ -62,7 +62,7 @@ export type MarketsView = {
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
 const RANGES: ChartRange[] = ["5D", "1M", "3M", "6M", "1Y"];
 const EXCHANGES: Exchange[] = ["US", "TSX", "TSXV", "NEO", "OTC"];
-const PROVIDERS = ["alpaca", "finnhub", "demo"] as const;
+const PROVIDERS = ["finnhub", "demo"] as const;
 const BAD_SYMBOL = "Type a symbol like AAPL or SHOP.TO.";
 const SHAPE: Record<"alpaca" | "finnhub" | "alphavantage" | "tiingo", string> = {
   alpaca: "That doesn't look like an Alpaca key: keys are letters and numbers only.",
@@ -157,7 +157,8 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
   }
   if (hit("PUT", /^\/api\/settings\/market-data$/)) {
     const b = await readBody(req);
-    if (!PROVIDERS.includes(b.provider as (typeof PROVIDERS)[number])) throw new HttpError(400, "provider must be alpaca, finnhub or demo.");
+    if (b.provider === "alpaca") throw new HttpError(400, "Alpaca isn't used anymore. Pick Finnhub or Demo.");
+    if (!PROVIDERS.includes(b.provider as (typeof PROVIDERS)[number])) throw new HttpError(400, "Pick Finnhub or Demo.");
     setSetting(db, "markets.provider", b.provider as string);
     await m.data.refreshKeys();
     await m.feed.reevaluate();
@@ -192,7 +193,18 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
       if (!q) return { ok: false, message: r.missing[0]?.reason ?? "No price came back." };
       return { ok: true, message: `${m.data.providerFor(i)?.label ?? q.source} answered.`, sample: { key: q.key, price: q.price, at: q.at, freshness: q.freshness } };
     };
-    return json({ us: await probe({ symbol: "AAPL", exchange: "US" }), ca: await probe({ symbol: "SHOP", exchange: "TSX" }) });
+    // History is probed with one small Tiingo request: five days of SPY.
+    const history = async () => {
+      const t = m.data.tiingo?.();
+      if (!t) return { ok: false, message: (await m.data.status()).history.message };
+      try {
+        await t.daily({ symbol: "SPY", exchange: "US" }, new Date(now() - 5 * 86_400_000).toISOString().slice(0, 10));
+        return { ok: true, message: "Tiingo answered." };
+      } catch (e) {
+        return { ok: false, message: redact(e instanceof Error ? e.message : String(e), m.data.secrets()) };
+      }
+    };
+    return json({ us: await probe({ symbol: "AAPL", exchange: "US" }), ca: await probe({ symbol: "SHOP", exchange: "TSX" }), history: await history() });
   }
 
   if (hit("GET", /^\/api\/markets\/bars$/)) {
