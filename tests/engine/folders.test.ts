@@ -169,7 +169,7 @@ describe("a migration that was interrupted", () => {
     expect(readFileSync(join(legacy, "a.md"), "utf8")).toBe("a");
   });
 
-  test("a cross-volume move copies to .partial first, and a boot resumes or redoes it", () => {
+  test("a cross-volume move copies to .partial, marks it .copied, and a boot finishes or redoes it", () => {
     const exdev = () => spyOn(fs, "renameSync").mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
       // Only the legacy-to-target hop crosses volumes; the .partial rename is on the target's volume.
       if (String(to).endsWith(".partial") || String(from).includes(`${sep}spaces${sep}`)) throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
@@ -191,11 +191,11 @@ describe("a migration that was interrupted", () => {
     expect(readFileSync(join(target, "sub", "b.md"), "utf8")).toBe("b");
     expect(existsSync(`${target}.partial`)).toBe(false);
     expect(existsSync(join(home.home, "spaces", s.id))).toBe(false);
-    // A copy that finished and removed the old folder but died before the final rename.
+    // A copy that was marked complete and removed the old folder, but died before the final rename.
     const t = createSpace(db, { name: "Errands", kind: "general", goal: "" });
     const target2 = getSpace(db, t.id)!.folder!;
-    mkdirSync(`${target2}.partial`, { recursive: true });
-    writeFileSync(join(`${target2}.partial`, "done.md"), "done");
+    mkdirSync(`${target2}.copied`, { recursive: true });
+    writeFileSync(join(`${target2}.copied`, "done.md"), "done");
     spy = exdev();
     try {
       migrateSpaceFolders(db);
@@ -203,6 +203,22 @@ describe("a migration that was interrupted", () => {
       spy.mockRestore();
     }
     expect(readFileSync(join(target2, "done.md"), "utf8")).toBe("done");
-    expect(existsSync(`${target2}.partial`)).toBe(false);
+    expect(existsSync(`${target2}.copied`)).toBe(false);
   });
+});
+
+test("a boot that dies while deleting the old folder after a complete copy loses nothing", () => {
+  const s = createSpace(db, { name: "Weekly Planning", kind: "general", goal: "" });
+  const target = getSpace(db, s.id)!.folder!;
+  const legacy = join(home.home, "spaces", s.id);
+  mkdirSync(legacy, { recursive: true });
+  for (const n of ["a.md", "b.md", "c.md", "d.md"]) writeFileSync(join(legacy, n), n);
+  // The copy finished and was marked complete; the old folder was half deleted when the engine died.
+  fs.cpSync(legacy, `${target}.copied`, { recursive: true });
+  for (const n of ["a.md", "b.md"]) fs.rmSync(join(legacy, n));
+  migrateSpaceFolders(db);
+  expect(fs.readdirSync(target).sort()).toEqual(["a.md", "b.md", "c.md", "d.md"]);
+  expect(existsSync(legacy)).toBe(false);
+  expect(existsSync(`${target}.copied`)).toBe(false);
+  expect(spaceFolder(getSpace(db, s.id)!)).toBe(target);
 });

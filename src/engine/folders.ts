@@ -87,19 +87,19 @@ export function migrateSpaceFolders(db: Database): { spaceId: string; from: stri
   return moved;
 }
 
-// A cross-volume copy goes to `<to>.partial`, then the old folder is removed, then `.partial` is renamed into place.
-// Left over from an interrupted boot: with the old folder gone the copy was complete, so it's finished; with the
-// old folder still there it may be half done, so it's thrown away and the move starts over.
+// A cross-volume copy goes to `<to>.partial`; once complete it's renamed to `<to>.copied` (the marker that it is
+// whole), then the old folder is deleted, then `.copied` is renamed into place. Left over from an interrupted boot:
+// `.copied` is finished (the rest of the old folder is deleted); an unmarked `.partial` may be half done, so it's
+// thrown away and the move starts over.
 function finishPartial(from: string, to: string): boolean {
   const partial = `${to}.partial`;
-  if (!existsSync(partial)) return false;
-  if (existsSync(from)) {
-    rmSync(partial, { recursive: true, force: true });
-    return false;
-  }
+  const copied = `${to}.copied`;
+  if (existsSync(partial)) rmSync(partial, { recursive: true, force: true });
+  if (!existsSync(copied)) return false;
   if (existsSync(to) && !isEmptyDir(to)) return false;
+  rmSync(from, { recursive: true, force: true });
   rmSync(to, { recursive: true, force: true });
-  renameSync(partial, to);
+  renameSync(copied, to);
   return true;
 }
 
@@ -114,7 +114,8 @@ function move(from: string, to: string) {
     if ((e as NodeJS.ErrnoException).code !== "EXDEV") throw e;
     const partial = `${to}.partial`;
     cpSync(from, partial, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
+    renameSync(partial, `${to}.copied`);
     rmSync(from, { recursive: true, force: true });
-    renameSync(partial, to);
+    renameSync(`${to}.copied`, to);
   }
 }
