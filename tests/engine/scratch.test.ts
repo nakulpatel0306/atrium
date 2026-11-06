@@ -20,8 +20,8 @@ const temp = () => {
   dirs.push(d);
   return d;
 };
-// Where the runner keeps a run's files: inside Atrium's own folder, which the copy's sandbox otherwise can't read.
-const runDir = () => join(home.home, "spaces", "spc_1", "runs", `run_${Math.random().toString(36).slice(2)}`);
+// Where the runner keeps a run's files: in its space folder, which the copy's sandbox otherwise can't read.
+const runDir = () => join(home.home, "files", "docs", "runs", `run_${Math.random().toString(36).slice(2)}`);
 
 // Atrium's own folder is unreadable inside the sandbox, so a canary there stands in for a secret.
 function canary() {

@@ -4,6 +4,8 @@ import { codexAdapter } from "./engine/agents/codex";
 import { geminiAdapter } from "./engine/agents/gemini";
 import { config } from "./engine/config";
 import { openDb } from "./engine/db";
+import { logActivity } from "./engine/events";
+import { migrateSpaceFolders, tildePath } from "./engine/folders";
 import { trimLog } from "./engine/logfile";
 import { keepAwake, powerSource } from "./engine/power";
 import { createRunner, recoverOnBoot } from "./engine/runner";
@@ -96,6 +98,8 @@ try {
 }
 
 await recoverOnBoot(db);
+// Before the runner starts, so no run works in a folder that is being moved.
+for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);
 recoverRepoActions(db);
 recoverRemovals(db);
 runner.start();

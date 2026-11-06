@@ -8,8 +8,8 @@ import { correctBranchHead, createApproval, getApproval } from "./approvals";
 import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
 import { applyRule } from "./autonomy/rules";
-import { config } from "./config";
 import { bus, logActivity } from "./events";
+import { spaceFolder } from "./folders";
 import {
   branchOffDirty,
   branchSummary,
@@ -346,7 +346,7 @@ export function createRunner(deps: {
     let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript> };
     let cwd: string | null = null;
     try {
-      cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : join(config().home, "spaces", space.id);
+      cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : spaceFolder(space);
       if (!repo && !scratch) mkdirSync(cwd, { recursive: true });
       const runId = newId("run");
       const transcript = openTranscript(runId);
@@ -566,7 +566,7 @@ export function createRunner(deps: {
   // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
   // A copy that fails must not lose the run's outcome; the approval says the files couldn't be kept.
   async function keepScratchFiles(space: Space, runId: string, cwd: string): Promise<Kept | null> {
-    const dir = join(config().home, "spaces", space.id, "runs", runId);
+    const dir = join(spaceFolder(space), "runs", runId);
     try {
       const res = await keepScratch(cwd, dir);
       return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;

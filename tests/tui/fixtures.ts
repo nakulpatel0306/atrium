@@ -30,6 +30,7 @@ const space = (over: Partial<Space>): Space => ({
   status: "active",
   reviewBy: null,
   github: null,
+  folder: null,
   createdAt: now - 3 * 24 * 60 * min,
   updatedAt: now - 60 * min,
   ...over,

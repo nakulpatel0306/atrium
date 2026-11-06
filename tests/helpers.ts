@@ -5,10 +5,13 @@ import { join } from "node:path";
 export function tempHome(): { home: string; cleanup(): void } {
   const home = mkdtempSync(join(tmpdir(), "atrium-home-"));
   process.env.ATRIUM_HOME = home;
+  // Space folders stay inside the temp home, never the real ~/Atrium.
+  process.env.ATRIUM_FILES_HOME = join(home, "files");
   return {
     home,
     cleanup: () => {
       delete process.env.ATRIUM_HOME;
+      delete process.env.ATRIUM_FILES_HOME;
       rmSync(home, { recursive: true, force: true });
     },
   };

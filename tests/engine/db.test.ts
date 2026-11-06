@@ -136,7 +136,7 @@ test("old DB gains markets and alert kinds", () => {
   const db = openDb(path);
   expect(db.query("SELECT * FROM spaces").get()).toEqual({
     id: "spc_old", name: "Old", kind: "repo", goal: "g", color: "blue", repo_path: "/r", private: 1, status: "active",
-    created_at: 1, updated_at: 2, review_by: "codex", github: null,
+    created_at: 1, updated_at: 2, review_by: "codex", github: null, folder: null,
   });
   expect(db.query("SELECT id, space_id, task_id, kind, title, detail, status, note, created_at, resolved_at, branch_head, decided_by FROM approvals").get()).toEqual({
     id: "apr_old", space_id: "spc_old", task_id: "tsk_old", kind: "review", title: "old", detail: "d", status: "approved",

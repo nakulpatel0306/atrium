@@ -20,7 +20,8 @@ import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { BASE_TOOLS, createRunner, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
 import { getSetting, setSetting } from "../../src/engine/settings";
-import { createSpace, updateSpace } from "../../src/engine/spaces";
+import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
+import { spaceFolder } from "../../src/engine/folders";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
 import { tempHome, tempRepo } from "../helpers";
 import { createCloner } from "../../src/engine/repos/clones";
@@ -144,7 +145,7 @@ test("runs a queued task to review and creates a review approval", async () => {
   expect(calls[0]!.systemPrompt).toContain("Work in the current folder.");
   expect(calls[0]!.systemPrompt).not.toMatch(/git|branch|commit|push|merge/i);
   expect(calls[0]!.allowedTools).toEqual(["Read", "Edit", "Write", "Glob", "Grep"]);
-  expect(calls[0]!.cwd).toBe(join(home.home, "spaces", s.id));
+  expect(calls[0]!.cwd).toBe(spaceFolder(getSpace(db, s.id)!));
   expect(existsSync(calls[0]!.cwd)).toBe(true);
   expect(chunks).toEqual(["working"]);
 
@@ -605,7 +606,7 @@ test("a general-space codex run uses a fresh scratch folder that is removed afte
   });
   start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
   await waitFor(() => status(t.id) === "review");
-  expect(seen).not.toBe(join(home.home, "spaces", s.id));
+  expect(seen).not.toBe(spaceFolder(getSpace(db, s.id)!));
   expect(existsSync(seen)).toBe(false);
   expect(codex.calls[0]!.systemPrompt).toContain("This folder is temporary");
   expect(codex.calls[0]!.systemPrompt).not.toMatch(/git|branch|commit/i);
@@ -624,7 +625,7 @@ test("files a scratch run leaves are kept with the run, and the approval says wh
   start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
   await waitFor(() => status(t.id) === "review");
   const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
-  const kept = join(home.home, "spaces", s.id, "runs", run.id);
+  const kept = join(spaceFolder(getSpace(db, s.id)!), "runs", run.id);
   expect(readFileSync(join(kept, "notes.md"), "utf8")).toBe("# notes\n");
   expect(readFileSync(join(kept, "sub", "more.txt"), "utf8")).toBe("more\n");
   expect(existsSync(join(kept, "link"))).toBe(false);
@@ -1227,7 +1228,7 @@ test("a scratch copy whose sandbox won't start keeps nothing and the approval sa
   start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
   await waitFor(() => status(t.id) === "review");
   const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
-  expect(existsSync(join(home.home, "spaces", s.id, "runs", run.id))).toBe(false);
+  expect(existsSync(join(spaceFolder(getSpace(db, s.id)!), "runs", run.id))).toBe(false);
   expect(listPending(db)[0]!.detail).toContain(
     "Atrium couldn't keep the files it left: the sandbox for copying them didn't start. They were removed with the temporary folder.",
   );

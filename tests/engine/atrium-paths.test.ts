@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atriumDenyPaths } from "../../src/engine/agents/atrium-paths";
 import { sandboxSettings } from "../../src/engine/agents/claude";
@@ -51,4 +52,44 @@ test("a free agent's seatbelt profile reads and writes its own space but not ano
   expect(run(`cat ${join(root, "spaces", "spc_other", "secret.md")}`).exitCode).not.toBe(0);
   expect(run(`cat ${join(root, "atrium.db")}`).exitCode).not.toBe(0);
   expect(run(`cat ${join(root, "transcripts", "run_1.log")}`).exitCode).not.toBe(0);
+});
+
+// Space folders live in a visible folder of their own (~/Atrium by default), outside Atrium's data folder.
+function filesHome() {
+  const files = realpathSync(mkdtempSync(join(tmpdir(), "atrium-files-")));
+  process.env.ATRIUM_FILES_HOME = files;
+  for (const d of ["weekly-planning", "investing"]) mkdirSync(join(files, d), { recursive: true });
+  writeFileSync(join(files, "weekly-planning", "grocery-list.md"), "x\n");
+  writeFileSync(join(files, "investing", "notes.md"), "private\n");
+  return files;
+}
+
+test("a run in its visible space folder is denied the other spaces there and all of Atrium's data", () => {
+  const files = filesHome();
+  try {
+    const own = join(files, "weekly-planning");
+    const denied = atriumDenyPaths(own);
+    expect(denied).toContain(join(files, "investing"));
+    expect(denied).not.toContain(own);
+    expect(denied).not.toContain(files);
+    expect(denied).toContain(join(root, "spaces"));
+    expect(denied).toContain(join(root, "atrium.db"));
+    const profile = seatbeltProfile({ cwd: own, writable: [own] });
+    const run = (script: string) => Bun.spawnSync([SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", script], { cwd: own });
+    expect(run("cat grocery-list.md").stdout.toString()).toBe("x\n");
+    expect(run(`cat ${join(files, "investing", "notes.md")}`).exitCode).not.toBe(0);
+  } finally {
+    delete process.env.ATRIUM_FILES_HOME;
+    rmSync(files, { recursive: true, force: true });
+  }
+});
+
+test("a repo or scratch run is denied the whole visible folder", () => {
+  const files = filesHome();
+  try {
+    expect(atriumDenyPaths("/tmp/some-repo")).toContain(files);
+  } finally {
+    delete process.env.ATRIUM_FILES_HOME;
+    rmSync(files, { recursive: true, force: true });
+  }
 });

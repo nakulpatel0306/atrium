@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "./events";
+import { pickFolder } from "./folders";
 import { newId } from "./ids";
 
 export const REVIEWERS = ["codex", "gemini", "claude"] as const;
@@ -18,6 +19,8 @@ export type Space = {
   reviewBy: ReviewerId | null;
   // The GitHub repo ("owner/name") a repo space comes from; its local copy is cloned when a task needs it.
   github: string | null;
+  // Where a general or markets space keeps its files; null for repo spaces, and for old spaces until boot moves them.
+  folder: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -33,6 +36,7 @@ type SpaceRow = {
   status: Space["status"];
   review_by: ReviewerId | null;
   github: string | null;
+  folder: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -55,6 +59,7 @@ const toSpace = (r: SpaceRow): Space => ({
   status: r.status,
   reviewBy: r.review_by,
   github: r.github,
+  folder: r.folder,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -72,7 +77,7 @@ export function createSpace(
   const id = newId("spc");
   const now = Date.now();
   db.query(
-    "INSERT INTO spaces (id, name, kind, goal, color, repo_path, private, github, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO spaces (id, name, kind, goal, color, repo_path, private, github, folder, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.name,
@@ -82,6 +87,7 @@ export function createSpace(
     input.repoPath ?? null,
     (input.private ?? true) ? 1 : 0,
     input.github ?? null,
+    input.kind === "repo" ? null : pickFolder(db, input.name),
     now,
     now,
   );

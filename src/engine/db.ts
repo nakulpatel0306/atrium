@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS spaces (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  github TEXT
+  github TEXT,
+  folder TEXT
 );
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
@@ -184,6 +185,8 @@ function migrate(db: Database) {
   if (!has("tasks", "parent_task_id")) db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id)");
   // Which agent reviews this space's finished work; NULL means no automatic review.
   if (!has("spaces", "review_by")) db.exec("ALTER TABLE spaces ADD COLUMN review_by TEXT");
+  // The visible folder a general or markets space keeps its files in (see folders.ts).
+  if (!has("spaces", "folder")) db.exec("ALTER TABLE spaces ADD COLUMN folder TEXT");
   // The approval a review or fix reports to, so a late one can't land on a newer approval.
   if (!has("tasks", "approval_id")) db.exec("ALTER TABLE tasks ADD COLUMN approval_id TEXT REFERENCES approvals(id)");
   // The task branch's commit when Nakul decided, so what he approved stays checkable.
@@ -231,7 +234,8 @@ const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   review_by TEXT,
-  github TEXT
+  github TEXT,
+  folder TEXT
 )`;
 
 const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (

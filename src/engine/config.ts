@@ -5,6 +5,10 @@ export function config() {
   const home = process.env.ATRIUM_HOME ?? join(homedir(), "Library", "Application Support", "Atrium");
   return {
     home,
+    // Where general and markets spaces keep their files, visible in Finder. Outside ~/Documents and ~/Desktop so
+    // iCloud never copies Investing notes off the Mac. An engine with its own ATRIUM_HOME (tests, a dev engine)
+    // keeps them inside it unless told otherwise, so it never writes into the real ~/Atrium.
+    filesHome: process.env.ATRIUM_FILES_HOME ?? (process.env.ATRIUM_HOME ? join(home, "files") : join(homedir(), "Atrium")),
     dbPath: join(home, "atrium.db"),
     transcriptsDir: join(home, "transcripts"),
     // Overridable so tests and a dev engine can run beside the installed one.
