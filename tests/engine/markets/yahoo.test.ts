@@ -121,6 +121,20 @@ test("HTTP 429 pauses Yahoo for 15 minutes and says so", async () => {
   expect(p.live()).toBe(true);
 });
 
+test("the pause is kept wherever the caller stores it", async () => {
+  let stored = 0;
+  const pause = { get: () => stored, set: (until: number) => void (stored = until) };
+  const make = (f: typeof fetch) => yahooProvider({ budget: dailyBudget(db, "yahoo", 2000, () => now), cap: 2000, fetch: f, now: () => now, pause });
+  await err(make(stubFetch(() => new Response("", { status: 429 })).fetch).quotes([XEQT]));
+  expect(stored).toBe(now + YAHOO_BACKOFF_MS);
+  const f = stubFetch(chart);
+  const again = make(f.fetch);
+  expect(again.live()).toBe(false);
+  expect(again.pausedUntil()).toBe(stored);
+  expect(await again.quotes([XEQT])).toEqual([]);
+  expect(f.calls).toHaveLength(0);
+});
+
 test("network and server errors back off too", async () => {
   const down = (async () => {
     throw new Error("fetch failed");

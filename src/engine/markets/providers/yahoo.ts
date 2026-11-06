@@ -28,14 +28,23 @@ type Meta = { currency?: unknown; regularMarketPrice?: unknown; regularMarketTim
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
-export function yahooProvider(deps: { budget: ReturnType<typeof dailyBudget>; cap: number; fetch?: typeof fetch; now?: () => number }): YahooProvider {
+// pause holds the pause's end (epoch ms); the caller can store it so a restart doesn't ask Yahoo again early.
+export function yahooProvider(deps: {
+  budget: ReturnType<typeof dailyBudget>;
+  cap: number;
+  fetch?: typeof fetch;
+  now?: () => number;
+  pause?: { get(): number; set(until: number): void };
+}): YahooProvider {
   const f = deps.fetch ?? fetch;
   const now = deps.now ?? Date.now;
-  let paused = 0;
+  let held = 0;
+  const pause = deps.pause ?? { get: () => held, set: (until: number) => void (held = until) };
 
   const fail = (kind: "rate_limited" | "unavailable", message: string): never => {
-    paused = now() + YAHOO_BACKOFF_MS;
-    throw new ProviderError(kind, message, paused);
+    const until = now() + YAHOO_BACKOFF_MS;
+    pause.set(until);
+    throw new ProviderError(kind, message, until);
   };
 
   // Null for a ticker Yahoo doesn't know or doesn't price in CAD; that one is skipped, the rest carry on.
@@ -83,17 +92,17 @@ export function yahooProvider(deps: { budget: ReturnType<typeof dailyBudget>; ca
     };
   };
 
-  const live = () => tsxOpen(now()) && now() >= paused && deps.budget.remaining() > 0;
+  const live = () => tsxOpen(now()) && now() >= pause.get() && deps.budget.remaining() > 0;
 
   return {
     id: "yahoo",
     label: "Yahoo Finance",
     covers: (i) => i.exchange in SUFFIX,
     live,
-    pausedUntil: () => paused,
+    pausedUntil: () => pause.get(),
     async quotes(list, signal) {
       // Outside TSX hours, or while paused, nothing is sent at all.
-      if (!tsxOpen(now()) || now() < paused) return [];
+      if (!tsxOpen(now()) || now() < pause.get()) return [];
       const out: Quote[] = [];
       for (const i of list) {
         const q = await quote(i, signal);

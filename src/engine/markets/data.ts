@@ -66,6 +66,8 @@ export const MISSING = {
 
 const FRESHNESS: Record<ProviderId, Freshness> = { alpaca: "live", finnhub: "live", alphavantage: "eod", tiingo: "eod", yahoo: "live", demo: "demo" };
 
+const YAHOO_PAUSE_KEY = "markets.yahoo.pausedUntil";
+
 const isCanadian = (i: Instrument) => i.exchange === "TSX" || i.exchange === "TSXV";
 const CA_SOURCES = new Set<ProviderId>(["yahoo", "alphavantage"]);
 
@@ -97,11 +99,22 @@ export function createMarketData(deps: {
   let rejected: Partial<Record<ProviderId, { message: string; date: string }>> = {};
   let lastRead = 0;
   let readFailed = false;
-  // Keyless, so it lives outside `built` and keeps its pause across key reloads. Substituted providers replace it
-  // too: a caller passing its own fakes reaches nothing else.
+  // Keyless, so it lives outside `built`. Its pause is kept in settings (written directly, no `changed`) so a restart
+  // doesn't ask Yahoo again early. Substituted providers replace it too: a caller passing fakes reaches nothing else.
+  const yahooPause = {
+    get: () => Number(getSetting(db, YAHOO_PAUSE_KEY) ?? 0),
+    set: (until: number) =>
+      db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(YAHOO_PAUSE_KEY, String(until)),
+  };
   const yahoo: YahooProvider | null = deps.providers
     ? ((deps.providers.yahoo as YahooProvider | undefined) ?? null)
-    : yahooProvider({ budget: dailyBudget(db, "yahoo", YAHOO_DAILY_CAP, now), cap: YAHOO_DAILY_CAP, fetch: meteredFetch(db, "yahoo", deps.fetch ?? fetch, now), now });
+    : yahooProvider({
+        budget: dailyBudget(db, "yahoo", YAHOO_DAILY_CAP, now),
+        cap: YAHOO_DAILY_CAP,
+        fetch: meteredFetch(db, "yahoo", deps.fetch ?? fetch, now),
+        now,
+        pause: yahooPause,
+      });
 
   const read = async (account: string) => {
     try {

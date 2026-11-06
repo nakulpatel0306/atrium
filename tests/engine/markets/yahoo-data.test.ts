@@ -147,6 +147,28 @@ test("when Yahoo fails, the portfolio keeps the last close and the data page say
   expect(yahooCalls(f)).toHaveLength(1);
 });
 
+test("the 15-minute pause survives an engine restart", async () => {
+  saveQuotes(db, [avClose("XEQT.TO", Date.parse("2026-11-05T21:00:00Z"))]);
+  const first = world(() => new Response("Too Many Requests", { status: 429 }));
+  await make(first).quotes([XEQT]);
+  const pausedUntil = now + 15 * 60_000;
+
+  // A fresh MarketData over the same database is what a restart gets.
+  now += 5 * 60_000;
+  const second = world();
+  const restarted = make(second);
+  await restarted.reload();
+  expect(restarted.providerFor(XEQT)?.id).toBe("alphavantage");
+  expect((await restarted.status()).ca.message).toStartWith("Yahoo Finance paused until 12:34 PM ET after an error");
+  await restarted.quotes([XEQT]);
+  expect(yahooCalls(second)).toHaveLength(0);
+
+  now = pausedUntil;
+  expect(restarted.providerFor(XEQT)?.id).toBe("yahoo");
+  await restarted.quotes([XEQT]);
+  expect(yahooCalls(second)).toHaveLength(1);
+});
+
 test("a changed reply shows a plain error on the data page", async () => {
   const data = make(world(() => jsonResponse({ chart: { result: [{ meta: { price: 44.46 } }], error: null } })));
   await data.quotes([XEQT]);
