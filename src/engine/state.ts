@@ -12,6 +12,7 @@ import { config } from "./config";
 import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
 import { type Candidate, type HandleSource, pendingMessageActions, type Service } from "./messaging/store";
+import { type MessagingState, messagingState } from "./capabilities";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
 
@@ -66,6 +67,9 @@ export type State = {
   repoActions: RepoActionView[];
   // Pending texts, for the send cards in Needs you.
   messageActions: MessageActionView[];
+  // Whether sending has worked, is blocked, or hasn't been tried; and whether a Contacts lookup has worked (null
+  // until the first one).
+  messaging: { state: MessagingState; contactsReady: boolean | null };
 };
 
 export type MessageActionView = {
@@ -83,6 +87,11 @@ export type MessageActionView = {
   // Whether a Contacts lookup has worked before, so the card knows macOS won't ask again.
   contactsReady: boolean;
 };
+
+function contactsReadyOf(db: Database): boolean | null {
+  const v = getSetting(db, "messaging.contactsReady");
+  return v === null ? null : v === "true";
+}
 
 function messageActionViews(db: Database): MessageActionView[] {
   const contactsReady = getSetting(db, "messaging.contactsReady") === "true";
@@ -193,5 +202,6 @@ export function snapshot(db: Database, registry?: Registry): State {
     disk: atriumDiskUsage(),
     repoActions: repoActionViews(db),
     messageActions: messageActionViews(db),
+    messaging: { state: messagingState(db), contactsReady: contactsReadyOf(db) },
   };
 }

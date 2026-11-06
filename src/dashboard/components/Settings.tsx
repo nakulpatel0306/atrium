@@ -6,6 +6,7 @@ import { absolute, money } from "../format";
 import { useMarketDataSettings } from "../markets";
 import { DataBudget } from "./DataBudget";
 import { Freshness } from "./markets/Freshness";
+import { MessagingSettings } from "./MessagingSettings";
 import { Storage } from "./Storage";
 
 const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }[] = [
@@ -222,6 +223,7 @@ export function Settings() {
           )}
         </>
       )}
+      <MessagingSettings />
       <Storage />
     </div>
   );

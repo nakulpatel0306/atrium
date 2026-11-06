@@ -12,6 +12,9 @@ import { FilesTab } from "./FilesTab";
 import { Markdown } from "./Markdown";
 import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
+import { OutcomeBanner } from "./OutcomeBanner";
+import { SentMessages } from "./SentMessages";
+import { outcomeLabel } from "../../engine/outcome";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
@@ -243,6 +246,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
   const parent = task.parentTaskId ? state.tasks.find((t) => t.id === task.parentTaskId) : undefined;
   const agent = agentText(task, state.runs);
   const space = state.spaces.find((s) => s.id === task.spaceId);
+  // A finished task the agent said it couldn't or only partly do is labelled that way, never plain done.
+  const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
 
   const act = async (fn: () => ReturnType<typeof post>) => {
     setBusy(true);
@@ -258,7 +263,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
   return (
     <div className="entry" id={`task-${task.id}`}>
       <div className={`item task${task.status === "done" ? " done" : ""}`} onClick={onToggle} aria-expanded={open}>
-        <StatusIcon status={task.status} />
+        <StatusIcon status={task.status} outcome={task.outcome} />
         <KindBadge kind={task.kind} />
         <span className="t" title={shownTitle(task)}>
           {shownTitle(task)}
@@ -268,8 +273,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
             waiting
           </span>
         ) : (
-          <span className={`tag${stuck ? " bad" : ""}`} title={task.blockedReason ?? undefined}>
-            {STATUS_TEXT[task.status]}
+          <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
+            {notDone ?? STATUS_TEXT[task.status]}
             {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
           </span>
         )}
@@ -309,6 +314,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
             </p>
           )}
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
+          {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">
@@ -498,6 +504,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
             )}
           </div>
           )}
+          {tab === "tasks" && <SentMessages spaceId={space.id} />}
           <Activity state={state} spaceId={space.id} />
         </div>
         <div className="live">

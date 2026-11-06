@@ -8,6 +8,8 @@ import { AgentPicker } from "./AgentPicker";
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
 type Draft = State["repoActions"][number];
+type Text = State["messageActions"][number];
+type SetupReply = { space: Space; tasks: Task[]; messaging?: true } | { draft: Draft } | { message: Text };
 
 type Props = {
   space: Space | null;
@@ -63,7 +65,7 @@ export function CommandBar({ space, setupRequest }: Props) {
     if (!value || busy) return;
     if (setup) {
       setMessage({ kind: "busy", text: "Setting up your space. This usually takes under a minute." });
-      const res = await post<{ space: Space; tasks: Task[] } | { draft: Draft }>("/api/command", { text: value });
+      const res = await post<SetupReply>("/api/command", { text: value });
       if (!res.ok) return setMessage({ kind: "error", text: res.error });
       setText("");
       // A new project is only a draft until Nakul approves it in Needs you, which lives on Home.
@@ -71,6 +73,20 @@ export function CommandBar({ space, setupRequest }: Props) {
         setMessage({ kind: "info", text: `Drafted "${res.data.draft.draft?.name}". Check it in Needs you and approve to create the repo.` });
         keepMessage.current = space !== null;
         navigate("/");
+        return;
+      }
+      // A text with its words is a card in Needs you right away; one without waits for an agent to draft it.
+      if ("message" in res.data) {
+        setMessage({ kind: "info", text: `Drafted a text to ${res.data.message.toName}. It's waiting in Needs you.` });
+        keepMessage.current = space !== null;
+        navigate("/");
+        return;
+      }
+      if (res.data.messaging) {
+        const to = res.data.tasks[0]?.title.replace(/^Draft a text to /, "") ?? "them";
+        setMessage({ kind: "info", text: `Atrium is drafting a text to ${to}. It'll be in Needs you to send.` });
+        keepMessage.current = true;
+        navigate(`/space/${res.data.space.id}`);
         return;
       }
       setMessage(null);
