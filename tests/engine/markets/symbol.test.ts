@@ -97,15 +97,15 @@ test("an untracked symbol works", async () => {
   expect(before).toMatchObject({ key: "NVDA", price: null, position: null, tv: "NVDA", refreshedAt: null });
   expect(before.lists.map((l) => l.has)).toEqual([false, false]);
   expect(await refreshSymbol(db, data, "NVDA", NOW)).toEqual({ refreshed: true, note: null });
-  expect(calls).toEqual(["quotes NVDA", "profile NVDA", "metric NVDA", "news NVDA", "earnings NVDA"]);
+  // TradingView's widgets show fundamentals and news, so the refresh asks Finnhub only for what Atrium computes with.
+  expect(calls).toEqual(["quotes NVDA", "profile NVDA", "earnings NVDA"]);
   const after = symbolView(db, data, fx.spaceId, "NVDA", NOW);
   expect(after.price!.value).toBe(190);
   expect(after.tv).toBe("NASDAQ:NVDA");
   expect(after.name).toBe("NVIDIA Corp");
-  expect(after.stats.map((s) => s.label)).toEqual(["Market cap", "P/E", "52-week range", "Dividend yield"]);
-  expect(after.stats[0]!.value).toBe("US$4.62T");
+  expect(after.stats).toEqual([]);
   expect(after.earnings?.date).toBe("2026-11-19");
-  expect(after.news).toHaveLength(1);
+  expect(after.news).toEqual([]);
   expect(after.refreshedAt).toBe(NOW);
 });
 
@@ -127,10 +127,10 @@ test("a TSX key makes no network call and says when prices update", async () => 
   expect(symbolView(db, data, fx.spaceId, "XEQT.TO", NOW).tv).toBe("TSX:XEQT");
 });
 
-test("CBOE:MARS view has chart.ok false with the coverage sentence", () => {
+test("CBOE:MARS gets TradingView's chart (it renders in the free widget)", () => {
   const v = symbolView(db, rig().data, fx.spaceId, "MARS", NOW);
   expect(v.tv).toBe("CBOE:MARS");
-  expect(v.chart).toEqual({ ok: false, reason: "TradingView's free chart doesn't cover Cboe BZX listings, so this is Atrium's chart from Tiingo daily closes." });
+  expect(v.chart).toEqual({ ok: true });
 });
 
 test("a provider failure becomes one plain note and no throw", async () => {

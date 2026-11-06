@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { anyAdvanced } from "./advanced";
+import { anyAdvanced, bigNewsArmed } from "./advanced";
 import { evaluateEvents } from "./alerts";
 import { AV_RESERVE, dailyBudget, noteSourceResult, planAlphaVantage } from "./budget";
 import { etDate } from "./calendar";
@@ -110,7 +110,8 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
       }
 
       try {
-        await fetchNews(db, deps.data, now);
+        // Stored news feeds Advanced tools and big-news alerts; a daily note or an ask fetches its own when it runs.
+        if (anyAdvanced(db) || bigNewsArmed(db)) await fetchNews(db, deps.data, now);
       } catch (e) {
         console.error(`End-of-day news: ${errorText(e, secrets)}`);
       }

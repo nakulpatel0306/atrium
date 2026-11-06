@@ -16,8 +16,11 @@ export function embedOrigin(loc: { hostname: string }, port: number): string {
   return loc.hostname === "localhost" ? `http://127.0.0.1:${port}` : `http://localhost:${port}`;
 }
 
-export function embedUrl(tv: string, embed: NonNullable<EmbedInfo>, loc: { hostname: string; port: string } = location): string {
+export type TvWidget = "chart" | "mini" | "info" | "profile" | "financials" | "timeline";
+
+export function embedUrl(tv: string, embed: NonNullable<EmbedInfo>, loc: { hostname: string; port: string } = location, w: TvWidget = "chart"): string {
   const q = new URLSearchParams({ symbol: tv, parent: `http://${loc.hostname}:${loc.port}` });
+  if (w !== "chart") q.set("w", w);
   return `${embedOrigin(loc, embed.port)}/embed/${encodeURIComponent(embed.token)}/tradingview?${q}`;
 }
 

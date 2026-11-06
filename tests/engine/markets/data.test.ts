@@ -245,10 +245,15 @@ test("US daily history comes from Tiingo", async () => {
   db.query("DELETE FROM settings WHERE key LIKE 'markets.bars.%'").run();
   const without = createMarketData({ db, keychain: fakeKeychain({ "finnhub.token": "FHTEST12345" }), fetch: s.fetch, now: () => now });
   const none = await without.bars({ symbol: "AAPL", exchange: "US" }, "1Y");
+  // Without Tiingo (optional now), the chart draws Atrium's own daily closes, which build up over time.
   expect(none.bars).toEqual([]);
   expect(none.source).toBeNull();
-  expect(none.note).toBe("Add a free Tiingo key for daily history (Settings → Market data).");
-  expect((await without.status()).history.ready).toBe(false);
+  expect(none.note).toBe("Atrium's own daily closes from Finnhub prices. History builds up over time.");
+  expect(await without.status()).toMatchObject({ history: { ready: true, message: "Atrium's own daily closes · builds up over time" } });
+  const { recordCloses } = await import("../../../src/engine/markets/closes");
+  recordCloses(db, "AAPL", [{ date: "2026-11-03", close: 200, adjClose: null, source: "finnhub" }, { date: "2026-11-04", close: 202, adjClose: null, source: "finnhub" }]);
+  const own = await without.bars({ symbol: "AAPL", exchange: "US" }, "1Y");
+  expect(own.bars.map((b) => [b.o, b.h, b.l, b.c])).toEqual([[200, 200, 200, 200], [202, 202, 202, 202]]);
 });
 
 test("with no provider setting, US prices come from Finnhub", async () => {

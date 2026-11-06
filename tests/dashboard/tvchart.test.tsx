@@ -58,10 +58,10 @@ test("renders the frame with the sandbox, the labels and the privacy line once",
 });
 
 test("coverage not ok renders the fallback", () => {
-  const reason = "TradingView's free chart doesn't cover Cboe BZX listings, so this is Atrium's chart from Tiingo daily closes.";
-  const out = renderToStaticMarkup(<TvChart tv="CBOE:MARS" coverage={{ ok: false, reason }} fallback={<div>fallback chart</div>} frameUrl={() => "http://localhost:7571/fake"} />);
+  const reason = "TradingView's free chart doesn't cover OTC Markets listings, so this is Atrium's chart from its own daily closes.";
+  const out = renderToStaticMarkup(<TvChart tv="OTC:GBTC" coverage={{ ok: false, reason }} fallback={<div>fallback chart</div>} frameUrl={() => "http://localhost:7571/fake"} />);
   expect(out).not.toContain("<iframe");
-  expect(out).toContain("TradingView&#x27;s free chart doesn&#x27;t cover Cboe BZX listings");
+  expect(out).toContain("TradingView&#x27;s free chart doesn&#x27;t cover OTC Markets listings");
   expect(out).toContain("fallback chart");
   expect(out).not.toContain(PRIVACY);
 });

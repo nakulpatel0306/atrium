@@ -6,7 +6,7 @@ import { cachedBars } from "./cache";
 import { etDate, etInstant } from "./calendar";
 import { currentQuote, type MarketData } from "./data";
 import { estimateFor, ESTIMATED } from "./estimate";
-import { recentNews, saveEarnings, saveNews, upcomingEarnings, type Earnings } from "./events";
+import { recentNews, saveEarnings, upcomingEarnings, type Earnings } from "./events";
 import { isFund } from "./funds/sources";
 import { listHoldings } from "./holdings";
 import { instrumentKey, parseInstrumentKey, type Exchange } from "./instrument";
@@ -132,9 +132,9 @@ function failureNote(e: unknown, secrets: string[]): string {
   return redact(e instanceof Error ? e.message : String(e), secrets);
 }
 
-// One refresh when the page opens, at most every ten minutes per key: a quote, then profile, metrics, a week of news
-// and the next month of earnings (the last two for stocks only). At most five Finnhub calls; provider errors become
-// one plain note, never a throw.
+// One refresh when the page opens, at most every ten minutes per key: a quote, the profile (its listing picks the
+// TradingView symbol) and, for stocks, the next month of earnings. TradingView's widgets show fundamentals and news,
+// so those aren't fetched. At most three Finnhub calls; provider errors become one plain note, never a throw.
 export async function refreshSymbol(db: Database, data: MarketData, key: string, now: number): Promise<{ refreshed: boolean; note: string | null }> {
   const i = parseInstrumentKey(key);
   if (!i) return { refreshed: false, note: null };
@@ -166,13 +166,6 @@ export async function refreshSymbol(db: Database, data: MarketData, key: string,
         db.query("UPDATE instrument_meta SET name = COALESCE(?, name), listing = COALESCE(?, listing), profile_at = ? WHERE key = ?").run(pr?.name ?? null, pr?.exchange ?? null, now, k);
       });
     }
-    if (p.metric) {
-      await attempt(async () => {
-        const mt = await p.metric!(i);
-        db.query("UPDATE instrument_meta SET pe = ?, high52 = ?, low52 = ?, div_yield = ?, market_cap = ?, metrics_at = ? WHERE key = ?").run(mt.pe, mt.high52, mt.low52, mt.divYield, mt.marketCap, now, k);
-      });
-    }
-    if (stock && p.news) await attempt(async () => saveNews(db, await p.news!([i], now - 7 * DAY_MS), now));
     if (stock && p.earnings) {
       const from = etDate(now);
       const to = etDate(now + 30 * DAY_MS);

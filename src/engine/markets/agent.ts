@@ -17,7 +17,7 @@ import { paperState, placePaperOrder } from "./paper";
 import type { Quote } from "./providers/types";
 import { redact } from "./redact";
 import { describeLimits, getStrategy, markStrategyRun, proposeStrategy, type StrategyInput } from "./strategies";
-import { recentNews, upcomingEarnings } from "./events";
+import { recentNews, saveNews, upcomingEarnings } from "./events";
 import { getMeta } from "./meta";
 import { healthFor } from "./portfolio";
 import { getNotes, latestWriteups, saveWriteup } from "./research";
@@ -206,6 +206,8 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     if (ind.length) out.push("Indicators:", ...ind);
     try {
       const news = (await data.news([...instruments.values()], at - 86_400_000)).slice(0, NEWS_MAX);
+      // Kept, so the investing context below (and the Symbol page's asks) read the same headlines.
+      if (agent === "claude") saveNews(db, news, at);
       if (news.length) out.push("News (last 24 hours):", ...news.map((n) => `- ${n.key}: ${n.headline} (${n.source}, ${etClock(n.at)})`));
     } catch (e) {
       out.push(`News unavailable: ${reason(e)}`);

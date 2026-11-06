@@ -131,7 +131,7 @@ test("search, symbol and refresh routes", async () => {
   expect(refreshed).toEqual({ refreshed: true, note: null });
   const after = await (await get(`/api/investing/${spaceId}/symbol/NVDA`)).json();
   expect(after.price.source).toBe("Demo data");
-  expect(after.stats.length).toBeGreaterThan(0);
+  expect(after.tv).toBe("NASDAQ:NVDA");
   expect(await error(await get(`/api/investing/${spaceId}/symbol/${encodeURIComponent("not a key!")}`))).toEqual([400, "Type a symbol like AAPL or SHOP.TO."]);
 });
 

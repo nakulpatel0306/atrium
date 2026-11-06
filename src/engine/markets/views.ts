@@ -55,6 +55,8 @@ export type PortfolioView = {
   holdings: (PriceRow & { quantity: number; valueCad: number | null; gainCad: number | null; gainCadPct: number | null })[];
   note: Writeup | null;
   empty: boolean;
+  // Which holdings the total leaves out, and what would bring them in.
+  left: string | null;
 };
 
 function priceRow(db: Database, data: MarketData, i: Instrument, name: string, now: number): PriceRow {
@@ -124,7 +126,20 @@ export function portfolioView(db: Database, data: MarketData, spaceId: string, n
     holdings,
     note: currentNote(db, spaceId, now),
     empty: positions.length === 0,
+    left: leftOut(holdings),
   };
+}
+
+const CANADIAN = /Alpha Vantage/;
+function leftOut(rows: PriceRow[]): string | null {
+  const unpriced = rows.filter((r) => !r.price);
+  if (!unpriced.length) return null;
+  const ca = unpriced.filter((r) => r.missing && CANADIAN.test(r.missing)).length;
+  const other = unpriced.length - ca;
+  const parts: string[] = [];
+  if (ca) parts.push(ca === 1 ? "1 Canadian holding isn't in the total. Add a free Alpha Vantage key in Settings → Market data to include it." : `${ca} Canadian holdings aren't in the total. Add a free Alpha Vantage key in Settings → Market data to include them.`);
+  if (other) parts.push(other === 1 ? "1 holding has no price yet and isn't in the total." : `${other} holdings have no price yet and aren't in the total.`);
+  return parts.join(" ");
 }
 
 export type ListsView = { lists: (WatchList & { rows: PriceRow[] })[] };

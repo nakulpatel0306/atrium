@@ -223,3 +223,14 @@ test("the digest asks for 4 sentences while Advanced is off", async () => {
   setAdvanced(db, space.id, true);
   expect(await hooks().context(task, space, "claude")).toContain("Write a short digest for Nakul: what moved in his portfolio today and why");
 });
+
+test("news fetched for a Claude task is kept for the daily note and asks", async () => {
+  const { recentNews } = await import("../../../src/engine/markets/events");
+  addToWatchlist(db, space.id, { symbol: "AAPL", exchange: "US" });
+  const data = createMarketData({ db, keychain, now: () => NOW, providers: { demo: demoProvider({ now: () => NOW }) } });
+  data.news = async () => [{ key: "AAPL", headline: "Apple ships a thing", source: "Reuters", url: "https://example.com/a", at: NOW - 60_000 }];
+  const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", purpose: "digest" });
+  const text = await createMarketsHooks(db, { data, now: () => NOW }).context(task, space, "claude");
+  expect(text).toContain("Apple ships a thing");
+  expect(recentNews(db, ["AAPL"], 0, 5).map((n) => n.headline)).toEqual(["Apple ships a thing"]);
+});

@@ -5,7 +5,20 @@ import { isTvSymbol, tvSymbolUrl } from "../engine/markets/tradingview";
 // cross-origin: it can't read the dashboard's DOM (holdings) or call the engine, and the dashboard document itself
 // loads nothing external. The query carries only the symbol and the parent origin. A CSP sandbox (opaque origin)
 // was tried and stops the widget rendering, which is why the isolation is by origin instead.
-export const TV_SCRIPT = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+const EMBEDDING = "https://s3.tradingview.com/external-embedding";
+// TradingView's free widgets in their iframe format, one script each. Every one injects its own frame from
+// TV_FRAME_HOSTS and keeps TradingView's attribution under it.
+export const TV_SCRIPTS = {
+  chart: `${EMBEDDING}/embed-widget-advanced-chart.js`,
+  mini: `${EMBEDDING}/embed-widget-mini-symbol-overview.js`,
+  info: `${EMBEDDING}/embed-widget-symbol-info.js`,
+  profile: `${EMBEDDING}/embed-widget-symbol-profile.js`,
+  financials: `${EMBEDDING}/embed-widget-financials.js`,
+  timeline: `${EMBEDDING}/embed-widget-timeline.js`,
+} as const;
+export type TvWidget = keyof typeof TV_SCRIPTS;
+export const TV_SCRIPT = TV_SCRIPTS.chart;
+const ATTRIBUTION: Record<TvWidget, string> = { chart: "chart", mini: "price", info: "price", profile: "profile", financials: "fundamentals", timeline: "news" };
 export const TV_FRAME_HOSTS = ["https://www.tradingview-widget.com", "https://s.tradingview.com"];
 
 const REFUSED = "That chart link isn't valid. Open the symbol from Atrium again.";
@@ -33,6 +46,26 @@ export function tvConfig(symbol: string): Record<string, unknown> {
   };
 }
 
+const common = { colorTheme: "dark", isTransparent: true, locale: "en" };
+
+export function widgetConfig(w: TvWidget, symbol: string): Record<string, unknown> {
+  switch (w) {
+    case "chart":
+      return tvConfig(symbol);
+    case "mini":
+      // Transparent mini charts paint a white backdrop inside TradingView's own frame, so this one is opaque.
+      return { ...common, isTransparent: false, symbol, width: "100%", height: "100%", autosize: true, dateRange: "1M", chartOnly: true, noTimeScale: true, largeChartUrl: "" };
+    case "info":
+      return { ...common, symbol, width: "100%" };
+    case "profile":
+      return { ...common, symbol, width: "100%", height: "100%" };
+    case "financials":
+      return { ...common, symbol, width: "100%", height: "100%", displayMode: "regular", largeChartUrl: "" };
+    case "timeline":
+      return { ...common, symbol, feedMode: "symbol", width: "100%", height: "100%", displayMode: "regular" };
+  }
+}
+
 const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // Tells the dashboard whether the widget's frame loaded, so it can show the offline card instead of a blank box.
@@ -51,7 +84,7 @@ const statusScript = (parent: string) => `
     "error",
     (e) => {
       const t = e.target;
-      if (t && t.tagName === "SCRIPT" && t.src === ${JSON.stringify(TV_SCRIPT)}) post("failed");
+      if (t && t.tagName === "SCRIPT" && t.src.startsWith(${JSON.stringify(EMBEDDING)})) post("failed");
     },
     true,
   );
@@ -64,10 +97,11 @@ function refuse(): Response {
 export function embedResponse(req: Request, url: URL, port: number): Response {
   const symbol = url.searchParams.get("symbol") ?? "";
   const parent = url.searchParams.get("parent") ?? "";
+  const w = (url.searchParams.get("w") ?? "chart") as TvWidget;
   const self = `http://${req.headers.get("host") ?? ""}`;
   const loopback = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
   // A same-origin embed would put TradingView's code next to the dashboard; it must be the other loopback name.
-  if (!isTvSymbol(symbol) || !loopback.includes(parent) || parent === self) return refuse();
+  if (!isTvSymbol(symbol) || !loopback.includes(parent) || parent === self || !Object.hasOwn(TV_SCRIPTS, w)) return refuse();
 
   const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64");
   const sym = symbol.includes(":") ? symbol.split(":")[1]! : symbol;
@@ -83,27 +117,30 @@ export function embedResponse(req: Request, url: URL, port: number): Response {
     "form-action 'none'",
     `frame-ancestors ${parent}`,
   ].join("; ");
-  const config = JSON.stringify(tvConfig(symbol)).replace(/</g, "\\u003c");
+  const config = JSON.stringify(widgetConfig(w, symbol)).replace(/</g, "\\u003c");
+  const label = `${sym} ${ATTRIBUTION[w]}`;
+  // The chart paints its own background; the smaller widgets sit on whatever row or card frames them.
+  const background = w === "chart" ? "#0d0d0f" : "transparent";
   const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>${escapeHtml(sym)} chart</title>
+<title>${escapeHtml(label)}</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0d0d0f; }
+  html, body { margin: 0; height: 100%; background: ${background}; color-scheme: dark; }
   .tradingview-widget-container { height: 100%; display: flex; flex-direction: column; }
   .tradingview-widget-container__widget { flex: 1; min-height: 0; }
   .tradingview-widget-copyright { font: 13px/20px -apple-system, system-ui, sans-serif; color: #8a8a94; padding: 4px 8px; }
   .tradingview-widget-copyright a { color: #8a8a94; text-decoration: none; }
-  .tradingview-widget-copyright .blue-text { color: #8fa8ff; }
+  .tradingview-widget-copyright .blue-text { color: #8fa8ff; }${w === "mini" ? "\n  .tradingview-widget-copyright { padding: 0 2px; line-height: 15px; white-space: nowrap; }" : ""}
 </style>
 </head>
 <body>
 <div class="tradingview-widget-container">
   <div class="tradingview-widget-container__widget"></div>
-  <div class="tradingview-widget-copyright"><a href="${escapeHtml(tvSymbolUrl(symbol))}" rel="noopener nofollow" target="_blank"><span class="blue-text">${escapeHtml(sym)} chart</span></a> by TradingView</div>
+  <div class="tradingview-widget-copyright"><a href="${escapeHtml(tvSymbolUrl(symbol))}" rel="noopener nofollow" target="_blank"><span class="blue-text">${escapeHtml(label)}</span></a> by TradingView</div>
   <script nonce="${nonce}">${statusScript(parent)}</script>
-  <script src="${TV_SCRIPT}" async>${config}</script>
+  <script src="${TV_SCRIPTS[w]}" async>${config}</script>
 </div>
 </body>
 </html>

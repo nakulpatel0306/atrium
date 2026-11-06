@@ -9,24 +9,32 @@ import { Freshness } from "./markets/Freshness";
 import { Storage } from "./Storage";
 
 const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }[] = [
-  { id: "finnhub", label: "Finnhub", covers: "US stocks and ETFs. Real-time quotes, symbol search, earnings dates and company news. Daily history comes from Tiingo." },
+  { id: "finnhub", label: "Finnhub", covers: "US stocks and ETFs. Real-time quotes, symbol search, earnings dates and the news Claude reads. Atrium keeps its own daily closes from these prices." },
   { id: "demo", label: "Demo", covers: "Made-up prices for every market, to try Atrium out. Every price is labelled Demo data." },
 ];
 
 type KeyProvider = "finnhub" | "alphavantage" | "tiingo";
-const KEY_FORMS: { id: KeyProvider; label: string; fields: { name: string; label: string }[]; help: string }[] = [
-  { id: "finnhub", label: "Finnhub", fields: [{ name: "token", label: "Token" }], help: "Sign up at finnhub.io and copy the API token from your dashboard." },
+const KEY_FORMS: { id: KeyProvider; label: string; need: string; fields: { name: string; label: string }[]; help: string }[] = [
+  {
+    id: "finnhub",
+    label: "Finnhub",
+    need: "Required",
+    fields: [{ name: "token", label: "Token" }],
+    help: "The one key Atrium needs: live US prices, search, earnings dates and news. Sign up free at finnhub.io and copy the API token from your dashboard.",
+  },
   {
     id: "alphavantage",
     label: "Alpha Vantage",
+    need: "Optional · Canadian prices",
     fields: [{ name: "key", label: "Key" }],
-    help: "Canadian prices (TSX and TSX-V), end of day only. The free key allows 25 requests a day, so Canadian prices refresh once after the close.",
+    help: "Adds your TSX and TSX-V holdings to the portfolio total, at end-of-day prices. Without it they still show TradingView's chart. The free key allows 25 requests a day, so Canadian prices refresh once after the close.",
   },
   {
     id: "tiingo",
     label: "Tiingo",
+    need: "Not needed",
     fields: [{ name: "token", label: "Token" }],
-    help: "Daily history and dividends for US stocks and ETFs (charts, performance, income). Sign up free at tiingo.com; Atrium stays under the free 1,000 requests a day.",
+    help: "Atrium keeps its own daily closes from Finnhub prices, so this isn't needed. A free Tiingo key adds years of adjusted history and dividends for the Advanced tools.",
   },
 ];
 
@@ -51,6 +59,7 @@ function KeyForm({ form, saved }: { form: (typeof KEY_FORMS)[number]; saved: boo
       <div className="set-title">
         <KeyRound />
         <b>{form.label}</b>
+        <span className="tag">{form.need}</span>
         <span className={`tag${saved ? " ok" : ""}`}>{saved ? "Saved in your Mac's Keychain" : "Not set"}</span>
       </div>
       <p className="hint">{form.help}</p>

@@ -37,6 +37,7 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
         <span className="inv-source" title={view.fx ? fxLabel(view.fx) : undefined}>
           <SourceTag s={view.total ? { ...view.total, source: view.mix ?? view.total.source } : null} missing="No prices yet" />
         </span>
+        {view.left && <span className="inv-left">{view.left}</span>}
       </header>
       {view.note && (
         <article className="inv-note">
@@ -48,7 +49,7 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
       <div className="inv-list">
         <div className="inv-list-head" aria-hidden>
           <span>Holding</span>
-          <span>30 days</span>
+          <span>1 month</span>
           <span>Price · today</span>
           <span>Gain</span>
         </div>

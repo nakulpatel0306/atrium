@@ -82,7 +82,7 @@ test("Portfolio: the daily note renders markdown with the advice tag", () => {
 });
 
 test("Portfolio: the empty state points to the import", () => {
-  const view = { total: null, dayCad: null, dayPct: null, dayLabel: null, mix: null, fx: null, holdings: [], note: null, empty: true };
+  const view = { total: null, dayCad: null, dayPct: null, dayLabel: null, mix: null, fx: null, holdings: [], note: null, empty: true, left: null };
   const html = renderToStaticMarkup(<Portfolio spaceId="spc_x" view={view} />);
   expect(html).toContain("No holdings yet. Import your Wealthsimple holdings file to see your portfolio.");
   expect(html).toContain("Import holdings");
@@ -174,4 +174,13 @@ test("nextSearch only sends trimmed, changed queries", () => {
   expect(nextSearch(null, " shop ")).toBe("shop");
   expect(nextSearch("shop", "shop ")).toBeNull();
   expect(nextSearch("shop", "shopi")).toBe("shopi");
+});
+
+test("Portfolio says which holdings the total leaves out, and a Canadian row says how to include it", () => {
+  const view = portfolioView(db, viewData(), fx.spaceId, NOW);
+  const row = { ...view.holdings.find((h) => h.key === "XEQT.TO")!, price: null, dayPct: null, missing: "Canadian prices need a free Alpha Vantage key (Settings → Market data)." };
+  const left = "1 Canadian holding isn't in the total. Add a free Alpha Vantage key in Settings → Market data to include it.";
+  const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={{ ...view, holdings: [row], left }} />);
+  expect(html).toContain("1 Canadian holding isn&#x27;t in the total. Add a free Alpha Vantage key in Settings → Market data to include it.");
+  expect(html).toContain("Add Alpha Vantage to include in totals");
 });

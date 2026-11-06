@@ -3,8 +3,10 @@ import { currencyOfKey } from "../../../engine/markets/labels";
 import type { PriceRow as Row } from "../../../engine/markets/views";
 import { priceText, signedPct, toneOf } from "../../simple";
 import { Sparkline } from "./Sparkline";
+import { TvWidget } from "./TvWidget";
 
-// One instrument row, shared by Portfolio and Watchlists: symbol and name, the 30-day line, price and today.
+// One instrument row, shared by Portfolio and Watchlists: symbol and name, TradingView's month chart (Atrium's own
+// line from its closes when that can't show), price and today.
 export function PriceRow({ row, onOpen, extra, actions }: { row: Row; onOpen: () => void; extra?: ReactNode; actions?: ReactNode }) {
   const first = row.spark[0];
   const last = row.spark.at(-1);
@@ -16,7 +18,9 @@ export function PriceRow({ row, onOpen, extra, actions }: { row: Row; onOpen: ()
           <b>{row.key}</b>
           <span title={row.name}>{row.name || " "}</span>
         </span>
-        <Sparkline values={row.spark} up={trend} />
+        <span className="inv-mini" onClick={(e) => e.stopPropagation()}>
+          <TvWidget tv={row.tv} kind="mini" className="tvw-mini" title={`${row.key} price by TradingView`} fallback={<Sparkline values={row.spark} up={trend} />} />
+        </span>
         <span className="inv-price">
           {row.price ? (
             <>
@@ -25,7 +29,7 @@ export function PriceRow({ row, onOpen, extra, actions }: { row: Row; onOpen: ()
             </>
           ) : (
             <span className="inv-missing" title={row.missing ?? undefined}>
-              No price yet
+              {row.missing && /Alpha Vantage/.test(row.missing) ? "Add Alpha Vantage to include in totals" : "No price yet"}
             </span>
           )}
         </span>

@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { openDb } from "../../src/engine/db";
 import { addHolding } from "../../src/engine/markets/holdings";
 import { createSpace } from "../../src/engine/spaces";
-import { embedResponse, TV_FRAME_HOSTS, TV_SCRIPT, tvConfig } from "../../src/server/embed";
+import { embedResponse, TV_FRAME_HOSTS, TV_SCRIPT, TV_SCRIPTS, tvConfig, widgetConfig } from "../../src/server/embed";
 import { startServer } from "../../src/server/server";
 import { tempHome } from "../helpers";
 
@@ -152,4 +152,27 @@ test("nothing in the embed's context can reach the API or the socket", async () 
   // The dashboard and plain reads still work.
   expect((await fetch(`${base}/api/state`)).status).toBe(200);
   expect((await fetch(`${base}/api/state`, { headers: { origin: base, referer: `${base}/space/x` } })).status).toBe(200);
+});
+
+test("each TradingView widget kind gets its own script, config and attribution", async () => {
+  const cases: [string, string, string, Record<string, unknown>][] = [
+    ["mini", "embed-widget-mini-symbol-overview.js", "AMZN price", { symbol: "NASDAQ:AMZN", chartOnly: true, dateRange: "1M", colorTheme: "dark", isTransparent: false }],
+    ["info", "embed-widget-symbol-info.js", "AMZN price", { symbol: "NASDAQ:AMZN", colorTheme: "dark" }],
+    ["profile", "embed-widget-symbol-profile.js", "AMZN profile", { symbol: "NASDAQ:AMZN", colorTheme: "dark" }],
+    ["financials", "embed-widget-financials.js", "AMZN fundamentals", { symbol: "NASDAQ:AMZN", displayMode: "regular" }],
+    ["timeline", "embed-widget-timeline.js", "AMZN news", { symbol: "NASDAQ:AMZN", feedMode: "symbol" }],
+  ];
+  for (const [w, script, label, config] of cases) {
+    const r = embed("localhost:7571", `${q("NASDAQ:AMZN", "http://127.0.0.1:7571")}&w=${w}`);
+    expect(r.status).toBe(200);
+    const body = await r.text();
+    expect(body).toContain(`<script src="https://s3.tradingview.com/external-embedding/${script}" async>`);
+    expect(body).toContain(`${label}</span></a> by TradingView`);
+    expect(TV_SCRIPTS[w as keyof typeof TV_SCRIPTS] as string).toBe(`https://s3.tradingview.com/external-embedding/${script}`);
+    expect(widgetConfig(w as keyof typeof TV_SCRIPTS, "NASDAQ:AMZN")).toMatchObject(config);
+  }
+  // No w is the chart; an unknown one is refused.
+  expect(await embed("localhost:7571", q("NASDAQ:AMZN", "http://127.0.0.1:7571")).text()).toContain("embed-widget-advanced-chart.js");
+  const bad = embed("localhost:7571", `${q("NASDAQ:AMZN", "http://127.0.0.1:7571")}&w=ticker`);
+  expect([bad.status, await bad.text()]).toEqual([400, REFUSED]);
 });

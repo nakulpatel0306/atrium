@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { getSetting } from "../settings";
 import { dailyBudget, hourlyBudget, meteredFetch, noteSourceResult } from "./budget";
 import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
-import { recordCloses } from "./closes";
+import { closes, recordCloses } from "./closes";
 import { etDate, etInstant, lastCompletedSession } from "./calendar";
 import { instrumentKey, type Instrument } from "./instrument";
 import { KEY_ACCOUNTS, KEYCHAIN_LOCKED, type Keychain } from "./keychain";
@@ -60,7 +60,7 @@ export const MISSING = {
   ca: "Canadian prices need a free Alpha Vantage key (Settings → Market data).",
   neo: "No free source covers NEO-listed CDRs.",
   otc: "No free source covers OTC stocks.",
-  history: "Add a free Tiingo key for daily history (Settings → Market data).",
+  history: "Atrium's own daily closes from Finnhub prices. History builds up over time.",
 };
 
 const FRESHNESS: Record<ProviderId, Freshness> = { alpaca: "live", finnhub: "live", alphavantage: "eod", tiingo: "eod", demo: "demo" };
@@ -262,6 +262,14 @@ export function createMarketData(deps: {
       const key = instrumentKey(i);
       const timeframe: Timeframe = range === "5D" ? "5Min" : "1Day";
       const r = range === "5D" ? route(i) : historyFor(i);
+      if (!r.provider && range !== "5D" && i.exchange === "US" && mode() !== "demo") {
+        // Tiingo is optional: without it, US history is the closes Atrium keeps from Finnhub's prices.
+        const own = closes(db, key, etDate(now() - RANGE_DAYS[range] * DAY_MS)).map((c) => {
+          const t = etInstant(c.date, "00:00") / 1000;
+          return { t, o: c.close, h: c.close, l: c.close, c: c.close, v: 0 };
+        });
+        return { key, timeframe, bars: own, source: null, freshness: null, note: MISSING.history };
+      }
       if (!r.provider) return { key, timeframe, bars: [], source: null, freshness: null, note: r.reason };
       const p = r.provider;
       const base = { key, timeframe, source: p.id, freshness: FRESHNESS[p.id] };
@@ -315,7 +323,7 @@ export function createMarketData(deps: {
         ? { ready: false, message: rejected.tiingo.message }
         : has.tiingo()
           ? { ready: true, message: `Tiingo · end of day (${tiingoLeft} of ${TIINGO_DAILY_LIMIT} requests left today)` }
-          : { ready: false, message: MISSING.history };
+          : { ready: true, message: "Atrium's own daily closes · builds up over time" };
       const us = !has[m]()
         ? { ready: false, message: readFailed ? KEYCHAIN_LOCKED : MISSING[m] }
         : rejected[m]

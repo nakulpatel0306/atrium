@@ -185,3 +185,13 @@ test("no thesis checks while Advanced is off", async () => {
   await eodJob(db, { data, tiingo: () => null, now: () => clock.now }).run(clock.now);
   expect(db.query("SELECT 1 FROM tasks WHERE purpose = 'thesis_check'").all()).toEqual([]);
 });
+
+test("no end-of-day news fetch unless Advanced or a big-news alert needs it", async () => {
+  setAdvanced(db, spaceId, false);
+  hold("RKLB", "US");
+  let newsCalls = 0;
+  const data = { quotes: async () => ({ quotes: [], missing: [] }), news: async () => (newsCalls++, []), research: () => null, prepare: async () => {} } as unknown as MarketData;
+  const at = Date.parse("2026-11-04T21:35:00Z");
+  await eodJob(db, { data, tiingo: () => null, now: () => at }).run(at);
+  expect(newsCalls).toBe(0);
+});

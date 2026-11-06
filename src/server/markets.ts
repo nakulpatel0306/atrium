@@ -200,7 +200,7 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
     // History is probed with one small Tiingo request: five days of SPY.
     const history = async () => {
       const t = m.data.tiingo?.();
-      if (!t) return { ok: false, message: (await m.data.status()).history.message };
+      if (!t) return { ok: true, message: "Not needed. Atrium keeps its own daily closes from Finnhub prices." };
       try {
         await t.daily({ symbol: "SPY", exchange: "US" }, new Date(now() - 5 * 86_400_000).toISOString().slice(0, 10));
         return { ok: true, message: "Tiingo answered." };

@@ -27,7 +27,7 @@ test("Inter is self-hosted", () => {
   expect(existsSync(join(DASH, "assets/fonts/LICENSE-Inter.txt"))).toBe(true);
 });
 
-// Libraries carry documentation links in their error messages and the fallback chart's attribution link; none is
+// Loopback URLs (and ones built from the page's own location) are fine. Libraries carry documentation links in their error messages and the fallback chart's attribution link; none is
 // loaded. Anything else in the bundle would be new external content.
 const LIBRARY_LINKS = /^https?:\/\/(react\.dev|reactjs\.org|github\.com|developer\.mozilla\.org|bugs\.webkit\.org|www\.apache\.org|www\.w3\.org|www\.tradingview\.com\/\?utm_medium=lwc-link)/;
 
@@ -40,7 +40,7 @@ test("the bundle has no inline script and loads nothing external", async () => {
     const html = files.filter((f) => f.endsWith(".html")).map((f) => readFileSync(join(out, f), "utf8")).join("\n");
     for (const tag of html.match(/<script\b[^>]*>/g) ?? []) expect(tag).toMatch(/\ssrc=/);
     const text = files.filter((f) => /\.(js|css|html)$/.test(f)).map((f) => readFileSync(join(out, f), "utf8")).join("\n");
-    const urls = [...new Set(text.match(/https?:\/\/[^\s"'`)<>\\]+/g) ?? [])].filter((u) => !/^https?:\/\/(127\.0\.0\.1|localhost)/.test(u));
+    const urls = [...new Set(text.match(/https?:\/\/[^\s"'`)<>\\]+/g) ?? [])].filter((u) => !/^https?:\/\/(127\.0\.0\.1|localhost|\$\{)/.test(u));
     expect(urls.filter((u) => !LIBRARY_LINKS.test(u))).toEqual([]);
     expect(text).not.toContain("tradingview-widget");
     expect(text).not.toContain("s3.tradingview.com");

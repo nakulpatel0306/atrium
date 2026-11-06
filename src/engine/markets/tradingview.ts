@@ -46,14 +46,15 @@ export function tvSymbol(key: string, listing?: string | null): string {
 const TV_SYMBOL = /^((NASDAQ|NYSE|AMEX|CBOE|TSX|TSXV|NEO|OTC):)?[A-Z0-9][A-Z0-9.\-]{0,14}$/;
 export const isTvSymbol = (s: string): boolean => TV_SYMBOL.test(s);
 
-// Venues missing from the free widget's market list (tradingview.com/widget-docs/markets/north-america).
-export const TV_WIDGET_MISSING: { prefix: TvPrefix; venue: string }[] = [{ prefix: "CBOE", venue: "Cboe BZX" }];
+// Venues the free widget can't show. Cboe BZX isn't in its published market list, but a real-browser check on
+// 2026-11-05 showed CBOE:MARS and CBOE:DRAM drawing real candles (Cboe One data), so nothing is listed today.
+export const TV_WIDGET_MISSING: { prefix: TvPrefix; venue: string }[] = [];
 
 export function widgetCoverage(tv: string): { ok: true } | { ok: false; reason: string } {
   const prefix = tv.includes(":") ? tv.split(":")[0] : null;
   const missing = TV_WIDGET_MISSING.find((m) => m.prefix === prefix);
   if (!missing) return { ok: true };
-  return { ok: false, reason: `TradingView's free chart doesn't cover ${missing.venue} listings, so this is Atrium's chart from Tiingo daily closes.` };
+  return { ok: false, reason: `TradingView's free chart doesn't cover ${missing.venue} listings, so this is Atrium's chart from its own daily closes.` };
 }
 
 export function tvSymbolUrl(tv: string): string {

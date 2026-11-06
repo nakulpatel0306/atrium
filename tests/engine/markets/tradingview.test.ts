@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isTvSymbol, TV_KNOWN, tvPrefixFromListing, tvSymbol, tvSymbolUrl, widgetCoverage } from "../../../src/engine/markets/tradingview";
+import { isTvSymbol, TV_KNOWN, TV_WIDGET_MISSING, tvPrefixFromListing, tvSymbol, tvSymbolUrl, widgetCoverage } from "../../../src/engine/markets/tradingview";
 
 const TABLE: [string, string][] = [
   ["AMZN", "NASDAQ:AMZN"],
@@ -43,10 +43,17 @@ test("unknown keys map by exchange or Finnhub listing", () => {
   expect(tvPrefixFromListing("LONDON STOCK EXCHANGE")).toBeNull();
 });
 
-test("widget coverage", () => {
-  expect(widgetCoverage("CBOE:MARS")).toEqual({ ok: false, reason: "TradingView's free chart doesn't cover Cboe BZX listings, so this is Atrium's chart from Tiingo daily closes." });
+test("widget coverage: Cboe listings render today; a listed venue gets the fallback sentence", () => {
+  expect(TV_WIDGET_MISSING).toEqual([]);
+  expect(widgetCoverage("CBOE:MARS")).toEqual({ ok: true });
   expect(widgetCoverage("NASDAQ:AMZN").ok).toBe(true);
-  expect(widgetCoverage("XYZ").ok).toBe(true);
+  TV_WIDGET_MISSING.push({ prefix: "OTC", venue: "OTC Markets" });
+  try {
+    expect(widgetCoverage("OTC:GBTC")).toEqual({ ok: false, reason: "TradingView's free chart doesn't cover OTC Markets listings, so this is Atrium's chart from its own daily closes." });
+    expect(widgetCoverage("XYZ").ok).toBe(true);
+  } finally {
+    TV_WIDGET_MISSING.pop();
+  }
 });
 
 test("isTvSymbol only accepts plain symbols", () => {

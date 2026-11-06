@@ -268,7 +268,7 @@ test("no unlicensed sources anywhere in the source", () => {
 });
 
 test("only TradingView's widget is loaded from outside", async () => {
-  const { TV_SCRIPT, TV_FRAME_HOSTS } = await import("../../src/server/embed");
+  const { TV_SCRIPT, TV_SCRIPTS, TV_FRAME_HOSTS } = await import("../../src/server/embed");
   const walk = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : /\.(ts|tsx|css|html)$/.test(e.name) ? [join(dir, e.name)] : []));
   const root = resolve(import.meta.dir, "../../src");
@@ -278,7 +278,9 @@ test("only TradingView's widget is loaded from outside", async () => {
     /^https?:\/\/(127\.0\.0\.1|localhost)([:/]|$)/.test(u) ||
     // Loopback URLs built from the engine's own host list or config.
     /^https?:\/\/\$\{/.test(u) ||
-    u === TV_SCRIPT ||
+    Object.values(TV_SCRIPTS).includes(u as (typeof TV_SCRIPTS)[keyof typeof TV_SCRIPTS]) ||
+    // The scripts' shared folder, which the embed page builds them from.
+    u === "https://s3.tradingview.com/external-embedding" ||
     // The embed page's CSP names the script's origin, and the widget config names TradingView as its support host.
     u === new URL(TV_SCRIPT).origin ||
     u === "https://www.tradingview.com" ||
@@ -363,7 +365,7 @@ test("the test probe reports history", async () => {
   const { keychain, data } = boot({ demo: false, fetch: stub });
   setSetting(db, "markets.provider", "finnhub");
   const before = await (await call("POST", "/api/settings/market-data/test")).json();
-  expect(before.history).toEqual({ ok: false, message: "Add a free Tiingo key for daily history (Settings → Market data)." });
+  expect(before.history).toEqual({ ok: true, message: "Not needed. Atrium keeps its own daily closes from Finnhub prices." });
   await keychain.set("tiingo.token", "TGTESTTOKEN99");
   await data.reload();
   const t = await (await call("POST", "/api/settings/market-data/test")).json();
