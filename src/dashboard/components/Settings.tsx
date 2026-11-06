@@ -5,6 +5,7 @@ import type { Quote } from "../../engine/markets/providers/types";
 import { del, post, put } from "../api";
 import { absolute, money } from "../format";
 import { useMarketDataSettings } from "../markets";
+import { ArchivedSpaces } from "./ArchivedSpaces";
 import { DataBudget } from "./DataBudget";
 import { Freshness } from "./markets/Freshness";
 import { MessagingSettings } from "./MessagingSettings";
@@ -230,6 +231,7 @@ export function Settings() {
         </>
       )}
       <MessagingSettings />
+      <ArchivedSpaces />
       <Storage />
     </div>
   );

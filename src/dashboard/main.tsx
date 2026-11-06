@@ -10,6 +10,7 @@ import { Rules } from "./components/Rules";
 import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { SpaceView } from "./components/SpaceView";
+import { Toast } from "./components/Toast";
 import { navigate, parseRoute, usePath } from "./route";
 
 function App() {
@@ -74,6 +75,7 @@ function App() {
     <div className="app">
       <Sidebar
         state={activeOnly(state)}
+        archived={state.archived?.length ?? 0}
         route={route}
         onNewSpace={newSpace}
         onJump={(section) => {
@@ -114,6 +116,7 @@ function App() {
           <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} symbol={route.symbol} />
         )}
         <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} />
+        <Toast />
       </main>
     </div>
   );

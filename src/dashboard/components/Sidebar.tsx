@@ -1,18 +1,20 @@
-import { Activity, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
+import { Activity, Archive, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
 import { post, type State } from "../api";
 import { bytes, tokens } from "../format";
 import { navigate, type Route } from "../route";
 import { WindowBar } from "./Agents";
+import { showArchived } from "./ArchivedSpaces";
 import { Logo } from "./Logo";
 
 type Props = {
   state: State;
+  archived: number;
   route: Route;
   onNewSpace: () => void;
   onJump: (section: "needs" | "activity") => void;
 };
 
-export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
+export function Sidebar({ state, archived, route, onNewSpace, onJump }: Props) {
   // Suggestions wait for an answer just like approvals do.
   const waiting = [...state.approvals, ...state.proposals];
   const pending = waiting.length;
@@ -82,6 +84,19 @@ export function Sidebar({ state, route, onNewSpace, onJump }: Props) {
           </button>
         );
       })}
+      {archived > 0 && (
+        <button
+          className="nav archived-link"
+          onClick={() => {
+            navigate("/settings#archived");
+            showArchived();
+          }}
+        >
+          <Archive />
+          Archived
+          <span className="ct">{archived}</span>
+        </button>
+      )}
 
       <div className="foot">
         <button className={`nav${route.name === "settings" ? " on" : ""}`} onClick={() => navigate("/settings")}>
