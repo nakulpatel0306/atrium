@@ -26,7 +26,7 @@ const SECRET_PATHS = [
 // Shortcuts runs work in its own daemon over XPC, outside this sandbox and with no Apple event to deny, so the CLIs
 // can't run and the services can't be reached even by a copied binary.
 const SHORTCUTS_SERVICES =
-  '(deny mach-lookup (global-name-prefix "com.apple.shortcuts") (global-name-prefix "com.apple.WorkflowKit") (global-name-prefix "com.apple.siri.shortcuts"))';
+  '(deny mach-lookup (global-name-prefix "com.apple.shortcuts") (global-name-prefix "com.apple.WorkflowKit") (global-name-prefix "com.apple.siri.shortcuts") (global-name "com.apple.siri.VoiceShortcuts.xpc") (global-name "com.apple.siriactionsd.xpc"))';
 
 // Inside cwd but off limits: git metadata (engine commits happen outside the sandbox), and the per-project
 // settings of Claude and agy, which an agent could otherwise use to widen its own permissions.

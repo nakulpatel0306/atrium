@@ -76,16 +76,26 @@ const REVIEW_SYSTEM_PROMPT = [
 
 // Titles that ask for something only the engine can do. An agent saying "done" to one of these, with nothing for
 // the engine to act on, hasn't done it. A send needs a person after the verb ("Text Dana", "Send the text to
-// Dana", "send him a message"), so "Text formatting fixes" or "Send button styling" aren't sends.
-const PERSON = "(?:him|her|them|me|mom|dad|my \\w+)";
+// Dana", "text dana that I'm late"), and a false match marks a good run "couldn't", so a name only counts when
+// what follows reads like a message: "Email Template Redesign" and "Send me a summary" aren't sends.
+const PERSON = "(?:him|her|them|mom|dad|my (?:mom|dad|mother|father|brother|sister|wife|husband|partner|girlfriend|boyfriend|friend|boss|manager|landlord|roommate|team))";
+const NAME = "[A-Z][\\w'-]*";
+const AFTER_NAME = "(?:$|[,:.!?—-]|\\s+(?:that|saying|about|asking|to|and|a|an|the|back|if|when|re|hi|hey|hello|happy|thanks|thank|good|i|i'm|im|we|we're|you|your|tonight|today|tomorrow)\\b)";
+const AFTER_LOWER = "\\s+(?:that|saying|about|asking|back|re|hi|hey|hello|happy|thanks|thank|i|i'm|im|we|we're|you|tonight|today|tomorrow)\\b";
 export function engineOnlyClaim(title: string): "message" | "repo" | null {
   const t = title.trim();
-  const verb = /^(?:send|text|message|imessage|email|e-mail|dm)\s+(.*)$/i.exec(t);
-  const rest = verb?.[1] ?? "";
-  const toPerson = new RegExp(`^(?:to\\s+)?${PERSON}\\b`, "i").test(rest) || /^(?:to\s+)?[A-Z][\w'-]*\b/.test(rest) || new RegExp(`\\bto\\s+(?:${PERSON}|[A-Z][\\w'-]*)\\b`).test(rest);
-  if (verb && toPerson && !/^(?:to\s+)?(?:[A-Z]{2,}|PR|CI)\b/.test(rest)) return "message";
-  if (new RegExp(`\\b(?:send|text)\\s+(?:${PERSON}|[A-Z][\\w'-]*)\\s+(?:a |the )?(?:text|message|email)\\b`, "i").test(t)) return "message";
-  if (/^(?:[Ll]et\s+[A-Z][\w'-]*\s+know|[Rr]each\s+out\s+to\s+[A-Z])/.test(t)) return "message";
+  const verb = /^(send|text|message|imessage|email|e-mail|dm)\s+(?:to\s+)?(.*)$/i.exec(t);
+  if (verb) {
+    const rest = verb[2]!;
+    const strong = !/^(?:send|email|e-mail)$/i.test(verb[1]!);
+    if (/^(?:[A-Z]{2,}|PR|CI)\b/.test(rest)) return null;
+    if (new RegExp(`^${PERSON}\\b`, "i").test(rest)) return "message";
+    if (new RegExp(`^${NAME}${AFTER_NAME}`).test(rest)) return "message";
+    if (strong && new RegExp(`^[a-z][\\w'-]*${AFTER_LOWER}`, "i").test(rest)) return "message";
+    if (new RegExp(`\\bto\\s+(?:${PERSON}|${NAME})\\b`).test(rest)) return "message";
+  }
+  if (new RegExp(`\\b(?:send|text)\\s+(?:${PERSON}|${NAME})\\s+(?:a |the )?(?:text|message|email)\\b`, "i").test(t)) return "message";
+  if (/^(?:let\s+(?!me\b)\S+\s+know|reach\s+out\s+to\s+\S)/i.test(t)) return "message";
   if (/\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(t)) return "repo";
   return null;
 }

@@ -1893,6 +1893,16 @@ describe("final review", () => {
     }
   });
 
+  test("a request for the agent's own output isn't a send", () => {
+    for (const t of ["Send me a summary of notes.md", "Email Template Redesign", "Message Queue cleanup", "Let me know what's in notes.md", "Send my notes to the folder"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
+    }
+  });
+
+  test("lowercase sends, as typed in the command bar, still count", () => {
+    for (const t of ["text dana that I'm late", "reach out to dana", "let dana know I'm on my way", "Text Dana"]) expect([t, engineOnlyClaim(t)]).toEqual([t, "message"]);
+  });
+
   test("M1: a repo space never applies the send check", async () => {
     const path = repo();
     const s = repoSpace(path);
