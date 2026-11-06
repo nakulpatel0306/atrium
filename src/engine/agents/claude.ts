@@ -19,6 +19,11 @@ const denyRules = (cwd: string) => [
   "Bash(git remote*)",
   "Bash(git clone*)",
   "Bash(git -c*)",
+  // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send.
+  "Bash(osascript*)",
+  "Bash(/usr/bin/osascript*)",
+  "Bash(open *)",
+  "Bash(shortcuts *)",
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
   "Write(**/.git/**)",

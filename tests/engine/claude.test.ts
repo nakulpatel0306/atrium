@@ -149,6 +149,11 @@ describe("claudeAdapter", () => {
       "Bash(git remote*)",
       "Bash(git clone*)",
       "Bash(git -c*)",
+      // Sending and controlling apps are the engine's alone.
+      "Bash(osascript*)",
+      "Bash(/usr/bin/osascript*)",
+      "Bash(open *)",
+      "Bash(shortcuts *)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
       "Edit(**/.claude/**)",

@@ -83,6 +83,17 @@ describe("seatbeltProfile", () => {
     expect(r.exitCode).not.toBe(0);
   });
 
+  // No application is named, so even outside the sandbox this would ask macOS for nothing.
+  test("osascript can't run under the profile", () => {
+    if (process.platform !== "darwin") return;
+    const profile = seatbeltProfile({ cwd, writable: [cwd] });
+    expect(profile).toContain('(deny process-exec (literal "/usr/bin/osascript"))');
+    expect(profile).toContain("(deny appleevent-send)");
+    const r = sandboxed(profile, "/usr/bin/osascript -e 'return 1'");
+    expect(r.exitCode).not.toBe(0);
+    expect(r.out + r.err).toContain("Operation not permitted");
+  });
+
   test("profile denies credential paths and .env names", () => {
     const home = realpathSync(homedir());
     const profile = seatbeltProfile({ cwd, writable: [] });

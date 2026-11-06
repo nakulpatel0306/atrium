@@ -105,6 +105,8 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     "(deny appleevent-send)",
     // The Keychain CLI would hand an agent Atrium's market data keys; agents only ever get prices.
     '(deny process-exec (literal "/usr/bin/security"))',
+    // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send.
+    '(deny process-exec (literal "/usr/bin/osascript"))',
     // GitHub is the engine's alone: no gh, no SSH to git hosts, and no SSH agent to sign or push with.
     ...ghBinaries().map((p) => `(deny process-exec (literal ${str(p)}))`),
     '(deny network-outbound (remote tcp "*:22"))',
