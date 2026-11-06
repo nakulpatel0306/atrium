@@ -16,8 +16,10 @@ afterEach(() => {
 });
 
 const HEADING = "What Atrium can and can't do right now:";
-const TASK_MSG =
+const MESSAGE_TASK_MSG =
   'Messages: you can\'t send texts yourself. To have Atrium send one, end your reply with a fenced block tagged atrium-message holding {"to": "<name, phone or email>", "text": "<exact text>"}, then the OUTCOME line. Atrium shows it to Nakul and sends it only when he presses Send.';
+const TASK_MSG =
+  "Messages: you can't send texts, and Atrium won't send one from this task. If the task needs a text sent, say so in your summary; Nakul can ask Atrium to text them.";
 const SETUP_MSG = 'Messages: for a request to text or message someone, reply with {"kind":"message", …} (see the rules below), not a space of tasks.';
 const SUFFIX = {
   untested: "The first send asks macOS for permission to control Messages, so Nakul must be at his Mac.",
@@ -39,12 +41,16 @@ test("task and setup lists, in every messaging state", () => {
     expect(messagingState(db)).toBe(state);
     const task = capabilityLines(db, "task");
     const setup = capabilityLines(db, "setup");
-    for (const lines of [task, setup]) {
+    const message = capabilityLines(db, "message");
+    for (const lines of [task, setup, message]) {
       expect(lines.slice(0, 3)).toEqual([HEADING, CAN_LINE, CANT_LINE]);
       if (state === "ready") for (const s of Object.values(SUFFIX)) expect(lines.join("\n")).not.toContain(s);
       else expect(lines).toContain(SUFFIX[state]);
     }
     expect(task).toContain(TASK_MSG);
+    expect(task.join("\n")).not.toContain("atrium-message");
+    expect(message).toContain(MESSAGE_TASK_MSG);
+    expect(message.join("\n")).not.toContain('"kind":"message"');
     expect(task.join("\n")).not.toContain('"kind":"message"');
     expect(setup).toContain(SETUP_MSG);
     expect(setup.join("\n")).not.toContain("atrium-message");

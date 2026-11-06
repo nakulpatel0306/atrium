@@ -13,7 +13,7 @@ import { draftProject, type RepoAction } from "./repos/store";
 import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
-import { nameProblem, normalizeHandle, textProblem } from "./messaging/rules";
+import { nameProblem, textProblem } from "./messaging/rules";
 import { messagesSpace } from "./messaging/space";
 import { draftMessage, type MessageAction } from "./messaging/store";
 
@@ -205,9 +205,8 @@ function parseMessageRequest(obj: Record<string, unknown>): MessageRequest {
 
 function setupMessage(db: Database, req: MessageRequest): SetupResult {
   const space = messagesSpace(db);
-  const handle = normalizeHandle(req.to);
   if (req.text) {
-    const { action, approval } = draftMessage(db, { spaceId: space.id, toName: req.to, text: req.text, handle, handleSource: handle ? "agent" : null });
+    const { action, approval } = draftMessage(db, { spaceId: space.id, toName: req.to, text: req.text });
     return { message: action, approval };
   }
   const detail = [
@@ -215,7 +214,7 @@ function setupMessage(db: Database, req: MessageRequest): SetupResult {
     `Write the text Nakul would send to ${req.to}: short, warm and in his voice. You can't send it, and nobody needs you to.`,
     `End your reply with a fenced block tagged atrium-message holding {"to": "${req.to}", "text": "<the text>"}, then the OUTCOME line. Atrium shows it to Nakul and sends it only when he presses Send.`,
   ].join("\n\n");
-  const task = createTask(db, { spaceId: space.id, title: `Draft a text to ${req.to}`, detail, weight: "light", allowOnBattery: true });
+  const task = createTask(db, { spaceId: space.id, title: `Draft a text to ${req.to}`, detail, weight: "light", allowOnBattery: true, purpose: "message" });
   return { space, tasks: [task], messaging: true };
 }
 

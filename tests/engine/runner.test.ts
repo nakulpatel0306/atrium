@@ -1822,7 +1822,7 @@ describe("message blocks", () => {
     });
     setSetting(db, "messaging.contactsReady", "true");
     const s = generalSpace();
-    const t = createTask(db, { spaceId: s.id, title: "Draft a text to Dana" });
+    const t = createTask(db, { spaceId: s.id, title: "Draft a text to Dana", purpose: "message" });
     start({ adapter: fakeAdapter(() => ok(block("Dana"))).adapter });
     await waitFor(() => status(t.id) === "review");
     expect(getTask(db, t.id)).toMatchObject({ outcome: "partial", outcomeReason: "Drafted a text to Dana. It sends only when you press Send." });
@@ -1835,14 +1835,39 @@ describe("message blocks", () => {
     expect(argv.slice(argv.indexOf("--") + 1)).toEqual(["Dana"]);
   });
 
-  test("a number as the recipient becomes the agent's handle; anything else is left for Nakul", async () => {
+  test("a message task's agent-supplied number is ignored", async () => {
     const s = generalSpace();
-    const a = createTask(db, { spaceId: s.id, title: "Draft one" });
-    const b = createTask(db, { spaceId: s.id, title: "Draft two" });
-    start({ adapter: fakeAdapter((input) => ok(block(input.prompt.includes("Draft one") ? "+1 (555) 010-0134" : "-e"))).adapter });
-    await waitFor(() => status(a.id) === "review" && status(b.id) === "review");
-    const drafts = pendingMessageActions(db);
-    expect(drafts.find((d) => d.taskId === a.id)).toMatchObject({ handle: "+15550100134", handleSource: "agent" });
-    expect(drafts.find((d) => d.taskId === b.id)).toMatchObject({ handle: null, handleSource: null });
+    const a = createTask(db, { spaceId: s.id, title: "Draft one", purpose: "message" });
+    start({ adapter: fakeAdapter(() => ok(block("+1 (555) 010-0134"))).adapter });
+    await waitFor(() => status(a.id) === "review");
+    expect(pendingMessageActions(db)[0]).toMatchObject({ taskId: a.id, toName: "+1 (555) 010-0134", handle: null, handleSource: null });
+  });
+
+  test("a repo task that writes a block still gets a normal review, and no draft", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Add a note" });
+    start({
+      adapter: fakeAdapter((input) => {
+        writeFileSync(join(input.cwd, "note.md"), "hi\n");
+        return ok(block("+15550100134"));
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "review");
+    expect(pendingMessageActions(db)).toEqual([]);
+    const a = getApproval(db, approvalFor(t.id)!.id)!;
+    expect(a.kind).toBe("review");
+    expect(a.detail).toContain("The agent suggested sending a text. Atrium doesn't send texts from here");
+    expect(a.detail).toContain("1 commit");
+    expect(getTask(db, t.id)!.outcome).toBe("done");
+  });
+
+  test("a general task outside the Messages space ignores a block too", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Summarise notes.md" });
+    start({ adapter: fakeAdapter(() => ok(block("Dana"))).adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(pendingMessageActions(db)).toEqual([]);
+    expect(listPending(db)[0]!.kind).toBe("review");
   });
 });

@@ -6,7 +6,8 @@ import { BAD_HANDLE_COPY, displayHandle, nameProblem, normalizeHandle, oneLine, 
 
 export type Candidate = { personId: string; name: string; kind: "phone" | "email"; label: string | null; handle: string };
 export type Service = "iMessage" | "SMS";
-export type HandleSource = "contacts" | "you" | "agent";
+// Where the number came from: Nakul typing it, or a Contacts lookup he started. Never an agent.
+export type HandleSource = "contacts" | "you";
 
 export type MessageAction = {
   id: string;

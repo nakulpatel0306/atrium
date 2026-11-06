@@ -39,7 +39,6 @@ import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { parseMessageBlock } from "./messaging/block";
 import { autoLookup } from "./messaging/contacts";
-import { normalizeHandle } from "./messaging/rules";
 import { draftMessage } from "./messaging/store";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
@@ -84,6 +83,8 @@ export function engineOnlyClaim(title: string): "message" | "repo" | null {
   if (/\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(title)) return "repo";
   return null;
 }
+
+const IGNORED_BLOCK = "The agent suggested sending a text. Atrium doesn't send texts from here; ask Atrium to text them from the command bar if you want that.";
 
 const ENGINE_ONLY: Record<"message" | "repo", string> = {
   message: "Only Atrium can send messages, and nothing was sent.",
@@ -429,7 +430,7 @@ export function createRunner(deps: {
       const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
       const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
-      const honest = [...capabilityLines(db, "task"), OUTCOME_INSTRUCTION];
+      const honest = [...capabilityLines(db, isMessageTask(task) ? "message" : "task"), OUTCOME_INSTRUCTION];
       result = await adapter.run({
         prompt: buildPrompt(task, space) + context,
         cwd: r.cwd,
@@ -567,8 +568,8 @@ export function createRunner(deps: {
       } else if (result.status === "ok" && message) {
         setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "review");
-        const handle = normalizeHandle(message.to);
-        const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text, handle, handleSource: handle ? "agent" : null });
+        // The number is never the agent's: Nakul types it or picks it from his own Contacts lookup.
+        const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text });
         logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`);
         void autoLookup(db, action.id);
       } else if (result.status === "ok") {
@@ -621,14 +622,23 @@ export function createRunner(deps: {
   function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: { to: string; text: string } | null } {
     const parsed = parseOutcome(summary);
     const block = task.kind === "work" ? parseMessageBlock(parsed.body) : null;
-    if (block) {
+    if (block && isMessageTask(task)) {
       const reason = `Drafted a text to ${block.to}. It sends only when you press Send.`;
       return { outcome: { outcome: "partial", reason, body: block.body }, message: { to: block.to, text: block.text } };
     }
+    // Anywhere else a block is ignored (an agent reading a repo or a web page could be talked into writing one)
+    // and the result goes to review as usual, with a note saying what the agent asked for.
+    const body = block ? `${parsed.body}\n\n${IGNORED_BLOCK}` : parsed.body;
     const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
     const claim = engineOnlyClaim((parent ?? task).title);
-    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, outcome: "unknown", reason: ENGINE_ONLY[claim] }, message: null };
-    return { outcome: parsed, message: null };
+    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, body, outcome: "unknown", reason: ENGINE_ONLY[claim] }, message: null };
+    return { outcome: { ...parsed, body }, message: null };
+  }
+
+  // Marked by the engine when it made the task (the setup path), or a task Nakul added in the Messages space;
+  // never anything the agent wrote.
+  function isMessageTask(task: Task): boolean {
+    return task.purpose === "message" || (task.spaceId === getSetting(db, "messaging.spaceId") && getSpace(db, task.spaceId)?.kind === "general");
   }
 
   // Records the files a run created, changed or deleted. A failure is logged and never changes the task's outcome.

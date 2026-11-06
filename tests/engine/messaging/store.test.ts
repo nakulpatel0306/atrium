@@ -33,8 +33,8 @@ afterEach(() => {
 const draft = (over: Partial<Parameters<typeof draftMessage>[1]> = {}) => draftMessage(db, { spaceId: space.id, toName: "Dana", text: "you free sat?", ...over });
 
 test("a draft waits on an always-ask question with the exact text", () => {
-  const { action, approval } = draft({ handle: "+1 (555) 010-0134", handleSource: "agent" });
-  expect(action).toMatchObject({ status: "draft", handle: "+15550100134", handleSource: "agent", service: "iMessage", text: "you free sat?" });
+  const { action, approval } = draft({ handle: "+1 (555) 010-0134", handleSource: "contacts" });
+  expect(action).toMatchObject({ status: "draft", handle: "+15550100134", handleSource: "contacts", service: "iMessage", text: "you free sat?" });
   expect(approval).toMatchObject({ kind: "question", alwaysAsk: "send_message", spaceId: space.id, title: "Send a text to Dana?", status: "pending" });
   expect(approval.detail).toBe(
     "To: Dana · +1 555 010 0134\nVia: iMessage\n\n> you free sat?\n\nOn Send, Atrium sends exactly this from Messages on this Mac. It can't confirm delivery.",
@@ -44,7 +44,7 @@ test("a draft waits on an always-ask question with the exact text", () => {
 });
 
 test("a bad handle is left out and the card asks for one", () => {
-  const { action, approval } = draft({ handle: '+1 555; do shell script "x"', handleSource: "agent" });
+  const { action, approval } = draft({ handle: '+1 555; do shell script "x"', handleSource: "contacts" });
   expect([action.handle, action.handleSource]).toEqual([null, null]);
   expect(approval.detail).toContain("To: Dana · number needed");
 });
@@ -59,9 +59,9 @@ test("a draft with bad text is refused", () => {
 });
 
 test("updateMessageDraft changes the action and the approval together", () => {
-  const { action, approval } = draft({ handle: "+15550100134", handleSource: "agent" });
+  const { action, approval } = draft({ handle: "+15550100134", handleSource: "contacts" });
   const same = updateMessageDraft(db, action.id, { text: "line 1\nline 2", handle: "+1 555 010 0134", service: "SMS" });
-  expect(same).toMatchObject({ text: "line 1\nline 2", handle: "+15550100134", handleSource: "agent", service: "SMS" });
+  expect(same).toMatchObject({ text: "line 1\nline 2", handle: "+15550100134", handleSource: "contacts", service: "SMS" });
   expect(getApproval(db, approval.id)!.detail).toContain("Via: SMS\n\n> line 1\n> line 2");
   const typed = updateMessageDraft(db, action.id, { text: "hi", handle: "+14165550134", service: "iMessage" });
   expect(typed.handleSource).toBe("you");
