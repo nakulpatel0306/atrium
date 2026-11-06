@@ -76,7 +76,7 @@ const contextOf = (state: State) => ({ tasks: state.tasks, files: state.activity
 
 // With a spaceId, shows only that space's lines and drops the space name each line would repeat.
 export function Activity({ state, spaceId }: { state: State; spaceId?: string }) {
-  const names = new Map(state.spaces.map((s) => [s.id, s.name]));
+  const names = new Map([...state.spaces, ...(state.archived ?? [])].map((s) => [s.id, s.name]));
   const rows = spaceId ? state.activity.filter((r) => r.spaceId === spaceId) : state.activity;
   const groups = groupActivity(rows, contextOf(state));
   return (

@@ -71,6 +71,18 @@ test("once decided, the line says what happened instead of waiting", () => {
   expect(g).toMatchObject({ text: "ran, ready for review, approved", tone: "routine" });
 });
 
+test("a failure after finished work stays apart from that work", () => {
+  const t = { taskId: "tsk_g" };
+  const groups = groupActivity(
+    feed(row(at(6, 9), "Started: Groceries", t), row(at(6, 9, 5), "Finished: Groceries", t), row(at(6, 10), "Blocked: Groceries. No disk.", t)),
+    { now: NOW, tasks: [{ id: "tsk_g", title: "Groceries", status: "blocked" }] },
+  );
+  expect(groups.map((g) => [g.tone, g.count])).toEqual([
+    ["failure", 1],
+    ["routine", 2],
+  ]);
+});
+
 test("a failure is its own prominent line and splits the task's routine lines around it", () => {
   const t = { taskId: "tsk_g" };
   const groups = groupActivity(
@@ -82,10 +94,10 @@ test("a failure is its own prominent line and splits the task's routine lines ar
     ),
     { now: NOW, tasks: [{ id: "tsk_g", title: "Groceries", status: "done" }] },
   );
-  expect(groups.map((g) => [g.tone, g.text])).toEqual([
-    ["routine", "ran"],
-    ["failure", "Blocked: Groceries. The folder is read-only."],
-    ["routine", "started"],
+  // The start that led straight to the failure folds into the failure's line.
+  expect(groups.map((g) => [g.tone, g.text, g.count])).toEqual([
+    ["routine", "ran", 2],
+    ["failure", "Blocked: Groceries. The folder is read-only.", 2],
   ]);
 });
 

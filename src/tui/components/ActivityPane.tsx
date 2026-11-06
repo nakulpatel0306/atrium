@@ -6,7 +6,7 @@ import { List, type ListProps, pad } from "./List";
 
 // One row per group: today's rows say how long ago, older ones their day, so the days read in order.
 export function ActivityPane(p: ListProps) {
-  const names = new Map(p.view.state.spaces.map((s) => [s.id, s.name]));
+  const names = new Map([...p.view.state.spaces, ...(p.view.state.archived ?? [])].map((s) => [s.id, s.name]));
   return (
     <List
       {...p}

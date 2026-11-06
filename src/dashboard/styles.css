@@ -779,7 +779,7 @@ h2 {
 .feed .events .tm {
   width: 64px;
 }
-.feed .show-more {
+.feed .btn.show-more {
   display: block;
   width: 100%;
   padding: 8px 14px;

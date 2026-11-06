@@ -154,7 +154,8 @@ export function Settings() {
   return (
     <div className="wrap">
       <h1>Settings</h1>
-      <p className="brief">How Atrium gets market prices for your investing spaces. Keys stay in your Mac's Keychain; agents only ever see prices.</p>
+      <p className="brief">Archived spaces, market prices, texts and storage. Keys stay in your Mac's Keychain; agents only ever see prices.</p>
+      <ArchivedSpaces />
       <h2>Market data</h2>
       {!s ? (
         <div className="list">
@@ -231,7 +232,6 @@ export function Settings() {
         </>
       )}
       <MessagingSettings />
-      <ArchivedSpaces />
       <Storage />
     </div>
   );

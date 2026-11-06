@@ -86,6 +86,8 @@ const OWN_LINE: Partial<Record<ActivityKind, ActivityTone>> = {
   sent: "notice",
 };
 
+const LEAD_IN = new Set<ActivityKind>(["started", "requeued", "paused"]);
+
 // The task a line names, for lines logged before activity recorded task ids.
 function titleIn(kind: ActivityKind, message: string): string | null {
   const after = (re: RegExp) => message.replace(re, "");
@@ -204,8 +206,15 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
       const title = r.taskId ? (tasks.get(r.taskId)?.title ?? titleIn(kind, r.message)) : titleIn(kind, r.message);
       const taskKey = r.taskId ? `id:${r.taskId}` : title ? `title:${r.spaceId}:${title}` : null;
       if (OWN_LINE[kind]) {
+        const own: Building = { events: [r], key: "", kind: "own" };
+        const cur = taskKey ? open.get(taskKey) : undefined;
         if (taskKey) open.delete(taskKey);
-        built.push({ events: [r], key: "", kind: "own" });
+        // A start that went straight to this line is part of it, not a line of its own.
+        if (cur && cur.events.every((e) => LEAD_IN.has(activityKind(e.message)))) {
+          own.events.push(...cur.events);
+          built.splice(built.indexOf(cur), 1);
+        }
+        built.push(own);
         continue;
       }
       if (taskKey && kind !== "alert" && kind !== "paper" && kind !== "other") {
@@ -255,8 +264,7 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
 }
 
 // The task a line leads with: a folded stretch names its task; a line of its own already does, in its text.
-export const leadOf = (g: ActivityGroup): string | null =>
-  g.title && (g.events.length > 1 || !g.text.includes(g.title)) ? g.title : null;
+export const leadOf = (g: ActivityGroup): string | null => (g.title && !g.text.includes(g.title) ? g.title : null);
 
 export function byDay(groups: ActivityGroup[]): { day: string; dayKey: string; groups: ActivityGroup[] }[] {
   const days: { day: string; dayKey: string; groups: ActivityGroup[] }[] = [];
