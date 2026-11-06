@@ -74,11 +74,12 @@ export function lookThroughFor(db: Database, key: string): LookThrough | null {
 }
 
 // Recomputed only when a fund file changes.
-let sectorMemo: { stamp: string; map: Map<string, string> } | null = null;
+const sectorMemo = new WeakMap<Database, { stamp: string; map: Map<string, string> }>();
 
 export function sectorsFromFunds(db: Database): Map<string, string> {
   const stamp = (db.query("SELECT COALESCE(GROUP_CONCAT(fund || ':' || fetched_at), '') AS s FROM fund_files").get() as { s: string }).s;
-  if (sectorMemo?.stamp === stamp) return sectorMemo.map;
+  const hit = sectorMemo.get(db);
+  if (hit?.stamp === stamp) return hit.map;
   const map = new Map<string, string>();
   const rows = db.query("SELECT ticker, key, name, country, sector FROM fund_lines WHERE sector IS NOT NULL AND kind = 'stock'").all() as {
     ticker: string | null;
@@ -91,7 +92,7 @@ export function sectorsFromFunds(db: Database): Map<string, string> {
     const k = companyKey(r);
     if (!map.has(k)) map.set(k, r.sector);
   }
-  sectorMemo = { stamp, map };
+  sectorMemo.set(db, { stamp, map });
   return map;
 }
 
