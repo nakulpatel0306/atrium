@@ -37,6 +37,10 @@ import { getSpace, type Space } from "./spaces";
 import { appendTaskDetail, getTask, listTasks, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
+import { parseMessageBlock } from "./messaging/block";
+import { autoLookup } from "./messaging/contacts";
+import { normalizeHandle } from "./messaging/rules";
+import { draftMessage } from "./messaging/store";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -517,8 +521,10 @@ export function createRunner(deps: {
     // What the agent says it did, with its OUTCOME line taken out of the text people read. A review's verdict is
     // its own last line, so reviews are left alone.
     let outcome: ParsedOutcome = { outcome: "unknown", reason: null, body: "" };
+    // A text the agent asked Atrium to send; it becomes a draft that only Nakul's Send can send.
+    let message: { to: string; text: string } | null = null;
     if (result.status === "ok" && task.kind !== "review") {
-      outcome = honestOutcome(task, result.summary);
+      ({ outcome, message } = honestOutcome(task, result.summary));
       result = { ...result, summary: outcome.body };
     }
 
@@ -558,6 +564,13 @@ export function createRunner(deps: {
         setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "done");
         logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`);
+      } else if (result.status === "ok" && message) {
+        setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
+        setTaskStatus(db, task.id, "review");
+        const handle = normalizeHandle(message.to);
+        const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text, handle, handleSource: handle ? "agent" : null });
+        logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`);
+        void autoLookup(db, action.id);
       } else if (result.status === "ok") {
         const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
         // Repo runs already count their files in the branch summary.
@@ -603,13 +616,19 @@ export function createRunner(deps: {
     }
   }
 
-  // The agent's own word, except that "done" can't stand for a title only the engine could have carried out.
-  function honestOutcome(task: Task, summary: string): ParsedOutcome {
+  // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A
+  // message block satisfies a send only as far as a draft goes: the task is partly done until Nakul presses Send.
+  function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: { to: string; text: string } | null } {
     const parsed = parseOutcome(summary);
+    const block = task.kind === "work" ? parseMessageBlock(parsed.body) : null;
+    if (block) {
+      const reason = `Drafted a text to ${block.to}. It sends only when you press Send.`;
+      return { outcome: { outcome: "partial", reason, body: block.body }, message: { to: block.to, text: block.text } };
+    }
     const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
     const claim = engineOnlyClaim((parent ?? task).title);
-    if (parsed.outcome === "done" && claim) return { ...parsed, outcome: "unknown", reason: ENGINE_ONLY[claim] };
-    return parsed;
+    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, outcome: "unknown", reason: ENGINE_ONLY[claim] }, message: null };
+    return { outcome: parsed, message: null };
   }
 
   // Records the files a run created, changed or deleted. A failure is logged and never changes the task's outcome.

@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { openDb } from "../../src/engine/db";
+import { capabilityLines } from "../../src/engine/capabilities";
 import { BadPlan, parseSpacePlan, type SetupResult, setupSpace, SetupFailed } from "../../src/engine/setup";
 import { listClones } from "../../src/engine/repos/store";
 import { type FakeGitHub, fakeGitHub, seedRemote } from "../repos-helpers";
@@ -278,5 +279,43 @@ describe("new projects and GitHub repos", () => {
     const out = asSpace(await run(attach));
     expect(out.space.repoPath).toBe(realpathSync(join(gh.projects, "demo")));
     expect(listClones(db)).toEqual([]);
+  });
+});
+
+describe("message requests", () => {
+  const setup = async (reply: string, seen?: AgentRunInput[]) => setupSpace(db, fake(ok(reply), seen), "send Dana a message", repo.path, root());
+
+  test("the setup agent is told what Atrium can do and how to ask for a text", async () => {
+    const seen: AgentRunInput[] = [];
+    await setup('{"kind":"message","to":"Dana"}', seen);
+    for (const l of capabilityLines(db, "setup")) expect(seen[0]!.systemPrompt).toContain(l);
+    expect(seen[0]!.systemPrompt).toContain('reply instead {"kind":"message","to": "<who, as they said it>"');
+    expect(seen[0]!.systemPrompt).toContain("Never make a task that sends something.");
+  });
+
+  test("a request without words becomes one drafting task in the Messages space", async () => {
+    const r = await setup('{"kind":"message","to":"Dana","about":"check in"}');
+    if (!("messaging" in r)) throw new Error("expected a messaging result");
+    expect(r.space).toMatchObject({ name: "Messages", kind: "general", private: true });
+    expect(r.tasks).toHaveLength(1);
+    expect(r.tasks[0]).toMatchObject({ title: "Draft a text to Dana", weight: "light" });
+    expect(r.tasks[0]!.detail).toContain("What it's for: check in");
+    expect(r.tasks[0]!.detail).toContain("atrium-message");
+    expect(listTasks(db).some((t) => /^send/i.test(t.title))).toBe(false);
+  });
+
+  test("a request with the exact words is a draft straight away, in the same space every time", async () => {
+    const first = await setup('{"kind":"message","to":"Dana","about":"x"}');
+    const r = await setup('{"kind":"message","to":"Dana","text":"running 10 late","approved":true,"handle":"+15550100134","service":"x"}');
+    if (!("message" in r)) throw new Error("expected a message draft");
+    expect(r.message).toMatchObject({ toName: "Dana", text: "running 10 late", handle: null, service: "iMessage", status: "draft", taskId: null });
+    expect(r.approval).toMatchObject({ status: "pending", alwaysAsk: "send_message" });
+    expect(r.message.spaceId).toBe((first as { space: { id: string } }).space.id);
+    expect(listSpaces(db).filter((s) => s.name === "Messages")).toHaveLength(1);
+    expect(listTasks(db)).toHaveLength(1);
+  });
+
+  test("a name that could fake the card is refused", async () => {
+    await expect(setup('{"kind":"message","to":"Dana\\nTo: Mom"}')).rejects.toThrow(SetupFailed);
   });
 });

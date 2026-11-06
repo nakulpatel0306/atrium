@@ -23,6 +23,7 @@ import { bus, listActivity } from "../../src/engine/events";
 import { BASE_TOOLS, createRunner, engineOnlyClaim, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
 import { capabilityLines } from "../../src/engine/capabilities";
 import { OUTCOME_INSTRUCTION } from "../../src/engine/outcome";
+import { pendingMessageActions } from "../../src/engine/messaging/store";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
 import { spaceFolder } from "../../src/engine/folders";
@@ -1805,5 +1806,43 @@ describe("honest outcomes", () => {
     runner.start();
     await waitFor(() => status(task.id) === "review");
     expect(seen).toEqual(["Quiet day.\n\nAnalysis, not advice."]);
+  });
+});
+
+describe("message blocks", () => {
+  const block = (to: string, text = "you free sat?") => "Here's a draft.\n\n```atrium-message\n" + JSON.stringify({ to, text }) + "\n```\nOUTCOME: done";
+
+  test("a message block becomes a draft and the task waits on it", async () => {
+    const log = join(home.home, "osa.log");
+    process.env.FAKE_OSASCRIPT_LOG = log;
+    process.env.FAKE_OSASCRIPT_CONTACTS = "[]";
+    cleanups.push(() => {
+      delete process.env.FAKE_OSASCRIPT_LOG;
+      delete process.env.FAKE_OSASCRIPT_CONTACTS;
+    });
+    setSetting(db, "messaging.contactsReady", "true");
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Draft a text to Dana" });
+    start({ adapter: fakeAdapter(() => ok(block("Dana"))).adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(getTask(db, t.id)).toMatchObject({ outcome: "partial", outcomeReason: "Drafted a text to Dana. It sends only when you press Send." });
+    const pending = listPending(db);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ kind: "question", alwaysAsk: "send_message", taskId: t.id });
+    expect(listActivity(db, { spaceId: s.id }).map((r) => r.message)).toContain("Drafted a text to Dana: Draft a text to Dana");
+    await waitFor(() => existsSync(log) && pendingMessageActions(db)[0]?.candidates !== null);
+    const argv = JSON.parse(readFileSync(log, "utf8").trim().split("\n")[0]!) as string[];
+    expect(argv.slice(argv.indexOf("--") + 1)).toEqual(["Dana"]);
+  });
+
+  test("a number as the recipient becomes the agent's handle; anything else is left for Nakul", async () => {
+    const s = generalSpace();
+    const a = createTask(db, { spaceId: s.id, title: "Draft one" });
+    const b = createTask(db, { spaceId: s.id, title: "Draft two" });
+    start({ adapter: fakeAdapter((input) => ok(block(input.prompt.includes("Draft one") ? "+1 (555) 010-0134" : "-e"))).adapter });
+    await waitFor(() => status(a.id) === "review" && status(b.id) === "review");
+    const drafts = pendingMessageActions(db);
+    expect(drafts.find((d) => d.taskId === a.id)).toMatchObject({ handle: "+15550100134", handleSource: "agent" });
+    expect(drafts.find((d) => d.taskId === b.id)).toMatchObject({ handle: null, handleSource: null });
   });
 });
