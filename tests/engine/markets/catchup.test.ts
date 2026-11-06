@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../../src/engine/db";
 import { createSpace } from "../../../src/engine/spaces";
-import { createCatchUp, earningsStale } from "../../../src/engine/markets/catchup";
+import { dailyBudget } from "../../../src/engine/markets/budget";
+import { createCatchUp, earningsStale, tsxClosesMissing } from "../../../src/engine/markets/catchup";
+import { recordCloses } from "../../../src/engine/markets/closes";
 import type { MarketData } from "../../../src/engine/markets/data";
 import { eodJob } from "../../../src/engine/markets/eod";
 import { instrumentKey, type Instrument } from "../../../src/engine/markets/instrument";
@@ -106,4 +108,58 @@ test("two catch-ups at once share one run", async () => {
   r.state.keyed = true;
   await Promise.all([r.catchUp.run(true), r.catchUp.run(true)]);
   expect(r.calls.filter((c) => c.startsWith("earnings"))).toHaveLength(1);
+});
+
+// Tonight on the old code: the 16:30 run kept the US closes, but Alpha Vantage's per-second notice was read as the
+// daily limit after a few calls, so no TSX closes for Nov 6, and the job still recorded success.
+function tsxRig(opts: { daily?: boolean } = {}) {
+  for (const s of ["ATZ", "VFV", "XEQT"]) {
+    db.query("INSERT INTO market_holdings (id, space_id, account, symbol, exchange, quantity, currency, source, updated_at) VALUES (?, ?, 'TFSA', ?, 'TSX', 1, 'CAD', 'manual', 1)").run(`h_${s}`, spaceId, s);
+  }
+  const asked: string[][] = [];
+  let clock = Date.parse("2026-11-07T01:30:00Z"); // Fri Nov 6, 8:30 PM ET, the new engine starts
+  const budget = () => dailyBudget(db, "alphavantage", 25, () => clock);
+  // The old run spent 3 calls, and its classifier set no exhaustion.
+  for (let n = 0; n < 3; n++) budget().spend();
+  if (opts.daily) budget().exhaust();
+  const data = {
+    quotes: async (list: Instrument[]) => {
+      asked.push(list.map(instrumentKey));
+      for (const i of list) if (i.exchange === "TSX") budget().spend(), recordCloses(db, instrumentKey(i), [{ date: "2026-11-06", close: 40, adjClose: null, source: "alphavantage" }]);
+      return { quotes: [], missing: [] };
+    },
+    news: async () => [],
+    research: () => null,
+    status: async () => ({ keys: { alphavantage: true } }),
+    prepare: async () => {},
+  } as unknown as MarketData;
+  const now = () => clock;
+  db.query("INSERT INTO settings (key, value) VALUES ('markets.job.eod', ?)").run(
+    JSON.stringify({ ranFor: Date.parse("2026-11-06T21:30:00Z"), lastRunAt: Date.parse("2026-11-06T21:30:00Z"), lastError: null, attempts: 0, lastAttemptAt: null }),
+  );
+  const jobs = createJobs(db, [eodJob(db, { data, tiingo: () => null, now })], now);
+  return { asked, catchUp: createCatchUp(db, { jobs, now }), at: (t: number) => (clock = t) };
+}
+
+test("missing TSX closes from a misread throttle are fetched again once, on start, within the budget", async () => {
+  const r = tsxRig();
+  expect(tsxClosesMissing(db, Date.parse("2026-11-07T01:30:00Z"))).toEqual({ date: "2026-11-06", keys: ["ATZ.TO", "VFV.TO", "XEQT.TO"] });
+  await r.catchUp.run(true);
+  expect(r.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toEqual([["ATZ.TO", "VFV.TO", "XEQT.TO"]]);
+  expect(tsxClosesMissing(db, Date.parse("2026-11-07T01:35:00Z"))).toBeNull();
+});
+
+test("the retry happens once per session, and never after a real daily-limit notice", async () => {
+  const once = tsxRig();
+  await once.catchUp.run(true);
+  db.query("DELETE FROM market_closes").run();
+  once.at(Date.parse("2026-11-07T03:00:00Z"));
+  await once.catchUp.run(true);
+  expect(once.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toHaveLength(1);
+});
+
+test("a real daily limit (the budget is used up) waits for tomorrow", async () => {
+  const r = tsxRig({ daily: true });
+  await r.catchUp.run(true);
+  expect(r.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toEqual([]);
 });
