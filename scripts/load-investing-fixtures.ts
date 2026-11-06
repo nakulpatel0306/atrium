@@ -32,10 +32,10 @@ setSetting(db, "markets.provider", "demo");
 const TICKERS: [string, string][] = INVESTING_TICKERS.map((t) => [t.key, t.name]);
 const space = { id: seedInvesting(db).spaceId };
 
-// Made-up positions (demo data), shaped like a TFSA with these 13 holdings: [market value, book value], listing currency.
+// Made-up positions (demo data), shaped like a TFSA with these 14 holdings: [market value, book value], listing currency.
 const SIZE: Record<string, [number, number]> = {
   "ATZ.TO": [2600, 2400], NOW: [2500, 2300], TSLA: [1800, 1500], AMZN: [2000, 1700], MARS: [900, 900], DRAM: [1000, 800], SPY: [4600, 4100],
-  "VFV.TO": [4700, 4200], QQQ: [3200, 2900], QBTS: [700, 1100], SOFI: [1300, 1200], RKLB: [1900, 1400], "XEQT.TO": [5200, 4500],
+  "VFV.TO": [4700, 4200], QQQ: [3200, 2900], QBTS: [700, 1100], SOFI: [1300, 1200], RKLB: [1900, 1400], "XEQT.TO": [5200, 4500], META: [2500, 2200],
 };
 const demoNow = demoProvider({ now: () => now });
 for (const [key, name] of TICKERS) {
