@@ -163,3 +163,19 @@ test("settling a digest stores it as a write-up instead of asking for review", a
   await hooks().settle(check, space, "claude", "Still holds.\n\nAnalysis, not advice.");
   expect(latestWriteups(db, space.id, { kind: "thesis_check", key: "NOW" })[0]).toMatchObject({ forDate: "2026-11-06", body: "Still holds.\n\nAnalysis, not advice." });
 });
+
+test("with the market closed, moves are dated by their session, not called today", async () => {
+  const SATURDAY = Date.parse("2026-11-07T17:00:00Z");
+  const FRIDAY_CLOSE = Date.parse("2026-11-06T21:00:00Z");
+  addToWatchlist(db, space.id, { symbol: "AAPL", exchange: "US" });
+  saveQuotes(db, [{ key: "AAPL", price: 101, prevClose: 100, at: FRIDAY_CLOSE, source: "demo", freshness: "demo" }]);
+  const closed = createMarketsHooks(db, { data: createMarketData({ db, keychain, now: () => SATURDAY, providers: { demo: demoProvider({ now: () => SATURDAY }) } }), now: () => SATURDAY });
+  const digest = createTask(db, { spaceId: space.id, title: "Digest", purpose: "digest" });
+  const text = await closed.context(digest, space, "claude");
+  expect(text).toContain("AAPL $101.00 +1.00% on Fri, Nov 6");
+  expect(text).not.toMatch(/AAPL[^\n]*today/);
+  expect(text).toContain("what moved in his portfolio on Fri, Nov 6 and why");
+  // During a session it is still "today".
+  saveQuotes(db, [{ key: "AAPL", price: 101, prevClose: 100, at: NOW - 60_000, source: "demo", freshness: "demo" }]);
+  expect(await hooks().context(digest, space, "claude")).toMatch(/AAPL \$[\d.]+ [+−-][\d.]+% today/);
+});

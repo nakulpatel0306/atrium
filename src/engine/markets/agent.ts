@@ -5,7 +5,7 @@ import type { Task } from "../tasks";
 import { agentName } from "../text";
 import { backtest, describeTemplate, type BacktestTemplate } from "./backtest";
 import { cachedBars, cachedQuotes } from "./cache";
-import { etClock, etDate, etInstant, usSession } from "./calendar";
+import { etClock, etDate, etInstant, lastCompletedSession, usSession } from "./calendar";
 import { currentQuote, type ChartRange, type MarketData } from "./data";
 import { listHoldings } from "./holdings";
 import { rsi, sma } from "./indicators";
@@ -20,6 +20,13 @@ import { getMeta } from "./meta";
 import { healthFor } from "./portfolio";
 import { getNotes, latestWriteups, saveWriteup } from "./research";
 import { listWatchlist } from "./watchlist";
+
+const DAY_LABEL = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+// "Fri, Nov 6" for an ET session date.
+const dayLabel = (iso: string) => DAY_LABEL.format(Date.parse(`${iso}T12:00:00Z`));
+// A move is "today" only while today's session is open; otherwise it's named by the session it happened in, so a
+// weekend digest doesn't call Friday's move today's.
+const dayOf = (quoteAt: number, at: number, open: boolean) => (open && etDate(quoteAt) === etDate(at) ? "today" : `on ${dayLabel(etDate(quoteAt))}`);
 
 export type MarketsBlock = {
   orders?: { symbol: string; side: "buy" | "sell"; qty: number; reason: string }[];
@@ -98,7 +105,8 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
       const since = Math.max(last?.createdAt ?? 0, at - 3 * 86_400_000);
       const news = recentNews(db, keys, since, 25);
       if (news.length) out.push("News since the last digest:", ...news.map((n) => `- ${n.key}: ${n.headline} (${n.source}, ${etClock(n.at)})`));
-      out.push("Write a short digest for Nakul: what moved in his portfolio today and why, from these prices and headlines. Say which numbers are delayed.");
+      const when = usSession(at).open ? "today" : `on ${dayLabel(lastCompletedSession(at).date)}`;
+      out.push(`Write a short digest for Nakul: what moved in his portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed.`);
     }
     if (task.purpose === "thesis_draft" || task.purpose === "thesis_check") out.push(...subjectFacts(task.subject, at, task.purpose === "thesis_check", space.id));
     return out;
@@ -151,7 +159,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     if (live.length && session.open) await data.quotes(live).catch(() => null);
     const quotes = cachedQuotes(db, [...instruments.keys()]);
     const line = (key: string, q: Quote | undefined) =>
-      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} today` : ""} (${freshnessText(q, at)}, ${etClock(q.at)})` : `${key}: no price yet`;
+      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} ${dayOf(q.at, at, session.open)}` : ""} (${freshnessText(q, at)}, ${etClock(q.at)})` : `${key}: no price yet`;
 
     const out: string[] = [];
     out.push(`Market data as of ${etClock(at)} on ${etDate(at)}. US market ${session.open ? "open" : session.holiday ? `closed (${session.holiday})` : "closed"}.`);
