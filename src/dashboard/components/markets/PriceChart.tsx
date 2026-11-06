@@ -44,7 +44,8 @@ const cssVar = (name: string) => getComputedStyle(document.documentElement).getP
 
 // fixed: the symbol is chosen elsewhere (the Research page), so the chart shows no picker of its own.
 export function PriceChart({ view, initialKey, fixed = false }: { view: MarketsView; initialKey: string | null; fixed?: boolean }) {
-  const keys = [...new Set([...view.watchlist.map((w) => w.key), ...view.holdings.map((h) => h.key)])];
+  // A fixed chart (the Symbol page's fallback) can draw a symbol that's in no list.
+  const keys = [...new Set([...(fixed && initialKey ? [initialKey] : []), ...view.watchlist.map((w) => w.key), ...view.holdings.map((h) => h.key)])];
   const [key, setKey] = useState(initialKey ?? keys[0] ?? null);
   const [range, setRange] = useState<ChartRange>("6M");
   const [show, setShow] = useState<Indicators>({ sma20: true, sma50: true, ema20: false, rsi14: true });

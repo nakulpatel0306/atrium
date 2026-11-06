@@ -184,3 +184,65 @@ test("Portfolio says which holdings the total leaves out, and a Canadian row say
   expect(html).toContain("1 Canadian holding isn&#x27;t in the total. Add a free Alpha Vantage key in Settings → Market data to include it.");
   expect(html).toContain("Add Alpha Vantage to include in totals");
 });
+
+// ---- Task 15: the Symbol page ----
+import { saveEarnings, saveNews } from "../../src/engine/markets/events";
+import { requestAsk, symbolView } from "../../src/engine/markets/symbol";
+import { SymbolBody } from "../../src/dashboard/components/invest/SymbolPage";
+
+const fake = () => "http://localhost:7571/fake";
+const PRIVACY = "TradingView sees which symbols you open, never your holdings.";
+
+test("Symbol page for a held US stock", () => {
+  db.query("INSERT OR REPLACE INTO instrument_meta (key, name, kind, pe, high52, low52, market_cap, metrics_at, listing) VALUES ('AMZN', 'Amazon.com Inc', 'stock', 40.1, 260, 160, 2410000, ?, 'NASDAQ NMS - GLOBAL MARKET')").run(NOW);
+  saveEarnings(db, [{ key: "AMZN", date: "2026-11-12", hour: "amc", epsEstimate: 1.23 }], "finnhub");
+  saveNews(db, Array.from({ length: 6 }, (_, n) => ({ key: "AMZN", headline: `Story ${n}`, source: "CNBC", url: `https://example.com/${n}`, at: NOW - n * 3600_000 })), NOW);
+  const view = symbolView(db, viewData(), fx.spaceId, "AMZN", NOW);
+  const html = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={view} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(html).toContain("US$250.00");
+  expect(html).toContain("Finnhub · real-time");
+  expect(html).toContain("Key stats");
+  expect(html).toContain("Market cap");
+  expect(html).toContain("Your position");
+  expect(html).toContain("10 shares in TFSA");
+  expect(html).toContain("Next earnings");
+  expect(html).toContain("Thu, Nov 12 · after close · EPS est. 1.23");
+  expect(html.match(/rel="noopener noreferrer"/g)?.length).toBe(5);
+  expect(html.split(PRIVACY)).toHaveLength(2);
+  expect(html).toContain("TradingView · delayed");
+  expect(html).toContain("Ask Claude about this");
+  expect(html).toContain("Anything specific? Leave blank for a quick overview.");
+  clean(html);
+  expect(text(html)).not.toContain("**");
+});
+
+test("Symbol page: an ask answer renders markdown with advice and what it made; a queued ask links to its task", () => {
+  saveWriteup(db, { spaceId: fx.spaceId, kind: "ask", key: "AMZN", forDate: new Date(NOW).toISOString(), body: "## Summary\n**Strong** quarter\n\nAnalysis, not advice.", taskId: "tsk_done" });
+  const answered = symbolView(db, viewData(), fx.spaceId, "AMZN", NOW);
+  const html = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={answered} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(html).toContain("<h2>Summary</h2>");
+  expect(html).toContain("<strong>Strong</strong>");
+  expect(html).toContain("Analysis, not advice");
+  expect(html).toContain('class="ask-made"');
+  expect(html).toContain("Quick overview");
+  const t = requestAsk(db, fx.spaceId, "AMZN", "Why up today?");
+  const queued = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "AMZN", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(queued).toContain("Claude is looking at AMZN…");
+  expect(queued).toContain(`href="/space/${fx.spaceId}?task=${t.id}"`);
+  db.query("DELETE FROM tasks").run();
+  db.query("DELETE FROM market_writeups").run();
+});
+
+test("Symbol page: a TSX key with no earnings offers to add a date", () => {
+  const html = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "XEQT.TO", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(html).toContain("No date yet");
+  expect(html).toContain("Add a date");
+  expect(html).toContain("CA$35.00");
+  clean(html);
+});
+
+test("Symbol page: no chart listener means Atrium's chart and no frame", () => {
+  const html = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "MARS", NOW)} marketsView={null} frameUrl={null} now={NOW} />);
+  expect(html).not.toContain("<iframe");
+  expect(html).toContain("TradingView&#x27;s chart couldn&#x27;t start this time");
+});

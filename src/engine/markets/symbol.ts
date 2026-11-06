@@ -26,6 +26,8 @@ export type SymbolView = {
   symbol: string;
   exchange: Exchange;
   name: string;
+  // Funds have no company financials or stories, so the page shows TradingView's fundamentals and news for stocks only.
+  kind: "stock" | "etf";
   tv: string;
   chart: { ok: true } | { ok: false; reason: string };
   price: Sourced | null;
@@ -102,6 +104,7 @@ export function symbolView(db: Database, data: MarketData, spaceId: string, key:
     symbol: i.symbol,
     exchange: i.exchange,
     name: meta?.name || holdings[0]?.name || listLists(db, spaceId).flatMap((l) => listItems(db, l.id)).find((x) => x.key === k)?.name || "",
+    kind: isFund(k) || meta?.kind === "etf" ? "etf" : "stock",
     tv,
     chart: widgetCoverage(tv),
     price: q ? quoteSourced(q, now) : null,

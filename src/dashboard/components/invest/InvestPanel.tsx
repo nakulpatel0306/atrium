@@ -8,6 +8,7 @@ import { AdvancedToggle } from "./AdvancedToggle";
 import { AlertsSimple } from "./AlertsSimple";
 import { Earnings } from "./Earnings";
 import { Portfolio } from "./Portfolio";
+import { SymbolPage } from "./SymbolPage";
 import { Watchlists } from "./Watchlists";
 
 const SIMPLE = ["portfolio", "watchlists", "earnings", "alerts"] as const;
@@ -62,9 +63,7 @@ export function InvestPanel({ spaceId, symbol }: { spaceId: string; symbol: stri
         </span>
       </div>
       {symbol ? (
-        <div className="list">
-          <div className="empty-row">Loading {symbol}…</div>
-        </div>
+        <SymbolPage key={symbol} spaceId={spaceId} symbolKey={symbol} marketsView={view} />
       ) : ADVANCED.includes(tab as AdvancedTab) ? (
         <AdvancedPanel spaceId={spaceId} tab={tab as AdvancedTab} view={view} />
       ) : tab === "portfolio" ? (

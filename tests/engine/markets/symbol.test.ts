@@ -124,7 +124,8 @@ test("a TSX key makes no network call and says when prices update", async () => 
   const { data, calls } = rig();
   expect(await refreshSymbol(db, data, "XEQT.TO", NOW)).toEqual({ refreshed: false, note: "Canadian prices update after the close from Alpha Vantage." });
   expect(calls).toEqual([]);
-  expect(symbolView(db, data, fx.spaceId, "XEQT.TO", NOW).tv).toBe("TSX:XEQT");
+  expect(symbolView(db, data, fx.spaceId, "XEQT.TO", NOW)).toMatchObject({ tv: "TSX:XEQT", kind: "etf" });
+  expect(symbolView(db, data, fx.spaceId, "AMZN", NOW).kind).toBe("stock");
 });
 
 test("CBOE:MARS gets TradingView's chart (it renders in the free widget)", () => {

@@ -46,15 +46,15 @@ export function tvConfig(symbol: string): Record<string, unknown> {
   };
 }
 
-const common = { colorTheme: "dark", isTransparent: true, locale: "en" };
+// Transparent widgets paint a white backdrop inside TradingView's own frame, so every one is opaque and dark.
+const common = { colorTheme: "dark", isTransparent: false, locale: "en" };
 
 export function widgetConfig(w: TvWidget, symbol: string): Record<string, unknown> {
   switch (w) {
     case "chart":
       return tvConfig(symbol);
     case "mini":
-      // Transparent mini charts paint a white backdrop inside TradingView's own frame, so this one is opaque.
-      return { ...common, isTransparent: false, symbol, width: "100%", height: "100%", autosize: true, dateRange: "1M", chartOnly: true, noTimeScale: true, largeChartUrl: "" };
+      return { ...common, symbol, width: "100%", height: "100%", autosize: true, dateRange: "1M", chartOnly: true, noTimeScale: true, largeChartUrl: "" };
     case "info":
       return { ...common, symbol, width: "100%" };
     case "profile":
