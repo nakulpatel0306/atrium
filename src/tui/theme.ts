@@ -36,6 +36,8 @@ export const GLYPH = {
   barRight: "▏",
   ellipsis: "…",
   suggestion: "✦",
+  // A result the agent said it couldn't or only partly do.
+  notdone: "!",
 } as const;
 
 const SPACE_COLORS: AnsiColor[] = ["blue", "green", "yellow", "magenta", "cyan", "red"];

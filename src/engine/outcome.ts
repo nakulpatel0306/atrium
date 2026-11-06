@@ -52,3 +52,11 @@ export function outcomeLabel(o: Outcome): string | null {
   if (o === "partial") return "partly done";
   return null;
 }
+
+// What the agent said about a result that isn't plainly done, in the words every app shows above anything else.
+export function outcomeText(outcome: Outcome | null, reason: string | null): string | null {
+  if (outcome === "couldnt") return `Couldn't do this: ${reason ?? "The agent didn't say why."}`;
+  if (outcome === "partial") return `Partly done: ${reason ?? "The agent didn't say what's left."}`;
+  if (outcome === "unknown") return "Atrium can't tell whether this was done. The agent didn't say, so check the summary.";
+  return null;
+}

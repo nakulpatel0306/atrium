@@ -1,13 +1,7 @@
 import { CircleAlert, CircleDashed, CircleHelp } from "lucide-react";
-import type { Outcome } from "../../engine/outcome";
+import { type Outcome, outcomeText } from "../../engine/outcome";
 
-// What the agent said about a result that isn't plainly done, shown above anything else about it.
-export function outcomeText(outcome: Outcome | null, reason: string | null): string | null {
-  if (outcome === "couldnt") return `Couldn't do this: ${reason ?? "The agent didn't say why."}`;
-  if (outcome === "partial") return `Partly done: ${reason ?? "The agent didn't say what's left."}`;
-  if (outcome === "unknown") return "Atrium can't tell whether this was done. The agent didn't say, so check the summary.";
-  return null;
-}
+export { outcomeText };
 
 export const approveLabel = (outcome: Outcome | null): string =>
   outcome === "couldnt" ? "Accept anyway" : outcome === "partial" ? "Accept as is" : "Approve";

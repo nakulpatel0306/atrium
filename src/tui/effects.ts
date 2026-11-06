@@ -31,6 +31,13 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
   switch (intent.type) {
     case "approve":
       return said(await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "approve" }), () => `Approved "${intent.title}".`);
+    case "send_message": {
+      // Exactly the text, number and service the confirm showed: what the engine has stored for this draft.
+      const text = state.messageActions.find((m) => m.id === intent.actionId);
+      if (!text?.handle) return { tone: "bad", text: "Pick who this goes to on the dashboard first." };
+      const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: text.text, handle: text.handle, service: text.service });
+      return said(res, () => `Sending to ${intent.toName} via Messages. Atrium can't confirm delivery.`);
+    }
     case "reject": {
       const note = intent.note.trim();
       const res = await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "reject", ...(note ? { note } : {}) });

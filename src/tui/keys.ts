@@ -8,6 +8,7 @@ import type { Action, ListPane, Overlay, Pane, Ui } from "./ui";
 
 export type Intent =
   | { type: "approve"; approvalId: string; title: string }
+  | { type: "send_message"; actionId: string; toName: string }
   | { type: "reject"; approvalId: string; note: string }
   | { type: "retry"; taskId: string }
   | { type: "runNow"; taskId: string }
@@ -240,11 +241,21 @@ function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[]
     case "a": {
       const approval = approvalOf(u, view);
       if (!approval) return [nothingHere(u, view, "Nothing to approve here. Pick a row in Needs you [3].")];
+      // A text goes only after a y on the confirm that shows exactly what's sent, and only once it has a number.
+      if (approval.alwaysAsk === "send_message") {
+        const text = view.state.messageActions.find((m) => m.approvalId === approval.id);
+        if (!text) return [info("This text is being updated. Try again in a moment.")];
+        if (!text.handle) return [info("Pick who this goes to on the dashboard first.")];
+        return [open({ kind: "confirm", purpose: "send", targetId: text.id })];
+      }
+      const outcome = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId)?.outcome : null;
+      if (outcome === "couldnt" || outcome === "partial") return [open({ kind: "confirm", purpose: "accept", targetId: approval.id })];
       return [intent({ type: "approve", approvalId: approval.id, title: approval.title })];
     }
     case "r": {
       const approval = approvalOf(u, view);
       if (!approval) return [nothingHere(u, view, "Nothing to send back here. Pick a row in Needs you [3].")];
+      if (approval.alwaysAsk === "send_message") return [intent({ type: "reject", approvalId: approval.id, note: "" })];
       return [prompt("reply", approval.id)];
     }
     case "R":
@@ -400,7 +411,7 @@ function overlayKey(input: string, key: Key, overlay: Overlay, view: View): Comm
     case "picker":
       return pickerKey(input, key, overlay);
     case "confirm":
-      if (input === "y") return [intent({ type: "archive", spaceId: overlay.targetId }), close];
+      if (input === "y") return [...confirmed(overlay, view), close];
       return input === "n" || input === "q" || key.escape ? [close] : [];
     case "help":
       return input === "?" || input === "q" || key.escape ? [close] : [];
@@ -409,6 +420,16 @@ function overlayKey(input: string, key: Key, overlay: Overlay, view: View): Comm
     case "transcript":
       return transcriptKey(input, key, overlay, view);
   }
+}
+
+function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): Command[] {
+  if (overlay.purpose === "archive") return [intent({ type: "archive", spaceId: overlay.targetId })];
+  if (overlay.purpose === "send") {
+    const text = view.state.messageActions.find((m) => m.id === overlay.targetId);
+    return text ? [intent({ type: "send_message", actionId: text.id, toName: text.toName })] : [info("This text was already handled.")];
+  }
+  const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
+  return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];
 }
 
 export function commandsFor(input: string, key: Key, u: Ui, view: View, files: MadeFile[] = []): Command[] {

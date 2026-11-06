@@ -244,5 +244,18 @@ check(nextBackoff(2) == 4, "backoff: doubles")
 check(nextBackoff(16) == 30, "backoff: caps")
 check(nextBackoff(30) == 30, "backoff: stays capped")
 
+// outcomes and texts
+let textNeed = Need(id: "apr_t", kind: "question", title: "Send a text to Dana?", spaceName: "Messages", path: "/", action: "send_message")
+check(newNotes(previous: summary(), next: summary(needs: [textNeed])).first?.title == "Text ready to send", "notes: a text waiting to send")
+let couldntNeed = Need(id: "apr_c", kind: "review", title: "Summarise notes.md", spaceName: "Notes", path: "/space/spc_3", outcome: "couldnt")
+check(newNotes(previous: summary(), next: summary(needs: [couldntNeed])).first?.title == "Couldn't do this", "notes: couldn't")
+let partialNeed = Need(id: "apr_p", kind: "review", title: "Write three files", spaceName: "Notes", path: "/space/spc_3", outcome: "partial")
+check(newNotes(previous: summary(), next: summary(needs: [partialNeed])).first?.title == "Partly done", "notes: partly done")
+let unknownNeed = Need(id: "apr_u", kind: "review", title: "Answer", spaceName: "Notes", path: "/space/spc_3", outcome: "unknown")
+check(newNotes(previous: summary(), next: summary(needs: [unknownNeed])).first?.title == "Ready for review", "notes: unknown reads as a review")
+let newJson = #"{"needsYou":1,"needs":[{"id":"a","kind":"review","title":"t","spaceName":"s","path":"/","topic":null,"files":0,"symbol":null,"outcome":"couldnt","action":null}],"stopped":[],"overnight":false}"#
+check((try? JSONDecoder().decode(Summary.self, from: Data(newJson.utf8)))?.needs.first?.outcome == "couldnt", "decode: outcome")
+check(decoded?.needs.first?.outcome == nil && decoded?.needs.first?.action == nil, "decode: an older engine has no outcome or action")
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)
