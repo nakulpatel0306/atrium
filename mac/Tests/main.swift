@@ -223,6 +223,21 @@ check(!rules.contains("\\\\.?"), "rules: no optional dots")
 check(!rules.contains("googleapis"), "rules: no Google")
 check(!contentRulesJSON(port: 7420, embedPort: nil).contains("7421"), "rules: no listener, no listener rule")
 
+// popups: only the dashboard itself opens a page in the app; a frame's popup goes to the browser on a click, or nowhere
+check(popupDecision(URL(string: "about:blank")!, port: 7420, userClick: false, fromDashboard: false) == .cancel, "popup: about:blank from a frame never replaces the dashboard")
+check(popupDecision(URL(string: "http://127.0.0.1:7420/api/state")!, port: 7420, userClick: false, fromDashboard: false) == .cancel, "popup: engine URL from a frame never loads in the main view")
+check(popupDecision(URL(string: "http://127.0.0.1:7420/api/state")!, port: 7420, userClick: true, fromDashboard: false) == .cancel, "popup: engine URL from a frame isn't opened in the browser either")
+check(popupDecision(URL(string: "https://www.tradingview.com/symbols/NASDAQ-AMZN/")!, port: 7420, userClick: true, fromDashboard: false) == .openExternally, "popup: TradingView attribution opens in the browser")
+check(popupDecision(URL(string: "https://www.tradingview.com/symbols/NASDAQ-AMZN/")!, port: 7420, userClick: false, fromDashboard: false) == .cancel, "popup: a frame's popup without a click is dropped")
+check(popupDecision(URL(string: "mailto:a@b.c")!, port: 7420, userClick: true, fromDashboard: false) == .cancel, "popup: a frame can't open mail")
+check(popupDecision(URL(string: "http://127.0.0.1:7420/space/x")!, port: 7420, userClick: true, fromDashboard: true) == .allow, "popup: the dashboard's own target=_blank stays in the app")
+check(popupDecision(URL(string: "https://github.com/x/pull/1")!, port: 7420, userClick: true, fromDashboard: true) == .openExternally, "popup: the dashboard's external link opens the browser")
+check(popupDecision(URL(string: "https://github.com/x/pull/1")!, port: 7420, userClick: false, fromDashboard: true) == .cancel, "popup: the dashboard's script popup without a click is dropped")
+check(popupDecision(URL(string: "file:///etc/passwd")!, port: 7420, userClick: true, fromDashboard: true) == .cancel, "popup: file is dropped")
+check(isDashboardOrigin(scheme: "http", host: "127.0.0.1", port: 7420, enginePort: 7420), "popup: dashboard origin")
+check(!isDashboardOrigin(scheme: "http", host: "localhost", port: 7421, enginePort: 7420), "popup: chart listener isn't the dashboard")
+check(!isDashboardOrigin(scheme: "https", host: "www.tradingview-widget.com", port: 0, enginePort: 7420), "popup: TradingView isn't the dashboard")
+
 // backoff
 check(nextBackoff(0) == 2, "backoff: floor")
 check(nextBackoff(2) == 4, "backoff: doubles")

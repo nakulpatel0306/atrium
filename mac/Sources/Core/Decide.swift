@@ -116,6 +116,21 @@ func linkDecision(_ url: URL, port: Int, userClick: Bool, mainFrame: Bool, embed
   return .openExternally
 }
 
+// A popup (window.open, target=_blank) loads in the app only when the dashboard itself opened it and it's one of
+// the dashboard's own pages. One from a frame (TradingView's chart) goes to the default browser on a real click, for
+// http(s) off the engine, or nowhere: a frame must never replace the dashboard or open the engine's API.
+func popupDecision(_ url: URL, port: Int, userClick: Bool, fromDashboard: Bool) -> LinkDecision {
+  if fromDashboard { return linkDecision(url, port: port, userClick: userClick, mainFrame: true) }
+  let scheme = url.scheme?.lowercased() ?? ""
+  let loopback = url.host == "127.0.0.1" || url.host == "localhost"
+  guard userClick, ["http", "https"].contains(scheme), !loopback else { return .cancel }
+  return .openExternally
+}
+
+func isDashboardOrigin(scheme: String, host: String, port: Int, enginePort: Int) -> Bool {
+  scheme == "http" && (host == "127.0.0.1" || host == "localhost") && port == enginePort
+}
+
 // WebKit also reports cancelled loads (a reload over a reload, a policy cancel) as failures; only a load that
 // couldn't reach the engine means it's offline.
 func isOfflineLoadError(domain: String, code: Int) -> Bool {

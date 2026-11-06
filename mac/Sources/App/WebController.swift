@@ -13,7 +13,10 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
 
   init(port: Int) {
     self.port = port
-    webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+    let configuration = WKWebViewConfiguration()
+    // Scripts (the dashboard's or TradingView's) can't open windows without a click.
+    configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+    webView = WKWebView(frame: .zero, configuration: configuration)
     super.init()
     webView.navigationDelegate = self
     webView.uiDelegate = self
@@ -112,9 +115,14 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
     _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction,
     windowFeatures: WKWindowFeatures
   ) -> WKWebView? {
-    switch decide(navigationAction) {
+    guard let url = navigationAction.request.url else { return nil }
+    let source = navigationAction.sourceFrame
+    let origin = source.securityOrigin
+    let fromDashboard = source.isMainFrame && isDashboardOrigin(scheme: origin.protocol, host: origin.host, port: origin.port, enginePort: port)
+    let userClick = navigationAction.navigationType == .linkActivated && recentUserInput()
+    switch popupDecision(url, port: port, userClick: userClick, fromDashboard: fromDashboard) {
     case .allow: webView.load(navigationAction.request)
-    case .openExternally: NSWorkspace.shared.open(navigationAction.request.url!)
+    case .openExternally: NSWorkspace.shared.open(url)
     case .cancel: break
     }
     return nil
