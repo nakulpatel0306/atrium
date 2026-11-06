@@ -2343,7 +2343,7 @@ code {
 .md {
   color: var(--text);
   line-height: 1.55;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .md > * + * {
   margin-top: 8px;
@@ -2434,4 +2434,135 @@ code {
 .md-img {
   color: var(--dim);
   font-style: italic;
+}
+
+/* Task detail: what was asked, and what the task made. */
+.detail h4 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  margin: 12px 0 6px;
+}
+.detail .md {
+  font-size: 13px;
+}
+.detail .md pre {
+  max-height: none;
+}
+.made section + section {
+  margin-top: 4px;
+}
+.made-decided {
+  margin-top: 6px;
+  color: var(--dim);
+}
+.made-none {
+  color: var(--dim);
+}
+.made-files {
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.made-row + .made-row {
+  border-top: 1px solid var(--line);
+}
+.made-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-height: 34px;
+  padding: 4px 8px 4px 10px;
+  cursor: pointer;
+}
+.made-row.gone .made-line {
+  cursor: default;
+}
+.made-line:hover {
+  background: var(--hover);
+}
+.made-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--dim);
+}
+.made-path {
+  color: var(--text);
+  font-size: 12px;
+  flex: 0 1 auto;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.made-row.gone .made-path {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+.made-size {
+  color: var(--dim);
+  white-space: nowrap;
+}
+.made-acts {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.made-acts .btn {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.chip-created {
+  color: var(--green);
+}
+.chip-deleted {
+  color: var(--red);
+}
+.made-said {
+  padding: 0 10px 6px 32px;
+  color: var(--dim);
+}
+.preview {
+  border-top: 1px solid var(--line);
+  padding: 10px 12px 12px 32px;
+}
+.preview img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+.preview pre.code {
+  max-height: 420px;
+  overflow: auto;
+  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+}
+.preview-note {
+  margin-top: 6px;
+  color: var(--dim);
+}
+.ics {
+  list-style: none;
+  margin-bottom: 6px;
+}
+.ics li {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.ics li + li {
+  border-top: 1px solid var(--line);
+}
+.ics b {
+  color: var(--text);
+  font-weight: 500;
+}
+.asked .md {
+  color: var(--text);
 }

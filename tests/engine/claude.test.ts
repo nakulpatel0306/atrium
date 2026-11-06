@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atriumDenyPaths } from "../../src/engine/agents/atrium-paths";
@@ -254,5 +254,28 @@ describe("claudeAdapter", () => {
     if (r.status !== "error") throw new Error("expected error");
     expect(r.kind).toBe("failed");
     expect(r.message).toStartWith("Claude's sandbox isn't available on this Mac");
+  });
+});
+
+describe("fake claude write_files mode", () => {
+  test("copies the fixture files into the run folder and answers with the summary", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atrium-fake-write-"));
+    const fixtures = join(import.meta.dir, "..", "fixtures", "plan-9");
+    try {
+      process.env.FAKE_CLAUDE_MODE = "write_files";
+      process.env.FAKE_CLAUDE_FILES = fixtures;
+      process.env.FAKE_CLAUDE_SUMMARY = join(fixtures, "summary.md");
+      process.env.FAKE_CLAUDE_CC_DIR = "1";
+      const r = await claudeAdapter(FAKE).run({ ...input(), cwd: dir });
+      expect(r.status).toBe("ok");
+      expect(r.status === "ok" && r.summary).toBe(readFileSync(join(fixtures, "summary.md"), "utf8"));
+      expect(readFileSync(join(dir, "grocery-list.md"), "utf8")).toBe(readFileSync(join(fixtures, "grocery-list.md"), "utf8"));
+      expect(existsSync(join(dir, "week-of-nov-9.ics"))).toBe(true);
+      expect(existsSync(join(dir, "summary.md"))).toBe(false);
+      expect(statSync(join(dir, ".claude", ".cc-writes")).mode & 0o777).toBe(0o700);
+    } finally {
+      for (const k of ["FAKE_CLAUDE_FILES", "FAKE_CLAUDE_SUMMARY", "FAKE_CLAUDE_CC_DIR"]) delete process.env[k];
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

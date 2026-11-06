@@ -7,11 +7,13 @@ import { navigate } from "../route";
 import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { Activity } from "./Activity";
 import { AgentPicker } from "./AgentPicker";
+import { Markdown } from "./Markdown";
 import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
+import { WhatItMade } from "./WhatItMade";
 import { AdviceTag } from "./markets/AdviceTag";
 import { MarketsPanel } from "./markets/MarketsPanel";
 
@@ -238,6 +240,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
   const wait = waitOf(task, state);
   const parent = task.parentTaskId ? state.tasks.find((t) => t.id === task.parentTaskId) : undefined;
   const agent = agentText(task, state.runs);
+  const space = state.spaces.find((s) => s.id === task.spaceId);
 
   const act = async (fn: () => ReturnType<typeof post>) => {
     setBusy(true);
@@ -296,7 +299,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
       </div>
       {open && (
         <div className="detail">
-          {state.spaces.find((s) => s.id === task.spaceId)?.kind === "markets" && (
+          {space?.kind === "markets" && (
             <p className="advice-line">
               <AdviceTag />
             </p>
@@ -309,7 +312,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
               {task.kind === "review" ? "Reviews" : "Fixes what the review found in"} “{parent.title}”
             </p>
           )}
-          <pre>{task.detail || task.title}</pre>
+          <section className="asked">
+            <h4>You asked</h4>
+            <Markdown text={task.detail || task.title} />
+          </section>
+          {space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />}
           <div className="meta">
             <span className="agent-meta">
               Agent

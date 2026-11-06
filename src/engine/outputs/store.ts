@@ -73,7 +73,7 @@ export function recordRunFiles(
 
 // What a task made across all its runs: the newest change to each file, newest first.
 export function taskFiles(db: Database, taskId: string): RunFile[] {
-  const rows = db.query("SELECT * FROM run_files WHERE task_id = ? ORDER BY created_at DESC, rowid DESC").all(taskId) as Row[];
+  const rows = db.query("SELECT * FROM run_files WHERE task_id = ? ORDER BY created_at DESC, path ASC").all(taskId) as Row[];
   const seen = new Set<string>();
   const out: RunFile[] = [];
   for (const r of rows) {

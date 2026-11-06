@@ -1,10 +1,11 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, type Stats } from "node:fs";
-import { basename, join, sep } from "node:path";
+import { join, sep } from "node:path";
 import { showBlob } from "../git";
 import { bytes as sizeText } from "../text";
+import { extOf, type FileKind, IMAGE_TYPES, kindOf, looksLikeText } from "./kinds";
 import { isHiddenPath } from "./snapshot";
 
-export type FileKind = "markdown" | "text" | "image" | "calendar" | "other";
+export { type FileKind, kindOf } from "./kinds";
 
 export class FileRefused extends Error {
   constructor(
@@ -18,9 +19,6 @@ export class FileRefused extends Error {
 export const PREVIEW_CAP = 262_144;
 export const RAW_CAP = 10_485_760;
 
-const TEXT_EXT = new Set("txt csv tsv json yaml yml toml ts tsx js jsx py rb go rs swift sh css html xml log".split(" "));
-// SVG can carry script, so it is never shown inline.
-const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
 
 const BAD_PATH = "That isn't a file Atrium can show.";
 const GONE = "That file isn't in the folder anymore. It may have been moved or deleted.";
@@ -28,32 +26,6 @@ const OUTSIDE = "This file points outside the space folder, so Atrium won't open
 const NOT_FILE = "That's a folder or special file. Use Reveal in Finder to see it.";
 const BINARY = "This file isn't text, so there's no preview. Open it instead.";
 const NOT_UTF8 = "Parts of this file aren't valid text, so they show as �.";
-
-const extOf = (path: string) => {
-  const name = basename(path);
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-};
-
-export function kindOf(path: string, head?: Uint8Array): FileKind {
-  const ext = extOf(path);
-  if (ext === "md" || ext === "markdown") return "markdown";
-  if (ext === "ics") return "calendar";
-  if (ext in IMAGE_TYPES) return "image";
-  if (TEXT_EXT.has(ext)) return "text";
-  return head && looksLikeText(head) ? "text" : "other";
-}
-
-function looksLikeText(head: Uint8Array): boolean {
-  if (head.includes(0)) return false;
-  try {
-    // stream: a multi-byte character cut at the end of the head isn't an error.
-    new TextDecoder("utf-8", { fatal: true }).decode(head, { stream: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Requests name files relative to the folder. Anything absolute, climbing out, hidden or a .env name is refused
 // before the disk is touched.

@@ -64,6 +64,21 @@ if (mode === "slow") {
   result("Finished the long job.");
   process.exit(0);
 }
+// Plays an agent that made files: copies every fixture except the summary into the run folder, then answers with it.
+if (mode === "write_files") {
+  const { chmodSync, copyFileSync, mkdirSync, readdirSync, readFileSync } = await import("node:fs");
+  const { basename, join } = await import("node:path");
+  const from = process.env.FAKE_CLAUDE_FILES!;
+  const summary = process.env.FAKE_CLAUDE_SUMMARY!;
+  for (const name of readdirSync(from)) if (name !== basename(summary)) copyFileSync(join(from, name), join(process.cwd(), name));
+  if (process.env.FAKE_CLAUDE_CC_DIR === "1") {
+    mkdirSync(join(process.cwd(), ".claude", ".cc-writes"), { recursive: true });
+    chmodSync(join(process.cwd(), ".claude", ".cc-writes"), 0o700);
+  }
+  out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Planning the week." }] } });
+  result(readFileSync(summary, "utf8"));
+  process.exit(0);
+}
 if (mode === "argv") {
   result(JSON.stringify({ argv: process.argv.slice(2), stdin: await Bun.stdin.text() }));
   process.exit(0);

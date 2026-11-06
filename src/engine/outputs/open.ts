@@ -2,12 +2,12 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, sta
 import { basename, join } from "node:path";
 import { config } from "../config";
 import { CHANGED, FileRefused, readBytes, readOpen, type Target } from "./files";
+import { extOf, OPENABLE } from "./kinds";
+
+export { OPENABLE } from "./kinds";
 
 export type OpenHow = "open" | "reveal" | "calendar";
 
-// File types Atrium will open. Anything that can launch code (apps, scripts, .command, HTML) is left out:
-// those are only ever revealed in Finder.
-export const OPENABLE = new Set(["md", "markdown", "txt", "csv", "tsv", "json", "yaml", "yml", "ics", "pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "rtf", "docx", "xlsx", "pptx"]);
 
 const RUNS_CODE = "Atrium won't open this kind of file directly, since it could run code. Use Reveal in Finder to look at it.";
 const OPEN_CAP = 100 * 1024 * 1024;
@@ -20,12 +20,6 @@ const OFFICE: Record<string, string[]> = {
   docx: ["Microsoft Word", "Pages", "TextEdit"],
   xlsx: ["Microsoft Excel", "Numbers"],
   pptx: ["Microsoft PowerPoint", "Keynote"],
-};
-
-const extOf = (p: string) => {
-  const name = basename(p);
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 };
 
 const installed = (app: string) =>

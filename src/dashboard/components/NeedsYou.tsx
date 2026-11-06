@@ -8,6 +8,8 @@ import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
 import { AdviceTag } from "./markets/AdviceTag";
+import { Markdown } from "./Markdown";
+import { WhatItMade } from "./WhatItMade";
 
 type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
@@ -95,7 +97,11 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
       </div>
       {open && (
         <div className="detail">
-          <pre>{approval.detail || "No further detail."}</pre>
+          {approval.taskId && space ? (
+            <WhatItMade taskId={approval.taskId} spaceId={space.id} spaceKind={space.kind} />
+          ) : (
+            <Markdown text={approval.detail || "No further detail."} />
+          )}
           <div className="meta">
             <span title={absolute(approval.createdAt)}>Asked {relative(approval.createdAt)}</span>
             {approval.taskId && space && (
