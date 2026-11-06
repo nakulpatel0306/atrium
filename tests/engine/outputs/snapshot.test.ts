@@ -140,3 +140,14 @@ test("a truncated before-snapshot doesn't call files past where it stopped new",
   // a2.md sorts within what the first walk saw (a.md, a2.md, b.md); c.md, d.md and sub/z.md were never seen.
   expect(changes).toEqual([{ path: "a2.md", change: "created", size: 1 }]);
 });
+
+test("a depth cap doesn't hide new files that sort after the last walked file", () => {
+  const d = temp();
+  put(d, "1/2/3/4/5/6/7/8/9/deep.md");
+  put(d, "grocery.md");
+  const before = snapshotFolder(d);
+  expect(before.truncated).toBe(true);
+  put(d, "week-plan.md");
+  put(d, "a-new.md");
+  expect(diffSnapshots(before, snapshotFolder(d)).map((c) => c.path)).toEqual(["a-new.md", "week-plan.md"]);
+});

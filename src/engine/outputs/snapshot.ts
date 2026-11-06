@@ -4,7 +4,9 @@ import { isEnvPath } from "../envpath";
 
 export type Entry = { size: number; mtimeMs: number; hash: string | null };
 // `last` is the last path the walk reached, so a capped snapshot says how far it got.
-export type Snapshot = { files: Map<string, Entry>; truncated: boolean; last: string | null };
+// `fileCapHit` says the walk stopped at maxFiles, and `last` is the last path it reached, so a diff knows how far
+// it got. A depth cap also sets `truncated`, but the walk carried on past it.
+export type Snapshot = { files: Map<string, Entry>; truncated: boolean; fileCapHit: boolean; last: string | null };
 export type FileChange = { path: string; change: "created" | "changed" | "deleted"; size: number | null };
 
 // hashTotalBytes caps the reading one snapshot does (a folder of 2,000 one-megabyte files would otherwise be read
@@ -63,7 +65,7 @@ export function snapshotFolder(
     }
   };
   walk(dir, "", 0);
-  return { files, truncated, last };
+  return { files, truncated, fileCapHit: full, last };
 }
 
 function hashOf(path: string, seen: Stats, cap: number): string | null {
@@ -110,7 +112,7 @@ function walkOrder(x: string, y: string): number {
 export function diffSnapshots(before: Snapshot, after: Snapshot): FileChange[] {
   const out: FileChange[] = [];
   // A capped before-walk never saw what lies past its last path, so nothing there can be called new.
-  const seen = (path: string) => !before.truncated || (before.last !== null && walkOrder(path, before.last) <= 0);
+  const seen = (path: string) => !before.fileCapHit || (before.last !== null && walkOrder(path, before.last) <= 0);
   for (const [path, a] of after.files) {
     if (!seen(path)) continue;
     const b = before.files.get(path);
