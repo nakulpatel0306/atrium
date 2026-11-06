@@ -313,7 +313,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         const inst = typeof f?.symbol === "string" ? parseInstrumentKey(f.symbol) : null;
         if (!inst || typeof f?.note !== "string") continue;
         const key = instrumentKey(inst);
-        createApproval(db, { spaceId: space.id, kind: "alert", topic: "flag", title: `${agentName(agent)} flagged ${key}`, detail: `${f.note.trim()}\n\nAnalysis, not advice.` });
+        createApproval(db, { spaceId: space.id, kind: "alert", topic: "flag", subject: key, title: `${agentName(agent)} flagged ${key}`, detail: `${f.note.trim()}\n\nAnalysis, not advice.` });
         lines.push(`Flagged ${key}: ${f.note.trim()}`);
       }
       for (const b of (Array.isArray(block?.backtests) ? block!.backtests : []).slice(0, LIMITS.backtests)) {

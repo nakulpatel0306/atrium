@@ -91,7 +91,7 @@ export function makeState(over: Partial<State> = {}): State {
       { id: ids.reviewRun, taskId: ids.review, agent: "claude", startedAt: now - 48 * min, endedAt: now - 44 * min, exitCode: 0, inputTokens: 1200, outputTokens: 300 },
     ],
     approvals: [
-      { id: ids.approval, spaceId: ids.atrium, taskId: ids.review, kind: "review", title: "Review: Fix login redirect", detail: "Changed 2 files.", status: "pending", note: null, branchHead: null, fingerprint: null, decidedBy: "you", ruleId: null, undoneAt: null, alwaysAsk: null, topic: null, createdAt: now - 3 * min, resolvedAt: null },
+      { id: ids.approval, spaceId: ids.atrium, taskId: ids.review, kind: "review", title: "Review: Fix login redirect", detail: "Changed 2 files.", status: "pending", note: null, branchHead: null, fingerprint: null, decidedBy: "you", ruleId: null, undoneAt: null, alwaysAsk: null, topic: null, subject: null, createdAt: now - 3 * min, resolvedAt: null },
     ],
     proposals: [],
     rules: [],

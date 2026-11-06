@@ -209,6 +209,8 @@ function migrate(db: Database) {
   if (!has("tasks", "subject")) db.exec("ALTER TABLE tasks ADD COLUMN subject TEXT");
   // Which kind of market alert an approval is, so Needs-you and notifications can group them.
   if (!has("approvals", "topic")) db.exec("ALTER TABLE approvals ADD COLUMN topic TEXT");
+  // The instrument an alert is about, so the Mac app can name it in a notification.
+  if (!has("approvals", "subject")) db.exec("ALTER TABLE approvals ADD COLUMN subject TEXT");
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
   migrateWatchlists(db);
@@ -280,6 +282,7 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   rule_id TEXT REFERENCES autonomy_rules(id),
   undone_at INTEGER,
   topic TEXT,
+  subject TEXT,
   always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${ALWAYS_ASK.map((k) => `'${k}'`).join(",")})),
   CHECK (space_id IS NOT NULL OR kind = 'question'),
   CHECK (always_ask IS NULL OR fingerprint IS NULL),

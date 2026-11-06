@@ -7,7 +7,7 @@ import { listSpaces } from "./spaces";
 import { listTasks } from "./tasks";
 
 // `files` is how many files a review's task made (0 for everything else), so the notification can say so.
-export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string; topic: AlertTopic | null; files: number };
+export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string; topic: AlertTopic | null; files: number; symbol: string | null };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
 export type Summary = {
   needsYou: number;
@@ -32,7 +32,7 @@ export function summary(db: Database): Summary {
     .map((a) => ({
       at: a.createdAt,
       need: (a.spaceId === null
-        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic, files: 0 }
+        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic, files: 0, symbol: null }
         : {
             id: a.id,
             kind: a.kind,
@@ -40,6 +40,7 @@ export function summary(db: Database): Summary {
             spaceName: names.get(a.spaceId)!,
             path: pathFor(a.spaceId, a.taskId),
             topic: a.topic,
+            symbol: a.kind === "alert" ? a.subject : null,
             files: a.kind === "review" && a.taskId ? taskFiles(db, a.taskId).filter((f) => f.change !== "deleted").length : 0,
           }) as Need,
     }));
@@ -48,7 +49,7 @@ export function summary(db: Database): Summary {
     .filter((p) => names.has(p.spaceId))
     .map((p) => ({
       at: p.createdAt,
-      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0 } as Need,
+      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0, symbol: null } as Need,
     }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
   const needs = [...approvals, ...suggestions].sort((a, b) => b.at - a.at).map((x) => x.need);

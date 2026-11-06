@@ -176,6 +176,48 @@ export function proposalDetail(view: View): DetailLine[] {
 // The engine logs a rule's decision as Atrium's, in these words; it's the only record of it the state carries.
 export const ruleApproved = (row: State["activity"][number]) => row.message.startsWith("Approved by your rule");
 
+const cadWhole = (n: number) => `CA$${Math.round(n).toLocaleString("en-US")}`;
+const priceText = (n: number, ccy: "CAD" | "USD") => `${ccy === "USD" ? "US$" : "CA$"}${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+const hourText = (h: string | null) => (h === "bmo" ? "before open" : h === "amc" ? "after close" : "time not set");
+
+// The investing glance: the portfolio's value and day, each list with symbols padded and prices right-aligned, and
+// the next two weeks of earnings.
+function marketsLines(g: MarketsGlance): DetailLine[] {
+  const out: DetailLine[] = [];
+  const p = g.portfolio;
+  if (p && p.totalCad !== null) {
+    const day = p.dayPct !== null && p.dayCad !== null ? ` · ${signedPct1(p.dayPct)} ${p.dayLabel ?? "today"} (${signedCad(p.dayCad)})` : "";
+    out.push(plain(`Portfolio ${cadWhole(p.totalCad)}${day}`));
+    if (p.mix) out.push(muted(p.mix));
+  } else out.push(plain("No holdings yet. Import them in the app."));
+  if (g.paper) out.push(plain(`Paper ${signedMoney(g.paper.dayPnl)} today (${signedMoney(g.paper.totalPnl)} total)`));
+  for (const l of g.lists) {
+    out.push(blank, heading(l.name));
+    if (!l.rows.length) {
+      out.push(muted("  Nothing here yet."));
+      continue;
+    }
+    const sym = Math.max(...l.rows.map((r) => r.key.length));
+    const prices = l.rows.map((r) => (r.price === null ? "no price" : priceText(r.price, r.ccy)));
+    const width = Math.max(...prices.map((x) => x.length));
+    l.rows.forEach((r, i) => {
+      const line: DetailLine = [{ text: `  ${r.key.padEnd(sym)}  ${prices[i]!.padStart(width)}${r.dayPct === null ? "" : `  ${signedPct1(r.dayPct)}`}` }];
+      if (r.tag) line.push({ text: `  ${r.tag}`, color: color.muted });
+      out.push(line);
+    });
+  }
+  out.push(blank, heading("Earnings in the next 2 weeks"));
+  if (!g.earnings.length) out.push(muted("No earnings in the next two weeks."));
+  for (const e of g.earnings) {
+    const when = dayFmt.format(Date.parse(`${e.date}T12:00:00Z`));
+    const line: DetailLine = [{ text: `  ${when}  ${e.key}  ${hourText(e.hour)}` }];
+    if (e.held) line.push({ text: "  · you hold this", color: color.muted });
+    out.push(line);
+  }
+  return out;
+}
+
 export function spaceDetail(view: View, reviewers: Record<string, string | null> | null, markets: MarketsGlance | null = null): DetailLine[] {
   const space = view.space;
   if (!space) return [muted(view.spaces.length ? PICK : "No spaces yet. Press N to describe one.")];
@@ -204,16 +246,8 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
   }
   if (space.kind === "markets") {
     lines.push(blank);
-    if (markets) {
-      const p = markets.portfolio;
-      if (p) {
-        lines.push(plain(`Portfolio ${signedPct1(p.dayPct)} ${p.dayLabel} (${signedCad(p.dayCad)}) · ${p.mix}`));
-        if (p.movers.length) lines.push(plain(`Top movers: ${p.movers.map((m) => `${m.key} ${signedPct1(m.dayPct)}${m.tag ? ` (${m.tag})` : ""}`).join(", ")}`));
-      }
-      lines.push(plain(`Watching ${plural(markets.watchlist, "symbol")}`));
-      if (markets.paper) lines.push(plain(`Paper ${signedMoney(markets.paper.dayPnl)} today (${signedMoney(markets.paper.totalPnl)} total)`));
-    }
-    lines.push(muted("Open the dashboard for charts, alerts and the paper account."));
+    if (markets) lines.push(...marketsLines(markets));
+    lines.push(muted("Open the app for the chart."));
   }
   const activity = state.activity.filter((a) => a.spaceId === space.id).slice(0, SPACE_ACTIVITY);
   lines.push(blank, heading("Recent activity"));

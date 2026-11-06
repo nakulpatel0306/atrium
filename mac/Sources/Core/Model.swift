@@ -7,6 +7,14 @@ struct Need: Decodable, Equatable {
   var topic: String? = nil
   // How many files a review's task made; absent from older engines.
   var files: Int? = nil
+  // The instrument an alert is about ("AMZN"); absent from older engines and for everything but alerts.
+  var symbol: String? = nil
+}
+
+// The engine's TradingView chart listener this launch; absent from older engines, null when it didn't start.
+struct Embed: Decodable, Equatable {
+  let port: Int
+  let token: String
 }
 
 struct AlertCounts: Decodable, Equatable {
@@ -25,6 +33,7 @@ struct Summary: Decodable, Equatable {
   let stopped: [Stopped]
   let overnight: Bool
   var alerts: AlertCounts? = nil
+  var embed: Embed? = nil
 }
 
 struct Note: Equatable {

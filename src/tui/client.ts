@@ -3,7 +3,7 @@ import { config } from "../engine/config";
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
-import type { MarketsView } from "../server/markets";
+import type { GlanceView } from "../engine/markets/views";
 import { clean, scrub } from "./text";
 
 export type EngineClient = {
@@ -22,12 +22,8 @@ export type EngineClient = {
   close(): void;
 };
 
-// The few markets numbers the terminal shows; charts and the rest stay on the dashboard.
-export type MarketsGlance = {
-  watchlist: number;
-  paper: { dayPnl: number; totalPnl: number } | null;
-  portfolio: { dayPct: number; dayCad: number; mix: string; dayLabel: string; movers: { key: string; dayPct: number; tag: string | null }[] } | null;
-};
+// The few investing numbers the terminal shows; charts and the rest stay in the app.
+export type MarketsGlance = GlanceView;
 
 export const engineBase = () => `http://${config().host}:${config().port}`;
 
@@ -225,10 +221,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     messages: (taskId) => read<Message[]>(`/api/tasks/${encodeURIComponent(taskId)}/messages`),
     outputs: (taskId) => read<TaskOutputs>(`/api/tasks/${encodeURIComponent(taskId)}/outputs`),
     reviewers: (spaceId) => read<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`),
-    markets: async (spaceId) => {
-      const v = await read<MarketsView>(`/api/markets/${encodeURIComponent(spaceId)}`);
-      return v ? glance(v) : null;
-    },
+    markets: (spaceId) => read<GlanceView>(`/api/investing/${encodeURIComponent(spaceId)}/glance`),
     transcript,
     post: (path, body) => send("POST", path, body),
     patch: (path, body) => send("PATCH", path, body),
@@ -243,12 +236,3 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     },
   };
 }
-
-type GlanceSource = { watchlist: unknown[]; paper: { dayPnl: number; totalPnl: number; fills: unknown[] }; portfolio?: MarketsGlance["portfolio"] };
-
-// A paper account nobody has traded in has nothing worth a line.
-export const glance = (v: Pick<MarketsView, "watchlist" | "paper" | "portfolio"> | GlanceSource): MarketsGlance => ({
-  watchlist: v.watchlist.length,
-  paper: v.paper.fills.length ? { dayPnl: v.paper.dayPnl, totalPnl: v.paper.totalPnl } : null,
-  portfolio: v.portfolio ? { dayPct: v.portfolio.dayPct, dayCad: v.portfolio.dayCad, mix: v.portfolio.mix, dayLabel: v.portfolio.dayLabel, movers: v.portfolio.movers } : null,
-});

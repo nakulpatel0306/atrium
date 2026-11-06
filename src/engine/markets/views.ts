@@ -12,7 +12,9 @@ import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } fro
 import { currencyOfKey } from "./labels";
 import { listItems, listLists, type WatchList } from "./lists";
 import { getMeta } from "./meta";
+import { paperState } from "./paper";
 import { portfolioDay, positionsFor } from "./portfolio";
+import type { Quote } from "./providers/types";
 import { latestWriteups, type Writeup } from "./research";
 import { closeDayText, quoteSourced, type Sourced } from "./sourced";
 import { tvSymbol } from "./tradingview";
@@ -181,6 +183,8 @@ export type GlanceView = {
   lists: { name: string; rows: { key: string; price: number | null; ccy: "CAD" | "USD"; dayPct: number | null; tag: string | null }[] }[];
   earnings: { key: string; date: string; hour: string | null; held: boolean }[];
   advanced: boolean;
+  // Today's and total paper P&L, only with Advanced on and some paper trades.
+  paper: { dayPnl: number; totalPnl: number } | null;
 };
 
 const tagOf = (p: Sourced | null): string | null => (!p || p.tone === "live" ? null : p.tone === "demo" ? "demo" : `close ${closeDayText(p.asOf)}`);
@@ -195,5 +199,18 @@ export function glanceView(db: Database, data: MarketData, spaceId: string, now:
     })),
     earnings: earningsView(db, spaceId, now).rows.map((e) => ({ key: e.key, date: e.date, hour: e.hour, held: e.held })),
     advanced: isAdvanced(db, spaceId),
+    paper: isAdvanced(db, spaceId) ? paperGlance(db, data, spaceId, now) : null,
   };
+}
+
+function paperGlance(db: Database, data: MarketData, spaceId: string, now: number): GlanceView["paper"] {
+  const symbols = db.query("SELECT DISTINCT symbol FROM paper_fills WHERE space_id = ?").all(spaceId) as { symbol: string }[];
+  if (!symbols.length) return null;
+  const quotes = new Map<string, Quote>();
+  for (const { symbol } of symbols) {
+    const q = currentQuote(db, data, { symbol, exchange: "US" });
+    if (q) quotes.set(symbol, q);
+  }
+  const p = paperState(db, spaceId, quotes, now);
+  return { dayPnl: p.dayPnl, totalPnl: p.totalPnl };
 }

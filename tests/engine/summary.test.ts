@@ -95,7 +95,7 @@ test("summary counts pending suggestions as things that need you", () => {
 
   const sum = summary(db);
   expect(sum.needsYou).toBe(2);
-  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null, files: 0 });
+  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null, files: 0, symbol: null });
   expect(sum.needs[1]!.id).toBe(a.id);
 });
 
@@ -130,7 +130,7 @@ test("summary counts alert kinds and gives each need its topic", () => {
 test("summary shows an Atrium-wide question as Atrium's", () => {
   const a = createApproval(db, { spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?', detail: "", alwaysAsk: "create_repo" });
   const sum = summary(db);
-  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null, files: 0 });
+  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null, files: 0, symbol: null });
   expect(sum.needsYou).toBe(1);
 });
 
@@ -150,4 +150,14 @@ test("a review need says how many files its task made", () => {
   expect(needs.find((n) => n.kind === "review")!.files).toBe(4);
   expect(needs.find((n) => n.kind === "review")!.path).toBe(`/space/${s.id}?task=${t.id}`);
   expect(needs.find((n) => n.kind === "alert")!.files).toBe(0);
+});
+
+test("an alert need carries its symbol; a review need has null", () => {
+  const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
+  createApproval(db, { spaceId: space.id, kind: "alert", topic: "price", title: "AMZN price above $300.00", detail: "d", subject: "AMZN" });
+  const work = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
+  createApproval(db, { spaceId: work.id, kind: "review", title: "Review", detail: "d" });
+  const needs = summary(db).needs;
+  expect(needs.find((n) => n.kind === "alert")?.symbol).toBe("AMZN");
+  expect(needs.find((n) => n.kind === "review")?.symbol).toBeNull();
 });

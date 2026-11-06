@@ -176,6 +176,7 @@ function fire(db: Database, a: Alert, q: Quote, now: number): void {
     kind: "alert",
     title: titleOf(a),
     topic: topicOf(a.rule),
+    subject: a.key,
     detail: `${a.key} at ${money(q.price, currencyOfKey(a.key))} (${freshnessText(q, now)}, ${etClock(q.at)}). Your alert: ${rule}.${note}\n\nAnalysis, not advice.`,
   });
   db.query("UPDATE market_alerts SET status = ?, last_fired_at = ? WHERE id = ?").run(a.repeat ? "fired" : "off", now, a.id);
@@ -273,7 +274,7 @@ export function evaluateEvents(db: Database, now: number): number {
 }
 
 function raise(db: Database, a: Alert, detail: string, now: number, firedFor: string | null): void {
-  createApproval(db, { spaceId: a.spaceId, kind: "alert", title: titleOf(a), topic: topicOf(a.rule), detail });
+  createApproval(db, { spaceId: a.spaceId, kind: "alert", title: titleOf(a), topic: topicOf(a.rule), subject: a.key, detail });
   db.query("UPDATE market_alerts SET status = ?, last_fired_at = ?, fired_for = COALESCE(?, fired_for) WHERE id = ?").run(a.repeat ? "armed" : "off", now, firedFor, a.id);
   logActivity(db, a.spaceId, "atrium", `Alert: ${titleOf(a)}`);
 }

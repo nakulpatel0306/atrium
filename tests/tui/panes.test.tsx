@@ -91,11 +91,12 @@ test("a markets space and its price alert show up and can be answered", async ()
   state.spaces.unshift({ ...state.spaces[0]!, id: "spc_markets", name: "Stocks", kind: "markets", private: true, repoPath: null, goal: "Watch", reviewBy: null });
   state.approvals.unshift({ ...state.approvals[0]!, id: "apr_alert", spaceId: "spc_markets", kind: "alert", taskId: null, title: "AAPL price above $200.00", createdAt: Date.now() });
   const client = fakeClient(state);
-  client.respond("/api/markets/spc_markets", { ok: true, data: { watchlist: [{}, {}], paper: { dayPnl: 5, totalPnl: 7, fills: [{}] } } });
+  const glance = { portfolio: null, lists: [{ name: "Holdings", rows: [{ key: "AAPL", price: 201, ccy: "USD", dayPct: 1.2, tag: null }] }], earnings: [], advanced: false, paper: null };
+  client.respond("/api/investing/spc_markets/glance", { ok: true, data: glance });
   const app = openApp(client);
   await app.frame((f) => f.includes("[1] Spaces") && f.includes("Stocks"));
-  await app.frame((f) => f.includes("Watching 2 symbols") && f.includes("Open the dashboard for charts"));
-  expect(client.calls).toContainEqual({ method: "GET", path: "/api/markets/spc_markets" });
+  await app.frame((f) => f.includes("US$201.00") && f.includes("Open the app for the chart."));
+  expect(client.calls).toContainEqual({ method: "GET", path: "/api/investing/spc_markets/glance" });
   await app.type("3");
   await app.frame((f) => f.includes("AAPL price above $200.00") && f.includes("a dismiss"));
   await app.type("r");

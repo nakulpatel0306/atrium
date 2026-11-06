@@ -171,6 +171,58 @@ let filesJson = """
   """
 check((try? JSONDecoder().decode(Summary.self, from: Data(filesJson.utf8)))?.needs.first?.files == 4, "decode: files")
 
+// symbols in alert titles
+check(alertTitle("price", "AMZN") == "AMZN price alert", "alert: price with symbol")
+check(alertTitle("indicator", "AMZN") == "AMZN price alert", "alert: indicator with symbol")
+check(alertTitle(nil, "AMZN") == "AMZN price alert", "alert: no topic with symbol")
+check(alertTitle("earnings", "NOW") == "NOW earnings soon", "alert: earnings with symbol")
+check(alertTitle("news", "RKLB") == "Big news on RKLB", "alert: news with symbol")
+check(alertTitle("flag", "TSLA") == "Claude flagged TSLA", "alert: flag with symbol")
+check(alertTitle("price", nil) == "Price alert", "alert: price without symbol")
+check(alertTitle("earnings", nil) == "Earnings soon", "alert: earnings without symbol")
+let symJson = """
+  {"needsYou":1,"needs":[{"id":"apr_s","kind":"alert","title":"AMZN price above $300.00","spaceName":"Investing","path":"/p","topic":"price","files":0,"symbol":"AMZN"}],"stopped":[],"overnight":false,"embed":{"port":7421,"token":"abc"}}
+  """
+let symDecoded = try? JSONDecoder().decode(Summary.self, from: Data(symJson.utf8))
+check(symDecoded?.needs.first?.symbol == "AMZN", "decode: need symbol")
+check(symDecoded?.embed == Embed(port: 7421, token: "abc"), "decode: embed listener")
+check(decoded?.needs.first?.symbol == nil && decoded?.embed == nil, "decode: older summaries without symbol or embed")
+let alertNeed = Need(id: "apr_s", kind: "alert", title: "AMZN price above $300.00", spaceName: "Investing", path: "/p", topic: "price", files: 0, symbol: "AMZN")
+check(newNotes(previous: summary(), next: summary(needs: [alertNeed])).first?.title == "AMZN price alert", "notes: alert names its symbol")
+
+// TradingView frames: only as subframes, only TradingView's widget hosts or the engine's chart listener
+let tvFrame = URL(string: "https://www.tradingview-widget.com/embed-widget/advanced-chart/")!
+check(isTvFrame(tvFrame), "tv: widget host")
+check(isTvFrame(URL(string: "https://s.tradingview.com/embed-widget/x/")!), "tv: fallback host")
+check(!isTvFrame(URL(string: "http://www.tradingview-widget.com/")!), "tv: http refused")
+check(!isTvFrame(URL(string: "https://www.tradingview.com/chart/")!), "tv: main site is not a frame host")
+check(linkDecision(tvFrame, port: 7420, userClick: false, mainFrame: false) == .allow, "policy: TradingView subframe without a click")
+check(linkDecision(tvFrame, port: 7420, userClick: false, mainFrame: true) == .cancel, "policy: TradingView as main frame without a click")
+check(linkDecision(URL(string: "https://www.tradingview.com/chart/")!, port: 7420, userClick: false, mainFrame: false) == .cancel, "policy: tradingview.com subframe")
+check(linkDecision(URL(string: "https://evil.example/")!, port: 7420, userClick: false, mainFrame: false) == .cancel, "policy: other subframe")
+let chartPage = URL(string: "http://localhost:7421/embed/abc/tradingview?symbol=NASDAQ:AMZN")!
+check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: false, embedPort: 7421) == .allow, "policy: the engine's chart listener as subframe")
+check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: false) == .cancel, "policy: no reported listener, no chart frame")
+check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: false, embedPort: 7422) == .cancel, "policy: a different port isn't the chart listener")
+check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: true, embedPort: 7421) == .cancel, "policy: the chart listener never as main frame")
+check(linkDecision(URL(string: "http://localhost:7420/embed/tradingview")!, port: 7420, userClick: false, mainFrame: false) == .allow, "policy: own port subframe still internal")
+
+// content rules: block everything, then allow the engine, its chart listener and TradingView
+let rules = contentRulesJSON(port: 7420, embedPort: 7421)
+let parsed = (try? JSONSerialization.jsonObject(with: Data(rules.utf8))) as? [[String: Any]]
+check(parsed != nil, "rules: valid JSON")
+let firstRule = parsed?.first
+check(((firstRule?["trigger"] as? [String: Any])?["url-filter"] as? String) == ".*", "rules: first rule matches everything")
+check(((firstRule?["action"] as? [String: Any])?["type"] as? String) == "block", "rules: first rule blocks")
+let filters = (parsed ?? []).compactMap { ($0["trigger"] as? [String: Any])?["url-filter"] as? String }
+check(rules.contains("127\\\\.0\\\\.0\\\\.1:7420"), "rules: engine port")
+check(rules.contains("localhost:7421"), "rules: chart listener port")
+check(rules.contains("tradingview-widget"), "rules: widget host")
+check(!filters.contains { $0.contains("|") }, "rules: no alternation")
+check(!rules.contains("\\\\.?"), "rules: no optional dots")
+check(!rules.contains("googleapis"), "rules: no Google")
+check(!contentRulesJSON(port: 7420, embedPort: nil).contains("7421"), "rules: no listener, no listener rule")
+
 // backoff
 check(nextBackoff(0) == 2, "backoff: floor")
 check(nextBackoff(2) == 4, "backoff: doubles")

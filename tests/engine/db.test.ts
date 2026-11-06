@@ -376,3 +376,17 @@ test("market_writeups accepts kind ask after migrating an old table", () => {
   db.close();
   t.cleanup();
 });
+
+test("approvals gain subject and keep their rows", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const first = openDb(path);
+  first.query("INSERT INTO spaces (id, name, kind, goal, color, private, status, created_at, updated_at) VALUES ('spc_a', 'Investing', 'markets', '', '#fff', 1, 'active', 1, 1)").run();
+  first.query("INSERT INTO approvals (id, space_id, kind, title, detail, created_at) VALUES ('apr_1', 'spc_a', 'alert', 'AMZN price above $1.00', '', 1)").run();
+  first.exec("ALTER TABLE approvals DROP COLUMN subject");
+  first.close();
+  const db = openDb(path);
+  expect(db.query("SELECT id, title, subject FROM approvals").all()).toEqual([{ id: "apr_1", title: "AMZN price above $1.00", subject: null }]);
+  db.close();
+  t.cleanup();
+});

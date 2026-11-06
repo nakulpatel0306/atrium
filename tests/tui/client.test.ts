@@ -203,3 +203,16 @@ test("a frame that isn't JSON is ignored", async () => {
   expect(other.online()).toBe(true);
   expect(fetches).toBeGreaterThanOrEqual(2);
 });
+
+test("markets() reads the glance route", async () => {
+  const seen: string[] = [];
+  const glance = { portfolio: null, lists: [], earnings: [], advanced: false, paper: null };
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    seen.push(url);
+    if (url.endsWith("/glance")) return new Response(JSON.stringify(glance), { headers: { "content-type": "application/json" } });
+    return realFetch(input, init);
+  }) as typeof fetch;
+  expect(await client.markets("spc_1")).toEqual(glance);
+  expect(seen.some((u) => u.endsWith("/api/investing/spc_1/glance"))).toBe(true);
+});

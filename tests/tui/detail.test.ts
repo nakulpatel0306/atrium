@@ -108,35 +108,51 @@ test("an alert's detail says how to dismiss it", () => {
   expect(all).not.toContain("r send back");
 });
 
-test("a markets space's detail shows the watchlist, paper P&L and where the charts are", () => {
+const GLANCE = {
+  portfolio: { totalCad: 48210.55, dayCad: 312.4, dayPct: 0.65, dayLabel: "today", mix: "10 real-time · 4 close of Nov 4" },
+  lists: [
+    {
+      name: "Holdings",
+      rows: [
+        { key: "AMZN", price: 250, ccy: "USD" as const, dayPct: 2.04, tag: null },
+        { key: "XEQT.TO", price: 35, ccy: "CAD" as const, dayPct: 0.29, tag: "close Nov 4" },
+      ],
+    },
+  ],
+  earnings: [{ key: "NOW", date: "2026-11-12", hour: "amc", held: true }],
+  advanced: false,
+  paper: null,
+};
+
+test("a markets space's detail shows the portfolio, each list and the next two weeks of earnings", () => {
   const view = deriveView(marketsState(), initialUi);
-  const all = text(spaceDetail(view, null, { watchlist: 3, paper: { dayPnl: 12.3, totalPnl: -4 }, portfolio: null }));
-  expect(all).toContain("Stocks");
-  expect(all).toContain("Watching 3 symbols");
-  expect(all).toContain("Paper +$12.30 today (−$4.00 total)");
-  expect(all).toContain("Open the dashboard for charts");
-  expect(text(spaceDetail(view, null, null))).toContain("Open the dashboard for charts");
+  const lines = spaceDetail(view, null, GLANCE);
+  const all = text(lines).split("\n");
+  const at = all.findIndex((l) => l.startsWith("Portfolio"));
+  expect(all.slice(at, at + 11)).toEqual([
+    "Portfolio CA$48,211 · +0.7% today (+CA$312)",
+    "10 real-time · 4 close of Nov 4",
+    "",
+    "Holdings",
+    "  AMZN     US$250.00  +2.0%",
+    "  XEQT.TO   CA$35.00  +0.3%  close Nov 4",
+    "",
+    "Earnings in the next 2 weeks",
+    "  Thu, Nov 12  NOW  after close  · you hold this",
+    "Open the app for the chart.",
+    "",
+  ]);
+  expect(lines[at + 1]![0]!.color).toBe("gray");
+  expect(all.join("\n")).not.toContain("Paper");
 });
 
-test("a markets space with holdings shows the portfolio's day and its top movers first", () => {
+test("a markets space with no holdings or earnings says so plainly", () => {
   const view = deriveView(marketsState(), initialUi);
-  const portfolio = {
-    dayPct: 0.8,
-    dayCad: 412,
-    mix: "10 real-time · 3 close of Nov 4",
-    dayLabel: "today",
-    movers: [
-      { key: "RKLB", dayPct: 6.1, tag: null },
-      { key: "QBTS", dayPct: -4.2, tag: null },
-      { key: "ATZ.TO", dayPct: 1.0, tag: "close Nov 4" },
-    ],
-  };
-  const lines = text(spaceDetail(view, null, { watchlist: 13, paper: null, portfolio })).split("\n");
-  const at = lines.findIndex((l) => l.startsWith("Portfolio"));
-  expect(lines[at]).toBe("Portfolio +0.8% today (+CA$412) · 10 real-time · 3 close of Nov 4");
-  expect(lines[at + 1]).toBe("Top movers: RKLB +6.1%, QBTS −4.2%, ATZ.TO +1.0% (close Nov 4)");
-  expect(lines[at + 2]).toBe("Watching 13 symbols");
-  expect(text(spaceDetail(view, null, { watchlist: 3, paper: null, portfolio: null }))).not.toContain("Portfolio");
+  const all = text(spaceDetail(view, null, { ...GLANCE, portfolio: null, earnings: [] }));
+  expect(all).toContain("No holdings yet. Import them in the app.");
+  expect(all).toContain("No earnings in the next two weeks.");
+  const paper = text(spaceDetail(view, null, { ...GLANCE, advanced: true, paper: { dayPnl: 12.3, totalPnl: -4 } }));
+  expect(paper).toContain("Paper +$12.30 today (−$4.00 total)");
 });
 
 test("a repo question's detail says it belongs to Atrium and where to edit it", () => {

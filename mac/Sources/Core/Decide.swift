@@ -38,7 +38,7 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
   var notes: [Note] = next.needs.filter { !seenNeeds.contains($0.id) }.map {
     Note(
       // A suggestion ("stop asking about this?") waits on an answer, like a question.
-      id: $0.id, title: $0.kind == "review" ? "Ready for review" : $0.kind == "alert" ? alertTitle($0.topic) : "Atrium has a question",
+      id: $0.id, title: $0.kind == "review" ? "Ready for review" : $0.kind == "alert" ? alertTitle($0.topic, $0.symbol) : "Atrium has a question",
       body: [$0.title, $0.spaceName, $0.kind == "review" ? madeText($0.files) : nil].compactMap { $0 }.joined(separator: " · "), path: $0.path)
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {
@@ -93,10 +93,24 @@ enum LinkDecision: Equatable {
   case allow, openExternally, cancel
 }
 
+let tvFrameHosts: Set<String> = ["www.tradingview-widget.com", "s.tradingview.com"]
+
+func isTvFrame(_ url: URL) -> Bool {
+  url.scheme == "https" && tvFrameHosts.contains(url.host ?? "")
+}
+
+// The engine's chart listener, on the port the engine reported, serving its one page.
+func isChartPage(_ url: URL, embedPort: Int?) -> Bool {
+  guard let embedPort, url.scheme == "http", let host = url.host else { return false }
+  return (host == "127.0.0.1" || host == "localhost") && url.port == embedPort && url.path.hasPrefix("/embed/")
+}
+
 // Dashboard pages show agent-written text, so a link or script there must not get NSWorkspace to open files or
 // launch other apps. Only a click Nakul made in the main frame leaves the app, and only to the web or mail.
-func linkDecision(_ url: URL, port: Int, userClick: Bool, mainFrame: Bool) -> LinkDecision {
+// TradingView's chart loads only as a subframe: the engine's chart listener and TradingView's widget hosts.
+func linkDecision(_ url: URL, port: Int, userClick: Bool, mainFrame: Bool, embedPort: Int? = nil) -> LinkDecision {
   if isInternal(url, port: port) { return .allow }
+  if !mainFrame && (isTvFrame(url) || isChartPage(url, embedPort: embedPort)) { return .allow }
   let scheme = url.scheme?.lowercased() ?? ""
   guard ["http", "https", "mailto"].contains(scheme), userClick, mainFrame else { return .cancel }
   return .openExternally
@@ -116,7 +130,15 @@ func nextBackoff(_ current: TimeInterval) -> TimeInterval {
   max(minBackoff, min(current * 2, maxBackoff))
 }
 
-func alertTitle(_ topic: String?) -> String {
+func alertTitle(_ topic: String?, _ symbol: String? = nil) -> String {
+  if let s = symbol {
+    switch topic {
+    case "earnings": return "\(s) earnings soon"
+    case "news": return "Big news on \(s)"
+    case "flag": return "Claude flagged \(s)"
+    default: return "\(s) price alert"
+    }
+  }
   switch topic {
   case "earnings": return "Earnings soon"
   case "news": return "Big news"
