@@ -134,7 +134,7 @@ test("1. the 13 tickers, then a Wealthsimple import with CAD book values and own
   spaceId = seedInvesting(db).spaceId;
   // Plan 7's tools are Advanced-only since Plan 10; this walkthrough exercises them.
   setAdvanced(db, spaceId, true);
-  expect(listWatchlist(db, spaceId)).toHaveLength(13);
+  expect(listWatchlist(db, spaceId)).toHaveLength(14);
   const csv = readFileSync(join(FIX, "ws-holdings.csv"), "utf8");
   expect((await call("POST", `/api/markets/${spaceId}/import`, { csv })).status).toBe(200);
   addHolding(db, spaceId, { account: "TFSA", symbol: "SPY", exchange: "US", name: "SPY", quantity: 4, bookValue: 2000, currency: "USD" });
@@ -181,7 +181,11 @@ test("4. health is read from the DB: Bank of Canada CAD totals and a company hel
 test("5. an earnings alert on the demo's first symbol lands in Needs you as an earnings item", async () => {
   // The end-of-day job asks the demo calendar for US stocks in tracked order; KO, held first, reports 3 trading days
   // after that run (Saturday's catch-up run for Friday's slot: Wednesday Nov 11).
-  expect(db.query("SELECT key, date, source FROM market_earnings").all()).toEqual([{ key: "KO", date: "2026-11-11", source: "finnhub" }]);
+  // META (added in Plan 10) reports later in the month, outside the alert window.
+  expect(db.query("SELECT key, date, source FROM market_earnings ORDER BY date").all()).toEqual([
+    { key: "KO", date: "2026-11-11", source: "finnhub" },
+    { key: "META", date: "2026-11-23", source: "finnhub" },
+  ]);
   createAlert(db, { spaceId, key: "KO", rule: { kind: "earnings_within", days: 5 } });
   expect(evaluateEvents(db, clock)).toBe(1);
   expect(evaluateEvents(db, clock)).toBe(0);

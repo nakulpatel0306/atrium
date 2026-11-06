@@ -22,7 +22,7 @@ import { fxJob } from "./engine/markets/fx";
 import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
 import { metaJob } from "./engine/markets/meta";
-import { seedOnBoot } from "./engine/markets/seed";
+import { addMetaOnBoot, seedOnBoot } from "./engine/markets/seed";
 import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { createRepos } from "./engine/repos";
@@ -39,6 +39,7 @@ const url = `http://${config().host}:${config().port}`;
 const db = openDb();
 // Nakul's 13 tickers go into an Investing space the first time the real engine starts (never with ATRIUM_HOME).
 seedOnBoot(db);
+addMetaOnBoot(db);
 const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: geminiAdapter() };
 // Market time: the real clock, or the demo clock ATRIUM_MARKET_NOW shifts while the provider is Demo.
 const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "finnhub");

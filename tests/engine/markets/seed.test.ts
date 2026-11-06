@@ -5,8 +5,9 @@ import { openDb } from "../../../src/engine/db";
 import { listActivity } from "../../../src/engine/events";
 import { getSetting, setSetting } from "../../../src/engine/settings";
 import { createSpace, listSpaces } from "../../../src/engine/spaces";
-import { INVESTING_TICKERS, seedInvesting, seedOnBoot } from "../../../src/engine/markets/seed";
-import { addToWatchlist, listWatchlist } from "../../../src/engine/markets/watchlist";
+import { addMetaOnce, INVESTING_TICKERS, META_ADDED, seedInvesting, seedOnBoot } from "../../../src/engine/markets/seed";
+import { createList, ensureDefaultList, listItems } from "../../../src/engine/markets/lists";
+import { addToWatchlist, listWatchlist, removeFromWatchlist } from "../../../src/engine/markets/watchlist";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -20,28 +21,28 @@ afterEach(() => {
   home.cleanup();
 });
 
-const KEYS = ["ATZ.TO", "NOW", "TSLA", "AMZN", "MARS", "DRAM", "SPY", "VFV.TO", "QQQ", "QBTS", "SOFI", "RKLB", "XEQT.TO"];
+const KEYS = ["ATZ.TO", "NOW", "TSLA", "AMZN", "MARS", "DRAM", "SPY", "VFV.TO", "QQQ", "QBTS", "SOFI", "RKLB", "XEQT.TO", "META"];
 
-test("seedInvesting creates the Investing space with the 13 tickers, once", () => {
+test("seedInvesting adds 14 tickers including META", () => {
   expect(INVESTING_TICKERS.map((t) => t.key)).toEqual(KEYS);
   const r = seedInvesting(db);
-  expect(r).toMatchObject({ created: true, added: 13 });
+  expect(r).toMatchObject({ created: true, added: 14 });
   const space = listSpaces(db).find((s) => s.id === r.spaceId)!;
   expect(space).toMatchObject({ name: "Investing", kind: "markets", private: true, goal: "Long-term TFSA investing: portfolio health, research and ideas." });
   const w = listWatchlist(db, r.spaceId);
   expect(w.map((x) => x.key)).toEqual(KEYS);
   expect(w.filter((x) => x.exchange === "TSX").map((x) => x.key)).toEqual(["ATZ.TO", "VFV.TO", "XEQT.TO"]);
-  expect(w.filter((x) => x.exchange === "US")).toHaveLength(10);
+  expect(w.filter((x) => x.exchange === "US")).toHaveLength(11);
   expect(w.find((x) => x.key === "RKLB")!.name).toBe("Rocket Lab");
   expect(getSetting(db, "investing.seeded")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-  expect(listActivity(db, { spaceId: r.spaceId }).map((a) => a.message)).toContain("Added your 13 tickers to the Investing watchlist.");
+  expect(listActivity(db, { spaceId: r.spaceId }).map((a) => a.message)).toContain("Added your 14 tickers to the Investing watchlist.");
   expect(seedInvesting(db)).toEqual({ spaceId: r.spaceId, created: false, added: 0 });
 });
 
 test("an existing Investing space keeps what it has", () => {
   const s = createSpace(db, { name: "Investing", kind: "markets", goal: "mine" });
   addToWatchlist(db, s.id, { symbol: "SPY", exchange: "US" });
-  expect(seedInvesting(db)).toEqual({ spaceId: s.id, created: false, added: 12 });
+  expect(seedInvesting(db)).toEqual({ spaceId: s.id, created: false, added: 13 });
 });
 
 test("seedOnBoot only ever runs on the real DB, and only once", () => {
@@ -61,4 +62,60 @@ test("seedOnBoot only ever runs on the real DB, and only once", () => {
   } finally {
     process.env.ATRIUM_HOME = saved;
   }
+});
+
+const metaLogs = (spaceId: string) => listActivity(db, { spaceId }).filter((a) => a.message === "Added META to your Holdings list.");
+const investing = () => {
+  const s = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
+  for (const k of ["AMZN", "NOW"]) addToWatchlist(db, s.id, { symbol: k, exchange: "US" });
+  return s.id;
+};
+
+test("addMetaOnce adds META to the Investing space's first list and logs once", () => {
+  const id = investing();
+  createList(db, id, "Ideas");
+  expect(addMetaOnce(db)).toBe("added");
+  const holdings = ensureDefaultList(db, id);
+  expect(listItems(db, holdings.id).map((i) => i.key)).toEqual(["AMZN", "NOW", "META"]);
+  expect(metaLogs(id)).toHaveLength(1);
+  expect(getSetting(db, META_ADDED)).not.toBeNull();
+});
+
+test("a second call is done_before and changes nothing", () => {
+  const id = investing();
+  addMetaOnce(db);
+  expect(addMetaOnce(db)).toBe("done_before");
+  expect(listWatchlist(db, id).filter((w) => w.key === "META")).toHaveLength(1);
+  expect(metaLogs(id)).toHaveLength(1);
+});
+
+test("if Nakul removed META after it was added, it stays removed", () => {
+  const id = investing();
+  addMetaOnce(db);
+  removeFromWatchlist(db, id, "META");
+  expect(addMetaOnce(db)).toBe("done_before");
+  expect(listWatchlist(db, id).map((w) => w.key)).toEqual(["AMZN", "NOW"]);
+});
+
+test("a second markets space named Ideas is untouched", () => {
+  investing();
+  const ideas = createSpace(db, { name: "Ideas", kind: "markets", goal: "g" });
+  addToWatchlist(db, ideas.id, { symbol: "NVDA", exchange: "US" });
+  addMetaOnce(db);
+  expect(listWatchlist(db, ideas.id).map((w) => w.key)).toEqual(["NVDA"]);
+});
+
+test("with META already present it reports present without logging", () => {
+  const id = investing();
+  addToWatchlist(db, id, { symbol: "META", exchange: "US" });
+  expect(addMetaOnce(db)).toBe("present");
+  expect(metaLogs(id)).toHaveLength(0);
+  expect(getSetting(db, META_ADDED)).not.toBeNull();
+});
+
+test("with no Investing space it sets no flag", () => {
+  expect(addMetaOnce(db)).toBe("no_space");
+  expect(getSetting(db, META_ADDED)).toBeNull();
+  investing();
+  expect(addMetaOnce(db)).toBe("added");
 });

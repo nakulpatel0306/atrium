@@ -214,7 +214,7 @@ test("the EDGAR cross-check stays off until a contact email is saved, and can be
 test("setup creates the Investing space once", async () => {
   boot();
   const a = await (await call("POST", "/api/investing/setup")).json();
-  expect(a).toMatchObject({ created: true, added: 13 });
+  expect(a).toMatchObject({ created: true, added: 14 });
   const b = await (await call("POST", "/api/investing/setup")).json();
   expect(b).toEqual({ spaceId: a.spaceId, created: false, added: 0 });
 });
