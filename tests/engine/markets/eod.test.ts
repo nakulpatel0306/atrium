@@ -195,3 +195,93 @@ test("no end-of-day news fetch unless Advanced or a big-news alert needs it", as
   await eodJob(db, { data, tiingo: () => null, now: () => at }).run(at);
   expect(newsCalls).toBe(0);
 });
+
+// Finnhub's calendar as the audit found it: RKLB reports Mon Nov 9 after the close, QBTS Tue Nov 10; the others
+// reported in October.
+const CALENDAR: Record<string, { date: string; hour: string | null }> = { RKLB: { date: "2026-11-09", hour: "amc" }, QBTS: { date: "2026-11-10", hour: null } };
+const finnhubCalendar = (asked: string[]) => ({
+  earnings: async (list: Instrument[], from: string, to: string) => {
+    asked.push(`${list.map(instrumentKey).join(",")} ${from}..${to}`);
+    return list.flatMap((i) => {
+      const e = CALENDAR[i.symbol];
+      return e && e.date >= from && e.date <= to ? [{ key: i.symbol, date: e.date, hour: e.hour, epsEstimate: null }] : [];
+    });
+  },
+});
+
+test("run before any key exists, earnings are reported skipped; adding a Finnhub key fills RKLB Nov 9 and QBTS Nov 10", async () => {
+  setAdvanced(db, spaceId, false);
+  for (const s of ["RKLB", "QBTS", "AMZN", "SPY"]) hold(s, "US");
+  const { createJobs } = await import("../../../src/engine/markets/jobs");
+  const { earningsView } = await import("../../../src/engine/markets/views");
+  const setup = Date.parse("2026-11-06T00:32:00Z"); // Thu Nov 5, 7:32 PM ET, the moment of setup
+  const asked: string[] = [];
+  let research: ReturnType<typeof finnhubCalendar> | null = null;
+  const data = { quotes: async () => ({ quotes: [], missing: [] }), news: async () => [], research: () => research, prepare: async () => {} } as unknown as MarketData;
+  let clock = setup;
+  const jobs = createJobs(db, [eodJob(db, { data, tiingo: () => null, now: () => clock })], () => clock);
+  expect(await jobs.runDue(setup)).toEqual(["eod"]);
+  const st = jobs.status()[0]!;
+  expect(st.lastError).toContain("Earnings dates weren't checked: add your Finnhub key in Settings → Market data.");
+  expect(asked).toEqual([]);
+  expect(earningsView(db, spaceId, setup).rows).toEqual([]);
+
+  clock = Date.parse("2026-11-06T14:00:00Z");
+  research = finnhubCalendar(asked);
+  expect(await jobs.rerunSkipped(clock)).toEqual(["eod"]);
+  expect(asked).toEqual(["RKLB,QBTS,AMZN 2026-11-06..2026-12-06"]);
+  expect(earningsView(db, spaceId, clock).rows.map((r) => [r.key, r.date, r.hour])).toEqual([
+    ["RKLB", "2026-11-09", "amc"],
+    ["QBTS", "2026-11-10", null],
+  ]);
+  expect(jobs.status()[0]!.lastError).toBeNull();
+});
+
+test("the 16:30 job keeps US closes from Finnhub quotes, the close and the previous close, so sparklines fill", async () => {
+  setAdvanced(db, spaceId, false);
+  hold("AMZN", "US");
+  hold("MARS", "US");
+  const { spark } = await import("../../../src/engine/markets/views");
+  const close = Date.parse("2026-11-06T21:00:00Z"); // Fri Nov 6, 4:00 PM ET
+  const asked: string[][] = [];
+  const quote = (key: string, price: number, prevClose: number, at: number) => ({ key, price, prevClose, at, source: "finnhub" as const, freshness: "live" as const });
+  const data = {
+    quotes: async (list: Instrument[]) => {
+      asked.push(list.map(instrumentKey));
+      return {
+        // MARS last traded a few seconds before the bell; AMZN's quote is stamped at the close.
+        quotes: list.map((i) => (i.symbol === "AMZN" ? quote("AMZN", 261.78, 260.21, close) : i.symbol === "MARS" ? quote("MARS", 21.43, 19.72, close - 12_000) : quote(instrumentKey(i), 600, 595, close))),
+        missing: [],
+      };
+    },
+    news: async () => [],
+    research: () => finnhubCalendar([]),
+    prepare: async () => {},
+  } as unknown as MarketData;
+  const at = Date.parse("2026-11-06T21:30:00Z");
+  const r = await eodJob(db, { data, tiingo: () => null, now: () => at }).run(at);
+  expect(asked[0]).toEqual(["AMZN", "MARS", "SPY"]);
+  expect(closeOn(db, "AMZN", "2026-11-06")).toMatchObject({ close: 261.78, adjClose: null, source: "finnhub" });
+  expect(closeOn(db, "AMZN", "2026-11-05")).toMatchObject({ close: 260.21, source: "finnhub" });
+  expect(closeOn(db, "MARS", "2026-11-06")!.close).toBe(21.43);
+  expect(spark(db, "AMZN", at)).toEqual([260.21, 261.78]);
+  expect(r && r.skipped.filter((s) => s.reason)).toEqual([]);
+});
+
+test("a late after-hours quote isn't taken as the close, but its previous close is", async () => {
+  setAdvanced(db, spaceId, false);
+  hold("AMZN", "US");
+  const data = {
+    quotes: async (list: Instrument[]) => ({
+      quotes: list.map((i) => ({ key: instrumentKey(i), price: 263, prevClose: 260.21, at: Date.parse("2026-11-06T23:30:00Z"), source: "finnhub", freshness: "live" })),
+      missing: [],
+    }),
+    news: async () => [],
+    research: () => finnhubCalendar([]),
+    prepare: async () => {},
+  } as unknown as MarketData;
+  const at = Date.parse("2026-11-07T00:00:00Z");
+  await eodJob(db, { data, tiingo: () => null, now: () => at }).run(at);
+  expect(closeOn(db, "AMZN", "2026-11-06")).toBeNull();
+  expect(closeOn(db, "AMZN", "2026-11-05")!.close).toBe(260.21);
+});

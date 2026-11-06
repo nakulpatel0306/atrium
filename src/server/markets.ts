@@ -28,6 +28,7 @@ import { addToWatchlist, listWatchlist, removeFromWatchlist, type WatchItem } fr
 import { setSetting } from "../engine/settings";
 import { getSpace } from "../engine/spaces";
 import { HttpError, json, readBody } from "./http";
+import type { CatchUp } from "../engine/markets/catchup";
 
 export type MarketsDeps = {
   data: MarketData;
@@ -40,6 +41,8 @@ export type MarketsDeps = {
   fetch?: typeof fetch;
   // The daily and weekly market jobs, for the data budget page.
   jobs?: Jobs;
+  // Runs the jobs' skipped steps and any missing earnings or metadata; a saved key starts it.
+  catchUp?: CatchUp;
 };
 
 type Priced<T> = T & { quote: Quote | null; missing: string | null };
@@ -506,5 +509,7 @@ async function saveKeys(db: Database, m: MarketsDeps, b: Record<string, unknown>
   }
   await m.data.reload();
   await m.feed.reevaluate();
+  // Not awaited: the steps a missing key held back fetch in the background, within each source's budget.
+  m.catchUp?.run(true).catch((e) => console.error(`Catch-up after a new key: ${redact(e instanceof Error ? e.message : String(e), m.data.secrets())}`));
   return { ok: true, message: "Saved in your Mac's Keychain." };
 }

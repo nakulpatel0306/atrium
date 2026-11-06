@@ -7,10 +7,24 @@ import { etDate, etInstant } from "./calendar";
 export type Slot =
   | { at: string /* "HH:MM" ET */; days: "weekdays" | "daily" | number[] /* 0=Sun…6=Sat */ }
   | { everyMinutes: number; from: string; to: string; days: "weekdays" };
-export type Job = { name: string; slot: Slot; run(now: number): Promise<void> };
+// A step that couldn't do its work (no key yet, a provider failure) is returned rather than thrown, so the rest of
+// the run still counts and that step alone runs again when a key is added. reason is shown on the data budget page;
+// null keeps it quiet, for an optional source Nakul hasn't set up.
+export type Skipped = { step: string; reason: string | null };
+export type JobResult = void | { skipped: Skipped[] };
+// only: the steps to run, when catching up on skipped ones; every step otherwise.
+export type Job = { name: string; slot: Slot; run(now: number, only?: string[]): Promise<JobResult> };
 export type JobStatus = { name: string; lastRunAt: number | null; lastError: string | null; nextAt: number | null };
 
-type State = { ranFor: number | null; lastRunAt: number | null; lastError: string | null; attempts: number; lastAttemptAt: number | null; attemptFor?: number | null };
+type State = {
+  ranFor: number | null;
+  lastRunAt: number | null;
+  lastError: string | null;
+  attempts: number;
+  lastAttemptAt: number | null;
+  attemptFor?: number | null;
+  skipped?: string[];
+};
 
 const DAY_MS = 86_400_000;
 const LOOK_DAYS = 8;
@@ -56,6 +70,12 @@ export function nextSlot(now: number, slot: Slot): number | null {
   return null;
 }
 
+const skippedOf = (r: JobResult): Skipped[] => (r && "skipped" in r ? r.skipped : []);
+const errorOf = (skipped: Skipped[]): string | null => {
+  const reasons = [...new Set(skipped.flatMap((s) => (s.reason ? [s.reason] : [])))];
+  return reasons.length ? reasons.join(" ") : null;
+};
+
 export function createJobs(db: Database, jobs: Job[], now: () => number = Date.now) {
   const key = (name: string) => `markets.job.${name}`;
   const read = (name: string): State => {
@@ -66,8 +86,31 @@ export function createJobs(db: Database, jobs: Job[], now: () => number = Date.n
   const write = (name: string, s: State) =>
     db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key(name), JSON.stringify(s));
 
+  // runDue and catch-up runs never overlap, so a step isn't fetched twice at once.
+  let chain: Promise<unknown> = Promise.resolve();
+  const serial = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = chain.then(fn, fn);
+    chain = next.catch(() => {});
+    return next;
+  };
+
+  // Outside any slot: the given steps (or all), merged into the job's state; its slot bookkeeping is untouched.
+  const runNow = async (job: Job, at: number, only?: string[]): Promise<void> => {
+    const s = read(job.name);
+    try {
+      const skipped = skippedOf(await job.run(at, only));
+      const kept = only ? (s.skipped ?? []).filter((x) => !only.includes(x)) : [];
+      const steps = [...new Set([...kept, ...skipped.map((x) => x.step)])];
+      // A reason for a step that isn't run again here stays as it was.
+      const keptError = only && kept.length ? s.lastError : null;
+      write(job.name, { ...s, lastRunAt: at, lastError: [keptError, errorOf(skipped)].filter(Boolean).join(" ") || null, skipped: steps });
+    } catch (e) {
+      write(job.name, { ...s, lastRunAt: at, lastError: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   return {
-    async runDue(at: number): Promise<string[]> {
+    runDue: (at: number): Promise<string[]> => serial(async () => {
       const ran: string[] = [];
       for (const job of jobs) {
         try {
@@ -78,8 +121,8 @@ export function createJobs(db: Database, jobs: Job[], now: () => number = Date.n
           if (attempts > 0 && s.lastAttemptAt !== null && at - s.lastAttemptAt < RETRY_MS) continue;
           ran.push(job.name);
           try {
-            await job.run(at);
-            write(job.name, { ranFor: slot, lastRunAt: at, lastError: null, attempts: 0, lastAttemptAt: at, attemptFor: null });
+            const skipped = skippedOf(await job.run(at));
+            write(job.name, { ranFor: slot, lastRunAt: at, lastError: errorOf(skipped), attempts: 0, lastAttemptAt: at, attemptFor: null, skipped: skipped.map((x) => x.step) });
           } catch (e) {
             const n = attempts + 1;
             const message = e instanceof Error ? e.message : String(e);
@@ -93,7 +136,28 @@ export function createJobs(db: Database, jobs: Job[], now: () => number = Date.n
       // Pages read what the jobs stored; one change event lets an open dashboard pick it up.
       if (ran.length) bus.emit({ type: "changed" });
       return ran;
-    },
+    }),
+    // After a key is added: each job's skipped steps run again, and only those.
+    rerunSkipped: (at: number): Promise<string[]> => serial(async () => {
+      const ran: string[] = [];
+      for (const job of jobs) {
+        const steps = read(job.name).skipped ?? [];
+        if (!steps.length) continue;
+        ran.push(job.name);
+        await runNow(job, at, steps);
+      }
+      if (ran.length) bus.emit({ type: "changed" });
+      return ran;
+    }),
+    // A catch-up run of one job's steps, e.g. earnings dates that are missing or stale.
+    runNow: (name: string, at: number, only?: string[]): Promise<boolean> => serial(async () => {
+      const job = jobs.find((j) => j.name === name);
+      if (!job) return false;
+      await runNow(job, at, only);
+      bus.emit({ type: "changed" });
+      return true;
+    }),
+    skipped: (name: string): string[] => read(name).skipped ?? [],
     status(): JobStatus[] {
       const at = now();
       return jobs.map((j) => {

@@ -8,7 +8,8 @@ import { isFund } from "./funds/sources";
 import type { FundFile } from "./funds/types";
 import { instrumentKey, parseInstrumentKey } from "./instrument";
 import type { Job } from "./jobs";
-import { ProviderError } from "./providers/types";
+import { ProviderError, type Metrics, type Profile } from "./providers/types";
+import { redact } from "./redact";
 
 export type Meta = {
   key: string;
@@ -107,7 +108,39 @@ export function metaFromFunds(db: Database): number {
   return n;
 }
 
-// Weekly: sectors from fund files, then Finnhub profiles (monthly) and metrics (weekly) for US stocks.
+const ages = (db: Database, key: string) =>
+  (db.query("SELECT profile_at, metrics_at FROM instrument_meta WHERE key = ?").get(key) as { profile_at: number | null; metrics_at: number | null } | null) ?? {
+    profile_at: null,
+    metrics_at: null,
+  };
+const usStock = (key: string) => parseInstrumentKey(key)?.exchange === "US" && !isFund(key);
+
+// A tracked key with no metadata row, or a US stock whose Finnhub profile or figures are missing or past their age.
+export function metaStale(db: Database, now: number): boolean {
+  return trackedKeys(db).some((key) => {
+    const row = db.query("SELECT kind FROM instrument_meta WHERE key = ?").get(key) as { kind: string | null } | null;
+    if (!row) return true;
+    if (!usStock(key)) return false;
+    const a = ages(db, key);
+    return now - (a.profile_at ?? 0) > PROFILE_MAX_AGE || now - (a.metrics_at ?? 0) > METRICS_MAX_AGE;
+  });
+}
+
+export function saveProfile(db: Database, key: string, pr: Profile | null, now: number): void {
+  const m = getMeta(db, [key]).get(key);
+  const useIndustry = !!pr?.industry && (!m?.sector || m.sectorSource === FINNHUB_INDUSTRY);
+  db.query(
+    `UPDATE instrument_meta SET name = COALESCE(?, name), listing = COALESCE(?, listing), country = COALESCE(country, ?), currency = COALESCE(currency, ?), profile_at = ?,
+       sector = CASE WHEN ? THEN ? ELSE sector END, sector_source = CASE WHEN ? THEN ? ELSE sector_source END WHERE key = ?`,
+  ).run(pr?.name ?? null, pr?.exchange ?? null, pr?.country ?? null, pr?.currency ?? null, now, useIndustry ? 1 : 0, pr?.industry ?? null, useIndustry ? 1 : 0, FINNHUB_INDUSTRY, key);
+}
+
+export function saveMetrics(db: Database, key: string, mt: Metrics, now: number): void {
+  db.query("UPDATE instrument_meta SET pe = ?, high52 = ?, low52 = ?, div_yield = ?, market_cap = ?, metrics_at = ? WHERE key = ?").run(mt.pe, mt.high52, mt.low52, mt.divYield, mt.marketCap ?? null, now, key);
+}
+
+// Weekly: sectors from fund files, then Finnhub profiles (monthly) and metrics (weekly) for US stocks. Catch-up runs
+// it too when a key is added or something is missing. Without a Finnhub key that part is reported as skipped.
 export function metaJob(db: Database, deps: { data: MarketData; now: () => number; fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> }): Job {
   return {
     name: "meta",
@@ -124,31 +157,22 @@ export function metaJob(db: Database, deps: { data: MarketData; now: () => numbe
       } catch (e) {
         console.error(`SEC EDGAR cross-check: ${e instanceof Error ? e.message : String(e)}`);
       }
+      const stocks = keys.filter(usStock);
+      if (!stocks.length) return;
       await deps.data.prepare?.();
       const p = deps.data.research?.();
-      if (!p) return;
-      const meta = getMeta(db, keys);
-      const ages = db.query("SELECT profile_at, metrics_at FROM instrument_meta WHERE key = ?");
-      for (const key of keys) {
-        const i = parseInstrumentKey(key);
-        if (!i || i.exchange !== "US" || isFund(key)) continue;
-        const a = ages.get(key) as { profile_at: number | null; metrics_at: number | null };
+      if (!p) return { skipped: [{ step: "finnhub", reason: "Company profiles and key stats weren't fetched: add your Finnhub key in Settings → Market data." }] };
+      for (const key of stocks) {
+        const i = parseInstrumentKey(key)!;
+        const a = ages(db, key);
         try {
-          if (p.profile && now - (a.profile_at ?? 0) > PROFILE_MAX_AGE) {
-            const pr = await p.profile(i);
-            const m = meta.get(key);
-            const useIndustry = pr?.industry && (!m?.sector || m.sectorSource === FINNHUB_INDUSTRY);
-            db.query(
-              `UPDATE instrument_meta SET name = COALESCE(?, name), listing = COALESCE(?, listing), profile_at = ?,
-                 sector = CASE WHEN ? THEN ? ELSE sector END, sector_source = CASE WHEN ? THEN ? ELSE sector_source END WHERE key = ?`,
-            ).run(pr?.name ?? null, pr?.exchange ?? null, now, useIndustry ? 1 : 0, pr?.industry ?? null, useIndustry ? 1 : 0, FINNHUB_INDUSTRY, key);
-          }
-          if (p.metric && now - (a.metrics_at ?? 0) > METRICS_MAX_AGE) {
-            const mt = await p.metric(i);
-            db.query("UPDATE instrument_meta SET pe = ?, high52 = ?, low52 = ?, div_yield = ?, market_cap = ?, metrics_at = ? WHERE key = ?").run(mt.pe, mt.high52, mt.low52, mt.divYield, mt.marketCap ?? null, now, key);
-          }
+          if (p.profile && now - (a.profile_at ?? 0) > PROFILE_MAX_AGE) saveProfile(db, key, await p.profile(i), now);
+          if (p.metric && now - (a.metrics_at ?? 0) > METRICS_MAX_AGE) saveMetrics(db, key, await p.metric(i), now);
         } catch (e) {
-          if (e instanceof ProviderError && (e.kind === "auth" || e.kind === "rate_limited")) break;
+          if (e instanceof ProviderError && (e.kind === "auth" || e.kind === "rate_limited")) {
+            const why = redact(e.message, deps.data.secrets?.() ?? []);
+            return { skipped: [{ step: "finnhub", reason: `Company profiles and key stats stopped at ${key}: ${why}` }] };
+          }
         }
       }
     },
