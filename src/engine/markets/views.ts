@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { isAdvanced } from "./advanced";
+import { cachedBars } from "./cache";
 import { etDate, lastCompletedSession } from "./calendar";
 import { adjustedCloses, closes } from "./closes";
 import { currentQuote, type MarketData } from "./data";
@@ -23,11 +24,12 @@ const SPARK_FROM_DAYS = 60;
 const DAY_MS = 86_400_000;
 const NO_PRICE = "No price yet; Atrium checks again during market hours.";
 
+// Atrium's own closes first; until it has two, the daily bars a chart already cached (early days, Demo mode).
 export function spark(db: Database, key: string, now: number = Date.now()): number[] {
-  const from = etDate(now - SPARK_FROM_DAYS * DAY_MS);
-  const values = adjustedCloses(closes(db, key, from))
-    .slice(-SPARK_DAYS)
-    .map((c) => c.close);
+  const from = now - SPARK_FROM_DAYS * DAY_MS;
+  let values = adjustedCloses(closes(db, key, etDate(from))).map((c) => c.close);
+  if (values.length < 2) values = cachedBars(db, key, "1Day", Math.floor(from / 1000)).map((b) => b.c);
+  values = values.slice(-SPARK_DAYS);
   return values.length < 2 ? [] : values;
 }
 

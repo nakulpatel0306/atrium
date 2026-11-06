@@ -42,12 +42,14 @@ export type AlertRule =
   | { kind: "earnings_within"; days: number }
   | { kind: "big_news" };
 
-export function describeRule(rule: AlertRule): string {
+// With the alert's key, a price is in its listing currency; without one it reads USD, as titles always did.
+export function describeRule(rule: AlertRule, key?: string): string {
+  const ccy = key ? currencyOfKey(key) : "USD";
   switch (rule.kind) {
     case "price_above":
-      return `price above ${money(rule.level, "USD")}`;
+      return `price above ${money(rule.level, ccy)}`;
     case "price_below":
-      return `price below ${money(rule.level, "USD")}`;
+      return `price below ${money(rule.level, ccy)}`;
     case "pct_move":
       return `moves ${rule.pct}% in a day`;
     case "rsi_below":

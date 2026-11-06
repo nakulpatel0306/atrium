@@ -140,7 +140,7 @@ export function Alerts({ view }: { view: MarketsView }) {
           <div key={a.id} className="entry">
             <div className="item mk-row" role="button" tabIndex={0} onClick={() => setOpen(open === a.id ? null : a.id)} onKeyDown={(e) => e.key === "Enter" && setOpen(open === a.id ? null : a.id)}>
               <span className="sym">{a.key}</span>
-              <span className="t">{describeRule(a.rule)}</span>
+              <span className="t">{describeRule(a.rule, a.key)}</span>
               <span className={`tag${a.status === "armed" ? " ok" : ""}`}>{STATUS[a.status]}</span>
               <span className="num faint">{a.lastFiredAt ? `fired ${etDateTimeText(a.lastFiredAt)}` : "never fired"}</span>
             </div>

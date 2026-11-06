@@ -169,7 +169,7 @@ function rearmed(a: Alert, q: Quote, now: number, holds: boolean | null): boolea
 }
 
 function fire(db: Database, a: Alert, q: Quote, now: number): void {
-  const rule = describeRule(a.rule);
+  const rule = describeRule(a.rule, a.key);
   const note = a.note ? ` Note: ${a.note}` : "";
   createApproval(db, {
     spaceId: a.spaceId,
@@ -182,7 +182,7 @@ function fire(db: Database, a: Alert, q: Quote, now: number): void {
   logActivity(db, a.spaceId, "atrium", `Alert: ${a.key} ${rule}`);
 }
 
-const titleOf = (a: Alert) => `${a.key} ${describeRule(a.rule)}`;
+const titleOf = (a: Alert) => `${a.key} ${describeRule(a.rule, a.key)}`;
 
 // An item Nakul hasn't answered yet already says this; a second one would only repeat it.
 const waiting = (db: Database, a: Alert) =>

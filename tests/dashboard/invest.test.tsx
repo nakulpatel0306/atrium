@@ -21,3 +21,106 @@ test("the Advanced switch explains what it hides", () => {
   expect(html).toContain('role="switch"');
   expect(html).toContain('aria-checked="false"');
 });
+
+// ---- Task 13: Portfolio, Earnings, Alerts ----
+import { afterAll, beforeAll } from "bun:test";
+import type { Database } from "bun:sqlite";
+import { openDb } from "../../src/engine/db";
+import { createAlert, listAlerts } from "../../src/engine/markets/alerts";
+import { saveWriteup } from "../../src/engine/markets/research";
+import { portfolioView } from "../../src/engine/markets/views";
+import { sparkPath } from "../../src/dashboard/simple";
+import { Portfolio } from "../../src/dashboard/components/invest/Portfolio";
+import { Earnings } from "../../src/dashboard/components/invest/Earnings";
+import { AlertsSimple } from "../../src/dashboard/components/invest/AlertsSimple";
+import { tempHome } from "../helpers";
+import { NOW, simpleFixture, viewData } from "../engine/markets/simple-fixture";
+
+let home: ReturnType<typeof tempHome>;
+let db: Database;
+let fx: ReturnType<typeof simpleFixture>;
+beforeAll(() => {
+  home = tempHome();
+  db = openDb();
+  fx = simpleFixture(db);
+});
+afterAll(() => {
+  db.close();
+  home.cleanup();
+});
+const text = (html: string) => html.replace(/<[^>]+>/g, " ");
+const clean = (html: string) => {
+  for (const bad of ["undefined", "NaN", "null"]) expect(text(html)).not.toContain(bad);
+};
+
+test("sparkPath scales to the box", () => {
+  expect(sparkPath([1, 2], 60, 24)).toBe("M0,23L60,1");
+  expect(sparkPath([5, 5, 5], 60, 24)).toBe("M0,12L30,12L60,12");
+  expect(sparkPath([], 60, 24)).toBe("");
+  expect(sparkPath([3], 60, 24)).toBe("");
+});
+
+test("Portfolio: total, today, rows with sparklines, no note without a digest", () => {
+  const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={portfolioView(db, viewData(), fx.spaceId, NOW)} />);
+  expect(html).toContain("Portfolio value");
+  expect(html).toContain("CA$");
+  expect(html).toContain("today");
+  expect(html).toContain("AMZN");
+  expect(html).toContain("+2.0%");
+  expect(html).toContain("<path");
+  expect(html).not.toContain("What moved");
+  clean(html);
+});
+
+test("Portfolio: the daily note renders markdown with the advice tag", () => {
+  saveWriteup(db, { spaceId: fx.spaceId, kind: "digest", key: null, forDate: "2026-11-04", body: "**Up** on news", taskId: null });
+  const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={portfolioView(db, viewData(), fx.spaceId, NOW)} />);
+  expect(html).toContain("What moved");
+  expect(html).toContain("<strong>Up</strong>");
+  expect(html).toContain("Analysis, not advice");
+  db.query("DELETE FROM market_writeups").run();
+});
+
+test("Portfolio: the empty state points to the import", () => {
+  const view = { total: null, dayCad: null, dayPct: null, dayLabel: null, mix: null, fx: null, holdings: [], note: null, empty: true };
+  const html = renderToStaticMarkup(<Portfolio spaceId="spc_x" view={view} />);
+  expect(html).toContain("No holdings yet. Import your Wealthsimple holdings file to see your portfolio.");
+  expect(html).toContain("Import holdings");
+  expect(html).toContain("Your watchlists still work without it.");
+});
+
+test("Earnings: grouped by day, with time, estimate and a held chip", () => {
+  const view = {
+    rows: [
+      { key: "NOW", name: "ServiceNow", date: "2026-11-12", hour: "amc", epsEstimate: 1.23, source: "finnhub" as const, held: true },
+      { key: "NVDA", name: "Nvidia", date: "2026-11-12", hour: "bmo", epsEstimate: null, source: "finnhub" as const, held: false },
+      { key: "ATZ.TO", name: "Aritzia", date: "2026-11-13", hour: null, epsEstimate: null, source: "you" as const, held: true },
+    ],
+    source: "Finnhub earnings calendar · checked Nov 4",
+  };
+  const html = renderToStaticMarkup(<Earnings spaceId="spc_x" view={view} />);
+  expect(html).toContain("Thu, Nov 12");
+  expect(html).toContain("Fri, Nov 13");
+  expect(html).toContain("after close");
+  expect(html).toContain("before open");
+  expect(html).toContain("time not set");
+  expect(html).toContain("EPS est. 1.23");
+  expect(html.match(/you hold this/g)).toHaveLength(2);
+  expect(html).toContain("Finnhub earnings calendar · checked Nov 4");
+  clean(html);
+  expect(renderToStaticMarkup(<Earnings spaceId="spc_x" view={{ rows: [], source: "x" }} />)).toContain("No earnings in the next two weeks for your holdings or watchlists.");
+});
+
+test("AlertsSimple: indicator alerts are paused while Advanced is off", () => {
+  createAlert(db, { spaceId: fx.spaceId, key: "AMZN", rule: { kind: "rsi_below", level: 30, period: 14 } });
+  createAlert(db, { spaceId: fx.spaceId, key: "XEQT.TO", rule: { kind: "price_above", level: 40 } });
+  const html = renderToStaticMarkup(<AlertsSimple spaceId={fx.spaceId} alerts={listAlerts(db, fx.spaceId)} advanced={false} />);
+  expect(html).toContain("XEQT.TO");
+  expect(html).toContain("price above CA$40.00");
+  expect(html).not.toContain("RSI");
+  expect(html).toContain("1 indicator alert is paused. Turn on Advanced tools to see them.");
+  expect(html).toContain("Set price alerts from a symbol&#x27;s page.");
+  const on = renderToStaticMarkup(<AlertsSimple spaceId={fx.spaceId} alerts={listAlerts(db, fx.spaceId)} advanced />);
+  expect(on).toContain("RSI(14) below 30");
+  expect(on).not.toContain("paused");
+});

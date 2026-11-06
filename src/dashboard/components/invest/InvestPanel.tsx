@@ -3,7 +3,11 @@ import { useState } from "react";
 import { useMarkets } from "../../markets";
 import { AdviceTag } from "../markets/AdviceTag";
 import { AdvancedPanel, type AdvancedTab } from "../markets/MarketsPanel";
+import { usePortfolio, useEarnings } from "../../simple";
 import { AdvancedToggle } from "./AdvancedToggle";
+import { AlertsSimple } from "./AlertsSimple";
+import { Earnings } from "./Earnings";
+import { Portfolio } from "./Portfolio";
 
 const SIMPLE = ["portfolio", "watchlists", "earnings", "alerts"] as const;
 const ADVANCED: AdvancedTab[] = ["health", "ideas", "chart", "paper"];
@@ -62,11 +66,29 @@ export function InvestPanel({ spaceId, symbol }: { spaceId: string; symbol: stri
         </div>
       ) : ADVANCED.includes(tab as AdvancedTab) ? (
         <AdvancedPanel spaceId={spaceId} tab={tab as AdvancedTab} view={view} />
+      ) : tab === "portfolio" ? (
+        <PortfolioTab spaceId={spaceId} />
+      ) : tab === "earnings" ? (
+        <EarningsTab spaceId={spaceId} />
+      ) : tab === "alerts" ? (
+        view ? <AlertsSimple spaceId={spaceId} alerts={view.alerts} advanced={advanced} /> : <Loading />
       ) : (
-        <div className="list">
-          <div className="empty-row">Loading…</div>
-        </div>
+        <Loading />
       )}
     </div>
   );
+}
+
+function Loading() {
+  return <div className="inv-loading">Loading…</div>;
+}
+
+function PortfolioTab({ spaceId }: { spaceId: string }) {
+  const view = usePortfolio(spaceId);
+  return view ? <Portfolio spaceId={spaceId} view={view} /> : <Loading />;
+}
+
+function EarningsTab({ spaceId }: { spaceId: string }) {
+  const view = useEarnings(spaceId);
+  return view ? <Earnings spaceId={spaceId} view={view} /> : <Loading />;
 }

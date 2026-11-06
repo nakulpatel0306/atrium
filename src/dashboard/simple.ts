@@ -62,3 +62,27 @@ export const investPath = base;
 
 export const openSymbol = (spaceId: string, key: string) => navigate(`/space/${encodeURIComponent(spaceId)}?symbol=${encodeURIComponent(key)}`);
 export const closeSymbol = (spaceId: string) => navigate(`/space/${encodeURIComponent(spaceId)}`);
+
+// A sparkline path in a w×h box: the range fills the height less 1px each side; a flat series sits mid-height.
+export function sparkPath(values: number[], w: number, h: number): string {
+  if (values.length < 2) return "";
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const y = (v: number) => (hi === lo ? h / 2 : 1 + (1 - (v - lo) / (hi - lo)) * (h - 2));
+  const x = (i: number) => (i / (values.length - 1)) * w;
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return values.map((v, i) => `${i ? "L" : "M"}${r(x(i))},${r(y(v))}`).join("");
+}
+
+const fmt = (n: number, digits: number) => Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+// Prices carry their currency explicitly: a CAD portfolio holds US listings too.
+export const priceText = (n: number, ccy: "CAD" | "USD") => `${ccy === "USD" ? "US$" : "CA$"}${fmt(n, 2)}`;
+export const cadText = (n: number, digits = 2) => `${n < 0 ? "−" : ""}CA$${fmt(n, digits)}`;
+export const signedCadText = (n: number, digits = 2) => `${n < 0 ? "−" : "+"}CA$${fmt(n, digits)}`;
+export const signedPct = (n: number, digits = 1) => `${n < 0 ? "−" : "+"}${fmt(n, digits)}%`;
+export const toneOf = (n: number | null) => (n === null || Math.abs(n) < 0.005 ? "flat" : n > 0 ? "up" : "down");
+
+const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+// "2026-11-12" → "Thu, Nov 12".
+export const dateHeading = (date: string) => dayFmt.format(Date.parse(`${date}T12:00:00Z`));
+export const hourText = (hour: string | null) => (hour === "bmo" ? "before open" : hour === "amc" ? "after close" : "time not set");

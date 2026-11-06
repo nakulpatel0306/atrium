@@ -104,3 +104,12 @@ test("glanceView tags closing prices", () => {
   ]);
   expect(g.advanced).toBe(false);
 });
+
+test("a sparkline falls back to cached daily bars until Atrium has closes", async () => {
+  const { saveBars } = await import("../../../src/engine/markets/cache");
+  const { spark } = await import("../../../src/engine/markets/views");
+  expect(spark(db, "NVDA", NOW)).toEqual([]);
+  saveBars(db, "NVDA", "1Day", [1, 2, 3].map((n) => ({ t: (NOW - (4 - n) * 86_400_000) / 1000, o: n, h: n, l: n, c: 100 + n, v: 1 })));
+  expect(spark(db, "NVDA", NOW)).toEqual([101, 102, 103]);
+  expect(spark(db, "AMZN", NOW)).toHaveLength(30);
+});

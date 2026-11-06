@@ -322,7 +322,7 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
   if (sub("POST", /^\/alerts\/off-from-approval$/)) {
     const b = await readBody(req);
     const a = typeof b.approvalId === "string" ? getApproval(db, b.approvalId) : null;
-    const matches = a && a.spaceId === spaceId && a.kind === "alert" ? listAlerts(db, spaceId).filter((x) => `${x.key} ${describeRule(x.rule)}` === a.title) : [];
+    const matches = a && a.spaceId === spaceId && a.kind === "alert" ? listAlerts(db, spaceId).filter((x) => [describeRule(x.rule, x.key), describeRule(x.rule)].some((r) => `${x.key} ${r}` === a.title)) : [];
     if (!matches.length) throw new HttpError(404, "That alert no longer exists.");
     for (const x of matches) setAlertStatus(db, x.id, "off");
     return json({ ok: true });

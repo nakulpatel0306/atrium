@@ -210,3 +210,9 @@ test("indicator alerts wait for Advanced", () => {
   expect(evaluateQuotes(db, [q(178)], NOW)).toBe(1);
   expect(listAlerts(db, spaceId).find((a) => a.id === rsi.id)?.status).toBe("armed");
 });
+
+test("TSX alert titles use CA$", () => {
+  expect(describeRule({ kind: "price_above", level: 40 }, "XEQT.TO")).toBe("price above CA$40.00");
+  expect(describeRule({ kind: "price_below", level: 40 }, "AMZN")).toBe("price below $40.00");
+  expect(describeRule({ kind: "price_above", level: 40 })).toBe("price above $40.00");
+});
