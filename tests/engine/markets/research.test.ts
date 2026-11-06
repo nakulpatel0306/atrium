@@ -6,6 +6,8 @@ import { listTasks, setTaskStatus } from "../../../src/engine/tasks";
 import { saveQuotes } from "../../../src/engine/markets/cache";
 import { saveEarnings, saveNews } from "../../../src/engine/markets/events";
 import { digestJob, getNotes, latestWriteups, requestThesisDraft, saveNotes, thesisChecks } from "../../../src/engine/markets/research";
+import { addToWatchlist } from "../../../src/engine/markets/watchlist";
+import type { Exchange } from "../../../src/engine/markets/instrument";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -22,7 +24,7 @@ afterEach(() => {
 });
 
 const watch = (space: string, symbol: string, exchange = "US") =>
-  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(space, symbol, exchange);
+  addToWatchlist(db, space, { symbol: symbol, exchange: exchange as Exchange });
 const WED_1720 = Date.parse("2026-11-04T22:20:00Z");
 
 test("notes and thesis round-trip, within a size limit", () => {

@@ -12,6 +12,8 @@ import { getMeta, metaFromFunds, metaJob } from "../../../src/engine/markets/met
 import type { MarketProvider } from "../../../src/engine/markets/providers/types";
 import { setSetting } from "../../../src/engine/settings";
 import { setAdvanced } from "../../../src/engine/markets/advanced";
+import { addToWatchlist } from "../../../src/engine/markets/watchlist";
+import type { Exchange } from "../../../src/engine/markets/instrument";
 import { tempHome } from "../../helpers";
 import { fixture, jsonResponse, stubFetch } from "./fakes";
 
@@ -26,7 +28,7 @@ beforeEach(() => {
   // Plan 7 behaviour under test is Advanced-only; the gates themselves are tested with it off.
   setAdvanced(db, spaceId, true);
   for (const [s, e] of [["ATZ", "TSX"], ["NOW", "US"], ["XEQT", "TSX"], ["RKLB", "US"], ["ABCX", "US"]] as const) {
-    db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(spaceId, s, e);
+    addToWatchlist(db, spaceId, { symbol: s, exchange: e as Exchange });
   }
 });
 afterEach(() => {

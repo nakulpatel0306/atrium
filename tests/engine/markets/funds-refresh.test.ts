@@ -10,6 +10,8 @@ import { FUND_SOURCES, fundUrl, isFund } from "../../../src/engine/markets/funds
 import { loadFundFile } from "../../../src/engine/markets/funds/store";
 import { FundFileError } from "../../../src/engine/markets/funds/types";
 import { setAdvanced } from "../../../src/engine/markets/advanced";
+import { addToWatchlist } from "../../../src/engine/markets/watchlist";
+import type { Exchange } from "../../../src/engine/markets/instrument";
 import { tempHome } from "../../helpers";
 import { stubFetch } from "./fakes";
 
@@ -117,7 +119,7 @@ test("the weekly job refreshes held and watched funds older than a week", async 
   const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
   setAdvanced(db, space.id, true);
   for (const [sym, ex] of [["XEQT", "TSX"], ["SPY", "US"], ["NOW", "US"]] as const) {
-    db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(space.id, sym, ex);
+    addToWatchlist(db, space.id, { symbol: sym, exchange: ex as Exchange });
   }
   await refreshFund(db, "XEQT.TO", { fetch: issuers().fetch, now: () => NOW - 2 * DAY });
   await refreshFund(db, "SPY", { fetch: issuers().fetch, now: () => NOW - 9 * DAY });
@@ -131,7 +133,7 @@ test("the weekly job refreshes held and watched funds older than a week", async 
 
 test("funds job makes no requests while Advanced is off", async () => {
   const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
-  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, 'SPY', 'US', '', 1)").run(space.id);
+  addToWatchlist(db, space.id, { symbol: "SPY", exchange: "US" });
   const off = issuers();
   await fundsJob(db, { fetch: off.fetch, now: () => NOW }).run(NOW);
   expect(off.calls).toHaveLength(0);

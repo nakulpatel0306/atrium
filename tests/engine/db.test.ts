@@ -320,3 +320,40 @@ test("a stored alpaca provider becomes finnhub once", () => {
   again.close();
   t.cleanup();
 });
+
+test("an old single watchlist becomes one Holdings list per space", async () => {
+  const { listLists, listItems } = await import("../../src/engine/markets/lists");
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const first = openDb(path);
+  first.exec("DROP TABLE market_watchlist");
+  first.exec("DROP TABLE market_lists");
+  first.exec(`CREATE TABLE market_watchlist (
+    space_id TEXT NOT NULL REFERENCES spaces(id), symbol TEXT NOT NULL, exchange TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '', added_at INTEGER NOT NULL, PRIMARY KEY (space_id, symbol, exchange))`);
+  const space = (id: string, name: string) =>
+    first.query("INSERT INTO spaces (id, name, kind, goal, color, private, status, created_at, updated_at) VALUES (?, ?, 'markets', '', '#fff', 1, 'active', 1, 1)").run(id, name);
+  space("spc_a", "Investing");
+  space("spc_b", "Ideas");
+  const keys = ["AMZN", "ATZ", "DRAM", "MARS", "NOW", "QBTS", "QQQ", "RKLB", "SOFI", "SPY", "TSLA", "VFV", "XEQT"];
+  keys.forEach((k, i) => first.query("INSERT INTO market_watchlist VALUES ('spc_a', ?, ?, '', ?)").run(k, ["ATZ", "VFV", "XEQT"].includes(k) ? "TSX" : "US", 100 - i));
+  first.query("INSERT INTO market_watchlist VALUES ('spc_b', 'NVDA', 'US', 'Nvidia', 5)").run();
+  first.query("INSERT INTO market_watchlist VALUES ('spc_b', 'AMD', 'US', '', 6)").run();
+  first.close();
+
+  const db = openDb(path);
+  const a = listLists(db, "spc_a");
+  expect(a.map((l) => [l.name, l.position])).toEqual([["Holdings", 0]]);
+  // Old order is by added_at; the fixture added them in reverse.
+  expect(listItems(db, a[0]!.id).map((i) => i.symbol)).toEqual([...keys].reverse());
+  const b = listLists(db, "spc_b");
+  expect(listItems(db, b[0]!.id).map((i) => [i.key, i.name])).toEqual([["NVDA", "Nvidia"], ["AMD", ""]]);
+  db.close();
+
+  const again = openDb(path);
+  expect(listLists(again, "spc_a").map((l) => l.id)).toEqual(a.map((l) => l.id));
+  expect(again.query("SELECT COUNT(*) AS n FROM market_watchlist").get()).toEqual({ n: 15 });
+  expect(again.query("SELECT COUNT(*) AS n FROM market_lists").get()).toEqual({ n: 2 });
+  again.close();
+  t.cleanup();
+});

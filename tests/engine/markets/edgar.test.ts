@@ -5,6 +5,8 @@ import { setSetting } from "../../../src/engine/settings";
 import { createSpace } from "../../../src/engine/spaces";
 import { crossCheck, edgarStatus, edgarUserAgent, edgarEpsTtm, refreshEdgar, setEdgarContact } from "../../../src/engine/markets/edgar";
 import { dataBudget } from "../../../src/engine/markets/budget";
+import { addToWatchlist } from "../../../src/engine/markets/watchlist";
+import type { Exchange } from "../../../src/engine/markets/instrument";
 import { tempHome } from "../../helpers";
 import { fixture, jsonResponse, stubFetch } from "./fakes";
 
@@ -46,7 +48,7 @@ test("crossCheck flags a P/E more than 10% off", () => {
 test("EDGAR is off until Nakul gives a contact, then asked politely, for US stocks only", async () => {
   const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
   for (const [s, e] of [["NOW", "US"], ["SPY", "US"], ["ATZ", "TSX"]] as const) {
-    db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(space.id, s, e);
+    addToWatchlist(db, space.id, { symbol: s, exchange: e as Exchange });
   }
   const s = stubFetch((url) => jsonResponse(fixture(url.host === "www.sec.gov" ? "investing/edgar-tickers.json" : "investing/edgar-facts-now.json")));
   const sleeps: number[] = [];
@@ -77,7 +79,7 @@ test("EDGAR is off until Nakul gives a contact, then asked politely, for US stoc
 
 test("a refusal from SEC pauses the cross-check for a month, quietly", async () => {
   const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
-  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, 'NOW', 'US', '', 1)").run(space.id);
+  addToWatchlist(db, space.id, { symbol: "NOW", exchange: "US" });
   setEdgarContact(db, "nakul@example.com");
   const s = stubFetch(() => new Response("Undeclared Automated Tool", { status: 403 }));
   await refreshEdgar(db, { fetch: s.fetch, now: () => NOW, sleep: async () => {} });

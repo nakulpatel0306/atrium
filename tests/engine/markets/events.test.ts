@@ -8,6 +8,8 @@ import { createJobs } from "../../../src/engine/markets/jobs";
 import type { Instrument } from "../../../src/engine/markets/instrument";
 import type { NewsItem } from "../../../src/engine/markets/providers/types";
 import { setAdvanced } from "../../../src/engine/markets/advanced";
+import { addToWatchlist } from "../../../src/engine/markets/watchlist";
+import type { Exchange } from "../../../src/engine/markets/instrument";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -51,7 +53,7 @@ test("news dedupes and old items are dropped", () => {
 
 test("the news job fetches hourly in session, never on a Saturday", async () => {
   const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
-  for (const [s, e] of [["RKLB", "US"], ["SPY", "US"]] as const) db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(space.id, s, e);
+  for (const [s, e] of [["RKLB", "US"], ["SPY", "US"]] as const) addToWatchlist(db, space.id, { symbol: s, exchange: e as Exchange });
   const asked: { list: string[]; since: number }[] = [];
   const data = {
     news: async (list: Instrument[], since: number) => {
@@ -83,7 +85,7 @@ test("the news job fetches hourly in session, never on a Saturday", async () => 
 
 test("hourly news only with Advanced or a big-news alert", async () => {
   const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
-  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, 'RKLB', 'US', '', 1)").run(space.id);
+  addToWatchlist(db, space.id, { symbol: "RKLB", exchange: "US" });
   let calls = 0;
   const data = { news: async () => (calls++, []) } as unknown as MarketData;
   const clock = Date.parse("2026-11-06T16:05:00Z");

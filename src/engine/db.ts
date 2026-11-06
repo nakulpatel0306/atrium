@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { config } from "./config";
+import { migrateWatchlists } from "./markets/lists";
 import { MARKETS_SCHEMA } from "./markets/schema";
 import { ALWAYS_ASK } from "./approvals";
 
@@ -210,6 +211,7 @@ function migrate(db: Database) {
   if (!has("approvals", "topic")) db.exec("ALTER TABLE approvals ADD COLUMN topic TEXT");
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
+  migrateWatchlists(db);
   // The holding's book value in CAD from a Wealthsimple holdings export, for an honest CAD gain.
   if (!has("market_holdings", "book_value_cad")) db.exec("ALTER TABLE market_holdings ADD COLUMN book_value_cad REAL");
   // The export's account type ("TFSA"), so a renamed account keeps its tax treatment.

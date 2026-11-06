@@ -14,6 +14,8 @@ import { join, resolve } from "node:path";
 import { createMarketData } from "../../../src/engine/markets/data";
 import { createKeychain } from "../../../src/engine/markets/keychain";
 import { setAdvanced } from "../../../src/engine/markets/advanced";
+import { addToWatchlist } from "../../../src/engine/markets/watchlist";
+import type { Exchange } from "../../../src/engine/markets/instrument";
 import { tempHome } from "../../helpers";
 
 const FAKE_SECURITY = resolve(import.meta.dir, "../../fixtures/fake-security.ts");
@@ -37,7 +39,7 @@ afterEach(() => {
 });
 
 const watch = (symbol: string, exchange = "US") =>
-  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(spaceId, symbol, exchange);
+  addToWatchlist(db, spaceId, { symbol: symbol, exchange: exchange as Exchange });
 
 type Stream = { list: Instrument[]; ev: StreamEvents; closed: boolean; sets: Instrument[][] };
 

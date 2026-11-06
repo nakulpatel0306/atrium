@@ -10,6 +10,8 @@ import { instrumentKey, type Instrument } from "../../../src/engine/markets/inst
 import { tiingoProvider, tiingoSymbols } from "../../../src/engine/markets/providers/tiingo";
 import { getSetting } from "../../../src/engine/settings";
 import { setAdvanced } from "../../../src/engine/markets/advanced";
+import { addToWatchlist } from "../../../src/engine/markets/watchlist";
+import type { Exchange } from "../../../src/engine/markets/instrument";
 import { tempHome } from "../../helpers";
 import { fixture, jsonResponse, stubFetch } from "./fakes";
 
@@ -33,7 +35,7 @@ const hold = (symbol: string, exchange: string) =>
     .query("INSERT INTO market_holdings (id, space_id, account, symbol, exchange, quantity, currency, source, updated_at) VALUES (?, ?, 'TFSA', ?, ?, 1, ?, 'manual', 1)")
     .run(`h_${symbol}`, spaceId, symbol, exchange, exchange === "US" ? "USD" : "CAD");
 const watch = (symbol: string, exchange: string) =>
-  db.query("INSERT INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, '', 1)").run(spaceId, symbol, exchange);
+  addToWatchlist(db, spaceId, { symbol: symbol, exchange: exchange as Exchange });
 
 function rig(clock: { now: number }) {
   const s = stubFetch(() => jsonResponse(fixture("investing/tiingo-spy.json")));

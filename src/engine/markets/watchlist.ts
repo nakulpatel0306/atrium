@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
+import { addToList, ensureDefaultList } from "./lists";
 import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } from "./instrument";
 
 export type WatchItem = Instrument & { key: string; name: string; addedAt: number };
@@ -14,27 +15,18 @@ const toItem = (r: Row): WatchItem => ({
   addedAt: r.added_at,
 });
 
+// A space's watchlist is the union of its lists: each key once, at its first added_at.
 export function listWatchlist(db: Database, spaceId: string): WatchItem[] {
   const rows = db
     .query("SELECT symbol, exchange, name, added_at FROM market_watchlist WHERE space_id = ? ORDER BY added_at, rowid")
     .all(spaceId) as Row[];
-  return rows.map(toItem);
+  const seen = new Set<string>();
+  return rows.map(toItem).filter((i) => !seen.has(i.key) && !!seen.add(i.key));
 }
 
-// Adding what's already there keeps the original row (and its name).
+// Adding what's already there keeps the original row (and its name). New keys go to the space's first list.
 export function addToWatchlist(db: Database, spaceId: string, i: Instrument, name = ""): WatchItem {
-  db.query("INSERT OR IGNORE INTO market_watchlist (space_id, symbol, exchange, name, added_at) VALUES (?, ?, ?, ?, ?)").run(
-    spaceId,
-    i.symbol,
-    i.exchange,
-    name,
-    Date.now(),
-  );
-  bus.emit({ type: "changed" });
-  const row = db
-    .query("SELECT symbol, exchange, name, added_at FROM market_watchlist WHERE space_id = ? AND symbol = ? AND exchange = ?")
-    .get(spaceId, i.symbol, i.exchange) as Row;
-  return toItem(row);
+  return addToList(db, ensureDefaultList(db, spaceId).id, i, name);
 }
 
 export function removeFromWatchlist(db: Database, spaceId: string, key: string): void {

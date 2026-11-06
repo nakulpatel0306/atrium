@@ -1,14 +1,23 @@
 // Tables for markets spaces. Prices and bars are keyed by instrument key (see instrument.ts), not by space,
 // so two spaces watching the same symbol share one cached quote.
 export const MARKETS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS market_lists (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS market_watchlist (
+  list_id TEXT NOT NULL REFERENCES market_lists(id) ON DELETE CASCADE,
   space_id TEXT NOT NULL REFERENCES spaces(id),
   symbol TEXT NOT NULL,
   exchange TEXT NOT NULL,
   name TEXT NOT NULL DEFAULT '',
   added_at INTEGER NOT NULL,
-  PRIMARY KEY (space_id, symbol, exchange)
+  PRIMARY KEY (list_id, symbol, exchange)
 );
+CREATE INDEX IF NOT EXISTS market_watchlist_space ON market_watchlist(space_id);
 CREATE TABLE IF NOT EXISTS market_holdings (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
