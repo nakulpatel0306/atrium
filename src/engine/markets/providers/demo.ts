@@ -1,5 +1,5 @@
 import { etDate, etInstant, usSession } from "../calendar";
-import { instrumentKey, type Instrument } from "../instrument";
+import { instrumentKey, parseInstrumentKey, type Instrument } from "../instrument";
 import type { Bar, MarketProvider, Quote, QuoteStream, Timeframe } from "./types";
 
 // Prices start from here so a series is the same whatever range is asked for.
@@ -74,6 +74,29 @@ function intraday(key: string, lastClose: number, opensAt: number, at: number): 
   const minutes = (at - opensAt) / 60_000;
   return round(lastClose * (1 + 0.012 * Math.sin(minutes / 37 + seedOf(key))));
 }
+
+// What demo search can find: Nakul's holdings and a few well-known names.
+const DEMO_CATALOG: { key: string; name: string; type: string }[] = [
+  { key: "AAPL", name: "Apple Inc", type: "Common Stock" },
+  { key: "AMZN", name: "Amazon.com Inc", type: "Common Stock" },
+  { key: "ATZ.TO", name: "Aritzia Inc", type: "Common Stock" },
+  { key: "DRAM", name: "Roundhill Memory ETF", type: "ETP" },
+  { key: "MARS", name: "Roundhill Space & Technology ETF", type: "ETP" },
+  { key: "META", name: "Meta Platforms Inc", type: "Common Stock" },
+  { key: "MSFT", name: "Microsoft Corp", type: "Common Stock" },
+  { key: "NOW", name: "ServiceNow Inc", type: "Common Stock" },
+  { key: "NVDA", name: "Nvidia Corp", type: "Common Stock" },
+  { key: "QBTS", name: "D-Wave Quantum Inc", type: "Common Stock" },
+  { key: "QQQ", name: "Invesco QQQ Trust", type: "ETP" },
+  { key: "RKLB", name: "Rocket Lab Corp", type: "Common Stock" },
+  { key: "SHOP", name: "Shopify Inc", type: "Common Stock" },
+  { key: "SHOP.TO", name: "Shopify Inc", type: "Common Stock" },
+  { key: "SOFI", name: "SoFi Technologies Inc", type: "Common Stock" },
+  { key: "SPY", name: "SPDR S&P 500 ETF Trust", type: "ETP" },
+  { key: "TSLA", name: "Tesla Inc", type: "Common Stock" },
+  { key: "VFV.TO", name: "Vanguard S&P 500 Index ETF", type: "ETF" },
+  { key: "XEQT.TO", name: "iShares Core Equity ETF Portfolio", type: "ETF" },
+];
 
 export function demoProvider(deps: { now?: () => number; tickMs?: number } = {}): MarketProvider {
   const now = deps.now ?? Date.now;
@@ -157,11 +180,18 @@ export function demoProvider(deps: { now?: () => number; tickMs?: number } = {})
         high52: Math.max(...days.map((d) => d.bar.h)),
         low52: Math.min(...days.map((d) => d.bar.l)),
         divYield: h % 3 === 0 ? round((h % 400) / 100) : null,
+        marketCap: round(1_000 + (h % 900_000)),
       };
     },
     async profile(i) {
       const key = instrumentKey(i);
-      return { name: `${key} (demo)`, country: i.exchange === "US" ? "US" : "CA", currency: i.exchange === "US" ? "USD" : "CAD", industry: "Technology" };
+      return {
+        name: `${key} (demo)`,
+        country: i.exchange === "US" ? "US" : "CA",
+        currency: i.exchange === "US" ? "USD" : "CAD",
+        industry: "Technology",
+        exchange: i.exchange === "US" ? "NASDAQ NMS - GLOBAL MARKET" : "TORONTO STOCK EXCHANGE",
+      };
     },
     // The first symbol reports three trading days out, so earnings alerts and thesis checks can be shown.
     async earnings(list, from, to) {
@@ -177,6 +207,13 @@ export function demoProvider(deps: { now?: () => number; tickMs?: number } = {})
         if (date >= from && date <= to) out.push({ key, date, hour: n === 0 || h % 2 ? "amc" : "bmo", epsEstimate: round((h % 300) / 100 + 0.1) });
       });
       return out;
+    },
+    async search(q) {
+      const t = q.trim().toLowerCase();
+      return DEMO_CATALOG.filter((c) => c.key.toLowerCase().startsWith(t) || c.name.toLowerCase().includes(t)).map((c) => {
+        const i = parseInstrumentKey(c.key)!;
+        return { key: c.key, symbol: i.symbol, exchange: i.exchange, name: c.name, type: c.type, note: null };
+      });
     },
     maxStreamSymbols: 30,
     async validate() {},

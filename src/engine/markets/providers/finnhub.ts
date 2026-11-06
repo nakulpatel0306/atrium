@@ -1,5 +1,6 @@
 import { etDate } from "../calendar";
 import { instrumentKey, type Instrument } from "../instrument";
+import { finnhubHits } from "../search";
 import { fetchJson, RECONNECT_MS } from "./http";
 import { ProviderError, type EarningsDate, type MarketProvider, type Metrics, type NewsItem, type Profile, type Quote, type QuoteStream, type StreamEvents } from "./types";
 
@@ -53,12 +54,18 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
   const metric = async (i: Instrument): Promise<Metrics> => {
     const r = (await get("/stock/metric", { symbol: i.symbol, metric: "all" })) as { metric?: Record<string, unknown> };
     const m = r?.metric ?? {};
-    return { pe: numOrNull(m.peTTM), high52: numOrNull(m["52WeekHigh"]), low52: numOrNull(m["52WeekLow"]), divYield: numOrNull(m.currentDividendYieldTTM) };
+    return {
+      pe: numOrNull(m.peTTM),
+      high52: numOrNull(m["52WeekHigh"]),
+      low52: numOrNull(m["52WeekLow"]),
+      divYield: numOrNull(m.currentDividendYieldTTM),
+      marketCap: numOrNull(m.marketCapitalization),
+    };
   };
   const profile = async (i: Instrument): Promise<Profile | null> => {
-    const r = (await get("/stock/profile2", { symbol: i.symbol })) as { name?: string; country?: string; currency?: string; finnhubIndustry?: string };
+    const r = (await get("/stock/profile2", { symbol: i.symbol })) as { name?: string; country?: string; currency?: string; finnhubIndustry?: string; exchange?: string };
     if (!r?.name) return null;
-    return { name: r.name, country: r.country || null, currency: r.currency || null, industry: r.finnhubIndustry || null };
+    return { name: r.name, country: r.country || null, currency: r.currency || null, industry: r.finnhubIndustry || null, exchange: r.exchange || null };
   };
   const earnings = async (list: Instrument[], from: string, to: string): Promise<EarningsDate[]> => {
     const out: EarningsDate[] = [];
@@ -150,6 +157,10 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
     news,
     metric,
     profile,
+    async search(q, signal) {
+      const r = (await get("/search", { q }, signal)) as { result?: { description: string; symbol: string; type: string }[] };
+      return finnhubHits(r?.result ?? []);
+    },
     earnings,
     stream,
     maxStreamSymbols: 50,

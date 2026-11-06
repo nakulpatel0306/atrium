@@ -107,3 +107,13 @@ test("EDGAR waits for Advanced; Finnhub metrics don't", async () => {
   expect(edgar.calls).toHaveLength(0);
   expect(asked).toContain("metric NOW");
 });
+
+test("meta job stores listing and market cap", async () => {
+  const research = {
+    profile: async () => ({ name: "ServiceNow Inc", country: "US", currency: "USD", industry: "Technology", exchange: "NEW YORK STOCK EXCHANGE, INC." }),
+    metric: async () => ({ pe: 50, high52: 80, low52: 20, divYield: null, marketCap: 190000 }),
+  } as unknown as MarketProvider;
+  const data = { research: () => research, prepare: async () => {} } as unknown as MarketData;
+  await metaJob(db, { data, now: () => NOW, fetch: stubFetch(() => jsonResponse({})).fetch, sleep: async () => {} }).run(NOW);
+  expect(getMeta(db, ["NOW"]).get("NOW")).toMatchObject({ listing: "NEW YORK STOCK EXCHANGE, INC.", marketCap: 190000 });
+});

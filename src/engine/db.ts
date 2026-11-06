@@ -212,6 +212,9 @@ function migrate(db: Database) {
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
   migrateWatchlists(db);
+  // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
+  if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");
+  if (!has("instrument_meta", "market_cap")) db.exec("ALTER TABLE instrument_meta ADD COLUMN market_cap REAL");
   // The holding's book value in CAD from a Wealthsimple holdings export, for an honest CAD gain.
   if (!has("market_holdings", "book_value_cad")) db.exec("ALTER TABLE market_holdings ADD COLUMN book_value_cad REAL");
   // The export's account type ("TFSA"), so a renamed account keeps its tax treatment.

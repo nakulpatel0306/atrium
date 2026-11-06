@@ -91,9 +91,9 @@ test("metric, profile and earnings map Finnhub's fields", async () => {
   );
   const p = finnhubProvider(TOKEN, { fetch: s.fetch, now: () => NOW });
   const NOWI = { symbol: "NOW", exchange: "US" as const };
-  expect(await p.metric!(NOWI)).toEqual({ pe: 61.84, high52: 1198.09, low52: 712.5, divYield: null });
+  expect(await p.metric!(NOWI)).toEqual({ pe: 61.84, high52: 1198.09, low52: 712.5, divYield: null, marketCap: 190000 });
   expect(s.calls[0]!.url.searchParams.get("metric")).toBe("all");
-  expect(await p.profile!(NOWI)).toEqual({ name: "ServiceNow Inc", country: "US", currency: "USD", industry: "Technology" });
+  expect(await p.profile!(NOWI)).toEqual({ name: "ServiceNow Inc", country: "US", currency: "USD", industry: "Technology", exchange: "NEW YORK STOCK EXCHANGE, INC." });
   const e = await p.earnings!([{ symbol: "RKLB", exchange: "US" }], "2026-11-05", "2026-12-05");
   expect(e).toEqual([
     { key: "RKLB", date: "2026-11-10", hour: "amc", epsEstimate: 1.23 },
@@ -103,4 +103,26 @@ test("metric, profile and earnings map Finnhub's fields", async () => {
   expect([cal.pathname, cal.searchParams.get("from"), cal.searchParams.get("to"), cal.searchParams.get("symbol")]).toEqual(["/api/v1/calendar/earnings", "2026-11-05", "2026-12-05", "RKLB"]);
   const empty = finnhubProvider(TOKEN, { fetch: stubFetch(() => jsonResponse({})).fetch, now: () => NOW });
   expect(await empty.profile!(NOWI)).toBeNull();
+});
+
+test("search hits /search with the query and token", async () => {
+  const s = stubFetch(() => jsonResponse(fixture("simple/finnhub-search-apple.json")));
+  const p = finnhubProvider(TOKEN, { fetch: s.fetch, now: () => NOW });
+  const hits = await p.search!("apple");
+  expect(s.calls[0]!.url.pathname).toBe("/api/v1/search");
+  expect(s.calls[0]!.url.searchParams.get("q")).toBe("apple");
+  expect(s.calls[0]!.url.searchParams.get("token")).toBe(TOKEN);
+  expect(hits.map((h) => h.key)).toEqual(["AAPL", "AAPL"]);
+});
+
+test("profile maps exchange", async () => {
+  const s = stubFetch(() => jsonResponse(fixture("investing/finnhub-profile2.json")));
+  const p = finnhubProvider(TOKEN, { fetch: s.fetch, now: () => NOW });
+  expect((await p.profile!({ symbol: "NOW", exchange: "US" }))?.exchange).toBe("NEW YORK STOCK EXCHANGE, INC.");
+});
+
+test("metric maps marketCapitalization", async () => {
+  const s = stubFetch(() => jsonResponse(fixture("investing/finnhub-metric.json")));
+  const p = finnhubProvider(TOKEN, { fetch: s.fetch, now: () => NOW });
+  expect((await p.metric!({ symbol: "NOW", exchange: "US" })).marketCap).toBe(190000);
 });

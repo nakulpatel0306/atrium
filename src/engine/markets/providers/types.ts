@@ -1,4 +1,4 @@
-import type { Instrument } from "../instrument";
+import type { Exchange, Instrument } from "../instrument";
 
 export type ProviderId = "alpaca" | "finnhub" | "alphavantage" | "tiingo" | "demo";
 export type Freshness = "live" | "eod" | "demo";
@@ -8,8 +8,10 @@ export type Bar = { t: number; o: number; h: number; l: number; c: number; v: nu
 export type Timeframe = "1Day" | "5Min";
 export type NewsItem = { key: string; headline: string; source: string; url: string; at: number };
 
-export type Metrics = { pe: number | null; high52: number | null; low52: number | null; divYield: number | null };
-export type Profile = { name: string; country: string | null; currency: string | null; industry: string | null };
+// marketCap is in millions, in the listing's currency.
+export type Metrics = { pe: number | null; high52: number | null; low52: number | null; divYield: number | null; marketCap: number | null };
+export type Profile = { name: string; country: string | null; currency: string | null; industry: string | null; exchange: string | null };
+export type SearchHit = { key: string; symbol: string; exchange: Exchange; name: string; type: string; note: string | null };
 export type EarningsDate = { key: string; date: string; hour: string | null; epsEstimate: number | null };
 
 export class ProviderError extends Error {
@@ -36,6 +38,7 @@ export interface MarketProvider {
   news?(list: Instrument[], since: number): Promise<NewsItem[]>;
   metric?(i: Instrument): Promise<Metrics>;
   profile?(i: Instrument): Promise<Profile | null>;
+  search?(q: string, signal?: AbortSignal): Promise<SearchHit[]>;
   earnings?(list: Instrument[], from: string, to: string): Promise<EarningsDate[]>;
   stream?(list: Instrument[], ev: StreamEvents): QuoteStream;
   maxStreamSymbols?: number;

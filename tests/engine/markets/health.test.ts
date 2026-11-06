@@ -53,7 +53,7 @@ const LT = new Map<string, LookThrough>([
   ["VFV.TO", lt("VFV.TO")],
 ]);
 const meta = new Map<string, Meta>([
-  ["AAPL", { key: "AAPL", name: "Apple", kind: "stock", sector: "Information Technology", sectorSource: "x", country: "United States", currency: "USD", pe: null, high52: null, low52: null, divYield: null, metricsAt: null }],
+  ["AAPL", { key: "AAPL", name: "Apple", kind: "stock", sector: "Information Technology", sectorSource: "x", country: "United States", currency: "USD", pe: null, high52: null, low52: null, divYield: null, metricsAt: null, listing: null, marketCap: null }],
 ]);
 const health = (over: Partial<Parameters<typeof portfolioHealth>[0]> = {}) => portfolioHealth({ positions: POSITIONS, fx, lookThrough: LT, meta, ...over });
 

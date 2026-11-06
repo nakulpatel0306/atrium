@@ -1,0 +1,9 @@
+{
+  "count": 4,
+  "result": [
+    { "description": "MARS INC", "displaySymbol": "MARS.L", "symbol": "MARS.L", "type": "Common Stock" },
+    { "description": "ROUNDHILL SPACE & TECHNOLOGY ETF", "displaySymbol": "MARS", "symbol": "MARS", "type": "ETP" },
+    { "description": "MARSHALL ISLANDS SHIPPING CORP", "displaySymbol": "MARSX", "symbol": "MARSX", "type": "Mutual Fund" },
+    { "description": "MARSTON'S PLC", "displaySymbol": "MARS.SW", "symbol": "MARS.SW", "type": "Common Stock" }
+  ]
+}

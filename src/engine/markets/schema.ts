@@ -164,7 +164,9 @@ CREATE TABLE IF NOT EXISTS instrument_meta (
   metrics_at INTEGER,
   profile_at INTEGER,
   edgar_eps_ttm REAL,
-  edgar_at INTEGER
+  edgar_at INTEGER,
+  listing TEXT,
+  market_cap REAL
 );
 CREATE TABLE IF NOT EXISTS market_earnings (
   key TEXT NOT NULL,

@@ -23,6 +23,8 @@ export type Meta = {
   low52: number | null;
   divYield: number | null;
   metricsAt: number | null;
+  listing: string | null;
+  marketCap: number | null;
 };
 
 const DAY_MS = 86_400_000;
@@ -44,6 +46,8 @@ type Row = {
   div_yield: number | null;
   metrics_at: number | null;
   profile_at: number | null;
+  listing: string | null;
+  market_cap: number | null;
 };
 
 export function getMeta(db: Database, keys: string[]): Map<string, Meta> {
@@ -64,6 +68,8 @@ export function getMeta(db: Database, keys: string[]): Map<string, Meta> {
       low52: r.low52,
       divYield: r.div_yield,
       metricsAt: r.metrics_at,
+      listing: r.listing,
+      marketCap: r.market_cap,
     });
   }
   return out;
@@ -133,13 +139,13 @@ export function metaJob(db: Database, deps: { data: MarketData; now: () => numbe
             const m = meta.get(key);
             const useIndustry = pr?.industry && (!m?.sector || m.sectorSource === FINNHUB_INDUSTRY);
             db.query(
-              `UPDATE instrument_meta SET name = COALESCE(?, name), profile_at = ?,
+              `UPDATE instrument_meta SET name = COALESCE(?, name), listing = COALESCE(?, listing), profile_at = ?,
                  sector = CASE WHEN ? THEN ? ELSE sector END, sector_source = CASE WHEN ? THEN ? ELSE sector_source END WHERE key = ?`,
-            ).run(pr?.name ?? null, now, useIndustry ? 1 : 0, pr?.industry ?? null, useIndustry ? 1 : 0, FINNHUB_INDUSTRY, key);
+            ).run(pr?.name ?? null, pr?.exchange ?? null, now, useIndustry ? 1 : 0, pr?.industry ?? null, useIndustry ? 1 : 0, FINNHUB_INDUSTRY, key);
           }
           if (p.metric && now - (a.metrics_at ?? 0) > METRICS_MAX_AGE) {
             const mt = await p.metric(i);
-            db.query("UPDATE instrument_meta SET pe = ?, high52 = ?, low52 = ?, div_yield = ?, metrics_at = ? WHERE key = ?").run(mt.pe, mt.high52, mt.low52, mt.divYield, now, key);
+            db.query("UPDATE instrument_meta SET pe = ?, high52 = ?, low52 = ?, div_yield = ?, market_cap = ?, metrics_at = ? WHERE key = ?").run(mt.pe, mt.high52, mt.low52, mt.divYield, mt.marketCap ?? null, now, key);
           }
         } catch (e) {
           if (e instanceof ProviderError && (e.kind === "auth" || e.kind === "rate_limited")) break;
