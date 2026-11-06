@@ -207,3 +207,16 @@ describe("calendar copies fail closed", () => {
     expect(logged()).toEqual([]);
   });
 });
+
+test("calendar copies drop ATTACH and URL everywhere and refuse hidden line breaks and control characters", () => {
+  const enc = (s: string) => new TextEncoder().encode(s);
+  const out = safeAlarms(enc("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Gym\r\nATTACH:https://tracker.example/a\r\nurl;x=1:https://tracker.example/b\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"));
+  expect(out).toContain("SUMMARY:Gym");
+  expect(out).not.toContain("tracker.example");
+  const msg = "This calendar file has hidden control characters, so Atrium won't send it to Calendar. Use Reveal in Finder to look at it.";
+  for (const ch of [" ", " ", "\u0085", "\u000b", "\u000c", "\u0007", "\u009b"]) {
+    expect(() => safeAlarms(enc(`BEGIN:VCALENDAR\r\nSUMMARY:Gym${ch}ACTION:PROCEDURE\r\nEND:VCALENDAR\r\n`))).toThrow(msg);
+  }
+  // Tabs are ordinary text (and folding), not control characters.
+  expect(safeAlarms(enc("BEGIN:VCALENDAR\r\nSUMMARY:Gym\tday\r\nEND:VCALENDAR\r\n"))).toContain("SUMMARY:Gym\tday");
+});

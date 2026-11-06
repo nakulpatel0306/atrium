@@ -73,6 +73,7 @@ export async function openFile(t: Target, how: OpenHow): Promise<{ app: string; 
   return result;
 }
 
+const CONTROL = "This calendar file has hidden control characters, so Atrium won't send it to Calendar. Use Reveal in Finder to look at it.";
 const NOT_UTF8 = "This calendar file isn't plain UTF-8 text, so Atrium won't send it to Calendar. Use Reveal in Finder to look at it.";
 const DURATION = /^[+-]?P(\d+W|(\d+D)?(T(\d+H)?(\d+M)?(\d+S)?)?)$/;
 const DATE_TIME = /^\d{8}T\d{6}Z$/;
@@ -138,6 +139,9 @@ export function safeAlarms(bytes: Uint8Array): string {
   } catch {
     throw new FileRefused(403, NOT_UTF8);
   }
+  // Characters some parsers treat as line breaks (or that hide text) would let lines mean different things to
+  // Atrium and to Calendar; tab is ordinary text.
+  if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u2028\u2029]/.test(text)) throw new FileRefused(403, CONTROL);
   const lines: string[] = [];
   for (const raw of text.split(/\r\n|\n|\r/)) {
     if ((raw.startsWith(" ") || raw.startsWith("\t")) && lines.length) lines[lines.length - 1] += raw.slice(1);
@@ -164,7 +168,8 @@ export function safeAlarms(bytes: Uint8Array): string {
     }
     if (begin) alarm = [];
     else if (end || !prop) broken = true;
-    else out.push(line);
+    // Outside alarms too, nothing that points at a file or a URL goes to Calendar.
+    else if (prop.name !== "ATTACH" && prop.name !== "URL") out.push(line);
   }
   if (alarm) broken = true;
   return out.flatMap((x) => (Array.isArray(x) ? (broken ? [] : x) : [x])).join("\r\n") + "\r\n";
