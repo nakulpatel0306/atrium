@@ -19,11 +19,14 @@ const denyRules = (cwd: string) => [
   "Bash(git remote*)",
   "Bash(git clone*)",
   "Bash(git -c*)",
-  // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send.
-  "Bash(osascript*)",
-  "Bash(/usr/bin/osascript*)",
+  // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send. Matched anywhere in the
+  // command, so "sh -c 'osascript …'" or "env osascript" is denied too.
+  "Bash(*osascript*)",
+  "Bash(*shortcuts*)",
+  "Bash(*automator*)",
   "Bash(open *)",
-  "Bash(shortcuts *)",
+  "Bash(* open *)",
+  "Bash(*/open *)",
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
   "Write(**/.git/**)",
@@ -35,6 +38,9 @@ const denyRules = (cwd: string) => [
   "Read(~/.aws/**)",
   "Read(~/.gnupg/**)",
   "Read(~/.config/gh/**)",
+  "Read(~/Library/Messages/**)",
+  "Read(~/Library/Application Support/AddressBook/**)",
+  "Read(~/Library/Contacts/**)",
   // Atrium's DB, transcripts and other spaces' folders; a general-space run keeps its own. "//" anchors at the root.
   ...atriumDenyPaths(cwd).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
 ];
@@ -45,17 +51,24 @@ export function sandboxSettings(cwd: string): string {
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
+      // Passed with --settings, which outranks the repo's .claude settings and the user's, and (with this false) makes
+      // the sandbox admin-required, so a cloned repo can't add excluded commands, sockets or hosts.
       allowUnsandboxedCommands: false,
+      // Apple Events would let a sandboxed command drive Messages or Terminal as "bun" once Nakul has allowed that.
+      allowAppleEvents: false,
+      enableWeakerNestedSandbox: false,
+      enableWeakerNetworkIsolation: false,
       autoAllowBashIfSandboxed: false,
       filesystem: {
         denyRead: [
           "~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains",
+          "~/Library/Messages", "~/Library/Application Support/AddressBook", "~/Library/Contacts",
           // A wildcard entry that matches a folder blocks its contents too.
           ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
           ...atriumDenyPaths(cwd),
         ],
       },
-      network: { allowedDomains: ["registry.npmjs.org"] },
+      network: { allowedDomains: ["registry.npmjs.org"], allowLocalBinding: false, allowAllUnixSockets: false },
     },
   });
 }

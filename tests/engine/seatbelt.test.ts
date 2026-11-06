@@ -94,6 +94,24 @@ describe("seatbeltProfile", () => {
     expect(r.out + r.err).toContain("Operation not permitted");
   });
 
+  // --help only prints usage; no shortcut is listed or run, and under the profile it can't start at all.
+  test("I3: the shortcuts CLI can't run under the profile", () => {
+    if (process.platform !== "darwin") return;
+    const profile = seatbeltProfile({ cwd, writable: [cwd] });
+    expect(profile).toContain('(deny process-exec (literal "/usr/bin/shortcuts"))');
+    expect(profile).toContain('(deny process-exec (literal "/usr/bin/automator"))');
+    expect(profile).toContain('(global-name-prefix "com.apple.shortcuts")');
+    expect(profile).toContain('(global-name-prefix "com.apple.WorkflowKit")');
+    const r = sandboxed(profile, "/usr/bin/shortcuts --help");
+    expect(r.exitCode).not.toBe(0);
+    expect(r.out + r.err).toContain("Operation not permitted");
+  });
+
+  test("M7: the Messages and Contacts stores are denied", () => {
+    const profile = seatbeltProfile({ cwd, writable: [cwd] });
+    for (const p of ["Library/Messages", "Library/Application Support/AddressBook", "Library/Contacts"]) expect(profile).toContain(p);
+  });
+
   test("profile denies credential paths and .env names", () => {
     const home = realpathSync(homedir());
     const profile = seatbeltProfile({ cwd, writable: [] });

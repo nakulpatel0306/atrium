@@ -149,11 +149,13 @@ describe("claudeAdapter", () => {
       "Bash(git remote*)",
       "Bash(git clone*)",
       "Bash(git -c*)",
-      // Sending and controlling apps are the engine's alone.
-      "Bash(osascript*)",
-      "Bash(/usr/bin/osascript*)",
+      // Sending and controlling apps are the engine's alone, matched anywhere in the command.
+      "Bash(*osascript*)",
+      "Bash(*shortcuts*)",
+      "Bash(*automator*)",
       "Bash(open *)",
-      "Bash(shortcuts *)",
+      "Bash(* open *)",
+      "Bash(*/open *)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
       "Edit(**/.claude/**)",
@@ -163,6 +165,9 @@ describe("claudeAdapter", () => {
       "Read(~/.aws/**)",
       "Read(~/.gnupg/**)",
       "Read(~/.config/gh/**)",
+      "Read(~/Library/Messages/**)",
+      "Read(~/Library/Application Support/AddressBook/**)",
+      "Read(~/Library/Contacts/**)",
       // Atrium's DB, transcripts and other spaces' folders. "//" anchors the rule at the filesystem root.
       ...atriumDenyPaths(process.cwd()).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
     ]);
@@ -303,5 +308,32 @@ test("by_prompt answers by what the prompt says", async () => {
     delete process.env.FAKE_CLAUDE_MODE;
     delete process.env.FAKE_CLAUDE_REPLIES;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("I4: per-run settings pin Apple Events and every sandbox-widening switch off", () => {
+  const s = JSON.parse(sandboxSettings(process.cwd()));
+  expect(s.sandbox.allowAppleEvents).toBe(false);
+  expect(s.sandbox.allowUnsandboxedCommands).toBe(false);
+  expect(s.sandbox.enableWeakerNestedSandbox).toBe(false);
+  expect(s.sandbox.enableWeakerNetworkIsolation).toBe(false);
+  expect(s.sandbox.network).toEqual({ allowedDomains: ["registry.npmjs.org"], allowLocalBinding: false, allowAllUnixSockets: false });
+});
+
+test("M7: Claude can't read the Messages or Contacts stores", () => {
+  const s = JSON.parse(sandboxSettings(process.cwd()));
+  for (const p of ["~/Library/Messages", "~/Library/Application Support/AddressBook", "~/Library/Contacts"]) expect(s.sandbox.filesystem.denyRead).toContain(p);
+});
+
+test("I4: osascript, shortcuts and open are denied anywhere in a command", async () => {
+  process.env.FAKE_CLAUDE_MODE = "argv";
+  try {
+    const r = await claudeAdapter(FAKE).run(input());
+    if (r.status !== "ok") throw new Error("expected ok");
+    const { argv } = JSON.parse(r.summary) as { argv: string[] };
+    const denied = argv.slice(argv.indexOf("--disallowedTools") + 1);
+    for (const rule of ["Bash(*osascript*)", "Bash(*shortcuts*)", "Bash(*automator*)", "Bash(open *)", "Bash(* open *)", "Read(~/Library/Messages/**)"]) expect(denied).toContain(rule);
+  } finally {
+    delete process.env.FAKE_CLAUDE_MODE;
   }
 });
