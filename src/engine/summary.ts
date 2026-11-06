@@ -1,11 +1,13 @@
 import type { Database } from "bun:sqlite";
 import { listPending, type AlertTopic } from "./approvals";
 import { listPendingProposals } from "./autonomy/proposals";
+import { taskFiles } from "./outputs/store";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
 import { listTasks } from "./tasks";
 
-export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string; topic: AlertTopic | null };
+// `files` is how many files a review's task made (0 for everything else), so the notification can say so.
+export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string; topic: AlertTopic | null; files: number };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
 export type Summary = {
   needsYou: number;
@@ -30,15 +32,23 @@ export function summary(db: Database): Summary {
     .map((a) => ({
       at: a.createdAt,
       need: (a.spaceId === null
-        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic }
-        : { id: a.id, kind: a.kind, title: a.title, spaceName: names.get(a.spaceId)!, path: pathFor(a.spaceId, a.taskId), topic: a.topic }) as Need,
+        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic, files: 0 }
+        : {
+            id: a.id,
+            kind: a.kind,
+            title: a.title,
+            spaceName: names.get(a.spaceId)!,
+            path: pathFor(a.spaceId, a.taskId),
+            topic: a.topic,
+            files: a.kind === "review" && a.taskId ? taskFiles(db, a.taskId).filter((f) => f.change !== "deleted").length : 0,
+          }) as Need,
     }));
   // Suggestions are answered from Home's Needs you list, not from a space.
   const suggestions = listPendingProposals(db)
     .filter((p) => names.has(p.spaceId))
     .map((p) => ({
       at: p.createdAt,
-      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null } as Need,
+      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0 } as Need,
     }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
   const needs = [...approvals, ...suggestions].sort((a, b) => b.at - a.at).map((x) => x.need);

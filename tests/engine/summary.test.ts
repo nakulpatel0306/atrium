@@ -5,6 +5,7 @@ import { openDb } from "../../src/engine/db";
 import { setSetting } from "../../src/engine/settings";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { summary } from "../../src/engine/summary";
+import { recordRunFiles } from "../../src/engine/outputs/store";
 import { createTask, setTaskStatus } from "../../src/engine/tasks";
 import { labelOf } from "../../src/engine/autonomy/kinds";
 import { tempHome } from "../helpers";
@@ -94,7 +95,7 @@ test("summary counts pending suggestions as things that need you", () => {
 
   const sum = summary(db);
   expect(sum.needsYou).toBe(2);
-  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null });
+  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null, files: 0 });
   expect(sum.needs[1]!.id).toBe(a.id);
 });
 
@@ -129,6 +130,24 @@ test("summary counts alert kinds and gives each need its topic", () => {
 test("summary shows an Atrium-wide question as Atrium's", () => {
   const a = createApproval(db, { spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?', detail: "", alwaysAsk: "create_repo" });
   const sum = summary(db);
-  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null });
+  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null, files: 0 });
   expect(sum.needsYou).toBe(1);
+});
+
+test("a review need says how many files its task made", () => {
+  const s = createSpace(db, { name: "Weekly Planning", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Make a grocery list" });
+  setTaskStatus(db, t.id, "running");
+  setTaskStatus(db, t.id, "review");
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES ('run_1', ?, 'claude', 1, '')").run(t.id);
+  recordRunFiles(db, { runId: "run_1", taskId: t.id, spaceId: s.id, root: "space" }, [
+    ...["a.md", "b.md", "c.md", "d.ics"].map((path) => ({ path, change: "created" as const, size: 1 })),
+    { path: "old.md", change: "deleted" as const, size: null },
+  ]);
+  createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title: "Make a grocery list", detail: "" });
+  createApproval(db, { spaceId: s.id, kind: "alert", title: "SPY moved", detail: "" });
+  const needs = summary(db).needs;
+  expect(needs.find((n) => n.kind === "review")!.files).toBe(4);
+  expect(needs.find((n) => n.kind === "review")!.path).toBe(`/space/${s.id}?task=${t.id}`);
+  expect(needs.find((n) => n.kind === "alert")!.files).toBe(0);
 });

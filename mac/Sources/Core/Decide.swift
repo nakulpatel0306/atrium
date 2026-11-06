@@ -23,6 +23,12 @@ func menuNeeds(_ s: Summary) -> (shown: [Need], more: Int) {
   (Array(s.needs.prefix(5)), max(0, s.needs.count - 5))
 }
 
+// "made 4 files" for a review's notification; nothing when the task made none.
+func madeText(_ n: Int?) -> String? {
+  guard let n, n > 0 else { return nil }
+  return n == 1 ? "made 1 file" : "made \(n) files"
+}
+
 // Notes only for ids the previous summary didn't have, so a reconnect or wake never repeats what Nakul already saw.
 // The first summary after launch only seeds: the badge already shows what was waiting.
 func newNotes(previous: Summary?, next: Summary) -> [Note] {
@@ -33,7 +39,7 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
     Note(
       // A suggestion ("stop asking about this?") waits on an answer, like a question.
       id: $0.id, title: $0.kind == "review" ? "Ready for review" : $0.kind == "alert" ? alertTitle($0.topic) : "Atrium has a question",
-      body: "\($0.title) · \($0.spaceName)", path: $0.path)
+      body: [$0.title, $0.spaceName, $0.kind == "review" ? madeText($0.files) : nil].compactMap { $0 }.joined(separator: " · "), path: $0.path)
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {
     Note(

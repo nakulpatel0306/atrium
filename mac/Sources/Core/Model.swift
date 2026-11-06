@@ -5,6 +5,8 @@ struct Need: Decodable, Equatable {
   let id, kind, title, spaceName, path: String
   // The kind of market alert ("price", "indicator", "earnings", "news", "flag"); absent from older engines.
   var topic: String? = nil
+  // How many files a review's task made; absent from older engines.
+  var files: Int? = nil
 }
 
 struct AlertCounts: Decodable, Equatable {

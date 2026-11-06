@@ -155,6 +155,22 @@ check(
   linkDecision(ext, port: 7420, userClick: isRecentUserInput(nil, age: 0), mainFrame: true) == .cancel,
   "policy: linkActivated with no input event is cancelled")
 
+// files made
+check(madeText(nil) == nil && madeText(0) == nil, "made: nothing to say")
+check(madeText(1) == "made 1 file", "made: one")
+check(madeText(4) == "made 4 files", "made: many")
+let withFiles = summary(needs: [Need(id: "apr_m", kind: "review", title: "Make a grocery list", spaceName: "Weekly Planning", path: "/space/spc_1?task=tsk_m", files: 4)])
+check(
+  newNotes(previous: summary(), next: withFiles)
+    == [Note(id: "apr_m", title: "Ready for review", body: "Make a grocery list · Weekly Planning · made 4 files", path: "/space/spc_1?task=tsk_m")],
+  "notes: a review says how many files it made")
+let oneFile = summary(needs: [Need(id: "apr_o", kind: "review", title: "Notes", spaceName: "Weekly Planning", path: "/space/spc_1?task=tsk_o", files: 1)])
+check(newNotes(previous: summary(), next: oneFile).first?.body == "Notes · Weekly Planning · made 1 file", "notes: one file")
+let filesJson = """
+  {"needsYou":1,"needs":[{"id":"apr_1","kind":"review","title":"Fix login","spaceName":"atrium","path":"/p","topic":null,"files":4}],"stopped":[],"overnight":false}
+  """
+check((try? JSONDecoder().decode(Summary.self, from: Data(filesJson.utf8)))?.needs.first?.files == 4, "decode: files")
+
 // backoff
 check(nextBackoff(0) == 2, "backoff: floor")
 check(nextBackoff(2) == 4, "backoff: doubles")
