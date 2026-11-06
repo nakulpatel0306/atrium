@@ -114,3 +114,21 @@ test("a list from another space, or a space that isn't markets, is a 404", async
   expect(await error(await get(`/api/investing/${general.id}/portfolio`))).toEqual([404, "No such markets space."]);
   expect(await error(await get(`/api/investing/spc_missing/lists`))).toEqual([404, "No such markets space."]);
 });
+
+test("search, symbol and refresh routes", async () => {
+  const { spaceId } = simpleFixture(db);
+  boot();
+  const r = await (await call("POST", "/api/investing/search", { q: "shop" })).json();
+  expect(r.hits.map((h: { key: string }) => h.key)).toEqual(["SHOP", "SHOP.TO"]);
+  expect(await error(await call("POST", "/api/investing/search", { q: " " }))).toEqual([400, "Type a name or a symbol."]);
+  const before = fetchCalls.length;
+  const v = await (await get(`/api/investing/${spaceId}/symbol/nvda`)).json();
+  expect(v).toMatchObject({ key: "NVDA", price: null, position: null });
+  expect(fetchCalls.length).toBe(before);
+  const refreshed = await (await call("POST", `/api/investing/${spaceId}/symbol/NVDA/refresh`)).json();
+  expect(refreshed).toEqual({ refreshed: true, note: null });
+  const after = await (await get(`/api/investing/${spaceId}/symbol/NVDA`)).json();
+  expect(after.price.source).toBe("Demo data");
+  expect(after.stats.length).toBeGreaterThan(0);
+  expect(await error(await get(`/api/investing/${spaceId}/symbol/${encodeURIComponent("not a key!")}`))).toEqual([400, "Type a symbol like AAPL or SHOP.TO."]);
+});

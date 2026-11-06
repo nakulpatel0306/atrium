@@ -1,14 +1,21 @@
 import type { Database } from "bun:sqlite";
 import { getSpace } from "../engine/spaces";
 import { isAdvanced, setAdvanced } from "../engine/markets/advanced";
-import { parseInstrumentKey } from "../engine/markets/instrument";
+import { instrumentKey, parseInstrumentKey } from "../engine/markets/instrument";
 import { addToList, createList, deleteList, getList, removeFromList, renameList } from "../engine/markets/lists";
 import { redact } from "../engine/markets/redact";
+import { searchSymbols } from "../engine/markets/search";
+import { refreshSymbol, symbolView } from "../engine/markets/symbol";
 import { earningsView, glanceView, listsView, portfolioView } from "../engine/markets/views";
 import { HttpError, json, readBody } from "./http";
 import type { MarketsDeps } from "./markets";
 
 const BAD_SYMBOL = "Type a symbol like AAPL or SHOP.TO.";
+const keyOf = (raw: string): string => {
+  const i = parseInstrumentKey(decodeURIComponent(raw).trim().toUpperCase());
+  if (!i) throw new HttpError(400, BAD_SYMBOL);
+  return instrumentKey(i);
+};
 
 // Engine validation throws plain sentences written for Nakul; here they become 400s.
 function check<T>(fn: () => T): T {
@@ -22,13 +29,23 @@ function check<T>(fn: () => T): T {
 
 // The simple investing views. Handles only the /api/investing/:space/… paths it owns and returns null for the rest,
 // so Plan 7's routes in investing.ts keep theirs. Every GET reads SQLite only.
-const OWNED = /^\/api\/investing\/([^/]+)(\/(?:advanced|portfolio|lists(?:\/.*)?|earnings|glance))$/;
+const OWNED = /^\/api\/investing\/([^/]+)(\/(?:advanced|portfolio|lists(?:\/.*)?|earnings|glance|symbol\/.*))$/;
 
 export async function simpleRoute(db: Database, m: MarketsDeps, req: Request, url: URL): Promise<Response | null> {
+  const search = req.method === "POST" && url.pathname === "/api/investing/search";
   const owned = url.pathname.match(OWNED);
-  if (!owned) return null;
+  if (!search && !owned) return null;
   try {
-    return await route(db, m, req, decodeURIComponent(owned[1]!), owned[2]!);
+    if (search) {
+      const b = await readBody(req);
+      await m.data.refreshKeys();
+      // searchSymbols turns provider failures into a note; what it throws is a validation sentence.
+      const result = await searchSymbols(m.data.research?.() ?? null, typeof b.q === "string" ? b.q : "", m.now).catch((e: Error) => {
+        throw new HttpError(400, e.message);
+      });
+      return json(result);
+    }
+    return await route(db, m, req, decodeURIComponent(owned![1]!), owned![2]!);
   } catch (e) {
     if (e instanceof HttpError) throw new HttpError(e.status, redact(e.message, m.data.secrets()));
     console.error(`Investing error: ${redact(e instanceof Error ? (e.stack ?? e.message) : String(e), m.data.secrets())}`);
@@ -53,6 +70,14 @@ async function route(db: Database, m: MarketsDeps, req: Request, spaceId: string
     setAdvanced(db, spaceId, b.on);
     await m.feed.reevaluate();
     return json({ advanced: isAdvanced(db, spaceId) });
+  }
+  const symbol = sub("GET", /^\/symbol\/([^/]+)$/);
+  if (symbol) return json(symbolView(db, m.data, spaceId, keyOf(symbol[1]!), now));
+  const refresh = sub("POST", /^\/symbol\/([^/]+)\/refresh$/);
+  if (refresh) {
+    const key = keyOf(refresh[1]!);
+    await m.data.refreshKeys();
+    return json(await refreshSymbol(db, m.data, key, now));
   }
   if (sub("GET", /^\/portfolio$/)) return json(portfolioView(db, m.data, spaceId, now));
   if (sub("GET", /^\/lists$/)) return json(listsView(db, m.data, spaceId, now));
