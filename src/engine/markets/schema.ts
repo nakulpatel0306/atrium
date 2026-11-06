@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS market_holdings (
   name TEXT NOT NULL DEFAULT '',
   quantity REAL NOT NULL,
   book_value REAL,
+  book_value_cad REAL,
+  account_type TEXT,
   currency TEXT NOT NULL CHECK (currency IN ('CAD','USD')),
   source TEXT NOT NULL CHECK (source IN ('manual','wealthsimple_holdings','wealthsimple_activity')),
   updated_at INTEGER NOT NULL
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS market_alerts (
   repeat INTEGER NOT NULL DEFAULT 1,
   status TEXT NOT NULL DEFAULT 'armed' CHECK (status IN ('armed','fired','off')),
   last_fired_at INTEGER,
+  fired_for TEXT,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS paper_accounts (
@@ -91,4 +94,127 @@ CREATE TABLE IF NOT EXISTS market_strategies (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS paper_fills_space ON paper_fills(space_id, created_at);
+CREATE TABLE IF NOT EXISTS fx_rates (
+  pair TEXT NOT NULL,
+  date TEXT NOT NULL,
+  rate REAL NOT NULL,
+  PRIMARY KEY (pair, date)
+);
+-- Atrium's own daily closes, so history grows without extra calls.
+CREATE TABLE IF NOT EXISTS market_closes (
+  key TEXT NOT NULL,
+  date TEXT NOT NULL,
+  close REAL NOT NULL,
+  adj_close REAL,
+  source TEXT NOT NULL,
+  PRIMARY KEY (key, date)
+);
+CREATE TABLE IF NOT EXISTS market_dividends (
+  key TEXT NOT NULL,
+  ex_date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  source TEXT NOT NULL,
+  PRIMARY KEY (key, ex_date)
+);
+-- The last good issuer holdings file per fund; a failed refresh only records its error.
+CREATE TABLE IF NOT EXISTS fund_files (
+  fund TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  as_of TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL,
+  note TEXT,
+  last_error TEXT,
+  last_attempt_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS fund_lines (
+  fund TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  ticker TEXT,
+  key TEXT,
+  name TEXT NOT NULL,
+  weight REAL NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('stock','fund','cash','other')),
+  sector TEXT,
+  country TEXT,
+  currency TEXT,
+  via TEXT,
+  PRIMARY KEY (fund, rank)
+);
+CREATE TABLE IF NOT EXISTS instrument_meta (
+  key TEXT PRIMARY KEY,
+  name TEXT,
+  kind TEXT NOT NULL DEFAULT 'unknown' CHECK (kind IN ('stock','etf','unknown')),
+  sector TEXT,
+  sector_source TEXT,
+  country TEXT,
+  currency TEXT,
+  pe REAL,
+  high52 REAL,
+  low52 REAL,
+  div_yield REAL,
+  metrics_at INTEGER,
+  profile_at INTEGER,
+  edgar_eps_ttm REAL,
+  edgar_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS market_earnings (
+  key TEXT NOT NULL,
+  date TEXT NOT NULL,
+  hour TEXT,
+  eps_estimate REAL,
+  source TEXT NOT NULL CHECK (source IN ('finnhub','you')),
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (key, date)
+);
+CREATE TABLE IF NOT EXISTS market_news (
+  id TEXT PRIMARY KEY,
+  key TEXT NOT NULL,
+  headline TEXT NOT NULL,
+  source TEXT NOT NULL,
+  url TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  fetched_at INTEGER NOT NULL,
+  UNIQUE (key, url)
+);
+CREATE TABLE IF NOT EXISTS research_notes (
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  key TEXT NOT NULL,
+  thesis TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (space_id, key)
+);
+CREATE TABLE IF NOT EXISTS market_writeups (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check')),
+  key TEXT,
+  for_date TEXT NOT NULL,
+  body TEXT NOT NULL,
+  task_id TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE (space_id, kind, key, for_date)
+);
+CREATE TABLE IF NOT EXISTS market_ideas (
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  key TEXT NOT NULL,
+  stage TEXT NOT NULL CHECK (stage IN ('watching','researching','owned','sold')),
+  note TEXT NOT NULL DEFAULT '',
+  stage_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (space_id, key)
+);
+CREATE TABLE IF NOT EXISTS tfsa_room (
+  year INTEGER PRIMARY KEY,
+  room_jan1 REAL NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tfsa_entries (
+  id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('contribution','withdrawal')),
+  amount REAL NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
 `;

@@ -106,6 +106,13 @@ test("setSetting emits changed only when the value changes", () => {
   expect(seen).toHaveLength(2);
 });
 
+test("purpose and subject round-trip", () => {
+  const t = createTask(db, { spaceId: space().id, title: "Draft a thesis for NOW", agent: "claude", purpose: "thesis_draft", subject: "NOW" });
+  expect([t.purpose, t.subject]).toEqual(["thesis_draft", "NOW"]);
+  const plain = createTask(db, { spaceId: space().id, title: "x" });
+  expect([plain.purpose, plain.subject]).toEqual([null, null]);
+});
+
 test("setSpaceRepo sets and clears repoPath and github", () => {
   const s = createSpace(db, { name: "Demo", kind: "repo", goal: "g", github: "fakeuser/demo" });
   expect(s.github).toBe("fakeuser/demo");

@@ -1491,6 +1491,20 @@ describe("markets spaces", () => {
     expect(calls[0]!.systemPrompt).toContain("Analysis, not advice");
   });
 
+  test("a digest or thesis task gets read-only tools and saves a write-up", async () => {
+    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
+    const { adapter, calls } = fakeAdapter(() => ok("Markets were quiet.\n\nAnalysis, not advice."));
+    const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", weight: "light", purpose: "digest" });
+    const plain = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
+    marketsRunner(adapter);
+    await waitFor(() => getTask(db, task.id)!.status === "done" && getTask(db, plain.id)!.status === "review");
+    const digest = calls.find((c) => c.prompt.includes("Daily digest"))!;
+    expect(digest.allowedTools).toEqual(["Read", "Glob", "Grep"]);
+    expect(digest.mode).toBe("review");
+    const other = calls.find((c) => c.prompt.includes("Explain today's move"))!;
+    expect(other.allowedTools).toEqual(["Read", "Edit", "Write", "Glob", "Grep"]);
+  });
+
   test("markets analysis task ends in review with the label", async () => {
     const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
     const { adapter, calls } = fakeAdapter(() => ok('Holdings moved with the market.\n\n```atrium-markets\n{"orders":[{"symbol":"AAPL","side":"buy","qty":1,"reason":"x"}]}\n```\nAnalysis, not advice.'));

@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { newId } from "../ids";
+import { syncIdeas } from "./ideas";
 import { instrumentKey, type Exchange } from "./instrument";
 
 export type HoldingInput = {
@@ -10,6 +11,10 @@ export type HoldingInput = {
   name: string;
   quantity: number;
   bookValue: number | null;
+  // From a Wealthsimple holdings export's "Book Value (CAD)"; null when the source doesn't say.
+  bookValueCad?: number | null;
+  // From a Wealthsimple holdings export's "Account Type" (e.g. "TFSA"); null when the source doesn't say.
+  accountType?: string | null;
   currency: "CAD" | "USD";
 };
 export type Holding = HoldingInput & {
@@ -29,6 +34,8 @@ type Row = {
   name: string;
   quantity: number;
   book_value: number | null;
+  book_value_cad: number | null;
+  account_type: string | null;
   currency: "CAD" | "USD";
   source: Holding["source"];
   updated_at: number;
@@ -44,6 +51,8 @@ const toHolding = (r: Row): Holding => ({
   name: r.name,
   quantity: r.quantity,
   bookValue: r.book_value,
+  bookValueCad: r.book_value_cad,
+  accountType: r.account_type,
   currency: r.currency,
   source: r.source,
   updatedAt: r.updated_at,
@@ -67,13 +76,14 @@ function insert(db: Database, spaceId: string, h: HoldingInput, source: Holding[
   checkQuantity(h.quantity);
   const id = newId("hld");
   db.query(
-    "INSERT INTO market_holdings (id, space_id, account, symbol, exchange, name, quantity, book_value, currency, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, spaceId, h.account, h.symbol, h.exchange, h.name, h.quantity, h.bookValue, h.currency, source, Date.now());
+    "INSERT INTO market_holdings (id, space_id, account, symbol, exchange, name, quantity, book_value, book_value_cad, account_type, currency, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, spaceId, h.account, h.symbol, h.exchange, h.name, h.quantity, h.bookValue, h.bookValueCad ?? null, h.accountType ?? null, h.currency, source, Date.now());
   return id;
 }
 
 export function addHolding(db: Database, spaceId: string, h: HoldingInput): Holding {
   const id = insert(db, spaceId, h, "manual");
+  syncIdeas(db, spaceId);
   bus.emit({ type: "changed" });
   return getHolding(db, id)!;
 }
@@ -91,7 +101,9 @@ export function updateHolding(db: Database, id: string, patch: Partial<HoldingIn
 }
 
 export function removeHolding(db: Database, id: string): void {
+  const spaceId = getHolding(db, id)?.spaceId;
   db.query("DELETE FROM market_holdings WHERE id = ?").run(id);
+  if (spaceId) syncIdeas(db, spaceId);
   bus.emit({ type: "changed" });
 }
 
@@ -110,6 +122,7 @@ export function replaceImported(
       replaced += db.query("DELETE FROM market_holdings WHERE space_id = ? AND account = ? AND source != 'manual'").run(spaceId, account).changes;
     }
     for (const r of rows) insert(db, spaceId, r, source);
+    syncIdeas(db, spaceId);
     return { added: rows.length, replaced };
   })();
   bus.emit({ type: "changed" });

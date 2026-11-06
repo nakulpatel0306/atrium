@@ -84,3 +84,23 @@ test("an auth error on the stream stops retrying", () => {
   ws.drop();
   expect(timers.pending.size).toBe(0);
 });
+
+test("metric, profile and earnings map Finnhub's fields", async () => {
+  const s = stubFetch((url) =>
+    jsonResponse(fixture(url.pathname.endsWith("/stock/metric") ? "investing/finnhub-metric.json" : url.pathname.endsWith("/stock/profile2") ? "investing/finnhub-profile2.json" : "investing/finnhub-earnings.json")),
+  );
+  const p = finnhubProvider(TOKEN, { fetch: s.fetch, now: () => NOW });
+  const NOWI = { symbol: "NOW", exchange: "US" as const };
+  expect(await p.metric!(NOWI)).toEqual({ pe: 61.84, high52: 1198.09, low52: 712.5, divYield: null });
+  expect(s.calls[0]!.url.searchParams.get("metric")).toBe("all");
+  expect(await p.profile!(NOWI)).toEqual({ name: "ServiceNow Inc", country: "US", currency: "USD", industry: "Technology" });
+  const e = await p.earnings!([{ symbol: "RKLB", exchange: "US" }], "2026-11-05", "2026-12-05");
+  expect(e).toEqual([
+    { key: "RKLB", date: "2026-11-10", hour: "amc", epsEstimate: 1.23 },
+    { key: "RKLB", date: "2026-11-20", hour: null, epsEstimate: null },
+  ]);
+  const cal = s.calls.at(-1)!.url;
+  expect([cal.pathname, cal.searchParams.get("from"), cal.searchParams.get("to"), cal.searchParams.get("symbol")]).toEqual(["/api/v1/calendar/earnings", "2026-11-05", "2026-12-05", "RKLB"]);
+  const empty = finnhubProvider(TOKEN, { fetch: stubFetch(() => jsonResponse({})).fetch, now: () => NOW });
+  expect(await empty.profile!(NOWI)).toBeNull();
+});

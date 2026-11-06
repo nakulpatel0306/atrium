@@ -84,7 +84,7 @@ test("no keys → every instrument missing with its reason", async () => {
   ]);
   const s = await data.status();
   expect(s.us.ready).toBe(false);
-  expect(s.keys).toEqual({ alpaca: false, finnhub: false, alphavantage: false });
+  expect(s.keys).toEqual({ alpaca: false, finnhub: false, alphavantage: false, tiingo: false });
   setSetting(db, "markets.provider", "finnhub");
   expect((await data.quotes([{ symbol: "AAPL", exchange: "US" }])).missing[0]!.reason).toBe("Add your Finnhub key in Settings → Market data.");
 });
@@ -212,4 +212,43 @@ test("a rejected key is retried once at the next session", async () => {
   fail = false;
   await data.prepare();
   expect((await data.status()).us.ready).toBe(true);
+});
+
+test("every provider request is metered, and failures are noted for the budget page", async () => {
+  const { dataBudget } = await import("../../../src/engine/markets/budget");
+  const { stubFetch, jsonResponse, fixture } = await import("./fakes");
+  setSetting(db, "markets.provider", "finnhub");
+  let fail = false;
+  const s = stubFetch(() => (fail ? new Response("no", { status: 500 }) : jsonResponse(fixture("finnhub-quote.json"))));
+  const data = createMarketData({ db, keychain: fakeKeychain({ ...ALL_KEYS }), fetch: s.fetch, now: () => now });
+  await data.quotes([{ symbol: "AAPL", exchange: "US" }]);
+  const row = () => dataBudget(db, now).find((r) => r.source === "finnhub")!;
+  expect(row().callsToday).toBe(s.calls.length);
+  expect(row().callsToday).toBeGreaterThan(0);
+  expect(row().lastOkAt).toBe(now);
+  fail = true;
+  await data.quotes([{ symbol: "AAPL", exchange: "US" }]);
+  expect(row().lastError).toContain("Finnhub");
+  expect(row().lastError).not.toContain("FHTEST12345");
+});
+
+test("US daily history comes from Tiingo outside Alpaca mode", async () => {
+  const { stubFetch, jsonResponse, fixture } = await import("./fakes");
+  setSetting(db, "markets.provider", "finnhub");
+  now = Date.parse("2026-11-05T16:00:00Z");
+  const s = stubFetch((url) => (url.host === "api.tiingo.com" ? jsonResponse(fixture("investing/tiingo-spy.json")) : new Response("no", { status: 500 })));
+  const withKey = createMarketData({ db, keychain: fakeKeychain({ "finnhub.token": "FHTEST12345", "tiingo.token": "TGTEST12345" }), fetch: s.fetch, now: () => now });
+  const r = await withKey.bars({ symbol: "AAPL", exchange: "US" }, "1Y");
+  expect([r.source, r.freshness, r.bars.length]).toEqual(["tiingo", "eod", 10]);
+  const st = await withKey.status();
+  expect(st.keys.tiingo).toBe(true);
+  expect(st.history).toEqual({ ready: true, message: "Tiingo · end of day (949 of 950 requests left today)" });
+  db.query("DELETE FROM market_bars").run();
+  db.query("DELETE FROM settings WHERE key LIKE 'markets.bars.%'").run();
+  const without = createMarketData({ db, keychain: fakeKeychain({ "finnhub.token": "FHTEST12345" }), fetch: s.fetch, now: () => now });
+  const none = await without.bars({ symbol: "AAPL", exchange: "US" }, "1Y");
+  expect(none.bars).toEqual([]);
+  expect(none.source).toBeNull();
+  expect(none.note).toBe("Add a free Tiingo key for daily history (Settings → Market data).");
+  expect((await without.status()).history.ready).toBe(false);
 });

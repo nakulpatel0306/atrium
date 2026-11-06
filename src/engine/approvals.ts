@@ -37,11 +37,15 @@ export type Approval = {
   decidedBy: "you" | "rule";
   ruleId: string | null;
   undoneAt: number | null;
+  // The kind of market alert; null for everything else.
+  topic: AlertTopic | null;
   // Set when only Nakul himself may ever decide this; no rule, proposal or auto-approval can.
   alwaysAsk: AlwaysAsk | null;
   createdAt: number;
   resolvedAt: number | null;
 };
+
+export type AlertTopic = "price" | "indicator" | "earnings" | "news" | "flag";
 
 type ApprovalRow = {
   id: string;
@@ -57,6 +61,7 @@ type ApprovalRow = {
   decided_by: Approval["decidedBy"];
   rule_id: string | null;
   undone_at: number | null;
+  topic: AlertTopic | null;
   always_ask: AlwaysAsk | null;
   created_at: number;
   resolved_at: number | null;
@@ -83,6 +88,7 @@ const toApproval = (r: ApprovalRow): Approval => ({
   decidedBy: r.decided_by,
   ruleId: r.rule_id,
   undoneAt: r.undone_at,
+  topic: r.topic ?? null,
   alwaysAsk: r.always_ask,
   createdAt: r.created_at,
   resolvedAt: r.resolved_at,
@@ -103,13 +109,14 @@ export function createApproval(
     detail: string;
     fingerprint?: string | null;
     alwaysAsk?: AlwaysAsk;
+    topic?: AlertTopic | null;
   },
 ): Approval {
   if (input.alwaysAsk && input.fingerprint) throw new Error("An always-ask approval can't carry a fingerprint.");
   if (input.spaceId === null && input.kind !== "question") throw new Error("Only a question can belong to no space.");
   const id = newId("apr");
   db.query(
-    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, always_ask, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, always_ask, topic, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.spaceId,
@@ -119,6 +126,7 @@ export function createApproval(
     input.detail,
     input.fingerprint ?? null,
     input.alwaysAsk ?? null,
+    input.topic ?? null,
     Date.now(),
   );
   bus.emit({ type: "changed" });

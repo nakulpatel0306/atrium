@@ -17,6 +17,7 @@ import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
+import { investingRoute } from "./investing";
 import { marketsRoute, type MarketsDeps } from "./markets";
 import type { Repos } from "../engine/repos";
 import { BadDraft } from "../engine/repos/names";
@@ -310,7 +311,7 @@ export function startServer(deps: Deps): Server<WsData> {
     }
 
     if (deps.markets) {
-      const res = await marketsRoute(db, deps.markets, req, url);
+      const res = (await marketsRoute(db, deps.markets, req, url)) ?? (await investingRoute(db, deps.markets, req, url));
       if (res) return res;
     }
     if (deps.repos) {

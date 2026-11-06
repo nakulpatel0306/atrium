@@ -4,7 +4,9 @@ import { del, patch, post } from "../../api";
 import { absolute, money, relative, signedPct } from "../../format";
 import { currencyOfKey } from "../../../engine/markets/labels";
 import { dayPct, holdingTotals, type MarketsView } from "../../markets";
+import { fxLabel, toCad } from "../../../engine/markets/sourced";
 import { Freshness } from "./Freshness";
+import { Estimate } from "./Watchlist";
 import { ImportDialog } from "./ImportDialog";
 
 type Row = MarketsView["holdings"][number];
@@ -35,7 +37,7 @@ function Totals({ rows }: { rows: Row[] }) {
   );
 }
 
-function HoldingDetail({ h, spaceId }: { h: Row; spaceId: string }) {
+function HoldingDetail({ h, spaceId, onOpen }: { h: Row; spaceId: string; onOpen?: (key: string) => void }) {
   const [qty, setQty] = useState(String(h.quantity));
   const [book, setBook] = useState(h.bookValue === null ? "" : String(h.bookValue));
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +74,11 @@ function HoldingDetail({ h, spaceId }: { h: Row; spaceId: string }) {
         <button className="btn danger" type="button" onClick={() => void del(url)}>
           Remove
         </button>
+        {onOpen && (
+          <button className="btn" type="button" onClick={() => onOpen(h.key)}>
+            Research {h.key}
+          </button>
+        )}
         {error && <span className="err">{error}</span>}
       </form>
     </div>
@@ -135,7 +142,8 @@ function AddHolding({ spaceId, onDone }: { spaceId: string; onDone: () => void }
   );
 }
 
-export function Holdings({ view }: { view: MarketsView }) {
+export function Holdings({ view, onOpen }: { view: MarketsView; onOpen?: (key: string) => void }) {
+  const cad = (h: Row) => (value(h) === null ? null : toCad(value(h)!, currencyOfKey(h.key), view.fx));
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -176,6 +184,9 @@ export function Holdings({ view }: { view: MarketsView }) {
                 <span className="num">Book value</span>
                 <span className="num">Market value</span>
                 <span className="num day">Today</span>
+                <span className="num" title={view.fx ? fxLabel(view.fx) : "No Bank of Canada rate yet"}>
+                  CAD
+                </span>
                 <span className="fresh-col">Price source</span>
               </div>
               {rows.map((h) => {
@@ -193,9 +204,13 @@ export function Holdings({ view }: { view: MarketsView }) {
                         {day === null ? "—" : `${day >= 0 ? "+" : "−"}${money(Math.abs(day), currencyOfKey(h.key))}`}
                         {pct !== null && <small> {signedPct(pct)}</small>}
                       </span>
+                      <span className="num" title={view.fx && value(h) !== null ? `${fxLabel(view.fx)}` : undefined}>
+                        {cad(h) === null ? "—" : money(cad(h)!, "CAD")}
+                      </span>
                       <Freshness quote={h.quote} missing={h.missing} />
                     </div>
-                    {open === h.id && <HoldingDetail h={h} spaceId={view.spaceId} />}
+                    <Estimate e={view.estimates[h.key]} />
+                    {open === h.id && <HoldingDetail h={h} spaceId={view.spaceId} onOpen={onOpen} />}
                   </div>
                 );
               })}

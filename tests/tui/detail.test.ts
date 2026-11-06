@@ -110,12 +110,33 @@ test("an alert's detail says how to dismiss it", () => {
 
 test("a markets space's detail shows the watchlist, paper P&L and where the charts are", () => {
   const view = deriveView(marketsState(), initialUi);
-  const all = text(spaceDetail(view, null, { watchlist: 3, paper: { dayPnl: 12.3, totalPnl: -4 } }));
+  const all = text(spaceDetail(view, null, { watchlist: 3, paper: { dayPnl: 12.3, totalPnl: -4 }, portfolio: null }));
   expect(all).toContain("Stocks");
   expect(all).toContain("Watching 3 symbols");
   expect(all).toContain("Paper +$12.30 today (−$4.00 total)");
   expect(all).toContain("Open the dashboard for charts");
   expect(text(spaceDetail(view, null, null))).toContain("Open the dashboard for charts");
+});
+
+test("a markets space with holdings shows the portfolio's day and its top movers first", () => {
+  const view = deriveView(marketsState(), initialUi);
+  const portfolio = {
+    dayPct: 0.8,
+    dayCad: 412,
+    mix: "10 real-time · 3 close of Nov 4",
+    dayLabel: "today",
+    movers: [
+      { key: "RKLB", dayPct: 6.1, tag: null },
+      { key: "QBTS", dayPct: -4.2, tag: null },
+      { key: "ATZ.TO", dayPct: 1.0, tag: "close Nov 4" },
+    ],
+  };
+  const lines = text(spaceDetail(view, null, { watchlist: 13, paper: null, portfolio })).split("\n");
+  const at = lines.findIndex((l) => l.startsWith("Portfolio"));
+  expect(lines[at]).toBe("Portfolio +0.8% today (+CA$412) · 10 real-time · 3 close of Nov 4");
+  expect(lines[at + 1]).toBe("Top movers: RKLB +6.1%, QBTS −4.2%, ATZ.TO +1.0% (close Nov 4)");
+  expect(lines[at + 2]).toBe("Watching 13 symbols");
+  expect(text(spaceDetail(view, null, { watchlist: 3, paper: null, portfolio: null }))).not.toContain("Portfolio");
 });
 
 test("a repo question's detail says it belongs to Atrium and where to edit it", () => {

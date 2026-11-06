@@ -146,6 +146,14 @@ test("alert approvals resolve without a task", () => {
   expect(listActivity(db)[0]!.message).toBe("Dismissed: AAPL price above $200.00");
 });
 
+test("topic round-trips", () => {
+  const s = createSpace(db, { name: "M", kind: "general", goal: "g" });
+  const a = createApproval(db, { spaceId: s.id, kind: "alert", title: "SPY earnings within 5 days", detail: "d", topic: "earnings" });
+  expect(getApproval(db, a.id)!.topic).toBe("earnings");
+  const b = createApproval(db, { spaceId: s.id, kind: "alert", title: "x", detail: "d" });
+  expect(b.topic).toBeNull();
+});
+
 test("a spaceless always-ask question waits for Nakul and no rule can decide it", () => {
   const a = createApproval(db, { spaceId: null, kind: "question", title: "Create?", detail: "d", alwaysAsk: "create_repo" });
   expect(a.spaceId).toBeNull();

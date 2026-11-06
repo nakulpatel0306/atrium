@@ -42,7 +42,8 @@ const tickLabel = (t: Time, type: TickMarkType) => {
 
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-export function PriceChart({ view, initialKey }: { view: MarketsView; initialKey: string | null }) {
+// fixed: the symbol is chosen elsewhere (the Research page), so the chart shows no picker of its own.
+export function PriceChart({ view, initialKey, fixed = false }: { view: MarketsView; initialKey: string | null; fixed?: boolean }) {
   const keys = [...new Set([...view.watchlist.map((w) => w.key), ...view.holdings.map((h) => h.key)])];
   const [key, setKey] = useState(initialKey ?? keys[0] ?? null);
   const [range, setRange] = useState<ChartRange>("6M");
@@ -163,12 +164,14 @@ export function PriceChart({ view, initialKey }: { view: MarketsView; initialKey
   return (
     <section className="mk-chart">
       <div className="mk-chart-head">
-        <select className="pick" value={key ?? ""} aria-label="Symbol" onChange={(e) => setKey(e.target.value)}>
-          {keys.map((k) => (
-            <option key={k}>{k}</option>
-          ))}
-        </select>
-        {row && <Freshness quote={row.quote} missing={row.missing} />}
+        {!fixed && (
+          <select className="pick" value={key ?? ""} aria-label="Symbol" onChange={(e) => setKey(e.target.value)}>
+            {keys.map((k) => (
+              <option key={k}>{k}</option>
+            ))}
+          </select>
+        )}
+        {row && !fixed && <Freshness quote={row.quote} missing={row.missing} />}
         <div className="seg">
           {RANGES.map((r) => (
             <button key={r} aria-pressed={range === r} onClick={() => setRange(r)}>

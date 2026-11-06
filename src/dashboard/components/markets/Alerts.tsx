@@ -14,10 +14,14 @@ const KINDS: { kind: Kind; label: string }[] = [
   { kind: "rsi_above", label: "RSI rises above" },
   { kind: "cross_above_sma", label: "Crosses above its moving average" },
   { kind: "cross_below_sma", label: "Crosses below its moving average" },
+  { kind: "earnings_within", label: "Reports earnings within (days)" },
+  { kind: "big_news", label: "Has big news (earnings, deals, FDA, lawsuits…)" },
 ];
 const STATUS: Record<MarketsView["alerts"][number]["status"], string> = { armed: "watching", fired: "fired · waiting to re-arm", off: "off" };
 
-function ruleFrom(kind: Kind, level: string, pct: string, period: string): AlertRule {
+function ruleFrom(kind: Kind, level: string, pct: string, period: string, days: string): AlertRule {
+  if (kind === "earnings_within") return { kind, days: Number(days) };
+  if (kind === "big_news") return { kind };
   if (kind === "price_above" || kind === "price_below") return { kind, level: Number(level) };
   if (kind === "pct_move") return { kind, pct: Number(pct) };
   if (kind === "rsi_below" || kind === "rsi_above") return { kind, level: Number(level), period: Number(period) };
@@ -31,6 +35,7 @@ function NewAlert({ view }: { view: MarketsView }) {
   const [level, setLevel] = useState("");
   const [pct, setPct] = useState("5");
   const [period, setPeriod] = useState("14");
+  const [days, setDays] = useState("5");
   const [note, setNote] = useState("");
   const [repeat, setRepeat] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +43,7 @@ function NewAlert({ view }: { view: MarketsView }) {
   const usesPeriod = kind.startsWith("rsi") || kind.startsWith("cross");
 
   const submit = async () => {
-    const res = await post(`/api/markets/${encodeURIComponent(view.spaceId)}/alerts`, { key, rule: ruleFrom(kind, level, pct, period), note, repeat });
+    const res = await post(`/api/markets/${encodeURIComponent(view.spaceId)}/alerts`, { key, rule: ruleFrom(kind, level, pct, period, days), note, repeat });
     if (!res.ok) return setError(res.error);
     setError(null);
     setLevel("");
@@ -90,6 +95,12 @@ function NewAlert({ view }: { view: MarketsView }) {
         <label>
           Percent
           <input className="mk-input" value={pct} onChange={(e) => setPct(e.target.value)} inputMode="decimal" />
+        </label>
+      )}
+      {kind === "earnings_within" && (
+        <label>
+          Days ahead
+          <input className="mk-input" value={days} onChange={(e) => setDays(e.target.value)} inputMode="numeric" />
         </label>
       )}
       {usesPeriod && (

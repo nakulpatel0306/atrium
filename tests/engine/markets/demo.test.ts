@@ -75,3 +75,18 @@ test("the stream is quiet outside the session", async () => {
   s.close();
   expect(seen).toEqual([]);
 });
+
+test("demo earnings, metrics and profiles are deterministic", async () => {
+  const p = demoProvider({ now: () => IN_SESSION });
+  const list = [AAPL, { symbol: "MSFT", exchange: "US" as const }];
+  const a = await p.earnings!(list, "2026-11-05", "2026-12-05");
+  expect(a).toEqual(await demoProvider({ now: () => IN_SESSION }).earnings!(list, "2026-11-05", "2026-12-05"));
+  // Thu Nov 5 + 3 trading days = Tue Nov 10.
+  expect(a.find((e) => e.key === "AAPL")).toEqual({ key: "AAPL", date: "2026-11-10", hour: "amc", epsEstimate: expect.any(Number) });
+  for (const e of a) expect(e.date >= "2026-11-05" && e.date <= "2026-12-05").toBe(true);
+  const m = await p.metric!(AAPL);
+  expect(m).toEqual(await p.metric!(AAPL));
+  expect(m.pe).toBeGreaterThan(0);
+  expect(m.high52!).toBeGreaterThan(m.low52!);
+  expect((await p.profile!(AAPL))!.name).toContain("AAPL");
+});

@@ -1,13 +1,20 @@
 import type { Database } from "bun:sqlite";
-import { listPending } from "./approvals";
+import { listPending, type AlertTopic } from "./approvals";
 import { listPendingProposals } from "./autonomy/proposals";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
 import { listTasks } from "./tasks";
 
-export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string };
+export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string; topic: AlertTopic | null };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
-export type Summary = { needsYou: number; needs: Need[]; stopped: Stopped[]; overnight: boolean };
+export type Summary = {
+  needsYou: number;
+  needs: Need[];
+  stopped: Stopped[];
+  overnight: boolean;
+  // Pending market alerts by kind; indicator alerts count as price.
+  alerts: { price: number; earnings: number; news: number; flag: number };
+};
 
 const STOPPED_LIMIT = 20;
 
@@ -23,15 +30,15 @@ export function summary(db: Database): Summary {
     .map((a) => ({
       at: a.createdAt,
       need: (a.spaceId === null
-        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/" }
-        : { id: a.id, kind: a.kind, title: a.title, spaceName: names.get(a.spaceId)!, path: pathFor(a.spaceId, a.taskId) }) as Need,
+        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic }
+        : { id: a.id, kind: a.kind, title: a.title, spaceName: names.get(a.spaceId)!, path: pathFor(a.spaceId, a.taskId), topic: a.topic }) as Need,
     }));
   // Suggestions are answered from Home's Needs you list, not from a space.
   const suggestions = listPendingProposals(db)
     .filter((p) => names.has(p.spaceId))
     .map((p) => ({
       at: p.createdAt,
-      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/" } as Need,
+      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null } as Need,
     }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
   const needs = [...approvals, ...suggestions].sort((a, b) => b.at - a.at).map((x) => x.need);
@@ -49,5 +56,11 @@ export function summary(db: Database): Summary {
         path: pathFor(t.spaceId, t.id),
       }),
     );
-  return { needsYou: needs.length, needs, stopped, overnight: getSetting(db, "overnight") === "true" };
+  const alerts = { price: 0, earnings: 0, news: 0, flag: 0 };
+  for (const n of needs) {
+    if (n.kind !== "alert") continue;
+    const t = n.topic === "indicator" || !n.topic ? "price" : n.topic;
+    alerts[t]++;
+  }
+  return { needsYou: needs.length, needs, stopped, overnight: getSetting(db, "overnight") === "true", alerts };
 }

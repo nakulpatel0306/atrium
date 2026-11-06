@@ -13,7 +13,15 @@ import { evaluateQuotes } from "./engine/markets/alerts";
 import { marketNow } from "./engine/markets/calendar";
 import { createMarketData } from "./engine/markets/data";
 import { createFeed } from "./engine/markets/feed";
+import { eodJob } from "./engine/markets/eod";
+import { newsJob } from "./engine/markets/events";
+import { fundsJob } from "./engine/markets/funds/refresh";
+import { fxJob } from "./engine/markets/fx";
+import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
+import { metaJob } from "./engine/markets/meta";
+import { seedOnBoot } from "./engine/markets/seed";
+import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { createRepos } from "./engine/repos";
 import { recoverRemovals } from "./engine/repos/cleanup";
@@ -27,11 +35,26 @@ trimLog(join(config().home, "engine.log"), 1024 * 1024);
 
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();
+// Nakul's 13 tickers go into an Investing space the first time the real engine starts (never with ATRIUM_HOME).
+seedOnBoot(db);
 const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: geminiAdapter() };
 // Market time: the real clock, or the demo clock ATRIUM_MARKET_NOW shifts while the provider is Demo.
 const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "alpaca");
 const keychain = createKeychain();
 const data = createMarketData({ db, keychain, now: marketClock });
+// Daily and weekly market jobs, run from the feed's own timer.
+const jobs = createJobs(
+  db,
+  [
+    fxJob(db, { now: marketClock }),
+    eodJob(db, { data, tiingo: () => data.tiingo?.() ?? null, now: marketClock }),
+    fundsJob(db, { now: marketClock }),
+    metaJob(db, { data, now: marketClock }),
+    newsJob(db, { data, now: marketClock }),
+    digestJob(db),
+  ],
+  marketClock,
+);
 // Repo work wakes the runner when a clone lands or a new project's space is ready.
 const repos = createRepos({ db, kick: () => runner.kick() });
 const runner = createRunner({
@@ -49,6 +72,7 @@ const feed = createFeed({
   onQuotes: (quotes) => evaluateQuotes(db, quotes, marketClock()),
   strategyActive: () => anyStrategyActive(db),
   onTick: (now) => enqueueDueStrategies(db, now, () => runner.kick()),
+  jobs,
 });
 onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
 // The only path to creating, pushing or removing a repo: Nakul's own decision on its approval.
@@ -62,7 +86,7 @@ try {
     runner,
     setup: (text) => setupSpace(db, claudeAdapter(), text),
     onViewers: (n) => void feed.setViewers(n),
-    markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock },
+    markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs },
     repos,
   });
 } catch (e) {

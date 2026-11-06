@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { createApproval } from "../approvals";
+import { createApproval, type AlertTopic } from "../approvals";
 import { bus, logActivity } from "../events";
 import { newId } from "../ids";
 import { cachedBars } from "./cache";
@@ -7,6 +7,7 @@ import { etClock, etDate, etInstant } from "./calendar";
 import { rsi, sma } from "./indicators";
 import { instrumentKey, parseInstrumentKey } from "./instrument";
 import { currencyOfKey, describeRule, freshnessText, money, type AlertRule } from "./labels";
+import { recentNews, upcomingEarnings } from "./events";
 import type { Quote } from "./providers/types";
 
 export type { AlertRule };
@@ -29,7 +30,18 @@ export type Alert = {
 export const HYSTERESIS = 0.005;
 const INDICATOR_EVERY_MS = 60_000;
 
-type Row = { id: string; space_id: string; key: string; rule: string; note: string; repeat: number; status: Alert["status"]; last_fired_at: number | null; created_at: number };
+type Row = {
+  id: string;
+  space_id: string;
+  key: string;
+  rule: string;
+  note: string;
+  repeat: number;
+  status: Alert["status"];
+  last_fired_at: number | null;
+  fired_for: string | null;
+  created_at: number;
+};
 
 const toAlert = (r: Row): Alert => ({
   id: r.id,
@@ -50,7 +62,10 @@ function validate(rule: AlertRule): void {
   if ("period" in rule && (!Number.isInteger(rule.period) || rule.period < 2 || rule.period > 200)) {
     throw new Error("The period must be a whole number from 2 to 200.");
   }
-  const kinds = ["price_above", "price_below", "pct_move", "rsi_below", "rsi_above", "cross_above_sma", "cross_below_sma"];
+  if (rule.kind === "earnings_within" && (!Number.isInteger(rule.days) || rule.days < 1 || rule.days > 30)) {
+    throw new Error("The number of days must be a whole number from 1 to 30.");
+  }
+  const kinds = ["price_above", "price_below", "pct_move", "rsi_below", "rsi_above", "cross_above_sma", "cross_below_sma", "earnings_within", "big_news"];
   if (!kinds.includes(rule.kind)) throw new Error("That isn't a kind of alert Atrium knows.");
 }
 
@@ -130,7 +145,17 @@ function condition(db: Database, a: Alert, q: Quote): boolean | null {
       if (p0 == null || s0 == null || p1 == null || s1 == null) return null;
       return r.kind === "cross_above_sma" ? p0 <= s0 && p1 > s1 : p0 >= s0 && p1 < s1;
     }
+    // Event alerts are evaluated from stored earnings and news (evaluateEvents), never from quotes.
+    case "earnings_within":
+    case "big_news":
+      return null;
   }
+}
+
+export function topicOf(rule: AlertRule): AlertTopic {
+  if (rule.kind === "earnings_within") return "earnings";
+  if (rule.kind === "big_news") return "news";
+  return rule.kind.startsWith("rsi") || rule.kind.endsWith("_sma") ? "indicator" : "price";
 }
 
 // Whether a fired alert may fire again.
@@ -149,7 +174,8 @@ function fire(db: Database, a: Alert, q: Quote, now: number): void {
     spaceId: a.spaceId,
     kind: "alert",
     title: titleOf(a),
-    detail: `${a.key} at ${money(q.price, currencyOfKey(a.key))} (${freshnessText(q)}, ${etClock(q.at)}). Your alert: ${rule}.${note}\n\nAnalysis, not advice.`,
+    topic: topicOf(a.rule),
+    detail: `${a.key} at ${money(q.price, currencyOfKey(a.key))} (${freshnessText(q, now)}, ${etClock(q.at)}). Your alert: ${rule}.${note}\n\nAnalysis, not advice.`,
   });
   db.query("UPDATE market_alerts SET status = ?, last_fired_at = ? WHERE id = ?").run(a.repeat ? "fired" : "off", now, a.id);
   logActivity(db, a.spaceId, "atrium", `Alert: ${a.key} ${rule}`);
@@ -174,6 +200,7 @@ export function evaluateQuotes(db: Database, quotes: Quote[], now: number): numb
       .all(q.key) as Row[];
     for (const row of rows) {
       const a = toAlert(row);
+      if (a.rule.kind === "earnings_within" || a.rule.kind === "big_news") continue;
       if (q.freshness === "eod") {
         if (lastEodAt.get(a.id) === q.at) continue;
         lastEodAt.set(a.id, q.at);
@@ -197,4 +224,52 @@ export function evaluateQuotes(db: Database, quotes: Quote[], now: number): numb
     }
   }
   return fired;
+}
+
+// Words that make a headline worth interrupting Nakul for.
+export const BIG_NEWS =
+  /\b(earnings|guidance|acquir\w*|merger|buyout|takeover|offering|downgrade\w*|upgrade\w*|FDA|SEC|lawsuit|recall\w*|bankrupt\w*|CEO|resign\w*|investigation|halt\w*|split|contract)\b/i;
+
+const weekdayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+const HOURS: Record<string, string> = { amc: " (after close)", bmo: " (before open)", dmh: " (during market hours)" };
+const DAY_MS = 86_400_000;
+
+// Earnings and big-news alerts, from what the end-of-day and news jobs stored. Called after each of those saves.
+export function evaluateEvents(db: Database, now: number): number {
+  const rows = db
+    .query(
+      `SELECT a.* FROM market_alerts a JOIN spaces s ON s.id = a.space_id
+       WHERE a.status != 'off' AND s.status = 'active' AND s.kind = 'markets' AND a.rule LIKE '%"kind":"earnings_within"%'
+       UNION ALL
+       SELECT a.* FROM market_alerts a JOIN spaces s ON s.id = a.space_id
+       WHERE a.status != 'off' AND s.status = 'active' AND s.kind = 'markets' AND a.rule LIKE '%"kind":"big_news"%'`,
+    )
+    .all() as Row[];
+  const today = etDate(now);
+  let fired = 0;
+  for (const row of rows) {
+    const a = toAlert(row);
+    if (a.rule.kind === "earnings_within") {
+      const next = upcomingEarnings(db, [a.key], today, a.rule.days)[0];
+      if (!next || row.fired_for === next.date) continue;
+      const day = weekdayFmt.format(Date.parse(`${next.date}T12:00:00Z`));
+      const eps = next.epsEstimate !== null ? ` EPS estimate ${next.epsEstimate}.` : "";
+      const source = next.source === "you" ? "Entered by you" : "Finnhub";
+      raise(db, a, `Earnings on ${day}${HOURS[next.hour ?? ""] ?? ""}.${eps} Source: ${source}.`, now, next.date);
+      fired++;
+    } else if (a.rule.kind === "big_news") {
+      if (a.lastFiredAt !== null && etDate(a.lastFiredAt) === today) continue;
+      const item = recentNews(db, [a.key], Math.max(a.createdAt, now - DAY_MS), 50).find((n) => BIG_NEWS.test(n.headline));
+      if (!item) continue;
+      raise(db, a, `${item.headline}\n${item.source} · ${etClock(item.at)}\n${item.url}`, now, null);
+      fired++;
+    }
+  }
+  return fired;
+}
+
+function raise(db: Database, a: Alert, detail: string, now: number, firedFor: string | null): void {
+  createApproval(db, { spaceId: a.spaceId, kind: "alert", title: titleOf(a), topic: topicOf(a.rule), detail });
+  db.query("UPDATE market_alerts SET status = ?, last_fired_at = ?, fired_for = COALESCE(?, fired_for) WHERE id = ?").run(a.repeat ? "armed" : "off", now, firedFor, a.id);
+  logActivity(db, a.spaceId, "atrium", `Alert: ${titleOf(a)}`);
 }

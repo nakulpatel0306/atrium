@@ -21,7 +21,11 @@ export type EngineClient = {
 };
 
 // The few markets numbers the terminal shows; charts and the rest stay on the dashboard.
-export type MarketsGlance = { watchlist: number; paper: { dayPnl: number; totalPnl: number } | null };
+export type MarketsGlance = {
+  watchlist: number;
+  paper: { dayPnl: number; totalPnl: number } | null;
+  portfolio: { dayPct: number; dayCad: number; mix: string; dayLabel: string; movers: { key: string; dayPct: number; tag: string | null }[] } | null;
+};
 
 export const engineBase = () => `http://${config().host}:${config().port}`;
 
@@ -237,10 +241,11 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
   };
 }
 
-type GlanceSource = { watchlist: unknown[]; paper: { dayPnl: number; totalPnl: number; fills: unknown[] } };
+type GlanceSource = { watchlist: unknown[]; paper: { dayPnl: number; totalPnl: number; fills: unknown[] }; portfolio?: MarketsGlance["portfolio"] };
 
 // A paper account nobody has traded in has nothing worth a line.
-export const glance = (v: Pick<MarketsView, "watchlist" | "paper"> | GlanceSource): MarketsGlance => ({
+export const glance = (v: Pick<MarketsView, "watchlist" | "paper" | "portfolio"> | GlanceSource): MarketsGlance => ({
   watchlist: v.watchlist.length,
   paper: v.paper.fills.length ? { dayPnl: v.paper.dayPnl, totalPnl: v.paper.totalPnl } : null,
+  portfolio: v.portfolio ? { dayPct: v.portfolio.dayPct, dayCad: v.portfolio.dayCad, mix: v.portfolio.mix, dayLabel: v.portfolio.dayLabel, movers: v.portfolio.movers } : null,
 });

@@ -15,6 +15,10 @@ import { paperState, placePaperOrder } from "./paper";
 import type { Quote } from "./providers/types";
 import { redact } from "./redact";
 import { describeLimits, getStrategy, markStrategyRun, proposeStrategy, type StrategyInput } from "./strategies";
+import { recentNews, upcomingEarnings } from "./events";
+import { getMeta } from "./meta";
+import { healthFor } from "./portfolio";
+import { getNotes, latestWriteups, saveWriteup } from "./research";
 import { listWatchlist } from "./watchlist";
 
 export type MarketsBlock = {
@@ -80,6 +84,50 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
       }
     ).n;
 
+  function investingContext(task: Task, space: Space, at: number): string[] {
+    const out: string[] = [];
+    const h = healthFor(db, data, space.id, at);
+    if (h.totalCad) {
+      const top = h.byCompany.filter((c) => c.key).slice(0, 5).map((c) => `${c.label} ${c.pct.toFixed(1)}%`);
+      out.push(`Portfolio: ${money(h.totalCad.value, "CAD")} (${h.totalCad.source}). Top exposures: ${top.join(", ")}.`);
+      if (h.warnings.length) out.push("Portfolio warnings:", ...h.warnings.map((w) => `- ${w.text}`));
+    }
+    if (task.purpose === "digest") {
+      const keys = [...new Set(listHoldings(db, space.id).map((x) => x.key).concat(listWatchlist(db, space.id).map((w) => w.key)))];
+      const last = latestWriteups(db, space.id, { kind: "digest", limit: 1 })[0];
+      const since = Math.max(last?.createdAt ?? 0, at - 3 * 86_400_000);
+      const news = recentNews(db, keys, since, 25);
+      if (news.length) out.push("News since the last digest:", ...news.map((n) => `- ${n.key}: ${n.headline} (${n.source}, ${etClock(n.at)})`));
+      out.push("Write a short digest for Nakul: what moved in his portfolio today and why, from these prices and headlines. Say which numbers are delayed.");
+    }
+    if (task.purpose === "thesis_draft" || task.purpose === "thesis_check") out.push(...subjectFacts(task.subject, at, task.purpose === "thesis_check", space.id));
+    return out;
+  }
+
+  // Public facts about one instrument, with their sources; Nakul's own thesis and notes only for a check.
+  function subjectFacts(key: string | null, at: number, withNotes: boolean, spaceId?: string): string[] {
+    if (!key) return [];
+    const out = [`About ${key}:`];
+    const m = getMeta(db, [key]).get(key);
+    if (m) {
+      const metrics = m.metricsAt ? ` (Finnhub · metrics ${etDate(m.metricsAt)})` : "";
+      out.push(`- ${m.name ?? key}; sector ${m.sector ?? "unknown"}${m.sectorSource ? ` (${m.sectorSource})` : ""}; country ${m.country ?? "unknown"}.`);
+      out.push(`- P/E ${fmt(m.pe)}, 52-week range ${fmt(m.low52)}–${fmt(m.high52)}, dividend yield ${m.divYield === null ? "n/a" : `${fmt(m.divYield)}%`}${metrics}.`);
+    }
+    const earnings = upcomingEarnings(db, [key], etDate(at), 60)[0];
+    if (earnings) out.push(`- Next earnings ${earnings.date}${earnings.hour ? ` (${earnings.hour})` : ""}, EPS estimate ${fmt(earnings.epsEstimate)} (${earnings.source === "you" ? "entered by Nakul" : "Finnhub"}).`);
+    const divs = db.query("SELECT ex_date, amount FROM market_dividends WHERE key = ? ORDER BY ex_date DESC LIMIT 4").all(key) as { ex_date: string; amount: number }[];
+    if (divs.length) out.push(`- Dividends (Tiingo): ${divs.map((d) => `${d.ex_date} ${fmt(d.amount, 4)}`).join(", ")}.`);
+    const news = recentNews(db, [key], 0, 10);
+    if (news.length) out.push("- Latest headlines:", ...news.map((n) => `  - ${n.headline} (${n.source}, ${etDate(n.at)})`));
+    if (withNotes && spaceId) {
+      const n = getNotes(db, spaceId, key);
+      out.push(`Nakul's thesis: ${n.thesis || "(none)"}`, `Nakul's notes: ${n.notes || "(none)"}`);
+    }
+    out.push("Write plain prose for Nakul. Do not recommend buying or selling.");
+    return out;
+  }
+
   async function buildContext(task: Task, space: Space, agent: string): Promise<string> {
     const at = now();
     const session = usSession(at);
@@ -103,7 +151,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     if (live.length && session.open) await data.quotes(live).catch(() => null);
     const quotes = cachedQuotes(db, [...instruments.keys()]);
     const line = (key: string, q: Quote | undefined) =>
-      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} today` : ""} (${freshnessText(q)}, ${etClock(q.at)})` : `${key}: no price yet`;
+      q ? `${key} ${money(q.price, currencyOfKey(key))}${q.prevClose ? ` ${pct((q.price / q.prevClose - 1) * 100)} today` : ""} (${freshnessText(q, at)}, ${etClock(q.at)})` : `${key}: no price yet`;
 
     const out: string[] = [];
     out.push(`Market data as of ${etClock(at)} on ${etDate(at)}. US market ${session.open ? "open" : session.holiday ? `closed (${session.holiday})` : "closed"}.`);
@@ -138,6 +186,9 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         ...p.positions.map((x) => `- ${x.symbol} × ${x.qty} @ avg ${money(x.avgCost, "USD")}${x.last === null ? "" : `, last ${money(x.last, "USD")}`}`),
       );
     }
+    // Investing context: Claude only, since it's built on Nakul's holdings and notes.
+    if (agent === "claude") out.push(...investingContext(task, space, at));
+    else if (task.purpose === "thesis_draft" || task.purpose === "thesis_check") out.push(...subjectFacts(task.subject, at, false));
     if (strategy) {
       out.push(`This task runs the approved paper strategy "${strategy.name}" (${strategy.status}).`, `Rules: ${strategy.rules}`, describeLimits(strategy));
       out.push(`Trades used today: ${tradesToday(strategy.id, at)} of ${strategy.maxTradesPerDay}.`);
@@ -220,7 +271,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         const inst = typeof f?.symbol === "string" ? parseInstrumentKey(f.symbol) : null;
         if (!inst || typeof f?.note !== "string") continue;
         const key = instrumentKey(inst);
-        createApproval(db, { spaceId: space.id, kind: "alert", title: `${agentName(agent)} flagged ${key}`, detail: `${f.note.trim()}\n\nAnalysis, not advice.` });
+        createApproval(db, { spaceId: space.id, kind: "alert", topic: "flag", title: `${agentName(agent)} flagged ${key}`, detail: `${f.note.trim()}\n\nAnalysis, not advice.` });
         lines.push(`Flagged ${key}: ${f.note.trim()}`);
       }
       for (const b of (Array.isArray(block?.backtests) ? block!.backtests : []).slice(0, LIMITS.backtests)) {
@@ -245,6 +296,20 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         } catch (e) {
           lines.push(`Couldn't propose that strategy: ${reason(e)}`);
         }
+      }
+      if (task.purpose) {
+        const body = summary.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
+        const forDate = task.purpose === "thesis_check" ? (task.title.match(/on (\d{4}-\d{2}-\d{2})$/)?.[1] ?? etDate(at)) : etDate(at);
+        saveWriteup(db, {
+          spaceId: space.id,
+          kind: task.purpose,
+          key: task.subject,
+          forDate,
+          body: body.endsWith("Analysis, not advice.") ? body : `${body}\n\nAnalysis, not advice.`,
+          taskId: task.id,
+        });
+        const what = task.purpose === "digest" ? "Digest" : task.purpose === "thesis_draft" ? "Thesis draft" : "Thesis check";
+        return { done: true, lines, activity: `${what} saved` };
       }
       if (strategy) {
         markStrategyRun(db, strategy.id, at);

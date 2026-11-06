@@ -1,7 +1,7 @@
 import { etDate } from "../calendar";
 import { instrumentKey, type Instrument } from "../instrument";
 import { fetchJson, RECONNECT_MS } from "./http";
-import { ProviderError, type MarketProvider, type NewsItem, type Quote, type QuoteStream, type StreamEvents } from "./types";
+import { ProviderError, type EarningsDate, type MarketProvider, type Metrics, type NewsItem, type Profile, type Quote, type QuoteStream, type StreamEvents } from "./types";
 
 const API = "https://finnhub.io/api/v1";
 const AUTH_MESSAGE = "Finnhub rejected the token. Check it in Settings → Market data.";
@@ -45,6 +45,29 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
         url: string;
       }[];
       for (const n of items) out.push({ key: instrumentKey(i), headline: n.headline, source: n.source, url: n.url, at: n.datetime * 1000 });
+    }
+    return out;
+  };
+
+  const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const metric = async (i: Instrument): Promise<Metrics> => {
+    const r = (await get("/stock/metric", { symbol: i.symbol, metric: "all" })) as { metric?: Record<string, unknown> };
+    const m = r?.metric ?? {};
+    return { pe: numOrNull(m.peTTM), high52: numOrNull(m["52WeekHigh"]), low52: numOrNull(m["52WeekLow"]), divYield: numOrNull(m.currentDividendYieldTTM) };
+  };
+  const profile = async (i: Instrument): Promise<Profile | null> => {
+    const r = (await get("/stock/profile2", { symbol: i.symbol })) as { name?: string; country?: string; currency?: string; finnhubIndustry?: string };
+    if (!r?.name) return null;
+    return { name: r.name, country: r.country || null, currency: r.currency || null, industry: r.finnhubIndustry || null };
+  };
+  const earnings = async (list: Instrument[], from: string, to: string): Promise<EarningsDate[]> => {
+    const out: EarningsDate[] = [];
+    for (const i of list) {
+      const r = (await get("/calendar/earnings", { from, to, symbol: i.symbol })) as { earningsCalendar?: { date: string; hour: string; epsEstimate: number | null; symbol: string }[] };
+      for (const e of r?.earningsCalendar ?? []) {
+        if (e.symbol !== i.symbol || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) continue;
+        out.push({ key: instrumentKey(i), date: e.date, hour: e.hour || null, epsEstimate: numOrNull(e.epsEstimate) });
+      }
     }
     return out;
   };
@@ -125,6 +148,9 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
       throw new ProviderError("no_history", "Finnhub's free plan has no price history. Switch to Alpaca in Settings → Market data for charts.");
     },
     news,
+    metric,
+    profile,
+    earnings,
     stream,
     maxStreamSymbols: 50,
     async validate() {

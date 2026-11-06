@@ -78,7 +78,8 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
       usProvider: "alpaca",
       us: { ready: opts.ready ?? true, message: opts.ready === false ? "Add your Alpaca key in Settings → Market data." : "ok" },
       ca: { ready: true, message: "ok" },
-      keys: { alpaca: true, finnhub: false, alphavantage: true },
+      keys: { alpaca: true, finnhub: false, alphavantage: true, tiingo: false },
+      history: { ready: true, message: "ok" },
     }),
     reload: async () => {},
     prepare: async () => {},
@@ -95,8 +96,10 @@ function setup(at: string, opts: Parameters<typeof fakeData>[0] & { strategy?: b
   const fd = fakeData(opts);
   const timers = fakeTimers();
   const got: Quote[][] = [];
-  const feed = createFeed({ db, data: fd.data, onQuotes: (q) => got.push(q), strategyActive: () => !!opts.strategy, now: () => now, timers });
-  return { ...fd, timers, feed, got };
+  const jobRuns: number[] = [];
+  const jobs = { runDue: async (t: number) => void jobRuns.push(t) };
+  const feed = createFeed({ db, data: fd.data, onQuotes: (q) => got.push(q), strategyActive: () => !!opts.strategy, now: () => now, timers, jobs });
+  return { ...fd, timers, feed, got, jobRuns };
 }
 
 test("feedMode table", () => {
@@ -180,6 +183,26 @@ test("poll during the session, one final call at the close, then stop", async ()
   s.timers.fireAll();
   await s.feed.idle();
   expect(s.quoteCalls).toHaveLength(3);
+  s.feed.stop();
+});
+
+test("the last price at the close is kept as the day's close", async () => {
+  const { closes } = await import("../../../src/engine/markets/closes");
+  watch("AAPL");
+  watch("MSFT");
+  watch("SHOP", "TSX");
+  const s = setup("2026-11-05T20:57:00Z");
+  await s.feed.start();
+  now = Date.parse("2026-11-05T21:00:30Z");
+  s.timers.fireAll();
+  await s.feed.idle();
+  expect(s.feed.status().mode).toBe("off");
+  const rows = db.query("SELECT key, date, close, source FROM market_closes ORDER BY key").all();
+  expect(rows).toEqual([
+    { key: "AAPL", date: "2026-11-05", close: 10, source: "alpaca" },
+    { key: "MSFT", date: "2026-11-05", close: 10, source: "alpaca" },
+  ]);
+  expect(closes(db, "AAPL", "2026-11-01")).toHaveLength(1);
   s.feed.stop();
 });
 
@@ -268,15 +291,40 @@ test("daily bars refresh once per ET date and errors are ignored", async () => {
   s.feed.stop();
 });
 
-test("TSX end-of-day refresh once at or after 16:30 ET", async () => {
+test("the feed leaves TSX end of day to the eod job", async () => {
   db.query("INSERT INTO market_holdings (id, space_id, account, symbol, exchange, name, quantity, currency, source, updated_at) VALUES ('h1', ?, 'TFSA', 'SHOP', 'TSX', 'Shopify', 5, 'CAD', 'manual', 1)").run(spaceId);
   const s = setup("2026-11-05T21:31:00Z");
   await s.feed.start();
-  expect(s.quoteCalls).toEqual([[{ symbol: "SHOP", exchange: "TSX" }]]);
+  expect(s.quoteCalls).toEqual([]);
   now += OFF_RECHECK_MS;
   s.timers.fireAll();
   await s.feed.idle();
-  expect(s.quoteCalls).toHaveLength(1);
+  expect(s.quoteCalls).toEqual([]);
+  s.feed.stop();
+});
+
+test("jobs run from the feed's own timer and add none", async () => {
+  watch("AAPL");
+  const s = setup("2026-11-07T08:00:00Z"); // Sat 03:00 ET
+  await s.feed.start();
+  expect(s.jobRuns).toEqual([now]);
+  expect(s.timers.pending.size).toBe(1);
+  for (let i = 0; i < 3; i++) {
+    now += OFF_RECHECK_MS;
+    s.timers.fireAll();
+    await s.feed.idle();
+    expect(s.timers.pending.size).toBe(1);
+  }
+  expect(s.jobRuns).toHaveLength(4);
+  expect(s.timers.delays.every((d) => d === OFF_RECHECK_MS)).toBe(true);
+  s.feed.stop();
+});
+
+test("no tracked symbols: no jobs and no timer", async () => {
+  const s = setup("2026-11-07T08:00:00Z");
+  await s.feed.start();
+  expect(s.jobRuns).toEqual([]);
+  expect(s.timers.pending.size).toBe(0);
   s.feed.stop();
 });
 
@@ -353,7 +401,7 @@ test("no Keychain reads while the market is closed and nobody is looking", async
     timers.fireAll();
     await feed.idle();
     const first = readFileSync(join(dir, "argv.log"), "utf8").trim().split("\n").length;
-    expect(first).toBe(4);
+    expect(first).toBe(5); // one read per key account, Tiingo included
     now += POLL_MS;
     timers.fireAll();
     await feed.idle();

@@ -2,9 +2,9 @@ import type { Database } from "bun:sqlite";
 import { getApproval } from "../engine/approvals";
 import { createAlert, describeRule, listAlerts, removeAlert, setAlertStatus, type Alert, type AlertRule } from "../engine/markets/alerts";
 import { backtest, type BacktestTemplate } from "../engine/markets/backtest";
-import { dailyBudget } from "../engine/markets/budget";
+import { dailyBudget, hourlyBudget } from "../engine/markets/budget";
 import { lastCompletedSession } from "../engine/markets/calendar";
-import { AV_DAILY_LIMIT, currentQuote as current, type ChartRange, type DataStatus, type MarketData } from "../engine/markets/data";
+import { AV_DAILY_LIMIT, TIINGO_DAILY_LIMIT, TIINGO_HOURLY_LIMIT, currentQuote as current, type ChartRange, type DataStatus, type MarketData } from "../engine/markets/data";
 import type { Feed, FeedStatus } from "../engine/markets/feed";
 import { addHolding, listHoldings, removeHolding, replaceImported, updateHolding, type Holding } from "../engine/markets/holdings";
 import { previewImport, type FieldMap } from "../engine/markets/import";
@@ -14,8 +14,14 @@ import { paperState, placePaperOrder, resetAccount, type PaperState } from "../e
 import { alpacaProvider } from "../engine/markets/providers/alpaca";
 import { alphaVantageProvider } from "../engine/markets/providers/alphavantage";
 import { finnhubProvider } from "../engine/markets/providers/finnhub";
+import { tiingoProvider, tiingoSymbols } from "../engine/markets/providers/tiingo";
 import type { MarketProvider, Quote } from "../engine/markets/providers/types";
 import { redact } from "../engine/markets/redact";
+import { estimateFor, ESTIMATED } from "../engine/markets/estimate";
+import { latestFx } from "../engine/markets/fx";
+import type { Jobs } from "../engine/markets/jobs";
+import { portfolioDay, type PortfolioDay } from "../engine/markets/portfolio";
+import type { Sourced } from "../engine/markets/sourced";
 import { listStrategies, proposeStrategy, setStrategyPaused, type Strategy, type StrategyInput } from "../engine/markets/strategies";
 import { addToWatchlist, listWatchlist, removeFromWatchlist, type WatchItem } from "../engine/markets/watchlist";
 import { setSetting } from "../engine/settings";
@@ -31,6 +37,8 @@ export type MarketsDeps = {
   now?: () => number;
   // For the throwaway providers that check a key before it's saved; tests stub it.
   fetch?: typeof fetch;
+  // The daily and weekly market jobs, for the data budget page.
+  jobs?: Jobs;
 };
 
 type Priced<T> = T & { quote: Quote | null; missing: string | null };
@@ -43,6 +51,12 @@ export type MarketsView = {
   strategies: Strategy[];
   feed: FeedStatus;
   data: DataStatus;
+  // The portfolio's day across its holdings, cached prices only.
+  portfolio: PortfolioDay | null;
+  // Labelled display-only estimates (VFV.TO from SPY and USD/CAD), never used in totals or alerts.
+  estimates: Record<string, Sourced>;
+  // Bank of Canada USD/CAD for the CAD column; null until the fx job has run.
+  fx: Sourced | null;
 };
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
@@ -50,10 +64,11 @@ const RANGES: ChartRange[] = ["5D", "1M", "3M", "6M", "1Y"];
 const EXCHANGES: Exchange[] = ["US", "TSX", "TSXV", "NEO", "OTC"];
 const PROVIDERS = ["alpaca", "finnhub", "demo"] as const;
 const BAD_SYMBOL = "Type a symbol like AAPL or SHOP.TO.";
-const SHAPE: Record<"alpaca" | "finnhub" | "alphavantage", string> = {
+const SHAPE: Record<"alpaca" | "finnhub" | "alphavantage" | "tiingo", string> = {
   alpaca: "That doesn't look like an Alpaca key: keys are letters and numbers only.",
   finnhub: "That doesn't look like a Finnhub token: tokens are letters and numbers only.",
   alphavantage: "That doesn't look like an Alpha Vantage key: keys are letters and numbers only.",
+  tiingo: "That doesn't look like a Tiingo token: tokens are letters and numbers only.",
 };
 
 // Per instrument, the last session close the view already tried to refresh for, so a dashboard that refetches on
@@ -149,9 +164,14 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
     return json({ data: await m.data.status(), feed: m.feed.status() });
   }
   if (hit("POST", /^\/api\/settings\/market-data\/keys$/)) return json(await saveKeys(db, m, await readBody(req), now));
-  const delKey = hit("DELETE", /^\/api\/settings\/market-data\/keys\/(alpaca|finnhub|alphavantage)$/);
+  const delKey = hit("DELETE", /^\/api\/settings\/market-data\/keys\/(alpaca|finnhub|alphavantage|tiingo)$/);
   if (delKey) {
-    const accounts = { alpaca: [KEY_ACCOUNTS.alpacaKeyId, KEY_ACCOUNTS.alpacaSecret], finnhub: [KEY_ACCOUNTS.finnhub], alphavantage: [KEY_ACCOUNTS.alphavantage] };
+    const accounts = {
+      alpaca: [KEY_ACCOUNTS.alpacaKeyId, KEY_ACCOUNTS.alpacaSecret],
+      finnhub: [KEY_ACCOUNTS.finnhub],
+      alphavantage: [KEY_ACCOUNTS.alphavantage],
+      tiingo: [KEY_ACCOUNTS.tiingo],
+    };
     try {
       for (const a of accounts[delKey[1] as keyof typeof accounts]) await m.keychain.remove(a);
     } catch (e) {
@@ -397,14 +417,30 @@ async function view(db: Database, m: MarketsDeps, spaceId: string, at: number): 
     strategies: listStrategies(db, spaceId),
     feed: m.feed.status(),
     data: await m.data.status(),
+    portfolio: portfolioDay(db, m.data, spaceId, at),
+    estimates: estimates(db, m, [...all.keys()], at),
+    fx: latestFx(db),
   };
+}
+
+function estimates(db: Database, m: MarketsDeps, keys: string[], at: number): Record<string, Sourced> {
+  const out: Record<string, Sourced> = {};
+  for (const key of keys) {
+    const cfg = ESTIMATED[key];
+    if (!cfg) continue;
+    const e = estimateFor(db, key, currentQuote(db, m, parseInstrumentKey(cfg.proxy)!), at);
+    if (e) out[key] = e;
+  }
+  return out;
 }
 
 // Shape check, then a live check with a provider that's thrown away, then the Keychain. Neither the key nor
 // anything that might echo it goes into the response.
 async function saveKeys(db: Database, m: MarketsDeps, b: Record<string, unknown>, now: () => number) {
   const provider = b.provider;
-  if (provider !== "alpaca" && provider !== "finnhub" && provider !== "alphavantage") throw new HttpError(400, "provider must be alpaca, finnhub or alphavantage.");
+  if (provider !== "alpaca" && provider !== "finnhub" && provider !== "alphavantage" && provider !== "tiingo") {
+    throw new HttpError(400, "provider must be alpaca, finnhub, alphavantage or tiingo.");
+  }
   const field = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const io = { fetch: m.fetch, now };
   let entries: [string, string][];
@@ -420,6 +456,16 @@ async function saveKeys(db: Database, m: MarketsDeps, b: Record<string, unknown>
     if (!isKeyShaped(token)) throw new HttpError(400, SHAPE.finnhub);
     entries = [[KEY_ACCOUNTS.finnhub, token]];
     probe = finnhubProvider(token, io);
+  } else if (provider === "tiingo") {
+    const token = field(b.token);
+    if (!isKeyShaped(token)) throw new HttpError(400, SHAPE.tiingo);
+    entries = [[KEY_ACCOUNTS.tiingo, token]];
+    probe = tiingoProvider(token, {
+      fetch: m.fetch,
+      now,
+      budget: { day: dailyBudget(db, "tiingo", TIINGO_DAILY_LIMIT, now), hour: hourlyBudget(db, "tiingo", TIINGO_HOURLY_LIMIT, now) },
+      symbols: tiingoSymbols(db, now),
+    });
   } else {
     const key = field(b.key);
     if (!isKeyShaped(key)) throw new HttpError(400, SHAPE.alphavantage);

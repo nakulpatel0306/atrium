@@ -1,0 +1,6 @@
+{
+  "earningsCalendar": [
+    { "date": "2026-11-10", "epsActual": null, "epsEstimate": 1.23, "hour": "amc", "quarter": 3, "revenueActual": null, "revenueEstimate": 1500000000, "symbol": "RKLB", "year": 2026 },
+    { "date": "2026-11-20", "epsActual": null, "epsEstimate": null, "hour": "", "quarter": 3, "revenueActual": null, "revenueEstimate": null, "symbol": "RKLB", "year": 2026 }
+  ]
+}
