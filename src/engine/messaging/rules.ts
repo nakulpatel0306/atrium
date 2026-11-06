@@ -18,10 +18,13 @@ const EMAIL = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}$/;
 // Counted in characters as people see them, so an emoji is one, as in the card's counter.
 export const textLength = (text: string): number => [...text.trim()].length;
 
+// A zero-width joiner inside an emoji sequence (👨‍👩‍👧) is how the emoji is spelled, not hidden text.
+const EMOJI_JOINER = /(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}\uFE0F]?)\u200D(?=\p{Extended_Pictographic})/gu;
+
 export function textProblem(text: string): string | null {
   const t = text.trim();
   if (!t) return EMPTY_COPY;
-  if (CONTROL.test(t) || new RegExp(HIDDEN_TEXT.source).test(t)) return HIDDEN_COPY;
+  if (CONTROL.test(t) || new RegExp(HIDDEN_TEXT.source).test(t.replace(EMOJI_JOINER, "$1"))) return HIDDEN_COPY;
   if (textLength(t) > MAX_TEXT) return TOO_LONG_COPY;
   return null;
 }

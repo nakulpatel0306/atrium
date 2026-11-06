@@ -37,3 +37,16 @@ test("nameProblem and oneLine", () => {
   for (const n of ["Dana\nTo: Mom · +1 555", "a\u2066b", "", "x".repeat(81)]) expect(nameProblem(n)).toBe(NAME_COPY);
   expect(oneLine("a\n\tb\u202ec")).toBe("a bc");
 });
+
+test("every invisible character is refused in names and texts", () => {
+  expect(nameProblem("Dana\u202e")).toBe(NAME_COPY);
+  expect(nameProblem("Dana\u2066")).toBe(NAME_COPY);
+  for (const c of ["\u0085", "\u061c", "\u200b", "\u200d", "\u200f", "\u202a", "\u2060", "\u2069", "\u2028", "\u2029", "\ufeff"]) {
+    expect(nameProblem(`Ta${c}lal`)).toBe(NAME_COPY);
+    expect(textProblem(`hi${c}there`)).toBe(HIDDEN_COPY);
+    expect(oneLine(`a${c}b`)).toBe("ab");
+  }
+  // An emoji spelled with joiners is fine.
+  expect(textProblem("family 👨‍👩‍👧 and 👍🏽‍")).toBe(HIDDEN_COPY);
+  expect(textProblem("family 👨‍👩‍👧 and 🏳️‍🌈")).toBeNull();
+});
