@@ -26,6 +26,21 @@ export function textProblem(text: string): string | null {
   return null;
 }
 
+export const MAX_NAME = 80;
+export const NAME_COPY = "Say who the message is for in one line, under 80 characters, with no hidden characters.";
+
+// The name sits on the card next to the number, so it can't carry line breaks or direction marks that would make
+// the card read as someone else.
+export function nameProblem(name: string): string | null {
+  const t = name.trim();
+  if (!t || [...t].length > MAX_NAME || /[\u0000-\u001f\u007f]/.test(t) || new RegExp(HIDDEN_TEXT.source).test(t)) return NAME_COPY;
+  return null;
+}
+
+// One plain line, for text Atrium itself shows on the card (an earlier failure).
+export const oneLine = (text: string): string =>
+  text.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(new RegExp(HIDDEN_TEXT.source, "g"), "").replace(/ {2,}/g, " ").trim().slice(0, 400);
+
 // The only recipients Atrium ever hands to Messages: a phone number of digits, or a plain email address.
 export function normalizeHandle(raw: string): string | null {
   const t = raw.trim();

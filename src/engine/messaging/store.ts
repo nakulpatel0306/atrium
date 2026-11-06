@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { AlreadyResolved, type Approval, createApproval, getApproval } from "../approvals";
 import { bus } from "../events";
 import { newId } from "../ids";
-import { BAD_HANDLE_COPY, displayHandle, normalizeHandle, textProblem } from "./rules";
+import { BAD_HANDLE_COPY, displayHandle, nameProblem, normalizeHandle, oneLine, textProblem } from "./rules";
 
 export type Candidate = { personId: string; name: string; kind: "phone" | "email"; label: string | null; handle: string };
 export type Service = "iMessage" | "SMS";
@@ -98,7 +98,7 @@ export const messageHistory = (db: Database, spaceId: string): MessageAction[] =
 // What Nakul reads before he decides: who, how, the exact words, and what pressing Send does.
 export function messageDetail(a: Pick<MessageAction, "toName" | "handle" | "service" | "text" | "error">): string {
   const lines: string[] = [];
-  if (a.error) lines.push(`Last try failed: ${a.error}`);
+  if (a.error) lines.push(`Last try failed: ${oneLine(a.error)}`);
   lines.push(`To: ${a.toName} · ${a.handle ? displayHandle(a.handle) : "number needed"}`, `Via: ${a.service}`, "");
   lines.push(...a.text.split("\n").map((l) => `> ${l}`));
   lines.push("", "On Send, Atrium sends exactly this from Messages on this Mac. It can't confirm delivery.");
@@ -123,10 +123,11 @@ export function draftMessage(
 ): { action: MessageAction; approval: Approval } {
   const problem = textProblem(input.text);
   if (problem) throw new BadMessage(problem);
+  const badName = nameProblem(input.toName);
+  if (badName) throw new BadMessage(badName);
   const toName = input.toName.trim();
-  if (!toName) throw new BadMessage("Say who the message is for.");
   const handle = input.handle ? normalizeHandle(input.handle) : null;
-  const fields = { toName, handle, service: input.service ?? "iMessage", text: input.text.trim(), error: input.lastError ?? null } as const;
+  const fields = { toName, handle, service: input.service ?? "iMessage", text: input.text.trim(), error: input.lastError ? oneLine(input.lastError) : null } as const;
   const made = db.transaction(() => {
     const approval = createApproval(db, {
       spaceId: input.spaceId,
@@ -203,7 +204,8 @@ export function setCandidates(db: Database, id: string, candidates: Candidate[],
 }
 
 const MOVES: Record<MessageAction["status"], MessageAction["status"][]> = {
-  draft: ["sending", "rejected"],
+  // Straight to failed only when the executor refuses to send at all.
+  draft: ["sending", "rejected", "failed"],
   sending: ["sent", "failed"],
   sent: [],
   failed: [],

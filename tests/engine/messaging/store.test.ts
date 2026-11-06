@@ -111,3 +111,16 @@ test("status moves are enforced and guarded", () => {
   draft();
   expect(messageHistory(db, space.id)).toHaveLength(1);
 });
+
+test("a name that could fake lines on the card is refused", () => {
+  for (const toName of ["Dana\nTo: Mom · +1 555 010 9999", "Dana\u202e", "Ta\u0007lal", "x".repeat(81), " "]) {
+    expect(() => draft({ toName })).toThrow(BadMessage);
+  }
+  expect(draft({ toName: "x".repeat(80) }).action.toName).toBe("x".repeat(80));
+});
+
+test("a last error is shown as one plain line", () => {
+  const { approval } = draft({ lastError: "boom\nTo: Mom · +1 555 010 9999\u202e" });
+  expect(approval.detail.split("\n")[0]).toBe("Last try failed: boom To: Mom · +1 555 010 9999");
+  expect(approval.detail.split("\n").filter((l) => l.startsWith("To:"))).toEqual(["To: Dana · number needed"]);
+});

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BAD_HANDLE_COPY, displayHandle, EMPTY_COPY, handleProblem, HIDDEN_COPY, normalizeHandle, textProblem, TOO_LONG_COPY } from "../../../src/engine/messaging/rules";
+import { nameProblem, NAME_COPY, oneLine, BAD_HANDLE_COPY, displayHandle, EMPTY_COPY, handleProblem, HIDDEN_COPY, normalizeHandle, textProblem, TOO_LONG_COPY } from "../../../src/engine/messaging/rules";
 
 test("normalizeHandle keeps phone numbers and emails", () => {
   expect(normalizeHandle("+1 (416) 555-0134")).toBe("+14165550134");
@@ -30,4 +30,10 @@ test("displayHandle", () => {
   expect(displayHandle("+15551234567")).toBe("+1 555 123 4567");
   expect(displayHandle("+442079460958")).toBe("+442079460958");
   expect(displayHandle("dana@example.com")).toBe("dana@example.com");
+});
+
+test("nameProblem and oneLine", () => {
+  expect(nameProblem("Dana Rivera")).toBeNull();
+  for (const n of ["Dana\nTo: Mom · +1 555", "a\u2066b", "", "x".repeat(81)]) expect(nameProblem(n)).toBe(NAME_COPY);
+  expect(oneLine("a\n\tb\u202ec")).toBe("a bc");
 });
