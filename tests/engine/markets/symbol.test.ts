@@ -161,3 +161,8 @@ test("a 501-character question is refused", async () => {
   expect(ASK_MAX_CHARS).toBe(500);
   expect(() => requestAsk(db, fx.spaceId, "AMZN", "x".repeat(501))).toThrow("Keep the question under 500 characters.");
 });
+
+test("a TSX key without an Alpha Vantage key says how to get Canadian prices", async () => {
+  const data = viewData({ reasonFor: () => "Canadian prices need a free Alpha Vantage key (Settings → Market data)." });
+  expect(await refreshSymbol(db, data, "XEQT.TO", NOW)).toEqual({ refreshed: false, note: "Canadian prices need a free Alpha Vantage key (Settings → Market data)." });
+});

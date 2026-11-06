@@ -3057,7 +3057,9 @@ code {
   }
   .inv-row-main,
   .wl-rows .inv-row-main {
-    grid-template-columns: minmax(0, 1fr) 120px 110px;
+    grid-template-columns: minmax(0, 1fr) 180px 96px;
+    gap: 10px;
+    padding: 6px 10px;
   }
   .inv-row-main .inv-gain {
     display: none;
@@ -3322,11 +3324,6 @@ code {
   height: 64px;
   border-radius: 4px;
   overflow: hidden;
-}
-@media (max-width: 760px) {
-  .tvw-mini {
-    width: 120px;
-  }
 }
 .inv-left {
   margin-top: 6px;

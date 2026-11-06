@@ -33,7 +33,7 @@ this page is the record of the reading pass.
 | Views | `src/dashboard/components/Proposal.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/RepoRemoval.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Rules.tsx` | rule list, rule detail, undo, empty states | yes | Em dash in the prose warning became a comma |
-| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | "Markets spaces" became "investing spaces" |
+| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | "Markets spaces" became "investing spaces"; Plan 10: Finnhub Required, Alpha Vantage Optional, Tiingo Not needed; Alpaca removal row |
 | Views | `src/dashboard/components/Sidebar.tsx` | nav labels, footer status | yes | No change needed |
 | Views | `src/dashboard/components/SpaceView.tsx` | tabs, task rows, task detail, not-found page, live column | yes | "Space not found" became "This space isn't here" with what to do; Tasks/Files tabs; "You asked" renders markdown; straight quotes around the parent task; full title on hover |
 | Views | `src/dashboard/components/StatusIcon.tsx` | labels, buttons, empty states, errors | yes | No change needed |
@@ -51,7 +51,20 @@ this page is the record of the reading pass.
 | Investing | `src/dashboard/components/markets/Holdings.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Investing | `src/dashboard/components/markets/Ideas.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
 | Investing | `src/dashboard/components/markets/ImportDialog.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/MarketsPanel.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Investing | `src/dashboard/components/markets/MarketsPanel.tsx` | back link | yes | Now AdvancedPanel; "← Back to ideas" |
+| Investing | `src/dashboard/components/invest/AdvancedToggle.tsx` | switch label, hint, error | yes | New in Plan 10; written to the rules |
+| Investing | `src/dashboard/components/invest/AlertsSimple.tsx` | alert rows, status chips, Turn on/off, paused line, hint | yes | New in Plan 10; singular and plural paused line |
+| Investing | `src/dashboard/components/invest/Earnings.tsx` | date headings, time words, EPS line, chips, empty state, source footer | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/InvestPanel.tsx` | tab labels, loading | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/Portfolio.tsx` | hero labels, What moved, left-out line, empty state, import buttons | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/PriceRow.tsx` | no-price and Alpha Vantage lines | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/Sparkline.tsx` | none (aria-hidden) | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/SymbolPage.tsx` | header, actions, alert form, position, earnings, stats, news, note, Ask Claude | yes | New in Plan 10; errors from the engine shown as written |
+| Investing | `src/dashboard/components/invest/SymbolSearch.tsx` | placeholder, results, actions, added line, no-match line | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/TvChart.tsx` | labels, privacy line, offline and failed cards, toggle | yes | New in Plan 10; privacy line shown once |
+| Investing | `src/dashboard/components/invest/TvWidget.tsx` | frame titles | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/Watchlists.tsx` | list chips, new and rename form, list menu, delete confirm, empty state, remove labels | yes | New in Plan 10 |
+| Investing | `src/dashboard/simple.ts` | time words, date headings, money formats | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/markets/Paper.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Investing | `src/dashboard/components/markets/PriceChart.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Investing | `src/dashboard/components/markets/Research.tsx` | labels, buttons, empty states, errors | yes | Thesis draft and check render as markdown (layout deferred to the investing redesign) |
@@ -123,8 +136,9 @@ this page is the record of the reading pass.
 | App | `mac/Sources/App/StatusMenu.swift` | messages | yes | Sentence case: "Open at login", "Open notification settings…" |
 | App | `mac/Sources/App/WebController.swift` | messages | yes | No change needed |
 | App | `mac/Sources/App/main.swift` | messages | yes | No change needed |
-| Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made |
-| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files |
+| Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made; Plan 10: alert titles name the symbol ("AMZN price alert") |
+| Core | `mac/Sources/Core/ContentRules.swift` | none | yes | New in Plan 10 |
+| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files, Need.symbol, Summary.embed |
 
 ### Engine messages that reach the UI
 
@@ -157,6 +171,14 @@ this page is the record of the reading pass.
 | Repos | `src/engine/repos/rules.ts` | messages | yes | No change needed |
 | Repos | `src/engine/repos/store.ts` | messages | yes | No change needed |
 | Repos | `src/engine/repos/templates.ts` | messages | yes | No change needed |
+| Investing | `src/engine/markets/advanced.ts` | none | yes | New in Plan 10 |
+| Investing | `src/engine/markets/lists.ts` | list refusals | yes | New in Plan 10; every refusal says what to do |
+| Investing | `src/engine/markets/search.ts` | validation, rate-limit and key notes, typed-symbol notes | yes | New in Plan 10 |
+| Investing | `src/engine/markets/symbol.ts` | ask refusals, refresh notes, stat labels | yes | New in Plan 10 |
+| Investing | `src/engine/markets/tradingview.ts` | coverage sentence | yes | New in Plan 10 |
+| Investing | `src/engine/markets/views.ts` | earnings source line, left-out line | yes | New in Plan 10 |
+| Investing | `src/server/embed.ts` | refusal, attribution | yes | New in Plan 10; TradingView attribution kept as designed |
+| Investing | `src/server/investing-simple.ts` | 404 and 400 sentences | yes | New in Plan 10 |
 | Investing | `src/engine/markets/agent.ts` | messages | yes | Filled/Refused lines use · instead of an em dash; moves say "on Fri, Nov 6" when the market is closed |
 | Investing | `src/engine/markets/alerts.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
 | Investing | `src/engine/markets/backtest.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |

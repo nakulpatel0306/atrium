@@ -274,7 +274,7 @@ export function SymbolBody({
         <div className="sym-quote">
           {view.price ? <span className="sym-price">{priceText(view.price.value, ccy)}</span> : <span className="sym-price faint">No price yet</span>}
           {view.dayPct !== null && <span className={`pill ${toneOf(view.dayPct)}`}>{signedPct(view.dayPct, 2)} today</span>}
-          <SourceTag s={view.price} missing="No price yet" />
+          {view.price && <SourceTag s={view.price} />}
         </div>
         {view.estimate && (
           <p className="sym-est" title={view.estimate.source}>
