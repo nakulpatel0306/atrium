@@ -22,7 +22,7 @@ export function trimLog(path: string, maxBytes: number): void {
 
 // launchd writes stdout and stderr to engine.log as they are, so each line gets its time here.
 export function stampConsole(now: () => Date = () => new Date()): void {
-  for (const name of ["log", "error"] as const) {
+  for (const name of ["log", "info", "warn", "error"] as const) {
     const write = console[name].bind(console);
     console[name] = (...args: unknown[]) => write(`${now().toISOString()} ${format(...args)}`);
   }
