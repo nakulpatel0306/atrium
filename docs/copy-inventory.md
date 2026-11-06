@@ -159,7 +159,8 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Runs | `src/engine/runner.ts` | messages | yes | "Runner error:" became a sentence with a next step; "Atrium couldn't start the run" says what to check; "Repo is on …" says what to do; requeue lines are sentences; em dashes removed; made line added to reviews; kept-files path shown with ~ |
 | Runs | `src/engine/approvals.ts` | messages | yes | No change needed |
-| Delete | `src/engine/delete.ts`, `src/engine/delete-files.ts` | refusals, kept-folder lines | yes | New in Plan 13: every refusal says nothing was deleted and what to do |
+| Delete | `src/engine/delete.ts`, `src/engine/delete-files.ts` | refusals, kept-folder lines | yes | New in Plan 13: every refusal says nothing was deleted and what to do; "Kept <file>: it changed after the task made it."; clone-in-flight and space-busy refusals |
+| Messaging | `src/engine/messaging/space.ts` | merge line | yes | Plan 13: "Moved the earlier Messages space's texts and history into this one." |
 | Runs | `src/engine/handoff.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/atrium-paths.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
