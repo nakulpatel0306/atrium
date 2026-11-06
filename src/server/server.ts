@@ -51,7 +51,17 @@ const RESERVE_STEPS = [0.25, 0.5, 0.75];
 // "changed" sockets (the Mac app) skip run output, which only the dashboard's live transcript needs.
 export type WsData = { topic: "engine" | "changed" };
 
-export function startServer(deps: Deps): Server<WsData> {
+const EMBED_PATH = "/embed/tradingview";
+const fromEmbed = (referer: string | null): boolean => {
+  if (!referer) return false;
+  try {
+    return new URL(referer).pathname === EMBED_PATH;
+  } catch {
+    return false;
+  }
+};
+
+export function startServer(deps: Deps): Server<WsData> & { embedPort: number | null } {
   const { db, runner } = deps;
 
   const origins = (port: number) => [`127.0.0.1:${port}`, `localhost:${port}`];
@@ -59,9 +69,13 @@ export function startServer(deps: Deps): Server<WsData> {
   // our Origin; any API read that says it comes from another site (a foreign Origin, or Sec-Fetch-Site naming
   // another site or another port) is refused too, so a web page can't read prices or make the engine spend
   // provider calls. Reads with neither header (curl, the terminal app, the Mac app) are allowed.
-  const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean): Response | null => {
+  const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean, path: string): Response | null => {
     if (!origins(port).includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
+    // The TradingView page runs third-party code. It's sandboxed to an opaque origin, and anything it (or a page
+    // it opens) asks for beyond the embed page itself is refused.
+    if (path !== EMBED_PATH && fromEmbed(req.headers.get("referer"))) return fail(403, "Forbidden origin.");
     const origin = req.headers.get("origin");
+    if (api && origin === "null") return fail(403, "Forbidden origin.");
     const ours = origin !== null && origins(port).some((h) => origin === `http://${h}`);
     if (needsOrigin && !ours) return fail(403, "Forbidden origin.");
     if (api) {
@@ -349,10 +363,8 @@ export function startServer(deps: Deps): Server<WsData> {
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";
-      const denied = guard(req, srv.port as number, needsOrigin, url.pathname.startsWith("/api/") || url.pathname === "/ws");
+      const denied = guard(req, srv.port as number, needsOrigin, url.pathname.startsWith("/api/") || url.pathname === "/ws", url.pathname);
       if (denied) return denied;
-      // TradingView's isolated chart page: behind the Host check above, outside the /api rules.
-      if (req.method === "GET" && url.pathname === "/embed/tradingview") return embedResponse(req, url, srv.port as number);
       if (url.pathname === "/ws") {
         const topic = url.searchParams.get("events") === "changed" ? "changed" : "engine";
         if (srv.upgrade(req, { data: { topic } })) return undefined as unknown as Response;
@@ -399,9 +411,36 @@ export function startServer(deps: Deps): Server<WsData> {
     if (e.type === "changed") server.publish("changed", msg);
   });
   const stop = server.stop.bind(server);
+  const embed = startEmbed(deps.port ?? config().port, server.port as number);
   server.stop = (force?: boolean) => {
     off();
+    embed?.stop(force);
     return stop(force);
   };
-  return server;
+  return Object.assign(server, { embedPort: embed ? (embed.port as number) : null });
+}
+
+// TradingView's chart page gets a listener of its own on the next port (any free port when the engine's is
+// random, as in tests). It serves that one page and nothing else, so the third-party script runs on an origin
+// with no API behind it; the engine's guard refuses anything that origin (or a page it opens) sends.
+function startEmbed(requested: number, enginePort: number): Server<undefined> | null {
+  const port = requested === 0 ? 0 : enginePort + 1;
+  try {
+    const embed: Server<undefined> = Bun.serve({
+      hostname: config().host,
+      port,
+      reusePort: false,
+      fetch(req) {
+        const url = new URL(req.url);
+        const own = [`127.0.0.1:${embed.port}`, `localhost:${embed.port}`];
+        if (!own.includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
+        if (req.method === "GET" && url.pathname === EMBED_PATH) return embedResponse(req, url, enginePort);
+        return fail(404, "Not found.");
+      },
+    });
+    return embed;
+  } catch (e) {
+    console.error(`The chart page couldn't start on port ${port}; symbol pages will show Atrium's chart. ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
 }

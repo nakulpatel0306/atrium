@@ -1,9 +1,10 @@
 import { isTvSymbol, tvSymbolUrl } from "../engine/markets/tradingview";
 
-// TradingView's Advanced Chart widget, isolated. The dashboard frames this page from the *other* loopback name
-// (127.0.0.1 ↔ localhost), so TradingView's code runs cross-origin: it can't read the dashboard's DOM (holdings)
-// or call the engine API, and the dashboard document itself loads nothing external. The query carries only the
-// symbol and the parent origin.
+// TradingView's Advanced Chart widget, isolated. This page is served by a listener of its own on the engine's port
+// + 1, under the other loopback name (127.0.0.1 ↔ localhost), and that listener has no API. TradingView's code runs
+// cross-origin: it can't read the dashboard's DOM (holdings) or call the engine, and the dashboard document itself
+// loads nothing external. The query carries only the symbol and the parent origin. A CSP sandbox (opaque origin)
+// was tried and stops the widget rendering, which is why the isolation is by origin instead.
 export const TV_SCRIPT = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
 export const TV_FRAME_HOSTS = ["https://www.tradingview-widget.com", "https://s.tradingview.com"];
 
@@ -38,13 +39,12 @@ const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
 const statusScript = (parent: string) => `
   const PARENT = ${JSON.stringify(parent)};
   const post = (state) => parent.postMessage({ type: "atrium-tv", state }, PARENT);
-  const box = document.querySelector(".tradingview-widget-container__widget");
-  const watch = (frame) => frame.addEventListener("load", () => post("loaded"), { once: true });
+  const box = document.querySelector(".tradingview-widget-container");
   const seen = new MutationObserver(() => {
     const frame = box.querySelector("iframe");
     if (!frame) return;
     seen.disconnect();
-    watch(frame);
+    frame.addEventListener("load", () => post("loaded"), { once: true });
   });
   seen.observe(box, { childList: true, subtree: true });
   window.addEventListener(

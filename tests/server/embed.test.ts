@@ -25,6 +25,7 @@ test("serves TradingView's widget with a strict CSP framed only by the parent", 
   expect(csp).toContain("connect-src 'none'");
   expect(csp).toContain("img-src 'none'");
   expect(csp).toContain("frame-ancestors http://127.0.0.1:7571");
+
   expect(r.headers.get("referrer-policy")).toBe("origin");
   expect(r.headers.get("x-content-type-options")).toBe("nosniff");
   expect(r.headers.get("cache-control")).toBe("no-store");
@@ -73,13 +74,20 @@ afterEach(() => {
   home.cleanup();
 });
 
-test("refuses a foreign Host", async () => {
+test("the chart page has a listener of its own with no API, and the engine doesn't serve it", async () => {
   server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0 });
   const port = server.port;
-  const ok = await fetch(`http://127.0.0.1:${port}/embed/tradingview?${q("NASDAQ:AMZN", `http://127.0.0.1:${port}`)}`, { headers: { host: `localhost:${port}` } });
+  const ep = server.embedPort!;
+  expect(ep).toBeGreaterThan(0);
+  expect(ep).not.toBe(port);
+  const page = `/embed/tradingview?${q("NASDAQ:AMZN", `http://127.0.0.1:${port}`)}`;
+  const ok = await fetch(`http://127.0.0.1:${ep}${page}`, { headers: { host: `localhost:${ep}` } });
   expect(ok.status).toBe(200);
-  const bad = await fetch(`http://127.0.0.1:${port}/embed/tradingview?${q("NASDAQ:AMZN", `http://127.0.0.1:${port}`)}`, { headers: { host: "evil.example" } });
-  expect(bad.status).toBe(403);
+  expect((await fetch(`http://127.0.0.1:${ep}${page}`, { headers: { host: "evil.example" } })).status).toBe(403);
+  for (const path of ["/api/state", "/api/summary", "/ws", "/"]) expect((await fetch(`http://127.0.0.1:${ep}${path}`)).status).toBe(404);
+  expect((await fetch(`http://127.0.0.1:${ep}/api/spaces`, { method: "POST", body: "{}" })).status).toBe(404);
+  // The engine's own port has no chart page.
+  expect((await fetch(`http://127.0.0.1:${port}${page}`)).status).toBe(404);
 });
 
 test("the page carries nothing but the symbol", async () => {
@@ -90,4 +98,25 @@ test("the page carries nothing but the symbol", async () => {
   expect(body).not.toContain("93021");
   expect(body).not.toContain("/api/");
   expect(body).not.toContain("TFSA");
+});
+
+test("nothing in the embed's context can reach the API or the socket", async () => {
+  server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0 });
+  const port = server.port;
+  const base = `http://127.0.0.1:${port}`;
+  const embedOrigin = `http://localhost:${server.embedPort}`;
+  const embedPage = `${embedOrigin}/embed/tradingview?symbol=NASDAQ%3AAMZN&parent=${encodeURIComponent(base)}`;
+  // What the chart page's scripts would send: their own origin, the page as Referer, Sec-Fetch-Site same-site.
+  const asEmbed = (path: string, init: RequestInit = {}) =>
+    fetch(base + path, { ...init, headers: { origin: embedOrigin, referer: embedPage, "sec-fetch-site": "same-site", ...(init.headers as Record<string, string>) } });
+  expect((await asEmbed("/api/state")).status).toBe(403);
+  expect((await asEmbed("/api/spaces", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x", kind: "general" }) })).status).toBe(403);
+  expect((await asEmbed("/ws")).status).toBe(403);
+  // A sandboxed frame's Origin null alone, and the embed Referer alone, are each refused too.
+  expect((await fetch(`${base}/api/state`, { headers: { origin: "null" } })).status).toBe(403);
+  expect((await fetch(`${base}/api/state`, { headers: { referer: embedPage } })).status).toBe(403);
+  expect((await fetch(`${base}/api/summary`, { headers: { referer: embedPage } })).status).toBe(403);
+  // The dashboard and plain reads still work.
+  expect((await fetch(`${base}/api/state`)).status).toBe(200);
+  expect((await fetch(`${base}/api/state`, { headers: { origin: base, referer: `${base}/space/x` } })).status).toBe(200);
 });
