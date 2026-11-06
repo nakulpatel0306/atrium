@@ -6,7 +6,7 @@ import { config } from "./engine/config";
 import { openDb } from "./engine/db";
 import { logActivity } from "./engine/events";
 import { migrateSpaceFolders, tildePath } from "./engine/folders";
-import { trimLog } from "./engine/logfile";
+import { stampConsole, trimLog } from "./engine/logfile";
 import { keepAwake, powerSource } from "./engine/power";
 import { createRunner, recoverOnBoot } from "./engine/runner";
 import { onApprovalResolved } from "./engine/approvals";
@@ -39,6 +39,7 @@ import { startServer } from "./server/server";
 
 // Keep launchd's log from growing forever; must run before anything logs.
 trimLog(join(config().home, "engine.log"), 1024 * 1024);
+stampConsole();
 
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();

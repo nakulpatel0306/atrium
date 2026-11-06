@@ -18,6 +18,8 @@ export function saveFundFile(db: Database, file: FundFile, fetchedAt: number): v
 }
 
 export function noteFundError(db: Database, fund: string, message: string, at: number): void {
+  const before = fundError(db, fund);
+  if (before !== message) console.error(`Fund holdings ${fund}: ${message}`);
   const updated = db.query("UPDATE fund_files SET last_error = ?, last_attempt_at = ? WHERE fund = ?").run(message, at, fund).changes;
   // A fund that never had a good file still records why, without lines (as_of '' marks "no file").
   if (!updated) {

@@ -1,3 +1,4 @@
+import { format } from "node:util";
 import { closeSync, openSync, readSync, statSync, writeFileSync } from "node:fs";
 
 // Rewrites in place (same inode) because launchd already holds the file open for appending.
@@ -17,4 +18,12 @@ export function trimLog(path: string, maxBytes: number): void {
     closeSync(fd);
   }
   writeFileSync(path, buf);
+}
+
+// launchd writes stdout and stderr to engine.log as they are, so each line gets its time here.
+export function stampConsole(now: () => Date = () => new Date()): void {
+  for (const name of ["log", "error"] as const) {
+    const write = console[name].bind(console);
+    console[name] = (...args: unknown[]) => write(`${now().toISOString()} ${format(...args)}`);
+  }
 }

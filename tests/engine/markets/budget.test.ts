@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../../src/engine/db";
 import { dataBudget, hourlyBudget, meteredFetch, noteSourceResult, planAlphaVantage, SOURCE_INFO } from "../../../src/engine/markets/budget";
@@ -67,4 +67,20 @@ test("planAlphaVantage puts held symbols first and keeps the reserve", () => {
   expect(planAlphaVantage(i)).toEqual({ eod: ["ATZ.TO", "VFV.TO", "XEQT.TO", "SHOP.TO"], deferred: [], spare: 16 });
   expect(planAlphaVantage({ ...i, used: 18 })).toEqual({ eod: ["ATZ.TO", "VFV.TO"], deferred: ["XEQT.TO", "SHOP.TO"], spare: 0 });
   expect(planAlphaVantage({ ...i, used: 30 })).toEqual({ eod: [], deferred: ["ATZ.TO", "VFV.TO", "XEQT.TO", "SHOP.TO"], spare: 0 });
+});
+
+test("a provider's new error goes to the engine log once, redacted by the caller, and its recovery once", () => {
+  const err = spyOn(console, "error").mockImplementation(() => {});
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  try {
+    noteSourceResult(db, "alphavantage", false, "Alpha Vantage asked Atrium to slow down; it will try again in a minute.", WED_NOON);
+    noteSourceResult(db, "alphavantage", false, "Alpha Vantage asked Atrium to slow down; it will try again in a minute.", WED_NOON + 60_000);
+    noteSourceResult(db, "alphavantage", true, undefined, WED_NOON + 120_000);
+    noteSourceResult(db, "alphavantage", true, undefined, WED_NOON + 180_000);
+    expect(err.mock.calls.map((c) => c[0])).toEqual(["Alpha Vantage: Alpha Vantage asked Atrium to slow down; it will try again in a minute."]);
+    expect(log.mock.calls.map((c) => c[0])).toEqual(["Alpha Vantage is working again."]);
+  } finally {
+    err.mockRestore();
+    log.mockRestore();
+  }
 });

@@ -100,12 +100,15 @@ export function meteredFetch(db: Database, source: DataSource, f: typeof fetch, 
 
 type SourceState = { lastOkAt: number | null; lastError: string | null; lastErrorAt: number | null };
 
-// The caller passes an already redacted message.
+// The caller passes an already redacted message. A new error, and the recovery from one, also go to the engine log,
+// once each rather than on every retry, so the day's provider errors can be read there.
 export function noteSourceResult(db: Database, source: DataSource, ok: boolean, message?: string, now: number = Date.now()): void {
   const key = `markets.source.${source}`;
   const raw = readSetting(db, key);
   const cur: SourceState = raw ? (JSON.parse(raw) as SourceState) : { lastOkAt: null, lastError: null, lastErrorAt: null };
   const next: SourceState = ok ? { lastOkAt: now, lastError: null, lastErrorAt: null } : { ...cur, lastError: message ?? "Failed.", lastErrorAt: now };
+  if (!ok && next.lastError !== cur.lastError) console.error(`${SOURCE_INFO[source].label}: ${next.lastError}`);
+  if (ok && cur.lastError) console.log(`${SOURCE_INFO[source].label} is working again.`);
   upsert(db, key, JSON.stringify(next));
 }
 
