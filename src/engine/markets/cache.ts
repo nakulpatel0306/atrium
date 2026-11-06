@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Bar, Freshness, ProviderId, Quote, Timeframe } from "./providers/types";
 
-type QuoteRow = { key: string; price: number; prev_close: number | null; at: number; source: ProviderId; freshness: Freshness };
+type QuoteRow = { key: string; price: number; prev_close: number | null; at: number; source: ProviderId; freshness: Freshness; fetched_at: number };
 
 export function saveQuotes(db: Database, quotes: Quote[]): void {
   const q = db.query(
@@ -11,7 +11,7 @@ export function saveQuotes(db: Database, quotes: Quote[]): void {
   );
   const fetchedAt = Date.now();
   db.transaction(() => {
-    for (const x of quotes) q.run(x.key, x.price, x.prevClose, x.at, x.source, x.freshness, fetchedAt);
+    for (const x of quotes) q.run(x.key, x.price, x.prevClose, x.at, x.source, x.freshness, x.fetchedAt ?? fetchedAt);
   })();
 }
 
@@ -19,7 +19,10 @@ export function cachedQuotes(db: Database, keys: string[]): Map<string, Quote> {
   const out = new Map<string, Quote>();
   if (!keys.length) return out;
   const rows = db.query(`SELECT * FROM market_quotes WHERE key IN (${keys.map(() => "?").join(",")})`).all(...keys) as QuoteRow[];
-  for (const r of rows) out.set(r.key, { key: r.key, price: r.price, prevClose: r.prev_close, at: r.at, source: r.source, freshness: r.freshness });
+  for (const r of rows) {
+    const q: Quote = { key: r.key, price: r.price, prevClose: r.prev_close, at: r.at, source: r.source, freshness: r.freshness };
+    out.set(r.key, r.source === "yahoo" ? { ...q, fetchedAt: r.fetched_at } : q);
+  }
   return out;
 }
 

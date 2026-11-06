@@ -2,7 +2,8 @@ import type { Exchange, Instrument } from "../instrument";
 
 export type ProviderId = "alpaca" | "finnhub" | "alphavantage" | "tiingo" | "yahoo" | "demo";
 export type Freshness = "live" | "eod" | "demo";
-export type Quote = { key: string; price: number; prevClose: number | null; at: number; source: ProviderId; freshness: Freshness };
+// fetchedAt is set only by Yahoo, whose freshness is judged by when Atrium fetched it rather than by its last trade.
+export type Quote = { key: string; price: number; prevClose: number | null; at: number; source: ProviderId; freshness: Freshness; fetchedAt?: number };
 // t is epoch seconds; a daily bar sits at its session date's ET midnight.
 export type Bar = { t: number; o: number; h: number; l: number; c: number; v: number };
 export type Timeframe = "1Day" | "5Min";

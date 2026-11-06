@@ -58,7 +58,7 @@ test("a typed TSX key is offered with a note, once", async () => {
   const empty = fake(() => []);
   const r = await searchSymbols(empty.p, "TSX:XEQT");
   expect(r.hits).toEqual([
-    { key: "XEQT.TO", symbol: "XEQT", exchange: "TSX", name: "XEQT.TO", type: "typed", note: "Not in Finnhub's search. Atrium will price it from Alpha Vantage after the close." } satisfies SearchHit,
+    { key: "XEQT.TO", symbol: "XEQT", exchange: "TSX", name: "XEQT.TO", type: "typed", note: "Not in Finnhub's search. Atrium prices it from Yahoo Finance during TSX hours." } satisfies SearchHit,
   ]);
   const xeqt = fake(() => raw("xeqt").result);
   const r2 = await searchSymbols(xeqt.p, "xeqt.to");

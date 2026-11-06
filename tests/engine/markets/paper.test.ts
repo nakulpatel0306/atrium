@@ -45,7 +45,7 @@ test("every refusal", () => {
   expect(no(placePaperOrder(db, order("buy", 1), quote("AAPL", 100, Date.parse("2026-11-07T15:00:00Z")), Date.parse("2026-11-07T15:00:00Z")))).toBe(
     "Paper trades only fill while the US market is open.",
   );
-  expect(no(placePaperOrder(db, order("buy", 1, "SHOP.TO"), quote("SHOP.TO", 100), NOW))).toBe("Paper trading covers US stocks only; Canadian prices here are end-of-day.");
+  expect(no(placePaperOrder(db, order("buy", 1, "SHOP.TO"), quote("SHOP.TO", 100), NOW))).toBe("Paper trading covers US stocks only.");
   expect(no(placePaperOrder(db, order("buy", 1), null, NOW))).toBe("No live price for AAPL right now.");
   expect(no(placePaperOrder(db, order("buy", 1), quote("AAPL", 100, NOW - 16 * 60_000), NOW))).toBe("The last price for AAPL is more than 15 minutes old.");
   expect(no(placePaperOrder(db, order("buy", 200), quote("AAPL", 100), NOW))).toBe("Not enough paper cash: this needs $20,000.00 and you have $10,000.00.");

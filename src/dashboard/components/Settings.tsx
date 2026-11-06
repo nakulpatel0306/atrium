@@ -183,7 +183,7 @@ export function Settings() {
               {s.feed.reason}
             </span>
           </div>
-          <p className="hint">TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). After the close, Alpha Vantage's close is used.</p>
+          <p className="hint">TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Add a free Alpha Vantage key for official closing prices.</p>
           <div className="mk-form">
             <button className="btn" onClick={() => void runTest()} disabled={testing}>
               <PlugZap />

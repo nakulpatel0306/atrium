@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../../src/engine/db";
 import { dailyBudget } from "../../../src/engine/markets/budget";
-import { tsxHolidays, tsxOpen } from "../../../src/engine/markets/calendar";
+import { tsxEarlyCloses, tsxHolidays, tsxOpen } from "../../../src/engine/markets/calendar";
 import { YAHOO_BACKOFF_MS, yahooProvider } from "../../../src/engine/markets/providers/yahoo";
 import { ProviderError } from "../../../src/engine/markets/providers/types";
 import { tempHome } from "../../helpers";
@@ -38,7 +38,7 @@ const err = async (p: Promise<unknown>) => {
 test("parses the chart meta into a quote", async () => {
   const f = stubFetch(chart);
   const p = provider(f.fetch);
-  expect(await p.quotes([XEQT])).toEqual([{ key: "XEQT.TO", price: 44.46, prevClose: 43.95, at: TRADE, source: "yahoo", freshness: "live" }]);
+  expect(await p.quotes([XEQT])).toEqual([{ key: "XEQT.TO", price: 44.46, prevClose: 43.95, at: TRADE, source: "yahoo", freshness: "live", fetchedAt: now }]);
   expect(p.label).toBe("Yahoo Finance");
 });
 
@@ -68,10 +68,50 @@ test("a TSX-V listing is asked for with Yahoo's .V suffix", async () => {
   expect(f.calls[0]!.url.pathname).toBe("/v8/finance/chart/ABC.V");
 });
 
-test("a trade older than 20 minutes isn't called live", async () => {
-  now = TRADE + 21 * 60_000;
+test("any answer in session is live, however long ago the last trade was", async () => {
+  now = TRADE + 2 * 60 * 60_000;
   const [q] = await provider(stubFetch(chart).fetch).quotes([XEQT]);
-  expect(q!.freshness).toBe("eod");
+  expect(q).toMatchObject({ at: TRADE, freshness: "live", fetchedAt: now });
+});
+
+test("a US listing or anything else sends nothing", async () => {
+  const f = stubFetch(chart);
+  const p = provider(f.fetch);
+  expect(await p.quotes([{ symbol: "SPY", exchange: "US" }, { symbol: "AAPL", exchange: "NEO" }, { symbol: "GBTC", exchange: "OTC" }])).toEqual([]);
+  expect(f.calls).toHaveLength(0);
+});
+
+test("validate goes through the same hours and pause guards", async () => {
+  const f = stubFetch(() => new Response("", { status: 429 }));
+  const p = provider(f.fetch);
+  now = Date.parse("2026-11-07T17:00:00Z");
+  await p.validate();
+  expect(f.calls).toHaveLength(0);
+  now = TRADE;
+  await err(p.validate());
+  expect(f.calls).toHaveLength(1);
+  await p.validate();
+  expect(f.calls).toHaveLength(1);
+});
+
+test("TSX closes at 1:00 PM ET on Christmas Eve and New Year's Eve", () => {
+  expect(tsxEarlyCloses(2026)).toEqual(["2026-12-24", "2026-12-31"]);
+  // Weekend eves aren't sessions at all.
+  expect(tsxEarlyCloses(2028)).toEqual([]);
+  expect(tsxOpen(Date.parse("2026-12-24T17:59:00Z"))).toBe(true);
+  expect(tsxOpen(Date.parse("2026-12-24T18:00:00Z"))).toBe(false);
+  expect(tsxOpen(Date.parse("2026-12-31T18:00:00Z"))).toBe(false);
+  expect(tsxOpen(Date.parse("2026-12-30T20:00:00Z"))).toBe(true);
+});
+
+test("a failure partway keeps what was fetched and says why", async () => {
+  const f = stubFetch((url) => (url.pathname.endsWith("/VFV.TO") ? new Response("", { status: 429 }) : chart()));
+  const p = provider(f.fetch);
+  const got = await p.quotes([XEQT, VFV, { symbol: "ATZ", exchange: "TSX" }]);
+  expect(got.map((q) => q.key)).toEqual(["XEQT.TO"]);
+  expect(p.lastFailure()).toBe("Yahoo Finance says too many requests. TSX prices show the last close; Atrium tries again in 15 minutes.");
+  expect(f.calls).toHaveLength(2);
+  expect(p.live()).toBe(false);
 });
 
 test("TSX hours: weekdays 9:30 to 4:00 ET, closed on Canadian holidays", () => {
@@ -176,8 +216,10 @@ test("a price quoted in another currency is not used", async () => {
 test("Atrium's own daily cap stops requests", async () => {
   const f = stubFetch(chart);
   const p = provider(f.fetch, 2);
+  expect(p.capped()).toBe(false);
   await p.quotes([XEQT, VFV]);
   expect(p.live()).toBe(false);
+  expect(p.capped()).toBe(true);
   const e = await err(p.quotes([XEQT]));
   expect(e.kind).toBe("rate_limited");
   expect(e.message).toBe("Atrium's own cap of 2 Yahoo Finance requests today is reached. TSX prices show the last close until tomorrow.");

@@ -151,10 +151,17 @@ function tsxTrading(date: string): boolean {
   return dow !== 0 && dow !== 6 && !tsxHolidays(y).some((h) => h.date === date);
 }
 
-// Toronto's regular session, in ET. Early closes aren't modelled: a late price just stops being live.
+// TSX closes at 1:00 PM ET on Christmas Eve and New Year's Eve when they're trading days.
+export function tsxEarlyCloses(year: number): string[] {
+  return [iso(year, 12, 24), iso(year, 12, 31)].filter(tsxTrading);
+}
+
+// Toronto's regular session, in ET.
 export function tsxOpen(now: number): boolean {
   const { date, hhmm } = etParts(now);
-  return tsxTrading(date) && hhmm >= "09:30" && hhmm < "16:00";
+  if (!tsxTrading(date)) return false;
+  const closes = tsxEarlyCloses(Number(date.slice(0, 4))).includes(date) ? "13:00" : "16:00";
+  return hhmm >= "09:30" && hhmm < closes;
 }
 
 // The next 9:30 ET open after `now` (today's, if it's still ahead).

@@ -124,7 +124,7 @@ export function placePaperOrder(
   const reasoning = input.reasoning.trim();
   if (!reasoning) return refuse("Give a reason for the trade; it's kept with the fill.");
   const inst = parseInstrumentKey(input.symbol);
-  if (!inst || inst.exchange !== "US") return refuse("Paper trading covers US stocks only; Canadian prices here are end-of-day.");
+  if (!inst || inst.exchange !== "US") return refuse("Paper trading covers US stocks only.");
   const symbol = inst.symbol;
   if (!usSession(now).open) return refuse("Paper trades only fill while the US market is open.");
   if (!quote || quote.freshness === "eod") return refuse(`No live price for ${symbol} right now.`);

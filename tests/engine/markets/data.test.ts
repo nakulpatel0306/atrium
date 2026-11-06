@@ -78,7 +78,7 @@ test("no keys → every instrument missing with its reason", async () => {
   expect(r.quotes).toEqual([]);
   expect(r.missing).toEqual([
     { key: "AAPL", reason: "Add your Finnhub key in Settings → Market data." },
-    { key: "SHOP.TO", reason: "No Canadian price yet. Yahoo Finance fills in during TSX hours; a free Alpha Vantage key (Settings → Market data) adds the official close." },
+    { key: "SHOP.TO", reason: "Not priced yet. Yahoo Finance fills in during TSX hours (9:30 AM to 4:00 PM ET)." },
     { key: "AAPL.NE", reason: "No free source covers NEO-listed CDRs." },
     { key: "GBTC:OTC", reason: "No free source covers OTC stocks." },
   ]);

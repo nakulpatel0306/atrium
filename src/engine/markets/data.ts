@@ -3,8 +3,9 @@ import { getSetting } from "../settings";
 import { dailyBudget, hourlyBudget, meteredFetch, noteSourceResult, YAHOO_DAILY_CAP } from "./budget";
 import { cachedBars, cachedQuotes, saveBars, saveQuotes } from "./cache";
 import { closes, recordCloses } from "./closes";
-import { etClock, etDate, etInstant, lastCompletedSession } from "./calendar";
+import { etClock, etDate, etInstant, lastCompletedSession, tsxOpen } from "./calendar";
 import { instrumentKey, type Instrument } from "./instrument";
+import { CA_NOT_PRICED } from "./labels";
 import { KEY_ACCOUNTS, KEYCHAIN_LOCKED, type Keychain } from "./keychain";
 import { alpacaProvider } from "./providers/alpaca";
 import { alphaVantageProvider } from "./providers/alphavantage";
@@ -58,7 +59,7 @@ const FIVE_DAY_SPAN_MS = 8 * DAY_MS;
 export const MISSING = {
   alpaca: "Add your Alpaca key in Settings → Market data.",
   finnhub: "Add your Finnhub key in Settings → Market data.",
-  ca: "No Canadian price yet. Yahoo Finance fills in during TSX hours; a free Alpha Vantage key (Settings → Market data) adds the official close.",
+  ca: CA_NOT_PRICED,
   neo: "No free source covers NEO-listed CDRs.",
   otc: "No free source covers OTC stocks.",
   history: "Atrium's own daily closes from Finnhub prices. History builds up over time.",
@@ -71,11 +72,13 @@ const YAHOO_PAUSE_KEY = "markets.yahoo.pausedUntil";
 const isCanadian = (i: Instrument) => i.exchange === "TSX" || i.exchange === "TSXV";
 const CA_SOURCES = new Set<ProviderId>(["yahoo", "alphavantage"]);
 
-// Yahoo's intraday price and Alpha Vantage's close share one cached row per listing, and the newer is "price now".
-// A Yahoo price that's no longer live never replaces a stored close from Alpha Vantage.
-function replacesCached(q: Quote, old: Quote | undefined): boolean {
+// Yahoo's intraday price and Alpha Vantage's close share one cached row per listing. A Yahoo trade beats a close
+// only from a later session (the closing auction's print is the close itself, so the official one stays). A close
+// never replaces a Yahoo price fetched today while Toronto is open; after that, the newer one wins.
+function replacesCached(q: Quote, old: Quote | undefined, now: number): boolean {
   if (!old || !CA_SOURCES.has(old.source) || old.source === q.source) return true;
-  if (q.source === "yahoo" && q.freshness !== "live") return false;
+  if (q.source === "yahoo") return etDate(q.at) > etDate(old.at);
+  if (tsxOpen(now) && etDate(old.fetchedAt ?? old.at) === etDate(now)) return false;
   return q.at > old.at;
 }
 
@@ -278,13 +281,17 @@ export function createMarketData(deps: {
       for (const [p, group] of groups) {
         try {
           const got = await p.quotes(group);
-          note(p, true);
+          // Yahoo keeps what it fetched before a mid-batch failure; the rest are missing for that reason.
+          const failed = p === yahoo ? yahoo.lastFailure() : null;
+          note(p, !failed, failed ? message(failed) : undefined);
           const cached = cachedQuotes(db, got.map((q) => q.key));
-          const kept = got.map((q) => (replacesCached(q, cached.get(q.key)) ? q : cached.get(q.key)!));
+          const kept = got.map((q) => (replacesCached(q, cached.get(q.key), now()) ? q : cached.get(q.key)!));
           saveQuotes(db, kept.filter((q) => q.source === p.id));
           quotes.push(...kept);
           const seen = new Set(got.map((q) => q.key));
-          for (const i of group) if (!seen.has(instrumentKey(i))) missing.push({ key: instrumentKey(i), reason: `${p.label} has no price for ${instrumentKey(i)}.` });
+          for (const i of group) {
+            if (!seen.has(instrumentKey(i))) missing.push({ key: instrumentKey(i), reason: failed ? message(failed) : `${p.label} has no price for ${instrumentKey(i)}.` });
+          }
         } catch (e) {
           const reason = message(e);
           note(p, false, reason);
@@ -369,7 +376,13 @@ export function createMarketData(deps: {
           : { ready: true, message: "Finnhub · real-time" };
       const left = dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, now).remaining();
       const paused = yahoo ? yahoo.pausedUntil() : 0;
-      const day = !yahoo ? null : paused > now() ? `Yahoo Finance paused until ${etClock(paused)} after an error` : "Yahoo Finance during TSX hours (a few minutes delayed)";
+      const day = !yahoo
+        ? null
+        : yahoo.capped()
+          ? `Yahoo Finance stopped for today (Atrium's ${YAHOO_DAILY_CAP.toLocaleString("en-US")}-request cap)`
+          : paused > now()
+            ? `Yahoo Finance paused until ${etClock(paused)} after an error`
+            : "Yahoo Finance during TSX hours";
       const ca = rejected.alphavantage
         ? { ready: false, message: rejected.alphavantage.message }
         : has.alphavantage()
