@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { config } from "../config";
 
@@ -10,6 +11,11 @@ export function atriumDenyPaths(cwd: string): string[] {
   const { home, dbPath, transcriptsDir, filesHome } = config();
   const spaces = join(home, "spaces");
   const paths = new Set([dbPath, `${dbPath}-wal`, `${dbPath}-shm`, transcriptsDir, join(home, "engine.log")]);
+  // A dev or test engine with folders of its own must still keep its agents out of the real ones.
+  const realHome = join(homedir(), "Library", "Application Support", "Atrium");
+  const realFiles = join(homedir(), "Atrium");
+  if (realHome !== home) paths.add(realHome);
+  if (realFiles !== filesHome) paths.add(realFiles);
   // An engine with its own ATRIUM_HOME keeps the files folder inside it; that one is handled below.
   for (const name of list(home)) if (name !== "spaces" && join(home, name) !== filesHome) paths.add(join(home, name));
   for (const root of [spaces, filesHome]) {

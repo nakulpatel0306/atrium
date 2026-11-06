@@ -16,6 +16,8 @@ import { createRule } from "../../src/engine/autonomy/rules";
 import { openDb } from "../../src/engine/db";
 import * as gitOps from "../../src/engine/git";
 import * as scratch from "../../src/engine/scratch";
+import * as snapshot from "../../src/engine/outputs/snapshot";
+import { taskFiles } from "../../src/engine/outputs/store";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { BASE_TOOLS, createRunner, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
@@ -120,6 +122,7 @@ async function waitFor(cond: () => boolean, ms = 3000) {
   }
 }
 
+const realSnapshot = snapshot.snapshotFolder;
 const generalSpace = () => createSpace(db, { name: "Docs", kind: "general", goal: "Write clear docs" });
 const repoSpace = (path: string) => createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path });
 const status = (id: string) => getTask(db, id)!.status;
@@ -1582,4 +1585,124 @@ describe("agents and repos", () => {
     expect(existsSync(join(gh.projects, "demo", "README.md"))).toBe(true);
     expect(db.query("SELECT COUNT(*) AS n FROM approvals WHERE always_ask IS NOT NULL").get()).toEqual({ n: 0 });
   }, 30_000);
+});
+
+describe("what a run made", () => {
+  test("a general run records the files it made", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Groceries" });
+    start({
+      adapter: fakeAdapter((input) => {
+        writeFileSync(join(input.cwd, "grocery-list.md"), "- milk\n");
+        writeFileSync(join(input.cwd, "week.ics"), "BEGIN:VCALENDAR\n");
+        mkdirSync(join(input.cwd, ".claude", ".cc-writes"), { recursive: true });
+        return ok("**Done.** Made the list.");
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "review");
+    const files = taskFiles(db, t.id);
+    expect(files.map((f) => [f.path, f.change, f.size, f.root]).sort()).toEqual([
+      ["grocery-list.md", "created", 7, "space"],
+      ["week.ics", "created", 16, "space"],
+    ]);
+    const detail = listPending(db)[0]!.detail;
+    expect(detail).toContain("Made 2 files: grocery-list.md and week.ics.");
+    expect(detail.indexOf("Made 2 files")).toBeGreaterThan(detail.indexOf("Made the list."));
+  });
+
+  test("a second run that edits a file records changed", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Groceries" });
+    let n = 0;
+    start({
+      adapter: fakeAdapter((input) => {
+        writeFileSync(join(input.cwd, "grocery-list.md"), n++ === 0 ? "- milk\n" : "- milk\n- eggs\n");
+        return ok();
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "review");
+    setTaskStatus(db, t.id, "queued");
+    runner!.kick();
+    await waitFor(() => listPending(db).length === 2);
+    expect(taskFiles(db, t.id).map((f) => [f.path, f.change])).toEqual([["grocery-list.md", "changed"]]);
+    expect(listPending(db)[0]!.detail).toContain("Changed grocery-list.md.");
+  });
+
+  test("a text-only run records nothing and adds no made line", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Answer" });
+    start({ adapter: fakeAdapter(() => ok("Just text.")).adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(taskFiles(db, t.id)).toEqual([]);
+    expect(listPending(db)[0]!.detail).not.toMatch(/Made |Changed |Deleted /);
+  });
+
+  test("a scratch run records kept files under runs/<runId>/", async () => {
+    const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
+    const t = createTask(db, { spaceId: s.id, title: "Write notes", agent: "codex" });
+    const codex = fakeAdapter((input) => {
+      writeFileSync(join(input.cwd, "notes.md"), "# notes\n");
+      return ok("Wrote notes.");
+    });
+    start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+    await waitFor(() => status(t.id) === "review");
+    const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+    expect(taskFiles(db, t.id).map((f) => [f.path, f.change])).toEqual([[`runs/${run.id}/notes.md`, "created"]]);
+    expect(listPending(db)[0]!.detail).toContain("Made notes.md.");
+  });
+
+  test("a repo run records the branch diff", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Add x" });
+    start({
+      adapter: fakeAdapter((input) => {
+        mkdirSync(join(input.cwd, "src"), { recursive: true });
+        writeFileSync(join(input.cwd, "src", "x.ts"), "export const x = 1;\n");
+        return ok();
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "review");
+    const [f] = taskFiles(db, t.id);
+    expect(f).toMatchObject({ root: "branch", ref: `atrium/${t.id}`, path: "src/x.ts", change: "created", insertions: 1 });
+    expect(listPending(db)[0]!.detail).not.toContain("Made src/x.ts.");
+  });
+
+  test("a recording failure doesn't change the outcome", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Groceries" });
+    const snap = spyOn(snapshot, "snapshotFolder");
+    let calls = 0;
+    snap.mockImplementation((dir, opts) => {
+      if (calls++ === 1) throw new Error("EACCES: permission denied");
+      return realSnapshot(dir, opts);
+    });
+    try {
+      start({
+        adapter: fakeAdapter((input) => {
+          writeFileSync(join(input.cwd, "a.md"), "a");
+          return ok();
+        }).adapter,
+      });
+      await waitFor(() => status(t.id) === "review");
+    } finally {
+      snap.mockRestore();
+    }
+    expect(listActivity(db).map((a) => a.message)).toContain(
+      "Couldn't list the files this run made: EACCES: permission denied. The work itself is saved; open the space's Files tab to see the folder.",
+    );
+  });
+
+  test("a blocked run still records what it left", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Groceries" });
+    start({
+      adapter: fakeAdapter((input) => {
+        writeFileSync(join(input.cwd, "half.md"), "half");
+        return { status: "error", kind: "failed", message: "It broke." };
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "blocked");
+    expect(taskFiles(db, t.id).map((f) => f.path)).toEqual(["half.md"]);
+  });
 });

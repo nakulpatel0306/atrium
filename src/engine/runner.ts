@@ -10,7 +10,10 @@ import { fingerprintOf } from "./autonomy/kinds";
 import { applyRule } from "./autonomy/rules";
 import { bus, logActivity } from "./events";
 import { spaceFolder } from "./folders";
+import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from "./outputs/snapshot";
+import { madeLine, recordRunFiles } from "./outputs/store";
 import {
+  branchFiles,
   branchOffDirty,
   branchSummary,
   commitAll,
@@ -389,6 +392,16 @@ export function createRunner(deps: {
     // A Claude run away from a repo works in the space folder itself, where its files stay; this is how a rule
     // tells a text answer from one that left files behind.
     const folderBefore = !repo && !r.scratch && task.kind === "work" ? folderState(r.cwd) : null;
+    // What the folder held before, so the review can say which files this run made. Runs/ holds kept scratch
+    // files, which their own runs record.
+    let snapBefore: Snapshot | null = null;
+    if (!repo && !r.scratch) {
+      try {
+        snapBefore = snapshotFolder(r.cwd, { skipTop: ["runs"] });
+      } catch {
+        // Reported once the run ends, when recording finds the folder unreadable too.
+      }
+    }
     const markets = space.kind === "markets" && task.kind === "work" ? deps.markets : undefined;
     let result: AgentRunResult;
     try {
@@ -480,6 +493,9 @@ export function createRunner(deps: {
       }
     }
 
+    // Before any status change, so every ended run (finished, blocked or stopped) says what it left.
+    const made = await recordMade({ task, space, runId, repo, cwd: r.cwd, scratch: r.scratch, kept, before: snapBefore, tampered: leftRepo !== null });
+
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
     let settled: Settled | null = null;
     try {
@@ -517,6 +533,9 @@ export function createRunner(deps: {
         logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`);
       } else if (result.status === "ok") {
         const lines = [result.summary.trim(), ...(settled?.lines ?? [])];
+        // Repo runs already count their files in the branch summary.
+        const madeText = !repo && made ? madeLine(made.changes, made.display) : null;
+        if (madeText) lines.splice(1, 0, madeText);
         const report = repo ? await repoReport(repo) : null;
         if (report) lines.push(...report.lines);
         if (kept) lines.push(keptLine(kept));
@@ -551,6 +570,48 @@ export function createRunner(deps: {
       }
     } finally {
       enforceTranscriptCap();
+    }
+  }
+
+  // Records the files a run created, changed or deleted. A failure is logged and never changes the task's outcome.
+  async function recordMade(r: {
+    task: Task;
+    space: Space;
+    runId: string;
+    repo: RepoRun | null;
+    cwd: string;
+    scratch: boolean;
+    kept: Kept | null;
+    before: Snapshot | null;
+    tampered: boolean;
+  }): Promise<{ changes: FileChange[]; display?: (path: string) => string } | null> {
+    const run = { runId: r.runId, taskId: r.task.id, spaceId: r.space.id };
+    try {
+      if (r.repo) {
+        // The repo's git settings changed under the run; nothing more is read from it until Nakul looks.
+        if (r.tampered) return null;
+        // The same start repoReport counts from: a fix counts from where its parent's work began.
+        const base = (r.task.kind === "fix" && r.task.parentTaskId && lastRepoRun(db, r.task.parentTaskId)?.start) || r.repo.start;
+        const files = await branchFiles(r.repo.path, base, r.repo.branch);
+        const changes = files.map((f) => ({ ...f, size: null }));
+        if (changes.length) recordRunFiles(db, { ...run, root: "branch", ref: r.repo.branch }, changes);
+        return { changes };
+      }
+      if (r.scratch) {
+        if (!r.kept || r.kept.failed || r.kept.files === 0) return null;
+        const prefix = `runs/${r.runId}/`;
+        const changes = [...snapshotFolder(r.kept.dir).files].map(([path, e]): FileChange => ({ path: prefix + path, change: "created", size: e.size }));
+        if (changes.length) recordRunFiles(db, { ...run, root: "space" }, changes);
+        return { changes, display: (p) => p.slice(prefix.length) };
+      }
+      if (!r.before) throw new Error("the folder couldn't be read before the run");
+      const changes = diffSnapshots(r.before, snapshotFolder(r.cwd, { skipTop: ["runs"] }));
+      if (changes.length) recordRunFiles(db, { ...run, root: "space" }, changes);
+      return { changes };
+    } catch (e) {
+      const why = (e as Error).message.trim().replace(/\.$/, "");
+      logActivity(db, r.space.id, "atrium", `Couldn't list the files this run made: ${why}. The work itself is saved; open the space's Files tab to see the folder.`);
+      return null;
     }
   }
 

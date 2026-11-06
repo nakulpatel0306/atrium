@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { atriumDenyPaths } from "../../src/engine/agents/atrium-paths";
 import { sandboxSettings } from "../../src/engine/agents/claude";
@@ -91,5 +91,30 @@ test("a repo or scratch run is denied the whole visible folder", () => {
   } finally {
     delete process.env.ATRIUM_FILES_HOME;
     rmSync(files, { recursive: true, force: true });
+  }
+});
+
+test("an engine with its own folders still denies the real ~/Atrium and the real data folder", () => {
+  const realFiles = join(homedir(), "Atrium");
+  const realData = join(homedir(), "Library", "Application Support", "Atrium");
+  const denied = atriumDenyPaths(mine());
+  expect(denied).toContain(realFiles);
+  expect(denied).toContain(realData);
+  const { sandbox } = JSON.parse(sandboxSettings(mine()));
+  expect(sandbox.filesystem.denyRead).toContain(realFiles);
+  expect(seatbeltProfile({ cwd: mine(), writable: [mine()] })).toContain(`(subpath "${realFiles}")`);
+});
+
+test("the real ~/Atrium isn't denied whole when it is this engine's own files folder", () => {
+  const realFiles = join(homedir(), "Atrium");
+  process.env.ATRIUM_FILES_HOME = realFiles;
+  try {
+    const own = join(realFiles, "weekly-planning");
+    const denied = atriumDenyPaths(own);
+    expect(denied).not.toContain(realFiles);
+    expect(denied).not.toContain(own);
+    expect(atriumDenyPaths("/tmp/some-repo")).toContain(realFiles);
+  } finally {
+    delete process.env.ATRIUM_FILES_HOME;
   }
 });
