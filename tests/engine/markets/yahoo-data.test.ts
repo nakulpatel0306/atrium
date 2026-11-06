@@ -10,7 +10,7 @@ import { addHolding } from "../../../src/engine/markets/holdings";
 import type { Instrument } from "../../../src/engine/markets/instrument";
 import type { Keychain } from "../../../src/engine/markets/keychain";
 import { CA_NOT_PRICED, freshnessText } from "../../../src/engine/markets/labels";
-import { healthFor } from "../../../src/engine/markets/portfolio";
+import { healthFor, portfolioDay } from "../../../src/engine/markets/portfolio";
 import type { Quote } from "../../../src/engine/markets/providers/types";
 import { isEarlierDay, mixLabel, priceTag, quoteSourced } from "../../../src/engine/markets/sourced";
 import { tempHome } from "../../helpers";
@@ -157,21 +157,69 @@ test("overnight handover: Yahoo in the day, Alpha Vantage's close after it, Yaho
   expect(cached()).toMatchObject({ source: "yahoo", price: 44.7 });
 });
 
-test("during TSX hours an Alpha Vantage close never replaces a Yahoo price fetched today", async () => {
+test("a thin listing's earlier-session trade isn't live, and the newer official close beats it", async () => {
   // VFV trades thinly: at 12:19 its last trade is still Thursday's 3:58 PM, a little before Thursday's close.
   const f = world(yahooTrade(Date.parse("2026-11-05T20:58:00Z"), 120.1), avSeries({ "2026-11-04": 119, "2026-11-05": 120.2 }));
   const data = make(f);
   await data.quotes([VFV]);
-  expect(cachedQuotes(db, ["VFV.TO"]).get("VFV.TO")!.source).toBe("yahoo");
-  // With Yahoo paused, Canadian prices route to Alpha Vantage, whose Thursday close is newer than VFV's last trade.
+  const q = cachedQuotes(db, ["VFV.TO"]).get("VFV.TO")!;
+  expect(q.source).toBe("yahoo");
+  expect(quoteSourced(q, now)).toMatchObject({ source: "Yahoo Finance · last price of Nov 5", tone: "delayed" });
+  // With Yahoo paused, Canadian prices route to Alpha Vantage. Its Thursday close is newer than VFV's Thursday 3:58
+  // PM trade, so it replaces it.
   setSetting(db, "markets.yahoo.pausedUntil", String(now + 15 * 60_000));
   expect(data.providerFor(VFV)?.id).toBe("alphavantage");
   await data.quotes([VFV]);
-  expect(cachedQuotes(db, ["VFV.TO"]).get("VFV.TO")!).toMatchObject({ source: "yahoo", price: 120.1 });
-  // After 4:00 the newer one wins again.
-  now = Date.parse("2026-11-06T21:30:00Z");
-  await data.quotes([VFV]);
   expect(cachedQuotes(db, ["VFV.TO"]).get("VFV.TO")!).toMatchObject({ source: "alphavantage", price: 120.2 });
+});
+
+test("an Alpha Vantage close never replaces a Yahoo trade from today's session", async () => {
+  const f = world(yahooTrade(TRADE), avSeries({ "2026-11-04": 43.5, "2026-11-05": 43.95 }));
+  const data = make(f);
+  await data.quotes([XEQT]);
+  setSetting(db, "markets.yahoo.pausedUntil", String(now + 15 * 60_000));
+  await data.quotes([XEQT]);
+  expect(cachedQuotes(db, ["XEQT.TO"]).get("XEQT.TO")!).toMatchObject({ source: "yahoo", price: 44.46 });
+});
+
+test("Monday 9:31 with no Alpha Vantage key: Friday's Yahoo trade is not live and not today's change", async () => {
+  const spaceId = createSpace(db, { name: "TFSA", kind: "markets", goal: "invest" }).id;
+  addHolding(db, spaceId, { account: "TFSA", symbol: "XEQT", exchange: "TSX", name: "XEQT", quantity: 100, bookValue: 1000, currency: "CAD" });
+  now = Date.parse("2026-11-09T14:31:00Z");
+  const data = make(world(yahooTrade(TRADE)), FH);
+  await data.quotes([XEQT]);
+  const q = currentQuote(db, data, XEQT)!;
+  expect(q).toMatchObject({ source: "yahoo", freshness: "eod" });
+  const s = quoteSourced(q, now);
+  expect(s).toMatchObject({ source: "Yahoo Finance · last price of Nov 6", tone: "delayed" });
+  expect(priceTag(s, now)).toBe("last price Nov 6");
+  expect(isEarlierDay(priceTag(s, now))).toBe(true);
+  const day = portfolioDay(db, data, spaceId, now)!;
+  expect(day.dayLabel).toBe("on Fri, Nov 6");
+  expect(day.mix).not.toContain("real-time");
+  expect(day.closes).toBe(1);
+  expect(day.movers[0]!.tag).toBe("last price Nov 6");
+});
+
+test("Yahoo stops being live at the TSX close, including early closes", () => {
+  const q = (at: number): Quote => ({ key: "XEQT.TO", price: 44.46, prevClose: 43.95, at, source: "yahoo", freshness: "live", fetchedAt: at + 20_000 });
+  const late = q(Date.parse("2026-11-06T20:58:00Z"));
+  expect(quoteSourced(late, Date.parse("2026-11-06T20:59:30Z")).tone).toBe("live");
+  expect(quoteSourced(late, Date.parse("2026-11-06T21:01:00Z"))).toMatchObject({ source: "Yahoo Finance · last price 3:58 PM", tone: "delayed" });
+  const eve = q(Date.parse("2026-12-24T17:58:00Z"));
+  expect(quoteSourced(eve, Date.parse("2026-12-24T17:59:30Z")).tone).toBe("live");
+  expect(quoteSourced(eve, Date.parse("2026-12-24T18:01:00Z")).tone).toBe("delayed");
+});
+
+test("during TSX hours with no Alpha Vantage key, a paused or capped Yahoo says so", async () => {
+  const data = make(world(() => new Response("Too Many Requests", { status: 429 })), FH);
+  await data.quotes([XEQT]);
+  expect(data.reasonFor(XEQT)).toBe("Yahoo Finance is paused until 12:34 PM ET after an error.");
+  setSetting(db, "markets.yahoo.pausedUntil", "0");
+  setSetting(db, "markets.budget.yahoo.2026-11-06", "2000");
+  expect(data.reasonFor(XEQT)).toBe("Yahoo Finance stopped for today (Atrium's 2,000-request cap).");
+  now = SATURDAY;
+  expect(data.reasonFor(XEQT)).toBe(CA_NOT_PRICED);
 });
 
 test("a Yahoo answer in session is live however old its last trade; it goes stale 10 minutes after the fetch", async () => {
@@ -203,7 +251,7 @@ test("when Yahoo fails, the portfolio keeps the last close and the data page say
   expect(currentQuote(db, data, XEQT)!.source).toBe("alphavantage");
   // Paused: Canadian prices go back to Alpha Vantage's close and Yahoo isn't asked again.
   expect(data.providerFor(XEQT)?.id).toBe("alphavantage");
-  expect((await data.status()).ca.message).toStartWith("Yahoo Finance paused until 12:34 PM ET after an error; after the close, Alpha Vantage");
+  expect((await data.status()).ca.message).toStartWith("Yahoo Finance is paused until 12:34 PM ET after an error; after the close, Alpha Vantage");
   now += 5 * 60_000;
   await data.quotes([XEQT]);
   expect(yahooCalls(f)).toHaveLength(1);
@@ -221,7 +269,7 @@ test("the 15-minute pause survives an engine restart", async () => {
   const restarted = make(second);
   await restarted.reload();
   expect(restarted.providerFor(XEQT)?.id).toBe("alphavantage");
-  expect((await restarted.status()).ca.message).toStartWith("Yahoo Finance paused until 12:34 PM ET after an error");
+  expect((await restarted.status()).ca.message).toStartWith("Yahoo Finance is paused until 12:34 PM ET after an error");
   await restarted.quotes([XEQT]);
   expect(yahooCalls(second)).toHaveLength(0);
 

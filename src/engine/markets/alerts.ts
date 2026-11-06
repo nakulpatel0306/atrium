@@ -177,7 +177,7 @@ function fire(db: Database, a: Alert, q: Quote, now: number): void {
     title: titleOf(a),
     topic: topicOf(a.rule),
     subject: a.key,
-    detail: `${a.key} at ${money(q.price, currencyOfKey(a.key))} (${freshnessText(q, now)}, ${etClock(q.at)}). Your alert: ${rule}.${note}\n\nAnalysis, not advice.`,
+    detail: `${a.key} at ${money(q.price, currencyOfKey(a.key))} (${freshnessText(q, now)}${q.source === "yahoo" ? "" : `, ${etClock(q.at)}`}). Your alert: ${rule}.${note}\n\nAnalysis, not advice.`,
   });
   db.query("UPDATE market_alerts SET status = ?, last_fired_at = ? WHERE id = ?").run(a.repeat ? "fired" : "off", now, a.id);
   logActivity(db, a.spaceId, "atrium", `Alert: ${a.key} ${rule}`);

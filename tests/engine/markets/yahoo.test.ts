@@ -68,10 +68,22 @@ test("a TSX-V listing is asked for with Yahoo's .V suffix", async () => {
   expect(f.calls[0]!.url.pathname).toBe("/v8/finance/chart/ABC.V");
 });
 
-test("any answer in session is live, however long ago the last trade was", async () => {
+test("an answer in session is live however long ago today's last trade was, but not one from an earlier session", async () => {
   now = TRADE + 2 * 60 * 60_000;
   const [q] = await provider(stubFetch(chart).fetch).quotes([XEQT]);
   expect(q).toMatchObject({ at: TRADE, freshness: "live", fetchedAt: now });
+  now = Date.parse("2026-11-09T14:31:00Z");
+  const [monday] = await provider(stubFetch(chart).fetch).quotes([XEQT]);
+  expect(monday).toMatchObject({ at: TRADE, freshness: "eod" });
+});
+
+test("a batch's failure belongs to that call", async () => {
+  let n = 0;
+  const f = stubFetch((url) => (url.pathname.endsWith("/VFV.TO") && ++n === 1 ? new Response("", { status: 429 }) : chart()));
+  const p = provider(f.fetch);
+  const [a, b] = await Promise.all([p.batch([XEQT, VFV]), p.batch([XEQT])]);
+  expect(a.failure).toContain("too many requests");
+  expect(b.failure).toBeNull();
 });
 
 test("a US listing or anything else sends nothing", async () => {
@@ -107,9 +119,9 @@ test("TSX closes at 1:00 PM ET on Christmas Eve and New Year's Eve", () => {
 test("a failure partway keeps what was fetched and says why", async () => {
   const f = stubFetch((url) => (url.pathname.endsWith("/VFV.TO") ? new Response("", { status: 429 }) : chart()));
   const p = provider(f.fetch);
-  const got = await p.quotes([XEQT, VFV, { symbol: "ATZ", exchange: "TSX" }]);
-  expect(got.map((q) => q.key)).toEqual(["XEQT.TO"]);
-  expect(p.lastFailure()).toBe("Yahoo Finance says too many requests. TSX prices show the last close; Atrium tries again in 15 minutes.");
+  const got = await p.batch([XEQT, VFV, { symbol: "ATZ", exchange: "TSX" }]);
+  expect(got.quotes.map((q) => q.key)).toEqual(["XEQT.TO"]);
+  expect(got.failure).toBe("Yahoo Finance says too many requests. TSX prices show the last close; Atrium tries again in 15 minutes.");
   expect(f.calls).toHaveLength(2);
   expect(p.live()).toBe(false);
 });

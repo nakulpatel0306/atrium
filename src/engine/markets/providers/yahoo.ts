@@ -1,5 +1,5 @@
 import type { dailyBudget } from "../budget";
-import { tsxOpen } from "../calendar";
+import { etDate, tsxOpen } from "../calendar";
 import { instrumentKey, type Instrument } from "../instrument";
 import { ProviderError, type MarketProvider, type Quote } from "./types";
 
@@ -23,8 +23,8 @@ export type YahooProvider = MarketProvider & {
   pausedUntil(): number;
   // Atrium's own daily cap is used up.
   capped(): boolean;
-  // Why the last quotes() call stopped early after pricing some tickers; null when it finished.
-  lastFailure(): string | null;
+  // quotes() with why it stopped early after pricing some tickers (null when it finished), kept per call.
+  batch(list: Instrument[], signal?: AbortSignal): Promise<{ quotes: Quote[]; failure: string | null }>;
 };
 
 type Meta = { currency?: unknown; regularMarketPrice?: unknown; regularMarketTime?: unknown; previousClose?: unknown; chartPreviousClose?: unknown };
@@ -90,21 +90,19 @@ export function yahooProvider(deps: {
       prevClose: num(meta.previousClose) ?? num(meta.chartPreviousClose),
       at,
       source: "yahoo",
-      // Any answer in session is live, however long ago the last trade was; staleness is judged from fetchedAt.
-      freshness: "live",
+      // Live however long ago today's last trade was (staleness is judged from fetchedAt); a trade from an earlier
+      // session, before a thin listing's first trade of the day, is that session's last price.
+      freshness: etDate(at) === etDate(now()) ? "live" : "eod",
       fetchedAt: now(),
     };
   };
 
   const covers = (i: Instrument) => i.exchange in SUFFIX;
   const live = () => tsxOpen(now()) && now() >= pause.get() && deps.budget.remaining() > 0;
-  let failure: string | null = null;
-
   // Outside TSX hours, while paused, or for anything but a Canadian listing, nothing is sent at all. A failure
   // partway keeps the prices already fetched and stops there (the pause is already set).
-  const quotes = async (list: Instrument[], signal?: AbortSignal): Promise<Quote[]> => {
-    failure = null;
-    if (!tsxOpen(now()) || now() < pause.get()) return [];
+  const batch = async (list: Instrument[], signal?: AbortSignal): Promise<{ quotes: Quote[]; failure: string | null }> => {
+    if (!tsxOpen(now()) || now() < pause.get()) return { quotes: [], failure: null };
     const out: Quote[] = [];
     for (const i of list.filter(covers)) {
       try {
@@ -112,12 +110,12 @@ export function yahooProvider(deps: {
         if (q) out.push(q);
       } catch (e) {
         if (!out.length) throw e;
-        failure = e instanceof Error ? e.message : String(e);
-        break;
+        return { quotes: out, failure: e instanceof Error ? e.message : String(e) };
       }
     }
-    return out;
+    return { quotes: out, failure: null };
   };
+  const quotes = async (list: Instrument[], signal?: AbortSignal) => (await batch(list, signal)).quotes;
 
   return {
     id: "yahoo",
@@ -126,7 +124,7 @@ export function yahooProvider(deps: {
     live,
     pausedUntil: () => pause.get(),
     capped: () => deps.budget.remaining() <= 0,
-    lastFailure: () => failure,
+    batch,
     quotes,
     async bars() {
       throw new ProviderError("no_history", "Yahoo Finance is only used for TSX prices during the day; charts use Alpha Vantage's closes.");

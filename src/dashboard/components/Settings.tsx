@@ -15,6 +15,10 @@ const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }
   { id: "demo", label: "Demo", covers: "Made-up prices for every market, to try Atrium out. Every price is labelled Demo data." },
 ];
 
+// Once a key is saved there's nothing left to add.
+export const tsxSourceHint = (hasAlphaVantage: boolean): string =>
+  `TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). ${hasAlphaVantage ? "Alpha Vantage supplies the official closing prices." : "Add a free Alpha Vantage key for official closing prices."}`;
+
 type KeyProvider = "finnhub" | "alphavantage" | "tiingo";
 const KEY_FORMS: { id: KeyProvider; label: string; need: string; fields: { name: string; label: string }[]; help: string }[] = [
   {
@@ -183,7 +187,7 @@ export function Settings() {
               {s.feed.reason}
             </span>
           </div>
-          <p className="hint">TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Add a free Alpha Vantage key for official closing prices.</p>
+          <p className="hint">{tsxSourceHint(s.data.keys.alphavantage)}</p>
           <div className="mk-form">
             <button className="btn" onClick={() => void runTest()} disabled={testing}>
               <PlugZap />

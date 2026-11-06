@@ -72,14 +72,13 @@ const YAHOO_PAUSE_KEY = "markets.yahoo.pausedUntil";
 const isCanadian = (i: Instrument) => i.exchange === "TSX" || i.exchange === "TSXV";
 const CA_SOURCES = new Set<ProviderId>(["yahoo", "alphavantage"]);
 
-// Yahoo's intraday price and Alpha Vantage's close share one cached row per listing. A Yahoo trade beats a close
-// only from a later session (the closing auction's print is the close itself, so the official one stays). A close
-// never replaces a Yahoo price fetched today while Toronto is open; after that, the newer one wins.
-function replacesCached(q: Quote, old: Quote | undefined, now: number): boolean {
+// Yahoo's intraday price and Alpha Vantage's close share one cached row per listing, compared by trading session:
+// a Yahoo trade beats a close only from a later session (the closing auction's print is the close itself, so the
+// official one stays), and a close replaces a Yahoo trade from its own session or earlier, never today's.
+function replacesCached(q: Quote, old: Quote | undefined): boolean {
   if (!old || !CA_SOURCES.has(old.source) || old.source === q.source) return true;
   if (q.source === "yahoo") return etDate(q.at) > etDate(old.at);
-  if (tsxOpen(now) && etDate(old.fetchedAt ?? old.at) === etDate(now)) return false;
-  return q.at > old.at;
+  return etDate(old.at) <= etDate(q.at);
 }
 
 type Keys = { alpacaKeyId: string | null; alpacaSecret: string | null; finnhub: string | null; alphavantage: string | null; tiingo: string | null };
@@ -210,8 +209,14 @@ export function createMarketData(deps: {
     if (i.exchange === "US") return has[m]() ? { provider: provider(m), reason: "" } : { provider: null, reason: MISSING[m] };
     // Yahoo only while it may be asked (TSX in session, not paused, under its cap); Alpha Vantage's close otherwise.
     if (yahoo?.live()) return { provider: yahoo, reason: "" };
-    return closesFor();
+    const r = closesFor();
+    // In session, a listing with no price is waiting on Yahoo, so the reason says why Yahoo isn't being asked.
+    if (r.provider || !yahoo || !tsxOpen(now())) return r;
+    if (yahoo.capped()) return { provider: null, reason: `${yahooCapped()}.` };
+    return yahoo.pausedUntil() > now() ? { provider: null, reason: `${yahooPaused()}.` } : r;
   };
+  const yahooCapped = () => `Yahoo Finance stopped for today (Atrium's ${YAHOO_DAILY_CAP.toLocaleString("en-US")}-request cap)`;
+  const yahooPaused = () => `Yahoo Finance is paused until ${etClock(yahoo!.pausedUntil())} after an error`;
   const closesFor = (): { provider: MarketProvider | null; reason: string } =>
     has.alphavantage() ? { provider: provider("alphavantage"), reason: "" } : { provider: null, reason: MISSING.ca };
 
@@ -280,12 +285,11 @@ export function createMarketData(deps: {
       }
       for (const [p, group] of groups) {
         try {
-          const got = await p.quotes(group);
           // Yahoo keeps what it fetched before a mid-batch failure; the rest are missing for that reason.
-          const failed = p === yahoo ? yahoo.lastFailure() : null;
+          const { quotes: got, failure: failed } = p === yahoo ? await yahoo.batch(group) : { quotes: await p.quotes(group), failure: null };
           note(p, !failed, failed ? message(failed) : undefined);
           const cached = cachedQuotes(db, got.map((q) => q.key));
-          const kept = got.map((q) => (replacesCached(q, cached.get(q.key), now()) ? q : cached.get(q.key)!));
+          const kept = got.map((q) => (replacesCached(q, cached.get(q.key)) ? q : cached.get(q.key)!));
           saveQuotes(db, kept.filter((q) => q.source === p.id));
           quotes.push(...kept);
           const seen = new Set(got.map((q) => q.key));
@@ -379,9 +383,9 @@ export function createMarketData(deps: {
       const day = !yahoo
         ? null
         : yahoo.capped()
-          ? `Yahoo Finance stopped for today (Atrium's ${YAHOO_DAILY_CAP.toLocaleString("en-US")}-request cap)`
+          ? yahooCapped()
           : paused > now()
-            ? `Yahoo Finance paused until ${etClock(paused)} after an error`
+            ? yahooPaused()
             : "Yahoo Finance during TSX hours";
       const ca = rejected.alphavantage
         ? { ready: false, message: rejected.alphavantage.message }

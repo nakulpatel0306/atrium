@@ -19,9 +19,19 @@ export const CA_NOT_PRICED = "Not priced yet. Yahoo Finance fills in during TSX 
 
 type Dated = Pick<Quote, "freshness" | "at"> & Partial<Pick<Quote, "source" | "fetchedAt">>;
 
+const isoFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+
+// A Yahoo price is live only while Toronto's session that traded it is still open: today's trade, fetched in the last
+// 10 minutes, before the close (1:00 PM on Christmas Eve and New Year's Eve, 4:00 PM otherwise).
+function yahooStale(q: Dated, now: number): boolean {
+  const day = isoFmt.format(now);
+  const closes = /-12-(24|31)$/.test(day) ? "13:00" : "16:00";
+  return isoFmt.format(q.at) !== day || hourFmt.format(now) >= closes || now - (q.fetchedAt ?? q.at) > YAHOO_FRESH_MS;
+}
+
 export function isStaleLive(q: Dated, now?: number): boolean {
   if (q.freshness !== "live" || now === undefined) return false;
-  if (q.source === "yahoo") return now - (q.fetchedAt ?? q.at) > YAHOO_FRESH_MS;
+  if (q.source === "yahoo") return yahooStale(q, now);
   return now - q.at > STALE_LIVE_MS;
 }
 
@@ -35,7 +45,7 @@ export function freshnessText(q: Pick<Quote, "freshness" | "source" | "at"> & Pa
   if (q.source === "yahoo") {
     const today = now === undefined || dayFmt.format(q.at) === dayFmt.format(now);
     const when = today ? timeFmt.format(q.at) : `${dayFmt.format(q.at)}, ${timeFmt.format(q.at)}`;
-    if (!isStaleLive(q, now)) return `${name} · last trade ${when}`;
+    if (q.freshness === "live" && !isStaleLive(q, now)) return `${name} · last trade ${when}`;
     return today ? `${name} · last price ${when}` : `${name} · last price of ${dayFmt.format(q.at)}`;
   }
   if (q.freshness === "eod") return `${PROVIDER_NAMES[q.source]} · close of ${dayFmt.format(q.at)}`;

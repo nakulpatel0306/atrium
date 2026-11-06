@@ -117,6 +117,13 @@ test("demo and eod labels; eod evaluates once per new at", () => {
   expect(alerts()[0]!.detail).toContain("SHOP.TO at CA$90.00 (Alpha Vantage · close of Nov 4, 4:00 PM ET)");
 });
 
+test("a Yahoo price says its time once", () => {
+  createAlert(db, { spaceId, key: "XEQT.TO", rule: { kind: "price_above", level: 40 } });
+  const yahoo: Quote = { key: "XEQT.TO", price: 44.46, prevClose: 43.95, at: NOW - 5 * 60_000, source: "yahoo", freshness: "live", fetchedAt: NOW };
+  expect(evaluateQuotes(db, [yahoo], NOW)).toBe(1);
+  expect(alerts()[0]!.detail).toContain("XEQT.TO at CA$44.46 (Yahoo Finance · last trade 9:55 AM). Your alert");
+});
+
 test("off alerts and archived spaces never fire", () => {
   const a = createAlert(db, { spaceId, key: "AAPL", rule: { kind: "price_above", level: 100 } });
   setAlertStatus(db, a.id, "off");

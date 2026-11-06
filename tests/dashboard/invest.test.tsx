@@ -294,3 +294,9 @@ test("Portfolio says once what TradingView sees, since its rows show TradingView
   expect(html.split("TradingView sees which tickers you view, including the ones you hold. It never sees how much you own or what it&#x27;s worth.")).toHaveLength(2);
   expect(html).not.toContain("never your holdings");
 });
+
+test("the Settings TSX hint asks for an Alpha Vantage key only when there isn't one", async () => {
+  const { tsxSourceHint } = await import("../../src/dashboard/components/Settings");
+  expect(tsxSourceHint(false)).toBe("TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Add a free Alpha Vantage key for official closing prices.");
+  expect(tsxSourceHint(true)).toBe("TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Alpha Vantage supplies the official closing prices.");
+});
