@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { activityKind, byDay, dayLabel, groupActivity } from "../../src/engine/activity-groups";
+import { activityKind, byDay, dayLabel, groupActivity, visibleGroups } from "../../src/engine/activity-groups";
 import type { ActivityRow } from "../../src/engine/events";
 
 const NOW = new Date(2026, 10, 6, 15, 0).getTime();
@@ -200,4 +200,20 @@ test("activity lines keep the task they're about", async () => {
     db.close();
     home.cleanup();
   }
+});
+
+test("failures and lines waiting on Nakul are never folded under Show more", () => {
+  const routine = Array.from({ length: 8 }, (_, i) => row(at(6, 14, i), `Cloned repo-${i} into ~/dev`));
+  const groups = groupActivity(feed(...routine, row(at(6, 9), "Blocked: Old job. No disk."), row(at(5, 9), "Alert: NVDA crossed $140")), { now: NOW });
+  const { visible, hidden } = visibleGroups(groups, 5);
+  expect(visible.map((g) => g.tone)).toEqual(["routine", "routine", "routine", "routine", "routine", "failure", "attention"]);
+  expect(hidden).toBe(3);
+});
+
+test("notes about kept or removed files get a line of their own", () => {
+  expect(activityKind("Kept notes.md: it changed after the task made it.")).toBe("note");
+  expect(activityKind("Atrium left /x alone: it isn't inside /y.")).toBe("note");
+  expect(activityKind("Kept the local copy of a/b: unpushed.")).toBe("failed");
+  const groups = groupActivity(feed(row(at(6, 9), "Kept a.md: it changed after the task made it."), row(at(6, 9, 1), "Kept a.md: it changed after the task made it.")), { now: NOW });
+  expect(groups.map((g) => g.tone)).toEqual(["notice", "notice"]);
 });

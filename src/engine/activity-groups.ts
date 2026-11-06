@@ -20,6 +20,7 @@ export type ActivityKind =
   | "alert"
   | "sent"
   | "paper"
+  | "note"
   | "other";
 
 // routine: folds away; attention: waiting on Nakul; failure: something went wrong; notice: worth its own line.
@@ -72,6 +73,7 @@ const KINDS: [RegExp, ActivityKind][] = [
   [/^Alert: /, "alert"],
   [/^Sent via Messages to /, "sent"],
   [/^Paper (buy|sell) /, "paper"],
+  [/^(Atrium left |Atrium kept |Kept |Removed the local copy |Removed the new copy )/, "note"],
 ];
 
 export function activityKind(message: string): ActivityKind {
@@ -84,6 +86,7 @@ const OWN_LINE: Partial<Record<ActivityKind, ActivityTone>> = {
   blocked: "failure",
   failed: "failure",
   sent: "notice",
+  note: "notice",
 };
 
 const LEAD_IN = new Set<ActivityKind>(["started", "requeued", "paused"]);
@@ -261,6 +264,13 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
   // Newest line first; groups from one millisecond keep the order their newest rows had in the feed.
   const order = new Map(rows.map((r, i) => [r.id, i]));
   return out.sort((a, b) => b.at - a.at || order.get(a.id)! - order.get(b.id)!);
+}
+
+// What a feed shows before "Show more": the newest `shown` groups, plus every failure and every line waiting on
+// Nakul, wherever they fall, so nothing that needs him is ever folded away.
+export function visibleGroups(groups: ActivityGroup[], shown: number): { visible: ActivityGroup[]; hidden: number } {
+  const visible = groups.filter((g, i) => i < shown || g.tone === "failure" || g.tone === "attention");
+  return { visible, hidden: groups.length - visible.length };
 }
 
 // The task a line leads with: a folded stretch names its task; a line of its own already does, in its text.

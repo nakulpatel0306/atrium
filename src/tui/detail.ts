@@ -2,7 +2,7 @@
 import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboard/agents";
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
 import { actorName, reviewHint, reviewLine, runOutcome, spaceStatus, STATUS_TEXT } from "../dashboard/summary";
-import { type ActivityGroup, type ActivityTone, byDay, groupActivity, leadOf } from "../engine/activity-groups";
+import { type ActivityGroup, type ActivityTone, byDay, groupActivity, leadOf, visibleGroups } from "../engine/activity-groups";
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
@@ -295,10 +295,11 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
     if (markets) lines.push(...marketsLines(markets));
     lines.push(muted("Open the app for the chart."));
   }
-  const groups = groupActivity(
-    state.activity.filter((a) => a.spaceId === space.id),
-    { tasks: state.tasks, files: state.activityFiles },
-  ).slice(0, SPACE_ACTIVITY);
+  // Failures and lines waiting on Nakul always show, past the newest few.
+  const { visible: groups } = visibleGroups(
+    groupActivity(state.activity.filter((a) => a.spaceId === space.id), { tasks: state.tasks, files: state.activityFiles }),
+    SPACE_ACTIVITY,
+  );
   lines.push(blank, heading("Recent activity"));
   if (groups.length === 0) lines.push(muted("Nothing yet."));
   for (const day of byDay(groups)) {

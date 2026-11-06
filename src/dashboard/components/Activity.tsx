@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { ACTIVITY_MORE, ACTIVITY_PAGE, type ActivityGroup, byDay, groupActivity, leadOf } from "../../engine/activity-groups";
+import { ACTIVITY_MORE, ACTIVITY_PAGE, type ActivityGroup, byDay, groupActivity, leadOf, visibleGroups } from "../../engine/activity-groups";
 import type { State } from "../api";
 import { absolute, clock, relative } from "../format";
 import { actorName } from "../summary";
@@ -53,9 +53,10 @@ function Group({ group, spaceName, showTitle = true }: { group: ActivityGroup; s
 
 function Feed({ groups, names, showTitle }: { groups: ActivityGroup[]; names?: Map<string, string>; showTitle?: boolean }) {
   const [shown, setShown] = useState(ACTIVITY_PAGE);
+  const { visible, hidden } = visibleGroups(groups, shown);
   return (
     <>
-      {byDay(groups.slice(0, shown)).map((d) => (
+      {byDay(visible).map((d) => (
         <div key={d.dayKey} className="day">
           <div className="day-head">{d.day}</div>
           {d.groups.map((g) => (
@@ -63,9 +64,9 @@ function Feed({ groups, names, showTitle }: { groups: ActivityGroup[]; names?: M
           ))}
         </div>
       ))}
-      {groups.length > shown && (
+      {hidden > 0 && (
         <button className="btn link show-more" onClick={() => setShown(shown + ACTIVITY_MORE)}>
-          Show more · {groups.length - shown} earlier
+          Show more · {hidden} earlier
         </button>
       )}
     </>
