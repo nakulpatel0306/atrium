@@ -145,10 +145,10 @@ test("nothing in the embed's context can reach the API or the socket", async () 
   expect((await asEmbed("/api/state")).status).toBe(403);
   expect((await asEmbed("/api/spaces", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x", kind: "general" }) })).status).toBe(403);
   expect((await asEmbed("/ws")).status).toBe(403);
-  // A sandboxed frame's Origin null alone, and the embed Referer alone, are each refused too.
+  // Origin null (a sandboxed frame) and the chart listener's origin as Referer are each refused too.
   expect((await fetch(`${base}/api/state`, { headers: { origin: "null" } })).status).toBe(403);
-  expect((await fetch(`${base}/api/state`, { headers: { referer: embedPage } })).status).toBe(403);
-  expect((await fetch(`${base}/api/summary`, { headers: { referer: embedPage } })).status).toBe(403);
+  expect((await fetch(`${base}/api/state`, { headers: { referer: `${embedOrigin}/` } })).status).toBe(403);
+  expect((await fetch(`${base}/api/summary`, { headers: { referer: `${embedOrigin}/` } })).status).toBe(403);
   // The dashboard and plain reads still work.
   expect((await fetch(`${base}/api/state`)).status).toBe(200);
   expect((await fetch(`${base}/api/state`, { headers: { origin: base, referer: `${base}/space/x` } })).status).toBe(200);
@@ -175,4 +175,16 @@ test("each TradingView widget kind gets its own script, config and attribution",
   expect(await embed("localhost:7571", q("NASDAQ:AMZN", "http://127.0.0.1:7571")).text()).toContain("embed-widget-advanced-chart.js");
   const bad = embed("localhost:7571", `${q("NASDAQ:AMZN", "http://127.0.0.1:7571")}&w=ticker`);
   expect([bad.status, await bad.text()]).toEqual([400, REFUSED]);
+});
+
+// The embed page sends Referrer-Policy: origin, so a browser's Referer from it is just "http://localhost:<port>/".
+test("a request whose Origin or Referer is the chart listener's origin is refused", async () => {
+  server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0 });
+  const base = `http://127.0.0.1:${server.port}`;
+  for (const host of ["localhost", "127.0.0.1"]) {
+    const embed = `http://${host}:${server.embedPort}`;
+    expect((await fetch(`${base}/api/state`, { headers: { referer: `${embed}/` } })).status).toBe(403);
+    expect((await fetch(`${base}/api/state`, { headers: { origin: embed } })).status).toBe(403);
+  }
+  expect((await fetch(`${base}/api/state`, { headers: { referer: `${base}/space/x` } })).status).toBe(200);
 });

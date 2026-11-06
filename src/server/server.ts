@@ -53,12 +53,13 @@ const RESERVE_STEPS = [0.25, 0.5, 0.75];
 export type WsData = { topic: "engine" | "changed" };
 
 const embedPath = (token: string) => `/embed/${token}/tradingview`;
-const fromEmbed = (referer: string | null): boolean => {
-  if (!referer) return false;
+// The origin a header names ("http://localhost:7421/" → "http://localhost:7421"), or null.
+const originOf = (value: string | null): string | null => {
+  if (!value || value === "null") return null;
   try {
-    return /^\/embed\/[^/]+\/tradingview$/.test(new URL(referer).pathname);
+    return new URL(value).origin;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -75,9 +76,13 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
   // provider calls. Reads with neither header (curl, the terminal app, the Mac app) are allowed.
   const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean): Response | null => {
     if (!origins(port).includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
-    // The TradingView page runs third-party code. It's sandboxed to an opaque origin, and anything it (or a page
-    // it opens) asks for beyond the embed page itself is refused.
-    if (fromEmbed(req.headers.get("referer"))) return fail(403, "Forbidden origin.");
+    // The TradingView page runs third-party code on the chart listener's origin. Anything that origin sends (it
+    // shows as Origin, or as Referer, which its Referrer-Policy: origin cuts to just the origin) is refused.
+    if (embed) {
+      const chart = [`http://127.0.0.1:${embed.port}`, `http://localhost:${embed.port}`];
+      const from = [originOf(req.headers.get("origin")), originOf(req.headers.get("referer"))];
+      if (from.some((o) => o !== null && chart.includes(o))) return fail(403, "Forbidden origin.");
+    }
     const origin = req.headers.get("origin");
     if (api && origin === "null") return fail(403, "Forbidden origin.");
     const ours = origin !== null && origins(port).some((h) => origin === `http://${h}`);

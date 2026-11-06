@@ -3,8 +3,10 @@ import { isTvSymbol, tvSymbolUrl } from "../engine/markets/tradingview";
 // TradingView's Advanced Chart widget, isolated. This page is served by a listener of its own on the engine's port
 // + 1, under the other loopback name (127.0.0.1 ↔ localhost), and that listener has no API. TradingView's code runs
 // cross-origin: it can't read the dashboard's DOM (holdings) or call the engine, and the dashboard document itself
-// loads nothing external. The query carries only the symbol and the parent origin. A CSP sandbox (opaque origin)
-// was tried and stops the widget rendering, which is why the isolation is by origin instead.
+// loads nothing external. The query carries only the symbol and the parent origin. A sandbox without
+// allow-same-origin (an opaque origin) stops the widget rendering, so the isolation is by origin: the engine refuses
+// anything from this listener's origin. Cookies don't separate ports, so in a regular browser TradingView's script
+// could read SameSite=None cookies other local servers set on localhost or 127.0.0.1; Atrium sets none.
 const EMBEDDING = "https://s3.tradingview.com/external-embedding";
 // TradingView's free widgets in their iframe format, one script each. Every one injects its own frame from
 // TV_FRAME_HOSTS and keeps TradingView's attribution under it.
