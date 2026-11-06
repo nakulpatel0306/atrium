@@ -64,7 +64,7 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   db.query("INSERT INTO autonomy_rules (id, space_id, fingerprint, proposal_id, created_at, expires_at) VALUES (?, ?, 'fp', ?, ?, ?)").run(rule, space.id, proposal, now, now + 1);
   db.query("UPDATE approvals SET rule_id = ? WHERE id = ?").run(rule, approval.id);
   db.query("INSERT INTO rule_events (id, space_id, rule_id, approval_id, event, actor, created_at) VALUES (?, ?, ?, ?, 'applied', 'atrium', ?)").run(newId("rle"), space.id, rule, approval.id, now);
-  recordRunFiles(db, { runId: run, taskId: task, spaceId: space.id, root: "space" }, [{ path: "list.md", change: "created", size: 3 }]);
+  recordRunFiles(db, { runId: run, taskId: task, spaceId: space.id, root: "space" }, [{ path: "list.md", change: "created", size: 4 }]);
   draftMessage(db, { spaceId: space.id, taskId: task, toName: "Dana", text: "Hey" });
   const repoApproval = createApproval(db, { spaceId: null, kind: "question", title: "Create repo?", detail: "", alwaysAsk: "create_repo" });
   db.query("INSERT INTO repo_actions (id, kind, status, approval_id, space_id, created_at, updated_at) VALUES (?, 'create', 'done', ?, ?, ?, ?)").run(newId("rpa"), repoApproval.id, space.id, now, now);
@@ -283,6 +283,10 @@ test("Atrium's own clone goes when everything is on GitHub, and stays when it is
     expect(readFileSync(join(dirty!.repoPath!, "notes.txt"), "utf8")).toBe("unsaved");
     expect(kept[0]).toStartWith("Kept the local copy of fakeuser/dirty:");
     expect(listClones(db).find((c) => c.path === dirty!.repoPath)).toMatchObject({ status: "present", spaceId: null });
+    // Still listed in Storage, under the deleted spaces, so it can be found and removed later.
+    const { createRepos } = await import("../../src/engine/repos");
+    const view = await createRepos({ db, kick: () => {} }).storage();
+    expect(view.repos.find((r) => r.path === dirty!.repoPath)).toMatchObject({ spaceId: null, spaceName: "fakeuser/dirty", createdBy: "atrium" });
     // Nothing reached GitHub beyond the clones and the fetch that checks what's pushed.
     expect(gh.argv().some((a) => a.includes("delete"))).toBe(false);
   } finally {
@@ -310,7 +314,7 @@ test("deleting a task removes its runs, review, history, transcript and the file
   recordRunFiles(db, { runId: s.run, taskId: s.task, spaceId: s.space.id, root: "space" }, [{ path: "sneaky.md", change: "created", size: 1 }]);
 
   try {
-    expect(taskDeletePreview(db, s.task)).toMatchObject({ title: "Groceries work", followers: 1, runs: 1, files: 3, refusal: null });
+    expect(taskDeletePreview(db, s.task)).toMatchObject({ title: "Groceries work", followers: 1, runs: 1, files: ["list.md", `runs/${s.run}/kept.txt`], edited: [], refusal: null });
     await deleteTask(db, s.task);
     expect(getTask(db, s.task)).toBeNull();
     expect(getTask(db, s.review)).toBeNull();

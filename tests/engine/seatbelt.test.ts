@@ -193,22 +193,37 @@ describe("seatbeltProfile", () => {
   });
 
   test("an agent can't delete a space through the engine, even with a forged Origin", async () => {
-    const { openDb } = await import("../../src/engine/db");
-    const { createSpace, getSpace } = await import("../../src/engine/spaces");
-    const { startServer } = await import("../../src/server/server");
-    // The suite's own temp home is already ATRIUM_HOME.
-    const db = openDb();
-    const server = startServer({ db, runner: { kick: () => {} }, setup: async () => ({}) as never, port: 0 });
+    // The engine runs in its own process, so if the sandbox let the request through it would be answered.
+    const engine = Bun.spawn(["bun", join(import.meta.dir, "../fixtures/delete-server.ts")], { stdout: "pipe", stderr: "inherit", env: process.env });
     try {
-      const space = createSpace(db, { name: "Text Dana", kind: "general", goal: "g" });
+      const reader = engine.stdout.getReader();
+      let line = "";
+      while (!line.includes("\n")) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        line += new TextDecoder().decode(value);
+      }
+      const { port, ids } = JSON.parse(line) as { port: number; ids: [string, string] };
+      const curl = (id: string) =>
+        `/usr/bin/curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X DELETE -H "Origin: http://127.0.0.1:${port}" -H "Content-Type: application/json" -d '{"name":"Text Dana"}' http://127.0.0.1:${port}/api/spaces/${id}`;
+      const run = async (argv: string[]) => {
+        const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
+        const out = await new Response(p.stdout).text();
+        return { code: await p.exited, out };
+      };
+      const spaces = async () => ((await (await fetch(`http://127.0.0.1:${port}/api/state`)).json()) as { spaces: { id: string }[] }).spaces.map((s) => s.id);
+
       const profile = seatbeltProfile({ cwd, writable: [cwd] });
-      const url = `http://127.0.0.1:${server.port}/api/spaces/${space.id}`;
-      const r = sandboxed(profile, `/usr/bin/curl -s --max-time 5 -X DELETE -H "Origin: http://127.0.0.1:${server.port}" -H "Content-Type: application/json" -d '{"name":"Text Dana"}' ${url}`);
-      expect(r.exitCode).toBe(7);
-      expect(getSpace(db, space.id)).not.toBeNull();
+      const inside = await run([SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", curl(ids[0])]);
+      expect(inside.code).toBe(7);
+      expect(await spaces()).toContain(ids[0]);
+      // Control: the same request from outside the sandbox does reach the engine and delete.
+      const outside = await run(["/bin/sh", "-c", curl(ids[1])]);
+      expect(outside.out).toBe("200");
+      expect(await spaces()).not.toContain(ids[1]);
     } finally {
-      server.stop(true);
-      db.close();
+      engine.kill("SIGTERM");
+      await engine.exited;
     }
   });
 

@@ -13,7 +13,7 @@ export function spaceDeleteLines(p: SpaceDeletePreview): { goes: string[]; stays
   else goes.push("The space itself (it has no tasks)");
   if (p.folder) {
     const what = p.folder.files === 0 ? "nothing in it yet" : `${p.folder.more ? "over " : ""}${plural(p.folder.files, "file")}, ${bytes(p.folder.bytes)}`;
-    goes.push(`Its folder ${p.folder.path} (${what})`);
+    goes.push(`Its folder ${p.folder.path} (${what}), moved to the Trash`);
   }
   if (p.history > 0) goes.push(`Its history: ${plural(p.history, "activity line")}`);
   if (p.texts.drafts > 0) goes.push(`${plural(p.texts.drafts, "unsent draft text")}`);
@@ -32,10 +32,22 @@ export function spaceDeleteLines(p: SpaceDeletePreview): { goes: string[]; stays
   return { goes, stays };
 }
 
+const names = (paths: string[]) => {
+  const shown = paths.slice(0, 4).map((p) => p.split("/").pop()!);
+  return paths.length > 4 ? `${shown.join(", ")} and ${paths.length - 4} more` : shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}` : shown[0]!;
+};
+
 export function taskDeleteLine(p: TaskDeletePreview): string {
-  const parts = [p.runs > 0 ? `its ${plural(p.runs, "run")} and transcripts` : null, "its history", p.files > 0 ? `the ${plural(p.files, "file")} it made` : null].filter(Boolean);
+  const n = p.files.length;
+  const parts = [p.runs > 0 ? `its ${plural(p.runs, "run")} and transcripts` : null, "its history", n > 0 ? `${n === 1 ? "the file" : `the ${n} files`} it made (${names(p.files)})` : null].filter(Boolean);
   const followers = p.followers > 0 ? ` and its ${p.followers === 1 ? "review or fix" : `${p.followers} reviews and fixes`}` : "";
   const last = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
-  const kept = [p.files > 0 ? "Files it only changed stay." : null, p.branch ? `Its branch ${p.branch} stays in your repo.` : null].filter(Boolean).join(" ");
+  const kept = [
+    p.edited.length ? `${names(p.edited)} changed since, so ${p.edited.length === 1 ? "it stays" : "they stay"}.` : null,
+    n > 0 || p.edited.length ? "Files it only changed stay." : null,
+    p.branch ? `Its branch ${p.branch} stays in your repo.` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return `Deletes this task${followers}, along with ${last}.${kept ? ` ${kept}` : ""} This can't be undone.`;
 }

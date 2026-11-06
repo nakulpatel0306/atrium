@@ -24,12 +24,12 @@ const preview = (over: Partial<SpaceDeletePreview> = {}): SpaceDeletePreview => 
 
 test("the confirm lists what goes and what stays, plainly", () => {
   expect(spaceDeleteLines(preview())).toEqual({
-    goes: ["3 tasks, with 4 runs and their transcripts", "Its folder ~/Atrium/text-dana (2 files, 2 KB)", "Its history: 12 activity lines", "1 unsent draft text"],
+    goes: ["3 tasks, with 4 runs and their transcripts", "Its folder ~/Atrium/text-dana (2 files, 2 KB), moved to the Trash", "Its history: 12 activity lines", "1 unsent draft text"],
     stays: ["The text already sent stays in Messages on your Mac. Atrium can't unsend a text."],
   });
   expect(spaceDeleteLines(preview({ tasks: 0, runs: 0, history: 0, folder: { path: "~/Atrium/x", files: 0, bytes: 0, more: false }, texts: { sent: 0, drafts: 0 } })).goes).toEqual([
     "The space itself (it has no tasks)",
-    "Its folder ~/Atrium/x (nothing in it yet)",
+    "Its folder ~/Atrium/x (nothing in it yet), moved to the Trash",
   ]);
   const yours = spaceDeleteLines(preview({ kind: "repo", folder: null, texts: { sent: 0, drafts: 0 }, repo: { path: "~/dev/app", atriumClone: false } }));
   expect(yours.stays).toEqual([
@@ -49,10 +49,13 @@ test("the typed name has to match", () => {
 });
 
 test("deleting a task says what goes with it", () => {
-  expect(taskDeleteLine({ id: "t", title: "Groceries", followers: 0, runs: 2, files: 1, branch: null, refusal: null })).toBe(
-    "Deletes this task, along with its 2 runs and transcripts, its history and the 1 file it made. Files it only changed stay. This can't be undone.",
+  expect(taskDeleteLine({ id: "t", title: "Groceries", followers: 0, runs: 2, files: ["list.md"], edited: [], branch: null, refusal: null })).toBe(
+    "Deletes this task, along with its 2 runs and transcripts, its history and the file it made (list.md). Files it only changed stay. This can't be undone.",
   );
-  expect(taskDeleteLine({ id: "t", title: "Fix", followers: 1, runs: 0, files: 0, branch: "atrium/tsk_1", refusal: null })).toBe(
+  expect(taskDeleteLine({ id: "t", title: "Groceries", followers: 0, runs: 1, files: ["a.md", "runs/r/b.md"], edited: ["notes.md"], branch: null, refusal: null })).toBe(
+    "Deletes this task, along with its 1 run and transcripts, its history and the 2 files it made (a.md and b.md). notes.md changed since, so it stays. Files it only changed stay. This can't be undone.",
+  );
+  expect(taskDeleteLine({ id: "t", title: "Fix", followers: 1, runs: 0, files: [], edited: [], branch: "atrium/tsk_1", refusal: null })).toBe(
     "Deletes this task and its review or fix, along with its history. Its branch atrium/tsk_1 stays in your repo. This can't be undone.",
   );
 });

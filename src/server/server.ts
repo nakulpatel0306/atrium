@@ -31,6 +31,7 @@ import { PushRefused } from "../engine/repos/push";
 import { reposRoute } from "./repos";
 import type { Messaging } from "../engine/messaging";
 import { messagingRoute } from "./messaging";
+import { mergeRestoredMessages } from "../engine/messaging/space";
 
 type Deps = {
   db: Database;
@@ -134,6 +135,11 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
       }
+      // A second Messages space never comes back; the restored one's texts join the current one.
+      if (status === "active" && Object.keys(b).length === 1) {
+        const merged = mergeRestoredMessages(db, id);
+        if (merged) return json(merged);
+      }
       const reviewBy = b.reviewBy;
       if (reviewBy !== undefined && reviewBy !== null && !REVIEWERS.includes(reviewBy as ReviewerId)) {
         throw new HttpError(400, "reviewBy must be codex, gemini, claude, or null.");
@@ -153,14 +159,16 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     }
 
     const spacePreviewM = hit("GET", /^\/api\/spaces\/([^/]+)\/delete-preview$/);
-    if (spacePreviewM) return json(spaceDeletePreview(db, spacePreviewM[1]!));
+    // A clone still downloading would land in a space that's gone, so a delete waits for it.
+    const deleteGuards = { cloning: (id: string) => deps.repos?.cloning(id) ?? false };
+    if (spacePreviewM) return json(spaceDeletePreview(db, spacePreviewM[1]!, deleteGuards));
 
     // Permanent: the body must carry the space's exact name, which the engine checks against its own row.
     const spaceDelM = hit("DELETE", /^\/api\/spaces\/([^/]+)$/);
     if (spaceDelM) {
       const b = await readBody(req);
       if (typeof b.name !== "string") throw new HttpError(400, "Type the space's name to delete it.");
-      return json(await deleteSpace(db, spaceDelM[1]!, b.name));
+      return json(await deleteSpace(db, spaceDelM[1]!, b.name, deleteGuards));
     }
 
     // Lets space settings say up front why a reviewer would be skipped, instead of after the work finishes.

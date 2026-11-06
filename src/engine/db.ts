@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS pending_deletes (
   path TEXT NOT NULL,
   root TEXT NOT NULL,
   clone_id TEXT,
+  -- For a file a task made: the size and latest modified time it may have and still be the task's own.
+  size INTEGER,
+  mtime_max INTEGER,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (

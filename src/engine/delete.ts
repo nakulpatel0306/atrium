@@ -5,7 +5,7 @@ import type { Database } from "bun:sqlite";
 import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config";
-import { finishPendingDeletes, queueDelete } from "./delete-files";
+import { fileNow, finishPendingDeletes, queueDelete } from "./delete-files";
 import { bus } from "./events";
 import { spaceFolder, tildePath } from "./folders";
 import { presentCloneForPath } from "./repos/store";
@@ -66,8 +66,13 @@ function taskClosure(db: Database, start: string[]): string[] {
   return [...all];
 }
 
-// What stops a delete: a run in progress, a text on its way, or a repo action mid-run.
-function refusal(db: Database, tasks: string[], spaceId: string | null): string | null {
+// What the engine is doing outside the database that a delete must wait for.
+export type DeleteGuards = { cloning?: (spaceId: string) => boolean };
+
+const CLONING = "Atrium is still getting a local copy of this repo. Try again in a minute. Nothing was deleted.";
+
+// What stops a delete: a run in progress, a text on its way, or a repo action or clone mid-run.
+function refusal(db: Database, tasks: string[], spaceId: string | null, guards: DeleteGuards = {}): string | null {
   const running = tasks.length
     ? (db.query(`SELECT title FROM tasks WHERE status = 'running' AND id IN (${marks(tasks)}) LIMIT 1`).get(...tasks) as { title: string } | null)
     : null;
@@ -82,8 +87,20 @@ function refusal(db: Database, tasks: string[], spaceId: string | null): string 
   if (spaceId && db.query("SELECT 1 FROM repo_actions WHERE status = 'running' AND space_id = ?").get(spaceId)) {
     return "Atrium is working on this space's repo right now. Try again in a minute. Nothing was deleted.";
   }
+  if (spaceId && guards.cloning?.(spaceId)) return CLONING;
   return null;
 }
+
+// A task's files sit in a folder other tasks of the space also work in, so its delete waits for all of them.
+function spaceBusy(db: Database, spaceId: string): string | null {
+  const running = db.query("SELECT title FROM tasks WHERE status = 'running' AND space_id = ? LIMIT 1").get(spaceId) as { title: string } | null;
+  return running ? `"${running.title}" is running in this space and may be working on the same files. Wait for it to finish, then try again. Nothing was deleted.` : null;
+}
+
+// Rows that point nowhere after a delete would mean a table was missed; the delete rolls back instead. Links that
+// were already broken before (old hand-edited databases) don't stop it.
+const brokenLinks = (db: Database) => db.query("PRAGMA foreign_key_check").all().length;
+const BROKE = "Atrium stopped the delete because it would have left broken links in its records. Nothing was deleted. Check the engine log.";
 
 // Removes the rows of these tasks, their runs and approvals, in an order the foreign keys accept. Rows elsewhere
 // that only mention a task (a text in Messages, a paper fill, a write-up) keep their row with the link cleared.
@@ -180,7 +197,7 @@ export type SpaceDeletePreview = {
   refusal: string | null;
 };
 
-export function spaceDeletePreview(db: Database, id: string): SpaceDeletePreview {
+export function spaceDeletePreview(db: Database, id: string, guards: DeleteGuards = {}): SpaceDeletePreview {
   const space = getSpace(db, id);
   if (!space) throw new DeleteRefused(404, SPACE_GONE);
   const count = (sql: string, ...p: string[]) => (db.query(sql).get(...p) as { n: number }).n;
@@ -203,19 +220,20 @@ export function spaceDeletePreview(db: Database, id: string): SpaceDeletePreview
     },
     repo: space.repoPath ? { path: tildePath(space.repoPath), atriumClone: presentCloneForPath(db, space.repoPath) !== null } : null,
     investing: SPACE_DATA.reduce((n, table) => n + count(`SELECT COUNT(*) AS n FROM ${table} WHERE space_id = ?`, id), 0),
-    refusal: refusal(db, tasks, id),
+    refusal: refusal(db, tasks, id, guards),
   };
 }
 
 // The name must match exactly (ignoring spaces around it), so a stale page or a mistyped id can't delete another space.
-export async function deleteSpace(db: Database, id: string, typedName: string): Promise<{ name: string; kept: string[] }> {
+export async function deleteSpace(db: Database, id: string, typedName: string, guards: DeleteGuards = {}): Promise<{ name: string; kept: string[] }> {
   const space = db.transaction(() => {
     const space = getSpace(db, id);
     if (!space) throw new DeleteRefused(404, SPACE_GONE);
-    if (typedName.trim() !== space.name.trim()) throw new DeleteRefused(400, `Type the space's name exactly as shown, "${space.name}", to delete it.`);
+    if (!typedName.trim() || typedName.trim() !== space.name.trim()) throw new DeleteRefused(400, `Type the space's name exactly as shown, "${space.name}", to delete it.`);
     const tasks = taskClosure(db, idsOf(db, "SELECT id FROM tasks WHERE space_id = ?", id));
-    const refused = refusal(db, tasks, id);
+    const refused = refusal(db, tasks, id, guards);
     if (refused) throw new DeleteRefused(409, refused);
+    const linksBefore = brokenLinks(db);
     db.query("DELETE FROM message_actions WHERE space_id = ?").run(id);
     // A new project's approval belongs to no space, so it's found through its repo action.
     const repoApprovals = idsOf(db, "SELECT approval_id AS id FROM repo_actions WHERE space_id = ?", id);
@@ -236,6 +254,10 @@ export async function deleteSpace(db: Database, id: string, typedName: string): 
     db.query("UPDATE repo_clones SET space_id = NULL WHERE space_id = ?").run(id);
     if (getSetting(db, "messaging.spaceId") === id) db.query("DELETE FROM settings WHERE key = 'messaging.spaceId'").run();
     db.query("DELETE FROM spaces WHERE id = ?").run(id);
+    if (brokenLinks(db) > linksBefore) {
+      console.error(`Deleting space ${id} would have left broken links: ${JSON.stringify(db.query("PRAGMA foreign_key_check").all())}`);
+      throw new DeleteRefused(409, BROKE);
+    }
     queueTranscripts(db, transcripts);
     if (space.kind !== "repo") for (const f of foldersOf(space)) queueDelete(db, "folder", f.path, f.root);
     if (clone) queueDelete(db, "clone", clone.path, config().projectsRoot, clone.id);
@@ -251,59 +273,91 @@ export type TaskDeletePreview = {
   // Reviews and fixes that go with it.
   followers: number;
   runs: number;
-  // Files its runs created in the space folder that no other task also recorded; those are removed.
-  files: number;
+  // Files its runs created in the space folder, unchanged since, that no other task also recorded; these go.
+  files: string[];
+  // Files it made that were changed afterwards (by Nakul or another task); these stay.
+  edited: string[];
   // A repo task's branch, which stays.
   branch: string | null;
   refusal: string | null;
 };
 
-// Files the tasks created in the space folder and nothing else recorded touching.
-function madeFiles(db: Database, tasks: string[]): string[] {
-  if (!tasks.length) return [];
+type MadeFile = { path: string; size: number; mtimeMax: number };
+
+// A file still counts as the task's own only while it's the size the run left it and hasn't been touched since
+// the run was recorded (a second of slack for the filesystem's clock).
+const SLACK_MS = 2000;
+
+// Files the tasks created in the space folder that nothing else recorded touching, split by whether they're still
+// exactly as the run left them.
+function madeFiles(db: Database, tasks: string[], root: string | null): { remove: MadeFile[]; edited: string[] } {
+  if (!tasks.length || !root) return { remove: [], edited: [] };
   const t = marks(tasks);
-  return (
-    db
-      .query(
-        `SELECT DISTINCT f.path AS id FROM run_files f WHERE f.task_id IN (${t}) AND f.root = 'space' AND f.change = 'created'
-         AND NOT EXISTS (SELECT 1 FROM run_files o WHERE o.space_id = f.space_id AND o.root = 'space' AND o.path = f.path AND o.task_id NOT IN (${t}))`,
-      )
-      .all(...tasks, ...tasks) as { id: string }[]
-  ).map((r) => r.id);
+  const rows = db
+    .query(
+      `SELECT f.path, f.size, f.change, f.created_at FROM run_files f WHERE f.task_id IN (${t}) AND f.root = 'space'
+       AND f.path IN (SELECT path FROM run_files c WHERE c.task_id IN (${t}) AND c.root = 'space' AND c.change = 'created')
+       AND NOT EXISTS (SELECT 1 FROM run_files o WHERE o.space_id = f.space_id AND o.root = 'space' AND o.path = f.path AND o.task_id NOT IN (${t}))
+       ORDER BY f.created_at, f.rowid`,
+    )
+    .all(...tasks, ...tasks, ...tasks) as { path: string; size: number | null; change: string; created_at: number }[];
+  // The newest record of each path says what it should look like now.
+  const latest = new Map(rows.map((r) => [r.path, r]));
+  const remove: MadeFile[] = [];
+  const edited: string[] = [];
+  for (const r of latest.values()) {
+    if (r.change === "deleted") continue;
+    const now = fileNow(root, r.path);
+    if (!now) continue;
+    if (r.size !== null && now.size === r.size && now.mtimeMs <= r.created_at + SLACK_MS) remove.push({ path: r.path, size: r.size, mtimeMax: r.created_at + SLACK_MS });
+    else edited.push(r.path);
+  }
+  return { remove, edited };
 }
 
 export function taskDeletePreview(db: Database, id: string): TaskDeletePreview {
   const task = getTask(db, id);
   if (!task) throw new DeleteRefused(404, TASK_GONE);
   const tasks = taskClosure(db, [id]);
-  const kind = getSpace(db, task.spaceId)?.kind;
+  const files = madeFiles(db, tasks, taskRoot(db, task));
   return {
     id,
     title: task.title,
     followers: tasks.length - 1,
     runs: (db.query(`SELECT COUNT(*) AS n FROM runs WHERE task_id IN (${marks(tasks)})`).get(...tasks) as { n: number }).n,
-    files: kind === "repo" ? 0 : madeFiles(db, tasks).length,
+    files: files.remove.map((f) => f.path),
+    edited: files.edited,
     branch: task.branch,
-    refusal: refusal(db, tasks, null),
+    refusal: refusal(db, tasks, null) ?? spaceBusy(db, task.spaceId),
   };
 }
 
+// A repo task's files are on its branch, which stays; only a space folder's files are removed.
+function taskRoot(db: Database, task: { spaceId: string }): string | null {
+  const space = getSpace(db, task.spaceId);
+  return space && space.kind !== "repo" ? spaceFolder(space) : null;
+}
+
 export async function deleteTask(db: Database, id: string): Promise<{ title: string; kept: string[] }> {
-  const title = db.transaction(() => {
+  const { title, edited } = db.transaction(() => {
     const task = getTask(db, id);
     if (!task) throw new DeleteRefused(404, TASK_GONE);
     const tasks = taskClosure(db, [id]);
-    const refused = refusal(db, tasks, null);
+    const refused = refusal(db, tasks, null) ?? spaceBusy(db, task.spaceId);
     if (refused) throw new DeleteRefused(409, refused);
-    const space = getSpace(db, task.spaceId);
-    // A repo task's files are on its branch, which stays; only a space folder's files are removed.
-    const root = space && space.kind !== "repo" ? spaceFolder(space) : null;
-    const files = root ? madeFiles(db, tasks) : [];
+    const root = taskRoot(db, task);
+    const files = madeFiles(db, tasks, root);
+    const linksBefore = brokenLinks(db);
     const { transcripts } = deleteTaskRows(db, tasks);
+    if (brokenLinks(db) > linksBefore) throw new DeleteRefused(409, BROKE);
     queueTranscripts(db, transcripts);
-    for (const f of files) queueDelete(db, "file", f, root!);
-    return task.title;
+    for (const f of files.remove) queueDelete(db, "file", f.path, root!, null, { size: f.size, mtimeMax: f.mtimeMax });
+    return { title: task.title, edited: files.edited };
   })();
   bus.emit({ type: "changed" });
-  return { title, kept: await finishPendingDeletes(db) };
+  const kept = await finishPendingDeletes(db);
+  return { title, kept: [...(edited.length ? [keptEdited(edited)] : []), ...kept] };
 }
+
+const keptEdited = (paths: string[]) =>
+  paths.length === 1 ? `Kept ${paths[0]}: it changed after the task made it.` : `Kept ${paths.length} files that changed after the task made them: ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ", …" : ""}.`;

@@ -8,6 +8,10 @@ export async function setArchived(space: Pick<Space, "id" | "name">, archived: b
   const flip = (to: boolean) => patch<Space>(`/api/spaces/${encodeURIComponent(space.id)}`, { status: to ? "archived" : "active" });
   const res = await flip(archived);
   if (!res.ok) return res;
+  if (res.data.id !== space.id) {
+    showToast(`Moved the earlier "${space.name}" into your current one, so there's only one.`);
+    return { ok: true };
+  }
   showToast(archived ? `Archived "${space.name}". It's in Settings under Archived spaces.` : `Restored "${space.name}".`, () => flip(!archived));
   return { ok: true };
 }

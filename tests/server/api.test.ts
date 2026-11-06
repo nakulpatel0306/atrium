@@ -685,7 +685,7 @@ test("the delete preview is a read; DELETE a task needs Origin", async () => {
   const preview = await fetch(`${base}/api/spaces/${s.id}/delete-preview`);
   expect(preview.status).toBe(200);
   expect(await preview.json()).toMatchObject({ name: "Groceries", tasks: 1, refusal: null });
-  expect(await (await fetch(`${base}/api/tasks/${t.id}/delete-preview`)).json()).toMatchObject({ title: "Make a list", runs: 0, files: 0 });
+  expect(await (await fetch(`${base}/api/tasks/${t.id}/delete-preview`)).json()).toMatchObject({ title: "Make a list", runs: 0, files: [], edited: [] });
   expect((await del(`/api/tasks/${t.id}`, undefined, {})).status).toBe(403);
   expect((await del(`/api/tasks/${t.id}`, undefined, { origin })).status).toBe(200);
   expect(getTask(db, t.id)).toBeNull();
@@ -699,4 +699,38 @@ test("the state lists archived spaces apart from active ones", async () => {
   const state = await (await fetch(`${base}/api/state`)).json();
   expect(state.spaces.map((s: { id: string }) => s.id)).toEqual([a.id]);
   expect(state.archived.map((s: { id: string }) => s.id)).toEqual([b.id]);
+});
+
+test("restoring an earlier Messages space merges it into the current one", async () => {
+  const { messagesSpace } = await import("../../src/engine/messaging/space");
+  const { draftMessage } = await import("../../src/engine/messaging/store");
+  const old = messagesSpace(db);
+  const { action } = draftMessage(db, { spaceId: old.id, toName: "Dana", text: "Hey" });
+  await patch(`/api/spaces/${old.id}`, { status: "archived" });
+  const current = messagesSpace(db);
+  expect(current.id).not.toBe(old.id);
+  const res = await patch(`/api/spaces/${old.id}`, { status: "active" });
+  expect(res.status).toBe(200);
+  expect((await res.json()).id).toBe(current.id);
+  expect(getSpace(db, old.id)).toBeNull();
+  expect(db.query("SELECT space_id FROM message_actions WHERE id = ?").get(action.id)).toEqual({ space_id: current.id });
+  const state = await (await fetch(`${base}/api/state`)).json();
+  expect(state.spaces.filter((s: { name: string }) => s.name === "Messages")).toHaveLength(1);
+  expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  // Any other space restores as usual.
+  const other = createSpace(db, { name: "Messages", kind: "general", goal: "My own list" });
+  await patch(`/api/spaces/${other.id}`, { status: "archived" });
+  expect((await (await patch(`/api/spaces/${other.id}`, { status: "active" })).json()).id).toBe(other.id);
+});
+
+test("DELETE a repo space waits for its clone to land", async () => {
+  server.stop(true);
+  server = startServer({ db, runner: { kick: () => {} }, setup: (t) => setupImpl(t), port: 0, repos: { cloning: () => true, daily: () => {} } as never });
+  base = `http://127.0.0.1:${server.port}`;
+  origin = base;
+  const s = createSpace(db, { name: "proj", kind: "repo", goal: "g", github: "fakeuser/proj" });
+  const res = await del(`/api/spaces/${s.id}`, { name: "proj" });
+  expect(res.status).toBe(409);
+  expect((await res.json()).error).toBe("Atrium is still getting a local copy of this repo. Try again in a minute. Nothing was deleted.");
+  expect(getSpace(db, s.id)).not.toBeNull();
 });
