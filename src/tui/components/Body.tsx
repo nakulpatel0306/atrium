@@ -35,6 +35,8 @@ export function Body({ view, ui, lay, detailLines, liveLines, online }: Props) {
   });
   const needs = view.state.approvals.length + view.state.proposals.length;
   const subject = detailTitle(view);
+  // The row of the made file picked with f, kept on screen.
+  const picked = ui.detailFile === null ? -1 : detailLines.findIndex((l) => l[0]?.text.startsWith("▸ "));
   return (
     <Box>
       <Box flexDirection="column" width={lay.left} flexShrink={0}>
@@ -56,6 +58,7 @@ export function Body({ view, ui, lay, detailLines, liveLines, online }: Props) {
           title={`Detail${subject ? ` · ${subject}` : ""}`}
           lines={detailLines}
           scroll={ui.detailScroll}
+          focusLine={picked >= 0 ? picked : undefined}
           focused={focused("detail")}
           width={lay.right}
           height={lay.detail}

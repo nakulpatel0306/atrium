@@ -120,3 +120,13 @@ test("an Atrium-wide repo question shows as Atrium's and approves with a", async
   await app.frame(() => client.calls.some((c) => c.method === "POST" && c.path === "/api/approvals/apr_repo"));
   expect(client.calls).toContainEqual({ method: "POST", path: "/api/approvals/apr_repo", body: { decision: "approve" } });
 });
+
+test("the detail pane scrolls to keep a picked file in view", async () => {
+  const { render } = await import("ink-testing-library");
+  const { DetailPane } = await import("../../src/tui/components/DetailPane");
+  const lines = Array.from({ length: 60 }, (_, i) => [{ text: i === 50 ? "▸ week.ics  new" : `line ${i}` }]);
+  const { lastFrame } = render(<DetailPane title="Detail" lines={lines} scroll={0} focusLine={50} focused width={60} height={12} />);
+  expect(lastFrame()).toContain("▸ week.ics");
+  const plain = render(<DetailPane title="Detail" lines={lines} scroll={0} focused width={60} height={12} />);
+  expect(plain.lastFrame()).not.toContain("▸ week.ics");
+});
