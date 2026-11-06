@@ -2660,3 +2660,71 @@ code {
 .kept {
   color: var(--dim);
 }
+
+/* investing: the chart */
+.tv-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tv-chart {
+  width: 100%;
+  height: clamp(360px, 62vh, 720px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.tv-chart iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+@media (max-width: 720px) {
+  .tv-chart {
+    height: 420px;
+  }
+}
+.tv-labels {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.tv-labels .tv-privacy {
+  margin-left: auto;
+  text-align: right;
+}
+.tv-reason {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+.tv-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--dim);
+}
+.tv-card svg {
+  width: 22px;
+  height: 22px;
+  color: var(--faint);
+}
+.tv-card p {
+  margin: 0;
+  max-width: 42ch;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.tv-card-acts {
+  display: flex;
+  gap: 8px;
+}

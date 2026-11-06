@@ -4,7 +4,7 @@ import { type Found, sourceFiles, swiftStrings, userStrings } from "./strings";
 type S = Found & { end: boolean };
 export type Offence = { file: string; line: number; text: string; rule: string };
 
-const PROPER = new Set(["Atrium", "Calendar", "Finder", "Claude", "Codex", "Gemini", "GitHub", "TFSA", "Mac", "Needs", "Auto", "Preview", "TextEdit", "Wealthsimple", "Finnhub", "Tiingo", "Alpaca", "Alpha", "Vantage", "SPY", "XEQT", "ETF", "CSV", "PR", "OK", "US", "CAD", "USD", "I"]);
+const PROPER = new Set(["Atrium", "Calendar", "Finder", "Claude", "Codex", "Gemini", "GitHub", "TFSA", "Mac", "Needs", "Auto", "Preview", "TextEdit", "Wealthsimple", "TradingView", "Finnhub", "Tiingo", "Alpaca", "Alpha", "Vantage", "SPY", "XEQT", "ETF", "CSV", "PR", "OK", "US", "CAD", "USD", "I"]);
 const CLI_WORDS = ["install", "log in", "logged out", "logged in", "update", "sandbox", "`claude`", "sign in", "signed in"];
 const ERROR_START = /^(Error:|Error |Failed to |Unable to |Something went wrong)/;
 
@@ -22,7 +22,7 @@ export function check(s: S, swift: boolean): string[] {
   if (s.call && s.end && !/[.!?]["')]*$/.test(t.trim())) rules.push("errors-end-in-a-stop");
   if (s.inButton) {
     const words = t.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w));
-    if (words.slice(1).some((w) => /^[A-Z][a-z]/.test(w) && !PROPER.has(w.replace(/[^A-Za-z]/g, "")))) rules.push("button-sentence-case");
+    if (words.slice(1).some((w) => /^[A-Z][a-z]/.test(w) && !PROPER.has(w.replace(/['’]s$/, "").replace(/[^A-Za-z]/g, "")))) rules.push("button-sentence-case");
   }
   if (t.includes("Claude Code") && !s.file.startsWith("src/engine/agents/") && !CLI_WORDS.some((w) => t.toLowerCase().includes(w))) rules.push("claude-code-only-for-cli");
   return rules;
