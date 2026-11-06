@@ -15,6 +15,8 @@
   --red: #eb5757;
   --blue: #4ea7fc;
   --claude: #d97757;
+  /* What the floating command bar covers at the bottom of the page: 20px gap, its own height, a little air. */
+  --cmd-clear: 88px;
   color-scheme: dark;
 }
 
@@ -233,6 +235,8 @@ svg.lucide {
 main {
   overflow-y: auto;
   position: relative;
+  /* So a row scrolled into view (a focused task, an opened preview) stops above the command bar. */
+  scroll-padding-bottom: var(--cmd-clear);
 }
 .top {
   height: 44px;
@@ -290,7 +294,7 @@ main {
 .wrap {
   max-width: 980px;
   margin: 0 auto;
-  padding: 28px 24px 120px;
+  padding: 28px 24px calc(var(--cmd-clear) + 32px);
 }
 h1 {
   font-size: 20px;

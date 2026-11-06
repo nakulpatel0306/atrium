@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { icsEvents, type FilePreview } from "../files";
 import { Markdown } from "./Markdown";
 
@@ -41,8 +41,11 @@ function Calendar({ text }: { text: string }) {
 
 export function PreviewPane({ preview, rawUrl }: { preview: FilePreview; rawUrl: string }) {
   const { kind, text } = preview;
+  const ref = useRef<HTMLDivElement>(null);
+  // A preview opened near the bottom would otherwise sit under the command bar (main's scroll padding clears it).
+  useEffect(() => ref.current?.scrollIntoView({ block: "nearest" }), []);
   return (
-    <div className="preview">
+    <div className="preview" ref={ref}>
       {kind === "image" ? (
         <img src={rawUrl} alt={preview.path} />
       ) : text === null ? null : kind === "markdown" ? (
