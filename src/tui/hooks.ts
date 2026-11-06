@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Message } from "../engine/messages";
+import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import type { EngineClient, MarketsGlance } from "./client";
 
@@ -32,6 +33,12 @@ function useFetched<T>(key: string | null, version: unknown, load: () => Promise
 export function useMessages(c: EngineClient, taskId: string | null): Message[] | null {
   const state = useEngineState(c);
   return useFetched(taskId, state, () => c.messages(taskId!));
+}
+
+// What a task made changes when a run ends or a decision lands, which any state push can mean.
+export function useOutputs(c: EngineClient, taskId: string | null): TaskOutputs | null {
+  const state = useEngineState(c);
+  return useFetched(taskId, state, () => c.outputs(taskId!));
 }
 
 // Only the space's own settings change the answer, so it's read again when the space is saved.

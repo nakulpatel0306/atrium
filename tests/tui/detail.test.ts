@@ -156,3 +156,35 @@ test("needs can be filtered by Atrium", () => {
   const view = deriveView(state, { ...initialUi, filters: { ...initialUi.filters, needs: "atrium" } });
   expect(view.approvals.map((a) => a.id)).toContain("apr_repo");
 });
+
+const outputs = {
+  summary: { text: "**Done.** Made your list.", status: "pending" as const, decidedBy: "you" as const, at: Date.now() },
+  files: [
+    { id: "rf1", runId: "r", root: "space" as const, ref: null, path: "grocery-list.md", absPath: "/a/grocery-list.md", change: "created" as const, size: 2662, insertions: null, deletions: null, kind: "markdown" as const, exists: true, at: 1 },
+    { id: "rf2", runId: "r", root: "space" as const, ref: null, path: "week.ics", absPath: "/a/week.ics", change: "created" as const, size: 613, insertions: null, deletions: null, kind: "calendar" as const, exists: true, at: 1 },
+    { id: "rf3", runId: "r", root: "space" as const, ref: null, path: "old.md", absPath: "/a/old.md", change: "changed" as const, size: 10, insertions: null, deletions: null, kind: "markdown" as const, exists: false, at: 1 },
+  ],
+};
+
+test("task detail shows the summary and what it made", () => {
+  const view = deriveView(makeState(), onTask(ids.review, 1));
+  const lines = taskDetail(view, null, outputs, null);
+  const all = text(lines);
+  expect(all).toContain("Summary");
+  expect(all).toContain("Done. Made your list.");
+  expect(all).not.toContain("**");
+  expect(all).toContain("What it made");
+  expect(all).toContain("grocery-list.md  new  2.6 KB");
+  expect(all).toContain("no longer in the folder");
+  expect(all).toContain("f select a file · o open · R reveal in Finder");
+  const picked = text(taskDetail(view, null, outputs, 1)).split("\n");
+  expect(picked.find((l) => l.includes("week.ics"))!.startsWith("▸ ")).toBe(true);
+  expect(picked.find((l) => l.includes("grocery-list.md  new"))!.startsWith("  ")).toBe(true);
+});
+
+test("approval detail renders markdown", () => {
+  const state = makeState();
+  state.approvals[0]!.detail = "**Done.** See the *list*.";
+  const view = deriveView(state, { ...initialUi, focus: "needs", lastLeft: "needs", selected: { ...initialUi.selected, needs: { id: ids.approval, index: 0 } } });
+  expect(text(approvalDetail(view, null))).not.toContain("**");
+});

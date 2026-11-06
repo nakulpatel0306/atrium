@@ -1,6 +1,7 @@
 import type { PostResult } from "../dashboard/api";
 import { config } from "../engine/config";
 import type { Message } from "../engine/messages";
+import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import type { MarketsView } from "../server/markets";
 import { clean, scrub } from "./text";
@@ -12,6 +13,7 @@ export type EngineClient = {
   output(runId: string): string;
   subscribe(fn: () => void): () => void;
   messages(taskId: string): Promise<Message[] | null>;
+  outputs(taskId: string): Promise<TaskOutputs | null>;
   reviewers(spaceId: string): Promise<Record<string, string | null> | null>;
   markets(spaceId: string): Promise<MarketsGlance | null>;
   transcript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
@@ -221,6 +223,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
       return () => listeners.delete(fn);
     },
     messages: (taskId) => read<Message[]>(`/api/tasks/${encodeURIComponent(taskId)}/messages`),
+    outputs: (taskId) => read<TaskOutputs>(`/api/tasks/${encodeURIComponent(taskId)}/outputs`),
     reviewers: (spaceId) => read<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`),
     markets: async (spaceId) => {
       const v = await read<MarketsView>(`/api/markets/${encodeURIComponent(spaceId)}`);

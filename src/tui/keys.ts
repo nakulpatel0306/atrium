@@ -20,7 +20,11 @@ export type Intent =
   | { type: "goal"; spaceId: string; goal: string }
   | { type: "reviewer"; spaceId: string; reviewBy: ReviewerId | null }
   | { type: "archive"; spaceId: string }
-  | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string };
+  | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
+  | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string };
+
+// A file the selected task made, as the keys need it.
+export type MadeFile = { path: string; exists: boolean; root: "space" | "branch" };
 
 export type Command = { kind: "ui"; action: Action } | { kind: "intent"; intent: Intent } | { kind: "quit" };
 
@@ -45,6 +49,9 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Act", keys: "N", does: "new space" },
   { section: "Act", keys: "A", does: "change agent" },
   { section: "Act", keys: "y n N", does: "suggestion: yes/later/never" },
+  { section: "Act", keys: "f F", does: "select a made file" },
+  { section: "Act", keys: "o", does: "open the selected file" },
+  { section: "Act", keys: "R", does: "reveal the selected file" },
   { section: "Space", keys: "p", does: "private on / off" },
   { section: "Space", keys: "e", does: "edit goal" },
   { section: "Space", keys: "v", does: "pick reviewer" },
@@ -63,7 +70,7 @@ const HINT_KEYS: Record<Pane, string[]> = {
   tasks: ["enter", "n", "R", "s", "A", "t"],
   needs: ["a", "r", "enter", "t"],
   activity: ["enter", "/"],
-  detail: ["j k", "a", "r", "t"],
+  detail: ["j k", "a", "r", "f F", "t"],
   live: ["j k", "g G"],
 };
 
@@ -145,8 +152,25 @@ function prompt(purpose: "task" | "space" | "reply" | "goal" | "filter", targetI
   return open({ kind: "prompt", purpose, value, cursor: value.length, agent: "auto", targetId });
 }
 
+// f, F, o and R on the files a task made, while its detail has focus. Null when the key means something else.
+function fileKey(input: string, u: Ui, view: View, files: MadeFile[]): Command[] | null {
+  if (u.focus !== "detail" || view.subject !== "task" || !view.task) return null;
+  if (input === "f" || input === "F") {
+    if (!files.length) return [info("This task didn't make any files.")];
+    const step = input === "f" ? 1 : -1;
+    const at = u.detailFile === null ? (step === 1 ? 0 : files.length - 1) : (u.detailFile + step + files.length) % files.length;
+    return [ui({ type: "file", index: at })];
+  }
+  const file = u.detailFile !== null ? files[u.detailFile] : undefined;
+  if ((input === "o" || input === "R") && file) {
+    const name = file.path.slice(file.path.lastIndexOf("/") + 1);
+    return [intent({ type: "openFile", spaceId: view.task.spaceId, path: file.path, how: input === "o" ? "open" : "reveal", name })];
+  }
+  return null;
+}
+
 // One command key, outside any overlay.
-function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
+function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[] = []): Command[] {
   if (key.tab) return [ui({ type: "cycle", dir: key.shift ? -1 : 1 })];
   if (key.leftArrow) return [ui({ type: "column", dir: "left" })];
   if (key.rightArrow) return [ui({ type: "column", dir: "right" })];
@@ -162,6 +186,8 @@ function globalKey(input: string, key: Key, u: Ui, view: View): Command[] {
     if (input === "u") return [ui({ type: "page", dir: -1 })];
     return [];
   }
+  const onFile = fileKey(input, u, view, files);
+  if (onFile) return onFile;
   const space = pinned(u, "spaces", view.space);
   const task = taskOf(u, view);
   // On a suggestion in Needs you, y / n / N answer it; everywhere else n and N make a task and a space.
@@ -385,13 +411,13 @@ function overlayKey(input: string, key: Key, overlay: Overlay, view: View): Comm
   }
 }
 
-export function commandsFor(input: string, key: Key, u: Ui, view: View): Command[] {
+export function commandsFor(input: string, key: Key, u: Ui, view: View, files: MadeFile[] = []): Command[] {
   const clear: Command[] = u.flash ? [ui({ type: "flash", flash: null })] : [];
   // Inside a prompt the whole chunk is text, so a paste lands whole and never runs as commands.
   if (u.overlay?.kind === "prompt") return [...clear, ...promptKey(input, key, u.overlay)];
   // Keys typed quickly arrive as one chunk; each character is its own command.
   const chars = input.length > 1 && !key.ctrl && !key.meta ? [...input] : [input];
   const out = [...clear];
-  for (const ch of chars) out.push(...(u.overlay ? overlayKey(ch, key, u.overlay, view) : globalKey(ch, key, u, view)));
+  for (const ch of chars) out.push(...(u.overlay ? overlayKey(ch, key, u.overlay, view) : globalKey(ch, key, u, view, files)));
   return out;
 }

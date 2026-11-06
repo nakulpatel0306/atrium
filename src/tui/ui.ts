@@ -25,6 +25,8 @@ export type Ui = {
   selected: Record<ListPane, Selection>;
   filters: Record<ListPane, string>;
   detailScroll: number;
+  // The made file picked in the task's detail with f, which o and R then act on.
+  detailFile: number | null;
   liveScroll: number | null;
   overlay: Overlay | null;
   flash: Flash | null;
@@ -45,7 +47,8 @@ export type Action =
   | { type: "select"; pane: ListPane; id: string }
   | { type: "unpin"; pane: ListPane }
   | { type: "filter"; pane: ListPane; text: string }
-  | { type: "flash"; flash: Flash | null };
+  | { type: "flash"; flash: Flash | null }
+  | { type: "file"; index: number | null };
 
 // Pane heights, plus how many lines Detail and Live hold so scrolling knows where the end is.
 export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number };
@@ -59,6 +62,7 @@ export const initialUi: Ui = {
   selected: { spaces: none, tasks: none, needs: none, activity: none },
   filters: { spaces: "", tasks: "", needs: "", activity: "" },
   detailScroll: 0,
+  detailFile: null,
   liveScroll: null,
   overlay: null,
   flash: null,
@@ -70,12 +74,13 @@ const isList = (p: Pane): p is ListPane => p !== "detail" && p !== "live";
 function focus(ui: Ui, pane: Pane): Ui {
   if (!isList(pane)) return { ...ui, focus: pane, lastRight: pane };
   // Detail follows the left pane last used, so a new one means new content, read from the top.
-  return { ...ui, focus: pane, lastLeft: pane, detailScroll: pane === ui.lastLeft ? ui.detailScroll : 0 };
+  const same = pane === ui.lastLeft;
+  return { ...ui, focus: pane, lastLeft: pane, detailScroll: same ? ui.detailScroll : 0, detailFile: same ? ui.detailFile : null };
 }
 
 // Selecting another space shows different tasks and output, so their selection and scroll start over.
 function select(ui: Ui, pane: ListPane, sel: Selection): Ui {
-  const next = { ...ui, selected: { ...ui.selected, [pane]: sel }, detailScroll: 0 };
+  const next = { ...ui, selected: { ...ui.selected, [pane]: sel }, detailScroll: 0, detailFile: null };
   if (pane === "spaces" && sel.id !== ui.selected.spaces.id) {
     return { ...next, selected: { ...next.selected, tasks: none }, liveScroll: null };
   }
@@ -150,6 +155,7 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
       }
       return ui;
     case "back":
+      if (ui.focus === "detail" && ui.detailFile !== null) return { ...ui, detailFile: null };
       if (isList(ui.focus) && ui.filters[ui.focus]) return { ...ui, filters: { ...ui.filters, [ui.focus]: "" } };
       if (ui.focus === "spaces") return ui;
       return focus(ui, isList(ui.focus) ? "spaces" : ui.lastLeft);
@@ -173,5 +179,7 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
       };
     case "flash":
       return { ...ui, flash: action.flash };
+    case "file":
+      return { ...ui, detailFile: action.index };
   }
 }

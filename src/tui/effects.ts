@@ -95,6 +95,10 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
             : `Atrium won't suggest a rule for ${intent.label} again.`,
       );
     }
+    case "openFile": {
+      const res = await client.post<{ app: string }>(`/api/spaces/${enc(intent.spaceId)}/file/open`, { path: intent.path, how: intent.how });
+      return said(res, (d) => (intent.how === "reveal" ? `Showing ${intent.name} in Finder.` : `Opened a copy of ${intent.name} in ${d.app}.`));
+    }
     case "archive":
       return space(intent.spaceId, { status: "archived" }, `Archived ${spaceName(intent.spaceId)}. Its agents stop picking up tasks.`);
   }

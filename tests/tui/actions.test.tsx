@@ -173,3 +173,17 @@ test("the prompt cursor never splits a wide character", async () => {
   const f = await app.frame((f) => f.includes("New task in atrium"));
   expect(f).toContain("> a🙂b");
 });
+
+test("opening a made file posts to the engine and says what happened", async () => {
+  const { runIntent } = await import("../../src/tui/effects");
+  const client = fakeClient(makeState());
+  client.respond(`/api/spaces/${ids.atrium}/file/open`, { ok: true, data: { ok: true, app: "TextEdit", copy: true } });
+  const out = await runIntent(client, { type: "openFile", spaceId: ids.atrium, path: "grocery-list.md", how: "open", name: "grocery-list.md" }, makeState());
+  expect(out).toEqual({ tone: "ok", text: "Opened a copy of grocery-list.md in TextEdit." });
+  expect(mutations(client.calls)).toEqual([{ method: "POST", path: `/api/spaces/${ids.atrium}/file/open`, body: { path: "grocery-list.md", how: "open" } }]);
+  const reveal = await runIntent(client, { type: "openFile", spaceId: ids.atrium, path: "week.ics", how: "reveal", name: "week.ics" }, makeState());
+  expect(reveal.text).toBe("Showing week.ics in Finder.");
+  client.respond(`/api/spaces/${ids.atrium}/file/open`, { ok: false, error: "Atrium won't open this kind of file directly, since it could run code. Use Reveal in Finder to look at it." });
+  const refused = await runIntent(client, { type: "openFile", spaceId: ids.atrium, path: "run.command", how: "open", name: "run.command" }, makeState());
+  expect(refused).toEqual({ tone: "bad", text: "Atrium won't open this kind of file directly, since it could run code. Use Reveal in Finder to look at it." });
+});

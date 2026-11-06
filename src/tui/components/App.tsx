@@ -6,7 +6,7 @@ import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
 import { activityDetail, approvalDetail, type DetailLine, proposalDetail, spaceDetail, taskDetail, wrapStyled } from "../detail";
 import { runIntent } from "../effects";
-import { useEngineState, useMarketsGlance, useMessages, useOnline, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
+import { useEngineState, useMarketsGlance, useMessages, useOnline, useOutputs, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, hints, type Intent } from "../keys";
 import { layout } from "../layout";
 import { deriveView, type View } from "../select";
@@ -47,9 +47,11 @@ function detailOf(
   messages: ReturnType<typeof useMessages>,
   reviewers: ReturnType<typeof useReviewers>,
   markets: ReturnType<typeof useMarketsGlance>,
+  made: { outputs: ReturnType<typeof useOutputs>; selected: number | null },
+  width: number,
 ): DetailLine[] {
-  if (view.subject === "task") return taskDetail(view, messages);
-  if (view.subject === "approval") return view.proposal ? proposalDetail(view) : approvalDetail(view, messages);
+  if (view.subject === "task") return taskDetail(view, messages, made.outputs, made.selected, width);
+  if (view.subject === "approval") return view.proposal ? proposalDetail(view) : approvalDetail(view, messages, width);
   if (view.subject === "activity") return activityDetail(view);
   return spaceDetail(view, reviewers, markets);
 }
@@ -100,7 +102,9 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   // Live is only drawn on the main screen; under a full-screen view its output isn't read or wrapped.
   const fullScreen = ui.overlay?.kind === "transcript" || ui.overlay?.kind === "agents";
   const output = useRunOutput(client, fullScreen ? null : (view?.live?.run.id ?? null));
-  const detailLines = view ? detailOf(view, messages, reviewers, markets).flatMap((l) => wrapStyled(l, inner)) : [];
+  const outputs = useOutputs(client, view?.subject === "task" ? (view.task?.id ?? null) : null);
+  const madeFiles = outputs?.files ?? [];
+  const detailLines = view ? detailOf(view, messages, reviewers, markets, { outputs, selected: ui.detailFile }, inner).flatMap((l) => wrapStyled(l, inner)) : [];
   const liveLines = useWrapped(output, inner);
   // Full-screen views: the header, one pane, and the status bar.
   const viewRows = height - 4;
@@ -167,7 +171,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
     const intents: Intent[] = [];
     let quit = false;
     const run = (text: string) => {
-      for (const cmd of commandsFor(text, key, cur, deriveView(s, cur))) {
+      for (const cmd of commandsFor(text, key, cur, deriveView(s, cur), madeFiles)) {
         if (cmd.kind === "ui") cur = reduce(cur, cmd.action, deriveView(s, cur), rows);
         else if (cmd.kind === "intent") intents.push(cmd.intent);
         else quit = true;

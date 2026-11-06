@@ -1,5 +1,6 @@
 import type { PostResult } from "../../src/dashboard/api";
 import type { Message } from "../../src/engine/messages";
+import type { TaskOutputs } from "../../src/engine/outputs/views";
 import type { State } from "../../src/engine/state";
 import { type EngineClient, glance } from "../../src/tui/client";
 
@@ -44,6 +45,12 @@ export function fakeClient(initial: State | null, opts: { online?: boolean } = {
       calls.push({ method: "GET", path });
       const r = responses.get(path);
       return r?.ok ? (r.data as Message[]) : null;
+    },
+    async outputs(taskId) {
+      const path = `/api/tasks/${taskId}/outputs`;
+      calls.push({ method: "GET", path });
+      const r = responses.get(path);
+      return r?.ok ? (r.data as TaskOutputs) : null;
     },
     async reviewers(spaceId) {
       const path = `/api/spaces/${spaceId}/reviewers`;

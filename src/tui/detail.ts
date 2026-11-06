@@ -3,10 +3,12 @@ import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboa
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
 import { actorName, reviewHint, reviewLine, runOutcome, spaceStatus, STATUS_TEXT } from "../dashboard/summary";
 import type { Message } from "../engine/messages";
+import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import { money } from "../engine/markets/labels";
-import { plural } from "../engine/text";
+import { fileSize, plural } from "../engine/text";
 import type { MarketsGlance } from "./client";
+import { markdownLines } from "./markdown";
 import type { View } from "./select";
 import { clean, width } from "./text";
 import { type AnsiColor, color, STATUS_GLYPH } from "./theme";
@@ -44,7 +46,34 @@ function runRow(run: Run): DetailLine {
   ];
 }
 
-function thread(messages: Message[] | null): DetailLine[] {
+const CHIP = { created: "new", changed: "changed", deleted: "deleted" } as const;
+
+function decided(s: NonNullable<TaskOutputs["summary"]>): string {
+  if (s.status === "pending") return "Waiting for you";
+  if (s.status === "rejected") return `Sent back ${relative(s.at)}`;
+  return `${s.decidedBy === "rule" ? "Approved by your rule" : "Approved by you"} ${relative(s.at)}`;
+}
+
+// The summary and the files a task made, the terminal's version of the dashboard's "What it made".
+function made(outputs: TaskOutputs | null, selected: number | null, width: number): DetailLine[] {
+  if (!outputs || (!outputs.summary && outputs.files.length === 0)) return [];
+  const lines: DetailLine[] = [];
+  if (outputs.summary) lines.push(heading("Summary"), ...markdownLines(outputs.summary.text, width), muted(decided(outputs.summary)), blank);
+  lines.push(heading("What it made"));
+  if (outputs.files.length === 0) return [...lines, muted("No files. This run answered in text only."), blank];
+  outputs.files.forEach((f, i) => {
+    const mark = i === selected ? "▸ " : "  ";
+    const gone = !f.exists || f.change === "deleted";
+    const amount = f.insertions !== null || f.deletions !== null ? `+${f.insertions ?? 0} −${f.deletions ?? 0}` : f.size !== null ? fileSize(f.size) : "";
+    lines.push([
+      { text: `${mark}${f.path}`, bold: i === selected, color: gone ? color.muted : undefined },
+      { text: gone ? "  no longer in the folder" : `  ${CHIP[f.change]}${amount ? `  ${amount}` : ""}`, color: color.muted },
+    ]);
+  });
+  return [...lines, muted("f select a file · o open · R reveal in Finder"), blank];
+}
+
+function thread(messages: Message[] | null, width = 100): DetailLine[] {
   if (!messages?.length) return [];
   return [
     blank,
@@ -58,12 +87,12 @@ function thread(messages: Message[] | null): DetailLine[] {
       if (verdict) {
         head.push({ text: `  ${verdict === "approve" ? "approves" : "asks for changes"}`, color: verdict === "approve" ? color.ok : color.warn });
       }
-      return [head, ...block(m.body)];
+      return [head, ...markdownLines(m.body, width)];
     }),
   ];
 }
 
-export function taskDetail(view: View, messages: Message[] | null): DetailLine[] {
+export function taskDetail(view: View, messages: Message[] | null, outputs: TaskOutputs | null = null, selectedFile: number | null = null, width = 100): DetailLine[] {
   const task = view.task;
   if (!task) return [muted(view.tasks.length ? PICK : "Pick a task in [2] to see its detail.")];
   const { state } = view;
@@ -84,7 +113,7 @@ export function taskDetail(view: View, messages: Message[] | null): DetailLine[]
   if (parent) {
     lines.push(muted(`${task.kind === "review" ? "Reviews" : "Fixes what the review found in"} “${parent.title}”`));
   }
-  lines.push(blank, ...block(task.detail || task.title), blank);
+  lines.push(blank, ...block(task.detail || task.title), blank, ...made(outputs, selectedFile, width));
   lines.push(
     [{ text: "Agent ", color: color.muted }, { text: agentText(task, state.runs) }],
     muted(`Added ${relative(task.createdAt)} (${absolute(task.createdAt)}) · Updated ${relative(task.updatedAt)}`),
@@ -92,14 +121,14 @@ export function taskDetail(view: View, messages: Message[] | null): DetailLine[]
   if (task.branch) lines.push(muted(`Branch ${task.branch}`));
   lines.push(muted(task.weight === "heavy" ? "Heavy · runs when plugged in" : "Light · runs anytime"));
   if (task.ignoreReserve) lines.push(muted("Runs during Claude's reserve"));
-  if (task.kind === "work") lines.push(...thread(messages));
+  if (task.kind === "work") lines.push(...thread(messages, width));
   lines.push(blank, heading("Runs"));
   if (runs.length === 0) lines.push(muted("No runs yet."));
   else lines.push(...runs.map(runRow), muted("t transcript · [ ] older / newer run"));
   return lines;
 }
 
-export function approvalDetail(view: View, messages: Message[] | null): DetailLine[] {
+export function approvalDetail(view: View, messages: Message[] | null, width = 100): DetailLine[] {
   const approval = view.approval;
   if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
   const space = view.state.spaces.find((s) => s.id === approval.spaceId);
@@ -107,7 +136,7 @@ export function approvalDetail(view: View, messages: Message[] | null): DetailLi
   const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");
   const lines: DetailLine[] = [muted(owner), plain(approval.title, { bold: true })];
   if (review) lines.push(plain(review.text, { color: review.tone ? TONE[review.tone] : undefined }));
-  lines.push(blank, ...block(approval.detail || "No further detail."), blank);
+  lines.push(blank, ...(approval.detail ? markdownLines(approval.detail, width) : [plain("No further detail.")]), blank);
   lines.push(muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`));
   if (approval.alwaysAsk === "create_repo") lines.push(plain("Edit the fields in the dashboard. a approves them as shown."));
   lines.push(

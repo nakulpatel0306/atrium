@@ -200,3 +200,54 @@ test("help comes first in the status bar", () => {
   const ui = pin(initialUi, deriveView(state, initialUi));
   expect(hints(ui, deriveView(state, ui)).startsWith("? help  ")).toBe(true);
 });
+
+const files = [
+  { path: "grocery-list.md", exists: true, root: "space" as const },
+  { path: "week.ics", exists: true, root: "space" as const },
+];
+
+function playFiles(steps: (string | [string, Partial<Key>])[], start: Partial<Ui>, list = files) {
+  const state = makeState();
+  let ui: Ui = pin({ ...initialUi, ...start }, deriveView(state, { ...initialUi, ...start }));
+  const all: Command[] = [];
+  for (const step of steps) {
+    const [input, flags] = typeof step === "string" ? [step, {}] : step;
+    const cmds = commandsFor(input, key(flags), ui, deriveView(state, ui), list);
+    all.push(...cmds);
+    for (const c of cmds) if (c.kind === "ui") ui = pin(reduce(ui, c.action, deriveView(state, ui), rows), deriveView(state, ui));
+  }
+  return { ui, all, intents: all.flatMap((c) => (c.kind === "intent" ? [c.intent] : [])) };
+}
+
+const inDetail = (index: number, id: string): Partial<Ui> => ({ ...onTask(index, id), focus: "detail", lastLeft: "tasks" });
+
+test("f picks a made file, then o opens it and R reveals it", () => {
+  const start = inDetail(1, ids.review);
+  expect(playFiles(["f"], start).ui.detailFile).toBe(0);
+  expect(playFiles(["f", "f", "f"], start).ui.detailFile).toBe(0);
+  expect(playFiles(["F"], start).ui.detailFile).toBe(1);
+  const open = playFiles(["f", "o"], start).intents;
+  expect(open).toEqual([{ type: "openFile", spaceId: ids.atrium, path: "grocery-list.md", how: "open", name: "grocery-list.md" }]);
+  expect(playFiles(["f", "f", "R"], start).intents).toEqual([{ type: "openFile", spaceId: ids.atrium, path: "week.ics", how: "reveal", name: "week.ics" }]);
+});
+
+test("with no file picked, o and R keep their usual meaning", () => {
+  const start = inDetail(1, ids.review);
+  expect(playFiles(["o"], start).intents[0]?.type).toBe("overnight");
+  expect(flashText(playFiles(["R"], start).all)).toContain("Retry is for blocked or failed tasks.");
+  expect(flashText(playFiles(["f"], start, []).all)).toContain("This task didn't make any files.");
+});
+
+test("esc clears the file before leaving detail", () => {
+  const start = inDetail(1, ids.review);
+  const once = playFiles(["f", ["", { escape: true }]], start).ui;
+  expect(once.detailFile).toBeNull();
+  expect(once.focus).toBe("detail");
+  expect(playFiles(["f", ["", { escape: true }], ["", { escape: true }]], start).ui.focus).toBe("tasks");
+});
+
+test("help lists the file keys", () => {
+  expect(HELP).toContainEqual({ section: "Act", keys: "f F", does: "select a made file" });
+  expect(HELP).toContainEqual({ section: "Act", keys: "o", does: "open the selected file" });
+  expect(HELP).toContainEqual({ section: "Act", keys: "R", does: "reveal the selected file" });
+});
