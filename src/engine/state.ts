@@ -41,6 +41,8 @@ export type State = {
   // didn't start. The token is part of the page's path, so nothing else on that port can stand in for it.
   embed?: { port: number; token: string } | null;
   spaces: Space[];
+  // Archived spaces, most recently archived first, for the list that restores or deletes them.
+  archived: Space[];
   tasks: Task[];
   runs: RunSummary[];
   approvals: Approval[];
@@ -49,6 +51,8 @@ export type State = {
   rules: Rule[];
   neverAsk: Proposal[];
   activity: ActivityRow[];
+  // How many files each task in the activity made, so the feed can say "wrote 2 files".
+  activityFiles: Record<string, number>;
   briefing: ReturnType<typeof briefing>;
   power: {
     source: "ac" | "battery";
@@ -143,8 +147,19 @@ function repoActionViews(db: Database): RepoActionView[] {
   });
 }
 
+// Files recorded for the tasks the feed mentions; a deleted file still counts, as the run did make it.
+function filesByTask(db: Database, activity: ActivityRow[]): Record<string, number> {
+  const ids = [...new Set(activity.map((a) => a.taskId).filter((id): id is string => id !== null))];
+  if (!ids.length) return {};
+  const rows = db
+    .query(`SELECT task_id, COUNT(DISTINCT root || ':' || path) AS n FROM run_files WHERE change != 'deleted' AND task_id IN (${ids.map(() => "?").join(",")}) GROUP BY task_id`)
+    .all(...ids) as { task_id: string; n: number }[];
+  return Object.fromEntries(rows.map((r) => [r.task_id, r.n]));
+}
+
 export function snapshot(db: Database, registry?: Registry): State {
   const now = Date.now();
+  const activity = listActivity(db, { limit: 300 });
   const waitsRaw = JSON.parse(getSetting(db, "runner.waiting") || "[]") as unknown;
   const pausedUntil = Number(getSetting(db, "agent.claude.limitedUntil") ?? 0);
   const midnight = new Date(now).setHours(0, 0, 0, 0);
@@ -169,6 +184,9 @@ export function snapshot(db: Database, registry?: Registry): State {
     .get(now - 24 * 3600_000) as { n: number };
   return {
     spaces: listSpaces(db),
+    archived: listSpaces(db, { includeArchived: true })
+      .filter((s) => s.status === "archived")
+      .sort((a, b) => b.updatedAt - a.updatedAt),
     tasks: listTasks(db),
     // rowid breaks ties between runs started in the same millisecond
     runs: db
@@ -182,7 +200,8 @@ export function snapshot(db: Database, registry?: Registry): State {
     proposals: listPendingProposals(db),
     rules: listRules(db, now),
     neverAsk: listNeverProposals(db),
-    activity: listActivity(db, { limit: 100 }),
+    activity,
+    activityFiles: filesByTask(db, activity),
     briefing: briefing(db, now),
     power: {
       source: getSetting(db, "power.source") === "battery" ? "battery" : "ac",

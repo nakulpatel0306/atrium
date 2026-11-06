@@ -8,7 +8,7 @@ import { openDb } from "../../src/engine/db";
 import { createRegistry } from "../../src/engine/agents/registry";
 import { createRunner } from "../../src/engine/runner";
 import { SetupFailed } from "../../src/engine/setup";
-import { createSpace } from "../../src/engine/spaces";
+import { createSpace, getSpace } from "../../src/engine/spaces";
 import { getSetting } from "../../src/engine/settings";
 import { createTask, getTask, listTasks, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { bus } from "../../src/engine/events";
@@ -645,4 +645,58 @@ test("cross-site reads are refused; plain reads still work", async () => {
   expect((await fetch(`${base}/api/state`)).status).toBe(200);
   expect((await fetch(`${base}/api/state`, { headers: { origin, "sec-fetch-site": "same-origin" } })).status).toBe(200);
   expect((await fetch(`${base}/api/state`, { headers: { "sec-fetch-site": "none" } })).status).toBe(200);
+});
+
+const del = (path: string, body?: unknown, headers: Record<string, string> = { origin, "content-type": "application/json" }) =>
+  fetch(base + path, { method: "DELETE", headers, body: body === undefined ? undefined : JSON.stringify(body) });
+
+test("DELETE a space needs Origin, the right Host, JSON and the exact name", async () => {
+  const s = createSpace(db, { name: "Text Dana", kind: "general", goal: "g" });
+  expect((await del(`/api/spaces/${s.id}`, { name: "Text Dana" }, { "content-type": "application/json" })).status).toBe(403);
+  expect((await del(`/api/spaces/${s.id}`, { name: "Text Dana" }, { origin: "http://evil.test", "content-type": "application/json" })).status).toBe(403);
+  expect((await del(`/api/spaces/${s.id}`, { name: "Text Dana" }, { origin, host: "evil.test", "content-type": "application/json" })).status).toBe(403);
+  expect((await del(`/api/spaces/${s.id}`, { name: "Text Dana" }, { origin, "content-type": "text/plain" })).status).toBe(415);
+  const missing = await del(`/api/spaces/${s.id}`);
+  expect(missing.status).toBe(400);
+  expect(await missing.json()).toEqual({ error: "Type the space's name to delete it." });
+  const wrong = await del(`/api/spaces/${s.id}`, { name: "Text" });
+  expect(wrong.status).toBe(400);
+  expect(getSpace(db, s.id)).not.toBeNull();
+  const ok = await del(`/api/spaces/${s.id}`, { name: "Text Dana" });
+  expect(ok.status).toBe(200);
+  expect(await ok.json()).toEqual({ name: "Text Dana", kept: [] });
+  expect(getSpace(db, s.id)).toBeNull();
+  expect((await del(`/api/spaces/${s.id}`, { name: "Text Dana" })).status).toBe(404);
+});
+
+test("DELETE a space with a running task is 409 and changes nothing", async () => {
+  const s = createSpace(db, { name: "Busy", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Long job" });
+  setTaskStatus(db, t.id, "running");
+  const res = await del(`/api/spaces/${s.id}`, { name: "Busy" });
+  expect(res.status).toBe(409);
+  expect((await res.json()).error).toContain('"Long job" is running.');
+  expect(getTask(db, t.id)).not.toBeNull();
+});
+
+test("the delete preview is a read; DELETE a task needs Origin", async () => {
+  const s = createSpace(db, { name: "Groceries", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Make a list" });
+  const preview = await fetch(`${base}/api/spaces/${s.id}/delete-preview`);
+  expect(preview.status).toBe(200);
+  expect(await preview.json()).toMatchObject({ name: "Groceries", tasks: 1, refusal: null });
+  expect(await (await fetch(`${base}/api/tasks/${t.id}/delete-preview`)).json()).toMatchObject({ title: "Make a list", runs: 0, files: 0 });
+  expect((await del(`/api/tasks/${t.id}`, undefined, {})).status).toBe(403);
+  expect((await del(`/api/tasks/${t.id}`, undefined, { origin })).status).toBe(200);
+  expect(getTask(db, t.id)).toBeNull();
+  expect((await del(`/api/tasks/${t.id}`, undefined, { origin })).status).toBe(404);
+});
+
+test("the state lists archived spaces apart from active ones", async () => {
+  const a = createSpace(db, { name: "Active", kind: "general", goal: "g" });
+  const b = createSpace(db, { name: "Old", kind: "general", goal: "g" });
+  await patch(`/api/spaces/${b.id}`, { status: "archived" });
+  const state = await (await fetch(`${base}/api/state`)).json();
+  expect(state.spaces.map((s: { id: string }) => s.id)).toEqual([a.id]);
+  expect(state.archived.map((s: { id: string }) => s.id)).toEqual([b.id]);
 });

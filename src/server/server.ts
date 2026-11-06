@@ -13,6 +13,7 @@ import { SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
 import { createSpace, getSpace, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
+import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
@@ -151,6 +152,17 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       return res;
     }
 
+    const spacePreviewM = hit("GET", /^\/api\/spaces\/([^/]+)\/delete-preview$/);
+    if (spacePreviewM) return json(spaceDeletePreview(db, spacePreviewM[1]!));
+
+    // Permanent: the body must carry the space's exact name, which the engine checks against its own row.
+    const spaceDelM = hit("DELETE", /^\/api\/spaces\/([^/]+)$/);
+    if (spaceDelM) {
+      const b = await readBody(req);
+      if (typeof b.name !== "string") throw new HttpError(400, "Type the space's name to delete it.");
+      return json(await deleteSpace(db, spaceDelM[1]!, b.name));
+    }
+
     // Lets space settings say up front why a reviewer would be skipped, instead of after the work finishes.
     const reviewersM = hit("GET", /^\/api\/spaces\/([^/]+)\/reviewers$/);
     if (reviewersM) {
@@ -205,6 +217,15 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       bus.emit({ type: "changed" });
       runner.kick();
       return json(getTask(db, id));
+    }
+
+    const taskPreviewM = hit("GET", /^\/api\/tasks\/([^/]+)\/delete-preview$/);
+    if (taskPreviewM) return json(taskDeletePreview(db, taskPreviewM[1]!));
+
+    const taskDelM = hit("DELETE", /^\/api\/tasks\/([^/]+)$/);
+    if (taskDelM) {
+      await readBody(req);
+      return json(await deleteTask(db, taskDelM[1]!));
     }
 
     const nowM = hit("POST", /^\/api\/tasks\/([^/]+)\/run-now$/);
@@ -397,6 +418,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       } catch (e) {
         if (e instanceof HttpError) return fail(e.status, e.message);
         if (e instanceof FileRefused) return fail(e.status, e.message);
+        if (e instanceof DeleteRefused) return fail(e.status, e.message);
         if (e instanceof AlreadyResolved) return fail(409, "Already handled");
         if (e instanceof InvalidTransition) return fail(409, e.message);
         if (e instanceof RuleRefused) return fail(409, e.message);

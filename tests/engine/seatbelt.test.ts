@@ -192,6 +192,26 @@ describe("seatbeltProfile", () => {
     }
   });
 
+  test("an agent can't delete a space through the engine, even with a forged Origin", async () => {
+    const { openDb } = await import("../../src/engine/db");
+    const { createSpace, getSpace } = await import("../../src/engine/spaces");
+    const { startServer } = await import("../../src/server/server");
+    // The suite's own temp home is already ATRIUM_HOME.
+    const db = openDb();
+    const server = startServer({ db, runner: { kick: () => {} }, setup: async () => ({}) as never, port: 0 });
+    try {
+      const space = createSpace(db, { name: "Text Dana", kind: "general", goal: "g" });
+      const profile = seatbeltProfile({ cwd, writable: [cwd] });
+      const url = `http://127.0.0.1:${server.port}/api/spaces/${space.id}`;
+      const r = sandboxed(profile, `/usr/bin/curl -s --max-time 5 -X DELETE -H "Origin: http://127.0.0.1:${server.port}" -H "Content-Type: application/json" -d '{"name":"Text Dana"}' ${url}`);
+      expect(r.exitCode).toBe(7);
+      expect(getSpace(db, space.id)).not.toBeNull();
+    } finally {
+      server.stop(true);
+      db.close();
+    }
+  });
+
   test("review profile has no writable cwd", () => {
     const profile = seatbeltProfile({ cwd, writable: [state] });
     const r = sandboxed(profile, `echo x > review.txt || echo no-cwd; echo x > "${state}/s.txt" && echo state-ok`);

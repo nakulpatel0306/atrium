@@ -82,6 +82,7 @@ export function makeState(over: Partial<State> = {}): State {
       space({ id: ids.atrium, name: "atrium", kind: "repo", goal: "Ship the terminal app", repoPath: "/Users/n/dev/atrium", reviewBy: "codex" }),
       space({ id: ids.jobHunt, name: "job hunt", goal: "Find a new role" }),
     ],
+    archived: [],
     tasks: [
       task({ id: ids.review, title: "Fix login redirect", status: "review", agent: "claude", weight: "heavy", approvalId: ids.approval, branch: "atrium/tsk_review", createdAt: now - 50 * min }),
       task({ id: ids.running, title: "Add the status bar", status: "running", agent: "claude", detail: "Draw the gauge.", createdAt: now - 40 * min }),
@@ -103,6 +104,7 @@ export function makeState(over: Partial<State> = {}): State {
       { id: "act_2", spaceId: ids.jobHunt, taskId: null, actor: "you", message: "added Summarize postings", createdAt: now - 15 * min },
       { id: "act_3", spaceId: null, taskId: null, actor: "atrium", message: "Overnight mode off", createdAt: now - 90 * min },
     ],
+    activityFiles: {},
     briefing: { greeting: "Good evening, Nakul.", summary: "2 tasks finished across 1 space.", markets: null },
     power: { source: "ac", overnight: false, keepAwake: false },
     waits: {

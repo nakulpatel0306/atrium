@@ -27,6 +27,7 @@ import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { createRepos } from "./engine/repos";
 import { recoverRemovals } from "./engine/repos/cleanup";
+import { finishPendingDeletes } from "./engine/delete-files";
 import { recoverRepoActions } from "./engine/repos/create";
 import { createMessaging } from "./engine/messaging";
 import { recoverMessageActions } from "./engine/messaging/send";
@@ -110,6 +111,8 @@ await recoverOnBoot(db);
 for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);
 recoverRepoActions(db);
 recoverRemovals(db);
+// Files a delete queued but didn't get to remove before the engine stopped; their rows are already gone.
+void finishPendingDeletes(db).catch((e) => console.error("Couldn't finish removing deleted files:", e));
 recoverMessageActions(db);
 fixTalal(db);
 runner.start();
