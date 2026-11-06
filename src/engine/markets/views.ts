@@ -186,14 +186,11 @@ export const EARNINGS_DAYS = EARNINGS_DAYS_AHEAD;
 
 export function earningsView(db: Database, spaceId: string, now: number): { rows: EarningsRow[]; source: string; days: number } {
   const held = new Set(listHoldings(db, spaceId).map((h) => h.key));
-  const names = new Map<string, string>();
-  for (const h of listHoldings(db, spaceId)) if (h.name) names.set(h.key, h.name);
-  for (const l of listLists(db, spaceId)) for (const i of listItems(db, l.id)) if (i.name && !names.has(i.key)) names.set(i.key, i.name);
-  const keys = [...new Set([...held, ...names.keys(), ...listLists(db, spaceId).flatMap((l) => listItems(db, l.id).map((i) => i.key))])];
-  const meta = getMeta(db, keys);
+  const keys = [...new Set([...held, ...listLists(db, spaceId).flatMap((l) => listItems(db, l.id).map((i) => i.key))])];
+  const names = holdingNames(db, spaceId, keys);
   const rows = upcomingEarnings(db, keys, etDate(now), EARNINGS_DAYS).map((e) => ({
     key: e.key,
-    name: names.get(e.key) || meta.get(e.key)?.name || "",
+    name: names.get(e.key) ?? "",
     date: e.date,
     hour: e.hour,
     epsEstimate: e.epsEstimate,

@@ -149,3 +149,11 @@ test("holding names: the profile name, then the watchlist's, then Wealthsimple's
   expect(names.AMZN).toBe("Amazon.com Inc");
   expect(names["VFV.TO"]).toBe("Vanguard S&P 500 Index ETF");
 });
+
+test("earnings rows use the same clean names as the Portfolio", async () => {
+  const { addHolding } = await import("../../../src/engine/markets/holdings");
+  addHolding(db, fx.spaceId, { account: "TFSA", symbol: "NOW", exchange: "US", name: "Servicenow Inc.", quantity: 1, bookValue: 100, currency: "USD" });
+  db.query("INSERT INTO instrument_meta (key, name) VALUES ('NOW', 'ServiceNow Inc')").run();
+  saveEarnings(db, [{ key: "NOW", date: "2026-11-09", hour: "amc", epsEstimate: null }], "finnhub");
+  expect(earningsView(db, fx.spaceId, NOW).rows.find((r) => r.key === "NOW")!.name).toBe("ServiceNow Inc");
+});
