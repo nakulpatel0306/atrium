@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import { isEnvPath } from "../envpath";
 
@@ -50,7 +50,7 @@ export function snapshotFolder(
           truncated = full = true;
           return;
         }
-        files.set(childRel, { size: st.size, mtimeMs: st.mtimeMs, hash: st.size <= limits.hashBytes ? hashOf(childAbs) : null });
+        files.set(childRel, { size: st.size, mtimeMs: st.mtimeMs, hash: st.size <= limits.hashBytes ? hashOf(childAbs, st, limits.hashBytes) : null });
       }
     }
   };
@@ -58,11 +58,36 @@ export function snapshotFolder(
   return { files, truncated };
 }
 
-function hashOf(path: string): string | null {
+function hashOf(path: string, seen: Stats, cap: number): string | null {
+  const bytes = readRegular(path, seen, cap);
+  return bytes ? Bun.hash(bytes).toString(16) : null;
+}
+
+// The engine isn't sandboxed and the folder is an agent's, so the path may be swapped for a link (or another
+// file) between the walk's lstat and this read. The open never follows a link, and the opened file must be the
+// very one the walk saw. Reads at most `cap` bytes; null when it isn't that regular file or is bigger.
+export function readRegular(path: string, seen: Pick<Stats, "dev" | "ino">, cap: number): Uint8Array | null {
+  let fd: number;
   try {
-    return Bun.hash(readFileSync(path)).toString(16);
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
     return null;
+  }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.dev !== seen.dev || st.ino !== seen.ino || st.size > cap) return null;
+    const buf = new Uint8Array(st.size);
+    let off = 0;
+    while (off < buf.length) {
+      const n = readSync(fd, buf, off, buf.length - off, off);
+      if (n === 0) break;
+      off += n;
+    }
+    return buf.subarray(0, off);
+  } catch {
+    return null;
+  } finally {
+    closeSync(fd);
   }
 }
 

@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { diffSnapshots, snapshotFolder } from "../../../src/engine/outputs/snapshot";
+import { diffSnapshots, readRegular, snapshotFolder } from "../../../src/engine/outputs/snapshot";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -95,4 +95,20 @@ test("a truncated after-snapshot reports no deletions", () => {
   const after = snapshotFolder(d, { limits: { maxFiles: 2 } });
   expect(after.truncated).toBe(true);
   expect(diffSnapshots(before, after)).toEqual([]);
+});
+
+test("a file swapped for a link after lstat is never read through the link", () => {
+  const d = temp();
+  const secret = join(temp(), "secret.txt");
+  writeFileSync(secret, "secret");
+  put(d, "notes.md", "public");
+  const seen = lstatSync(join(d, "notes.md"));
+  rmSync(join(d, "notes.md"));
+  symlinkSync(secret, join(d, "notes.md"));
+  expect(readRegular(join(d, "notes.md"), seen, 1024)).toBeNull();
+  // A different regular file at the same path (another inode) is refused too.
+  rmSync(join(d, "notes.md"));
+  writeFileSync(join(d, "notes.md"), "swapped");
+  expect(readRegular(join(d, "notes.md"), seen, 1024)).toBeNull();
+  expect(new TextDecoder().decode(readRegular(join(d, "notes.md"), lstatSync(join(d, "notes.md")), 1024)!)).toBe("swapped");
 });
