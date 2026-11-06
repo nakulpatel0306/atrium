@@ -16,7 +16,7 @@ import {
 import { openDb } from "../../src/engine/db";
 import type { ChangedFile } from "../../src/engine/git";
 import { createSpace, type Space } from "../../src/engine/spaces";
-import { createTask, getTask, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, getTask, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
 
 const FP = "v1:code:docs:small:claude";
@@ -50,6 +50,7 @@ function pending(s: Space = space) {
   const t = createTask(db, { spaceId: s.id, title: "Add a note" });
   setTaskStatus(db, t.id, "running");
   setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
+  setTaskOutcome(db, t.id, "done", null);
   const a = createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title: "Add a note", detail: "1 commit", fingerprint: FP });
   const branch = `atrium/${t.id}`;
   const facts: ActionFacts = { domain: "code", agent: "claude", branch, sha: branchAt(repo.path, branch), files: [file("docs/a.md")], content: PLAIN_DOCS };
@@ -230,6 +231,7 @@ describe("applyRule", () => {
     const t = createTask(db, { spaceId: space.id, title: "Bigger note" });
     setTaskStatus(db, t.id, "running");
     setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
+    setTaskOutcome(db, t.id, "done", null);
     const a = createApproval(db, { spaceId: space.id, taskId: t.id, kind: "review", title: "Bigger note", detail: "", fingerprint: "v1:code:docs:medium:claude" });
     const branch = `atrium/${t.id}`;
     const facts: ActionFacts = { domain: "code", agent: "claude", branch, sha: branchAt(repo.path, branch), files: [file("docs/a.md", 80)], content: PLAIN_DOCS };
@@ -242,6 +244,7 @@ describe("applyRule", () => {
       const t2 = createTask(db, { spaceId: other.id, title: "Note" });
       setTaskStatus(db, t2.id, "running");
       setTaskStatus(db, t2.id, "review", { branch: `atrium/${t2.id}` });
+      setTaskOutcome(db, t2.id, "done", null);
       const a2 = createApproval(db, { spaceId: other.id, taskId: t2.id, kind: "review", title: "Note", detail: "", fingerprint: FP });
       const b2 = `atrium/${t2.id}`;
       expect(applyRule(db, a2.id, { domain: "code", agent: "claude", branch: b2, sha: branchAt(otherRepo.path, b2), files: [file("docs/a.md")], content: PLAIN_DOCS })).not.toBeNull();
@@ -357,4 +360,36 @@ test("applyRule never touches an always-ask approval", () => {
   db.exec("PRAGMA ignore_check_constraints = OFF");
   expect(applyRule(db, repoAsk.id, facts)).toBeNull();
   expect(getApproval(db, repoAsk.id)!.status).toBe("pending");
+});
+
+test("applyRule never decides a send_message approval", () => {
+  const { a, facts } = pending();
+  rule();
+  const send = createApproval(db, { spaceId: space.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+  db.exec("PRAGMA ignore_check_constraints = ON");
+  db.query("UPDATE approvals SET kind = 'review', task_id = ?, fingerprint = ? WHERE id = ?").run(a.taskId, FP, send.id);
+  db.exec("PRAGMA ignore_check_constraints = OFF");
+  expect(applyRule(db, send.id, facts)).toBeNull();
+  expect(getApproval(db, send.id)!.status).toBe("pending");
+});
+
+test("applyRule leaves a result that wasn't done for Nakul", () => {
+  const general = createSpace(db, { name: "Notes", kind: "general", goal: "" });
+  const fp = "v1:general:text:claude";
+  createRule(db, proposal(general, fp), Date.now() - 1000);
+  const facts: ActionFacts = { domain: "general", agent: "claude", filesKept: 0 };
+  const result = (outcome: "done" | "partial" | "couldnt" | "unknown") => {
+    const t = createTask(db, { spaceId: general.id, title: "Summarise notes.md" });
+    setTaskStatus(db, t.id, "running");
+    setTaskStatus(db, t.id, "review");
+    setTaskOutcome(db, t.id, outcome, outcome === "done" ? null : "the file isn't there.");
+    return createApproval(db, { spaceId: general.id, taskId: t.id, kind: "review", title: t.title, detail: "", fingerprint: fp });
+  };
+  for (const o of ["couldnt", "partial", "unknown"] as const) {
+    const a = result(o);
+    expect(applyRule(db, a.id, facts)).toBeNull();
+    expect(getApproval(db, a.id)!.status).toBe("pending");
+  }
+  const done = result("done");
+  expect(applyRule(db, done.id, facts)?.status).toBe("approved");
 });

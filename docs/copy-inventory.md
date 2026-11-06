@@ -27,16 +27,20 @@ this page is the record of the reading pass.
 | Views | `src/dashboard/components/Home.tsx` | greeting, briefing, space cards, new-space card | yes | New-space card: "just describe it" became "Describe it in a sentence and Atrium sets it up."; centred, balanced, focus ring; card titles carry a full title |
 | Views | `src/dashboard/components/Logo.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Markdown.tsx` | labels, buttons, empty states, errors | yes | New in this plan |
-| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state | yes | Row summary is the first paragraph as plain text (no markdown); detail shows What it made; "View transcript in" became "Open the task in"; full title on hover |
+| Views | `src/dashboard/components/OutcomeBanner.tsx` | Couldn't do this, Partly done, can't tell banners; Accept anyway / Accept as is | yes | New in Plan 11 |
+| Views | `src/dashboard/components/MessageCard.tsx` | send card: recipient line, number field, Contacts lookup, matches, message box and counter, Via toggle, footnote, Last try failed, Open System Settings | yes | New in Plan 11; copy from the plan |
+| Views | `src/dashboard/components/MessagingSettings.tsx` | Settings › Messages: sending and Contacts status lines, Open System Settings | yes | New in Plan 11 |
+| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state | yes | Row summary is the first paragraph as plain text (no markdown); detail shows What it made; "View transcript in" became "Open the task in"; full title on hover; Plan 11: outcome banner under the row, "Accept anyway" / "Accept as is" |
 | Views | `src/dashboard/components/PreviewPane.tsx` | preview notes, calendar list | yes | New in this plan; written to the rules |
 | Views | `src/dashboard/components/ProjectDraft.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Proposal.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/RepoRemoval.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/SentMessages.tsx` | Texts heading, Sent to / Didn't send / Not sent rows | yes | New in Plan 11 |
 | Views | `src/dashboard/components/Rules.tsx` | rule list, rule detail, undo, empty states | yes | Em dash in the prose warning became a comma |
 | Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | "Markets spaces" became "investing spaces"; Plan 10: Finnhub Required, Alpha Vantage Optional, Tiingo Not needed; Alpaca removal row |
 | Views | `src/dashboard/components/Sidebar.tsx` | nav labels, footer status | yes | No change needed |
 | Views | `src/dashboard/components/SpaceView.tsx` | tabs, task rows, task detail, not-found page, live column | yes | "Space not found" became "This space isn't here" with what to do; Tasks/Files tabs; "You asked" renders markdown; straight quotes around the parent task; full title on hover |
-| Views | `src/dashboard/components/StatusIcon.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Views | `src/dashboard/components/StatusIcon.tsx` | labels, buttons, empty states, errors | yes | Plan 11: Not done and Partly done labels for finished tasks |
 | Views | `src/dashboard/components/Storage.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Thread.tsx` | labels, buttons, empty states, errors | yes | Message bodies render as markdown |
 | Views | `src/dashboard/components/Transcript.tsx` | labels, buttons, empty states, errors | yes | No change needed |

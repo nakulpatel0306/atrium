@@ -5,7 +5,7 @@ import { reviewTarget } from "../../dashboard/summary";
 import type { State } from "../../engine/state";
 import type { EngineClient } from "../client";
 import { activityDetail, approvalDetail, type DetailLine, proposalDetail, spaceDetail, taskDetail, wrapStyled } from "../detail";
-import { runIntent } from "../effects";
+import { runIntent, sendFollowUp } from "../effects";
 import { useEngineState, useMarketsGlance, useMessages, useOnline, useOutputs, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, hints, type Intent } from "../keys";
 import { layout } from "../layout";
@@ -70,6 +70,8 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
   const seen = useRef(false);
   // Setting up a space takes a while; a second submit meanwhile would set up a second space.
   const settingUp = useRef(false);
+  // A text that's on its way, so the status bar can say when it went (or didn't).
+  const sending = useRef<{ toName: string; at: number } | null>(null);
   if (state && !briefing.current) briefing.current = state.briefing;
 
   useEffect(() => {
@@ -150,6 +152,7 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
       settingUp.current = true;
       flash({ tone: "info", text: SETTING_UP });
     }
+    const started = Date.now();
     const out = await runIntent(client, intent, s);
     if (intent.type === "newSpace") settingUp.current = false;
     // A decided approval leaves the list; the next one is picked deliberately, never slid into.
@@ -159,7 +162,25 @@ export function App({ client, size }: { client: EngineClient; size?: Size }) {
       dispatch({ type: "focus", pane: "tasks" });
     }
     flash({ tone: out.tone, text: out.text });
+    if (intent.type === "send_message" && out.tone === "ok") {
+      sending.current = { toName: intent.toName, at: started };
+      // The send can finish before this request does; then no later push would bring the news.
+      const now = client.state();
+      const done = now ? sendFollowUp(now, sending.current) : null;
+      if (done) {
+        sending.current = null;
+        flash(done);
+      }
+    }
   };
+
+  useEffect(() => {
+    if (!state || !sending.current) return;
+    const next = sendFollowUp(state, sending.current);
+    if (!next) return;
+    sending.current = null;
+    flash(next);
+  }, [state]);
 
   const handle = (input: string, key: Key) => {
     const s = client.state();

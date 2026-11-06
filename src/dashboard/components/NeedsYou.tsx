@@ -4,6 +4,8 @@ import { post, type State, useMessages } from "../api";
 import { absolute, relative } from "../format";
 import { navigate } from "../route";
 import { reviewLine, reviewTarget, summaryLine } from "../summary";
+import { MessageCard } from "./MessageCard";
+import { approveLabel, OutcomeBanner } from "./OutcomeBanner";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -37,6 +39,9 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
     }
   };
   const ReviewIcon = review?.fixing ? Wrench : SearchCheck;
+  // What the agent said about a result that isn't plainly done; only reviews carry one.
+  const task = approval.kind === "review" && approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
+  const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
 
   const decide = async (decision: "approve" | "reject") => {
     setBusy(true);
@@ -89,12 +94,17 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
                 Send back
               </button>
               <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
-                Approve
+                {approveLabel(outcome)}
               </button>
             </>
           )}
         </div>
       </div>
+      {outcome && (
+        <div className="outcome-row">
+          <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
+        </div>
+      )}
       {open && (
         <div className="detail">
           {approval.taskId && space ? (
@@ -167,6 +177,8 @@ export function NeedsYou({ state }: { state: State }) {
               const action = state.repoActions.find((r) => r.approvalId === a.id);
               if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
               if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
+              const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
+              if (text) return <MessageCard key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} />;
               return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
             })}
           </>

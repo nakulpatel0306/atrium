@@ -31,6 +31,15 @@ func madeText(_ n: Int?) -> String? {
 
 // Notes only for ids the previous summary didn't have, so a reconnect or wake never repeats what Nakul already saw.
 // The first summary after launch only seeds: the badge already shows what was waiting.
+// A text and a result the agent didn't finish say so in the title, before anything else.
+func noteTitle(_ n: Need) -> String {
+  if n.action == "send_message" { return "Text ready to send" }
+  if n.kind == "review" && n.outcome == "couldnt" { return "Couldn't do this" }
+  if n.kind == "review" && n.outcome == "partial" { return "Partly done" }
+  if n.kind == "review" { return "Ready for review" }
+  return n.kind == "alert" ? alertTitle(n.topic, n.symbol) : "Atrium has a question"
+}
+
 func newNotes(previous: Summary?, next: Summary) -> [Note] {
   guard let previous else { return [] }
   let seenNeeds = Set(previous.needs.map(\.id))
@@ -38,7 +47,7 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
   var notes: [Note] = next.needs.filter { !seenNeeds.contains($0.id) }.map {
     Note(
       // A suggestion ("stop asking about this?") waits on an answer, like a question.
-      id: $0.id, title: $0.kind == "review" ? "Ready for review" : $0.kind == "alert" ? alertTitle($0.topic, $0.symbol) : "Atrium has a question",
+      id: $0.id, title: noteTitle($0),
       body: [$0.title, $0.spaceName, $0.kind == "review" ? madeText($0.files) : nil].compactMap { $0 }.joined(separator: " · "), path: $0.path)
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {

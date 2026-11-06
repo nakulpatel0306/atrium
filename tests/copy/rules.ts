@@ -4,7 +4,7 @@ import { type Found, sourceFiles, swiftStrings, userStrings } from "./strings";
 type S = Found & { end: boolean };
 export type Offence = { file: string; line: number; text: string; rule: string };
 
-const PROPER = new Set(["Atrium", "Calendar", "Finder", "Claude", "Codex", "Gemini", "GitHub", "TFSA", "Mac", "Needs", "Auto", "Preview", "TextEdit", "Wealthsimple", "TradingView", "Finnhub", "Tiingo", "Alpaca", "Alpha", "Vantage", "SPY", "XEQT", "ETF", "CSV", "PR", "OK", "US", "CAD", "USD", "I"]);
+const PROPER = new Set(["Atrium", "Calendar", "Finder", "Claude", "Codex", "Gemini", "GitHub", "TFSA", "Mac", "Needs", "Auto", "Preview", "TextEdit", "Wealthsimple", "TradingView", "System", "Settings", "Messages", "Contacts", "Finnhub", "Tiingo", "Alpaca", "Alpha", "Vantage", "SPY", "XEQT", "ETF", "CSV", "PR", "OK", "US", "CAD", "USD", "I"]);
 const CLI_WORDS = ["install", "log in", "logged out", "logged in", "update", "sandbox", "`claude`", "sign in", "signed in"];
 const ERROR_START = /^(Error:|Error |Failed to |Unable to |Something went wrong)/;
 

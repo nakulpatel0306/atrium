@@ -13,7 +13,7 @@ import {
 import { applyRule, revokeRule, RuleRefused } from "../../src/engine/autonomy/rules";
 import { openDb } from "../../src/engine/db";
 import { createSpace, type Space } from "../../src/engine/spaces";
-import { createTask, setTaskStatus, type Task } from "../../src/engine/tasks";
+import { createTask, setTaskOutcome, setTaskStatus, type Task } from "../../src/engine/tasks";
 import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
 
 const FP = "v1:code:docs:small:claude";
@@ -42,7 +42,8 @@ afterEach(() => {
 function reviewTask(s: Space, title = "Add a note"): Task {
   const t = createTask(db, { spaceId: s.id, title });
   setTaskStatus(db, t.id, "running");
-  return setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
+  setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
+  return setTaskOutcome(db, t.id, "done", null);
 }
 
 function decide(a: Approval, decision: "approve" | "reject", note?: string, at = tick()): Approval {
@@ -241,4 +242,12 @@ test("approving five repo creations proposes nothing", () => {
     expect(consider(decide(a, "approve"))).toBeNull();
   }
   expect((db.query("SELECT COUNT(*) AS n FROM autonomy_proposals").get() as { n: number }).n).toBe(0);
+});
+
+test("five sends propose nothing", () => {
+  for (let i = 0; i < 5; i++) {
+    const a = createApproval(db, { spaceId: space.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+    expect(consider(decide(a, "approve"))).toBeNull();
+  }
+  expect(listPendingProposals(db)).toEqual([]);
 });

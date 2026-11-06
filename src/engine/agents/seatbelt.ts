@@ -19,7 +19,14 @@ const SECRET_PATHS = [
   ".config/op", ".password-store", ".zsh_history", ".bash_history", ".local/share/fish/fish_history",
   "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox", "Library/Safari", "Library/Cookies",
   "Library/Messages", "Library/Mail", "Library/Application Support/Atrium",
+  // Contacts' stores: only the engine looks people up, and only after Nakul asks.
+  "Library/Application Support/AddressBook", "Library/Contacts",
 ];
+
+// Shortcuts runs work in its own daemon over XPC, outside this sandbox and with no Apple event to deny, so the CLIs
+// can't run and the services can't be reached even by a copied binary.
+const SHORTCUTS_SERVICES =
+  '(deny mach-lookup (global-name-prefix "com.apple.shortcuts") (global-name-prefix "com.apple.WorkflowKit") (global-name-prefix "com.apple.siri.shortcuts") (global-name "com.apple.siri.VoiceShortcuts.xpc") (global-name "com.apple.siriactionsd.xpc"))';
 
 // Inside cwd but off limits: git metadata (engine commits happen outside the sandbox), and the per-project
 // settings of Claude and agy, which an agent could otherwise use to widen its own permissions.
@@ -105,6 +112,11 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     "(deny appleevent-send)",
     // The Keychain CLI would hand an agent Atrium's market data keys; agents only ever get prices.
     '(deny process-exec (literal "/usr/bin/security"))',
+    // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send.
+    '(deny process-exec (literal "/usr/bin/osascript"))',
+    '(deny process-exec (literal "/usr/bin/shortcuts"))',
+    '(deny process-exec (literal "/usr/bin/automator"))',
+    SHORTCUTS_SERVICES,
     // GitHub is the engine's alone: no gh, no SSH to git hosts, and no SSH agent to sign or push with.
     ...ghBinaries().map((p) => `(deny process-exec (literal ${str(p)}))`),
     '(deny network-outbound (remote tcp "*:22"))',

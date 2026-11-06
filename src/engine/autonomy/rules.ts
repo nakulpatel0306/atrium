@@ -140,6 +140,8 @@ export function applyRule(db: Database, approvalId: string, facts: ActionFacts |
     if (a?.alwaysAsk) return null;
     if (a?.status !== "pending" || a.kind !== "review" || !a.fingerprint || !a.spaceId || !facts) return null;
     if (forbiddenFor(facts).length > 0 || fingerprintOf(facts) !== a.fingerprint) return null;
+    // The agent's own words can only ever stop a rule, never start one: anything short of "done" is Nakul's call.
+    if (!a.taskId || getTask(db, a.taskId)?.outcome !== "done") return null;
     // Once Nakul has sent a task back, or undone a rule's approval of it, only he decides on it again.
     const doubted = db
       .query("SELECT 1 FROM approvals WHERE task_id = ? AND id != ? AND (status = 'rejected' OR undone_at IS NOT NULL)")

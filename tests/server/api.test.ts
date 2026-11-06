@@ -10,7 +10,7 @@ import { createRunner } from "../../src/engine/runner";
 import { SetupFailed } from "../../src/engine/setup";
 import { createSpace } from "../../src/engine/spaces";
 import { getSetting } from "../../src/engine/settings";
-import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, getTask, listTasks, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { bus } from "../../src/engine/events";
 import { startServer, type WsData } from "../../src/server/server";
 import { branchAt, PLAIN_DOCS, tempHome, tempRepo } from "../helpers";
@@ -554,6 +554,7 @@ async function appliedRule() {
   // Approvals made in the same millisecond as the rule would count as already waiting.
   await Bun.sleep(5);
   const a = reviewItem(s.id, "Auto one");
+  setTaskOutcome(db, a.taskId!, "done", null);
   const facts = { domain: "code" as const, agent: "claude", branch: `atrium/${a.taskId}`, sha: branchAt(repo.path, `atrium/${a.taskId}`), content: PLAIN_DOCS, files: [{ path: "docs/a.md", status: "A" as const, added: 2, deleted: 0, oldMode: "000000", newMode: "100644" }] };
   expect(applyRule(db, a.id, facts)).not.toBeNull();
   return { rule, a };

@@ -3858,3 +3858,192 @@ code {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* outcomes: a result the agent said it couldn't or only partly do */
+.stat.notdone,
+.stat.partial {
+  color: var(--yellow);
+}
+.tag.notdone {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
+}
+.outcome-row {
+  background: var(--panel);
+  padding: 8px 14px 2px 32px;
+}
+.outcome-banner {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  background: color-mix(in srgb, var(--yellow) 9%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line));
+  border-radius: 6px;
+  padding: 7px 10px;
+  margin: 6px 0 8px;
+}
+.outcome-banner svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--yellow);
+}
+.outcome-banner.unknown {
+  background: var(--raised);
+  border-color: var(--line-strong);
+}
+.outcome-banner.unknown svg {
+  color: var(--dim);
+}
+
+/* message card */
+.msg-entry .msg-ico {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--green);
+}
+.msg-card {
+  display: grid;
+  grid-template-columns: minmax(0, 560px);
+  gap: 10px;
+  padding-top: 10px;
+}
+.msg-card p {
+  margin: 0;
+}
+.msg-card .last-try {
+  background: color-mix(in srgb, var(--red) 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--red) 30%, var(--line));
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+.msg-to {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.msg-card .lbl {
+  font-size: 11px;
+  color: var(--faint);
+  margin-right: 2px;
+}
+.msg-to .sep {
+  color: var(--faint);
+}
+.msg-to .need {
+  color: var(--yellow);
+}
+.msg-handle {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.msg-handle .mk-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.msg-card .mk-input {
+  font-size: 13px;
+  padding: 5px 8px;
+}
+.msg-card .btn svg {
+  width: 13px;
+  height: 13px;
+}
+.msg-card > .btn {
+  justify-self: start;
+}
+.msg-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.msg-picks legend {
+  font-size: 11px;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+.msg-picks label.inline {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.msg-picks input {
+  accent-color: var(--accent);
+}
+.msg-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.msg-text .lbl-row {
+  display: flex;
+  justify-content: space-between;
+}
+.msg-text .count {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.msg-text .count.over {
+  color: var(--red);
+}
+.msg-text textarea {
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.msg-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.msg-foot .faint,
+.msg-card .faint {
+  color: var(--faint);
+  font-size: 12px;
+}
+.via {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* sent history */
+.sent-list .item.failed .t {
+  color: var(--red);
+}
+.sent-list .item.rejected .t {
+  color: var(--dim);
+}
+
+/* messaging settings */
+.set-row svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--faint);
+}
+.set-row .t.ok {
+  color: var(--green);
+}
+.set-row .t.bad {
+  color: var(--yellow);
+}

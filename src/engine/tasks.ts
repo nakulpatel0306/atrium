@@ -1,10 +1,12 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "./events";
 import { newId } from "./ids";
+import type { Outcome } from "./outcome";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
-export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask" | "money";
+// "message" marks a task the engine made to draft a text; only such a task may hand back an atrium-message block.
+export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask" | "money" | "message";
 
 export type Task = {
   id: string;
@@ -26,6 +28,10 @@ export type Task = {
   purpose: TaskPurpose | null;
   subject: string | null;
   branch: string | null;
+  // Whether the last finished run did what the title asks, in the agent's own words; null before outcomes existed
+  // or while the task hasn't finished.
+  outcome: Outcome | null;
+  outcomeReason: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -48,6 +54,8 @@ type TaskRow = {
   purpose: TaskPurpose | null;
   subject: string | null;
   branch: string | null;
+  outcome: Outcome | null;
+  outcome_reason: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -88,6 +96,8 @@ const toTask = (r: TaskRow): Task => ({
   purpose: r.purpose ?? null,
   subject: r.subject ?? null,
   branch: r.branch,
+  outcome: r.outcome ?? null,
+  outcomeReason: r.outcome_reason ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -175,6 +185,14 @@ export function setTaskStatus(
     Date.now(),
     id,
   );
+  bus.emit({ type: "changed" });
+  return getTask(db, id)!;
+}
+
+// Not tied to status: a result Nakul accepts stays labelled with what the agent said about it.
+export function setTaskOutcome(db: Database, id: string, outcome: Outcome, reason: string | null): Task {
+  const res = db.query("UPDATE tasks SET outcome = ?, outcome_reason = ?, updated_at = ? WHERE id = ?").run(outcome, reason, Date.now(), id);
+  if (res.changes === 0) throw new Error(`No task with id ${id}`);
   bus.emit({ type: "changed" });
   return getTask(db, id)!;
 }

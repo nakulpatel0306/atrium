@@ -7,7 +7,7 @@ import { openDb } from "../../src/engine/db";
 import { setSetting } from "../../src/engine/settings";
 import { createSpace } from "../../src/engine/spaces";
 import { snapshot } from "../../src/engine/state";
-import { createTask, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { saveQuotes } from "../../src/engine/markets/cache";
 import { addHolding } from "../../src/engine/markets/holdings";
 import { placePaperOrder } from "../../src/engine/markets/paper";
@@ -265,4 +265,18 @@ test("the briefing carries the Investing portfolio's day, with the top mover's h
   expect(p.movers[0]).toMatchObject({ key: "RKLB", tag: null });
   expect(p.headline).toBe("Rocket Lab wins a NASA contract for two Neutron launches to…");
   expect(p.headline!.length).toBe(60);
+});
+
+test("the briefing says how many couldn't be done", () => {
+  const now = Date.now();
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  const one = createTask(db, { spaceId: a.id, title: "one" });
+  const two = createTask(db, { spaceId: a.id, title: "two" });
+  seedRun(one.id, now - 1000);
+  seedRun(two.id, now - 500);
+  setTaskOutcome(db, one.id, "couldnt", "no number.");
+  setTaskOutcome(db, two.id, "done", null);
+  expect(briefing(db, now).summary).toBe("2 tasks finished across 1 space. 1 couldn't be done; open it to see why.");
+  setTaskOutcome(db, two.id, "couldnt", "no file.");
+  expect(briefing(db, now).summary).toBe("2 tasks finished across 1 space. 2 couldn't be done; open them to see why.");
 });

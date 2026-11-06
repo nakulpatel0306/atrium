@@ -15,6 +15,8 @@ export const ALWAYS_ASK = [
   "create_repo",
   "push",
   "remove_clone",
+  // Every text or message Atrium sends as Nakul, to anyone, every time.
+  "send_message",
 ] as const;
 export type AlwaysAsk = (typeof ALWAYS_ASK)[number];
 
@@ -217,19 +219,46 @@ export function resolveApproval(
     }
     if (rule) logActivity(db, a.spaceId, "atrium", `Approved by your rule "${rule.label}": ${a.title}`);
     else if (a.kind === "alert") logActivity(db, a.spaceId, "you", `Dismissed: ${a.title}`);
-    else logActivity(db, a.spaceId, "you", `${decision === "approve" ? "Approved" : "Rejected"}: ${a.title}`);
+    else logActivity(db, a.spaceId, "you", decisionLine(db, a, decision));
     return a;
   });
   const a = resolve();
-  for (const fn of [...resolvedListeners]) {
+  // Listeners act on the decision (a send, a repo push), so they wait until it's committed. Inside a caller's
+  // transaction (the Send route saves Nakul's edits and his yes together) they run once that transaction has
+  // finished, and only if the decision is still there; a rolled-back yes runs nothing.
+  const fire = () => {
+    if (db.inTransaction) return queueMicrotask(fire);
+    let current: Approval | null;
     try {
-      fn(a, decision);
-    } catch (e) {
-      console.error(`An approval listener failed: ${e instanceof Error ? e.message : String(e)}`);
+      current = getApproval(db, a.id);
+    } catch {
+      return;
     }
-  }
+    if (current?.status !== a.status) return;
+    for (const fn of [...resolvedListeners]) {
+      try {
+        fn(a, decision);
+      } catch (e) {
+        console.error(`An approval listener failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  };
+  fire();
   bus.emit({ type: "changed" });
   return a;
+}
+
+// Accepting a result the agent said it didn't finish is recorded as exactly that.
+function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
+  if (a.alwaysAsk === "send_message") {
+    const what = a.title.replace(/^Send a /, "").replace(/\?$/, "");
+    return decision === "approve" ? `Pressed Send: ${what}` : `Chose not to send: ${what}`;
+  }
+  if (decision === "reject") return `Rejected: ${a.title}`;
+  const outcome = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
+  if (outcome === "couldnt") return `Accepted anyway: ${a.title}. It says it couldn't do this.`;
+  if (outcome === "partial") return `Accepted as is: ${a.title}. It says it's only partly done.`;
+  return `Approved: ${a.title}`;
 }
 
 // Nakul himself said yes and hasn't undone it: the only decision that may run a repo action.

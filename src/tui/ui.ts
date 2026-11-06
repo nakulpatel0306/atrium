@@ -12,7 +12,10 @@ export type Overlay =
   | { kind: "prompt"; purpose: PromptPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null }
   | { kind: "picker"; purpose: "agent" | "reviewer"; targetId: string; options: string[]; index: number }
   | { kind: "transcript"; taskId: string; runIndex: number; scroll: number }
-  | { kind: "confirm"; purpose: "archive"; targetId: string };
+  | { kind: "confirm"; purpose: "archive"; targetId: string }
+  // Sending a text, or accepting a result the agent said it didn't finish, waits for a y.
+  | { kind: "confirm"; purpose: "send"; targetId: string }
+  | { kind: "confirm"; purpose: "accept"; targetId: string };
 
 export type Flash = { text: string; tone: "ok" | "bad" | "info" };
 

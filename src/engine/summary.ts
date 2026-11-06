@@ -4,10 +4,22 @@ import { listPendingProposals } from "./autonomy/proposals";
 import { taskFiles } from "./outputs/store";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
-import { listTasks } from "./tasks";
+import { getTask, listTasks } from "./tasks";
 
 // `files` is how many files a review's task made (0 for everything else), so the notification can say so.
-export type Need = { id: string; kind: "review" | "question" | "alert" | "suggestion"; title: string; spaceName: string; path: string; topic: AlertTopic | null; files: number; symbol: string | null };
+// `outcome` is what a review's agent said when it wasn't plainly done; `action` marks a text waiting to be sent.
+export type Need = {
+  id: string;
+  kind: "review" | "question" | "alert" | "suggestion";
+  title: string;
+  spaceName: string;
+  path: string;
+  topic: AlertTopic | null;
+  files: number;
+  symbol: string | null;
+  outcome: "partial" | "couldnt" | "unknown" | null;
+  action: "send_message" | null;
+};
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
 export type Summary = {
   needsYou: number;
@@ -29,9 +41,12 @@ export function summary(db: Database): Summary {
   // An Atrium-wide question (a new repo, removing a local copy) belongs to no space and is answered from Home.
   const approvals = listPending(db)
     .filter((a) => a.spaceId === null || names.has(a.spaceId))
-    .map((a) => ({
+    .map((a) => {
+      const told = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
+      const extra = { outcome: told && told !== "done" ? told : null, action: a.alwaysAsk === "send_message" ? "send_message" : null };
+      return {
       at: a.createdAt,
-      need: (a.spaceId === null
+      need: ({ ...(a.spaceId === null
         ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic, files: 0, symbol: null }
         : {
             id: a.id,
@@ -42,14 +57,15 @@ export function summary(db: Database): Summary {
             topic: a.topic,
             symbol: a.kind === "alert" ? a.subject : null,
             files: a.kind === "review" && a.taskId ? taskFiles(db, a.taskId).filter((f) => f.change !== "deleted").length : 0,
-          }) as Need,
-    }));
+          }), ...extra }) as Need,
+      };
+    });
   // Suggestions are answered from Home's Needs you list, not from a space.
   const suggestions = listPendingProposals(db)
     .filter((p) => names.has(p.spaceId))
     .map((p) => ({
       at: p.createdAt,
-      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0, symbol: null } as Need,
+      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0, symbol: null, outcome: null, action: null } as Need,
     }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
   const needs = [...approvals, ...suggestions].sort((a, b) => b.at - a.at).map((x) => x.need);

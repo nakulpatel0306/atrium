@@ -1,4 +1,5 @@
-import { CircleCheck, CircleDashed, CircleDot, CircleSlash, CircleX, LoaderCircle, type LucideIcon } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleDashed, CircleDot, CircleSlash, CircleX, LoaderCircle, type LucideIcon } from "lucide-react";
+import type { Outcome } from "../../engine/outcome";
 import type { State } from "../api";
 
 type Status = State["tasks"][number]["status"];
@@ -13,10 +14,17 @@ const ICONS: Record<Status, { icon: LucideIcon; label: string }> = {
   done: { icon: CircleCheck, label: "Done" },
 };
 
-export function StatusIcon({ status }: { status: Status }) {
-  const { icon: Icon, label } = ICONS[status];
+// A finished task the agent said it couldn't or only partly do never wears the done check.
+const UNFINISHED = {
+  couldnt: { icon: CircleAlert, label: "Not done", cls: "notdone" },
+  partial: { icon: CircleDashed, label: "Partly done", cls: "partial" },
+} as const;
+
+export function StatusIcon({ status, outcome = null }: { status: Status; outcome?: Outcome | null }) {
+  const odd = status === "done" && (outcome === "couldnt" || outcome === "partial") ? UNFINISHED[outcome] : null;
+  const { icon: Icon, label } = odd ?? ICONS[status];
   return (
-    <Icon className={`stat ${status}`} role="img" aria-label={label}>
+    <Icon className={`stat ${odd?.cls ?? status}`} role="img" aria-label={label}>
       <title>{label}</title>
     </Icon>
   );

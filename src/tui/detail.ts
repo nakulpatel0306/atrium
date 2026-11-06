@@ -6,6 +6,8 @@ import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import { money } from "../engine/markets/labels";
+import { displayHandle } from "../engine/messaging/rules";
+import { outcomeText } from "../engine/outcome";
 import { fileSize, plural } from "../engine/text";
 import type { MarketsGlance } from "./client";
 import { markdownLines } from "./markdown";
@@ -51,6 +53,8 @@ const CHIP = { created: "new", changed: "changed", deleted: "deleted" } as const
 function decided(s: NonNullable<TaskOutputs["summary"]>): string {
   if (s.status === "pending") return "Waiting for you";
   if (s.status === "rejected") return `Sent back ${relative(s.at)}`;
+  if (s.outcome === "couldnt") return `Accepted anyway by you ${relative(s.at)}`;
+  if (s.outcome === "partial") return `Accepted as is by you ${relative(s.at)}`;
   return `${s.decidedBy === "rule" ? "Approved by your rule" : "Approved by you"} ${relative(s.at)}`;
 }
 
@@ -108,6 +112,8 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
     ],
   ];
   if (task.status === "blocked" && task.blockedReason) lines.push(plain(task.blockedReason, { color: color.bad }));
+  const told = outcomeText(task.outcome, task.outcomeReason);
+  if (told && (task.status === "review" || task.status === "done")) lines.push(plain(told, { color: task.outcome === "unknown" ? color.muted : color.warn }));
   // Wait reasons can name a command in backticks; they're kept as written so it can be copied.
   if (wait) lines.push(plain(wait.reason, { color: needsAction(wait) ? color.bad : color.warn }));
   if (parent) {
@@ -128,6 +134,22 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   return lines;
 }
 
+function messageLines(m: State["messageActions"][number]): DetailLine[] {
+  const lines: DetailLine[] = [];
+  if (m.lastError) lines.push(blank, plain(`Last try failed: ${m.lastError}`, { color: color.bad }));
+  lines.push(
+    blank,
+    [{ text: "To   ", color: color.muted }, { text: m.toName, bold: true }, { text: m.handle ? `  ${displayHandle(m.handle)}` : "  number needed", color: m.handle ? undefined : color.warn }],
+    [{ text: "Via  ", color: color.muted }, { text: m.service }],
+    blank,
+    ...block(m.text),
+    blank,
+    muted("Sends from Messages on this Mac. Atrium can't confirm delivery."),
+    muted(m.handle ? "a send · r don't send" : "Pick who this goes to on the dashboard, then a sends it here · r don't send"),
+  );
+  return lines;
+}
+
 export function approvalDetail(view: View, messages: Message[] | null, width = 100): DetailLine[] {
   const approval = view.approval;
   if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
@@ -135,6 +157,11 @@ export function approvalDetail(view: View, messages: Message[] | null, width = 1
   const review = reviewLine(approval, view.state, messages);
   const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");
   const lines: DetailLine[] = [muted(owner), plain(approval.title, { bold: true })];
+  const text = approval.alwaysAsk === "send_message" ? view.state.messageActions.find((m) => m.approvalId === approval.id) : undefined;
+  if (text) return [...lines, ...messageLines(text), blank, muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`)];
+  const task = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId) : undefined;
+  const told = task ? outcomeText(task.outcome, task.outcomeReason) : null;
+  if (told) lines.push(plain(told, { color: task?.outcome === "unknown" ? color.muted : color.warn }));
   if (review) lines.push(plain(review.text, { color: review.tone ? TONE[review.tone] : undefined }));
   lines.push(blank, ...(approval.detail ? markdownLines(approval.detail, width) : [plain("No further detail.")]), blank);
   lines.push(muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`));
