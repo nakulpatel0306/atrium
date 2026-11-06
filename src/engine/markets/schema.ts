@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS research_notes (
 CREATE TABLE IF NOT EXISTS market_writeups (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
-  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask')),
+  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask','money')),
   key TEXT,
   for_date TEXT NOT NULL,
   body TEXT NOT NULL,
@@ -228,4 +228,21 @@ CREATE TABLE IF NOT EXISTS tfsa_entries (
   note TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS money_transactions (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  source TEXT NOT NULL CHECK (source IN ('bank','wealthsimple')),
+  account TEXT NOT NULL,
+  date TEXT NOT NULL,
+  description TEXT NOT NULL,
+  merchant TEXT NOT NULL,
+  amount REAL NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'CAD',
+  kind TEXT NOT NULL,
+  symbol TEXT,
+  fingerprint TEXT NOT NULL,
+  imported_at INTEGER NOT NULL,
+  UNIQUE (space_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS money_transactions_date ON money_transactions(space_id, date);
 `;

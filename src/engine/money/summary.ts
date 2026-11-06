@@ -1,0 +1,227 @@
+import type { Database } from "bun:sqlite";
+import { createTask, listTasks, type Task } from "../tasks";
+import { etDate } from "../markets/calendar";
+import { latestWriteups, type Writeup } from "../markets/research";
+import { listEntries, roomStatus } from "../markets/tfsa";
+import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
+
+type Tx = { date: string; account: string; description: string; merchant: string; amount: number; currency: string; kind: string; source: string };
+
+export type Recurring = { merchant: string; amount: number; count: number; last: string; next: string };
+export type Unusual = { date: string; merchant: string; amount: number; reason: string };
+export type WsYear = {
+  year: string;
+  deposits: number;
+  tfsaDeposits: number;
+  withdrawals: number;
+  dividends: number;
+  fees: number;
+  buys: number;
+  sells: number;
+  // USD activity, kept apart: nothing is converted without a rate.
+  usd: { buys: number; sells: number; dividends: number };
+};
+export type MoneyView = {
+  months: string[];
+  month: string | null;
+  spending: { category: string; amount: number; count: number }[];
+  spent: number;
+  income: number;
+  recurring: Recurring[];
+  unusual: Unusual[];
+  ws: WsYear[];
+  counts: { bank: number; wealthsimple: number };
+  range: { from: string; to: string } | null;
+  accounts: string[];
+  rules: number;
+  asks: (Writeup & { question: string; status: "queued" | "running" | "done" | "failed"; taskId: string | null })[];
+};
+
+export const STARTERS = [
+  "How much did I get in dividends this year?",
+  "What did I put into my TFSA in 2026?",
+  "Where did my money go last month?",
+  "Any subscriptions I forgot about?",
+];
+export const MONEY_ASK_MAX = 500;
+const DAY_MS = 86_400_000;
+const UNUSUAL_DAYS = 90;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+};
+const days = (a: string, b: string) => (Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / DAY_MS;
+const nextMonth = (date: string) => {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return d.toISOString().slice(0, 10);
+};
+
+const txs = (db: Database, spaceId: string, source: "bank" | "wealthsimple") =>
+  db
+    .query("SELECT date, account, description, merchant, amount, currency, kind, source FROM money_transactions WHERE space_id = ? AND source = ? ORDER BY date, rowid")
+    .all(spaceId, source) as Tx[];
+
+// Fixed amounts (within 5%) at least three times, each about a month apart: subscriptions, rent, phone bills.
+function recurring(spend: Tx[]): Recurring[] {
+  const by = new Map<string, Tx[]>();
+  for (const t of spend) by.set(t.merchant, [...(by.get(t.merchant) ?? []), t]);
+  const out: Recurring[] = [];
+  for (const [merchant, list] of by) {
+    if (list.length < 3) continue;
+    const gaps = list.slice(1).map((t, i) => days(list[i]!.date, t.date));
+    const amounts = list.map((t) => -t.amount);
+    const typical = median(amounts);
+    if (!gaps.every((g) => g >= 25 && g <= 35) || !amounts.every((a) => Math.abs(a - typical) <= typical * 0.05)) continue;
+    const last = list.at(-1)!;
+    out.push({ merchant, amount: round2(-last.amount), count: list.length, last: last.date, next: nextMonth(last.date) });
+  }
+  return out.sort((a, b) => b.amount - a.amount);
+}
+
+// In the last 90 days of data: the same amount at the same place within 3 days, or more than 3× the usual there.
+function unusual(spend: Tx[]): Unusual[] {
+  const end = spend.at(-1)?.date;
+  if (!end) return [];
+  const out: Unusual[] = [];
+  spend.forEach((t, i) => {
+    if (days(t.date, end) > UNUSUAL_DAYS) return;
+    const before = spend.slice(0, i).filter((p) => p.merchant === t.merchant);
+    const twin = before.find((p) => p.amount === t.amount && days(p.date, t.date) <= 3);
+    if (twin) return out.push({ date: t.date, merchant: t.merchant, amount: round2(-t.amount), reason: `Same amount at ${t.merchant} within 3 days.` });
+    if (before.length >= 2 && -t.amount > 3 * median(before.map((p) => -p.amount))) {
+      out.push({ date: t.date, merchant: t.merchant, amount: round2(-t.amount), reason: `More than 3× your usual at ${t.merchant}.` });
+    }
+  });
+  return out.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function wsYears(rows: Tx[]): WsYear[] {
+  const by = new Map<string, WsYear>();
+  for (const t of rows) {
+    const year = t.date.slice(0, 4);
+    const y = by.get(year) ?? { year, deposits: 0, tfsaDeposits: 0, withdrawals: 0, dividends: 0, fees: 0, buys: 0, sells: 0, usd: { buys: 0, sells: 0, dividends: 0 } };
+    const a = Math.abs(t.amount);
+    const usd = t.currency === "USD";
+    if (t.kind === "deposit") {
+      y.deposits += a;
+      if (/tfsa/i.test(t.account)) y.tfsaDeposits += a;
+    } else if (t.kind === "withdrawal") y.withdrawals += a;
+    else if (t.kind === "fee") y.fees += a;
+    else if (t.kind === "dividend") usd ? (y.usd.dividends += a) : (y.dividends += a);
+    else if (t.kind === "buy") usd ? (y.usd.buys += a) : (y.buys += a);
+    else if (t.kind === "sell") usd ? (y.usd.sells += a) : (y.sells += a);
+    by.set(year, y);
+  }
+  const r2 = (y: WsYear): WsYear => ({
+    ...y,
+    ...Object.fromEntries((["deposits", "tfsaDeposits", "withdrawals", "dividends", "fees", "buys", "sells"] as const).map((k) => [k, round2(y[k])])),
+    usd: { buys: round2(y.usd.buys), sells: round2(y.usd.sells), dividends: round2(y.usd.dividends) },
+  });
+  return [...by.values()].sort((a, b) => b.year.localeCompare(a.year)).map(r2);
+}
+
+function asks(db: Database, spaceId: string): MoneyView["asks"] {
+  const tasks = listTasks(db, { spaceId }).filter((t) => t.purpose === "money");
+  const byTask = new Map(tasks.map((t) => [t.id, t]));
+  const open = tasks
+    .filter((t) => t.status === "queued" || t.status === "running")
+    .map((t) => ({ id: t.id, kind: "money", key: null, forDate: new Date(t.createdAt).toISOString(), body: "", taskId: t.id, createdAt: t.createdAt, question: t.detail, status: t.status as "queued" | "running" }));
+  const done = latestWriteups(db, spaceId, { kind: "money", limit: 3 }).map((w) => {
+    const t = w.taskId ? byTask.get(w.taskId) : undefined;
+    return { ...w, question: t?.detail ?? "", status: (t?.status === "failed" ? "failed" : "done") as "done" | "failed" };
+  });
+  return [...open, ...done].slice(0, 3);
+}
+
+function spendingIn(bank: Tx[], month: string | null, rules: Rule[]) {
+  const inMonth = month ? bank.filter((t) => t.date.startsWith(month)) : [];
+  const cats = new Map<string, { amount: number; count: number }>();
+  let income = 0;
+  for (const t of inMonth) {
+    const category = categorize(t.description, rules);
+    if (t.amount > 0 && category !== "Transfers") income += t.amount;
+    if (t.amount >= 0 || NOT_SPENDING.has(category)) continue;
+    const c = cats.get(category) ?? { amount: 0, count: 0 };
+    cats.set(category, { amount: c.amount - t.amount, count: c.count + 1 });
+  }
+  const spending = [...cats.entries()].map(([category, c]) => ({ category, amount: round2(c.amount), count: c.count })).sort((a, b) => b.amount - a.amount);
+  return { spending, spent: round2(spending.reduce((s, c) => s + c.amount, 0)), income: round2(income) };
+}
+
+export function moneyView(db: Database, spaceId: string, now: number, month?: string): MoneyView {
+  const bank = txs(db, spaceId, "bank");
+  const ws = txs(db, spaceId, "wealthsimple");
+  const rules = listRules(db, spaceId);
+  const months = [...new Set(bank.map((t) => t.date.slice(0, 7)))].sort().reverse();
+  const current = etDate(now).slice(0, 7);
+  const picked = month && months.includes(month) ? month : months.includes(current) ? current : (months[0] ?? null);
+  const spend = bank.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
+  return {
+    months,
+    month: picked,
+    ...spendingIn(bank, picked, rules),
+    recurring: recurring(spend),
+    unusual: unusual(spend),
+    ws: wsYears(ws),
+    counts: { bank: bank.length, wealthsimple: ws.length },
+    range: bank.length ? { from: bank[0]!.date, to: bank.at(-1)!.date } : null,
+    accounts: [...new Set(bank.map((t) => t.account))],
+    rules: rules.length,
+    asks: asks(db, spaceId),
+  };
+}
+
+const cad = (n: number) => `CA$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const usd = (n: number) => `US$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const both = (c: number, u: number) => (c && u ? `${cad(c)} + ${usd(u)}` : u ? usd(u) : cad(c));
+// "MasterCard 5191XXXXXXXX4021" → "MasterCard ··4021": Claude never needs a full account number.
+const accountLabel = (a: string) => a.replace(/\s+[\dX*-]*(\d{4})$/i, " ··$1");
+
+// Compact, sourced facts for "Ask about my money": Claude only, read-only, from Nakul's own files on this Mac.
+export function moneyFacts(db: Database, spaceId: string, now: number): string[] {
+  const v = moneyView(db, spaceId, now);
+  const bank = txs(db, spaceId, "bank");
+  const rules = listRules(db, spaceId);
+  const out = ["Money facts (from files Nakul imported on this Mac; amounts in CAD unless marked US$):"];
+  if (!v.counts.wealthsimple) out.push("No Wealthsimple activity imported.");
+  for (const y of v.ws.slice(0, 3)) {
+    out.push(
+      `Wealthsimple ${y.year}: deposits ${cad(y.deposits)} (TFSA ${cad(y.tfsaDeposits)}), withdrawals ${cad(y.withdrawals)}, dividends ${both(y.dividends, y.usd.dividends)}, fees ${cad(y.fees)}, buys ${both(y.buys, y.usd.buys)}, sells ${both(y.sells, y.usd.sells)}.`,
+    );
+  }
+  const year = Number(etDate(now).slice(0, 4));
+  const room = roomStatus(db, year);
+  const logged = listEntries(db, year);
+  if (room.roomJan1 != null || logged.length) {
+    const put = logged.filter((e) => e.kind === "contribution").reduce((s, e) => s + e.amount, 0);
+    out.push(`TFSA ${year} (Nakul's own entries): room on Jan 1 ${room.roomJan1 != null ? cad(room.roomJan1) : "not set"}, contributions logged ${cad(put)}.`);
+  }
+  if (!bank.length) out.push("No bank or card transactions imported.");
+  else {
+    out.push(`Bank and card: ${bank.length} transactions from ${v.range!.from} to ${v.range!.to} in ${v.accounts.map(accountLabel).join(" and ")}.`);
+    for (const m of v.months.slice(0, 3)) {
+      const s = spendingIn(bank, m, rules);
+      const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");
+      out.push(`- ${m}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}.`);
+    }
+    const recent = bank.filter((t) => t.amount < 0 && days(t.date, v.range!.to) <= 90);
+    const merchants = new Map<string, number>();
+    for (const t of recent) merchants.set(t.merchant, (merchants.get(t.merchant) ?? 0) - t.amount);
+    const top = [...merchants.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (top.length) out.push(`Top places, last 90 days: ${top.map(([m, a]) => `${m} ${cad(a)}`).join(", ")}.`);
+    if (v.recurring.length) out.push(`Recurring charges: ${v.recurring.map((r) => `${r.merchant} ${cad(r.amount)} monthly (${r.count} times, last ${r.last})`).join("; ")}.`);
+    if (v.unusual.length) out.push(`Unusual: ${v.unusual.slice(0, 5).map((u) => `${u.date} ${u.merchant} ${cad(u.amount)}: ${u.reason}`).join("; ")}`);
+  }
+  return out;
+}
+
+export function requestMoneyAsk(db: Database, spaceId: string, question: string): Task {
+  const q = question.trim();
+  if (!q) throw new Error("Type a question, like How much did I get in dividends this year?");
+  if (q.length > MONEY_ASK_MAX) throw new Error("Keep the question under 500 characters.");
+  if (listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money")) throw new Error("Claude is already looking at your money.");
+  return createTask(db, { spaceId, title: "Ask Claude about my money", detail: q, agent: "claude", weight: "light", allowOnBattery: true, purpose: "money" });
+}

@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { moneyFacts } from "../money/summary";
 import { isAdvanced } from "./advanced";
 import { portfolioView } from "./views";
 import { createApproval } from "../approvals";
@@ -114,6 +115,13 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
           : `Write at most 4 short sentences for Nakul: what moved in his portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed. No headings.`,
       );
     }
+    if (task.purpose === "money") {
+      out.push(...moneyFacts(db, space.id, at));
+      if (task.detail.trim()) out.push(`Nakul asks: ${task.detail.trim()}`);
+      out.push(
+        "Answer in at most 250 words of plain, everyday markdown, using only these facts and the portfolio above. Say plainly when they don't cover the question. Don't recommend specific investments.",
+      );
+    }
     if (task.purpose === "ask" && task.subject) {
       out.push(...subjectFacts(task.subject, at, true, space.id).slice(0, -1));
       const held = positionLine(space.id, task.subject, at);
@@ -126,10 +134,10 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
   }
 
   // Two answers settled in the same millisecond still get their own row.
-  function askInstant(spaceId: string, key: string | null, at: number): string {
-    const taken = db.query("SELECT 1 FROM market_writeups WHERE space_id = ? AND kind = 'ask' AND key IS ? AND for_date = ?");
+  function askInstant(spaceId: string, kind: string, key: string | null, at: number): string {
+    const taken = db.query("SELECT 1 FROM market_writeups WHERE space_id = ? AND kind = ? AND key IS ? AND for_date = ?");
     let t = at;
-    while (taken.get(spaceId, key, new Date(t).toISOString())) t++;
+    while (taken.get(spaceId, kind, key, new Date(t).toISOString())) t++;
     return new Date(t).toISOString();
   }
 
@@ -343,8 +351,8 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         const body = summary.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
         // Every answer to an ask is kept, so it's dated to the instant rather than the day.
         const forDate =
-          task.purpose === "ask"
-            ? askInstant(space.id, task.subject, at)
+          task.purpose === "ask" || task.purpose === "money"
+            ? askInstant(space.id, task.purpose, task.subject, at)
             : task.purpose === "thesis_check"
               ? (task.title.match(/on (\d{4}-\d{2}-\d{2})$/)?.[1] ?? etDate(at))
               : etDate(at);
@@ -356,7 +364,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
           body: body.endsWith("Analysis, not advice.") ? body : `${body}\n\nAnalysis, not advice.`,
           taskId: task.id,
         });
-        if (task.purpose === "ask") return { done: true, lines, activity: "Answer saved" };
+        if (task.purpose === "ask" || task.purpose === "money") return { done: true, lines, activity: "Answer saved" };
         const what = task.purpose === "digest" ? "Digest" : task.purpose === "thesis_draft" ? "Thesis draft" : "Thesis check";
         return { done: true, lines, activity: `${what} saved` };
       }

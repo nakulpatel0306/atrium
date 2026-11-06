@@ -6,12 +6,12 @@ import { InvestTabs } from "../../src/dashboard/components/invest/InvestPanel";
 const tabs = (advanced: boolean) => renderToStaticMarkup(<InvestTabs spaceId="spc_1" advanced={advanced} tab="portfolio" onTab={() => {}} />);
 const labels = (html: string) => [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((m) => m[1]);
 
-test("Advanced off shows the four simple views only", () => {
-  expect(labels(tabs(false))).toEqual(["Portfolio", "Watchlists", "Earnings", "Alerts"]);
+test("Advanced off shows the five simple views only", () => {
+  expect(labels(tabs(false))).toEqual(["Portfolio", "Watchlists", "Earnings", "Alerts", "Money"]);
 });
 
 test("Advanced on adds Health, Ideas, Chart and Paper", () => {
-  expect(labels(tabs(true))).toEqual(["Portfolio", "Watchlists", "Earnings", "Alerts", "Health", "Ideas", "Chart", "Paper"]);
+  expect(labels(tabs(true))).toEqual(["Portfolio", "Watchlists", "Earnings", "Alerts", "Money", "Health", "Ideas", "Chart", "Paper"]);
 });
 
 test("the Advanced switch explains what it hides", () => {
@@ -245,4 +245,45 @@ test("Symbol page: no chart listener means Atrium's chart and no frame", () => {
   const html = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "MARS", NOW)} marketsView={null} frameUrl={null} now={NOW} />);
   expect(html).not.toContain("<iframe");
   expect(html).toContain("TradingView&#x27;s chart couldn&#x27;t start this time");
+});
+
+// ---- Money ----
+import { importMoney, previewMoney } from "../../src/engine/money/import";
+import { moneyView, requestMoneyAsk, STARTERS } from "../../src/engine/money/summary";
+import { MoneyBody } from "../../src/dashboard/components/invest/Money";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const moneyCsv = (name: string) => readFileSync(join(import.meta.dir, "../fixtures/money", name), "utf8");
+
+test("Money: empty state invites an import and still offers the starter questions", () => {
+  const html = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={{ ...moneyView(db, fx.spaceId, NOW), starters: STARTERS }} now={NOW} />);
+  expect(html).toContain("Ask about my money");
+  for (const q of STARTERS) expect(html).toContain(q.replace("'", "&#x27;"));
+  expect(html).toContain("Import a bank, card or Wealthsimple file");
+  expect(html).toContain("No bank or card transactions yet.");
+  clean(html);
+});
+
+test("Money: the month by category, recurring and unusual charges, Wealthsimple totals, and answers", () => {
+  importMoney(db, fx.spaceId, previewMoney(moneyCsv("rbc.csv")));
+  importMoney(db, fx.spaceId, previewMoney(moneyCsv("ws-activity-2026.csv")));
+  saveWriteup(db, { spaceId: fx.spaceId, kind: "money", key: null, forDate: new Date(NOW).toISOString(), body: "You pay **CA$58.47** a month for subscriptions.\n\nAnalysis, not advice.", taskId: null });
+  const view = { ...moneyView(db, fx.spaceId, NOW, "2026-10"), starters: STARTERS };
+  const html = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={view} now={NOW} />);
+  expect(html).toContain("Groceries");
+  expect(html).toContain("Recurring charges");
+  expect(html).toContain("Netflix.com");
+  expect(html).toContain("Same amount at Best Buy within 3 days.");
+  expect(html).toContain("CA$9,000.00");
+  expect(html).toContain("<strong>CA$58.47</strong>");
+  expect(html).toContain("Analysis, not advice");
+  expect(html).toContain("October 2026");
+  clean(html);
+  requestMoneyAsk(db, fx.spaceId, "Where did my money go last month?");
+  const queued = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={{ ...moneyView(db, fx.spaceId, NOW), starters: STARTERS }} now={NOW} />);
+  expect(queued).toContain("Claude is looking at your money…");
+  db.query("DELETE FROM tasks").run();
+  db.query("DELETE FROM market_writeups").run();
+  db.query("DELETE FROM money_transactions").run();
 });

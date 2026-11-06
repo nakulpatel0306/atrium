@@ -214,8 +214,8 @@ function migrate(db: Database) {
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
   migrateWatchlists(db);
-  // Ask Claude answers are kept as write-ups of their own kind.
-  rebuildIfMissing(db, "market_writeups", "'ask'", WRITEUPS_DDL);
+  // Ask Claude answers (about a symbol, or about money) are kept as write-ups of their own kinds.
+  rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
   // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
   if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");
   if (!has("instrument_meta", "market_cap")) db.exec("ALTER TABLE instrument_meta ADD COLUMN market_cap REAL");
@@ -241,7 +241,7 @@ export function migrateProvider(db: Database): void {
 const WRITEUPS_DDL = (name: string) => `CREATE TABLE ${name} (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
-  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask')),
+  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask','money')),
   key TEXT,
   for_date TEXT NOT NULL,
   body TEXT NOT NULL,

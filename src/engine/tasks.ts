@@ -4,7 +4,7 @@ import { newId } from "./ids";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
-export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask";
+export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask" | "money";
 
 export type Task = {
   id: string;

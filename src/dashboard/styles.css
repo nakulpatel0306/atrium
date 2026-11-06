@@ -3619,3 +3619,242 @@ code {
   width: auto;
   max-width: 320px;
 }
+
+/* investing: Money */
+.money-ask {
+  margin-bottom: 22px;
+}
+.money-ask h3,
+.money h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+}
+.money-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.money-ask > .hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+.money-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.money-bar-row .btn {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+}
+.money .sym-cols {
+  margin-top: 8px;
+}
+.money-month-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--dim);
+}
+.money-month-head b {
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.money-month-head select,
+.money-map select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.money-cats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.money-cats li {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 96px 72px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.money-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.money-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.money-amt {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.money-count {
+  font-size: 11px;
+  text-align: right;
+}
+.money-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.money-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.money-list li > span:first-of-type {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.money-list li > span.faint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+.money-ws .sym-stats {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 12px;
+}
+.money-ws .sym-stats div {
+  padding-right: 8px;
+}
+.money-year dd {
+  font-weight: 600;
+}
+.money-foot {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+.money-import,
+.money-rules {
+  margin: 0 0 18px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.money-import-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.money-import-pick .btn {
+  cursor: pointer;
+}
+.money-import-pick .btn.link {
+  margin-left: auto;
+}
+.money-format {
+  margin: 12px 0 6px;
+  font-size: 13px;
+}
+.money-import .hint {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.money-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 10px 0;
+}
+.money-map label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.money-sample {
+  width: 100%;
+  margin: 8px 0 12px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.money-sample td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.money-sample td.neg,
+.money-sample td.pos {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.money-sample td.pos {
+  color: var(--green);
+}
+.money-rules ul {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow: auto;
+}
+.money-rules li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+.money-rules input {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.money-rules-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 760px) {
+  .money-cats li {
+    grid-template-columns: 90px minmax(0, 1fr) 86px;
+  }
+  .money-count {
+    display: none;
+  }
+  .money-ws .sym-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

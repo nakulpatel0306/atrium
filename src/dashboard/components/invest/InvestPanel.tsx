@@ -7,11 +7,12 @@ import { useEarnings, useLists, usePortfolio } from "../../simple";
 import { AdvancedToggle } from "./AdvancedToggle";
 import { AlertsSimple } from "./AlertsSimple";
 import { Earnings } from "./Earnings";
+import { Money } from "./Money";
 import { Portfolio } from "./Portfolio";
 import { SymbolPage } from "./SymbolPage";
 import { Watchlists } from "./Watchlists";
 
-const SIMPLE = ["portfolio", "watchlists", "earnings", "alerts"] as const;
+const SIMPLE = ["portfolio", "watchlists", "earnings", "alerts", "money"] as const;
 const ADVANCED: AdvancedTab[] = ["health", "ideas", "chart", "paper"];
 export type InvestTab = (typeof SIMPLE)[number] | AdvancedTab;
 const TEXT: Record<InvestTab, string> = {
@@ -19,6 +20,7 @@ const TEXT: Record<InvestTab, string> = {
   watchlists: "Watchlists",
   earnings: "Earnings",
   alerts: "Alerts",
+  money: "Money",
   health: "Health",
   ideas: "Ideas",
   chart: "Chart",
@@ -72,6 +74,8 @@ export function InvestPanel({ spaceId, symbol }: { spaceId: string; symbol: stri
         <ListsTab spaceId={spaceId} />
       ) : tab === "earnings" ? (
         <EarningsTab spaceId={spaceId} />
+      ) : tab === "money" ? (
+        <Money spaceId={spaceId} />
       ) : tab === "alerts" ? (
         view ? <AlertsSimple spaceId={spaceId} alerts={view.alerts} advanced={advanced} /> : <Loading />
       ) : (

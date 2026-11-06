@@ -57,6 +57,9 @@ this page is the record of the reading pass.
 | Investing | `src/dashboard/components/invest/Earnings.tsx` | date headings, time words, EPS line, chips, empty state, source footer | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/InvestPanel.tsx` | tab labels, loading | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/Portfolio.tsx` | hero labels, What moved, left-out line, empty state, import buttons | yes | New in Plan 10 |
+| Investing | `src/dashboard/components/invest/Money.tsx` | ask box, starter questions, privacy line, month, categories, recurring, unusual, Wealthsimple totals, rules link | yes | New in Plan 10 (Money view) |
+| Investing | `src/dashboard/components/invest/MoneyImport.tsx` | file picker, format line, column labels, sign and date choices, import result | yes | New in Plan 10 (Money view) |
+| Investing | `src/dashboard/components/invest/MoneyRules.tsx` | rule editor labels, buttons, saved line, load error | yes | New in Plan 10 (Money view) |
 | Investing | `src/dashboard/components/invest/PriceRow.tsx` | no-price and Alpha Vantage lines | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/Sparkline.tsx` | none (aria-hidden) | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/SymbolPage.tsx` | header, actions, alert form, position, earnings, stats, news, note, Ask Claude | yes | New in Plan 10; errors from the engine shown as written |
@@ -171,6 +174,10 @@ this page is the record of the reading pass.
 | Repos | `src/engine/repos/rules.ts` | messages | yes | No change needed |
 | Repos | `src/engine/repos/store.ts` | messages | yes | No change needed |
 | Repos | `src/engine/repos/templates.ts` | messages | yes | No change needed |
+| Investing | `src/engine/money/categories.ts` | rule validation | yes | New in Plan 10 (Money view) |
+| Investing | `src/engine/money/import.ts` | skip reasons, warnings, guessed-layout line | yes | New in Plan 10 (Money view); every warning says what to do |
+| Investing | `src/engine/money/summary.ts` | unusual-charge reasons, ask refusals, facts for Claude | yes | New in Plan 10 (Money view) |
+| Investing | `src/server/money.ts` | 400, 404 and 413 sentences | yes | New in Plan 10 (Money view) |
 | Investing | `src/engine/markets/advanced.ts` | none | yes | New in Plan 10 |
 | Investing | `src/engine/markets/lists.ts` | list refusals | yes | New in Plan 10; every refusal says what to do |
 | Investing | `src/engine/markets/search.ts` | validation, rate-limit and key notes, typed-symbol notes | yes | New in Plan 10 |
