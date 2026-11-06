@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { anyAdvanced, bigNewsArmed } from "./advanced";
 import { evaluateEvents } from "./alerts";
 import { AV_RESERVE, dailyBudget, noteSourceResult, planAlphaVantage } from "./budget";
-import { etDate, etInstant, lastCompletedSession } from "./calendar";
+import { etDate, etInstant, lastCompletedSession, tsxOpen, tsxTrading } from "./calendar";
 import { recordCloses } from "./closes";
 import { AV_DAILY_LIMIT, type MarketData } from "./data";
 import { fetchNews, saveEarnings } from "./events";
@@ -11,7 +11,7 @@ import { isFund } from "./funds/sources";
 import { instrumentKey, parseInstrumentKey, type Exchange, type Instrument } from "./instrument";
 import type { Job, Skipped } from "./jobs";
 import type { TiingoProvider } from "./providers/tiingo";
-import { ProviderError } from "./providers/types";
+import { ProviderError, type EarningsDate } from "./providers/types";
 import { redact } from "./redact";
 import { thesisChecks } from "./research";
 
@@ -40,19 +40,44 @@ export const EARNINGS_CHECKED = "markets.earnings.checked";
 export const EARNINGS_DAYS_AHEAD = 30;
 const NO_FINNHUB = "add your Finnhub key in Settings → Market data";
 
-export async function fetchEarnings(db: Database, data: MarketData, now: number): Promise<Skipped | null> {
-  const stocks = trackedInstruments(db).filter((i) => i.exchange === "US" && !isFund(instrumentKey(i)));
+type Checked = { at: number; keys: string[] };
+const EARNINGS_MAX_AGE = 20 * 3_600_000;
+const readChecked = (db: Database): Checked | null => {
+  const raw = (db.query("SELECT value FROM settings WHERE key = ?").get(EARNINGS_CHECKED) as { value: string } | null)?.value;
+  return raw ? (JSON.parse(raw) as Checked) : null;
+};
+const usStocks = (db: Database) => trackedInstruments(db).filter((i) => i.exchange === "US" && !isFund(instrumentKey(i)));
+
+// The stocks whose dates are missing or older than 20 hours: a new holding, or a day since the last check.
+export function earningsDue(db: Database, now: number): Instrument[] {
+  const stocks = usStocks(db);
+  const c = readChecked(db);
+  if (!c || now - c.at > EARNINGS_MAX_AGE) return stocks;
+  return stocks.filter((i) => !c.keys.includes(instrumentKey(i)));
+}
+
+// The 16:30 run checks every stock; a catch-up (resume) only the due ones. Finnhub answers per symbol, so a rate limit
+// partway keeps the dates already fetched, and the rest are due on the next catch-up.
+export async function fetchEarnings(db: Database, data: MarketData, now: number, opts: { resume?: boolean } = {}): Promise<Skipped | null> {
+  const stocks = opts.resume ? earningsDue(db, now) : usStocks(db);
   if (!stocks.length) return null;
   const research = data.research?.();
-  if (!research?.earnings) return { step: "earnings", reason: `Earnings dates weren't checked: ${NO_FINNHUB}.` };
+  if (!research?.earnings) return { step: "earnings", reason: `Earnings dates weren't checked: ${NO_FINNHUB}.`, status: "off" };
   const today = etDate(now);
-  try {
-    const rows = await research.earnings(stocks, today, shift(today, EARNINGS_DAYS_AHEAD));
-    const keys = stocks.map(instrumentKey);
+  const prev = readChecked(db);
+  const fresh = prev && now - prev.at <= EARNINGS_MAX_AGE ? prev : null;
+  const save = (rows: EarningsDate[], keys: string[]) => {
     saveEarnings(db, rows, "finnhub", { replaceFrom: { keys, from: today } });
-    upsert(db, EARNINGS_CHECKED, JSON.stringify({ at: now, keys }));
+    // A partial or due-only check keeps the earlier check's time, so what it didn't cover comes due on time.
+    const all = [...new Set([...(fresh?.keys ?? []), ...keys])];
+    upsert(db, EARNINGS_CHECKED, JSON.stringify({ at: fresh && keys.length < usStocks(db).length ? fresh.at : now, keys: all }));
+  };
+  try {
+    save(await research.earnings(stocks, today, shift(today, EARNINGS_DAYS_AHEAD)), stocks.map(instrumentKey));
     return null;
   } catch (e) {
+    const partial = e instanceof ProviderError ? e.partial : undefined;
+    if (partial?.done.length) save(partial.rows, partial.done);
     return { step: "earnings", reason: `Earnings dates failed: ${errorText(e, data.secrets?.() ?? [])}` };
   }
 }
@@ -68,16 +93,81 @@ const sessionBefore = (date: string) => lastCompletedSession(etInstant(date, "00
 // the job runs, so sparklines and performance fill from the first day.
 async function ownUsCloses(db: Database, data: MarketData, list: Instrument[], now: number): Promise<Skipped | null> {
   if (!list.length) return null;
-  if (!data.research?.()) return { step: "us-closes", reason: `US closes weren't kept: ${NO_FINNHUB}.` };
+  if (!data.research?.()) return { step: "us-closes", reason: `US closes weren't kept: ${NO_FINNHUB}.`, status: "off" };
   const session = lastCompletedSession(now);
   const r = await data.quotes(list);
   for (const q of r.quotes) {
-    if (q.source === "alphavantage" || q.source === "yahoo") continue;
+    // Demo prices are made up, and Canadian closes come from Alpha Vantage, never from Yahoo's last trade.
+    if (q.source === "alphavantage" || q.source === "yahoo" || q.source === "demo") continue;
     const day = etDate(q.at);
     if (day === session.date && q.at <= session.closesAt + 60_000) recordCloses(db, q.key, [{ date: day, close: q.price, adjClose: null, source: q.source }]);
     if (q.prevClose) recordCloses(db, q.key, [{ date: sessionBefore(day), close: q.prevClose, adjClose: null, source: q.source }]);
   }
-  return r.missing.length ? { step: "us-closes", reason: `US closes weren't kept for ${r.missing.map((m) => m.key).join(", ")}: ${r.missing[0]!.reason}` } : null;
+  // The next day's previous close fills a missed one, so this waits rather than retrying.
+  return r.missing.length
+    ? { step: "us-closes", reason: `US closes weren't kept for ${r.missing.map((m) => m.key).join(", ")}: ${r.missing[0]!.reason}`, status: "waiting" }
+    : null;
+}
+
+// Everything the job fetches for: what the feed tracks plus the benchmarks.
+export function eodInstruments(db: Database): Instrument[] {
+  const tracked = trackedInstruments(db);
+  const seen = new Set(tracked.map(instrumentKey));
+  return [...tracked, ...BENCHMARKS.filter((k) => !seen.has(k)).map((k) => parseInstrumentKey(k)!)];
+}
+
+// The Canadian listings Atrium keeps closes for, held first, and the session those closes are for.
+export const caKeys = (db: Database, all: Instrument[]): string[] =>
+  [...new Set([...heldKeys(db).filter((k) => isCanadian(parseInstrumentKey(k)!)), ...all.filter(isCanadian).map(instrumentKey)])];
+export const caSession = (now: number): string | null => {
+  const { date } = lastCompletedSession(now);
+  return tsxTrading(date) ? date : null;
+};
+export const missingCloses = (db: Database, keys: string[], date: string): string[] => {
+  const have = db.query("SELECT 1 FROM market_closes WHERE key = ? AND date = ?");
+  return keys.filter((k) => !have.get(k, date));
+};
+
+// Catch-up's approved retry: the keys and how many calls it may spend, taken once.
+export const CA_BATCH = "markets.av.batch";
+function takeBatch(db: Database): string[] | null {
+  const raw = (db.query("SELECT value FROM settings WHERE key = ?").get(CA_BATCH) as { value: string } | null)?.value;
+  if (!raw) return null;
+  db.query("DELETE FROM settings WHERE key = ?").run(CA_BATCH);
+  return JSON.parse(raw) as string[];
+}
+
+// Only closes still missing for the session are fetched, never ones already saved. batch: the keys catch-up approved
+// (already within its budget); otherwise the day's plan. Whatever is still missing afterwards waits, with the reason,
+// for catch-up's one retry per key.
+async function canadianCloses(db: Database, data: MarketData, all: Instrument[], now: number, batch: string[] | null): Promise<Skipped | null> {
+  const date = caSession(now);
+  if (!date) return null;
+  const keys = caKeys(db, all);
+  const missing = missingCloses(db, keys, date);
+  if (!missing.length) return null;
+  const wait = (reason: string): Skipped => ({ step: "ca-closes", reason, status: "waiting" });
+  // In session Canadian prices come from Yahoo, which keeps no closes; asking now would only look like success.
+  if (tsxOpen(now)) return wait(`Canadian closes for ${date} wait for Toronto's close.`);
+  let fetch: string[];
+  let deferred: string[] = [];
+  if (batch) fetch = batch.filter((k) => missing.includes(k));
+  else {
+    const held = heldKeys(db).filter((k) => missing.includes(k));
+    const used = AV_DAILY_LIMIT - dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, () => now).remaining();
+    const plan = planAlphaVantage({ held, watched: missing, used, limit: AV_DAILY_LIMIT, reserve: AV_RESERVE });
+    upsert(db, "markets.av.plan", JSON.stringify(plan.eod));
+    upsert(db, "markets.av.deferred", JSON.stringify(plan.deferred));
+    fetch = plan.eod;
+    deferred = plan.deferred;
+  }
+  // data.quotes keeps the bars and closes of every daily series it fetches.
+  const r = fetch.length ? await data.quotes(fetch.map((k) => parseInstrumentKey(k)!)) : { quotes: [], missing: [] };
+  const still = missingCloses(db, keys, date);
+  if (!still.length) return null;
+  const failed = r.missing.find((m) => still.includes(m.key));
+  const why = failed ? failed.reason : deferred.length ? "Alpha Vantage's budget for today is spoken for." : "Alpha Vantage sent no close yet.";
+  return wait(`Canadian closes for ${date} weren't saved for ${still.join(", ")}: ${why}`);
 }
 
 const STEPS = ["us-history", "us-closes", "ca-closes", "earnings", "thesis", "news"] as const;
@@ -93,9 +183,7 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
     async run(now, only) {
       const want = (step: (typeof STEPS)[number]) => !only || only.includes(step);
       const skipped: Skipped[] = [];
-      const tracked = trackedInstruments(db);
-      const seen = new Set(tracked.map(instrumentKey));
-      const all = [...tracked, ...BENCHMARKS.filter((k) => !seen.has(k)).map((k) => parseInstrumentKey(k)!)];
+      const all = eodInstruments(db);
       const us = all.filter((x) => x.exchange === "US");
       const secrets = deps.data.secrets?.() ?? [];
       await deps.data.prepare?.();
@@ -126,39 +214,30 @@ export function eodJob(db: Database, deps: { data: MarketData; tiingo: () => Tii
         }
         noteSourceResult(db, "tiingo", failed === null, failed ?? undefined, now);
         if (failed) skipped.push({ step: "us-history", reason: `Tiingo history failed: ${failed}` });
-      } else if (want("us-history")) skipped.push({ step: "us-history", reason: null });
+      } else if (want("us-history")) skipped.push({ step: "us-history", reason: null, status: "off" });
 
       if (want("us-closes") && !tiingo) {
         try {
           const s = await ownUsCloses(db, deps.data, us, now);
           if (s) skipped.push(s);
         } catch (e) {
-          skipped.push({ step: "us-closes", reason: `US closes failed: ${errorText(e, secrets)}` });
+          skipped.push({ step: "us-closes", reason: `US closes failed: ${errorText(e, secrets)}`, status: "waiting" });
         }
       }
 
       if (want("ca-closes")) {
         try {
-          const held = heldKeys(db).filter((k) => isCanadian(parseInstrumentKey(k)!));
-          const watched = all.filter(isCanadian).map(instrumentKey);
           const keyed = (await deps.data.status?.())?.keys.alphavantage ?? true;
-          if (!keyed && watched.length) skipped.push({ step: "ca-closes", reason: null });
-          else {
-            const used = AV_DAILY_LIMIT - dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, deps.now).remaining();
-            const plan = planAlphaVantage({ held, watched, used, limit: AV_DAILY_LIMIT, reserve: AV_RESERVE });
-            upsert(db, "markets.av.plan", JSON.stringify(plan.eod));
-            upsert(db, "markets.av.deferred", JSON.stringify(plan.deferred));
-            // data.quotes keeps the bars and closes of every daily series it fetches.
-            const r = plan.eod.length ? await deps.data.quotes(plan.eod.map((k) => parseInstrumentKey(k)!)) : { missing: [] };
-            if (r.missing.length) skipped.push({ step: "ca-closes", reason: `Canadian closes weren't saved for ${r.missing.map((m) => m.key).join(", ")}: ${r.missing[0]!.reason}` });
-          }
+          const s = keyed ? await canadianCloses(db, deps.data, all, now, only ? takeBatch(db) : null) : null;
+          if (!keyed && all.some(isCanadian)) skipped.push({ step: "ca-closes", reason: null, status: "off" });
+          else if (s) skipped.push(s);
         } catch (e) {
-          skipped.push({ step: "ca-closes", reason: `Canadian closes failed: ${errorText(e, secrets)}` });
+          skipped.push({ step: "ca-closes", reason: `Canadian closes failed: ${errorText(e, secrets)}`, status: "waiting" });
         }
       }
 
       if (want("earnings")) {
-        const s = await fetchEarnings(db, deps.data, now);
+        const s = await fetchEarnings(db, deps.data, now, { resume: !!only });
         if (s) skipped.push(s);
         try {
           // Earnings-in-N-days alerts count down on stored dates even when today's check couldn't run.

@@ -10,6 +10,7 @@ import { eodJob } from "../../../src/engine/markets/eod";
 import { instrumentKey, type Instrument } from "../../../src/engine/markets/instrument";
 import { createJobs } from "../../../src/engine/markets/jobs";
 import { getMeta, metaJob, metaStale } from "../../../src/engine/markets/meta";
+import { ProviderError } from "../../../src/engine/markets/providers/types";
 import { earningsView } from "../../../src/engine/markets/views";
 import { tempHome } from "../../helpers";
 
@@ -54,6 +55,8 @@ function rig() {
     quotes: async () => ({ quotes: [], missing: [] }),
     news: async () => [],
     research: () => (state.keyed ? research : null),
+    // No Alpha Vantage key: the XEQT benchmark's close is quietly off, not missing.
+    status: async () => ({ keys: { alphavantage: false } }),
     prepare: async () => {},
   } as unknown as MarketData;
   let clock = START;
@@ -81,7 +84,7 @@ test("on start without a key nothing is fetched; once the key is added, earnings
     ["QBTS", "2026-11-10"],
   ]);
   expect(getMeta(db, ["META"]).get("META")).toMatchObject({ name: "Meta Platforms Inc", kind: "stock", pe: 25 });
-  expect(r.jobs.status().every((j) => j.lastError === null)).toBe(true);
+  expect(r.jobs.status().map((j) => [j.name, j.lastError])).toEqual([["eod", null], ["meta", null]]);
 });
 
 test("with everything fresh, catch-up makes no calls; between forced runs it checks at most hourly", async () => {
@@ -99,7 +102,8 @@ test("with everything fresh, catch-up makes no calls; between forced runs it che
   expect(r.calls).toHaveLength(n);
   r.at(START + 75 * 60_000);
   await r.catchUp.run();
-  expect(r.calls).toContain("earnings RKLB,QBTS,META,SOFI");
+  // Only the new holding is due; the others were checked an hour ago.
+  expect(r.calls).toContain("earnings SOFI");
   expect(r.calls).toContain("profile SOFI");
 });
 
@@ -138,7 +142,7 @@ function tsxRig(opts: { daily?: boolean } = {}) {
     JSON.stringify({ ranFor: Date.parse("2026-11-06T21:30:00Z"), lastRunAt: Date.parse("2026-11-06T21:30:00Z"), lastError: null, attempts: 0, lastAttemptAt: null }),
   );
   const jobs = createJobs(db, [eodJob(db, { data, tiingo: () => null, now })], now);
-  return { asked, catchUp: createCatchUp(db, { jobs, now }), at: (t: number) => (clock = t) };
+  return { asked, jobs, catchUp: createCatchUp(db, { jobs, now }), at: (t: number) => (clock = t) };
 }
 
 test("missing TSX closes from a misread throttle are fetched again once, on start, within the budget", async () => {
@@ -172,4 +176,63 @@ test("a real daily limit (the budget is used up) waits for tomorrow", async () =
   const r = tsxRig({ daily: true });
   await r.catchUp.run(true);
   expect(r.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toEqual([]);
+});
+
+test("a rate limit partway through earnings keeps the dates it got, and catch-up asks only for the rest", async () => {
+  const asked: string[] = [];
+  let limited = true;
+  const research = {
+    async earnings(list: Instrument[]) {
+      asked.push(list.map(instrumentKey).join(","));
+      const rows: { key: string; date: string; hour: string | null; epsEstimate: null }[] = [];
+      const done: string[] = [];
+      for (const i of list) {
+        if (limited && i.symbol === "QBTS") {
+          const e = new ProviderError("rate_limited", "Finnhub says too many requests; Atrium will try again in a minute.");
+          e.partial = { done, rows };
+          throw e;
+        }
+        if (i.symbol === "RKLB") rows.push({ key: "RKLB", date: "2026-11-09", hour: "amc", epsEstimate: null });
+        if (i.symbol === "QBTS") rows.push({ key: "QBTS", date: "2026-11-10", hour: null, epsEstimate: null });
+        done.push(instrumentKey(i));
+      }
+      return rows;
+    },
+  };
+  const data = { quotes: async () => ({ quotes: [], missing: [] }), news: async () => [], research: () => research, status: async () => ({ keys: { alphavantage: false } }), prepare: async () => {} } as unknown as MarketData;
+  let clock = START;
+  const jobs = createJobs(db, [eodJob(db, { data, tiingo: () => null, now: () => clock })], () => clock);
+  const catchUp = createCatchUp(db, { jobs, now: () => clock });
+  await catchUp.run(true);
+  expect(earningsView(db, spaceId, START).rows.map((x) => x.key)).toEqual(["RKLB"]);
+  expect(jobs.steps("eod").earnings?.status).toBe("skipped");
+  limited = false;
+  clock += 61 * 60_000;
+  await catchUp.run();
+  expect(asked).toEqual(["RKLB,QBTS,META", "QBTS,META"]);
+  expect(earningsView(db, spaceId, START).rows.map((x) => x.key)).toEqual(["RKLB", "QBTS"]);
+  expect(jobs.steps("eod").earnings).toBeUndefined();
+});
+
+test("before today's 16:30 run, a retry of yesterday's TSX closes leaves that run its share of Alpha Vantage", async () => {
+  const r = tsxRig();
+  // Mon 1:00 AM ET (Friday's closes missing): 22 left, 5 reserved, 3 kept for tonight's ATZ, VFV and XEQT.
+  for (let n = 0; n < 12; n++) dailyBudget(db, "alphavantage", 25, () => Date.parse("2026-11-09T06:00:00Z")).spend();
+  r.at(Date.parse("2026-11-09T06:00:00Z"));
+  await r.catchUp.run(true);
+  // 25 − 12 used − 5 reserve − 3 for tonight = 5 available, enough for all three.
+  expect(r.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toEqual([["ATZ.TO", "VFV.TO", "XEQT.TO"]]);
+});
+
+test("with only tonight's share left, the retry waits and says why", async () => {
+  const r = tsxRig();
+  const at = Date.parse("2026-11-09T06:00:00Z");
+  for (let n = 0; n < 17; n++) dailyBudget(db, "alphavantage", 25, () => at).spend();
+  r.at(at);
+  await r.catchUp.run(true);
+  expect(r.asked.filter((l) => l.some((k) => k.endsWith(".TO")))).toEqual([]);
+  expect(r.jobs.steps("eod")["ca-closes"]).toEqual({
+    status: "waiting",
+    reason: "Canadian closes for 2026-11-06 wait for ATZ.TO, VFV.TO, XEQT.TO: Alpha Vantage's budget is kept for tonight's closes.",
+  });
 });

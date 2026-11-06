@@ -1,80 +1,80 @@
 import type { Database } from "bun:sqlite";
 import { AV_RESERVE, dailyBudget } from "./budget";
-import { lastCompletedSession, tsxOpen, tsxTrading } from "./calendar";
+import { etDate, etInstant, tsxOpen, tsxTrading } from "./calendar";
 import { AV_DAILY_LIMIT } from "./data";
-import { EARNINGS_CHECKED, heldKeys } from "./eod";
-import { trackedInstruments } from "./feed";
-import { isFund } from "./funds/sources";
-import { instrumentKey, parseInstrumentKey } from "./instrument";
+import { CA_BATCH, caKeys, caSession, earningsDue, eodInstruments, missingCloses } from "./eod";
 import type { Jobs } from "./jobs";
 import { metaStale } from "./meta";
 
 const HOUR_MS = 3_600_000;
-// Finnhub's calendar moves; a check older than this is done again.
-const EARNINGS_MAX_AGE = 20 * HOUR_MS;
 // Between forced runs (engine start, a key added) the feed's steps check at most this often.
 const QUIET_MS = HOUR_MS;
+// Which keys catch-up has already retried for which session, so each key gets one retry per session.
+const CA_ATTEMPTS = "markets.av.catchup";
 
-export function earningsStale(db: Database, now: number): boolean {
-  const stocks = trackedInstruments(db).filter((i) => i.exchange === "US" && !isFund(instrumentKey(i))).map(instrumentKey);
-  if (!stocks.length) return false;
-  const raw = (db.query("SELECT value FROM settings WHERE key = ?").get(EARNINGS_CHECKED) as { value: string } | null)?.value;
-  if (!raw) return true;
-  const c = JSON.parse(raw) as { at: number; keys: string[] };
-  return now - c.at > EARNINGS_MAX_AGE || stocks.some((k) => !c.keys.includes(k));
-}
+const setting = (db: Database, key: string) => (db.query("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | null)?.value ?? null;
+const upsert = (db: Database, key: string, value: string) =>
+  db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 
-const TSX_RETRIED = "markets.av.retried";
-const isCanadian = (key: string) => ["TSX", "TSXV"].includes(parseInstrumentKey(key)?.exchange ?? "");
+export const earningsStale = (db: Database, now: number): boolean => earningsDue(db, now).length > 0;
 
-// The held Canadian listings with no stored close for the last completed session. Alpha Vantage's per-second notice
-// used to be read as its daily limit, which left these empty while the job reported success.
+// The Canadian listings with no stored close for the last completed session.
 export function tsxClosesMissing(db: Database, now: number): { date: string; keys: string[] } | null {
-  const { date } = lastCompletedSession(now);
-  if (!tsxTrading(date)) return null;
-  const have = db.query("SELECT 1 FROM market_closes WHERE key = ? AND date = ?");
-  const keys = heldKeys(db).filter((k) => isCanadian(k) && !have.get(k, date));
+  const date = caSession(now);
+  if (!date) return null;
+  const keys = missingCloses(db, caKeys(db, eodInstruments(db)), date);
   return keys.length ? { date, keys } : null;
 }
 
-// Once per session, and only while today's budget has room beyond Nakul's reserve: a real daily-limit notice uses
-// the budget up, so it waits for tomorrow, while a throttle misread as one gets its retry.
-// While Toronto trades, Canadian prices route to Yahoo, which keeps no closes, so the retry waits for the close.
-function tsxRetryDue(db: Database, now: number): string | null {
-  if (tsxOpen(now)) return null;
+// One retry per missing key per session, recorded before it's sent. It waits while Toronto trades (Yahoo prices the
+// day and keeps no closes), and spends only what's left after Nakul's reserve and, before today's 16:30 run, after
+// that run's share: yesterday's close never takes today's.
+async function tsxRetry(db: Database, jobs: Jobs, now: number): Promise<boolean> {
+  if (tsxOpen(now)) return false;
   const missing = tsxClosesMissing(db, now);
-  if (!missing) return null;
-  const retried = (db.query("SELECT value FROM settings WHERE key = ?").get(TSX_RETRIED) as { value: string } | null)?.value;
-  if (retried === missing.date) return null;
-  if (dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, () => now).remaining() <= AV_RESERVE) return null;
-  return missing.date;
+  if (!missing) return false;
+  const raw = setting(db, CA_ATTEMPTS);
+  const tried = raw && (JSON.parse(raw) as { date: string }).date === missing.date ? (JSON.parse(raw) as { keys: string[] }).keys : [];
+  const todo = missing.keys.filter((k) => !tried.includes(k));
+  if (!todo.length) return false;
+  const today = etDate(now);
+  const tonight = today !== missing.date && tsxTrading(today) && (jobs.ranFor("eod") ?? 0) < etInstant(today, "16:30") ? caKeys(db, eodInstruments(db)).length : 0;
+  const available = dailyBudget(db, "alphavantage", AV_DAILY_LIMIT, () => now).remaining() - AV_RESERVE - tonight;
+  if (available <= 0) {
+    jobs.mark("eod", "ca-closes", {
+      status: "waiting",
+      reason: `Canadian closes for ${missing.date} wait for ${missing.keys.join(", ")}: Alpha Vantage's budget is kept for ${tonight ? "tonight's closes" : "your own use"}.`,
+    });
+    return false;
+  }
+  const batch = todo.slice(0, available);
+  upsert(db, CA_ATTEMPTS, JSON.stringify({ date: missing.date, keys: [...tried, ...batch] }));
+  upsert(db, CA_BATCH, JSON.stringify(batch));
+  return jobs.runNow("eod", now, ["ca-closes"]);
 }
 
-// Fills in what the scheduled jobs couldn't: their skipped steps (after a key is added), and earnings dates or
-// company metadata that are missing or stale (a new holding, an engine that was off). The checks read only the DB;
-// the network is used only for what's due, through the jobs' own steps and budgets. One run at a time.
+// Fills in what the scheduled jobs couldn't: their failed steps, steps that were off for want of a key (on start and
+// when a key is added), earnings dates or company metadata that are missing or stale (a new holding, an engine that
+// was off), and one retry per missing TSX close. Each check reads only the DB and stands on its own; the network is
+// used only for what's due, through the jobs' own steps and budgets. One run at a time.
 export function createCatchUp(db: Database, deps: { jobs: Jobs; now: () => number }) {
   let running: Promise<string[]> | null = null;
   let lastAt = 0;
-  const run = async (): Promise<string[]> => {
+  const run = async (force: boolean): Promise<string[]> => {
     const now = deps.now();
     lastAt = now;
-    const done = await deps.jobs.rerunSkipped(now);
-    if (!done.includes("eod") && earningsStale(db, now) && (await deps.jobs.runNow("eod", now, ["earnings"]))) done.push("eod");
-    if (!done.includes("meta") && metaStale(db, now) && (await deps.jobs.runNow("meta", now))) done.push("meta");
-    const tsx = !done.includes("eod") || !deps.jobs.skipped("eod").includes("ca-closes") ? tsxRetryDue(db, now) : null;
-    if (tsx) {
-      db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(TSX_RETRIED, tsx);
-      if (await deps.jobs.runNow("eod", now, ["ca-closes"])) done.push("eod");
-    }
-    return done;
+    const done = new Set(await deps.jobs.rerunSkipped(now, force));
+    if (earningsStale(db, now) && (await deps.jobs.runNow("eod", now, ["earnings"]))) done.add("eod");
+    if (metaStale(db, now) && (await deps.jobs.runNow("meta", now))) done.add("meta");
+    if (await tsxRetry(db, deps.jobs, now)) done.add("eod");
+    return [...done];
   };
   return {
     // force: engine start or a key just added; otherwise at most once an hour.
     async run(force = false): Promise<string[]> {
       if (running) return running;
       if (!force && deps.now() - lastAt < QUIET_MS) return [];
-      running = run().finally(() => (running = null));
+      running = run(force).finally(() => (running = null));
       return running;
     },
   };

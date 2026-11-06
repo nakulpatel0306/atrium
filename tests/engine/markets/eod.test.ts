@@ -217,7 +217,13 @@ test("run before any key exists, earnings are reported skipped; adding a Finnhub
   const setup = Date.parse("2026-11-06T00:32:00Z"); // Thu Nov 5, 7:32 PM ET, the moment of setup
   const asked: string[] = [];
   let research: ReturnType<typeof finnhubCalendar> | null = null;
-  const data = { quotes: async () => ({ quotes: [], missing: [] }), news: async () => [], research: () => research, prepare: async () => {} } as unknown as MarketData;
+  const data = {
+    quotes: async () => ({ quotes: [], missing: [] }),
+    news: async () => [],
+    research: () => research,
+    status: async () => ({ keys: { alphavantage: false } }),
+    prepare: async () => {},
+  } as unknown as MarketData;
   let clock = setup;
   const jobs = createJobs(db, [eodJob(db, { data, tiingo: () => null, now: () => clock })], () => clock);
   expect(await jobs.runDue(setup)).toEqual(["eod"]);
@@ -228,7 +234,9 @@ test("run before any key exists, earnings are reported skipped; adding a Finnhub
 
   clock = Date.parse("2026-11-06T14:00:00Z");
   research = finnhubCalendar(asked);
-  expect(await jobs.rerunSkipped(clock)).toEqual(["eod"]);
+  // An hourly catch-up leaves steps that wait on a key alone; adding the key runs them.
+  expect(await jobs.rerunSkipped(clock)).toEqual([]);
+  expect(await jobs.rerunSkipped(clock, true)).toEqual(["eod"]);
   expect(asked).toEqual(["RKLB,QBTS,AMZN 2026-11-06..2026-12-06"]);
   expect(earningsView(db, spaceId, clock).rows.map((r) => [r.key, r.date, r.hour])).toEqual([
     ["RKLB", "2026-11-09", "amc"],
@@ -256,6 +264,7 @@ test("the 16:30 job keeps US closes from Finnhub quotes, the close and the previ
     },
     news: async () => [],
     research: () => finnhubCalendar([]),
+    status: async () => ({ keys: { alphavantage: false } }),
     prepare: async () => {},
   } as unknown as MarketData;
   const at = Date.parse("2026-11-06T21:30:00Z");
@@ -284,4 +293,50 @@ test("a late after-hours quote isn't taken as the close, but its previous close 
   await eodJob(db, { data, tiingo: () => null, now: () => at }).run(at);
   expect(closeOn(db, "AMZN", "2026-11-06")).toBeNull();
   expect(closeOn(db, "AMZN", "2026-11-05")!.close).toBe(260.21);
+});
+
+test("demo prices are never kept as closes, even in Demo mode", async () => {
+  setAdvanced(db, spaceId, false);
+  hold("AMZN", "US");
+  const { setSetting } = await import("../../../src/engine/settings");
+  setSetting(db, "markets.provider", "demo");
+  const at = Date.parse("2026-11-06T21:30:00Z");
+  const data = {
+    quotes: async (list: Instrument[]) => ({ quotes: list.map((i) => ({ key: instrumentKey(i), price: 200, prevClose: 199, at: Date.parse("2026-11-06T21:00:00Z"), source: "demo", freshness: "demo" })), missing: [] }),
+    news: async () => [],
+    research: () => finnhubCalendar([]),
+    status: async () => ({ keys: { alphavantage: false } }),
+    prepare: async () => {},
+  } as unknown as MarketData;
+  await eodJob(db, { data, tiingo: () => null, now: () => at }).run(at);
+  expect(closeOn(db, "AMZN", "2026-11-06")).toBeNull();
+  expect(closeOn(db, "AMZN", "2026-11-05")).toBeNull();
+});
+
+test("Canadian closes are never marked done without being saved: in session they wait, and an empty plan waits too", async () => {
+  setAdvanced(db, spaceId, false);
+  hold("ATZ", "TSX");
+  const asked: string[][] = [];
+  const data = {
+    quotes: async (list: Instrument[]) => (asked.push(list.map(instrumentKey)), { quotes: [], missing: [] }),
+    news: async () => [],
+    research: () => null,
+    status: async () => ({ keys: { alphavantage: true } }),
+    prepare: async () => {},
+  } as unknown as MarketData;
+  // Tue 11:00 AM ET, Monday's closes missing: Yahoo would answer, so nothing is asked.
+  const inSession = Date.parse("2026-11-10T16:00:00Z");
+  const r = await eodJob(db, { data, tiingo: () => null, now: () => inSession }).run(inSession, ["ca-closes"]);
+  expect(asked).toEqual([]);
+  expect(r && r.skipped).toEqual([{ step: "ca-closes", reason: "Canadian closes for 2026-11-09 wait for Toronto's close.", status: "waiting" }]);
+  // After the close with the day's budget used down to the reserve: nothing to plan, still waiting.
+  const after = Date.parse("2026-11-10T21:30:00Z");
+  for (let n = 0; n < 20; n++) dailyBudget(db, "alphavantage", 25, () => after).spend();
+  const r2 = await eodJob(db, { data, tiingo: () => null, now: () => after }).run(after, ["ca-closes"]);
+  expect(asked).toEqual([]);
+  expect(r2 && r2.skipped[0]).toEqual({
+    step: "ca-closes",
+    reason: "Canadian closes for 2026-11-10 weren't saved for ATZ.TO, XEQT.TO: Alpha Vantage's budget for today is spoken for.",
+    status: "waiting",
+  });
 });
