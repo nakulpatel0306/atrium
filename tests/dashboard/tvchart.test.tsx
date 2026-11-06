@@ -26,20 +26,29 @@ test("chartReducer", () => {
   expect(CHART_TIMEOUT_MS).toBe(12_000);
 });
 
-test("embedUrl uses the chart listener (next port, other loopback name) and carries only the symbol and parent", () => {
-  const u = new URL(embedUrl("NASDAQ:AMZN", { hostname: "127.0.0.1", port: "7420" }));
-  expect(u.origin).toBe("http://localhost:7421");
-  expect(u.pathname).toBe("/embed/tradingview");
-  expect(embedUrl("NASDAQ:AMZN", { hostname: "127.0.0.1", port: "7420" })).toContain("symbol=NASDAQ%3AAMZN");
-  expect(embedUrl("NASDAQ:AMZN", { hostname: "127.0.0.1", port: "7420" })).toContain("parent=http%3A%2F%2F127.0.0.1%3A7420");
+test("embedUrl uses the engine-reported chart listener and carries only the symbol and parent", () => {
+  const embed = { port: 7577, token: "abc123" };
+  const url = embedUrl("NASDAQ:AMZN", embed, { hostname: "127.0.0.1", port: "7420" });
+  const u = new URL(url);
+  expect(u.origin).toBe("http://localhost:7577");
+  expect(u.pathname).toBe("/embed/abc123/tradingview");
+  expect(url).toContain("symbol=NASDAQ%3AAMZN");
+  expect(url).toContain("parent=http%3A%2F%2F127.0.0.1%3A7420");
   expect([...u.searchParams.keys()]).toEqual(["symbol", "parent"]);
-  expect(embedOrigin({ hostname: "localhost", port: "7420" })).toBe("http://127.0.0.1:7421");
+  expect(embedOrigin({ hostname: "localhost" }, 7577)).toBe("http://127.0.0.1:7577");
+});
+
+test("no chart listener this launch means Atrium's chart, never a guessed frame", () => {
+  const out = renderToStaticMarkup(<TvChart tv="NASDAQ:AMZN" coverage={{ ok: true }} fallback={<div>fallback chart</div>} frameUrl={null} />);
+  expect(out).not.toContain("<iframe");
+  expect(out).toContain("fallback chart");
+  expect(out).toContain("TradingView&#x27;s chart couldn&#x27;t start this time, so this is Atrium&#x27;s chart from daily closes.");
 });
 
 test("renders the frame with the sandbox, the labels and the privacy line once", () => {
   const out = renderToStaticMarkup(<TvChart tv="NASDAQ:AMZN" coverage={{ ok: true }} fallback={<div>fallback chart</div>} frameUrl={() => "http://localhost:7571/fake"} />);
   expect(out).toContain('<iframe title="NASDAQ:AMZN chart by TradingView" src="http://localhost:7571/fake"');
-  expect(out).toContain('sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"');
+  expect(out).toContain('sandbox="allow-scripts allow-same-origin allow-popups"');
   expect(out.split(PRIVACY)).toHaveLength(2);
   expect(out).toContain("TradingView · delayed");
   expect(out).toContain("Show Atrium&#x27;s chart");

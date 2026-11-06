@@ -5,16 +5,18 @@ import { navigate } from "./route";
 
 // The simple investing views' client side: the chart frame's address and state, plus hooks and formatting.
 
-// The TradingView page has a listener of its own on the engine's port + 1, under the other loopback name, so its
-// code runs cross-origin to the dashboard with no API behind it.
-export function embedOrigin(loc: { hostname: string; port: string }): string {
-  const port = Number(loc.port) + 1;
+// The TradingView page has a listener of its own, at the port and secret path the engine reports, under the other
+// loopback name; its code runs cross-origin to the dashboard with no API behind it. Null (the listener didn't
+// start) means the Symbol page shows Atrium's chart instead.
+export type EmbedInfo = { port: number; token: string } | null;
+
+export function embedOrigin(loc: { hostname: string }, port: number): string {
   return loc.hostname === "localhost" ? `http://127.0.0.1:${port}` : `http://localhost:${port}`;
 }
 
-export function embedUrl(tv: string, loc: { hostname: string; port: string } = location): string {
+export function embedUrl(tv: string, embed: NonNullable<EmbedInfo>, loc: { hostname: string; port: string } = location): string {
   const q = new URLSearchParams({ symbol: tv, parent: `http://${loc.hostname}:${loc.port}` });
-  return `${embedOrigin(loc)}/embed/tradingview?${q}`;
+  return `${embedOrigin(loc, embed.port)}/embed/${encodeURIComponent(embed.token)}/tradingview?${q}`;
 }
 
 export type ChartState = "loading" | "ready" | "offline" | "failed";

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../src/engine/db";
 import { addHolding } from "../../src/engine/markets/holdings";
@@ -74,20 +74,53 @@ afterEach(() => {
   home.cleanup();
 });
 
-test("the chart page has a listener of its own with no API, and the engine doesn't serve it", async () => {
+test("the chart page has a listener of its own with no API, at a secret path the engine reports", async () => {
   server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0 });
   const port = server.port;
   const ep = server.embedPort!;
   expect(ep).toBeGreaterThan(0);
   expect(ep).not.toBe(port);
-  const page = `/embed/tradingview?${q("NASDAQ:AMZN", `http://127.0.0.1:${port}`)}`;
+  expect(server.embedToken).toMatch(/^[0-9a-f]{32}$/);
+  const state = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json();
+  expect(state.embed).toEqual({ port: ep, token: server.embedToken });
+  expect((await (await fetch(`http://127.0.0.1:${port}/api/summary`)).json()).embed).toEqual({ port: ep, token: server.embedToken });
+  const query = `?${q("NASDAQ:AMZN", `http://127.0.0.1:${port}`)}`;
+  const page = `/embed/${server.embedToken}/tradingview${query}`;
   const ok = await fetch(`http://127.0.0.1:${ep}${page}`, { headers: { host: `localhost:${ep}` } });
   expect(ok.status).toBe(200);
   expect((await fetch(`http://127.0.0.1:${ep}${page}`, { headers: { host: "evil.example" } })).status).toBe(403);
+  // Without the token, or with another one, there's nothing there.
+  expect((await fetch(`http://127.0.0.1:${ep}/embed/tradingview${query}`)).status).toBe(404);
+  expect((await fetch(`http://127.0.0.1:${ep}/embed/${"0".repeat(32)}/tradingview${query}`)).status).toBe(404);
   for (const path of ["/api/state", "/api/summary", "/ws", "/"]) expect((await fetch(`http://127.0.0.1:${ep}${path}`)).status).toBe(404);
   expect((await fetch(`http://127.0.0.1:${ep}/api/spaces`, { method: "POST", body: "{}" })).status).toBe(404);
   // The engine's own port has no chart page.
   expect((await fetch(`http://127.0.0.1:${port}${page}`)).status).toBe(404);
+  // Each launch gets a new token.
+  const second = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0 });
+  expect(second.embedToken).not.toBe(server.embedToken);
+  second.stop(true);
+});
+
+test("a chart listener that can't bind is reported as null", async () => {
+  const squatter = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("squatter") });
+  const free = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
+  const enginePort = squatter.port! - 1;
+  free.stop(true);
+  const errors: string[] = [];
+  const spy = spyOn(console, "error").mockImplementation((...a: unknown[]) => void errors.push(a.map(String).join(" ")));
+  try {
+    server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: enginePort });
+    expect(server.embedPort).toBeNull();
+    expect((await (await fetch(`http://127.0.0.1:${enginePort}/api/state`)).json()).embed).toBeNull();
+    expect(errors.join("\n")).toContain("couldn't start");
+  } catch (e) {
+    // The engine port itself was taken between the probe and the start; nothing to check this run.
+    if (!String(e).includes("EADDRINUSE")) throw e;
+  } finally {
+    spy.mockRestore();
+    squatter.stop(true);
+  }
 });
 
 test("the page carries nothing but the symbol", async () => {
@@ -105,7 +138,7 @@ test("nothing in the embed's context can reach the API or the socket", async () 
   const port = server.port;
   const base = `http://127.0.0.1:${port}`;
   const embedOrigin = `http://localhost:${server.embedPort}`;
-  const embedPage = `${embedOrigin}/embed/tradingview?symbol=NASDAQ%3AAMZN&parent=${encodeURIComponent(base)}`;
+  const embedPage = `${embedOrigin}/embed/${server.embedToken}/tradingview?symbol=NASDAQ%3AAMZN&parent=${encodeURIComponent(base)}`;
   // What the chart page's scripts would send: their own origin, the page as Referer, Sec-Fetch-Site same-site.
   const asEmbed = (path: string, init: RequestInit = {}) =>
     fetch(base + path, { ...init, headers: { origin: embedOrigin, referer: embedPage, "sec-fetch-site": "same-site", ...(init.headers as Record<string, string>) } });

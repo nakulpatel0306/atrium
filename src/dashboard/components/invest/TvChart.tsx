@@ -1,8 +1,10 @@
 import { WifiOff } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useEngineState } from "../../api";
 import { CHART_TIMEOUT_MS, chartReducer, embedUrl, type ChartState } from "../../simple";
 
 const PRIVACY = "TradingView sees which symbols you open, never your holdings.";
+const UNAVAILABLE = "TradingView's chart couldn't start this time, so this is Atrium's chart from daily closes.";
 const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
 
 export function ChartCard({ state, onRetry, onFallback }: { state: ChartState; onRetry: () => void; onFallback: () => void }) {
@@ -26,24 +28,27 @@ export function TvChart({
   tv,
   coverage,
   fallback,
-  frameUrl = embedUrl,
+  frameUrl,
   timeoutMs = CHART_TIMEOUT_MS,
 }: {
   tv: string;
   coverage: { ok: true } | { ok: false; reason: string };
   fallback: ReactNode;
-  frameUrl?: (tv: string) => string;
+  // Tests pass a fake; otherwise the engine-reported chart listener. Null: there's no chart page this launch.
+  frameUrl?: ((tv: string) => string) | null;
   timeoutMs?: number;
 }) {
   const [state, send] = useReducer(chartReducer, isOnline() ? "loading" : "offline");
   const [ours, setOurs] = useState(false);
   // Each Try again remounts the frame with a fresh 12 s timeout.
   const [attempt, setAttempt] = useState(0);
-  const src = frameUrl(tv);
+  const embed = useEngineState()?.embed ?? null;
+  const url = frameUrl !== undefined ? frameUrl : embed ? (t: string) => embedUrl(t, embed) : null;
+  const src = url ? url(tv) : "";
   const frame = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
-    if (!coverage.ok || ours) return;
+    if (!coverage.ok || ours || !src) return;
     send({ type: "start", online: isOnline() });
     const origin = new URL(src).origin;
     const onMessage = (e: MessageEvent) => {
@@ -65,10 +70,10 @@ export function TvChart({
     };
   }, [src, coverage.ok, ours, attempt, timeoutMs]);
 
-  if (!coverage.ok) {
+  if (!coverage.ok || !src) {
     return (
       <div className="tv-wrap">
-        <p className="tv-reason">{coverage.reason}</p>
+        <p className="tv-reason">{coverage.ok ? UNAVAILABLE : coverage.reason}</p>
         {fallback}
       </div>
     );
@@ -93,7 +98,7 @@ export function TvChart({
             ref={frame}
             title={`${tv} chart by TradingView`}
             src={src}
-            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            sandbox="allow-scripts allow-same-origin allow-popups"
             referrerPolicy="origin"
             loading="lazy"
           />

@@ -51,29 +51,32 @@ const RESERVE_STEPS = [0.25, 0.5, 0.75];
 // "changed" sockets (the Mac app) skip run output, which only the dashboard's live transcript needs.
 export type WsData = { topic: "engine" | "changed" };
 
-const EMBED_PATH = "/embed/tradingview";
+const embedPath = (token: string) => `/embed/${token}/tradingview`;
 const fromEmbed = (referer: string | null): boolean => {
   if (!referer) return false;
   try {
-    return new URL(referer).pathname === EMBED_PATH;
+    return /^\/embed\/[^/]+\/tradingview$/.test(new URL(referer).pathname);
   } catch {
     return false;
   }
 };
 
-export function startServer(deps: Deps): Server<WsData> & { embedPort: number | null } {
+export function startServer(deps: Deps): Server<WsData> & { embedPort: number | null; embedToken: string } {
   const { db, runner } = deps;
+  const embedToken = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex");
+  let embed: Server<undefined> | null = null;
+  const embedInfo = () => (embed ? { port: embed.port as number, token: embedToken } : null);
 
   const origins = (port: number) => [`127.0.0.1:${port}`, `localhost:${port}`];
   // Blocks DNS rebinding (Host) and other websites driving or reading the engine. Mutations and the socket must carry
   // our Origin; any API read that says it comes from another site (a foreign Origin, or Sec-Fetch-Site naming
   // another site or another port) is refused too, so a web page can't read prices or make the engine spend
   // provider calls. Reads with neither header (curl, the terminal app, the Mac app) are allowed.
-  const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean, path: string): Response | null => {
+  const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean): Response | null => {
     if (!origins(port).includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
     // The TradingView page runs third-party code. It's sandboxed to an opaque origin, and anything it (or a page
     // it opens) asks for beyond the embed page itself is refused.
-    if (path !== EMBED_PATH && fromEmbed(req.headers.get("referer"))) return fail(403, "Forbidden origin.");
+    if (fromEmbed(req.headers.get("referer"))) return fail(403, "Forbidden origin.");
     const origin = req.headers.get("origin");
     if (api && origin === "null") return fail(403, "Forbidden origin.");
     const ours = origin !== null && origins(port).some((h) => origin === `http://${h}`);
@@ -91,8 +94,8 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     const method = req.method;
     const hit = (m: string, pattern: RegExp) => (method === m ? pathname.match(pattern) : null);
 
-    if (hit("GET", /^\/api\/state$/)) return json(snapshot(db, runner.registry));
-    if (hit("GET", /^\/api\/summary$/)) return json(summary(db));
+    if (hit("GET", /^\/api\/state$/)) return json({ ...snapshot(db, runner.registry), embed: embedInfo() });
+    if (hit("GET", /^\/api\/summary$/)) return json({ ...summary(db), embed: embedInfo() });
 
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);
@@ -363,7 +366,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";
-      const denied = guard(req, srv.port as number, needsOrigin, url.pathname.startsWith("/api/") || url.pathname === "/ws", url.pathname);
+      const denied = guard(req, srv.port as number, needsOrigin, url.pathname.startsWith("/api/") || url.pathname === "/ws");
       if (denied) return denied;
       if (url.pathname === "/ws") {
         const topic = url.searchParams.get("events") === "changed" ? "changed" : "engine";
@@ -411,19 +414,20 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     if (e.type === "changed") server.publish("changed", msg);
   });
   const stop = server.stop.bind(server);
-  const embed = startEmbed(deps.port ?? config().port, server.port as number);
+  embed = startEmbed(deps.port ?? config().port, server.port as number, embedToken);
   server.stop = (force?: boolean) => {
     off();
     embed?.stop(force);
     return stop(force);
   };
-  return Object.assign(server, { embedPort: embed ? (embed.port as number) : null });
+  return Object.assign(server, { embedPort: embed ? (embed.port as number) : null, embedToken });
 }
 
 // TradingView's chart page gets a listener of its own on the next port (any free port when the engine's is
-// random, as in tests). It serves that one page and nothing else, so the third-party script runs on an origin
-// with no API behind it; the engine's guard refuses anything that origin (or a page it opens) sends.
-function startEmbed(requested: number, enginePort: number): Server<undefined> | null {
+// random, as in tests). It serves that one page, at a per-launch secret path, and nothing else, so the third-party
+// script runs on an origin with no API behind it; the engine's guard refuses anything that origin (or a page it
+// opens) sends. The dashboard and the Mac app learn the port and path from the engine, never by guessing.
+function startEmbed(requested: number, enginePort: number, token: string): Server<undefined> | null {
   const port = requested === 0 ? 0 : enginePort + 1;
   try {
     const embed: Server<undefined> = Bun.serve({
@@ -434,7 +438,7 @@ function startEmbed(requested: number, enginePort: number): Server<undefined> | 
         const url = new URL(req.url);
         const own = [`127.0.0.1:${embed.port}`, `localhost:${embed.port}`];
         if (!own.includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
-        if (req.method === "GET" && url.pathname === EMBED_PATH) return embedResponse(req, url, enginePort);
+        if (req.method === "GET" && url.pathname === embedPath(token)) return embedResponse(req, url, enginePort);
         return fail(404, "Not found.");
       },
     });
