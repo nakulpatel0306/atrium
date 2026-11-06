@@ -28,6 +28,8 @@ import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from 
 import { createRepos } from "./engine/repos";
 import { recoverRemovals } from "./engine/repos/cleanup";
 import { recoverRepoActions } from "./engine/repos/create";
+import { createMessaging } from "./engine/messaging";
+import { recoverMessageActions } from "./engine/messaging/send";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
@@ -80,6 +82,9 @@ const feed = createFeed({
 onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
 // The only path to creating, pushing or removing a repo: Nakul's own decision on its approval.
 onApprovalResolved(repos.onDecision);
+// Likewise the only path to sending a text: his own Send on its card.
+const messaging = createMessaging({ db, kick: () => runner.kick() });
+onApprovalResolved(messaging.onDecision);
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
 let server: ReturnType<typeof startServer>;
@@ -103,6 +108,7 @@ await recoverOnBoot(db);
 for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);
 recoverRepoActions(db);
 recoverRemovals(db);
+recoverMessageActions(db);
 runner.start();
 repos.daily(Date.now());
 void feed.start();
