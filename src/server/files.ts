@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { spaceFolder } from "../engine/folders";
-import { branchPreview, branchRaw, FileRefused, readPreview, readRaw, resolveTarget } from "../engine/outputs/files";
+import { branchPreview, branchRaw, FileRefused, NOT_FILE, readPreview, readRaw, resolveTarget } from "../engine/outputs/files";
 import { type OpenHow, openFile } from "../engine/outputs/open";
 import { spaceFiles, taskOutputs } from "../engine/outputs/views";
 import { getSpace } from "../engine/spaces";
@@ -8,6 +8,17 @@ import { getTask } from "../engine/tasks";
 import { HttpError, json, readBody, str } from "./http";
 
 const HOW: OpenHow[] = ["open", "reveal", "calendar"];
+const REVEAL_NOT_FILE = "That's a folder or special file, so Atrium won't select it. Use Reveal in Finder on the space folder and look there.";
+
+// "Use Reveal in Finder" makes no sense as the answer to a Reveal, so a folder there gets its own words.
+function revealable<T>(resolve: () => T, how: OpenHow): T {
+  try {
+    return resolve();
+  } catch (e) {
+    if (how === "reveal" && e instanceof FileRefused && e.message === NOT_FILE) throw new HttpError(400, REVEAL_NOT_FILE);
+    throw e;
+  }
+}
 
 // The bytes are an agent's; the browser must never treat them as a page on the engine's origin.
 const rawResponse = (r: { bytes: Uint8Array; type: string }) =>
@@ -74,7 +85,7 @@ export async function filesRoute(db: Database, req: Request, url: URL): Promise<
       if (!space.repoPath) throw new HttpError(404, "This space has no repo folder set.");
       let target: ReturnType<typeof resolveTarget>;
       try {
-        target = resolveTarget(space.repoPath, rel);
+        target = revealable(() => resolveTarget(space.repoPath!, rel), how);
       } catch (e) {
         // A file a task made exists only on its branch until Nakul checks it out.
         if (e instanceof FileRefused && e.status === 404) {
@@ -84,7 +95,7 @@ export async function filesRoute(db: Database, req: Request, url: URL): Promise<
       }
       return json({ ok: true, ...(await openFile(target, how)) });
     }
-    return json({ ok: true, ...(await openFile(resolveTarget(spaceFolder(space), rel), how)) });
+    return json({ ok: true, ...(await openFile(revealable(() => resolveTarget(spaceFolder(space), rel), how), how)) });
   }
   return null;
 }

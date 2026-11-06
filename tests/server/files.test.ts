@@ -143,6 +143,10 @@ test("the folder itself can be revealed but not opened", async () => {
   expect((await post(`/api/spaces/${s.id}/file/open`, { path: ".", how: "reveal" })).status).toBe(200);
   expect(logged()).toEqual([["-R", realpathSync(folder)]]);
   expect((await post(`/api/spaces/${s.id}/file/open`, { path: ".", how: "open" })).status).toBe(400);
+  mkdirSync(join(folder, "sub"), { recursive: true });
+  const dirReveal = await post(`/api/spaces/${s.id}/file/open`, { path: "sub", how: "reveal" });
+  expect(dirReveal.status).toBe(400);
+  expect((await dirReveal.json()).error).toBe("That's a folder or special file, so Atrium won't select it. Use Reveal in Finder on the space folder and look there.");
 });
 
 function repoSpaceWithBranch() {

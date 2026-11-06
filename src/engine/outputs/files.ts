@@ -23,7 +23,7 @@ export const RAW_CAP = 10_485_760;
 const BAD_PATH = "That isn't a file Atrium can show.";
 const GONE = "That file isn't in the folder anymore. It may have been moved or deleted.";
 const OUTSIDE = "This file points outside the space folder, so Atrium won't open it.";
-const NOT_FILE = "That's a folder or special file. Use Reveal in Finder to see it.";
+export const NOT_FILE = "That's a folder or special file. Use Reveal in Finder to see it.";
 const BINARY = "This file isn't text, so there's no preview. Open it instead.";
 const NOT_UTF8 = "Parts of this file aren't valid text, so they show as �.";
 
