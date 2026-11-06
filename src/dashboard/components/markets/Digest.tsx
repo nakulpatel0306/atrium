@@ -1,6 +1,8 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { useDigests } from "../../investing";
+import type { Writeup } from "../../../engine/markets/research";
+import { Markdown } from "../Markdown";
 import { AdviceTag } from "./AdviceTag";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
@@ -12,6 +14,10 @@ export function Digest({ spaceId }: { spaceId: string }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   if (!digests?.length) return null;
+  return <DigestList digests={digests} open={open} all={all} onOpen={() => setOpen(!open)} onAll={() => setAll(!all)} />;
+}
+
+export function DigestList({ digests, open, all, onOpen, onAll }: { digests: Writeup[]; open: boolean; all: boolean; onOpen: () => void; onAll?: () => void }) {
   const shown = all ? digests : digests.slice(0, 1);
   return (
     <section>
@@ -20,7 +26,7 @@ export function Digest({ spaceId }: { spaceId: string }) {
         <span className="h2-acts">
           <AdviceTag />
           {digests.length > 1 && (
-            <button className="btn" onClick={() => setAll(!all)}>
+            <button className="btn" onClick={onAll}>
               {all ? "Latest only" : `Last ${digests.length}`}
             </button>
           )}
@@ -33,9 +39,9 @@ export function Digest({ spaceId }: { spaceId: string }) {
               <b>{dateText(d.forDate)}</b>
               <span className="faint">Claude, from today's prices and headlines</span>
             </div>
-            <p className={open || all || n > 0 ? "" : "clamp"}>{d.body}</p>
+            <Markdown className={open || all || n > 0 ? undefined : "clamp"} text={d.body} />
             {!all && (
-              <button className="btn link" onClick={() => setOpen(!open)}>
+              <button className="btn link" onClick={onOpen}>
                 {open ? <ChevronUp /> : <ChevronDown />}
                 {open ? "Less" : "More"}
               </button>

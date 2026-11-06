@@ -1,9 +1,9 @@
 import { Inbox, SearchCheck, Wrench } from "lucide-react";
 import { useState } from "react";
 import { post, type State, useMessages } from "../api";
-import { absolute, firstLine, relative } from "../format";
+import { absolute, relative } from "../format";
 import { navigate } from "../route";
-import { reviewLine, reviewTarget } from "../summary";
+import { reviewLine, reviewTarget, summaryLine } from "../summary";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -59,7 +59,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
         <span className="who">{space?.name ?? (approval.spaceId === null ? "Atrium" : "Unknown space")}</span>
         <span className="t">
           {approval.title}
-          {approval.detail && <span>{firstLine(approval.detail)}</span>}
+          {approval.detail && <span>{summaryLine(approval.detail)}</span>}
         </span>
         {review && (
           <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>

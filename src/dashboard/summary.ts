@@ -3,6 +3,7 @@ import type { Message } from "../engine/messages";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, ranAgent, verdictOf, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
+import { plainText } from "./markdown";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -181,3 +182,6 @@ export const actorName = (actor: string) => (actor === "you" ? "You" : actor.cha
 // must still be shown.
 export const emptyHome = (state: State): boolean =>
   state.spaces.length === 0 && state.approvals.length === 0 && state.proposals.length === 0;
+
+// One line for a row: the first paragraph of agent text, without its markdown.
+export const summaryLine = (text: string): string => plainText(text.trim().split(/\n\s*\n/)[0] ?? "");

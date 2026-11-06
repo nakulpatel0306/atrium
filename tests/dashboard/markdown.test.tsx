@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown } from "../../src/dashboard/components/Markdown";
+import { ThreadList } from "../../src/dashboard/components/Thread";
+import { DigestList } from "../../src/dashboard/components/markets/Digest";
+import { summaryLine } from "../../src/dashboard/summary";
 import { plainText, safeUrl } from "../../src/dashboard/markdown";
 
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -50,4 +53,25 @@ test("plainText flattens markdown to one line", () => {
   expect(plainText("| Item | Qty |\n| --- | --- |\n| Bananas | 6 |")).toBe("Item Qty Bananas 6");
   expect(plainText("# Title")).toBe("Title");
   expect(plainText("[the list](https://x.com) and ![alt text](x.png) and `code`")).toBe("the list and alt text and code");
+});
+
+test("thread messages render as markdown", () => {
+  const out = renderToStaticMarkup(
+    <ThreadList messages={[{ id: "m1", spaceId: "s", taskId: "t", fromAgent: "codex", toAgent: "claude", body: "**Approve.** Looks `good`.", createdAt: 1 }]} />,
+  );
+  expect(out).not.toContain("**");
+  expect(out).toContain("<strong>Approve.</strong>");
+});
+
+test("digests render as markdown and keep the clamp", () => {
+  const d = { id: "w1", kind: "digest", key: null, forDate: "2026-11-05", body: "**SPY** fell 1.2%.\n\n- AAPL up", taskId: null, createdAt: 1 };
+  const out = renderToStaticMarkup(<DigestList digests={[d]} open={false} all={false} onOpen={() => {}} />);
+  expect(out).not.toContain("**");
+  expect(out).toContain("<strong>SPY</strong>");
+  expect(out).toContain('class="md clamp"');
+});
+
+test("summaryLine is the first paragraph as plain text", () => {
+  expect(summaryLine("**Done.** Made the list.\n\n- a\n- b")).toBe("Done. Made the list.");
+  expect(summaryLine("")).toBe("");
 });

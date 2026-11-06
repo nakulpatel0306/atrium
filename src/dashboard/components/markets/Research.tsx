@@ -6,6 +6,7 @@ import { post, put } from "../../api";
 import { absolute, money } from "../../format";
 import { investingPath, pctText, useResearch, type ResearchView } from "../../investing";
 import type { MarketsView } from "../../markets";
+import { Markdown } from "../Markdown";
 import { AdviceTag } from "./AdviceTag";
 import { PriceChart } from "./PriceChart";
 import { SourceTag } from "./SourceTag";
@@ -149,7 +150,7 @@ function Notes({ spaceId, r }: { spaceId: string; r: ResearchView }) {
               <span className="faint">{dateText(draft.forDate)}</span>
               <AdviceTag />
             </div>
-            <p>{draft.body}</p>
+            <Markdown text={draft.body} />
             <div className="mk-form">
               <button className="btn" onClick={() => setThesis(draft.body.replace(/\n*Analysis, not advice\.$/, ""))}>
                 Use this draft
@@ -221,7 +222,7 @@ export function Research({ spaceId, view, initialKey }: { spaceId: string; view:
                   <b>Thesis check before earnings on {dateText(w.forDate)}</b>
                   <AdviceTag />
                 </div>
-                <p>{w.body}</p>
+                <Markdown text={w.body} />
               </div>
             </section>
           ))}

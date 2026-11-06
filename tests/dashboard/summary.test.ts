@@ -122,3 +122,14 @@ test("Home is only empty when there are no spaces and nothing waiting", () => {
   expect(emptyHome(state({ spaces: [], proposals: [], approvals: [ask] } as Partial<State>))).toBe(false);
   expect(emptyHome(state({ spaces: [space], proposals: [] } as Partial<State>))).toBe(false);
 });
+
+test("reviewLine never shows an agent's markdown markers", () => {
+  // The line is built from the verdict, never the message text, so markdown in the review can't leak into it.
+  const approval = { id: "apr_1", taskId: "tsk_w" } as Approval;
+  const state = {
+    tasks: [{ id: "tsk_r", kind: "review", parentTaskId: "tsk_w", approvalId: "apr_1", status: "done", agent: "codex" }],
+    runs: [],
+  } as unknown as State;
+  const line = reviewLine(approval, state, [{ id: "m", spaceId: "s", taskId: "tsk_w", fromAgent: "codex", toAgent: "claude", body: "**Approve.** Looks good", createdAt: 1 }]);
+  expect(line?.text).not.toContain("**");
+});

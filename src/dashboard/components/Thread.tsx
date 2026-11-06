@@ -1,12 +1,16 @@
 import { ArrowRight, MessagesSquare } from "lucide-react";
 import { agentName, verdictOf } from "../agents";
-import { useMessages } from "../api";
+import { type Message, useMessages } from "../api";
 import { absolute, clock } from "../format";
 import { Avatar } from "./Avatar";
+import { Markdown } from "./Markdown";
 
 export function Thread({ taskId }: { taskId: string }) {
   const messages = useMessages(taskId);
-  if (!messages?.length) return null;
+  return messages?.length ? <ThreadList messages={messages} /> : null;
+}
+
+export function ThreadList({ messages }: { messages: Message[] }) {
   return (
     <div className="thread">
       <h3>
@@ -28,7 +32,7 @@ export function Thread({ taskId }: { taskId: string }) {
                 )}
                 <time title={absolute(m.createdAt)}>{clock(m.createdAt)}</time>
               </div>
-              <div className="body">{m.body}</div>
+              <Markdown className="body" text={m.body} />
             </li>
           );
         })}
