@@ -179,3 +179,47 @@ test("with the market closed, moves are dated by their session, not called today
   saveQuotes(db, [{ key: "AAPL", price: 101, prevClose: 100, at: NOW - 60_000, source: "demo", freshness: "demo" }]);
   expect(await hooks().context(digest, space, "claude")).toMatch(/AAPL \$[\d.]+ [+−-][\d.]+% today/);
 });
+
+test("ask context has facts, notes, the position line and the question", async () => {
+  const { saveNotes } = await import("../../../src/engine/markets/research");
+  const { saveFx } = await import("../../../src/engine/markets/fx");
+  saveFx(db, [{ date: "2026-11-04", rate: 1.4 }]);
+  addHolding(db, space.id, { account: "TFSA", symbol: "AMZN", exchange: "US", name: "Amazon", quantity: 10, bookValue: 1500, currency: "USD" });
+  saveNotes(db, space.id, "AMZN", { notes: "Cloud margins matter." });
+  const task = createTask(db, { spaceId: space.id, title: "Ask Claude about AMZN", detail: "Why up today?", agent: "claude", purpose: "ask", subject: "AMZN" });
+  const text = await hooks().context(task, space, "claude");
+  expect(text).toContain("About AMZN:");
+  expect(text).toContain("Nakul's notes: Cloud margins matter.");
+  expect(text).toMatch(/Nakul holds 10 in TFSA, worth CA\$[\d,]+\.\d\d \(.+\), gain [+−]CA\$[\d,]+\.\d\d since purchase\./);
+  expect(text).toContain("Nakul asks: Why up today?");
+  expect(text).toContain("Answer in at most 200 words of plain markdown: what the company or fund does, what moved it lately and why, and what to watch next. Don't recommend buying or selling.");
+});
+
+test("a non-Claude agent never gets the position line", async () => {
+  addHolding(db, space.id, { account: "TFSA", symbol: "AMZN", exchange: "US", name: "Amazon", quantity: 17, bookValue: 1500, currency: "USD" });
+  const task = createTask(db, { spaceId: space.id, title: "Ask Claude about AMZN", detail: "", agent: "claude", purpose: "ask", subject: "AMZN" });
+  const codex = await hooks().context(task, space, "codex");
+  expect(codex).not.toContain("Nakul holds");
+  expect(codex).not.toContain("× 17");
+  expect(codex).not.toContain("TFSA");
+});
+
+test("ask settles into a kept writeup ending with Analysis, not advice.", async () => {
+  const { latestWriteups } = await import("../../../src/engine/markets/research");
+  const a = createTask(db, { spaceId: space.id, title: "Ask Claude about AMZN", detail: "One", agent: "claude", purpose: "ask", subject: "AMZN" });
+  expect(await hooks().settle(a, space, "claude", "AWS grew.")).toEqual({ done: true, lines: [], activity: "Answer saved" });
+  const b = createTask(db, { spaceId: space.id, title: "Ask Claude about AMZN", detail: "Two", agent: "claude", purpose: "ask", subject: "AMZN" });
+  await hooks().settle(b, space, "claude", "Retail was flat.\n\nAnalysis, not advice.");
+  const asks = latestWriteups(db, space.id, { kind: "ask", key: "AMZN" });
+  expect(asks).toHaveLength(2);
+  expect(asks.map((w) => w.body).sort()).toEqual(["AWS grew.\n\nAnalysis, not advice.", "Retail was flat.\n\nAnalysis, not advice."]);
+});
+
+test("the digest asks for 4 sentences while Advanced is off", async () => {
+  const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", purpose: "digest" });
+  const off = await hooks().context(task, space, "claude");
+  expect(off).toContain("Write at most 4 short sentences for Nakul: what moved in his portfolio today and why, from these prices and headlines. Say which numbers are delayed. No headings.");
+  const { setAdvanced } = await import("../../../src/engine/markets/advanced");
+  setAdvanced(db, space.id, true);
+  expect(await hooks().context(task, space, "claude")).toContain("Write a short digest for Nakul: what moved in his portfolio today and why");
+});

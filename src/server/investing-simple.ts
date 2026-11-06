@@ -5,7 +5,7 @@ import { instrumentKey, parseInstrumentKey } from "../engine/markets/instrument"
 import { addToList, createList, deleteList, getList, removeFromList, renameList } from "../engine/markets/lists";
 import { redact } from "../engine/markets/redact";
 import { searchSymbols } from "../engine/markets/search";
-import { refreshSymbol, symbolView } from "../engine/markets/symbol";
+import { refreshSymbol, requestAsk, symbolView } from "../engine/markets/symbol";
 import { earningsView, glanceView, listsView, portfolioView } from "../engine/markets/views";
 import { HttpError, json, readBody } from "./http";
 import type { MarketsDeps } from "./markets";
@@ -78,6 +78,14 @@ async function route(db: Database, m: MarketsDeps, req: Request, spaceId: string
     const key = keyOf(refresh[1]!);
     await m.data.refreshKeys();
     return json(await refreshSymbol(db, m.data, key, now));
+  }
+  const ask = sub("POST", /^\/symbol\/([^/]+)\/ask$/);
+  if (ask) {
+    const key = keyOf(ask[1]!);
+    const b = await readBody(req);
+    const task = check(() => requestAsk(db, spaceId, key, typeof b.question === "string" ? b.question : ""));
+    m.kick();
+    return json({ taskId: task.id });
   }
   if (sub("GET", /^\/portfolio$/)) return json(portfolioView(db, m.data, spaceId, now));
   if (sub("GET", /^\/lists$/)) return json(listsView(db, m.data, spaceId, now));

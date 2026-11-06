@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
-import { listTasks } from "../tasks";
+import { createTask, listTasks, type Task } from "../tasks";
 import { listAlerts, type Alert } from "./alerts";
 import { cachedBars } from "./cache";
 import { etDate, etInstant } from "./calendar";
@@ -183,4 +183,15 @@ export async function refreshSymbol(db: Database, data: MarketData, key: string,
   // A rate limit reported by both the quote and the research calls reads once.
   const all = [...notes].map((n) => (/limit/i.test(n) && /Finnhub/.test(n) ? "Finnhub is busy. Try again in a minute." : n));
   return { refreshed: true, note: all.length ? [...new Set(all)].join(" ") : null };
+}
+
+export const ASK_MAX_CHARS = 500;
+
+// Claude only: the answer may draw on his position and notes. An empty question asks for a quick overview.
+export function requestAsk(db: Database, spaceId: string, key: string, question: string): Task {
+  const q = question.trim();
+  if (q.length > ASK_MAX_CHARS) throw new Error("Keep the question under 500 characters.");
+  const open = listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "ask" && t.subject === key);
+  if (open) throw new Error(`Claude is already looking at ${key}.`);
+  return createTask(db, { spaceId, title: `Ask Claude about ${key}`, detail: q, agent: "claude", weight: "light", allowOnBattery: true, purpose: "ask", subject: key });
 }

@@ -357,3 +357,22 @@ test("an old single watchlist becomes one Holdings list per space", async () => 
   again.close();
   t.cleanup();
 });
+
+test("market_writeups accepts kind ask after migrating an old table", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const first = openDb(path);
+  first.exec("DROP TABLE market_writeups");
+  first.exec(`CREATE TABLE market_writeups (id TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES spaces(id),
+    kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check')), key TEXT, for_date TEXT NOT NULL, body TEXT NOT NULL,
+    task_id TEXT, created_at INTEGER NOT NULL, UNIQUE (space_id, kind, key, for_date))`);
+  first.query("INSERT INTO spaces (id, name, kind, goal, color, private, status, created_at, updated_at) VALUES ('spc_a', 'Investing', 'markets', '', '#fff', 1, 'active', 1, 1)").run();
+  first.query("INSERT INTO market_writeups VALUES ('w1', 'spc_a', 'digest', NULL, '2026-11-04', 'Old note', NULL, 1)").run();
+  first.close();
+  const db = openDb(path);
+  expect(db.query("SELECT id, body FROM market_writeups").all()).toEqual([{ id: "w1", body: "Old note" }]);
+  db.query("INSERT INTO market_writeups VALUES ('w2', 'spc_a', 'ask', 'AMZN', '2026-11-05T15:00:00.000Z', 'Answer', NULL, 2)").run();
+  expect(db.query("SELECT COUNT(*) AS n FROM market_writeups").get()).toEqual({ n: 2 });
+  db.close();
+  t.cleanup();
+});

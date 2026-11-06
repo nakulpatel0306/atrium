@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS research_notes (
 CREATE TABLE IF NOT EXISTS market_writeups (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
-  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check')),
+  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask')),
   key TEXT,
   for_date TEXT NOT NULL,
   body TEXT NOT NULL,

@@ -1,4 +1,6 @@
 import type { Database } from "bun:sqlite";
+import { isAdvanced } from "./advanced";
+import { portfolioView } from "./views";
 import { createApproval } from "../approvals";
 import type { Space } from "../spaces";
 import type { Task } from "../tasks";
@@ -106,10 +108,40 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
       const news = recentNews(db, keys, since, 25);
       if (news.length) out.push("News since the last digest:", ...news.map((n) => `- ${n.key}: ${n.headline} (${n.source}, ${etClock(n.at)})`));
       const when = usSession(at).open ? "today" : `on ${dayLabel(lastCompletedSession(at).date)}`;
-      out.push(`Write a short digest for Nakul: what moved in his portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed.`);
+      out.push(
+        isAdvanced(db, space.id)
+          ? `Write a short digest for Nakul: what moved in his portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed.`
+          : `Write at most 4 short sentences for Nakul: what moved in his portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed. No headings.`,
+      );
+    }
+    if (task.purpose === "ask" && task.subject) {
+      out.push(...subjectFacts(task.subject, at, true, space.id).slice(0, -1));
+      const held = positionLine(space.id, task.subject, at);
+      if (held) out.push(held);
+      if (task.detail.trim()) out.push(`Nakul asks: ${task.detail.trim()}`);
+      out.push("Answer in at most 200 words of plain markdown: what the company or fund does, what moved it lately and why, and what to watch next. Don't recommend buying or selling.");
     }
     if (task.purpose === "thesis_draft" || task.purpose === "thesis_check") out.push(...subjectFacts(task.subject, at, task.purpose === "thesis_check", space.id));
     return out;
+  }
+
+  // Two answers settled in the same millisecond still get their own row.
+  function askInstant(spaceId: string, key: string | null, at: number): string {
+    const taken = db.query("SELECT 1 FROM market_writeups WHERE space_id = ? AND kind = 'ask' AND key IS ? AND for_date = ?");
+    let t = at;
+    while (taken.get(spaceId, key, new Date(t).toISOString())) t++;
+    return new Date(t).toISOString();
+  }
+
+  function positionLine(spaceId: string, key: string, at: number): string | null {
+    const held = listHoldings(db, spaceId).filter((h) => h.key === key);
+    if (!held.length) return null;
+    const qty = held.reduce((s, h) => s + h.quantity, 0);
+    const accounts = [...new Set(held.map((h) => h.account))].join(" and ");
+    const row = portfolioView(db, data, spaceId, at).holdings.find((h) => h.key === key);
+    const worth = row?.valueCad != null && row.price ? `, worth ${money(row.valueCad, "CAD")} (${row.price.source})` : "";
+    const gain = row?.gainCad != null ? `, gain ${row.gainCad >= 0 ? "+" : ""}${money(row.gainCad, "CAD")} since purchase` : "";
+    return `Nakul holds ${qty} in ${accounts}${worth}${gain}.`;
   }
 
   // Public facts about one instrument, with their sources; Nakul's own thesis and notes only for a check.
@@ -196,7 +228,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     }
     // Investing context: Claude only, since it's built on Nakul's holdings and notes.
     if (agent === "claude") out.push(...investingContext(task, space, at));
-    else if (task.purpose === "thesis_draft" || task.purpose === "thesis_check") out.push(...subjectFacts(task.subject, at, false));
+    else if (task.purpose === "thesis_draft" || task.purpose === "thesis_check" || task.purpose === "ask") out.push(...subjectFacts(task.subject, at, false));
     if (strategy) {
       out.push(`This task runs the approved paper strategy "${strategy.name}" (${strategy.status}).`, `Rules: ${strategy.rules}`, describeLimits(strategy));
       out.push(`Trades used today: ${tradesToday(strategy.id, at)} of ${strategy.maxTradesPerDay}.`);
@@ -307,7 +339,13 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
       }
       if (task.purpose) {
         const body = summary.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
-        const forDate = task.purpose === "thesis_check" ? (task.title.match(/on (\d{4}-\d{2}-\d{2})$/)?.[1] ?? etDate(at)) : etDate(at);
+        // Every answer to an ask is kept, so it's dated to the instant rather than the day.
+        const forDate =
+          task.purpose === "ask"
+            ? askInstant(space.id, task.subject, at)
+            : task.purpose === "thesis_check"
+              ? (task.title.match(/on (\d{4}-\d{2}-\d{2})$/)?.[1] ?? etDate(at))
+              : etDate(at);
         saveWriteup(db, {
           spaceId: space.id,
           kind: task.purpose,
@@ -316,6 +354,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
           body: body.endsWith("Analysis, not advice.") ? body : `${body}\n\nAnalysis, not advice.`,
           taskId: task.id,
         });
+        if (task.purpose === "ask") return { done: true, lines, activity: "Answer saved" };
         const what = task.purpose === "digest" ? "Digest" : task.purpose === "thesis_draft" ? "Thesis draft" : "Thesis check";
         return { done: true, lines, activity: `${what} saved` };
       }

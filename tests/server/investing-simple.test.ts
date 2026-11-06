@@ -25,6 +25,7 @@ let server: ReturnType<typeof startServer>;
 let base: string;
 let fetchCalls: string[];
 let reevaluated: number;
+let kicks: number;
 
 function boot() {
   setSetting(db, "markets.provider", "demo");
@@ -37,7 +38,7 @@ function boot() {
   const data = createMarketData({ db, keychain, now: clock, fetch: stub, providers: { demo: demoProvider({ now: clock }) } });
   const real = createFeed({ db, data, onQuotes: () => {}, strategyActive: () => false, now: clock });
   const feed = { ...real, reevaluate: async () => void reevaluated++ };
-  server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0, markets: { data, feed, keychain, kick: () => {}, now: clock, fetch: stub } });
+  server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0, markets: { data, feed, keychain, kick: () => void kicks++, now: clock, fetch: stub } });
   base = `http://127.0.0.1:${server.port}`;
 }
 
@@ -48,6 +49,7 @@ beforeEach(() => {
   db = openDb();
   fetchCalls = [];
   reevaluated = 0;
+  kicks = 0;
 });
 afterEach(() => {
   server?.stop(true);
@@ -131,4 +133,13 @@ test("search, symbol and refresh routes", async () => {
   expect(after.price.source).toBe("Demo data");
   expect(after.stats.length).toBeGreaterThan(0);
   expect(await error(await get(`/api/investing/${spaceId}/symbol/${encodeURIComponent("not a key!")}`))).toEqual([400, "Type a symbol like AAPL or SHOP.TO."]);
+});
+
+test("ask queues a Claude task and refuses a second", async () => {
+  const { spaceId } = simpleFixture(db);
+  boot();
+  const r = await (await call("POST", `/api/investing/${spaceId}/symbol/AMZN/ask`, { question: "Why up today?" })).json();
+  expect(r.taskId).toMatch(/^tsk_/);
+  expect(kicks).toBe(1);
+  expect(await error(await call("POST", `/api/investing/${spaceId}/symbol/AMZN/ask`, {}))).toEqual([400, "Claude is already looking at AMZN."]);
 });

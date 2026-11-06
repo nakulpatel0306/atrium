@@ -140,3 +140,23 @@ test("a provider failure becomes one plain note and no throw", async () => {
   expect(r.note).toContain("Finnhub is busy");
   expect(r.note!.match(/Finnhub is busy/g)).toHaveLength(1);
 });
+
+test("requestAsk queues a Claude task with the question", async () => {
+  const { requestAsk } = await import("../../../src/engine/markets/symbol");
+  const t = requestAsk(db, fx.spaceId, "AMZN", "  Why up today?  ");
+  expect(t).toMatchObject({ agent: "claude", purpose: "ask", subject: "AMZN", weight: "light", allowOnBattery: true, title: "Ask Claude about AMZN", detail: "Why up today?" });
+  const v = symbolView(db, rig().data, fx.spaceId, "AMZN", NOW);
+  expect(v.asks).toMatchObject([{ status: "queued", question: "Why up today?", taskId: t.id }]);
+});
+
+test("a second ask while one is open is refused", async () => {
+  const { requestAsk } = await import("../../../src/engine/markets/symbol");
+  requestAsk(db, fx.spaceId, "AMZN", "");
+  expect(() => requestAsk(db, fx.spaceId, "AMZN", "again")).toThrow("Claude is already looking at AMZN.");
+});
+
+test("a 501-character question is refused", async () => {
+  const { requestAsk, ASK_MAX_CHARS } = await import("../../../src/engine/markets/symbol");
+  expect(ASK_MAX_CHARS).toBe(500);
+  expect(() => requestAsk(db, fx.spaceId, "AMZN", "x".repeat(501))).toThrow("Keep the question under 500 characters.");
+});
