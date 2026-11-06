@@ -132,7 +132,7 @@ export function saveProfile(db: Database, key: string, pr: Profile | null, now: 
   db.query(
     `UPDATE instrument_meta SET name = COALESCE(?, name), listing = COALESCE(?, listing), country = COALESCE(country, ?), currency = COALESCE(currency, ?), profile_at = ?,
        sector = CASE WHEN ? THEN ? ELSE sector END, sector_source = CASE WHEN ? THEN ? ELSE sector_source END WHERE key = ?`,
-  ).run(pr?.name ?? null, pr?.exchange ?? null, pr?.country ?? null, pr?.currency ?? null, now, useIndustry ? 1 : 0, pr?.industry ?? null, useIndustry ? 1 : 0, FINNHUB_INDUSTRY, key);
+  ).run(pr?.name || null, pr?.exchange ?? null, pr?.country ?? null, pr?.currency ?? null, now, useIndustry ? 1 : 0, pr?.industry ?? null, useIndustry ? 1 : 0, FINNHUB_INDUSTRY, key);
 }
 
 export function saveMetrics(db: Database, key: string, mt: Metrics, now: number): void {

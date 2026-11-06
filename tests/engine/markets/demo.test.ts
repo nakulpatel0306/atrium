@@ -88,5 +88,6 @@ test("demo earnings, metrics and profiles are deterministic", async () => {
   expect(m).toEqual(await p.metric!(AAPL));
   expect(m.pe).toBeGreaterThan(0);
   expect(m.high52!).toBeGreaterThan(m.low52!);
-  expect((await p.profile!(AAPL))!.name).toContain("AAPL");
+  // No made-up company name, so a demo profile never replaces a real one.
+  expect((await p.profile!(AAPL))!.name).toBe("");
 });

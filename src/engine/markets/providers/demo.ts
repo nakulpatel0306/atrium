@@ -184,9 +184,9 @@ export function demoProvider(deps: { now?: () => number; tickMs?: number } = {})
       };
     },
     async profile(i) {
-      const key = instrumentKey(i);
       return {
-        name: `${key} (demo)`,
+        // Made-up data has no company name; the watchlist's names stay in use.
+        name: "",
         country: i.exchange === "US" ? "US" : "CA",
         currency: i.exchange === "US" ? "USD" : "CAD",
         industry: "Technology",
