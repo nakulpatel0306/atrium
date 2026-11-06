@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { logActivity } from "../events";
-import { HIDDEN_TEXT } from "../repos/rules";
+import { stripHidden } from "../repos/rules";
 import { getSetting, setSetting } from "../settings";
 import { runOsa } from "./osascript";
 import { MessagingProblem, problemFor } from "./problems";
@@ -14,7 +14,7 @@ const US = String.fromCharCode(31);
 export const noMatchCopy = (name: string) => `No one called "${name}" in your Contacts. Type their phone number or email.`;
 export const severalCopy = (name: string) => `More than one match for "${name}". Pick who this goes to.`;
 
-const plain = (s: string) => s.replace(/[\u0000-\u001f\u007f]/g, "").replace(HIDDEN_TEXT, "").trim();
+const plain = (s: string) => stripHidden(s.replace(/[\u0000-\u001f\u007f]/g, "")).trim();
 
 // Contacts stores built-in labels as "_$!<Mobile>!$_" and an unlabelled entry as missing value.
 function cleanLabel(raw: string): string | null {
