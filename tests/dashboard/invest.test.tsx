@@ -81,8 +81,16 @@ test("Portfolio: the daily note renders markdown with the advice tag", () => {
   db.query("DELETE FROM market_writeups").run();
 });
 
+test("Portfolio: each row's weight and the total gain on what was invested", () => {
+  const view = portfolioView(db, viewData(), fx.spaceId, NOW);
+  const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={view} />);
+  expect(html).toContain(">Weight<");
+  for (const h of view.holdings) expect(html).toContain(`>${h.weightPct!.toFixed(1)}%<`);
+  expect(text(html)).toMatch(/\+CA\$1,896 \(\+37\.2%\)\s+total gain on CA\$5,094 invested/);
+});
+
 test("Portfolio: the empty state points to the import", () => {
-  const view = { total: null, dayCad: null, dayPct: null, dayLabel: null, mix: null, fx: null, holdings: [], note: null, empty: true, left: null };
+  const view = { total: null, dayCad: null, dayPct: null, dayLabel: null, mix: null, fx: null, holdings: [], gain: null, note: null, empty: true, left: null };
   const html = renderToStaticMarkup(<Portfolio spaceId="spc_x" view={view} />);
   expect(html).toContain("No holdings yet. Import your Wealthsimple holdings file to see your portfolio.");
   expect(html).toContain("Import holdings");

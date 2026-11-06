@@ -19,7 +19,7 @@ import { redact } from "./redact";
 import { getNotes, latestWriteups, type Writeup } from "./research";
 import { closeDayText, quoteSourced, type Sourced } from "./sourced";
 import { tvSymbol, widgetCoverage } from "./tradingview";
-import { portfolioView } from "./views";
+import { cleanName, portfolioView } from "./views";
 
 export type SymbolView = {
   key: string;
@@ -103,7 +103,7 @@ export function symbolView(db: Database, data: MarketData, spaceId: string, key:
     key: k,
     symbol: i.symbol,
     exchange: i.exchange,
-    name: meta?.name || holdings[0]?.name || listLists(db, spaceId).flatMap((l) => listItems(db, l.id)).find((x) => x.key === k)?.name || "",
+    name: meta?.name || listLists(db, spaceId).flatMap((l) => listItems(db, l.id)).find((x) => x.key === k)?.name || cleanName(holdings[0]?.name ?? ""),
     kind: isFund(k) || meta?.kind === "etf" ? "etf" : "stock",
     tv,
     chart: widgetCoverage(tv),

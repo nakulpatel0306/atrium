@@ -124,3 +124,28 @@ test("holdings without a price are named under the total", () => {
   expect(v.total!.value).toBeCloseTo(10 * 250 * FX, 2);
   expect(portfolioView(db, viewData(), fx.spaceId, NOW).left).toBe("1 holding has no price yet and isn't in the total.");
 });
+
+test("portfolioView gives each holding's weight and the total gain against book", () => {
+  const v = portfolioView(db, viewData(), fx.spaceId, NOW);
+  const total = v.total!.value;
+  for (const h of v.holdings) expect(h.weightPct!).toBeCloseTo((h.valueCad! / total) * 100, 6);
+  const gain = v.holdings.reduce((a, h) => a + h.gainCad!, 0);
+  expect(v.gain!.cad).toBeCloseTo(gain, 6);
+  expect(v.gain!.bookCad).toBeCloseTo(total - gain, 6);
+  expect(v.gain!.pct).toBeCloseTo((gain / (total - gain)) * 100, 6);
+  expect(v.gain!.complete).toBe(true);
+});
+
+test("holding names: the profile name, then the watchlist's, then Wealthsimple's tidied", async () => {
+  const { addHolding } = await import("../../../src/engine/markets/holdings");
+  const { cleanName } = await import("../../../src/engine/markets/views");
+  expect(cleanName("Vanguard Investments Canada Inc. - S&P 500 Index ETF")).toBe("Vanguard S&P 500 Index ETF");
+  expect(cleanName("Roundhill ETF Trust - Space & Technology ETF")).toBe("Roundhill Space & Technology ETF");
+  expect(cleanName("SSGA SPDR S&P 500 ETF")).toBe("SPDR S&P 500 ETF");
+  expect(cleanName("Servicenow Inc.")).toBe("Servicenow Inc.");
+  addHolding(db, fx.spaceId, { account: "TFSA", symbol: "VFV", exchange: "TSX", name: "Vanguard Investments Canada Inc. - S&P 500 Index ETF", quantity: 1, bookValue: 100, currency: "CAD" });
+  db.query("INSERT INTO instrument_meta (key, name) VALUES ('AMZN', 'Amazon.com Inc')").run();
+  const names = Object.fromEntries(portfolioView(db, viewData(), fx.spaceId, NOW).holdings.map((h) => [h.key, h.name]));
+  expect(names.AMZN).toBe("Amazon.com Inc");
+  expect(names["VFV.TO"]).toBe("Vanguard S&P 500 Index ETF");
+});
