@@ -8,7 +8,7 @@ import { openDb } from "../../src/engine/db";
 import { listActivity } from "../../src/engine/events";
 import * as gitOps from "../../src/engine/git";
 import { reviewDiff } from "../../src/engine/git";
-import { afterReview, afterWork } from "../../src/engine/handoff";
+import { afterFix, afterReview, afterWork } from "../../src/engine/handoff";
 import { listMessages } from "../../src/engine/messages";
 import { createRunner } from "../../src/engine/runner";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
@@ -568,4 +568,18 @@ test("the branch report after a fix counts from where the work started", async (
   await waitFor(() => children(t.id, "fix").some((c) => c.status === "done"));
   expect(listPending(db)[0]!.detail).toContain(`2 commits, 2 files (+2 −0) on atrium/${t.id}`);
   expect(git(path, "branch", "--show-current")).toBe("main");
+});
+
+test("afterFix sets the parent's outcome from the fix's line", () => {
+  const s = createSpace(db, { name: "App", kind: "general", goal: "" });
+  const parent = createTask(db, { spaceId: s.id, title: "Add a note" });
+  setTaskStatus(db, parent.id, "running");
+  setTaskStatus(db, parent.id, "review");
+  const a = createApproval(db, { spaceId: s.id, taskId: parent.id, kind: "review", title: "Add a note", detail: "Added it." });
+  const fix = createTask(db, { spaceId: s.id, title: "Fix: Add a note", kind: "fix", parentTaskId: parent.id, approvalId: a.id, agent: "claude" });
+  afterFix(db, fix, { outcome: "partial", reason: "one typo left.", body: "Fixed two typos." }, "");
+  expect([getTask(db, parent.id)!.outcome, getTask(db, parent.id)!.outcomeReason]).toEqual(["partial", "one typo left."]);
+  const detail = getApproval(db, a.id)!.detail;
+  expect(detail).toContain("fixed: Fixed two typos.");
+  expect(detail).not.toContain("OUTCOME");
 });

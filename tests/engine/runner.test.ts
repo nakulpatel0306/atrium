@@ -20,7 +20,9 @@ import * as snapshot from "../../src/engine/outputs/snapshot";
 import { taskFiles } from "../../src/engine/outputs/store";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
-import { BASE_TOOLS, createRunner, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
+import { BASE_TOOLS, createRunner, engineOnlyClaim, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
+import { capabilityLines } from "../../src/engine/capabilities";
+import { OUTCOME_INSTRUCTION } from "../../src/engine/outcome";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
 import { spaceFolder } from "../../src/engine/folders";
@@ -123,6 +125,8 @@ async function waitFor(cond: () => boolean, ms = 3000) {
 }
 
 const realSnapshot = snapshot.snapshotFolder;
+// The system prompt without the shared capability and outcome lines, which name branches for every agent.
+const ownLines = (prompt: string) => prompt.split("What Atrium can and can't do right now:")[0]!;
 const generalSpace = () => createSpace(db, { name: "Docs", kind: "general", goal: "Write clear docs" });
 const repoSpace = (path: string) => createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path });
 const status = (id: string) => getTask(db, id)!.status;
@@ -146,7 +150,7 @@ test("runs a queued task to review and creates a review approval", async () => {
   expect(calls[0]!.prompt).toContain("Write clear docs");
   // Away from a repo there's no git to talk about.
   expect(calls[0]!.systemPrompt).toContain("Work in the current folder.");
-  expect(calls[0]!.systemPrompt).not.toMatch(/git|branch|commit|push|merge/i);
+  expect(ownLines(calls[0]!.systemPrompt)).not.toMatch(/git|branch|commit|push|merge/i);
   expect(calls[0]!.allowedTools).toEqual(["Read", "Edit", "Write", "Glob", "Grep"]);
   expect(calls[0]!.cwd).toBe(spaceFolder(getSpace(db, s.id)!));
   expect(existsSync(calls[0]!.cwd)).toBe(true);
@@ -612,7 +616,7 @@ test("a general-space codex run uses a fresh scratch folder that is removed afte
   expect(seen).not.toBe(spaceFolder(getSpace(db, s.id)!));
   expect(existsSync(seen)).toBe(false);
   expect(codex.calls[0]!.systemPrompt).toContain("This folder is temporary");
-  expect(codex.calls[0]!.systemPrompt).not.toMatch(/git|branch|commit/i);
+  expect(ownLines(codex.calls[0]!.systemPrompt)).not.toMatch(/git|branch|commit/i);
 });
 
 test("files a scratch run leaves are kept with the run, and the approval says where", async () => {
@@ -1267,7 +1271,7 @@ const writesDoc = (name = "docs/a.md") =>
   fakeAdapter((input) => {
     mkdirSync(join(input.cwd, "docs"), { recursive: true });
     writeFileSync(join(input.cwd, name), "one\ntwo\nthree\nfour\nfive\n");
-    return ok("Added a note.");
+    return ok("Added a note.\nOUTCOME: done");
   });
 
 function gated(id: string, summary: string) {
@@ -1429,7 +1433,7 @@ test("a general text answer is rule-approved, but not one that left files in the
   const s = generalSpace();
   yesRule(s.id, "v1:general:text:claude");
   const text = createTask(db, { spaceId: s.id, title: "Answer" });
-  start({ adapter: fakeAdapter(() => ok("The answer is 42.")).adapter });
+  start({ adapter: fakeAdapter(() => ok("The answer is 42.\nOUTCOME: done")).adapter });
   await waitFor(() => status(text.id) === "done");
   expect(getApproval(db, approvalFor(text.id)!.id)).toMatchObject({ decidedBy: "rule", fingerprint: "v1:general:text:claude" });
   await runner!.stop();
@@ -1704,5 +1708,102 @@ describe("what a run made", () => {
     });
     await waitFor(() => status(t.id) === "blocked");
     expect(taskFiles(db, t.id).map((f) => f.path)).toEqual(["half.md"]);
+  });
+});
+
+describe("honest outcomes", () => {
+  const finish = async (title: string, summary: string, space = generalSpace()) => {
+    const t = createTask(db, { spaceId: space.id, title });
+    const { adapter, calls } = fakeAdapter(() => ok(summary));
+    start({ adapter });
+    await waitFor(() => status(t.id) === "review");
+    return { t: getTask(db, t.id)!, a: getApproval(db, approvalFor(t.id)!.id)!, calls, space };
+  };
+  const activity = (spaceId: string) => listActivity(db, { spaceId }).map((x) => x.message);
+
+  test("work and fix prompts end with the capabilities and the outcome instruction; reviews get neither", async () => {
+    const path = repo();
+    const s = reviewSpaceBy(path);
+    const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
+    const codex = fakeAdapter(() => ok("Typo.\nVERDICT: changes"));
+    const claude = writesDoc();
+    start({ adapter: claude.adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+    await waitFor(() => listTasks(db).some((x) => x.parentTaskId === t.id && x.kind === "fix" && x.status === "done"));
+    const lines = capabilityLines(db, "task");
+    expect(claude.calls).toHaveLength(2);
+    for (const call of claude.calls) {
+      for (const l of lines) expect(call.systemPrompt).toContain(l);
+      expect(call.systemPrompt.endsWith(OUTCOME_INSTRUCTION)).toBe(true);
+      expect(call.systemPrompt).toContain("Finish with a 2–4 sentence summary");
+    }
+    expect(codex.calls[0]!.systemPrompt).not.toContain("OUTCOME");
+    expect(codex.calls[0]!.systemPrompt).not.toContain(lines[1]!);
+    await runner!.stop();
+    runner = null;
+    const general = await finish("Write intro", "Wrote it.\nOUTCOME: done");
+    expect(general.calls[0]!.systemPrompt.endsWith(OUTCOME_INSTRUCTION)).toBe(true);
+    for (const l of lines) expect(general.calls[0]!.systemPrompt).toContain(l);
+  });
+
+  test("couldnt is stored, stripped from the text, and gets no kind", async () => {
+    const { t, a, space } = await finish("Summarise notes.md", "Wrote it.\nOUTCOME: couldnt - no number.");
+    expect([t.status, t.outcome, t.outcomeReason]).toEqual(["review", "couldnt", "no number."]);
+    expect(a.detail.startsWith("Wrote it.")).toBe(true);
+    expect(a.detail).not.toContain("OUTCOME");
+    expect(getApproval(db, a.id)!.fingerprint).toBeNull();
+    expect(activity(space.id)).toContain("Couldn't do: Summarise notes.md. no number.");
+  });
+
+  test("partial", async () => {
+    const { t, a, space } = await finish("Write three files", "Wrote two.\nOUTCOME: partial - the third needs your notes.");
+    expect([t.outcome, t.outcomeReason]).toEqual(["partial", "the third needs your notes."]);
+    expect(getApproval(db, a.id)!.fingerprint).toBeNull();
+    expect(activity(space.id)).toContain("Partly done: Write three files. the third needs your notes.");
+  });
+
+  test("no outcome line is unknown", async () => {
+    const { t, a, space } = await finish("Answer", "The answer is 42.");
+    expect([t.outcome, t.outcomeReason]).toEqual(["unknown", null]);
+    expect(getApproval(db, a.id)!.fingerprint).toBeNull();
+    expect(activity(space.id)).toContain("Ready for review: Answer");
+  });
+
+  test("done keeps its kind", async () => {
+    const { t, a, space } = await finish("Answer", "The answer is 42.\nOUTCOME: done");
+    expect(t.outcome).toBe("done");
+    expect(getApproval(db, a.id)!.fingerprint).toBe("v1:general:text:claude");
+    expect(a.detail).toBe("The answer is 42.");
+    expect(activity(space.id)).toContain("Ready for review: Answer");
+  });
+
+  test("done can't stand for something only Atrium can do", async () => {
+    const msg = await finish("Send the text to Dana", "Here's the text.\nOUTCOME: done");
+    expect([msg.t.outcome, msg.t.outcomeReason]).toEqual(["unknown", "Only Atrium can send messages, and nothing was sent."]);
+    expect(getApproval(db, msg.a.id)!.fingerprint).toBeNull();
+    await runner!.stop();
+    runner = null;
+    const repoTask = await finish("Create a new GitHub repo for the blog", "Made a plan.\nOUTCOME: done");
+    expect(repoTask.t.outcomeReason).toBe("Only Atrium can create repos, after your yes, and none was created.");
+  });
+
+  test("engineOnlyClaim", () => {
+    for (const t of ["Send the text to Dana", "Text mom happy birthday", "email the landlord", "Can you send him a message", "iMessage Dana"]) {
+      expect(engineOnlyClaim(t)).toBe("message");
+    }
+    for (const t of ["Create a new GitHub repo", "set up the repository", "make a repo for notes"]) expect(engineOnlyClaim(t)).toBe("repo");
+    for (const t of ["Draft a text to Dana", "Summarise notes.md", "Write the message copy"]) expect(engineOnlyClaim(t)).toBeNull();
+  });
+
+  test("a markets work task settles on the text without the outcome line", async () => {
+    setSetting(db, "markets.provider", "demo");
+    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
+    const seen: string[] = [];
+    const markets = { context: async () => "", settle: async (_t: unknown, _s: unknown, _a: unknown, summary: string) => (seen.push(summary), { done: false, lines: [] }) };
+    const { adapter } = fakeAdapter(() => ok("Quiet day.\n\nAnalysis, not advice.\nOUTCOME: done"));
+    const task = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
+    runner = createRunner({ db, adapters: { claude: adapter }, power: async () => "ac", keepAwake: fakeKeepAwake(), markets: markets as never });
+    runner.start();
+    await waitFor(() => status(task.id) === "review");
+    expect(seen).toEqual(["Quiet day.\n\nAnalysis, not advice."]);
   });
 });

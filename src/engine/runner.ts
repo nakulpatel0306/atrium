@@ -34,7 +34,9 @@ import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
-import { appendTaskDetail, getTask, listTasks, setTaskStatus, type Task } from "./tasks";
+import { appendTaskDetail, getTask, listTasks, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
+import { capabilityLines } from "./capabilities";
+import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -68,6 +70,21 @@ const REVIEW_SYSTEM_PROMPT = [
   "Everything you need is in the prompt. Don't create or change any files.",
   "Never read, print, or edit .env files, keys, or tokens.",
 ].join("\n");
+
+// Titles that ask for something only the engine can do. An agent saying "done" to one of these, with nothing for
+// the engine to act on, hasn't done it.
+export function engineOnlyClaim(title: string): "message" | "repo" | null {
+  if (/^(send|text|message|imessage|email|e-mail|dm)\b/i.test(title) || /\b(send|text)\s+(him|her|them|\w+)?\s*(a |the )?(text|message|email)\b/i.test(title)) {
+    return "message";
+  }
+  if (/\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(title)) return "repo";
+  return null;
+}
+
+const ENGINE_ONLY: Record<"message" | "repo", string> = {
+  message: "Only Atrium can send messages, and nothing was sent.",
+  repo: "Only Atrium can create repos, after your yes, and none was created.",
+};
 
 export const REVIEW_TOOLS = ["Read", "Glob", "Grep"];
 export const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
@@ -406,12 +423,13 @@ export function createRunner(deps: {
     let result: AgentRunResult;
     try {
       const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
-      const general = generalSystemPrompt(r.scratch);
+      const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
+      // The outcome line comes last, so it's the final thing the agent reads before it starts.
+      const honest = [...capabilityLines(db, "task"), OUTCOME_INSTRUCTION];
       result = await adapter.run({
         prompt: buildPrompt(task, space) + context,
         cwd: r.cwd,
-        systemPrompt:
-          task.kind === "review" ? REVIEW_SYSTEM_PROMPT : repo ? REPO_SYSTEM_PROMPT : markets ? [general, ...MARKETS_SYSTEM_LINES].join("\n") : general,
+        systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
         allowedTools: task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
         mode: task.kind === "review" || task.purpose ? "review" : "work",
@@ -496,6 +514,14 @@ export function createRunner(deps: {
     // Before any status change, so every ended run (finished, blocked or stopped) says what it left.
     const made = await recordMade({ task, space, runId, repo, cwd: r.cwd, scratch: r.scratch, kept, before: snapBefore, tampered: leftRepo !== null });
 
+    // What the agent says it did, with its OUTCOME line taken out of the text people read. A review's verdict is
+    // its own last line, so reviews are left alone.
+    let outcome: ParsedOutcome = { outcome: "unknown", reason: null, body: "" };
+    if (result.status === "ok" && task.kind !== "review") {
+      outcome = honestOutcome(task, result.summary);
+      result = { ...result, summary: outcome.body };
+    }
+
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
     let settled: Settled | null = null;
     try {
@@ -524,15 +550,16 @@ export function createRunner(deps: {
         const base = (task.parentTaskId && lastRepoRun(db, task.parentTaskId)?.start) || null;
         const report = repo ? await repoReport(base ? { ...repo, start: base } : repo) : null;
         setTaskStatus(db, task.id, "done");
-        afterFix(db, task, result.summary, report?.lines[0] ?? "");
+        afterFix(db, task, outcome, report?.lines[0] ?? "");
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
       } else if (result.status === "ok" && (settled = markets ? await settleMarkets(markets, task, space, adapter.id, result.summary) : null)?.done) {
         // A paper strategy run settled its own orders; there is nothing for Nakul to review.
         if (settled.lines.length) appendTaskDetail(db, task.id, `\n\nThis run:\n${settled.lines.join("\n")}`);
+        setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "done");
         logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`);
       } else if (result.status === "ok") {
-        const lines = [result.summary.trim(), ...(settled?.lines ?? [])];
+        const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
         // Repo runs already count their files in the branch summary.
         const madeText = !repo && made ? madeLine(made.changes, made.display) : null;
         if (madeText) lines.splice(1, 0, madeText);
@@ -541,6 +568,8 @@ export function createRunner(deps: {
         if (kept) lines.push(keptLine(kept));
         const filesKept = repo ? 0 : kept ? Math.max(kept.files + kept.skipped, 1) : r.scratch ? 0 : filesLeftIn(r.cwd, folderBefore);
         const facts = await factsFor(db, getTask(db, task.id)!, space, filesKept);
+        // Before the approval exists, so nothing deciding on it can miss what the agent said.
+        setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "review");
         const approval = createApproval(db, {
           spaceId: space.id,
@@ -548,9 +577,10 @@ export function createRunner(deps: {
           kind: "review",
           title: task.title,
           detail: lines.join("\n\n"),
-          fingerprint: facts ? fingerprintOf(facts) : null,
+          // A result that isn't done has no kind, so no rule can ever approve it.
+          fingerprint: outcome.outcome === "done" && facts ? fingerprintOf(facts) : null,
         });
-        logActivity(db, space.id, adapter.id, `Ready for review: ${task.title}`);
+        logActivity(db, space.id, adapter.id, readyLine(task, outcome));
         if (repo && report?.commits) await handOff(task, repo, approval.id);
         await considerRule(approval.id, { filesKept });
       } else if (result.kind === "rate_limited") {
@@ -571,6 +601,15 @@ export function createRunner(deps: {
     } finally {
       enforceTranscriptCap();
     }
+  }
+
+  // The agent's own word, except that "done" can't stand for a title only the engine could have carried out.
+  function honestOutcome(task: Task, summary: string): ParsedOutcome {
+    const parsed = parseOutcome(summary);
+    const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
+    const claim = engineOnlyClaim((parent ?? task).title);
+    if (parsed.outcome === "done" && claim) return { ...parsed, outcome: "unknown", reason: ENGINE_ONLY[claim] };
+    return parsed;
   }
 
   // Records the files a run created, changed or deleted. A failure is logged and never changes the task's outcome.
@@ -712,6 +751,13 @@ export function createRunner(deps: {
 // Any change to the space folder, or a folder that can't be read, counts as files left behind.
 function filesLeftIn(dir: string, before: string | null): number {
   return before !== null && folderState(dir) === before ? 0 : 1;
+}
+
+function readyLine(task: Task, o: ParsedOutcome): string {
+  const why = o.reason ? ` ${o.reason}` : "";
+  if (o.outcome === "couldnt") return `Couldn't do: ${task.title}.${why}`;
+  if (o.outcome === "partial") return `Partly done: ${task.title}.${why}`;
+  return `Ready for review: ${task.title}`;
 }
 
 function buildPrompt(task: Task, space: Space): string {

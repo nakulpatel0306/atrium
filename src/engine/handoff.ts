@@ -6,7 +6,8 @@ import type { ReviewDiff } from "./git";
 import { addMessage } from "./messages";
 import { agentName as name, plural, sentence } from "./text";
 import type { Space } from "./spaces";
-import { createTask, getTask, type Task } from "./tasks";
+import type { ParsedOutcome } from "./outcome";
+import { createTask, getTask, setTaskOutcome, type Task } from "./tasks";
 import { verdictOf } from "./verdict";
 
 const CLIP_CHARS = 600;
@@ -145,16 +146,19 @@ export function afterReview(db: Database, reviewTask: Task, result: AgentRunResu
   );
 }
 
-// `report` is the branch summary after the fix, which now covers the work and the fix together.
-export function afterFix(db: Database, fixTask: Task, summary: string, report: string): void {
+// `report` is the branch summary after the fix, which now covers the work and the fix together. The fix's own
+// outcome line now speaks for the parent's result, since the branch Nakul decides on holds both.
+export function afterFix(db: Database, fixTask: Task, outcome: ParsedOutcome, report: string): void {
   const parent = fixTask.parentTaskId ? getTask(db, fixTask.parentTaskId) : null;
   if (!parent) return;
   const worker = resolvedAgent(db, fixTask);
   const review = child(db, parent.id, "review");
-  const text = summary.trim();
+  const text = outcome.body.trim();
   if (review) addMessage(db, { spaceId: parent.spaceId, taskId: parent.id, fromAgent: worker, toAgent: review.agent, body: text });
   const approval = openApproval(db, fixTask.approvalId);
-  if (approval) appendApprovalDetail(db, approval.id, `\n\n${name(worker)} fixed: ${clip(text)}${report ? `\n\n${report}` : ""}`);
+  if (!approval) return;
+  setTaskOutcome(db, parent.id, outcome.outcome, outcome.reason);
+  appendApprovalDetail(db, approval.id, `\n\n${name(worker)} fixed: ${clip(text)}${report ? `\n\n${report}` : ""}`);
 }
 
 // Replaces "Fix in progress" with what happened, so Nakul isn't left waiting on a fix that won't come.
