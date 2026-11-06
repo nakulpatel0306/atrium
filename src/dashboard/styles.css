@@ -3069,3 +3069,237 @@ code {
     display: none;
   }
 }
+
+/* investing: search and watchlists */
+.icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.srch {
+  position: relative;
+  margin-bottom: 18px;
+}
+.srch-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  height: 40px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.srch-box:focus-within {
+  border-color: var(--accent);
+}
+.srch-box svg {
+  width: 15px;
+  height: 15px;
+  color: var(--faint);
+  flex: none;
+}
+.srch-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.srch-box input::placeholder {
+  color: var(--faint);
+}
+.srch-busy {
+  font-size: 12px;
+}
+.srch-msg {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+.srch-list {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.srch-hit {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+}
+.srch-hit + .srch-hit {
+  border-top: 1px solid var(--line);
+}
+.srch-hit.on {
+  background: var(--hover);
+}
+.srch-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.srch-sym {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--dim);
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+.srch-name {
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.srch-note {
+  font-size: 12px;
+  color: var(--faint);
+}
+.srch-acts,
+.srch-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+.srch-more {
+  padding: 3px 5px;
+}
+.srch-more svg {
+  margin: 0;
+}
+.srch-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+.srch-menu button {
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.srch-menu button:hover {
+  background: var(--hover);
+}
+.srch-menu button.danger {
+  color: var(--red);
+}
+.wl-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.wl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.wl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.wl-chip:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.wl-chip[aria-selected="true"] {
+  color: var(--text);
+  background: var(--raised);
+  border-color: var(--line-strong);
+}
+.wl-count {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.wl-new svg {
+  width: 12px;
+  height: 12px;
+}
+.wl-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.wl-name input {
+  height: 28px;
+  width: 160px;
+  padding: 0 10px;
+  border-radius: 14px;
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: 0;
+}
+.wl-menu-wrap {
+  position: relative;
+}
+.wl-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  font-size: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.wl-confirm span {
+  flex: 1;
+}
+.wl-rows .inv-row-acts .icon-btn {
+  visibility: hidden;
+}
+.wl-rows .inv-row:hover .inv-row-acts .icon-btn,
+.wl-rows .inv-row-acts .icon-btn:focus-visible {
+  visibility: visible;
+}
+.wl-rows .inv-row-main {
+  grid-template-columns: minmax(0, 1fr) 60px 150px;
+}

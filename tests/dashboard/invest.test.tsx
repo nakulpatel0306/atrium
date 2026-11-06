@@ -124,3 +124,54 @@ test("AlertsSimple: indicator alerts are paused while Advanced is off", () => {
   expect(on).toContain("RSI(14) below 30");
   expect(on).not.toContain("paused");
 });
+
+// ---- Task 14: Watchlists and search ----
+import { listsView } from "../../src/engine/markets/views";
+import { createList } from "../../src/engine/markets/lists";
+import { nextSearch } from "../../src/dashboard/simple";
+import { Watchlists } from "../../src/dashboard/components/invest/Watchlists";
+import { SearchResults } from "../../src/dashboard/components/invest/SymbolSearch";
+
+test("Watchlists: list chips, the first list's rows and the search box", () => {
+  const ideas = createList(db, fx.spaceId, "Ideas");
+  const view = listsView(db, viewData(), fx.spaceId, NOW);
+  const html = renderToStaticMarkup(<Watchlists spaceId={fx.spaceId} view={view} />);
+  expect(html).toContain(">Holdings<");
+  expect(html).toContain(">Ideas<");
+  expect(html).toContain("AMZN");
+  expect(html).toContain("XEQT.TO");
+  expect(html).toContain('placeholder="Search a stock or ETF, like Shopify or XEQT.TO"');
+  expect(html).toContain('aria-label="Remove AMZN from Holdings"');
+  expect(html).toContain("New list");
+  clean(html);
+  const empty = renderToStaticMarkup(<Watchlists spaceId={fx.spaceId} view={view} initialList={ideas.id} />);
+  expect(empty).toContain("Nothing here yet. Search above to add a stock or ETF.");
+});
+
+test("SearchResults: US first, a typed TSX hit with its note, Open and Add on each", () => {
+  const result = {
+    hits: [
+      { key: "SHOP", symbol: "SHOP", exchange: "US" as const, name: "Shopify Inc", type: "Common Stock", note: null },
+      { key: "XEQT.TO", symbol: "XEQT", exchange: "TSX" as const, name: "XEQT.TO", type: "typed", note: "Not in Finnhub's search. Atrium will price it from Alpha Vantage after the close." },
+    ],
+    note: null,
+  };
+  const lists = [{ id: "lst_1", name: "Holdings" }, { id: "lst_2", name: "Ideas" }];
+  const html = renderToStaticMarkup(<SearchResults result={result} lists={lists} active={0} onOpen={() => {}} onAdd={() => {}} />);
+  expect(html).toContain('role="listbox"');
+  expect(html.indexOf("SHOP")).toBeLessThan(html.indexOf("XEQT.TO"));
+  expect(html).toContain("Not in Finnhub&#x27;s search. Atrium will price it from Alpha Vantage after the close.");
+  expect(html.match(/>Open</g)).toHaveLength(2);
+  expect(html.match(/>Add to Holdings</g)).toHaveLength(2);
+  expect(html).toContain(">US<");
+  expect(html).toContain(">TSX<");
+  const noted = renderToStaticMarkup(<SearchResults result={{ hits: [], note: "Finnhub is busy. Try again in a minute." }} lists={lists} active={-1} onOpen={() => {}} onAdd={() => {}} />);
+  expect(noted).toContain("Finnhub is busy. Try again in a minute.");
+});
+
+test("nextSearch only sends trimmed, changed queries", () => {
+  expect(nextSearch(null, "  ")).toBeNull();
+  expect(nextSearch(null, " shop ")).toBe("shop");
+  expect(nextSearch("shop", "shop ")).toBeNull();
+  expect(nextSearch("shop", "shopi")).toBe("shopi");
+});

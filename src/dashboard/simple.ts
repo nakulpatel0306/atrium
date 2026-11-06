@@ -1,6 +1,8 @@
 import type { PortfolioView, ListsView, EarningsRow } from "../engine/markets/views";
 import type { SymbolView } from "../engine/markets/symbol";
-import { useEngineState, useFetched } from "./api";
+import { useEffect, useRef, useState } from "react";
+import type { SearchResult } from "../engine/markets/search";
+import { post, useEngineState, useFetched } from "./api";
 import { navigate } from "./route";
 
 // The simple investing views' client side: the chart frame's address and state, plus hooks and formatting.
@@ -49,7 +51,7 @@ export function chartReducer(s: ChartState, e: ChartEvent): ChartState {
   }
 }
 
-export type { EarningsRow, ListsView, PortfolioView, SymbolView };
+export type { EarningsRow, ListsView, PortfolioView, SearchResult, SymbolView };
 export type EarningsView = { rows: EarningsRow[]; source: string };
 
 const base = (spaceId: string) => `/api/investing/${encodeURIComponent(spaceId)}`;
@@ -86,3 +88,38 @@ const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "sho
 // "2026-11-12" → "Thu, Nov 12".
 export const dateHeading = (date: string) => dayFmt.format(Date.parse(`${date}T12:00:00Z`));
 export const hourText = (hour: string | null) => (hour === "bmo" ? "before open" : hour === "amc" ? "after close" : "time not set");
+
+// Whether a search box's text should go to the engine: trimmed, non-empty and different from the last sent.
+export function nextSearch(prev: string | null, q: string): string | null {
+  const t = q.trim();
+  return t && t !== prev ? t : null;
+}
+
+export const SEARCH_DEBOUNCE_MS = 300;
+
+// Debounced; only the newest reply counts, so a slow answer to "sho" can't replace the one for "shop".
+export function useSearch(q: string): { result: SearchResult | null; error: string | null; busy: boolean } {
+  const [state, setState] = useState<{ result: SearchResult | null; error: string | null; busy: boolean }>({ result: null, error: null, busy: false });
+  const sent = useRef<string | null>(null);
+  const seq = useRef(0);
+  useEffect(() => {
+    if (!q.trim()) {
+      sent.current = null;
+      seq.current++;
+      setState({ result: null, error: null, busy: false });
+      return;
+    }
+    const query = nextSearch(sent.current, q);
+    if (!query) return;
+    const timer = setTimeout(async () => {
+      sent.current = query;
+      const mine = ++seq.current;
+      setState((s) => ({ ...s, busy: true }));
+      const res = await post<SearchResult>("/api/investing/search", { q: query });
+      if (mine !== seq.current) return;
+      setState(res.ok ? { result: res.data, error: null, busy: false } : { result: null, error: res.error, busy: false });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [q]);
+  return state;
+}
