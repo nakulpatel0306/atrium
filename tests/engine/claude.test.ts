@@ -339,7 +339,8 @@ test("I4: osascript, shortcuts and open are denied anywhere in a command", async
 });
 
 // ---- Plan 14: private and money runs ----
-import { privateReads } from "../../src/engine/agents/private-paths";
+import { privateReadRules, privateReads } from "../../src/engine/agents/private-paths";
+import { MIN_PRIVATE_VERSION, TOO_OLD, atLeast } from "../../src/engine/agents/claude";
 import { homedir } from "node:os";
 
 const argvOf = async (over: Partial<AgentRunInput>) => {
@@ -420,5 +421,59 @@ describe("a private repo's run, which keeps its test commands", () => {
     warn.mockRestore();
     for (const f of ["Downloads", "Desktop", "Documents"]) expect(denyRead).toContain(join(gone, f));
     expect(denyRead).toContain(csv(gone));
+  });
+});
+
+test("card data: a private run refuses an older or unreadable Claude Code, and nothing is spawned for real work", async () => {
+  expect(MIN_PRIVATE_VERSION).toEqual([2, 1, 257]);
+  expect(atLeast([2, 1, 318], MIN_PRIVATE_VERSION)).toBe(true);
+  expect(atLeast([2, 1, 257], MIN_PRIVATE_VERSION)).toBe(true);
+  expect(atLeast([2, 1, 256], MIN_PRIVATE_VERSION)).toBe(false);
+  expect(atLeast([2, 0, 999], MIN_PRIVATE_VERSION)).toBe(false);
+  for (const v of ["2.1.200", "unknown"]) {
+    process.env.FAKE_CLAUDE_VERSION = v;
+    const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
+    const r = await claudeAdapter(FAKE).run({ ...input(), privateData: true });
+    expect(r).toEqual({ status: "error", kind: "failed", message: TOO_OLD });
+    expect(existsSync(join(dir, "argv.json"))).toBe(false);
+    rmSync(dir, { recursive: true });
+  }
+  delete process.env.FAKE_CLAUDE_VERSION;
+  // An ordinary run doesn't ask.
+  process.env.FAKE_CLAUDE_VERSION = "2.1.200";
+  expect((await claudeAdapter(FAKE).run(input())).status).toBe("ok");
+  delete process.env.FAKE_CLAUDE_VERSION;
+});
+
+describe("explicit read denies and symlink cycles", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "atrium-home-")));
+    for (const d of ["Atrium/investing/run-x", "Atrium/other", "Downloads", "Projects"]) mkdirSync(join(root, d), { recursive: true });
+    writeFileSync(join(root, "statement.csv"), "x");
+    // A link back up at an ancestor, and a two-link cycle.
+    symlinkSync(join(root, "Atrium"), join(root, "Atrium", "investing", "loop"));
+    symlinkSync(join(root, "b"), join(root, "a"));
+    symlinkSync(join(root, "a"), join(root, "b"));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  test("Read denies cover everything beside the way down, and never the run's folder", () => {
+    const keep = join(root, "Atrium", "investing", "run-x");
+    const rules = privateReadRules(keep, root);
+    for (const p of [join(root, "Downloads"), join(root, "Projects"), join(root, "statement.csv"), join(root, "Atrium", "other")]) expect(rules).toContain(`Read(/${p})`);
+    expect(rules).toContain("Read(//Users/Shared/**)");
+    expect(rules).toContain("Read(//Volumes/**)");
+    expect(rules.some((r) => r.startsWith(`Read(/${keep}`))).toBe(false);
+    expect(rules).not.toContain(`Read(/${root})`);
+    expect(rules).not.toContain(`Read(/${join(root, "Atrium")})`);
+  });
+
+  test("a symlink cycle ends, and a link back at an ancestor is closed", () => {
+    const keep = join(root, "Atrium", "investing", "run-x");
+    const { denyRead } = privateReads(keep, { bash: true, home: root });
+    expect(denyRead).toContain(join(root, "Atrium", "investing", "loop"));
+    expect(privateReadRules(keep, root)).toContain(`Read(/${join(root, "Atrium", "investing", "loop")})`);
   });
 });

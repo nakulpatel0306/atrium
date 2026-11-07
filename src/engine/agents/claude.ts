@@ -117,6 +117,24 @@ function windowUsage(w: any, fallbackResetsAt?: unknown): WindowUsage | undefine
   return typeof w?.utilization === "number" && Number.isFinite(resetsAt) ? { utilization: w.utilization, resetsAt } : undefined;
 }
 
+// permissions.blockReadsOutsideWorkingDirectories, which fences a private run's file tools to its folder, arrived in
+// Claude Code 2.1.257 (settings reference: "Requires Claude Code v2.1.257 or later"). An older CLI would ignore it, so
+// a private or investing run refuses to start there.
+export const MIN_PRIVATE_VERSION = [2, 1, 257] as const;
+export const TOO_OLD = "This space is private, and Claude Code is too old to keep its reads to the space's own folder. Run `claude update`, then retry.";
+
+export function atLeast(v: number[], min: readonly number[]): boolean {
+  for (let i = 0; i < min.length; i++) if ((v[i] ?? 0) !== min[i]) return (v[i] ?? 0) > min[i]!;
+  return true;
+}
+
+async function cliVersion(bin: string, signal?: AbortSignal): Promise<number[] | null> {
+  let line = "";
+  const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => void (line ||= l) });
+  const m = !proc.notInstalled && proc.exitCode === 0 ? line.match(/(\d+)\.(\d+)\.(\d+)/) : null;
+  return m ? [+m[1]!, +m[2]!, +m[3]!] : null;
+}
+
 export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
   return {
     id: "claude",
@@ -125,6 +143,11 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       // The variadic --allowedTools would swallow a flag-looking entry as another option.
       const flagLike = input.allowedTools.find((t) => t.startsWith("-"));
       if (flagLike) throw new Error(`Invalid allowedTools entry: ${flagLike}`);
+      // Fail closed: a version Atrium can't read counts as too old.
+      if (input.privateData) {
+        const v = await cliVersion(bin, input.signal);
+        if (!v || !atLeast(v, MIN_PRIVATE_VERSION)) return { status: "error", kind: "failed", message: TOO_OLD };
+      }
 
       let limitResetsAt: number | undefined;
       let limitRejected = false;

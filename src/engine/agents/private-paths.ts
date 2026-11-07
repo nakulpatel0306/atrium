@@ -51,29 +51,61 @@ function list(dir: string): string[] | null {
   }
 }
 
-function walk(root: string, keep: string, closeAll: (dir: string) => boolean, out: string[]): void {
+const MAX_DEPTH = 16;
+
+type Visit = {
+  // A folder on the way down to the cwd.
+  ancestor(dir: string): void;
+  // Anything beside the way down: a file or folder, as every path it goes by (a link and its target). `closed` is a
+  // link that points back up at an ancestor.
+  sibling(paths: string[], dir: boolean, closed: boolean): void;
+  // A folder on the way down that couldn't be listed, or one too deep.
+  unlisted(dir: string): void;
+};
+
+// From root down to keep (both real paths, keep strictly inside root), visiting what lies beside the path. Only a
+// folder strictly deeper than the current one is entered, each real path once, at most 16 levels: a symlink cycle
+// ends instead of looping.
+function walkTo(root: string, keep: string, visit: Visit, depth = 0, seen = new Set<string>()): void {
+  if (depth > MAX_DEPTH || seen.has(root)) return visit.unlisted(root);
+  seen.add(root);
+  visit.ancestor(root);
+  const entries = list(root);
+  if (entries === null) return visit.unlisted(root);
+  for (const name of entries) {
+    const { paths, dir } = aliases(join(root, name));
+    const target = paths.at(-1)!;
+    const deeper = target.startsWith(root + sep);
+    if (dir && deeper && inside(keep, target)) {
+      if (target !== keep) walkTo(target, keep, visit, depth + 1, seen);
+      // The link's own name (if any) is beside the path too.
+      if (paths.length > 1) visit.sibling(paths.slice(0, -1), dir, false);
+    } else if (dir && inside(keep, target)) {
+      // A link back up at an ancestor: the link is closed, but its target holds the cwd and stays as it is.
+      visit.sibling(paths.slice(0, -1), dir, true);
+    } else visit.sibling(paths, dir, false);
+  }
+}
+
+// Every export under root except inside keep; folders under a private folder are closed outright.
+function denyExports(root: string, keep: string, closeAll: (dir: string) => boolean, out: string[]): void {
   if (!inside(keep, root)) {
     out.push(...(closeAll(root) ? [root] : exports(root)));
     return;
   }
   if (root === keep) return;
-  const entries = list(root);
-  if (entries === null) {
-    console.warn(`Atrium couldn't list ${root}; Claude's sandbox denies every bank export under it.`);
-    out.push(...exports(root));
-    return;
-  }
-  out.push(...filesIn(root));
-  for (const name of entries) {
-    const { paths, dir } = aliases(join(root, name));
-    if (!dir) continue;
-    const toward = paths.find((p) => inside(keep, p));
-    const close = paths.some(closeAll);
-    for (const p of paths) {
-      if (p === toward) walk(p, keep, closeAll, out);
-      else out.push(...(close ? [p] : exports(p)));
-    }
-  }
+  walkTo(root, keep, {
+    ancestor: (dir) => out.push(...filesIn(dir)),
+    sibling: (paths, dir, closed) => {
+      if (!dir) return;
+      const close = closed || paths.some(closeAll);
+      for (const p of paths) out.push(...(close ? [p] : exports(p)));
+    },
+    unlisted: (dir) => {
+      console.warn(`Atrium couldn't list ${dir}; Claude's sandbox denies every bank export under it.`);
+      out.push(...exports(dir));
+    },
+  });
 }
 
 export type PrivateReads = { denyRead: string[]; allowRead: string[] };
@@ -88,17 +120,29 @@ export function privateReads(cwd: string, opts: { bash: boolean; home?: string }
   if (list(home) === null) {
     console.warn(`Atrium couldn't list ${home}; Claude's sandbox denies every bank export in it.`);
     out.push(...privateFolders, ...exports(home));
-  } else walk(home, keep, closeAll, out);
-  for (const root of OTHER_ROOTS) walk(real(root), keep, () => false, out);
+  } else denyExports(home, keep, closeAll, out);
+  for (const root of OTHER_ROOTS) denyExports(real(root), keep, () => false, out);
   for (const f of privateFolders) if (!inside(keep, f) && !out.includes(f)) out.push(f);
   return { denyRead: [...new Set(out)], allowRead: [] };
 }
 
-// Read deny rules for Claude's own file tools, beside the working-directory fence: the three private folders,
-// unless the run works inside one.
+// Read deny rules (they cover Read, Glob and Grep) beside the working-directory fence, so a CLI that ignored the fence
+// would still be kept out: the whole of /Users/Shared and /Volumes, and everything in the home folder beside the
+// way down to the cwd. A deny can't be re-opened, so none of them ever covers the cwd.
 export function privateReadRules(cwd: string, home: string = homedir()): string[] {
   const keep = real(cwd);
-  return PRIVATE_FOLDERS.map((f) => join(real(home), f))
-    .filter((f) => !inside(keep, f))
-    .flatMap((f) => [`Read(/${f})`, `Read(/${f}/**)`]);
+  const rule = (p: string) => [`Read(/${p})`, `Read(/${p}/**)`];
+  const out: string[] = [];
+  const deny = (root: string) => {
+    if (!inside(keep, root)) return out.push(...rule(root));
+    if (root === keep) return;
+    walkTo(root, keep, {
+      ancestor: () => {},
+      sibling: (paths) => paths.forEach((p) => out.push(...rule(p))),
+      // Can't list it without covering the cwd, so the fence alone guards it.
+      unlisted: (dir) => console.warn(`Atrium couldn't list ${dir} to deny Claude's reads beside its folder.`),
+    });
+  };
+  for (const root of [real(home), ...SHARED_ROOTS]) deny(root);
+  return [...new Set(out)];
 }
