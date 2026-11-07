@@ -268,6 +268,13 @@ check(withNudge.needsYou == 0, "notes: nudges don't add to the badge")
 let nudgeJson = #"{"needsYou":0,"needs":[],"stopped":[],"overnight":false,"nudges":[{"id":"mnd_2","kind":"import","title":"Time to import October","body":"Amex isn't imported for October yet.","path":"/space/spc_9?tab=money","spaceId":"spc_9","spaceName":"Investing","createdAt":1}]}"#
 check((try? JSONDecoder().decode(Summary.self, from: Data(nudgeJson.utf8)))?.nudges?.first?.kind == "import", "decode: nudges")
 
+let fresh = Nudge(id: "mnd_3", kind: "import", title: "Time to import October", body: "Amex isn't imported for October yet.", path: "/", createdAt: 1_000_000_000_000)
+var launch = summary()
+launch.nudges = [fresh, budget]
+let atLaunch = newNotes(previous: nil, next: launch, now: Date(timeIntervalSince1970: 1_000_000_000 + 3600))
+check(atLaunch.map(\.id) == ["mnd_3"], "notes: a reminder made in the last day is announced at launch; budget nudges aren't")
+check(newNotes(previous: nil, next: launch, now: Date(timeIntervalSince1970: 1_000_000_000 + 2 * 86400)).isEmpty, "notes: an older reminder only seeds")
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)
 

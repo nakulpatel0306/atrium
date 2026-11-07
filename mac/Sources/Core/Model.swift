@@ -34,6 +34,8 @@ struct Stopped: Decodable, Equatable {
 // A Money heads-up (a budget at 80% or 100%, the monthly import reminder): notified once, never in the badge.
 struct Nudge: Decodable, Equatable {
   let id, kind, title, body, path: String
+  // Epoch milliseconds; absent from older engines.
+  var createdAt: Double? = nil
 }
 
 struct Summary: Decodable, Equatable {
