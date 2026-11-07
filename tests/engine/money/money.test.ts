@@ -145,7 +145,8 @@ test("the month's spending by category, recurring charges and unusual ones", () 
     { date: "2026-10-27", merchant: "Metro", amount: 312.4, reason: "More than 3× your usual at Metro." },
     { date: "2026-10-26", merchant: "Best Buy", amount: 449.99, reason: "Same amount at Best Buy within 3 days." },
   ]);
-  expect(moneyView(db, spaceId, NOW).month).toBe("2026-11");
+  // It opens on the latest month the imports fully cover, not two days of November.
+  expect(moneyView(db, spaceId, NOW).month).toBe("2026-10");
 });
 
 test("Wealthsimple totals by year and TFSA deposits", () => {

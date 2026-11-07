@@ -51,7 +51,20 @@ export function subscriptions(rows: Tx[], rules: Rule[]): SubscriptionList {
   if (!latest) return { list: [], perMonth: 0, perYear: 0 };
   const latestMonth = latest.slice(0, 7);
   const byMerchant = new Map<string, Tx[]>();
-  for (const t of spend) byMerchant.set(t.merchant, [...(byMerchant.get(t.merchant) ?? []), t]);
+  for (const t of spend) {
+    const list = byMerchant.get(t.merchant);
+    if (list) list.push(t);
+    else byMerchant.set(t.merchant, [t]);
+  }
+  // Rows from the last 90 days by their merchant's first word, built once.
+  const recentByWord = new Map<string, { id: string; date: string }[]>();
+  for (const t of rows) {
+    if (days(t.date, latest) > FORGOTTEN_QUIET_DAYS) continue;
+    const word = firstWord(t.merchant);
+    const list = recentByWord.get(word);
+    if (list) list.push(t);
+    else recentByWord.set(word, [t]);
+  }
 
   const list: Subscription[] = [];
   for (const [merchant, charges] of byMerchant) {
@@ -80,7 +93,7 @@ export function subscriptions(rows: Tx[], rules: Rule[]): SubscriptionList {
     }
     const own = new Set(charges.map((t) => t.id));
     const word = firstWord(merchant);
-    const elsewhere = rows.some((t) => !own.has(t.id) && firstWord(t.merchant) === word && days(t.date, latest) <= FORGOTTEN_QUIET_DAYS);
+    const elsewhere = (recentByWord.get(word) ?? []).some((t) => !own.has(t.id));
     if (!elsewhere && !NEVER_FORGOTTEN.has(category) && charges.length >= 3 && days(last.date, latest) <= STILL_CHARGING_DAYS) flags.push("forgotten");
     if (charges[0]!.date.startsWith(latestMonth)) flags.push("new");
     list.push({

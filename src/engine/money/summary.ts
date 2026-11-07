@@ -5,7 +5,12 @@ import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
 import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
 import { isMasked, maskNumbers } from "./import";
-import { monthYear, recap, recapFacts } from "./recap";
+import { budgetRows, listBudgets, type BudgetRow } from "./budgets";
+import { monthCover } from "./coverage";
+import { coverText, monthName, monthYear, recap, recapFacts, type Recap } from "./recap";
+import { roomTie, tfsaRoom, type Room } from "./room";
+import { subscriptions, type SubscriptionList } from "./subscriptions";
+import { transfers, type TransferWhy } from "./transfers";
 import { counted, spendingIn, txs, type Tx } from "./rows";
 
 
@@ -36,8 +41,20 @@ export type MoneyView = {
   range: { from: string; to: string } | null;
   accounts: string[];
   rules: number;
+  recap: Recap | null;
+  // What the recap's month is missing, or null when the imports cover all of it.
+  coverLine: string | null;
+  tie: string | null;
+  subscriptions: SubscriptionList;
+  room: Room;
+  budgets: BudgetRow[];
+  // Categories a budget can be set for: the rule list's spending ones, plus any seen this month.
+  categories: string[];
+  transactions: MonthTx[];
   asks: (Writeup & { question: string; status: "queued" | "running" | "done" | "failed"; taskId: string | null })[];
 };
+
+export type MonthTx = { id: string; date: string; description: string; account: string; amount: number; category: string; transfer: TransferWhy | null; mark: number | null };
 
 export const STARTERS = [
   "How much did I get in dividends this year?",
@@ -163,13 +180,20 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
   const rules = listRules(db, spaceId);
   const months = [...new Set(all.map((t) => t.date.slice(0, 7)))].sort().reverse();
   const current = etDate(now).slice(0, 7);
-  const picked = month && months.includes(month) ? month : months.includes(current) ? current : (months[0] ?? null);
+  // The latest month the imports fully cover, so a recap opens on a finished month rather than two days of the next.
+  const today = etDate(now);
+  const complete = months.find((m) => monthCover(db, spaceId, m, today).complete);
+  const picked = month && months.includes(month) ? month : (complete ?? (months.includes(current) ? current : (months[0] ?? null)));
+  const r = picked ? recap(db, spaceId, now, picked) : null;
+  const room = tfsaRoom(db, spaceId, Number(today.slice(0, 4)));
+  const monthSpending = spendingIn(bank, picked, rules);
+  const moved = transfers(all);
   const spend = bank.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
   const merchants = byMerchant(spend);
   return {
     months,
     month: picked,
-    ...spendingIn(bank, picked, rules),
+    ...monthSpending,
     recurring: recurring(merchants),
     unusual: unusual(merchants, spend.at(-1)?.date),
     ws: wsYears(ws),
@@ -177,6 +201,19 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
     range: all.length ? { from: all[0]!.date, to: all.at(-1)!.date } : null,
     accounts: [...new Set(all.map((t) => t.account))],
     rules: rules.length,
+    recap: r,
+    coverLine: r ? coverText(r.cover) : null,
+    tie: r ? roomTie(r.net, monthName(r.month), room) : null,
+    subscriptions: subscriptions(bank, rules),
+    room,
+    budgets: budgetRows(listBudgets(db, spaceId), monthSpending.spending),
+    categories: [...new Set([...rules.map((x) => x.category).filter((c) => !NOT_SPENDING.has(c)), "Other", ...monthSpending.spending.map((c) => c.category)])].sort(),
+    transactions: picked
+      ? all
+          .filter((t) => t.date.startsWith(picked))
+          .reverse()
+          .map((t) => ({ id: t.id, date: t.date, description: t.description, account: t.account, amount: t.amount, category: categorize(t.description, rules), transfer: moved.get(t.id) ?? null, mark: t.transfer }))
+      : [],
     asks: asks(db, spaceId),
   };
 }

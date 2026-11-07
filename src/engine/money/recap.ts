@@ -59,16 +59,30 @@ function totals(rows: Tx[], month: string, rules: ReturnType<typeof listRules>):
 // left out of the largest-charges part.
 function notable(rows: Tx[], now: Totals, month: string): Notable[] {
   const before = new Map<string, number[]>();
-  for (const t of rows) if (t.amount < 0 && t.date < `${month}-01`) before.set(t.merchant, [...(before.get(t.merchant) ?? []), -t.amount]);
+  const lastMonth = new Map<string, number[]>();
   const last = shiftMonth(month, -1);
-  const regular = (t: Tx) => rows.some((p) => p.merchant === t.merchant && p.date.startsWith(last) && Math.abs(-p.amount + t.amount) <= -t.amount * 0.05);
+  for (const t of rows) {
+    if (t.amount >= 0 || t.date >= `${month}-01`) continue;
+    const list = before.get(t.merchant);
+    if (list) list.push(-t.amount);
+    else before.set(t.merchant, [-t.amount]);
+    if (!t.date.startsWith(last)) continue;
+    const prev = lastMonth.get(t.merchant);
+    if (prev) prev.push(-t.amount);
+    else lastMonth.set(t.merchant, [-t.amount]);
+  }
+  const regular = (t: Tx) => (lastMonth.get(t.merchant) ?? []).some((a) => Math.abs(a + t.amount) <= -t.amount * 0.05);
+  // The median of each merchant's earlier charges, worked out once.
+  const usualAt = new Map<string, number>();
+  for (const [m, past] of before) if (past.length >= 2) usualAt.set(m, past.sort((a, b) => a - b)[Math.floor(past.length / 2)]!);
+  const biggest = [...now.spend].sort((a, b) => a.amount - b.amount);
   const out: Notable[] = [];
-  for (const t of [...now.spend].sort((a, b) => a.amount - b.amount)) {
-    const past = (before.get(t.merchant) ?? []).sort((a, b) => a - b);
-    const usual = past.length >= 2 ? past[Math.floor(past.length / 2)]! : null;
+  for (const t of biggest) {
+    if (out.length >= NOTABLE_SHOWN) break;
+    const usual = usualAt.get(t.merchant) ?? null;
     if (usual && -t.amount > 3 * usual) out.push({ date: t.date, merchant: t.merchant, amount: round2(-t.amount), why: `More than 3× your usual at ${t.merchant}.` });
   }
-  for (const t of [...now.spend].sort((a, b) => a.amount - b.amount)) {
+  for (const t of biggest) {
     if (out.length >= NOTABLE_SHOWN) break;
     if (regular(t) || out.some((o) => o.date === t.date && o.merchant === t.merchant && o.amount === round2(-t.amount))) continue;
     out.push({ date: t.date, merchant: t.merchant, amount: round2(-t.amount), why: out.length ? "One of the largest charges this month." : "The largest charge this month." });
