@@ -233,6 +233,16 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
   };
 }
 
+// The Money view without anything row by row: no transactions, unusual charges, recurring list, Wealthsimple years
+// or import list. It's what the terminal app reads, so no transaction text ever reaches it, masked or not.
+export type MoneySummary = Omit<MoneyView, "transactions" | "unusual" | "recurring" | "ws" | "imports" | "importAccounts"> & { lastImportAt: number | null };
+
+export function moneySummary(v: MoneyView): MoneySummary {
+  const { transactions: _t, unusual: _u, recurring: _r, ws: _w, imports, importAccounts: _a, recap, ...rest } = v;
+  // The recap's largest charges are real rows (date, merchant, amount); the terminal app only needs its totals.
+  return { ...rest, recap: recap && { ...recap, notable: [] }, lastImportAt: imports[0]?.importedAt ?? null };
+}
+
 const cad = (n: number) => `CA$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const usd = (n: number) => `US$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const both = (c: number, u: number) => (c && u ? `${cad(c)} + ${usd(u)}` : u ? usd(u) : cad(c));

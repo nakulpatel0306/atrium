@@ -235,3 +235,16 @@ test("notes about kept or removed files get a line of their own", () => {
   const groups = groupActivity(feed(row(at(6, 9), "Kept a.md: it changed after the task made it."), row(at(6, 9, 1), "Kept a.md: it changed after the task made it.")), { now: NOW });
   expect(groups.map((g) => g.tone)).toEqual(["notice", "notice"]);
 });
+
+test("a task Nakul stopped folds into its line as stopped by you", () => {
+  const groups = groupActivity(
+    feed(
+      row(at(6, 10), "Started: Groceries", { taskId: "tsk_g", actor: "claude" }),
+      row(at(6, 10, 5), "Stopped by you: Groceries. Retry to run it again.", { taskId: "tsk_g", actor: "you" }),
+    ),
+    { now: NOW, tasks: [{ id: "tsk_g", title: "Groceries", status: "blocked" } as never] },
+  );
+  expect(activityKind("Stopped by you: Groceries.")).toBe("stopped");
+  expect(groups).toHaveLength(1);
+  expect(groups[0]!.text).toBe("started, stopped by you");
+});

@@ -3,36 +3,47 @@ import { cleanup } from "ink-testing-library";
 import { spaceStatus } from "../../src/dashboard/summary";
 import { fakeClient } from "./fake-client";
 import { ids, makeState } from "./fixtures";
-import { openApp } from "./harness";
+import { KEY, openApp } from "./harness";
 
 afterEach(() => cleanup());
 
-test("shows the four left panes and the status bar", async () => {
+const nudge = { id: "mnd_1", spaceId: ids.atrium, spaceName: "Investing", kind: "import" as const, title: "Time to import October", body: "Amex isn't imported for October yet.", path: "/space/x?tab=money", createdAt: 0 };
+
+test("Home: tabs, the briefing, Needs you as cards, Today, the Ask box and the keys", async () => {
   const state = makeState();
   const app = openApp(fakeClient(state));
-  const f = await app.frame((f) => f.includes("[1] Spaces"));
-  for (const s of ["[1] Spaces", "[2] Tasks · atrium", "[3] Needs you · 1", "[4] Activity", "[0] Detail", "[5] Live", "41%", state.briefing.greeting]) {
+  const f = await app.frame((f) => f.includes("NEEDS YOU"));
+  for (const s of ["◆ atrium", " 1 Home ", " 2 Spaces ", " 3 Money ", " 4 Investing ", " 5 Activity ", "41%", "AC", state.briefing.greeting, "NEEDS YOU  1", "TODAY", "RUNNING  1", "Add the status bar", "Ask Atrium", "?  help"]) {
     expect(f).toContain(s);
   }
+  // The selected card carries its actions.
+  expect(f).toContain("◆ Review: Fix login redirect");
+  expect(f).toContain(" a  Approve");
+  expect(f).toContain(" r  Send back");
 });
 
-test("space rows carry the one-line status", async () => {
+test("at 80×24 Today folds under the cards and every line fits", async () => {
+  const app = openApp(fakeClient(makeState()), { columns: 80, rows: 24 });
+  const f = await app.frame((f) => f.includes("NEEDS YOU"));
+  const lines = f.split("\n");
+  expect(lines).toHaveLength(24);
+  for (const l of lines) expect(Bun.stringWidth(l)).toBeLessThanOrEqual(80);
+  expect(f).toContain("TODAY");
+  expect(f).toContain("RUNNING  ");
+  expect(f).not.toContain("│ TODAY");
+});
+
+test("Spaces: rows carry the one-line status, and Tasks follow the selected space", async () => {
   const state = makeState();
   const app = openApp(fakeClient(state));
-  const atrium = state.spaces[0]!;
-  const status = spaceStatus(atrium, state.tasks.filter((t) => t.spaceId === ids.atrium), state).text;
-  const f = await app.frame((f) => f.includes("[1] Spaces"));
-  const row = f.split("\n").find((l) => l.includes("atrium") && l.includes("Claude running"));
-  expect(row).toBeDefined();
+  await app.frame((f) => f.includes("1 Home"));
+  await app.type("2");
+  const f = await app.frame((f) => f.includes("TASKS · atrium"));
+  const status = spaceStatus(state.spaces[0]!, state.tasks.filter((t) => t.spaceId === ids.atrium), state).text;
   expect(status.startsWith("Claude running · Add the")).toBe(true);
-  expect(row).toContain("Claude running · Add the");
-});
-
-test("j moves the selection and Tasks follow", async () => {
-  const app = openApp(fakeClient(makeState()));
-  await app.frame((f) => f.includes("[2] Tasks · atrium"));
+  expect(f.split("\n").find((l) => l.includes("atrium") && l.includes("Claude running"))).toBeDefined();
   await app.type("j");
-  await app.frame((f) => f.includes("[2] Tasks · job hunt"));
+  await app.frame((f) => f.includes("TASKS · job hunt"));
 });
 
 test("offline screen says how to start the engine", async () => {
@@ -44,7 +55,7 @@ test("offline screen says how to start the engine", async () => {
   expect(f).toContain("reconnects on its own");
   client.push(makeState());
   client.setOnline(true);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
 });
 
 test("connecting screen before the first state", async () => {
@@ -52,13 +63,13 @@ test("connecting screen before the first state", async () => {
   await app.frame((f) => f.includes("Connecting to Atrium…"));
 });
 
-test("offline banner keeps the last state visible", async () => {
+test("going offline keeps the last state visible and says so with a word", async () => {
   const client = fakeClient(makeState());
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   client.setOnline(false);
-  const f = await app.frame((f) => f.includes("offline · reconnecting"));
-  expect(f).toContain("[1] Spaces");
+  const f = await app.frame((f) => f.includes("✗ offline · reconnecting"));
+  expect(f).toContain("NEEDS YOU");
 });
 
 test("too small a window gets one plain sentence", async () => {
@@ -67,10 +78,10 @@ test("too small a window gets one plain sentence", async () => {
   expect(f.replace(/\s+/g, " ").trim()).toBe("Atrium needs at least 80×24. This window is 70×20.");
 });
 
-test("marks the briefing seen once", async () => {
+test("marks the briefing seen once, and keeps the briefing it opened with", async () => {
   const client = fakeClient(makeState());
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await new Promise((r) => setTimeout(r, 20));
   client.push(makeState({ briefing: { greeting: "Good night, Nakul.", summary: "Later.", markets: null } }));
   client.push(makeState());
@@ -80,18 +91,23 @@ test("marks the briefing seen once", async () => {
 });
 
 test("empty states read plainly", async () => {
-  const app = openApp(fakeClient(makeState({ spaces: [], approvals: [], activity: [] })));
-  const f = await app.frame((f) => f.includes("No spaces yet"));
-  expect(f).toContain("No spaces yet. Press N to describe one.");
-  expect(f).toContain("You're all caught up.");
-  expect(f.replace(/[│\s]+/g, " ")).toContain("No activity yet. Agent runs and your decisions will show up here.");
+  const app = openApp(fakeClient(makeState({ spaces: [], approvals: [], activity: [], tasks: [], runs: [] })));
+  const home = await app.frame((f) => f.includes("caught up"));
+  expect(home).toContain("You're all caught up.");
+  expect(home).toContain("Nothing running.");
+  await app.type("2");
+  const spaces = await app.frame((f) => f.includes("No spaces yet"));
+  expect(spaces).toContain("No spaces yet. Press N and");
+  await app.type("5");
+  const activity = await app.frame((f) => f.includes("No activity yet"));
+  expect(activity).toContain("No activity yet. Agent runs and your decisions will show up here.");
 });
 
-test("each key in a chunk sees the focus the one before it set", async () => {
+test("each key in a chunk sees the tab the one before it set", async () => {
   const app = openApp(fakeClient(makeState()));
-  await app.frame((f) => f.includes("[1] Spaces"));
-  await app.type("3a");
-  await app.frame((f) => f.includes('Approved "Review: Fix login redirect".'));
+  await app.frame((f) => f.includes("1 Home"));
+  await app.type("2j");
+  await app.frame((f) => f.includes("TASKS · job hunt"));
 });
 
 test("engine text can't send escape sequences to the terminal", async () => {
@@ -101,29 +117,51 @@ test("engine text can't send escape sequences to the terminal", async () => {
   state.activity[0] = { ...state.activity[0]!, message: `finished${evil} it` };
   state.spaces[1] = { ...state.spaces[1]!, name: `job${evil} hunt` };
   const app = openApp(fakeClient(state));
-  await app.frame((f) => f.includes("[1] Spaces"));
-  await app.type("2");
-  await app.frame((f) => f.includes("[0] Detail · Add the status bar"));
+  await app.frame((f) => f.includes("1 Home"));
+  await app.type("2", KEY.tab);
+  await app.frame((f) => f.includes("TASK  Add the status bar"));
+  await app.type("5");
+  await app.frame((f) => f.includes("finished it"));
   const out = app.frames.join("");
   expect(out).not.toContain("\x1b]");
   expect(out).not.toContain("\x1b[2J");
   expect(out).not.toContain("\x9b");
-  expect(out).toContain("finished it");
 });
 
-test("activity times stay in one narrow column", async () => {
+test("Activity: day headings, one line per group, a mark for its tone, and its full lines beside it", async () => {
   const state = makeState();
   state.activity[0] = { ...state.activity[0]!, createdAt: Date.now() };
   const app = openApp(fakeClient(state));
-  const f = await app.frame((f) => f.includes("[4] Activity"));
-  expect(f).toContain("│now    Claude · finished Fix login redirect");
-  expect(f).toContain("│15m    You · added Summarize postings · jo");
+  await app.frame((f) => f.includes("1 Home"));
+  await app.type("5");
+  const f = await app.frame((f) => f.includes("ACTIVITY"));
+  expect(f).toContain("TODAY");
+  expect(f).toMatch(/▌ now\s+· Claude · finished Fix login redirect · atrium/);
+  expect(f).toMatch(/15m\s+· You · added Summarize postings · job hunt/);
+  expect(f).toContain("LINES");
+  expect(f).toContain("Claude: finished Fix login redirect");
 });
 
-test("the monthly import reminder shows on top of Needs you as a plain line, not an item", async () => {
-  const nudge = { id: "mnd_1", spaceId: ids.atrium, spaceName: "Investing", kind: "import" as const, title: "Time to import October", body: "Amex isn't imported for October yet.", path: "/space/x?tab=money", createdAt: 0 };
-  const app = openApp(fakeClient(makeState({ nudges: [nudge] })));
+test("the monthly import reminder is a quiet card; enter opens Money and x dismisses it", async () => {
+  const client = fakeClient(makeState({ approvals: [], nudges: [nudge] }));
+  const app = openApp(client);
   const f = await app.frame((f) => f.includes("Time to import October"));
-  expect(f).toContain("✦ Time to import October · Amex");
-  expect(f).toContain("[3] Needs you · 1");
+  expect(f).toContain("✦ Time to import October");
+  expect(f).toContain("Open Money");
+  await app.type("x");
+  await app.frame((f) => f.includes("Dismissed."));
+  expect(client.calls.filter((c) => c.method === "POST" && c.path !== "/api/seen")).toEqual([{ method: "POST", path: `/api/investing/${ids.atrium}/money/nudges/mnd_1/dismiss`, body: undefined }]);
+  await app.type(KEY.enter);
+  await app.frame((f) => f.includes(" 3 Money ") && f.includes("Investing space yet"));
+});
+
+test("more cards than fit say how many are below, and the selected one stays whole", async () => {
+  const base = makeState();
+  const approvals = Array.from({ length: 9 }, (_, i) => ({ ...base.approvals[0]!, id: `apr_${i}`, title: `Question ${i}`, kind: "question" as const }));
+  const app = openApp(fakeClient(makeState({ approvals })), { columns: 80, rows: 24 });
+  const f = await app.frame((f) => f.includes("NEEDS YOU  9"));
+  expect(f).toMatch(/↓ \d more below/);
+  await app.type("G");
+  const end = await app.frame((f) => f.includes("? Question 8") && f.includes(" a  Approve"));
+  expect(end).toMatch(/↑ \d more above/);
 });

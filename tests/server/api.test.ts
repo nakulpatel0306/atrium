@@ -734,3 +734,83 @@ test("DELETE a repo space waits for its clone to land", async () => {
   expect((await res.json()).error).toBe("Atrium is still getting a local copy of this repo. Try again in a minute. Nothing was deleted.");
   expect(getSpace(db, s.id)).not.toBeNull();
 });
+
+test("stop ends a running task through the runner and requires Origin", async () => {
+  const runner = createRunner({
+    db,
+    adapters: {
+      claude: {
+        id: "claude",
+        label: "Claude Code",
+        run: (input) => new Promise((resolve) => input.signal!.addEventListener("abort", () => resolve({ status: "error", kind: "failed", message: "Stopped" }))),
+      },
+    },
+    power: async () => "ac",
+    keepAwake: { start() {}, stop() {}, active: () => false },
+  });
+  server.stop(true);
+  server = startServer({ db, runner, setup: (t) => setupImpl(t), port: 0 });
+  base = `http://127.0.0.1:${server.port}`;
+  origin = base;
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Long job" });
+  const queued = createTask(db, { spaceId: s.id, title: "Not yet" });
+  runner.start();
+  try {
+    const until = Date.now() + 3000;
+    while (getTask(db, t.id)!.status !== "running" && Date.now() < until) await Bun.sleep(5);
+    expect((await fetch(`${base}/api/tasks/${t.id}/stop`, { method: "POST" })).status).toBe(403);
+    expect((await post(`/api/tasks/${queued.id}/stop`)).status).toBe(409);
+    expect((await post("/api/tasks/tsk_nope/stop")).status).toBe(404);
+    const res = await post(`/api/tasks/${t.id}/stop`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; blockedReason: string };
+    expect(body.status).toBe("blocked");
+    expect(body.blockedReason).toBe("You stopped this task. Retry to run it again.");
+    // Stopped once, it isn't running any more.
+    expect((await post(`/api/tasks/${t.id}/stop`)).status).toBe(409);
+  } finally {
+    await runner.stop();
+  }
+});
+
+test("stop with no runner that can stop says so", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Ghost" });
+  setTaskStatus(db, t.id, "running");
+  const res = await post(`/api/tasks/${t.id}/stop`);
+  expect(res.status).toBe(409);
+  expect(((await res.json()) as { error: string }).error).toBe("Atrium isn't running this task right now. Restart the engine if it still shows as running.");
+});
+
+test("stop says what happened: finished first is 409, still winding down is 202 with the task as it is", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Racing" });
+  setTaskStatus(db, t.id, "running");
+  let outcome: "finished" | "timeout" = "finished";
+  server.stop(true);
+  server = startServer({ db, runner: { kick: () => {}, stopTask: async () => outcome }, setup: (x) => setupImpl(x), port: 0 });
+  base = `http://127.0.0.1:${server.port}`;
+  origin = base;
+  const finished = await post(`/api/tasks/${t.id}/stop`);
+  expect(finished.status).toBe(409);
+  expect(((await finished.json()) as { error: string }).error).toBe("It finished before it could be stopped, so its result stands.");
+  outcome = "timeout";
+  const slow = await post(`/api/tasks/${t.id}/stop`);
+  expect(slow.status).toBe(202);
+  expect(((await slow.json()) as { status: string }).status).toBe("running");
+});
+
+test("a live run's transcript says how many of its lines it holds", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
+  const t = createTask(db, { spaceId: s.id, title: "Live" });
+  const path = `${home.home}/live.log`;
+  await Bun.write(path, "a\nb\n");
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run("run_live", t.id, "claude", Date.now(), path);
+  server.stop(true);
+  server = startServer({ db, runner: { kick: () => {}, outputSeq: (id) => (id === "run_live" ? 2 : null) }, setup: (x) => setupImpl(x), port: 0 });
+  base = `http://127.0.0.1:${server.port}`;
+  const res = await fetch(`${base}/api/runs/run_live/transcript`);
+  expect(res.headers.get("x-atrium-output-seq")).toBe("2");
+  expect(await res.text()).toBe("a\nb\n");
+});

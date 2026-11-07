@@ -14,7 +14,7 @@ afterEach(() => cleanup());
 
 const withSuggestion = () => makeState({ proposals: [proposal()] });
 const onNeeds = (state = withSuggestion()): Ui => {
-  const ui: Ui = { ...initialUi, focus: "needs", lastLeft: "needs" };
+  const ui: Ui = { ...initialUi };
   return pin(ui, deriveView(state, ui));
 };
 const text = (lines: { text: string }[][]) => lines.map((l) => l.map((s) => s.text).join("")).join("\n");
@@ -42,11 +42,12 @@ test("y, n, and N answer the selected suggestion", () => {
   ]);
 });
 
-test("n and N still make a task and a space outside a suggestion", () => {
+test("n and N still make a task and a space in Spaces", () => {
   const state = withSuggestion();
-  const ui = pin(initialUi, deriveView(state, initialUi));
-  expect(commandsFor("n", key(), ui, deriveView(state, ui))[0]).toMatchObject({ kind: "ui", action: { type: "open", overlay: { purpose: "task" } } });
-  expect(commandsFor("N", key(), ui, deriveView(state, ui))[0]).toMatchObject({ kind: "ui", action: { type: "open", overlay: { purpose: "space" } } });
+  const start = { ...initialUi, tab: "spaces" as const };
+  const ui = pin(start, deriveView(state, start));
+  expect(commandsFor("n", key(), ui, deriveView(state, ui))[0]).toMatchObject({ kind: "ui", action: { type: "ask", ask: { purpose: "ask" } } });
+  expect(commandsFor("N", key(), ui, deriveView(state, ui))[0]).toMatchObject({ kind: "ui", action: { type: "ask", ask: { purpose: "space" } } });
 });
 
 test("answers go to the suggestion endpoint and read plainly", async () => {
@@ -77,20 +78,20 @@ test("suggestion detail explains what yes means", () => {
 test("approvals made by a rule say so", () => {
   const state = makeState();
   state.activity[0] = { ...state.activity[0]!, actor: "atrium", message: 'Approved by your rule "docs-only changes": Review: Update README' };
-  const ui: Ui = { ...initialUi, focus: "activity", lastLeft: "activity" };
+  const ui: Ui = { ...initialUi, tab: "activity" };
   const all = text(activityDetail(deriveView(state, pin(ui, deriveView(state, ui)))));
   expect(all).toContain("approved by your rule");
   expect(all).toContain("Rules page");
 });
 
-test("a suggestion in the app: row, detail, and y", async () => {
+test("a suggestion in the app: card, full text, and y", async () => {
   const client = fakeClient(withSuggestion());
   const app = openApp(client);
-  const f = await app.frame((f) => f.includes("[3] Needs you · 2"));
-  // Truncated to the pane; the detail has the whole label.
-  expect(f).toContain("✦ Stop asking about docs-only chan");
-  await app.type("3");
-  await app.frame((f) => f.includes("[0] Detail · Suggestion · docs-only changes"));
+  const f = await app.frame((f) => f.includes("NEEDS YOU  2"));
+  expect(f).toContain("✦ Stop asking about docs-only changes?");
+  expect(f).toContain(" y  Yes");
+  await app.type("\r");
+  await app.frame((f) => f.includes("Suggestion · docs-only changes") && f.includes("never merges or pushes"));
   await app.type("y");
   await app.frame((f) => f.includes("Atrium will approve docs-only changes"));
   expect(mutations(client.calls)).toEqual([{ method: "POST", path: `/api/proposals/${ids.proposal}`, body: { answer: "yes" } }]);
@@ -100,6 +101,8 @@ test("a rule's approval is labelled in the activity list", async () => {
   const state = makeState();
   state.activity[0] = { ...state.activity[0]!, actor: "atrium", message: 'Approved by your rule "docs-only changes": Review: Update README' };
   const app = openApp(fakeClient(state));
-  const f = await app.frame((f) => f.includes("[4] Activity"));
+  await app.frame((f) => f.includes("1 Home"));
+  await app.type("5");
+  const f = await app.frame((f) => f.includes("ACTIVITY"));
   expect(f).toContain("Review: Update README · approved by your");
 });

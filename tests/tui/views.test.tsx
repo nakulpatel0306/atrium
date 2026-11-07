@@ -3,7 +3,7 @@ import { cleanup } from "ink-testing-library";
 import type { State } from "../../src/engine/state";
 import { fakeClient } from "./fake-client";
 import { ids, makeState } from "./fixtures";
-import { openApp } from "./harness";
+import { KEY, openApp } from "./harness";
 
 afterEach(() => cleanup());
 
@@ -13,14 +13,14 @@ function twoRuns(): State {
   const older = { ...state.runs[1]!, id: "run_old", startedAt: state.runs[1]!.startedAt - 3600_000, endedAt: state.runs[1]!.endedAt! - 3600_000, exitCode: 1 };
   return { ...state, runs: [...state.runs, older] };
 }
-const onReview = ["2", "j"];
+const onReview = ["2", KEY.tab, "j"];
 
 test("t opens the latest transcript and [ ] switch runs", async () => {
   const client = fakeClient(twoRuns());
   client.respond(`/api/runs/${ids.reviewRun}/transcript`, { ok: true, data: "run B text" });
   client.respond("/api/runs/run_old/transcript", { ok: true, data: "run A text" });
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type(...onReview, "t");
   let f = await app.frame((f) => f.includes("run B text"));
   // Runs count from the oldest, so the newest of two is run 2.
@@ -34,7 +34,7 @@ test("t opens the latest transcript and [ ] switch runs", async () => {
   expect(fetched(ids.reviewRun)).toBe(1);
   expect(fetched("run_old")).toBe(1);
   await app.type("q");
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
 });
 
 test("a missing transcript reads plainly", async () => {
@@ -44,7 +44,7 @@ test("a missing transcript reads plainly", async () => {
     error: "This transcript isn't stored anymore. Atrium keeps the newest 200 MB of transcripts.",
   });
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type(...onReview, "t");
   await app.frame((f) => f.includes("This transcript isn't stored anymore."));
 });
@@ -53,7 +53,7 @@ test("transcript text is cleaned", async () => {
   const client = fakeClient(makeState());
   client.respond(`/api/runs/${ids.reviewRun}/transcript`, { ok: true, data: "start\x1b[2J\x1b]0;title\x07 end" });
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type(...onReview, "t");
   await app.frame((f) => f.includes("start end"));
   const out = app.frames.join("");
@@ -65,7 +65,7 @@ test("the transcript scrolls", async () => {
   const client = fakeClient(makeState());
   client.respond(`/api/runs/${ids.reviewRun}/transcript`, { ok: true, data: Array.from({ length: 100 }, (_, i) => `tline ${i}`).join("\n") });
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type(...onReview, "t");
   await app.frame((f) => f.includes("tline 0"));
   await app.type("G");
@@ -78,37 +78,40 @@ test("the transcript scrolls", async () => {
 
 test("help lists every key", async () => {
   const app = openApp(fakeClient(makeState()));
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type("?");
   const f = await app.frame((f) => f.includes("send back"));
-  for (const s of ["approve", "send back", "run now", "transcript", "agents and usage", "new task", "new space"]) expect(f).toContain(s);
+  for (const s of ["approve", "send back", "text: send, edit, skip", "transcript", "agents and usage", "switch tab", "type in the Ask box", "stop running task"]) expect(f).toContain(s);
   await app.type("?");
   await app.frame((f) => !f.includes("agents and usage"));
+  await app.type("2", "?");
+  const spaces = await app.frame((f) => f.includes("new task, new space"));
+  for (const s of ["retry, run now", "change agent", "archive, delete", "pick a made file"]) expect(spaces).toContain(s);
 });
 
 test("agents view shows status and the window", async () => {
   const state = makeState();
   state.agents.codex = { ...state.agents.codex!, installed: false, detail: "Install it with npm i -g @openai/codex." };
   const app = openApp(fakeClient(state));
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type("u");
   const f = await app.frame((f) => f.includes("Pause Claude tasks at"));
   for (const s of ["Claude", "Ready", "41%", "tokens today", "Atrium disk usage", "Not installed.", "[50%]"]) expect(f).toContain(s);
   await app.type("q");
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
 });
 
 test("reserve steps from the agents view", async () => {
   const client = fakeClient(makeState());
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type("u", "]");
   await app.frame((f) => f.includes("Claude tasks now pause at 75% of the window."));
   expect(client.calls.filter((c) => c.path === "/api/settings")).toEqual([{ method: "POST", path: "/api/settings", body: { claudeReserve: 0.75 } }]);
 
   const high = fakeClient(makeState({ usage: { claudeTokens24h: 0, claudeReserve: 0.75 } }));
   const app2 = openApp(high);
-  await app2.frame((f) => f.includes("[1] Spaces"));
+  await app2.frame((f) => f.includes("1 Home"));
   await app2.type("u", "]");
   await app2.frame((f) => f.includes("75% is the highest pause point."));
   expect(high.calls.filter((c) => c.path === "/api/settings")).toEqual([]);
@@ -117,7 +120,7 @@ test("reserve steps from the agents view", async () => {
 test("o toggles overnight from anywhere", async () => {
   const client = fakeClient(makeState());
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   await app.type("o");
   await app.frame((f) => f.includes("Overnight mode on."));
   await app.type("u", "o");
@@ -130,12 +133,12 @@ test("a transcript opened mid-run is fetched in full once the run ends", async (
   const client = fakeClient(state);
   client.respond(`/api/runs/${ids.liveRun}/transcript`, { ok: true, data: "early lines" });
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   client.emitOutput(ids.liveRun, "early lines\nstill going");
-  await app.type("2", "t");
+  await app.type("2", KEY.tab, "t");
   await app.frame((f) => f.includes("still going"));
   await app.type("q");
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   client.respond(`/api/runs/${ids.liveRun}/transcript`, { ok: true, data: "early lines\nstill going\nall done" });
   const ended = { ...state, runs: state.runs.map((r) => (r.id === ids.liveRun ? { ...r, endedAt: Date.now(), exitCode: 0 } : r)) };
   client.push(ended);

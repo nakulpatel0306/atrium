@@ -1,12 +1,14 @@
 import { render } from "ink-testing-library";
 import type { EngineClient } from "../../src/tui/client";
 import { App } from "../../src/tui/components/App";
+import { mouseBus } from "../../src/tui/mouse";
 
 export const KEY = { enter: "\r", tab: "\t", shiftTab: "\x1b[Z", esc: "\x1b", up: "\x1b[A", down: "\x1b[B", left: "\x1b[D", right: "\x1b[C" };
 
 // Renders the whole app and lets a test wait for the frame it expects, without fixed sleeps.
 export function openApp(client: EngineClient, size = { columns: 120, rows: 36 }) {
-  const tree = <App client={client} size={size} />;
+  const mouse = mouseBus();
+  const tree = <App client={client} size={size} mouse={mouse} />;
   const r = render(tree);
   // ink-testing-library's stdout is always 100 columns wide; Ink lays out and clips to it, so match the size.
   Object.defineProperty(r.stdout, "columns", { get: () => size.columns });
@@ -40,5 +42,14 @@ export function openApp(client: EngineClient, size = { columns: 120, rows: 36 })
       await new Promise((res) => setTimeout(res, 10));
     }
   };
-  return { ...r, frame, type };
+  // A left click at a screen cell (0-based), then a tick for Ink to draw.
+  const click = async (x: number, y: number) => {
+    mouse.emit({ kind: "click", x, y });
+    await new Promise((res) => setTimeout(res, 10));
+  };
+  const wheel = async (x: number, y: number, dir: 1 | -1) => {
+    mouse.emit({ kind: "wheel", x, y, dir });
+    await new Promise((res) => setTimeout(res, 10));
+  };
+  return { ...r, frame, type, click, wheel };
 }

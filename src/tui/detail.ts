@@ -14,12 +14,13 @@ import type { MarketsGlance } from "./client";
 import { markdownLines } from "./markdown";
 import type { View } from "./select";
 import { clean, width } from "./text";
-import { type AnsiColor, color, STATUS_GLYPH } from "./theme";
+import type { Line, Seg } from "./canvas";
+import { color, STATUS_GLYPH, type Tone } from "./theme";
 
 type Run = State["runs"][number];
 
-export type Styled = { text: string; color?: AnsiColor; bold?: boolean; dim?: boolean };
-export type DetailLine = Styled[];
+export type Styled = Seg;
+export type DetailLine = Line;
 
 const SPACE_ACTIVITY = 5;
 
@@ -30,7 +31,7 @@ export function groupWhen(g: ActivityGroup, now = Date.now()): string {
   return new Date(g.at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export const TONE_COLOR: Record<ActivityTone, AnsiColor | undefined> = { routine: undefined, attention: color.warn, failure: color.bad, notice: color.ok };
+export const TONE_COLOR: Record<ActivityTone, Tone | undefined> = { routine: undefined, attention: color.warn, failure: color.bad, notice: color.ok };
 const TONE = { ok: color.ok, waiting: color.warn, bad: color.bad } as const;
 
 const blank: DetailLine = [];
@@ -108,7 +109,7 @@ function thread(messages: Message[] | null, width = 100): DetailLine[] {
 
 export function taskDetail(view: View, messages: Message[] | null, outputs: TaskOutputs | null = null, selectedFile: number | null = null, width = 100): DetailLine[] {
   const task = view.task;
-  if (!task) return [muted(view.tasks.length ? PICK : "Pick a task in [2] to see its detail.")];
+  if (!task) return [muted(view.tasks.length ? PICK : "Pick a task on the left to see its detail.")];
   const { state } = view;
   const glyph = STATUS_GLYPH[task.status];
   const wait = waitOf(task, state);
@@ -182,7 +183,7 @@ export function approvalDetail(view: View, messages: Message[] | null, width = 1
         ? "a dismiss · turn the alert off or change it on the dashboard"
         : approval.spaceId === null
           ? "a approve · r decline"
-          : "a approve · r send back · enter on the task in [2] for runs · t transcript",
+          : "a approve · r send back · t transcript · the task in Spaces has its runs",
     ),
   );
   return lines;
@@ -257,7 +258,7 @@ function marketsLines(g: MarketsGlance): DetailLine[] {
 
 export function spaceDetail(view: View, reviewers: Record<string, string | null> | null, markets: MarketsGlance | null = null): DetailLine[] {
   const space = view.space;
-  if (!space) return [muted(view.spaces.length ? PICK : "No spaces yet. Press N to describe one.")];
+  if (!space) return [muted(view.spaces.length ? PICK : "No spaces yet. Press space and describe one.")];
   const { state } = view;
   if (space.status === "archived") {
     return [

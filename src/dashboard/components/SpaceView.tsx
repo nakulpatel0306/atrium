@@ -10,6 +10,7 @@ import { setArchived } from "../spaces";
 import { Activity, TaskHistory } from "./Activity";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
+import { StopTask } from "./StopTask";
 import { AgentPicker } from "./AgentPicker";
 import { FilesTab } from "./FilesTab";
 import { Markdown } from "./Markdown";
@@ -319,6 +320,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
             Run now
           </button>
         )}
+        <StopTask task={task} />
         <Avatar agent={ranAgent(task, state.runs)} live={task.status === "running"} title={agent} />
       </div>
       {open && (

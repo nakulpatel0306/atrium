@@ -14,7 +14,7 @@ const root = resolve(import.meta.dir, "..");
 const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const USAGE = "Usage: atrium [tui|start|status|open|install|uninstall|app install|app uninstall|investing setup]";
+const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup]";
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
@@ -187,6 +187,10 @@ export async function main(cmd: string | undefined): Promise<number> {
   switch (cmd) {
     case undefined:
     case "tui":
+    // The terminal app reads the flag itself (theme.ts), so `atrium --high-contrast` is the app too.
+    case "--high-contrast":
+      // chalk reads the environment as it loads, so the color mode is settled before the app is imported.
+      await import("./tui/boot-env");
       await import("./tui/main");
       return -1;
     case "start":

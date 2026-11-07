@@ -66,8 +66,8 @@ function open() {
 test("approving in the terminal resolves it in the engine", async () => {
   seedReview(db);
   const app = open();
-  await app.frame((f) => f.includes("[3] Needs you · 1"));
-  await app.type("3", "a");
+  await app.frame((f) => f.includes("NEEDS YOU  1"));
+  await app.type("a");
   await app.frame((f) => f.includes("You're all caught up."));
   expect(listPending(db)).toEqual([]);
 });
@@ -75,7 +75,9 @@ test("approving in the terminal resolves it in the engine", async () => {
 test("a change in the engine shows up without polling", async () => {
   const { space } = seedReview(db);
   const app = open();
-  await app.frame((f) => f.includes("[2] Tasks · atrium"));
+  await app.frame((f) => f.includes("NEEDS YOU"));
+  await app.type("2");
+  await app.frame((f) => f.includes("TASKS · atrium"));
   await new Promise((r) => setTimeout(r, 100));
   const before = stateFetches;
   await new Promise((r) => setTimeout(r, 500));
@@ -94,6 +96,8 @@ test("live output streams in", async () => {
   );
   bus.emit({ type: "changed" });
   const app = open();
+  await app.frame((f) => f.includes("NEEDS YOU"));
+  await app.type("2");
   await app.frame((f) => f.includes("Claude · running"));
   bus.emit({ type: "run-output", runId: "run_live", taskId: task.id, chunk: "hello from the agent" });
   await app.frame((f) => f.includes("hello from the agent"));

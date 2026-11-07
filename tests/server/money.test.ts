@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -152,14 +152,20 @@ test("the view carries the recap, subscriptions, TFSA room and budgets; transfer
 });
 
 test("budget heads-ups and the reminder can be dismissed from the dashboard; summary carries them", async () => {
-  await call("POST", money("/import"), { csv: "Date,Description,Amount\n2026-11-02,STARBUCKS,-90\n", signs: "negative-out" });
-  await call("PUT", money("/budgets"), { category: "Dining", limit: 100 });
-  const s = await (await fetch(`${base}/api/summary`)).json();
-  expect(s.nudges).toEqual([expect.objectContaining({ kind: "budget", title: "Dining is at 90% of its November budget", path: `/space/${spaceId}?tab=money` })]);
-  expect(s.needsYou).toBe(0);
-  expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(200);
-  expect((await (await fetch(`${base}/api/summary`)).json()).nudges).toEqual([]);
-  expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(400);
+  // The summary shows a heads-up for two days by the wall clock; pin that to this file's engine clock.
+  setSystemTime(new Date(NOW));
+  try {
+    await call("POST", money("/import"), { csv: "Date,Description,Amount\n2026-11-02,STARBUCKS,-90\n", signs: "negative-out" });
+    await call("PUT", money("/budgets"), { category: "Dining", limit: 100 });
+    const s = await (await fetch(`${base}/api/summary`)).json();
+    expect(s.nudges).toEqual([expect.objectContaining({ kind: "budget", title: "Dining is at 90% of its November budget", path: `/space/${spaceId}?tab=money` })]);
+    expect(s.needsYou).toBe(0);
+    expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(200);
+    expect((await (await fetch(`${base}/api/summary`)).json()).nudges).toEqual([]);
+    expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(400);
+  } finally {
+    setSystemTime();
+  }
 });
 
 test("card data: uploaded CSV text never comes back in an error, and isn't logged", async () => {
@@ -246,4 +252,20 @@ test("a statement's file name, with its account id, is never stored", async () =
     .join("\n");
   expect(raw.includes("Interest")).toBe(true);
   for (const s of ["WK000000000CAD", "monthly-statement", "Fake Person"]) expect(raw.includes(s)).toBe(false);
+});
+
+test("the terminal app's summary read carries totals and budgets but no transaction rows", async () => {
+  await call("POST", money("/import"), { csv: "Date,Description,Amount\n2026-11-02,STARBUCKS 4111 1111,-90\n2026-11-03,PAYROLL,2000\n", signs: "negative-out" });
+  await call("PUT", money("/budgets"), { category: "Dining", limit: 100 });
+  const full = await (await fetch(`${base}${money()}`)).json();
+  const slim = await (await fetch(`${base}${money("?summary=1")}`)).json();
+  expect(full.transactions.length).toBeGreaterThan(0);
+  for (const k of ["transactions", "unusual", "recurring", "ws", "imports", "importAccounts"]) expect(slim).not.toHaveProperty(k);
+  expect(slim.spent).toBe(full.spent);
+  expect(slim.budgets).toEqual(full.budgets);
+  expect(slim.lastImportAt).toBe(full.imports[0].importedAt);
+  expect(full.recap.notable.length).toBeGreaterThan(0);
+  expect(slim.recap.notable).toEqual([]);
+  expect(slim.recap.spent).toBe(full.recap.spent);
+  expect(JSON.stringify(slim)).not.toContain("STARBUCKS");
 });

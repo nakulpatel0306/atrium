@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { borderTop, clean, tail, truncate, viewport, width, wrapLines } from "../../src/tui/text";
+import { clean, tail, truncate, viewport, width, wrapLines } from "../../src/tui/text";
 
 test("clean strips escapes an agent could use on the terminal", () => {
   expect(clean("a\x1b]52;c;Zm9v\x07b\x1b[2J\x1b]0;title\x07c")).toBe("abc");
@@ -34,12 +34,4 @@ test("tail follows unless scrolled", () => {
   expect(tail(lines, 10, null)).toEqual(lines.slice(20, 30));
   expect(tail(lines, 10, 5)).toEqual(lines.slice(5, 15));
   expect(tail(lines, 10, 99)).toEqual(lines.slice(20, 30));
-});
-
-test("borderTop is exactly as wide as asked", () => {
-  const top = borderTop("[1] Spaces", 30);
-  expect(width(top)).toBe(30);
-  expect(top.startsWith("╭─[1] Spaces─")).toBe(true);
-  expect(top.endsWith("╮")).toBe(true);
-  expect(width(borderTop("x".repeat(60), 20))).toBe(20);
 });

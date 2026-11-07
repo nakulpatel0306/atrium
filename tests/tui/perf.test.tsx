@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { cleanup } from "ink-testing-library";
 import { fakeClient } from "./fake-client";
 import { ids, makeState } from "./fixtures";
-import { openApp } from "./harness";
+import { KEY, openApp } from "./harness";
 
 afterEach(() => cleanup());
 
@@ -13,9 +13,9 @@ test("a keypress over a 5 MB transcript renders in under 30 ms", async () => {
   const client = fakeClient(makeState());
   client.respond(`/api/runs/${ids.reviewRun}/transcript`, { ok: true, data: text });
   const app = openApp(client);
-  await app.frame((f) => f.includes("[1] Spaces"));
+  await app.frame((f) => f.includes("1 Home"));
   const opened = performance.now();
-  await app.type("2", "j", "t");
+  await app.type("2", KEY.tab, "j", "t");
   await app.frame((f) => f.includes("000000 tool output"), 10_000);
   const openMs = performance.now() - opened;
   const times: number[] = [];

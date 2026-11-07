@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { getSpace } from "../engine/spaces";
 import { listRules, setRules, type Rule } from "../engine/money/categories";
 import { importMoney, previewMoney, type DateOrder, type MoneyMap, type Signs } from "../engine/money/import";
-import { moneyView, requestExplain, requestMoneyAsk, STARTERS } from "../engine/money/summary";
+import { moneySummary, moneyView, requestExplain, requestMoneyAsk, STARTERS } from "../engine/money/summary";
 import { ACCOUNTS, OTHER_ACCOUNT } from "../engine/money/banks";
 import { checkBudgets, listBudgets, setBudget } from "../engine/money/budgets";
 import { dismissNudge } from "../engine/money/nudges";
@@ -68,7 +68,11 @@ export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url
     if (!space || space.kind !== "markets") throw new HttpError(404, "No such markets space.");
     const rest = owned[2] ?? "";
     const now = (m.now ?? Date.now)();
-    if (req.method === "GET" && rest === "") return json({ ...moneyView(db, spaceId, now, url.searchParams.get("month") ?? undefined), starters: STARTERS });
+    if (req.method === "GET" && rest === "") {
+      const view = moneyView(db, spaceId, now, url.searchParams.get("month") ?? undefined);
+      // ?summary=1 is the terminal app's read: totals, budgets and the rest, never the transaction list.
+      return json({ ...(url.searchParams.get("summary") === "1" ? moneySummary(view) : view), starters: STARTERS });
+    }
     if (req.method === "POST" && rest === "/preview") {
       const p = previewOf(await readBody(req, BODY_LIMIT));
       return json({ ...p, rows: p.rows.slice(0, PREVIEW_ROWS).map(({ legacy: _legacy, ...r }) => r), total: p.rows.length, choices: [...ACCOUNTS, OTHER_ACCOUNT] });
