@@ -3,7 +3,9 @@ import type { DateOrder, MoneyField, MoneyMap, MoneyPreview, Signs } from "../..
 import { post } from "../../api";
 import { investPath } from "../../simple";
 
-type Preview = MoneyPreview & { total: number };
+type Preview = MoneyPreview & { total: number; choices: string[] };
+const SURE = { high: "sure", medium: "fairly sure", low: "not sure" } as const;
+const OTHER = "Imported";
 const FIELDS: { id: MoneyField; label: string }[] = [
   { id: "date", label: "Date" },
   { id: "description", label: "Description" },
@@ -18,7 +20,7 @@ const amountText = (n: number) => `${n < 0 ? "−" : "+"}${Math.abs(n).toLocaleS
 export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: () => void }) {
   const [csv, setCsv] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [opts, setOpts] = useState<{ mapping?: MoneyMap; signs?: Signs; dates?: DateOrder }>({});
+  const [opts, setOpts] = useState<{ mapping?: MoneyMap; signs?: Signs; dates?: DateOrder; account?: string }>({});
   const [line, setLine] = useState<{ ok: boolean; text: string } | null>(null);
   const base = `${investPath(spaceId)}/money`;
 
@@ -52,7 +54,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
           Choose a CSV file
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => void load(e.target.files?.[0])} />
         </label>
-        <span className="faint">RBC, TD, Scotiabank and most other bank and card exports, or a Wealthsimple activity export.</span>
+        <span className="faint">TD, Amex and Wealthsimple Cash are recognised. Most other bank and card exports work too.</span>
         <button className="btn link" onClick={onClose}>
           Close
         </button>
@@ -60,11 +62,23 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
       {preview && (
         <>
           <p className="money-format">
-            {preview.format === "wealthsimple" ? "Wealthsimple activity" : preview.format === "bank" ? "Bank or card export" : "Columns not found"} · {preview.total}{" "}
+            {preview.format === "unknown" ? "Columns not found" : preview.bank.id === "generic" ? "Bank or card export" : `${preview.bank.label} · ${SURE[preview.bank.confidence]}`} · {preview.total}{" "}
             {preview.total === 1 ? "row" : "rows"}
             {preview.accounts.length ? ` · ${preview.accounts.length === 1 ? "1 account" : `${preview.accounts.length} accounts`}` : ""}
             {preview.skipped.length ? ` · ${preview.skipped.length} skipped` : ""}
           </p>
+          {preview.account !== null && (
+            <label className="money-account">
+              Account
+              <select value={preview.account} onChange={(e) => void look(csv, { ...opts, account: e.target.value })}>
+                {preview.choices.map((c) => (
+                  <option key={c} value={c}>
+                    {c === OTHER ? "Another account" : c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {[...preview.guessed, ...preview.warnings].map((w) => (
             <p key={w} className="hint">
               {w}

@@ -3,22 +3,25 @@ import { useState } from "react";
 import type { MoneyView } from "../../../engine/money/summary";
 import { post, useEngineState, useFetched } from "../../api";
 import { relative } from "../../format";
-import { cadText, dateHeading, investPath } from "../../simple";
+import { cadText, investPath } from "../../simple";
 import { Markdown } from "../Markdown";
 import { WhatItMade } from "../WhatItMade";
 import { AdviceTag } from "../markets/AdviceTag";
+import { MoneyBudgets } from "./MoneyBudgets";
 import { MoneyImport } from "./MoneyImport";
+import { MoneyMonth } from "./MoneyMonth";
+import { isExplain, MoneyRecap } from "./MoneyRecap";
+import { MoneyRoom } from "./MoneyRoom";
 import { MoneyRules } from "./MoneyRules";
+import { MoneySubs } from "./MoneySubs";
 
 export type MoneyPage = MoneyView & { starters: string[] };
 
-const monthFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", year: "numeric" });
-const monthText = (m: string) => monthFmt.format(Date.parse(`${m}-15T12:00:00Z`));
 
 function Ask({ spaceId, view, now }: { spaceId: string; view: MoneyPage; now: number }) {
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const open = view.asks.find((a) => a.status === "queued" || a.status === "running");
+  const open = view.asks.find((a) => !isExplain(a) && (a.status === "queued" || a.status === "running"));
   const ask = async (question: string) => {
     const res = await post(`${investPath(spaceId)}/money/ask`, { question });
     setError(res.ok ? null : res.error);
@@ -58,7 +61,7 @@ function Ask({ spaceId, view, now }: { spaceId: string; view: MoneyPage; now: nu
       <p className="hint">Claude reads a short summary of what you import here and your holdings. Nothing else leaves this Mac.</p>
       {error && <p className="err">{error}</p>}
       {view.asks
-        .filter((a) => a.status === "done" || a.status === "failed")
+        .filter((a) => !isExplain(a) && (a.status === "done" || a.status === "failed"))
         .map((a) => (
           <article key={a.id} className="sym-answer">
             <header>
@@ -78,77 +81,6 @@ function Ask({ spaceId, view, now }: { spaceId: string; view: MoneyPage; now: nu
   );
 }
 
-function Month({ view, onMonth }: { view: MoneyPage; onMonth: (m: string) => void }) {
-  if (!view.month) return <p className="faint">No bank or card transactions yet.</p>;
-  const max = Math.max(1, ...view.spending.map((s) => s.amount));
-  return (
-    <>
-      <div className="money-month-head">
-        <select value={view.month} aria-label="Month" onChange={(e) => onMonth(e.target.value)}>
-          {view.months.map((m) => (
-            <option key={m} value={m}>
-              {monthText(m)}
-            </option>
-          ))}
-        </select>
-        <span>
-          Spent <b>{cadText(view.spent)}</b> · Money in <b>{cadText(view.income)}</b>
-        </span>
-      </div>
-      {view.spending.length === 0 ? (
-        <p className="faint">No spending in {monthText(view.month)}.</p>
-      ) : (
-        <ul className="money-cats">
-          {view.spending.map((s) => (
-            <li key={s.category}>
-              <span className="money-cat">{s.category}</span>
-              <span className="money-bar" aria-hidden>
-                <span style={{ width: `${(s.amount / max) * 100}%` }} />
-              </span>
-              <span className="money-amt">{cadText(s.amount)}</span>
-              <span className="faint money-count">{s.count === 1 ? "1 charge" : `${s.count} charges`}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-}
-
-function Recurring({ view }: { view: MoneyPage }) {
-  if (!view.recurring.length) return <p className="faint">No regular monthly charges found yet.</p>;
-  return (
-    <ul className="money-list">
-      {view.recurring.map((r) => (
-        <li key={r.merchant}>
-          <b>{r.merchant}</b>
-          <span>{cadText(r.amount)} a month</span>
-          <span className="faint">
-            {r.count} so far · next around {dateHeading(r.next)}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Unusual({ view }: { view: MoneyPage }) {
-  if (!view.unusual.length) return <p className="faint">Nothing unusual in the last 90 days.</p>;
-  return (
-    <ul className="money-list">
-      {view.unusual.map((u) => (
-        <li key={`${u.date}-${u.merchant}-${u.amount}`}>
-          <b>{u.merchant}</b>
-          <span>
-            {cadText(u.amount)} · {dateHeading(u.date)}
-          </span>
-          <span className="faint">{u.reason}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function Wealthsimple({ view }: { view: MoneyPage }) {
   if (!view.ws.length) return <p className="faint">Import a Wealthsimple activity export to see deposits, dividends and fees.</p>;
   const us = (n: number) => `US$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -156,7 +88,7 @@ function Wealthsimple({ view }: { view: MoneyPage }) {
   const both = (c: number, u: number) => (u && !c ? us(u) : u ? `${cadText(c)} + ${us(u)}` : cadText(c));
   return (
     <div className="money-ws">
-      {view.ws.slice(0, 3).map((y) => (
+      {view.ws.slice(0, 1).map((y) => (
         <dl key={y.year} className="sym-stats">
           <div className="money-year">
             <dt>Year</dt>
@@ -207,7 +139,7 @@ export function MoneyBody({ spaceId, view, now = Date.now(), onMonth = () => {} 
   const [rules, setRules] = useState(false);
   return (
     <div className="money">
-      <Ask spaceId={spaceId} view={view} now={now} />
+      {view.recap ? <MoneyRecap spaceId={spaceId} view={view} onMonth={onMonth} /> : <p className="money-empty">Import a bank, card or Wealthsimple file to see where your money went.</p>}
       <div className="money-bar-row">
         <button className="btn" onClick={() => setImporting(!importing)} aria-expanded={importing}>
           <Upload />
@@ -220,10 +152,13 @@ export function MoneyBody({ spaceId, view, now = Date.now(), onMonth = () => {} 
       {importing && <MoneyImport spaceId={spaceId} onClose={() => setImporting(false)} />}
       <div className="sym-cols">
         <div>
-          <section>
-            <h3>Spending by category</h3>
-            <Month view={view} onMonth={onMonth} />
-          </section>
+          {view.month && (
+            <section>
+              <h3>Budgets</h3>
+              <MoneyBudgets spaceId={spaceId} view={view} />
+              <MoneyMonth spaceId={spaceId} view={view} />
+            </section>
+          )}
           <section>
             <h3>Wealthsimple</h3>
             <Wealthsimple view={view} />
@@ -231,15 +166,16 @@ export function MoneyBody({ spaceId, view, now = Date.now(), onMonth = () => {} 
         </div>
         <div>
           <section>
-            <h3>Recurring charges</h3>
-            <Recurring view={view} />
+            <h3>TFSA room</h3>
+            <MoneyRoom room={view.room} />
           </section>
           <section>
-            <h3>Worth a look</h3>
-            <Unusual view={view} />
+            <h3>Subscriptions</h3>
+            <MoneySubs subs={view.subscriptions} />
           </section>
         </div>
       </div>
+      <Ask spaceId={spaceId} view={view} now={now} />
       <p className="hint money-foot">
         Categories come from {view.rules} simple {view.rules === 1 ? "rule" : "rules"} on this Mac.{" "}
         <button className="btn link" onClick={() => setRules(!rules)}>

@@ -35,7 +35,7 @@ this page is the record of the reading pass.
 | Views | `src/dashboard/components/OutcomeBanner.tsx` | Couldn't do this, Partly done, can't tell banners; Accept anyway / Accept as is | yes | New in Plan 11 |
 | Views | `src/dashboard/components/MessageCard.tsx` | send card: recipient line, number field, Contacts lookup, matches, message box and counter, Via toggle, footnote, Last try failed, Open System Settings | yes | New in Plan 11; copy from the plan |
 | Views | `src/dashboard/components/MessagingSettings.tsx` | Settings › Messages: sending and Contacts status lines, Open System Settings | yes | New in Plan 11 |
-| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state | yes | Row summary is the first paragraph as plain text (no markdown); detail shows What it made; "View transcript in" became "Open the task in"; full title on hover; Plan 11: outcome banner under the row, "Accept anyway" / "Accept as is" |
+| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state, Plan 14 reminder row (Import now, Dismiss) | yes | Row summary is the first paragraph as plain text (no markdown); detail shows What it made; "View transcript in" became "Open the task in"; full title on hover; Plan 11: outcome banner under the row, "Accept anyway" / "Accept as is" |
 | Views | `src/dashboard/components/PreviewPane.tsx` | preview notes, calendar list | yes | New in this plan; written to the rules |
 | Views | `src/dashboard/components/ProjectDraft.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Proposal.tsx` | labels, buttons, empty states, errors | yes | No change needed |
@@ -67,8 +67,13 @@ this page is the record of the reading pass.
 | Investing | `src/dashboard/components/invest/InvestPanel.tsx` | tab labels, loading | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/Portfolio.tsx` | hero labels, What moved, left-out line, empty state, import buttons | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/Money.tsx` | ask box, starter questions, privacy line, month, categories, recurring, unusual, Wealthsimple totals, rules link | yes | New in Plan 10 (Money view) |
-| Investing | `src/dashboard/components/invest/MoneyImport.tsx` | file picker, format line, column labels, sign and date choices, import result | yes | New in Plan 10 (Money view) |
+| Investing | `src/dashboard/components/invest/MoneyImport.tsx` | file picker, format line, column labels, sign and date choices, import result | yes | New in Plan 10 (Money view); Plan 14: bank and how sure Atrium is, Account picker |
 | Investing | `src/dashboard/components/invest/MoneyRules.tsx` | rule editor labels, buttons, saved line, load error | yes | New in Plan 10 (Money view) |
+| Investing | `src/dashboard/components/invest/MoneyRecap.tsx` | month picker, basis line, Spent / Money in / Left over, Biggest changes, Notable charges, Explain my month, asking line | yes | New in Plan 14; numbers from the engine only |
+| Investing | `src/dashboard/components/invest/MoneyBudgets.tsx` | category rows, Set limit, of CA$N, Save, remove hint | yes | New in Plan 14 |
+| Investing | `src/dashboard/components/invest/MoneySubs.tsx` | totals line, cadence, last and next, flags (price went up, maybe forgotten, new this month), empty state | yes | New in Plan 14; flags are lowercase tags |
+| Investing | `src/dashboard/components/invest/MoneyRoom.tsx` | headline, where it comes from, what to do, Enter your room, Save, Cancel | yes | New in Plan 14 |
+| Investing | `src/dashboard/components/invest/MoneyMonth.tsx` | Show N transactions, transfer tag and its reasons, Mark as transfer / Not a transfer | yes | New in Plan 14 |
 | Investing | `src/dashboard/components/invest/PriceRow.tsx` | no-price and Alpha Vantage lines | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/Sparkline.tsx` | none (aria-hidden) | yes | New in Plan 10 |
 | Investing | `src/dashboard/components/invest/SymbolPage.tsx` | header, actions, alert form, position, earnings, stats, news, note, Ask Claude | yes | New in Plan 10; errors from the engine shown as written |
@@ -151,7 +156,7 @@ this page is the record of the reading pass.
 | App | `mac/Sources/App/main.swift` | messages | yes | No change needed |
 | Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made; Plan 10: alert titles name the symbol ("AMZN price alert") |
 | Core | `mac/Sources/Core/ContentRules.swift` | none | yes | New in Plan 10 |
-| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files, Need.symbol, Summary.embed |
+| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files, Need.symbol, Summary.embed; Plan 14: Summary.nudges (titles come from the engine) |
 
 ### Engine messages that reach the UI
 
@@ -189,7 +194,14 @@ this page is the record of the reading pass.
 | Repos | `src/engine/repos/templates.ts` | messages | yes | No change needed |
 | Investing | `src/engine/money/categories.ts` | rule validation | yes | New in Plan 10 (Money view) |
 | Investing | `src/engine/money/import.ts` | skip reasons, warnings, guessed-layout line | yes | New in Plan 10 (Money view); every warning says what to do |
-| Investing | `src/engine/money/summary.ts` | unusual-charge reasons, ask refusals, facts for Claude | yes | New in Plan 10 (Money view) |
+| Investing | `src/engine/money/summary.ts` | unusual-charge reasons, ask refusals, facts for Claude | yes | New in Plan 10 (Money view); Plan 14: Explain my month refusals and brief, card-number refusal |
+| Investing | `src/engine/money/recap.ts` | recap sentences, notable reasons, incomplete line, recap facts | yes | New in Plan 14 |
+| Investing | `src/engine/money/room.ts` | room headline, source line, what to do, tie-in | yes | New in Plan 14 |
+| Investing | `src/engine/money/budgets.ts` | budget refusals, heads-up titles and bodies | yes | New in Plan 14 |
+| Investing | `src/engine/money/reminder.ts` | Time to import, accounts line | yes | New in Plan 14 |
+| Investing | `src/engine/money/nudges.ts` | dismiss refusal | yes | New in Plan 14 |
+| Investing | `src/engine/money/transfers.ts` | mark refusal | yes | New in Plan 14 |
+| Investing | `src/engine/money/banks.ts`, `coverage.ts`, `rows.ts`, `subscriptions.ts` | none | yes | New in Plan 14; no user strings |
 | Investing | `src/server/money.ts` | 400, 404 and 413 sentences | yes | New in Plan 10 (Money view) |
 | Investing | `src/engine/markets/advanced.ts` | none | yes | New in Plan 10 |
 | Investing | `src/engine/markets/lists.ts` | list refusals | yes | New in Plan 10; every refusal says what to do |
