@@ -264,5 +264,8 @@ test("the terminal app's summary read carries totals and budgets but no transact
   expect(slim.spent).toBe(full.spent);
   expect(slim.budgets).toEqual(full.budgets);
   expect(slim.lastImportAt).toBe(full.imports[0].importedAt);
+  expect(full.recap.notable.length).toBeGreaterThan(0);
+  expect(slim.recap.notable).toEqual([]);
+  expect(slim.recap.spent).toBe(full.recap.spent);
   expect(JSON.stringify(slim)).not.toContain("STARBUCKS");
 });

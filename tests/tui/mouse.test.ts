@@ -39,6 +39,14 @@ test("a report cut right after ESC or ESC[ is held for the rest, and a lone Esc 
   expect(flushed).toEqual(["\x1b"]);
 });
 
+test("Esc then a quick key reaches Ink as Esc and the key, not an Alt-chord", () => {
+  const flushed: string[] = [];
+  const filter = mouseFilter(() => {}, (t) => flushed.push(t));
+  expect(filter("\x1b")).toBe("");
+  expect(filter("j")).toBe("j");
+  expect(flushed).toEqual(["\x1b"]);
+});
+
 test("inside a bracketed paste nothing is taken out", () => {
   const pasted = "\x1b[200~look \x1b[<0;1;1M here\x1b[201~";
   expect(run(pasted)).toEqual({ out: pasted, events: [] });

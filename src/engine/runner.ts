@@ -695,8 +695,8 @@ export function createRunner(deps: {
     ]);
     clearTimeout(timer);
     if (!settled) return "timeout";
-    const stopped = stoppedByStop.delete(taskId);
-    return stopped ? "stopped" : "finished";
+    // `has`, not `delete`: a second stop of the same run waits on the same promise and must hear the same answer.
+    return stoppedByStop.has(taskId) ? "stopped" : "finished";
   }
 
   // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A

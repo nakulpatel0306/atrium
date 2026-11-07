@@ -34,7 +34,11 @@ export function mouseFilter(onMouse: (e: MouseEvent) => void, flush?: (text: str
   return (chunk) => {
     if (timer) clearTimeout(timer);
     timer = null;
-    let s = held + chunk;
+    // A held lone Esc joins the next read only when that read could finish a report; otherwise Esc then a quick key
+    // would reach Ink as one Alt-chord.
+    const alone = held === "\x1b" && !chunk.startsWith("[") && flush;
+    if (alone) flush(held);
+    let s = alone ? chunk : held + chunk;
     held = "";
     let out = "";
     while (s.length) {

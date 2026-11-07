@@ -238,8 +238,9 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
 export type MoneySummary = Omit<MoneyView, "transactions" | "unusual" | "recurring" | "ws" | "imports" | "importAccounts"> & { lastImportAt: number | null };
 
 export function moneySummary(v: MoneyView): MoneySummary {
-  const { transactions: _t, unusual: _u, recurring: _r, ws: _w, imports, importAccounts: _a, ...rest } = v;
-  return { ...rest, lastImportAt: imports[0]?.importedAt ?? null };
+  const { transactions: _t, unusual: _u, recurring: _r, ws: _w, imports, importAccounts: _a, recap, ...rest } = v;
+  // The recap's largest charges are real rows (date, merchant, amount); the terminal app only needs its totals.
+  return { ...rest, recap: recap && { ...recap, notable: [] }, lastImportAt: imports[0]?.importedAt ?? null };
 }
 
 const cad = (n: number) => `CA$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

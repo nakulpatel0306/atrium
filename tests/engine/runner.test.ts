@@ -921,6 +921,17 @@ test("stopTask stops a running task: blocked with your word, edits saved on its 
   expect(seen).toEqual([[], ["half.txt"]]);
 });
 
+test("two stops of the same run, from the dashboard and the terminal at once, both hear stopped", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Long job" });
+  const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+  await waitFor(() => status(t.id) === "running");
+  await Bun.sleep(20);
+  expect(await Promise.all([r.stopTask(t.id), r.stopTask(t.id)])).toEqual(["stopped", "stopped"]);
+  expect(status(t.id)).toBe("blocked");
+});
+
 test("stopTask leaves no agent process behind", async () => {
   const s = generalSpace();
   const t = createTask(db, { spaceId: s.id, title: "Spawns a child" });
