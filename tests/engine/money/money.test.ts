@@ -238,6 +238,7 @@ test("masking keeps dates written in a description and still hides card and acco
   expect(maskNumbers("PAYMENT 2026-10-02")).toBe("PAYMENT 2026-10-02");
   expect(maskNumbers("REFUND 10/02/2026 ONLINE")).toBe("REFUND 10/02/2026 ONLINE");
   expect(maskNumbers("BILL 2026/10/02")).toBe("BILL 2026/10/02");
+  expect(maskNumbers("From 2026-10-01 to 2026-10-30.")).toBe("From 2026-10-01 to 2026-10-30.");
   expect(maskNumbers("TRF 02-10-2026")).toBe("TRF 02-10-2026");
   expect(maskNumbers("CARD 4510 1234 5678 9012")).toBe("CARD ··9012");
   expect(maskNumbers("ACCT 00123456789")).toBe("ACCT ··6789");
@@ -456,4 +457,85 @@ test("storeRow masks every text field, however the row was built", () => {
   const { storeRow } = require("../../../src/engine/money/import") as typeof import("../../../src/engine/money/import");
   const r = storeRow({ source: "bank", account: "4111111111111111", date: "2026-10-02", description: "=4111-1111-1111-1111", merchant: "4111 1111 1111 1111", amount: -1, currency: "CAD", kind: "spend", symbol: "4111111111111111" });
   expect(r).toMatchObject({ account: "··1111", description: "··1111", merchant: "··1111", symbol: "··1111" });
+});
+
+// ---- Recap ----
+import { coverText, recap, recapFacts } from "../../../src/engine/money/recap";
+import { monthCover } from "../../../src/engine/money/coverage";
+
+test("the recap: spent, money in, net, against last month, with the biggest changes and notable charges", () => {
+  importAll();
+  const r = recap(db, spaceId, NOW, "2026-10")!;
+  const sept = recap(db, spaceId, NOW, "2026-09")!;
+  expect(r.previous).toBe("2026-09");
+  expect(r.before).toEqual({ spent: sept.spent, income: sept.income });
+  expect(r.net).toBeCloseTo(r.income - r.spent, 2);
+  const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  expect(r.lines[0]).toBe(`You spent CA$${money(r.spent)} in October, CA$${money(r.spent - sept.spent)} more than September.`);
+  expect(r.lines[1]).toMatch(/^Money in was CA\$4,3\d\d\.\d\d, so CA\$[\d,.]+ was left over\.$/);
+  expect(r.changes[0]).toMatchObject({ category: "Shopping", before: 0, delta: 814.19 });
+  expect(r.changes.length).toBeLessThanOrEqual(3);
+  expect(r.notable[0]).toMatchObject({ merchant: "Best Buy", amount: 749.99 });
+  expect(r.notable.length).toBeLessThanOrEqual(3);
+  expect(r.basis).toEqual({ count: expect.any(Number), from: "2026-10-01", to: "2026-10-30" });
+  // The TD card payment both ways, the Amex payment both ways and the Wealthsimple top-up both ways.
+  expect(r.moved.count).toBe(6);
+  expect(r.cover.complete).toBe(true);
+  expect(coverText(r.cover)).toBeNull();
+  expect(recap(db, spaceId, NOW, "2026-12")).toBeNull();
+});
+
+test("a month the imports don't fully cover says so, and the month in progress says so", () => {
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-01,COFFEE,-4\n2026-10-31,COFFEE,-4\n2026-11-02,COFFEE,-4\n", { account: "Amex", signs: "negative-out" }));
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-02,LUNCH,-14\n2026-10-12,LUNCH,-14\n", { account: "TD chequing", signs: "negative-out" }));
+  const oct = monthCover(db, spaceId, "2026-10", "2026-11-05");
+  expect(oct.complete).toBe(false);
+  expect(oct.accounts).toEqual([
+    { account: "Amex", complete: true, through: "2026-10-31" },
+    { account: "TD chequing", complete: false, through: "2026-10-12" },
+  ]);
+  expect(coverText(oct)).toBe("Incomplete: TD chequing only through Oct 12.");
+  const nov = monthCover(db, spaceId, "2026-11", "2026-11-05");
+  expect(nov.inProgress).toBe(true);
+  expect(coverText(nov)).toBe("November isn't over yet.");
+  expect(recap(db, spaceId, NOW, "2026-11")!.lines[0]).toBe("You spent CA$4.00 in November so far, CA$32.00 less than October.");
+});
+
+test("the facts Claude gets for Explain my month are Atrium's numbers only, masked", () => {
+  importAll();
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-29,GIFT SHOP 4111 1111 1111 1111,-900\n", { account: "Amex", signs: "negative-out" }));
+  const facts = recapFacts(recap(db, spaceId, NOW, "2026-10")!).join("\n");
+  expect(facts).toContain("Recap facts for October 2026");
+  expect(facts).toContain("Shopping up CA$814.19");
+  expect(facts).toContain("Based on ");
+  expect(isMasked(facts)).toBe(true);
+  expect(facts).not.toContain("4111");
+});
+
+// ---- Subscriptions ----
+import { subscriptions } from "../../../src/engine/money/subscriptions";
+import { counted, txs } from "../../../src/engine/money/rows";
+
+test("subscriptions: every recurring charge with its cost, last and next dates, and its flags", () => {
+  importAll();
+  const s = subscriptions(counted(txs(db, spaceId, "bank")), listRules(db, spaceId));
+  const by = Object.fromEntries(s.list.map((x) => [x.merchant, x]));
+  expect(Object.keys(by).sort()).toEqual(["Apple.com/bill", "Crave", "Summit Fitness Fitness", "Landlord Pap", "Netflix.com", "Presto Fare/toronto", "Rogers", "Spotify", "Uber One"]);
+  expect(by.Spotify).toMatchObject({ cadence: "monthly", amount: 12.99, was: 11.99, last: "2026-10-05", next: "2026-11-05", count: 3 });
+  expect(by.Spotify!.flags).toContain("price-up");
+  expect(by["Summit Fitness Fitness"]!.flags).toEqual(["forgotten"]);
+  // Uber rides show he uses Uber One; rent is never "forgotten".
+  expect(by["Uber One"]!.flags).toEqual([]);
+  expect(by["Landlord Pap"]!.flags).toEqual([]);
+  expect(by.Crave).toMatchObject({ count: 1, flags: ["new"], next: "2026-11-09" });
+  expect(s.perMonth).toBeCloseTo(s.list.reduce((n, x) => n + x.perMonth, 0), 2);
+  expect(s.perYear).toBeCloseTo(s.perMonth * 12, 2);
+});
+
+test("subscriptions: a yearly charge counts as a twelfth a month, and a stopped one drops off", () => {
+  const rows = ["Date,Description,Amount", "2024-10-03,ADOBE ANNUAL,-239.88", "2025-10-03,ADOBE ANNUAL,-239.88", "2026-01-05,OLDGYM,-30", "2026-02-05,OLDGYM,-30", "2026-03-05,OLDGYM,-30", "2026-10-20,COFFEE,-4"];
+  importMoney(db, spaceId, previewMoney(rows.join("\n"), { signs: "negative-out" }));
+  const s = subscriptions(counted(txs(db, spaceId, "bank")), listRules(db, spaceId));
+  expect(s.list.map((x) => [x.merchant, x.cadence, x.perMonth, x.next])).toEqual([["Adobe Annual", "yearly", 19.99, "2026-10-03"]]);
+  expect(s.perYear).toBe(239.88);
 });

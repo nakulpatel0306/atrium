@@ -5,9 +5,8 @@ import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
 import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
 import { maskNumbers } from "./import";
-import { transfers } from "./transfers";
+import { counted, txs, type Tx } from "./rows";
 
-export type Tx = { id: string; date: string; account: string; description: string; merchant: string; amount: number; currency: string; kind: string; source: string; transfer: number | null };
 
 export type Recurring = { merchant: string; amount: number; count: number; last: string; next: string };
 export type Unusual = { date: string; merchant: string; amount: number; reason: string };
@@ -63,17 +62,6 @@ const nextMonth = (date: string) => {
   d.setUTCMonth(d.getUTCMonth() + 1);
   return d.toISOString().slice(0, 10);
 };
-
-export const txs = (db: Database, spaceId: string, source: "bank" | "wealthsimple") =>
-  db
-    .query("SELECT id, date, account, description, merchant, amount, currency, kind, source, transfer FROM money_transactions WHERE space_id = ? AND source = ? ORDER BY date, rowid")
-    .all(spaceId, source) as Tx[];
-
-// Bank and card rows with transfers between Nakul's own accounts taken out: what spending and money in count.
-export function counted(bank: Tx[]): Tx[] {
-  const moved = transfers(bank);
-  return bank.filter((t) => !moved.has(t.id));
-}
 
 // Each merchant's charges in date order; rows arrive sorted, so one pass keeps the summary linear.
 function byMerchant(spend: Tx[]): Map<string, Tx[]> {
