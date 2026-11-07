@@ -257,5 +257,17 @@ let newJson = #"{"needsYou":1,"needs":[{"id":"a","kind":"review","title":"t","sp
 check((try? JSONDecoder().decode(Summary.self, from: Data(newJson.utf8)))?.needs.first?.outcome == "couldnt", "decode: outcome")
 check(decoded?.needs.first?.outcome == nil && decoded?.needs.first?.action == nil, "decode: an older engine has no outcome or action")
 
+// money nudges
+let budget = Nudge(id: "mnd_1", kind: "budget", title: "Dining reached its October budget", body: "CA$420.00 of CA$400.00 in October.", path: "/space/spc_9?tab=money")
+var withNudge = summary()
+withNudge.nudges = [budget]
+let nudgeNotes = newNotes(previous: summary(), next: withNudge)
+check(nudgeNotes == [Note(id: "mnd_1", title: "Dining reached its October budget", body: "CA$420.00 of CA$400.00 in October.", path: "/space/spc_9?tab=money")], "notes: a money nudge is notified with its own title")
+check(newNotes(previous: withNudge, next: withNudge).isEmpty, "notes: a seen nudge doesn't repeat")
+check(withNudge.needsYou == 0, "notes: nudges don't add to the badge")
+let nudgeJson = #"{"needsYou":0,"needs":[],"stopped":[],"overnight":false,"nudges":[{"id":"mnd_2","kind":"import","title":"Time to import October","body":"Amex isn't imported for October yet.","path":"/space/spc_9?tab=money","spaceId":"spc_9","spaceName":"Investing","createdAt":1}]}"#
+check((try? JSONDecoder().decode(Summary.self, from: Data(nudgeJson.utf8)))?.nudges?.first?.kind == "import", "decode: nudges")
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)
+

@@ -31,6 +31,11 @@ struct Stopped: Decodable, Equatable {
   let path: String
 }
 
+// A Money heads-up (a budget at 80% or 100%, the monthly import reminder): notified once, never in the badge.
+struct Nudge: Decodable, Equatable {
+  let id, kind, title, body, path: String
+}
+
 struct Summary: Decodable, Equatable {
   let needsYou: Int
   let needs: [Need]
@@ -38,6 +43,8 @@ struct Summary: Decodable, Equatable {
   let overnight: Bool
   var alerts: AlertCounts? = nil
   var embed: Embed? = nil
+  // Absent from older engines.
+  var nudges: [Nudge]? = nil
 }
 
 struct Note: Equatable {

@@ -55,6 +55,8 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
       id: $0.id, title: $0.status == "blocked" ? "Blocked" : "Didn't finish",
       body: "\($0.title) · \($0.reason ?? $0.spaceName)", path: $0.path)
   }
+  let seenNudges = Set((previous.nudges ?? []).map(\.id))
+  notes += (next.nudges ?? []).filter { !seenNudges.contains($0.id) }.map { Note(id: $0.id, title: $0.title, body: $0.body, path: $0.path) }
   if notes.count > 3 {
     return [Note(id: "batch-\(notes[0].id)", title: "\(notes.count) things need you", body: "Open Atrium to see them.", path: "/")]
   }
