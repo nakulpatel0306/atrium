@@ -5,8 +5,9 @@ import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
 import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
 import { maskNumbers } from "./import";
+import { transfers } from "./transfers";
 
-type Tx = { date: string; account: string; description: string; merchant: string; amount: number; currency: string; kind: string; source: string };
+export type Tx = { id: string; date: string; account: string; description: string; merchant: string; amount: number; currency: string; kind: string; source: string; transfer: number | null };
 
 export type Recurring = { merchant: string; amount: number; count: number; last: string; next: string };
 export type Unusual = { date: string; merchant: string; amount: number; reason: string };
@@ -63,10 +64,16 @@ const nextMonth = (date: string) => {
   return d.toISOString().slice(0, 10);
 };
 
-const txs = (db: Database, spaceId: string, source: "bank" | "wealthsimple") =>
+export const txs = (db: Database, spaceId: string, source: "bank" | "wealthsimple") =>
   db
-    .query("SELECT date, account, description, merchant, amount, currency, kind, source FROM money_transactions WHERE space_id = ? AND source = ? ORDER BY date, rowid")
+    .query("SELECT id, date, account, description, merchant, amount, currency, kind, source, transfer FROM money_transactions WHERE space_id = ? AND source = ? ORDER BY date, rowid")
     .all(spaceId, source) as Tx[];
+
+// Bank and card rows with transfers between Nakul's own accounts taken out: what spending and money in count.
+export function counted(bank: Tx[]): Tx[] {
+  const moved = transfers(bank);
+  return bank.filter((t) => !moved.has(t.id));
+}
 
 // Each merchant's charges in date order; rows arrive sorted, so one pass keeps the summary linear.
 function byMerchant(spend: Tx[]): Map<string, Tx[]> {
@@ -176,10 +183,11 @@ function spendingIn(bank: Tx[], month: string | null, rules: Rule[]) {
 }
 
 export function moneyView(db: Database, spaceId: string, now: number, month?: string): MoneyView {
-  const bank = txs(db, spaceId, "bank");
+  const all = txs(db, spaceId, "bank");
+  const bank = counted(all);
   const ws = txs(db, spaceId, "wealthsimple");
   const rules = listRules(db, spaceId);
-  const months = [...new Set(bank.map((t) => t.date.slice(0, 7)))].sort().reverse();
+  const months = [...new Set(all.map((t) => t.date.slice(0, 7)))].sort().reverse();
   const current = etDate(now).slice(0, 7);
   const picked = month && months.includes(month) ? month : months.includes(current) ? current : (months[0] ?? null);
   const spend = bank.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
@@ -191,9 +199,9 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
     recurring: recurring(merchants),
     unusual: unusual(merchants, spend.at(-1)?.date),
     ws: wsYears(ws),
-    counts: { bank: bank.length, wealthsimple: ws.length },
-    range: bank.length ? { from: bank[0]!.date, to: bank.at(-1)!.date } : null,
-    accounts: [...new Set(bank.map((t) => t.account))],
+    counts: { bank: all.length, wealthsimple: ws.length },
+    range: all.length ? { from: all[0]!.date, to: all.at(-1)!.date } : null,
+    accounts: [...new Set(all.map((t) => t.account))],
     rules: rules.length,
     asks: asks(db, spaceId),
   };
@@ -206,7 +214,7 @@ const both = (c: number, u: number) => (c && u ? `${cad(c)} + ${usd(u)}` : u ? u
 // Compact, sourced facts for "Ask about my money": Claude only, read-only, from Nakul's own files on this Mac.
 export function moneyFacts(db: Database, spaceId: string, now: number): string[] {
   const v = moneyView(db, spaceId, now);
-  const bank = txs(db, spaceId, "bank");
+  const bank = counted(txs(db, spaceId, "bank"));
   const rules = listRules(db, spaceId);
   const out = ["Money facts (from files Nakul imported on this Mac; amounts in CAD unless marked US$):"];
   if (!v.counts.wealthsimple) out.push("No Wealthsimple activity imported.");
@@ -222,9 +230,10 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
     const put = logged.filter((e) => e.kind === "contribution").reduce((s, e) => s + e.amount, 0);
     out.push(`TFSA ${year} (Nakul's own entries): room on Jan 1 ${room.roomJan1 != null ? cad(room.roomJan1) : "not set"}, contributions logged ${cad(put)}.`);
   }
-  if (!bank.length) out.push("No bank or card transactions imported.");
+  const n = v.counts.bank;
+  if (!n) out.push("No bank or card transactions imported.");
   else {
-    out.push(`Bank and card: ${bank.length} ${bank.length === 1 ? "transaction" : "transactions"} from ${v.range!.from} to ${v.range!.to} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
+    out.push(`Bank and card: ${n} ${n === 1 ? "transaction" : "transactions"} from ${v.range!.from} to ${v.range!.to} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
     for (const m of v.months.slice(0, 3)) {
       const s = spendingIn(bank, m, rules);
       const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");

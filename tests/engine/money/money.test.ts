@@ -376,3 +376,51 @@ test("money imported before imports were recorded gets one coverage row per acco
     { account: "MasterCard ··4021", first_date: "2026-08-06", last_date: "2026-11-04", rows: 19 },
   ]);
 });
+
+// ---- Transfers ----
+import { markTransfer, transfers } from "../../../src/engine/money/transfers";
+const importAll = () => {
+  for (const f of ["td-chequing.csv", "td-credit.csv", "amex.csv", "ws-cash.csv"]) importMoney(db, spaceId, previewMoney(csv(f)));
+};
+const txIdOf = (description: string, date: string) => (db.query("SELECT id FROM money_transactions WHERE description = ? AND date = ?").get(description, date) as { id: string }).id;
+
+test("paying the cards and topping up Wealthsimple Cash are transfers, not spending or money in", () => {
+  importAll();
+  const v = moneyView(db, spaceId, NOW, "2026-10");
+  const cats = Object.fromEntries(v.spending.map((s) => [s.category, s.amount]));
+  expect(cats.Transfers).toBeUndefined();
+  expect(v.spending.reduce((n, c) => n + c.amount, 0)).toBeCloseTo(v.spent, 2);
+  // Two paydays plus Wealthsimple interest; none of the card payments or the CA$500 top-up.
+  const interest = (db.query("SELECT amount FROM money_transactions WHERE description = 'Interest' AND date LIKE '2026-10%'").get() as { amount: number }).amount;
+  expect(v.income).toBeCloseTo(4300 + interest, 2);
+  expect(v.spent).toBeLessThan(4000);
+});
+
+test("transfers: known descriptions, matching pairs across accounts within 3 days, and Nakul's own marks", () => {
+  const rows = [
+    { id: "a", date: "2026-10-10", account: "TD chequing", description: "ONLINE TFR", amount: -300, kind: "spend", transfer: null },
+    { id: "b", date: "2026-10-12", account: "Wealthsimple Cash", description: "Deposit", amount: 300, kind: "income", transfer: null },
+    { id: "c", date: "2026-10-10", account: "TD chequing", description: "COFFEE", amount: -300, kind: "spend", transfer: null },
+    { id: "d", date: "2026-10-20", account: "Amex", description: "PAYMENT RECEIVED - THANK YOU", amount: 90, kind: "income", transfer: null },
+    { id: "e", date: "2026-10-01", account: "TD chequing", description: "REFUND", amount: 40, kind: "income", transfer: null },
+    { id: "f", date: "2026-10-09", account: "TD credit card", description: "STORE", amount: -40, kind: "spend", transfer: null },
+    { id: "g", date: "2026-10-03", account: "TD chequing", description: "WEALTHSIMPLE", amount: -25, kind: "spend", transfer: 0 },
+    { id: "h", date: "2026-10-03", account: "TD chequing", description: "CASH TO SAVINGS", amount: -25, kind: "spend", transfer: 1 },
+  ];
+  const t = transfers(rows);
+  expect(Object.fromEntries(t)).toEqual({ a: "pair", b: "pair", d: "known", h: "marked" });
+});
+
+test("marking a transaction as a transfer or not changes the month, and the mark can be handed back", () => {
+  importAll();
+  const before = moneyView(db, spaceId, NOW, "2026-10").spent;
+  const id = txIdOf("BEST BUY #921", "2026-10-26");
+  markTransfer(db, spaceId, id, true);
+  expect(moneyView(db, spaceId, NOW, "2026-10").spent).toBeCloseTo(before - 749.99, 2);
+  markTransfer(db, spaceId, id, null);
+  expect(moneyView(db, spaceId, NOW, "2026-10").spent).toBeCloseTo(before, 2);
+  const pay = txIdOf("AMEX BILL PYMT", "2026-10-22");
+  markTransfer(db, spaceId, pay, false);
+  expect(moneyView(db, spaceId, NOW, "2026-10").spent).toBeCloseTo(before + 1124.3, 2);
+  expect(() => markTransfer(db, spaceId, "mtx_nope", true)).toThrow("That transaction isn't here anymore. Refresh the page.");
+});
