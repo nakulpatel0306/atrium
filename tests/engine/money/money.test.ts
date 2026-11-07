@@ -249,4 +249,14 @@ test("masking keeps dates written in a description and still hides card and acco
   expect(maskNumbers("5191XXXXXXXX4021")).toBe("··4021");
   // Not a real date, so it's masked.
   expect(maskNumbers("X 2026-19-45")).toBe("X ··1945");
+  // Security review: separators can't make a card number look like a date.
+  expect(maskNumbers("CARD 4510-1234-5678-9012")).toBe("CARD ··9012");
+  expect(maskNumbers("CARD 4510.1234.5678.9012")).toBe("CARD ··9012");
+  expect(maskNumbers("CARD 4510/1234/5678/9012")).toBe("CARD ··9012");
+  expect(maskNumbers("CARD 4510.12.31")).toBe("CARD ··1231");
+  expect(maskNumbers("CARD 4510-12-31 7788")).toBe("CARD ··7788");
+  // Text that already holds a private-use character can't confuse the restore.
+  expect(maskNumbers("\uE000 PAYMENT 2026-10-02 \uE000 4510123456789012")).toBe("\uE000 PAYMENT 2026-10-02 \uE000 ··9012");
+  // Digits split around a kept date that add up to a long run mask everything.
+  expect(maskNumbers("ACCT 123 2026-10-02 456")).not.toMatch(/2026-10-02/);
 });
