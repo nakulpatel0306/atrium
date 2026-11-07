@@ -44,22 +44,34 @@ const DAY_MS = 86_400_000;
 const dayOf = (date: string) => Date.parse(`${date}T12:00:00Z`) / DAY_MS;
 const words = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
 export const toOwner = (description: string, owner: string | null) => !!owner && words(owner).trim() !== "" && words(description).includes(words(owner));
+// The name an e-transfer was sent to, or "" when the bank hides it (TD's "SEND E-TFR ***ab2"): what's left once the
+// e-transfer words and masked codes are gone.
+const FILLER = new Set(["send", "sent", "to", "from", "interac", "epay", "e", "transfer", "tfr", "trf", "etransfer", "etfr", "email", "money", "auto", "deposit", "withdrawal"]);
+export const payeeOf = (description: string) =>
+  description
+    .replace(E_TRANSFER, " ")
+    .split(/\s+/)
+    .filter((w) => w && !/[\d*]/.test(w) && !FILLER.has(w.toLowerCase().replace(/[^a-z]/g, "")) && /[a-z]/i.test(w))
+    .join(" ");
 
 // Every row's flow, given all of one space's rows. On top of each row's own call, e-transfers between his accounts:
-// one out of an account and one into a different account of his, the exact same amount within 3 days, nearest date
-// first and each row used once; and any sent to his own name, paired or not. Rows he marked as not a transfer are
+// one out of an account (to his own name, or with the payee hidden) and one into a different account of his, the
+// exact same amount within 3 days, nearest date first and each row used once; and any sent to his own name, paired
+// or not. Rows he marked as not a transfer are
 // left out of this, so his mark keeps the other side counted too.
 export function flowsFor(rows: Row[], owner: () => string | null): Map<string, Flow | null> {
   const accounts = [...new Set(rows.map((r) => r.account))];
   const out = new Map(rows.map((r) => [r.id, flowOf(r, accounts)]));
   const open = (r: Row) => out.get(r.id) === null && r.transfer !== 0 && !isCard(r.account) && E_TRANSFER.test(r.description);
-  const sent = rows.filter((r) => r.amount < 0 && open(r));
-  if (!sent.length) return out;
+  const outgoing = rows.filter((r) => r.amount < 0 && open(r));
+  if (!outgoing.length) return out;
   const name = owner();
-  const own = new Set(sent.filter((r) => toOwner(r.description, name)).map((r) => r.id));
+  const own = new Set(outgoing.filter((r) => toOwner(r.description, name)).map((r) => r.id));
+  // One that names someone else is spending, always; only those to his name or to a hidden payee may pair.
+  const sent = outgoing.filter((r) => own.has(r.id) || !payeeOf(r.description));
   const arrived = rows.filter((r) => r.amount > 0 && open(r));
   const used = new Set<string>();
-  // Those to his own name pick first, so a friend's e-transfer of the same amount never takes their pair.
+  // Those to his own name pick first, so a hidden payee of the same amount never takes their pair.
   for (const t of [...sent].sort((a, b) => +own.has(b.id) - +own.has(a.id))) {
     const match = arrived
       .filter((c) => !used.has(c.id) && c.account !== t.account && Math.round(c.amount * 100) === Math.round(-t.amount * 100) && Math.abs(dayOf(c.date) - dayOf(t.date)) <= PAIR_DAYS)

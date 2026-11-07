@@ -96,6 +96,17 @@ test("pairs need different accounts, the exact amount and at most 3 days", () =>
   expect(moneyView(db, spaceId, NOW, "2026-10").income).toBe(120.01);
 });
 
+test("an e-transfer naming someone else never pairs; a hidden payee or his own name may", () => {
+  importMoney(db, spaceId, previewMoney(ws([["2026-10-05", "Withdrawal", "Casey", -40], ["2026-10-07", "Withdrawal", "", -90]])));
+  importMoney(db, spaceId, previewMoney(td([["10/05/2026", "E-TRANSFER ***a1B", 40], ["10/08/2026", "E-TFR *** EPAY", 90], ["10/09/2026", "SEND E-TFR ***ab2", -25], ["10/10/2026", "E-transfer ***k9", 25]]), { account: "TD chequing" }));
+  expect(row("2026-10-05", "Wealthsimple chequing")).toMatchObject({ flow: null, category: "E-transfers" });
+  expect(row("2026-10-05", "TD chequing").flow).toBeNull();
+  expect(row("2026-10-07", "Wealthsimple chequing").flow).toBe("moved");
+  expect(row("2026-10-08", "TD chequing").flow).toBe("moved");
+  // TD to TD is the same account, so the hidden one there stays spending.
+  expect(row("2026-10-09", "TD chequing").flow).toBeNull();
+});
+
 test("only outgoing rows count for his own name", () => {
   importMoney(db, spaceId, previewMoney(ws([["2026-10-16", "Deposit", ME, 300]])));
   expect(row("2026-10-16", "Wealthsimple chequing")).toMatchObject({ flow: null, transfer: null });
@@ -110,6 +121,14 @@ test("re-evaluation stays idempotent with pairs, runs on open, and follows his m
   db.query("UPDATE money_transactions SET flow = NULL").run();
   db.close();
   db = openDb();
+  expect(flows()).toEqual(first);
+  // He says the 200 to himself wasn't a transfer: the TD side is money in again, and the friend's same-amount
+  // e-transfer two days later never takes its place.
+  const mine = row("2026-10-05", "Wealthsimple chequing").id;
+  markTransfer(db, spaceId, mine, false);
+  expect(row("2026-10-06", "TD chequing")).toMatchObject({ flow: null, transfer: null });
+  expect(row("2026-10-08", "Wealthsimple chequing")).toMatchObject({ flow: null, transfer: null, category: "E-transfers" });
+  markTransfer(db, spaceId, mine, null);
   expect(flows()).toEqual(first);
   // He says the 300 from TD wasn't a transfer: both sides count again.
   const sent = row("2026-10-14", "TD chequing").id;
