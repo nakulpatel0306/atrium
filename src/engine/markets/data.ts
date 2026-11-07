@@ -100,8 +100,9 @@ export function createMarketData(deps: {
   // fetch, which tries once more.
   let rejected: Partial<Record<ProviderId, { message: string; date: string }>> = {};
   let lastRead = 0;
-  // Shared across rebuilt providers, so a key change doesn't reset the count.
-  const finnhubPace = pacer(FINNHUB_PER_MINUTE, 60_000);
+  // Shared across rebuilt providers, so a key change doesn't reset the count. It paces the real network; a caller
+  // passing its own fetch (tests, replays) isn't held to Finnhub's clock.
+  const finnhubPace = deps.fetch ? undefined : pacer(FINNHUB_PER_MINUTE, 60_000);
   let readFailed = false;
   // Keyless, so it lives outside `built`. Its pause is kept in settings (written directly, no `changed`) so a restart
   // doesn't ask Yahoo again early. Substituted providers replace it too: a caller passing fakes reaches nothing else.
