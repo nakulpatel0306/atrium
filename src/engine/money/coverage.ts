@@ -4,7 +4,7 @@ import { etDate } from "../markets/calendar";
 // Which days Nakul's imports cover, per account, from the import log. A file only shows the days that had
 // something on them, so a month is complete for an account when its files start in the first week and either reach
 // the last 3 days, or were imported after the month ended and reach its last week (the quiet days were just quiet).
-// A statement file (Wealthsimple Cash) covers its whole period, whatever days had activity.
+// A statement file (Wealthsimple savings) covers its whole period, whatever days had activity.
 export type AccountCover = { account: string; complete: boolean; through: string | null };
 export type MonthCover = { month: string; inProgress: boolean; complete: boolean; accounts: AccountCover[] };
 

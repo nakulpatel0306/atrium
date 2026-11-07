@@ -8,6 +8,7 @@ import { checkBudgets, listBudgets, setBudget } from "../engine/money/budgets";
 import { dismissNudge } from "../engine/money/nudges";
 import { importReminder } from "../engine/money/reminder";
 import { markTransfer } from "../engine/money/transfers";
+import { BUSY, changeImportAccount, findImport, GONE, moneyBusy, undoImport } from "../engine/money/imports";
 import { redact } from "../engine/markets/redact";
 import { HttpError, json, readBody } from "./http";
 import type { MarketsDeps } from "./markets";
@@ -18,6 +19,7 @@ const TOO_BIG = "That file is over 2 MB; export a shorter date range.";
 const BODY_LIMIT = { bytes: 2 * MAX_CSV_BYTES + 64 * 1024, message: TOO_BIG };
 const PREVIEW_ROWS = 20;
 const OWNED = /^\/api\/investing\/([^/]+)\/money(\/(?:preview|import|rules|ask|explain|transfer|budgets|nudges\/[^/]+\/dismiss))?$/;
+const IMPORT = /^\/api\/money\/imports\/([^/]+)(\/account)?$/;
 
 function check<T>(fn: () => T): T {
   try {
@@ -41,12 +43,26 @@ function previewOf(b: Record<string, unknown>) {
   return previewMoney(b.csv, { mapping, signs, dates, account });
 }
 
+// Undo an import, or move its rows to another of his accounts. Neither runs while Claude is reading his money.
+async function importRoute(db: Database, req: Request, id: string, account: boolean): Promise<Response | null> {
+  if (!(req.method === "DELETE" && !account) && !(req.method === "POST" && account)) return null;
+  const imp = findImport(db, id);
+  if (!imp || getSpace(db, imp.space_id)?.kind !== "markets") throw new HttpError(404, GONE);
+  if (moneyBusy(db, imp.space_id)) throw new HttpError(409, BUSY);
+  if (!account) return json(check(() => undoImport(db, id)));
+  const b = await readBody(req);
+  return json(check(() => changeImportAccount(db, id, typeof b.account === "string" ? b.account : "")));
+}
+
 // The Money view: Nakul's own bank, card and Wealthsimple files, read and summarised on this Mac. Nothing here
 // touches the network; only an ask sends compact facts to Claude.
 export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url: URL): Promise<Response | null> {
   const owned = url.pathname.match(OWNED);
-  if (!owned) return null;
+  const imported = url.pathname.match(IMPORT);
+  if (!owned && !imported) return null;
   try {
+    if (imported) return await importRoute(db, req, decodeURIComponent(imported[1]!), imported[2] === "/account");
+    if (!owned) return null;
     const spaceId = decodeURIComponent(owned[1]!);
     const space = getSpace(db, spaceId);
     if (!space || space.kind !== "markets") throw new HttpError(404, "No such markets space.");

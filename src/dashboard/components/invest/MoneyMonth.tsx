@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { MoneyView } from "../../../engine/money/summary";
+import { accountLabel } from "../../../engine/money/banks";
 import { post } from "../../api";
 import { investPath } from "../../simple";
 import { shortDate } from "./MoneyRecap";
@@ -29,7 +30,7 @@ export function MoneyMonth({ spaceId, view }: { spaceId: string; view: MoneyView
               <tr key={t.id} className={t.transfer ? "moved" : ""}>
                 <td className="faint">{shortDate(t.date)}</td>
                 <td title={t.description}>{t.description}</td>
-                <td className="faint">{t.account}</td>
+                <td className="faint">{accountLabel(t.account)}</td>
                 <td className="faint">{t.transfer ? <span className="money-flag flag-transfer" title={WHY[t.transfer]}>transfer</span> : t.category}</td>
                 <td className={t.amount < 0 ? "neg" : "pos"}>{amountText(t.amount)}</td>
                 <td>

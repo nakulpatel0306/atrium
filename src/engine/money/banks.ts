@@ -1,39 +1,49 @@
 // Which bank a CSV came from, from its shape alone. These layouts are the documented or well-known ones, not
 // checked against Nakul's own downloads (see docs/plans/2026-11-06-plan-14-money.md), so each says how sure it is
 // and the manual column mapping stays as the fallback.
-export type BankId = "td" | "amex" | "ws-cash" | "ws-activity" | "generic";
+export type BankId = "td" | "amex" | "ws-cash" | "ws-chequing" | "ws-activity" | "generic";
 export type Confidence = "high" | "medium" | "low";
 export type Bank = { id: BankId; label: string; confidence: Confidence; account: string | null };
 
 // The accounts Nakul has, for the picker on files that don't name their account.
-export const ACCOUNTS = ["TD chequing", "TD credit card", "Amex", "Wealthsimple Cash"] as const;
+export const ACCOUNTS = ["TD chequing", "TD credit card", "Amex", "Wealthsimple chequing", "Wealthsimple savings"] as const;
 export const OTHER_ACCOUNT = "Imported";
+export const isKnownAccount = (a: string) => (ACCOUNTS as readonly string[]).includes(a);
+// How the catch-all account reads anywhere Nakul sees it.
+export const accountLabel = (a: string) => (a === OTHER_ACCOUNT ? "Unknown account" : a);
 
 const lower = (row: string[]) => row.map((h) => h.trim().toLowerCase());
 const NUM = /^-?\$?[\d,]*\.?\d+$/;
 const isNum = (s: string | undefined) => NUM.test((s ?? "").trim());
 const blankOrNum = (s: string | undefined) => (s ?? "").trim() === "" || isNum(s);
-const MDY = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+const TD_DATE = /^(?:\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})$/;
 
-// TD's EasyWeb download has no header: date, description, money out, money in, balance.
+// TD's EasyWeb download has no header: date, description, money out, money in, balance. It comes as MM/DD/YYYY, or
+// quoted with YYYY-MM-DD dates.
 function isTd(rows: string[][]): boolean {
   const sample = rows.slice(0, 20);
-  return sample.length > 0 && sample.every((r) => r.length === 5 && MDY.test(r[0]!.trim()) && blankOrNum(r[2]) && blankOrNum(r[3]) && isNum(r[4]));
+  return sample.length > 0 && sample.every((r) => r.length === 5 && TD_DATE.test(r[0]!.trim()) && blankOrNum(r[2]) && blankOrNum(r[3]) && isNum(r[4]));
 }
 
-// A TD card statement has its payments from chequing in it; a chequing account has payroll and bills instead.
-const CARD_PAYMENT = /payment\s*-?\s*thank you|payment received/i;
+// TD's card and chequing files look the same. A card statement has its payments and interest charges in it; a
+// chequing account sends e-transfers and pays the card from its side.
+const CARD_LINE = /payment\s*-?\s*thank you|payment received|interest charge/i;
+const CHEQUING_LINE = /send e-?tfr|tfr-to c\/c/i;
 
 const AMEX_ONLY = ["date processed", "cardmember", "card member", "extended details", "appears on your statement as", "account #"];
 const WS_CASH = ["date", "transaction", "description", "amount", "balance"];
+const WS_CHEQUING = ["transaction_date", "transaction_type", "status", "payee", "amount"];
 
 export function detectBank(rows: string[][], mostlyPositive: () => boolean): Bank {
   const head = lower(rows[0] ?? []);
   if (head.includes("activity_type")) return { id: "ws-activity", label: "Wealthsimple activity", confidence: "high", account: null };
-  if (head.length === WS_CASH.length && WS_CASH.every((c) => head.includes(c))) return { id: "ws-cash", label: "Wealthsimple Cash", confidence: "medium", account: "Wealthsimple Cash" };
+  if (WS_CHEQUING.every((c) => head.includes(c))) return { id: "ws-chequing", label: "Wealthsimple chequing", confidence: "high", account: "Wealthsimple chequing" };
+  // The savings statement, with or without its currency column.
+  const extra = head.filter((c) => !WS_CASH.includes(c));
+  if (WS_CASH.every((c) => head.includes(c)) && extra.every((c) => c === "currency")) return { id: "ws-cash", label: "Wealthsimple savings", confidence: "medium", account: "Wealthsimple savings" };
   if (isTd(rows)) {
-    const card = rows.some((r) => CARD_PAYMENT.test(r[1] ?? ""));
-    return { id: "td", label: "TD", confidence: "medium", account: card ? "TD credit card" : "TD chequing" };
+    const lines = (re: RegExp) => rows.filter((r) => re.test(r[1] ?? "")).length;
+    return { id: "td", label: "TD", confidence: "medium", account: lines(CARD_LINE) > lines(CHEQUING_LINE) ? "TD credit card" : "TD chequing" };
   }
   const basic = ["date", "description", "amount"].every((c) => head.includes(c));
   if (basic && AMEX_ONLY.some((c) => head.includes(c))) return { id: "amex", label: "Amex", confidence: "high", account: "Amex" };
@@ -41,7 +51,7 @@ export function detectBank(rows: string[][], mostlyPositive: () => boolean): Ban
   return { id: "generic", label: "Bank or card export", confidence: "low", account: null };
 }
 
-// Wealthsimple Cash's own internal transfer codes. AFT and EFT aren't: a biller's pre-authorised debit and a payroll
+// Wealthsimple savings' own internal transfer codes. AFT and EFT aren't: a biller's pre-authorised debit and a payroll
 // deposit use them too, so they count as spending or money in unless they pair with another of his accounts.
 // Interac e-transfers (E_TRFIN, E_TRFOUT) can be to anyone.
 export const WS_TRANSFER_CODES = /^(TRF|INTERNAL_TRANSFER)/i;

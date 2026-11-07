@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { etDate } from "../markets/calendar";
 import { getSetting, setSetting } from "../settings";
 import { listSpaces } from "../spaces";
+import { accountLabel } from "./banks";
 import { checkBudgets } from "./budgets";
 import { monthCover, shiftMonth } from "./coverage";
 import { addNudge, hasNudge, settleNudge } from "./nudges";
@@ -17,7 +18,7 @@ export function importReminder(db: Database, spaceId: string, now: number): void
   const last = shiftMonth(today.slice(0, 7), -1);
   const key = `import:${last}`;
   const cover = monthCover(db, spaceId, last, today);
-  const missing = cover.accounts.filter((a) => !a.complete).map((a) => a.account);
+  const missing = cover.accounts.filter((a) => !a.complete).map((a) => accountLabel(a.account));
   if (!missing.length) return settleNudge(db, spaceId, key, now);
   if (Number(today.slice(8, 10)) < REMIND_FROM_DAY || hasNudge(db, spaceId, key)) return;
   const name = monthName(last);

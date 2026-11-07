@@ -123,7 +123,7 @@ test("an oversized body is refused before it's parsed, with or without a Content
 
 test("preview names the bank and the account; the account can be picked", async () => {
   const p = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv") })).json();
-  expect(p).toMatchObject({ bank: { id: "td", confidence: "medium" }, account: "TD credit card", choices: ["TD chequing", "TD credit card", "Amex", "Wealthsimple Cash", "Imported"] });
+  expect(p).toMatchObject({ bank: { id: "td", confidence: "medium" }, account: "TD credit card", choices: ["TD chequing", "TD credit card", "Amex", "Wealthsimple chequing", "Wealthsimple savings", "Imported"] });
   const picked = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv"), account: "TD chequing" })).json();
   expect(picked.accounts).toEqual(["TD chequing"]);
 });
@@ -180,4 +180,70 @@ test("card data: uploaded CSV text never comes back in an error, and isn't logge
   } finally {
     console.error = spy;
   }
+});
+
+// ---- Imports: undo and change account ----
+
+test("an import can be moved to the right account, dropping what it doubled, then undone", async () => {
+  await call("POST", money("/import"), { csv: csv("td-chequing.csv") });
+  await call("POST", money("/import"), { csv: csv("td-chequing-iso.csv"), account: "Imported" });
+  let v = await (await fetch(base + money())).json();
+  expect(v.imports.map((i: { account: string; rows: number }) => [i.account, i.rows])).toEqual([
+    ["Imported", 11],
+    ["TD chequing", 28],
+  ]);
+  expect(v.busy).toBe(false);
+  expect(v.importAccounts).toEqual(["TD chequing", "TD credit card", "Amex", "Wealthsimple chequing", "Wealthsimple savings"]);
+  const id = v.imports[0].id;
+  const imp = (rest = "") => `/api/money/imports/${id}${rest}`;
+
+  // The usual guards: a JSON body and our own origin.
+  const plain = await fetch(base + imp("/account"), { method: "POST", headers: { origin: base, "content-type": "text/plain" }, body: '{"account":"TD chequing"}' });
+  expect(plain.status).toBe(415);
+  const foreign = await fetch(base + imp(), { method: "DELETE", headers: { origin: "http://evil.example" } });
+  expect(foreign.status).toBe(403);
+  const noOrigin = await fetch(base + imp(), { method: "DELETE" });
+  expect(noOrigin.status).toBe(403);
+  const unknown = await call("POST", imp("/account"), { account: "Somewhere else" });
+  expect([unknown.status, (await unknown.json()).error]).toEqual([400, "Pick one of your accounts."]);
+
+  expect(await (await call("POST", imp("/account"), { account: "TD chequing" })).json()).toEqual({ moved: 2, dropped: 9 });
+  v = await (await fetch(base + money())).json();
+  expect(v.imports.map((i: { account: string; rows: number }) => [i.account, i.rows])).toEqual([
+    ["TD chequing", 2],
+    ["TD chequing", 28],
+  ]);
+
+  expect(await (await call("DELETE", imp())).json()).toEqual({ removed: 2 });
+  v = await (await fetch(base + money())).json();
+  expect(v.imports).toHaveLength(1);
+  expect(v.counts.bank).toBe(28);
+  const gone = await call("DELETE", imp());
+  expect([gone.status, (await gone.json()).error]).toEqual([404, "That import isn't here anymore. Refresh the page."]);
+});
+
+test("an import can't be undone or moved while Claude is looking at your money", async () => {
+  await call("POST", money("/import"), { csv: csv("amex.csv") });
+  await call("POST", money("/ask"), { question: "Where did my money go last month?" });
+  const v = await (await fetch(base + money())).json();
+  expect(v.busy).toBe(true);
+  const id = v.imports[0].id;
+  for (const res of [await call("DELETE", `/api/money/imports/${id}`), await call("POST", `/api/money/imports/${id}/account`, { account: "TD credit card" })]) {
+    expect([res.status, (await res.json()).error]).toEqual([409, "Claude is looking at your money. Try again when it's done."]);
+  }
+  expect((await (await fetch(base + money())).json()).counts.bank).toBe(20);
+});
+
+test("a statement's file name, with its account id, is never stored", async () => {
+  const name = "Fake Person's Savings-monthly-statement-transactions-WK000000000CAD-2026-10-01.csv";
+  // Even sent alongside the file, the name is ignored.
+  expect((await call("POST", money("/import"), { csv: csv("ws-savings-statement.csv"), name, filename: name })).status).toBe(200);
+  db.exec("PRAGMA wal_checkpoint(PASSIVE)");
+  const { readdirSync } = await import("node:fs");
+  const raw = readdirSync(home.home)
+    .filter((f) => f.includes(".db"))
+    .map((f) => readFileSync(join(home.home, f)).toString("latin1"))
+    .join("\n");
+  expect(raw.includes("Interest")).toBe(true);
+  for (const s of ["WK000000000CAD", "monthly-statement", "Fake Person"]) expect(raw.includes(s)).toBe(false);
 });

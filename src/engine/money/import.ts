@@ -7,7 +7,7 @@ import { ACCOUNTS, detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_COD
 import { merchantOf } from "./categories";
 import { monthEnd } from "./coverage";
 
-// Bank and card exports (TD, Amex, Wealthsimple Cash, RBC, Scotiabank and the like) and Wealthsimple activity exports,
+// Bank and card exports (TD, Amex, Wealthsimple chequing and savings, RBC, Scotiabank and the like) and Wealthsimple activity exports,
 // read on this Mac. Known banks are found by shape (banks.ts), other columns by name, and anything else is mapped by
 // hand in the preview.
 export type MoneyField = "date" | "description" | "description2" | "amount" | "debit" | "credit" | "account" | "accountNumber" | "type";
@@ -267,7 +267,7 @@ export function maskNumbers(input: string): string {
 // True when text has no card or account number left in it: masking would change nothing.
 export const isMasked = (s: string): boolean => maskNumbers(s) === s;
 
-// A Wealthsimple Cash transaction code ("AFT_IN"), the only raw cell kept as text when a row has no description.
+// A Wealthsimple savings transaction code ("AFT_IN"), the only raw cell kept as text when a row has no description.
 const TYPE_CODE = /^[A-Z_ ]{1,20}$/;
 const MAX_ACCOUNT = 40;
 
@@ -334,10 +334,11 @@ function wealthsimple(headers: string[], body: string[][]): Pick<MoneyPreview, "
   return { rows, skipped, accounts: [...new Set(rows.map((r) => r.account))] };
 }
 
-// A Wealthsimple Cash monthly statement: date, transaction code, description, signed amount, balance.
+// A Wealthsimple savings monthly statement: date, transaction code, description, signed amount, balance and
+// sometimes currency.
 function wsCash(headers: string[], body: string[][], account: string): Pick<MoneyPreview, "rows" | "skipped" | "accounts"> {
   const col = (name: string) => headers.findIndex((h) => h.trim().toLowerCase() === name);
-  const [date, code, description, amountCol] = ["date", "transaction", "description", "amount"].map(col);
+  const [date, code, description, amountCol, currency] = ["date", "transaction", "description", "amount", "currency"].map(col);
   const rows: MoneyRow[] = [];
   const skipped: MoneyPreview["skipped"] = [];
   body.forEach((r, n) => {
@@ -349,7 +350,53 @@ function wsCash(headers: string[], body: string[][], account: string): Pick<Mone
     const c = (r[code!] ?? "").trim();
     const text = maskNumbers(safeText(r[description!] ?? "")) || (TYPE_CODE.test(c) ? c : maskNumbers(safeText(c)));
     const kind: MoneyKind = WS_TRANSFER_CODES.test(c) ? "transfer" : WS_INTEREST_CODES.test(c) ? "interest" : amount < 0 ? "spend" : "income";
-    rows.push({ source: "bank", account, date: d, description: text, merchant: merchantOf(text), amount: Math.round(amount * 100) / 100, currency: "CAD", kind, symbol: null });
+    const usd = (r[currency!] ?? "").trim().toUpperCase() === "USD";
+    rows.push({ source: "bank", account, date: d, description: text, merchant: merchantOf(text), amount: Math.round(amount * 100) / 100, currency: usd ? "USD" : "CAD", kind, symbol: null });
+  });
+  return { rows, skipped, accounts: rows.length ? [account] : [] };
+}
+
+// Only settled rows count; a pending e-transfer may never happen.
+const SETTLED = new Set(["posted", "completed"]);
+
+// A Wealthsimple chequing export. Only the columns below are read: account_number and payee_email are never touched,
+// so they can't reach a row, a fingerprint or the database.
+function wsChequing(headers: string[], body: string[][], account: string): Pick<MoneyPreview, "rows" | "skipped" | "accounts"> {
+  const col = (name: string) => headers.findIndex((h) => h.trim().toLowerCase() === name);
+  const [date, type, sub, status, payee, amountCol, currency] = ["transaction_date", "transaction_type", "transaction_sub_type", "status", "payee", "amount", "currency"].map(col);
+  const rows: MoneyRow[] = [];
+  const skipped: MoneyPreview["skipped"] = [];
+  body.forEach((r, n) => {
+    const line = n + 2;
+    if (!SETTLED.has((r[status!] ?? "").trim().toLowerCase())) return skipped.push({ line, reason: "Not posted yet." });
+    const d = isoDate(r[date!] ?? "", "mdy");
+    const raw = (r[amountCol!] ?? "").trim();
+    let amount = num(raw);
+    if (!d) return skipped.push({ line, reason: "No date Atrium can read." });
+    if (Number.isNaN(amount)) return skipped.push({ line, reason: "No amount Atrium can read." });
+    if (Math.abs(amount) >= MAX_AMOUNT) return skipped.push({ line, reason: TOO_LARGE });
+    const t = (r[type!] ?? "").trim().toLowerCase();
+    const s = (r[sub!] ?? "").trim().toLowerCase();
+    // A signed amount is taken as written; an unsigned one follows its type.
+    if (!raw.startsWith("-") && !raw.startsWith("(")) {
+      const out = t === "withdrawal" || (t === "internal transfer" && s === "source");
+      amount = out ? -Math.abs(amount) : Math.abs(amount);
+    }
+    const kind: MoneyKind = t === "internal transfer" ? "transfer" : t === "interest" ? "interest" : amount < 0 ? "spend" : "income";
+    const who = maskNumbers(safeText(r[payee!] ?? ""));
+    const label = kind === "transfer" ? "Internal transfer" : kind === "interest" ? "Interest" : s === "e transfer" ? "E-transfer" : maskNumbers(safeText(r[type!] ?? "")) || "Wealthsimple";
+    const text = s === "e transfer" && who ? `E-transfer ${who}` : who || label;
+    rows.push({
+      source: "bank",
+      account,
+      date: d,
+      description: text,
+      merchant: merchantOf(text),
+      amount: Math.round(amount * 100) / 100,
+      currency: (r[currency!] ?? "").trim().toUpperCase() === "USD" ? "USD" : "CAD",
+      kind,
+      symbol: null,
+    });
   });
   return { rows, skipped, accounts: rows.length ? [account] : [] };
 }
@@ -375,9 +422,10 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
   const bank = detectBank(all, () => positives(body.map((r) => num(r[headers.findIndex((h) => h.trim().toLowerCase() === "amount")])).filter((n) => !Number.isNaN(n) && n !== 0)));
   const account = (fallback: string | null) => cleanAccount(opts.account) || fallback;
   if (bank.id === "ws-activity") return { ...empty, format: "wealthsimple", headers, ...wealthsimple(headers, body), warnings, bank };
-  if (bank.id === "ws-cash") {
+  if (bank.id === "ws-cash" || bank.id === "ws-chequing") {
     const named = account(bank.account)!;
-    return { ...empty, format: "bank", headers, ...wsCash(headers, body, named), warnings, bank, account: named };
+    const parse = bank.id === "ws-cash" ? wsCash : wsChequing;
+    return { ...empty, format: "bank", headers, ...parse(headers, body, named), warnings, bank, account: named };
   }
 
   let mapping: MoneyMap = opts.mapping ?? detect(headers);
@@ -465,14 +513,43 @@ export function legacyMask(s: string): string {
 export const fingerprintOf = (r: Pick<MoneyRow, "source" | "account" | "date" | "amount" | "currency" | "description">, n: number) =>
   createHash("sha256").update(`${[r.source, r.account, r.date, r.amount.toFixed(2), r.currency, r.description.toLowerCase()].join("|")}|${n}`).digest("hex").slice(0, 32);
 
+// A trailing word with a digit, a mask mark or # in it is a reference or card code, which one layout may write
+// differently from another ("ROGERS ******1234", "ROGERS ··1234").
+const TRAILING_CODE = /[\d*·#]/;
+
+// A description as two layouts of the same account would both write it: uppercased, quotes gone, whitespace collapsed,
+// trailing codes trimmed. A description that is only a code keeps it.
+export function normalDescription(s: string): string {
+  const words = s.replace(/["'`]/g, "").toUpperCase().trim().split(/\s+/).filter(Boolean);
+  while (words.length > 1 && TRAILING_CODE.test(words.at(-1)!)) words.pop();
+  return words.join(" ");
+}
+
+// Counts how many rows from other imports already hold this transaction in the same account: same date, amount and
+// normalised description. Rows of the import itself never count, so identical charges in one file all stay.
+export function twinCounter(db: Database): (spaceId: string, r: MoneyRow, importId: string) => number {
+  const near = db.query(
+    `SELECT description FROM money_transactions WHERE space_id = ? AND source = ? AND account = ? AND date = ? AND ROUND(amount, 2) = ? AND currency = ?
+     AND (import_id IS NULL OR import_id != ?)`,
+  );
+  return (spaceId, r, importId) => {
+    const norm = normalDescription(r.description);
+    const rows = near.all(spaceId, r.source, r.account, r.date, r.amount, r.currency, importId) as { description: string }[];
+    return rows.filter((o) => normalDescription(o.description) === norm).length;
+  };
+}
+
 // Re-importing the same file adds nothing: each row's fingerprint is its account, date, amount and description,
-// plus how many identical rows came before it in the file, so two real identical charges both stay. Rows stored
-// before Atrium named the account ("Imported") count as already here too.
+// plus how many identical rows came before it in the file, so two real identical charges both stay. The same
+// transaction from another layout of the account (other quotes, spacing or codes) is caught by its normalised
+// description. Rows stored before Atrium named the account ("Imported") count as already here too. Every row keeps
+// the id of the import that added it, so the import can be undone.
 export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { added: number; duplicates: number } {
   const seen = new Map<string, number>();
+  const seenLoose = new Map<string, number>();
   const put = db.query(
-    `INSERT OR IGNORE INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol, fingerprint, imported_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol, fingerprint, imported_at, import_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   // Rows stored before this masker: under the old "Imported" account, or with a date the old masker hid.
   const twins = db.query(
@@ -480,7 +557,8 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
        (account = 'Imported' AND ?5 != 'Imported' AND lower(description) = ?6)
        OR (?7 IS NOT NULL AND (account = ?5 OR account = 'Imported') AND lower(description) = ?7))`,
   );
-  const covered = new Map<string, { first: string; last: string; rows: number }>();
+  const others = twinCounter(db);
+  const covered = new Map<string, { id: string; first: string; last: string; rows: number }>();
   let added = 0;
   const at = Date.now();
   db.transaction(() => {
@@ -489,17 +567,21 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
       const base = [r.source, r.account, r.date, r.amount.toFixed(2), r.currency, r.description.toLowerCase()].join("|");
       const n = (seen.get(base) ?? 0) + 1;
       seen.set(base, n);
-      const c = covered.get(r.account) ?? { first: r.date, last: r.date, rows: 0 };
-      covered.set(r.account, { first: r.date < c.first ? r.date : c.first, last: r.date > c.last ? r.date : c.last, rows: c.rows + 1 });
+      const loose = `${[r.source, r.account, r.date, r.amount.toFixed(2), r.currency].join("|")}|${normalDescription(r.description)}`;
+      const k = (seenLoose.get(loose) ?? 0) + 1;
+      seenLoose.set(loose, k);
+      const c = covered.get(r.account) ?? { id: newId("mim"), first: r.date, last: r.date, rows: 0 };
+      covered.set(r.account, { id: c.id, first: r.date < c.first ? r.date : c.first, last: r.date > c.last ? r.date : c.last, rows: c.rows + 1 });
       if ((twins.get(spaceId, r.source, r.date, r.amount, r.account, r.description.toLowerCase(), raw.legacy?.toLowerCase() ?? null) as { n: number }).n >= n) continue;
+      if (others(spaceId, r, c.id) >= k) continue;
       const fingerprint = fingerprintOf(r, n);
-      added += put.run(newId("mtx"), spaceId, r.source, r.account, r.date, r.description, r.merchant, r.amount, r.currency, r.kind, r.symbol, fingerprint, at).changes;
+      added += put.run(newId("mtx"), spaceId, r.source, r.account, r.date, r.description, r.merchant, r.amount, r.currency, r.kind, r.symbol, fingerprint, at, c.id).changes;
     }
     const log = db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at, period_start, period_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    // A Wealthsimple Cash statement covers whole calendar months, from its first row's month to its last row's.
+    // A Wealthsimple savings statement covers whole calendar months, from its first row's month to its last row's.
     const statement = p.bank.id === "ws-cash";
     for (const [account, c] of covered) {
-      log.run(newId("mim"), spaceId, account, c.first, c.last, c.rows, at, statement ? `${c.first.slice(0, 7)}-01` : null, statement ? monthEnd(c.last.slice(0, 7)) : null);
+      log.run(c.id, spaceId, account, c.first, c.last, c.rows, at, statement ? `${c.first.slice(0, 7)}-01` : null, statement ? monthEnd(c.last.slice(0, 7)) : null);
     }
   })();
   bus.emit({ type: "changed" });

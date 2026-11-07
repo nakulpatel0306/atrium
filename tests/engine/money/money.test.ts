@@ -300,11 +300,11 @@ test("a bare Date, Description, Amount file with charges as positives looks like
   expect(previewMoney("Date,Description,Amount\n2026-10-01,COFFEE,-4\n2026-10-03,PAY,-11.99\n").bank.id).toBe("generic");
 });
 
-test("a Wealthsimple Cash statement: interest is money in; AFT is money in or out until it pairs with his own account", () => {
+test("a Wealthsimple savings statement: interest is money in; AFT is money in or out until it pairs with his own account", () => {
   const p = previewMoney(csv("ws-cash.csv"));
-  expect(p.bank).toMatchObject({ id: "ws-cash", label: "Wealthsimple Cash", confidence: "medium" });
+  expect(p.bank).toMatchObject({ id: "ws-cash", label: "Wealthsimple savings", confidence: "medium" });
   expect(p.format).toBe("bank");
-  expect(p.rows[0]).toMatchObject({ date: "2026-08-17", amount: 500, kind: "income", account: "Wealthsimple Cash", source: "bank" });
+  expect(p.rows[0]).toMatchObject({ date: "2026-08-17", amount: 500, kind: "income", account: "Wealthsimple savings", source: "bank" });
   const trf = previewMoney('"date","transaction","description","amount","balance"\n"2026-10-04","TRFIN","From your other Wealthsimple account","10.00","10.00"\n');
   expect(trf.rows[0]!.kind).toBe("transfer");
   expect(p.rows[1]).toMatchObject({ kind: "interest", description: "Interest" });
@@ -657,7 +657,7 @@ test("the monthly reminder: on the 2nd, once, naming the accounts not imported f
   importReminder(db, spaceId, dec2);
   importReminder(db, spaceId, dec2 + 3600_000);
   expect(nudgeRows()).toEqual([
-    { kind: "import", key: "import:2026-11", title: "Time to import November", body: "Amex, TD chequing, TD credit card and Wealthsimple Cash aren't imported for November yet." },
+    { kind: "import", key: "import:2026-11", title: "Time to import November", body: "Amex, TD chequing, TD credit card and Wealthsimple savings aren't imported for November yet." },
   ]);
   expect(activeNudges(db, dec2 + 5 * 86_400_000)).toHaveLength(1);
 });

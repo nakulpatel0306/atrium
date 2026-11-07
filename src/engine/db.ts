@@ -277,10 +277,14 @@ function migrate(db: Database): boolean {
   rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
   // Nakul's own say on whether a money row is a transfer between his accounts: 1 yes, 0 no, NULL for Atrium to tell.
   if (!has("money_transactions", "transfer")) db.exec("ALTER TABLE money_transactions ADD COLUMN transfer INTEGER");
-  // A statement file covers its whole period, not just the days with activity (Wealthsimple Cash issues one a month).
+  // A statement file covers its whole period, not just the days with activity (Wealthsimple savings issues one a month).
   if (!has("money_imports", "period_start")) db.exec("ALTER TABLE money_imports ADD COLUMN period_start TEXT");
   if (!has("money_imports", "period_end")) db.exec("ALTER TABLE money_imports ADD COLUMN period_end TEXT");
   backfillMoneyImports(db);
+  // The import that added each row, so an import can be undone or moved to another account.
+  if (!has("money_transactions", "import_id")) db.exec("ALTER TABLE money_transactions ADD COLUMN import_id TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS money_transactions_import ON money_transactions(import_id)");
+  backfillImportIds(db);
   // Rows stored by the Plan 10 masker go through today's once (and drop their doubled twins).
   const remasked = remaskMoney(db);
   // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
@@ -306,6 +310,17 @@ export function backfillMoneyImports(db: Database): void {
     `INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at)
      SELECT 'mim_' || lower(hex(randomblob(8))), space_id, account, MIN(date), MAX(date), COUNT(*), MIN(imported_at)
      FROM money_transactions GROUP BY space_id, account`,
+  ).run();
+}
+
+// Rows from before import ids get the import logged with them (same account and time). Rows older than the import
+// log go to their account's backfilled record: the latest one logged at or before them.
+export function backfillImportIds(db: Database): void {
+  db.query(
+    `UPDATE money_transactions AS t SET import_id = COALESCE(
+       (SELECT i.id FROM money_imports i WHERE i.space_id = t.space_id AND i.account = t.account AND i.imported_at = t.imported_at ORDER BY i.rowid LIMIT 1),
+       (SELECT i.id FROM money_imports i WHERE i.space_id = t.space_id AND i.account = t.account AND i.imported_at <= t.imported_at ORDER BY i.imported_at DESC, i.rowid DESC LIMIT 1))
+     WHERE import_id IS NULL`,
   ).run();
 }
 

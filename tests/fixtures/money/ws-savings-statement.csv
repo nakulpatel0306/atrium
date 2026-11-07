@@ -1,0 +1,5 @@
+"date","transaction","description","amount","balance","currency"
+"2026-10-02","AFT_IN","Direct deposit from NORTHWIND","300.00","5300.00","CAD"
+"2026-10-09","E_TRFOUT","Interac e-Transfer to A Fakefriend","-20.00","5280.00","CAD"
+"2026-10-17","TRFOUT","Transfer out to chequing","-100.00","5180.00","CAD"
+"2026-10-31","INT","Interest","11.02","5191.02","CAD"

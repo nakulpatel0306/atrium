@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { DateOrder, MoneyField, MoneyMap, MoneyPreview, Signs } from "../../../engine/money/import";
+import { accountLabel } from "../../../engine/money/banks";
 import { post } from "../../api";
 import { investPath } from "../../simple";
 
 type Preview = MoneyPreview & { total: number; choices: string[] };
-const OTHER = "Imported";
 const FIELDS: { id: MoneyField; label: string }[] = [
   { id: "date", label: "Date" },
   { id: "description", label: "Description" },
@@ -55,7 +55,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
           Choose a CSV file
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => void load(e.target.files?.[0])} />
         </label>
-        <span className="faint">TD, Amex and Wealthsimple Cash are recognised. Most other bank and card exports work too.</span>
+        <span className="faint">TD, Amex and Wealthsimple chequing and savings are recognised. Most other bank and card exports work too.</span>
         <button className="btn link" onClick={onClose}>
           Close
         </button>
@@ -74,7 +74,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
               <select value={preview.account} onChange={(e) => void look(csv, { ...opts, account: e.target.value })}>
                 {preview.choices.map((c) => (
                   <option key={c} value={c}>
-                    {c === OTHER ? "Another account" : c}
+                    {accountLabel(c)}
                   </option>
                 ))}
               </select>
@@ -136,7 +136,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
                   <tr key={i}>
                     <td>{r.date}</td>
                     <td>{r.description}</td>
-                    <td className="faint">{r.account}</td>
+                    <td className="faint">{accountLabel(r.account)}</td>
                     <td className={r.amount < 0 ? "neg" : "pos"}>{amountText(r.amount)}</td>
                   </tr>
                 ))}
