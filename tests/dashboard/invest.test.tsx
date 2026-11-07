@@ -380,6 +380,35 @@ test("Money: an incomplete month says so plainly", () => {
   db.query("DELETE FROM money_imports").run();
 });
 
+test("Money: the Imports list, an unknown account said plainly, and no undo while Claude is looking", () => {
+  wipeMoney();
+  importMoney(db, fx.spaceId, previewMoney(moneyCsv("td-chequing.csv")));
+  importMoney(db, fx.spaceId, previewMoney(moneyCsv("td-chequing-iso.csv"), { account: "Imported" }));
+  const render = () => text(renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={{ ...moneyView(db, fx.spaceId, NOW, "2026-10"), starters: STARTERS }} now={NOW} />));
+  const t = render();
+  expect(t).toContain("Imports");
+  expect(t).toMatch(/Unknown account\.\s+Change it\?/);
+  expect(t).toContain("Oct 1 to Nov 3");
+  expect(t).toContain("11 rows");
+  expect(t).toContain("TD chequing");
+  expect(t).toContain("Undo import");
+  expect(t).toContain("Change account");
+  expect(t).not.toContain("Imported");
+  requestMoneyAsk(db, fx.spaceId, "Where did my money go last month?");
+  const busy = render();
+  expect(busy).toContain("Claude is looking at your money. Undo and Change account come back when it&#x27;s done.");
+  expect(busy).not.toContain("Undo import");
+  expect(busy).not.toContain("Change it?");
+  expect(busy).toContain("Unknown account");
+  wipeMoney();
+});
+
+test("Money: the import sends only the file's text, never its name", () => {
+  const src = readFileSync(join(import.meta.dir, "../../src/dashboard/components/invest/MoneyImport.tsx"), "utf8");
+  expect(src).toContain("file.text()");
+  expect(/file\.name|\.name\b/.test(src)).toBe(false);
+});
+
 test("Needs you shows the import reminder as a quiet row with Import now and Dismiss, not counted", () => {
   const s = makeState({ approvals: [], proposals: [] });
   s.nudges = [{ id: "mnd_1", spaceId: "spc_1", spaceName: "Investing", kind: "import", title: "Time to import October", body: "Amex isn't imported for October yet.", path: "/space/spc_1?tab=money", createdAt: 0 }];

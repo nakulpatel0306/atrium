@@ -4651,3 +4651,18 @@ code {
   font-weight: 600;
   color: var(--faint);
 }
+.money-import-acts {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12px;
+}
+.money-imports .err {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+.money-unknown .btn.link {
+  font-weight: 600;
+}

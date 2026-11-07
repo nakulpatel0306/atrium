@@ -9,6 +9,7 @@ import { WhatItMade } from "../WhatItMade";
 import { AdviceTag } from "../markets/AdviceTag";
 import { MoneyBudgets } from "./MoneyBudgets";
 import { MoneyImport } from "./MoneyImport";
+import { MoneyImports } from "./MoneyImports";
 import { MoneyMonth } from "./MoneyMonth";
 import { isExplain, MoneyRecap } from "./MoneyRecap";
 import { MoneyRoom } from "./MoneyRoom";
@@ -163,6 +164,12 @@ export function MoneyBody({ spaceId, view, now = Date.now(), onMonth = () => {} 
             <h3>Wealthsimple</h3>
             <Wealthsimple view={view} />
           </section>
+          {view.imports.length > 0 && (
+            <section>
+              <h3>Imports</h3>
+              <MoneyImports view={view} now={now} />
+            </section>
+          )}
         </div>
         <div>
           <section>
