@@ -79,7 +79,7 @@ test("usage lists tui", async () => {
   } finally {
     console.error = err;
   }
-  expect(lines).toEqual(["Usage: atrium [tui|start|status|open|install|uninstall|app install|app uninstall|investing setup]"]);
+  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup]"]);
 });
 
 test("investing setup asks the running engine once and says what happened", async () => {
