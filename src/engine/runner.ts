@@ -28,6 +28,7 @@ import {
 import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
 import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
+import { isMasked } from "./money/import";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
 import { verdictOf } from "./verdict";
@@ -446,8 +447,11 @@ export function createRunner(deps: {
       const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
       const honest = [...capabilityLines(db, isMessageTask(task) ? "message" : "task"), OUTCOME_INSTRUCTION];
+      const prompt = buildPrompt(task, space) + context;
+      // Money facts go to Claude only, and only masked: a card or account number left in the prompt stops the run.
+      if (task.purpose === "money" && (adapter.id !== "claude" || !isMasked(prompt))) throw new MoneyGuard();
       result = await adapter.run({
-        prompt: buildPrompt(task, space) + context,
+        prompt,
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
@@ -464,7 +468,10 @@ export function createRunner(deps: {
         },
       });
     } catch (e) {
-      result = { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
+      result =
+        e instanceof MoneyGuard
+          ? { status: "error", kind: "failed", message: MoneyGuard.text }
+          : { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
     }
 
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
@@ -806,6 +813,10 @@ function readyLine(task: Task, o: ParsedOutcome): string {
   if (o.outcome === "couldnt") return `Couldn't do: ${task.title}.${why}`;
   if (o.outcome === "partial") return `Partly done: ${task.title}.${why}`;
   return `Ready for review: ${task.title}`;
+}
+
+class MoneyGuard extends Error {
+  static text = "Atrium stopped this before sending anything: the money facts weren't fully masked or the agent wasn't Claude. Try again, and check the engine log if it keeps happening.";
 }
 
 function buildPrompt(task: Task, space: Space): string {

@@ -664,3 +664,15 @@ test("nothing to remind about before the first import; the daily check runs once
   moneyDaily(db, Date.parse("2026-12-03T16:00:00Z"));
   expect(nudgeRows().map((n) => n.key)).toEqual(["import:2026-11"]);
 });
+
+test("card data: no money code talks to the network; only Claude's prompt ever carries money facts", () => {
+  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+  const dir = join(import.meta.dir, "../../../src/engine/money");
+  for (const f of readdirSync(dir)) {
+    const src = readFileSync(join(dir, f), "utf8");
+    expect(src).not.toMatch(/\bfetch\(|https?:\/\/|Bun\.connect|node:net|node:http|WebSocket/);
+  }
+  // Provider code never imports money code.
+  const markets = join(import.meta.dir, "../../../src/engine/markets/providers");
+  for (const f of readdirSync(markets)) expect(readFileSync(join(markets, f), "utf8")).not.toContain("money");
+});

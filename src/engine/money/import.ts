@@ -112,8 +112,9 @@ function valid(y: number, mo: number, d: number): string | null {
 // A real date written with separators ("2026-10-02", "10/02/2026"), which masking leaves alone. Only years from 1990
 // to next year count, so a card number sliced like a date ("4510.12.31") is still a number.
 const DATE_RUN = /(?<![\d/-]|\d\.)(?:(\d{4})([-/.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([-/.])(\d{1,2})\6(\d{4}))(?![\d/-]|\.\d)/g;
-// An amount or quantity with one decimal point ("1234.56", "0.123456"), also left alone.
-const DECIMAL_RUN = /(?<![\d/-]|\d\.)(?:\d{1,9}\.\d{1,2}|\d{1,3}\.\d{1,6})(?![\d/-]|\.\d)/g;
+// An amount or quantity with one decimal point ("1234.56", "0.123456"), also left alone when it has at most 11 digits.
+const DECIMAL_RUN = /(?<![\d/-]|\d\.)\d{1,9}\.\d{1,6}(?![\d/-]|\.\d)/g;
+const DECIMAL_MAX_DIGITS = 11;
 // Digits with spaces, dashes, dots, slashes or masking X and * between them.
 const NUMBER_RUN = /\d[\dX*\s./-]{4,}\d/gi;
 // An account, transit or reference number next to the word that names it: 5 digits are enough there.
@@ -130,7 +131,7 @@ function keptSpans(s: string): { start: number; end: number }[] {
     const isDate = y1 ? realDate(+y1, +m1!, +d1!) : realDate(+y2!, +a2!, +b2!) || realDate(+y2!, +b2!, +a2!);
     if (isDate) kept.push({ start: m.index!, end: m.index! + m[0].length });
   }
-  for (const m of s.matchAll(DECIMAL_RUN)) kept.push({ start: m.index!, end: m.index! + m[0].length });
+  for (const m of s.matchAll(DECIMAL_RUN)) if (m[0].length - 1 <= DECIMAL_MAX_DIGITS) kept.push({ start: m.index!, end: m.index! + m[0].length });
   return kept.sort((a, b) => a.start - b.start);
 }
 

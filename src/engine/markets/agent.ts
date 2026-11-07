@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { moneyFacts } from "../money/summary";
+import { explainContext, moneyFacts } from "../money/summary";
 import { isAdvanced } from "./advanced";
 import { portfolioView } from "./views";
 import { createApproval } from "../approvals";
@@ -178,6 +178,12 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
 
   async function buildContext(task: Task, space: Space, agent: string): Promise<string> {
     const at = now();
+    // Money stays with Claude; Explain my month gets the month's recap and nothing else.
+    if (task.purpose === "money") {
+      if (agent !== "claude") return "";
+      const explain = explainContext(db, task, at);
+      if (explain) return explain.join("\n");
+    }
     const session = usSession(at);
     const status = await data.status();
     const watch = listWatchlist(db, space.id);

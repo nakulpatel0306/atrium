@@ -4,7 +4,8 @@ import { etDate } from "../markets/calendar";
 import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
 import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
-import { maskNumbers } from "./import";
+import { isMasked, maskNumbers } from "./import";
+import { monthYear, recap, recapFacts } from "./recap";
 import { counted, spendingIn, txs, type Tx } from "./rows";
 
 
@@ -227,6 +228,36 @@ export function requestMoneyAsk(db: Database, spaceId: string, question: string)
   const q = question.trim();
   if (!q) throw new Error("Type a question, like How much did I get in dividends this year?");
   if (q.length > MONEY_ASK_MAX) throw new Error("Keep the question under 500 characters.");
+  // A card number typed into the question would go to Claude as is.
+  if (!isMasked(q)) throw new Error("Leave card and account numbers out of the question.");
   if (listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money")) throw new Error("Claude is already looking at your money.");
   return createTask(db, { spaceId, title: "Ask Claude about my money", detail: q, agent: "claude", weight: "light", allowOnBattery: true, purpose: "money" });
+}
+
+// "Explain my month": the same read-only Claude ask, given only the recap Atrium worked out for that month.
+export const RECAP_SUBJECT = "recap:";
+export function requestExplain(db: Database, spaceId: string, month: string, now: number): Task {
+  if (!/^\d{4}-\d{2}$/.test(month) || !recap(db, spaceId, now, month)) throw new Error("There's nothing imported for that month yet.");
+  if (listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money")) throw new Error("Claude is already looking at your money.");
+  return createTask(db, {
+    spaceId,
+    title: "Explain my month",
+    detail: `Explain my month: ${monthYear(month)}`,
+    agent: "claude",
+    weight: "light",
+    allowOnBattery: true,
+    purpose: "money",
+    subject: `${RECAP_SUBJECT}${month}`,
+  });
+}
+
+// The facts and the brief for an Explain my month task; null for an ordinary money question.
+export function explainContext(db: Database, task: Pick<Task, "spaceId" | "subject">, now: number): string[] | null {
+  if (!task.subject?.startsWith(RECAP_SUBJECT)) return null;
+  const r = recap(db, task.spaceId, now, task.subject.slice(RECAP_SUBJECT.length));
+  if (!r) return ["There's no recap for that month anymore. Say so in one sentence."];
+  return [
+    ...recapFacts(r),
+    "Rephrase these facts for Nakul in at most 120 words of plain, calm prose: where his money went this month compared with last month. Use only the numbers above, exactly as written; don't add, total or estimate any others. If the month is incomplete, say so first. No headings, no advice.",
+  ];
 }
