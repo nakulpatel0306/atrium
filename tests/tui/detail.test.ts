@@ -32,14 +32,14 @@ test("a waiting task says why in the right tone", () => {
   const state = makeState();
   const reason = state.waits[ids.queued]!.reason;
   const lines = taskDetail(deriveView(state, onTask(ids.queued, 2)), null);
-  expect(lineWith(lines, reason)?.find((s) => s.text.includes(reason))?.color).toBe("yellow");
+  expect(lineWith(lines, reason)?.find((s) => s.text.includes(reason))?.color).toBe("warn");
 
   const signedOut: State = makeState({
     waits: { [ids.queued]: { taskId: ids.queued, agent: "claude", kind: "signed_out", reason: "Claude is signed out. Run `claude` to sign in." } },
   });
   const red = taskDetail(deriveView(signedOut, onTask(ids.queued, 2)), null);
   const seg = lineWith(red, "signed out")?.find((s) => s.text.includes("signed out"));
-  expect(seg?.color).toBe("red");
+  expect(seg?.color).toBe("bad");
   expect(seg?.text).toContain("`claude`");
 });
 
@@ -53,7 +53,7 @@ test("approval detail shows the review line", () => {
   const review = task({ id: "tsk_rev", kind: "review", parentTaskId: ids.review, agent: "codex", status: "running", title: "Review: Fix login redirect" });
   const state = makeState();
   state.tasks.push(review);
-  const ui: Ui = { ...initialUi, focus: "needs", lastLeft: "needs" };
+  const ui: Ui = { ...initialUi };
   const lines = approvalDetail(deriveView(state, ui), null);
   const all = text(lines);
   expect(all).toContain("Codex is reviewing · you can decide now");
@@ -72,7 +72,7 @@ test("space detail explains a reviewer that can't work there", () => {
 });
 
 test("activity detail shows the whole message", () => {
-  const ui: Ui = { ...initialUi, focus: "activity", lastLeft: "activity" };
+  const ui: Ui = { ...initialUi, tab: "activity" };
   const all = text(activityDetail(deriveView(makeState(), ui)));
   expect(all).toContain("Claude");
   expect(all).toContain("atrium");
@@ -80,15 +80,15 @@ test("activity detail shows the whole message", () => {
 });
 
 test("wrapStyled keeps styles across the break", () => {
-  const out = wrapStyled([{ text: "ab", color: "red" }, { text: "cdef" }], 3);
+  const out = wrapStyled([{ text: "ab", color: "bad" }, { text: "cdef" }], 3);
   expect(out.map((l) => l.map((s) => s.text).join(""))).toEqual(["abc", "def"]);
-  expect(out[0]![0]).toEqual({ text: "ab", color: "red" });
+  expect(out[0]![0]).toEqual({ text: "ab", color: "bad" });
 });
 
 test("wrapStyled breaks between words when it can", () => {
-  const out = wrapStyled([{ text: "can ask for one round", color: "gray" }], 12);
+  const out = wrapStyled([{ text: "can ask for one round", color: "dim" }], 12);
   expect(out.map((l) => l.map((s) => s.text).join(""))).toEqual(["can ask for", "one round"]);
-  expect(out[1]![0]!.color).toBe("gray");
+  expect(out[1]![0]!.color).toBe("dim");
   expect(wrapStyled([{ text: "abcdefghij" }], 4).map((l) => l.map((s) => s.text).join(""))).toEqual(["abcd", "efgh", "ij"]);
 });
 
@@ -102,7 +102,7 @@ function marketsState() {
 test("an alert's detail says how to dismiss it", () => {
   const state = makeState();
   state.approvals.unshift({ ...state.approvals[0]!, id: "apr_alert", kind: "alert", taskId: null, title: "AAPL price above $200.00", detail: "AAPL at $200.10 (IEX real-time, 10:42 AM ET).\n\nAnalysis, not advice." });
-  const all = text(approvalDetail(deriveView(state, { ...initialUi, focus: "needs", lastLeft: "needs" }), null));
+  const all = text(approvalDetail(deriveView(state, { ...initialUi }), null));
   expect(all).toContain("AAPL price above $200.00");
   expect(all).toContain("a dismiss");
   expect(all).not.toContain("r send back");
@@ -142,7 +142,7 @@ test("a markets space's detail shows the portfolio, each list and the next 30 da
     "Open the app for the chart.",
     "",
   ]);
-  expect(lines[at + 1]![0]!.color).toBe("gray");
+  expect(lines[at + 1]![0]!.color).toBe("dim");
   expect(all.join("\n")).not.toContain("Paper");
 });
 
@@ -158,7 +158,7 @@ test("a markets space with no holdings or earnings says so plainly", () => {
 test("a repo question's detail says it belongs to Atrium and where to edit it", () => {
   const state = makeState();
   state.approvals = [{ ...state.approvals[0]!, spaceId: null, taskId: null, kind: "question", alwaysAsk: "create_repo", title: 'Create GitHub repo "demo"?', detail: "Name: demo" }];
-  const ui: Ui = { ...initialUi, focus: "needs", lastLeft: "needs" };
+  const ui: Ui = { ...initialUi };
   const all = text(approvalDetail(deriveView(state, ui), null));
   expect(all).toContain("Atrium");
   expect(all).not.toContain("Unknown space");
@@ -201,6 +201,6 @@ test("task detail shows the summary and what it made", () => {
 test("approval detail renders markdown", () => {
   const state = makeState();
   state.approvals[0]!.detail = "**Done.** See the *list*.";
-  const view = deriveView(state, { ...initialUi, focus: "needs", lastLeft: "needs", selected: { ...initialUi.selected, needs: { id: ids.approval, index: 0 } } });
+  const view = deriveView(state, { ...initialUi, selected: { ...initialUi.selected, needs: { id: ids.approval, index: 0 } } });
   expect(text(approvalDetail(view, null))).not.toContain("**");
 });

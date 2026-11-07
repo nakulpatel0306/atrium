@@ -2,22 +2,22 @@ import { expect, test } from "bun:test";
 import type { Key } from "ink";
 import { join } from "node:path";
 import type { State } from "../../src/engine/state";
-import { type Command, commandsFor, HELP, hints } from "../../src/tui/keys";
+import { type Command, commandsFor, HELP, type KeyContext, NO_CONTEXT, strip } from "../../src/tui/keys";
 import { deriveView } from "../../src/tui/select";
 import { initialUi, type Overlay, pin, reduce, type Ui } from "../../src/tui/ui";
 import { ids, makeState } from "./fixtures";
 import { key } from "./key";
 
-const rows = { detail: 20, live: 10 };
+const rows = { detail: 20, live: 10, moneyRows: 3, investRows: 2 };
 
 // Plays keys through commandsFor and the reducer, the way the App does, collecting every command.
-function play(steps: (string | [string, Partial<Key>])[], start: Partial<Ui> = {}, state: State = makeState()) {
+function play(steps: (string | [string, Partial<Key>])[], start: Partial<Ui> = {}, state: State = makeState(), ctx: KeyContext = NO_CONTEXT) {
   // Pinned the way the App pins after every change.
   let ui: Ui = pin({ ...initialUi, ...start }, deriveView(state, { ...initialUi, ...start }));
   const all: Command[] = [];
   for (const step of steps) {
     const [input, flags] = typeof step === "string" ? [step, {}] : step;
-    const cmds = commandsFor(input, key(flags), ui, deriveView(state, ui));
+    const cmds = commandsFor(input, key(flags), ui, deriveView(state, ui), ctx);
     all.push(...cmds);
     for (const c of cmds) {
       if (c.kind !== "ui") continue;
@@ -29,16 +29,14 @@ function play(steps: (string | [string, Partial<Key>])[], start: Partial<Ui> = {
 }
 
 const uiActions = (cmds: Command[]) => cmds.flatMap((c) => (c.kind === "ui" ? [c.action] : []));
-const flashText = (cmds: Command[]) =>
-  uiActions(cmds).flatMap((a) => (a.type === "flash" && a.flash ? [a.flash.text] : []));
+const flashText = (cmds: Command[]) => uiActions(cmds).flatMap((a) => (a.type === "flash" && a.flash ? [a.flash.text] : []));
+const enter: [string, Partial<Key>] = ["", { return: true }];
+const esc: [string, Partial<Key>] = ["", { escape: true }];
 
+const spaces: Partial<Ui> = { tab: "spaces" };
 // Tasks in atrium, dashboard order: running, review, queued.
-const onTask = (index: number, id: string): Partial<Ui> => ({
-  focus: "tasks",
-  lastLeft: "tasks",
-  selected: { ...initialUi.selected, tasks: { id, index } },
-});
-const inJobHunt: Partial<Ui> = { selected: { ...initialUi.selected, spaces: { id: ids.jobHunt, index: 1 } } };
+const onTask = (index: number, id: string): Partial<Ui> => ({ tab: "spaces", focus: "tasks", lastLeft: "tasks", selected: { ...initialUi.selected, tasks: { id, index } } });
+const inJobHunt: Partial<Ui> = { tab: "spaces", selected: { ...initialUi.selected, spaces: { id: ids.jobHunt, index: 1 } } };
 
 test("a chunk of command keys acts once per key", () => {
   expect(uiActions(play(["jj"]).all)).toEqual([
@@ -50,35 +48,43 @@ test("a chunk of command keys acts once per key", () => {
   expect(jq[1]).toEqual({ kind: "quit" });
 });
 
-test("arrows, numbers, and tab focus panes", () => {
-  expect(play(["3"]).ui.focus).toBe("needs");
-  expect(play(["0"]).ui.focus).toBe("detail");
-  expect(play(["5"]).ui.focus).toBe("live");
-  expect(uiActions(play([["", { tab: true }]]).all)).toEqual([{ type: "cycle", dir: 1 }]);
-  expect(uiActions(play([["", { tab: true, shift: true }]]).all)).toEqual([{ type: "cycle", dir: -1 }]);
-  expect(uiActions(play(["l"]).all)).toEqual([{ type: "column", dir: "right" }]);
+test("numbers switch tabs; tab and arrows move between Spaces panes", () => {
+  expect(play(["2"]).ui.tab).toBe("spaces");
+  expect(play(["3"]).ui.tab).toBe("money");
+  expect(play(["4"]).ui.tab).toBe("investing");
+  expect(play(["5"]).ui.tab).toBe("activity");
+  expect(play(["5", "1"]).ui.tab).toBe("home");
+  expect(uiActions(play([["", { tab: true }]], spaces).all)).toEqual([{ type: "cycle", dir: 1 }]);
+  expect(uiActions(play([["", { tab: true, shift: true }]], spaces).all)).toEqual([{ type: "cycle", dir: -1 }]);
+  expect(uiActions(play(["l"], spaces).all)).toEqual([{ type: "column", dir: "right" }]);
   expect(uiActions(play([["", { downArrow: true }]]).all)).toEqual([{ type: "move", delta: 1 }]);
-  expect(uiActions(play([["d", { ctrl: true }]]).all)).toEqual([{ type: "page", dir: 1 }]);
+  expect(uiActions(play([["d", { ctrl: true }]], spaces).all)).toEqual([{ type: "page", dir: 1 }]);
 });
 
-test("a approves the selected approval", () => {
+test("a approves the selected card on Home, or the selected task in review", () => {
   const approve = { type: "approve" as const, approvalId: ids.approval, title: "Review: Fix login redirect" };
-  expect(play(["3", "a"]).intents).toEqual([approve]);
+  expect(play(["a"]).intents).toEqual([approve]);
   expect(play(["a"], onTask(1, ids.review)).intents).toEqual([approve]);
   const queued = play(["a"], onTask(2, ids.queued));
   expect(queued.intents).toEqual([]);
-  expect(flashText(queued.all)).toEqual(["Nothing to approve here. Pick a row in Needs you [3]."]);
+  expect(flashText(queued.all)).toEqual(["Nothing to approve here. Pick a task in review."]);
 });
 
-test("r opens the send-back prompt and enter rejects with the note", () => {
-  const opened = play(["3", "r"]);
-  expect(opened.ui.overlay).toMatchObject({ kind: "prompt", purpose: "reply", targetId: ids.approval });
-  const sent = play(["tighten the tests", ["", { return: true }]], { overlay: opened.ui.overlay });
+test("r opens the send-back box and enter rejects with the note", () => {
+  const opened = play(["r"]);
+  expect(opened.ui.ask).toMatchObject({ purpose: "reply", targetId: ids.approval });
+  const sent = play(["tighten the tests", enter], { ask: opened.ui.ask });
   expect(sent.intents).toEqual([{ type: "reject", approvalId: ids.approval, note: "tighten the tests" }]);
-  expect(sent.ui.overlay).toBeNull();
-  expect(play([["", { return: true }]], { overlay: opened.ui.overlay }).intents).toEqual([
-    { type: "reject", approvalId: ids.approval, note: "" },
-  ]);
+  expect(sent.ui.ask).toBeNull();
+  expect(play([enter], { ask: opened.ui.ask }).intents).toEqual([{ type: "reject", approvalId: ids.approval, note: "" }]);
+});
+
+test("enter on a review card opens its task in Spaces", () => {
+  const opened = play([enter]);
+  expect(opened.ui.tab).toBe("spaces");
+  expect(opened.ui.focus).toBe("detail");
+  expect(opened.ui.lastLeft).toBe("tasks");
+  expect(opened.ui.selected.tasks.id).toBe(ids.review);
 });
 
 test("retry and run now only where the dashboard offers them", () => {
@@ -91,32 +97,57 @@ test("retry and run now only where the dashboard offers them", () => {
   expect(flashText(play(["s"], onTask(0, ids.running)).all)).toEqual(["Run now is for tasks waiting on Claude's reserve."]);
 });
 
-test("n and N open prompts; tab cycles the agent", () => {
-  const opened = play(["n"]);
-  expect(opened.ui.overlay).toMatchObject({ kind: "prompt", purpose: "task", targetId: ids.atrium, agent: "auto" });
-  let overlay = opened.ui.overlay;
-  for (const agent of ["claude", "codex", "gemini", "auto"]) {
-    overlay = play([["", { tab: true }]], { overlay }).ui.overlay;
-    expect(overlay).toMatchObject({ agent });
-  }
-  const sent = play(["Add a README", ["", { tab: true }], ["", { return: true }]], { overlay: opened.ui.overlay });
-  expect(sent.intents).toEqual([{ type: "newTask", spaceId: ids.atrium, text: "Add a README", agent: "claude" }]);
+test(". asks before stopping the running task, and y stops it", () => {
+  const opened = play(["."], onTask(0, ids.running));
+  expect(opened.ui.overlay).toEqual({ kind: "confirm", purpose: "stop", targetId: ids.running });
+  expect(play(["y"], { overlay: opened.ui.overlay }).intents).toEqual([{ type: "stop", taskId: ids.running }]);
+  expect(play(["n"], { overlay: opened.ui.overlay }).intents).toEqual([]);
+  // From the live pane, the space's running task; on Home, the only one running.
+  expect(play(["."], { ...spaces, focus: "live" }).ui.overlay).toEqual({ kind: "confirm", purpose: "stop", targetId: ids.running });
+  expect(play(["."]).ui.overlay).toEqual({ kind: "confirm", purpose: "stop", targetId: ids.running });
+  expect(flashText(play(["."], onTask(2, ids.queued)).all)).toEqual(["That task isn't running."]);
+  const none = makeState({ tasks: makeState().tasks.filter((t) => t.status !== "running") });
+  expect(flashText(play(["."], {}, none).all)).toEqual(["Nothing is running."]);
+});
 
-  const space = play(["N"]);
-  expect(space.ui.overlay).toMatchObject({ kind: "prompt", purpose: "space" });
-  expect(play(["a todo app", ["", { return: true }]], { overlay: space.ui.overlay }).intents).toEqual([
-    { type: "newSpace", text: "a todo app" },
-  ]);
-  const empty = play([["", { return: true }]], { overlay: space.ui.overlay });
+test("space or : opens the Ask box; on Spaces it adds a task and tab cycles the agent", () => {
+  const opened = play([" "], spaces);
+  expect(opened.ui.ask).toMatchObject({ purpose: "ask", agent: "auto" });
+  expect(play([":"]).ui.ask).toMatchObject({ purpose: "ask" });
+  let ask = opened.ui.ask;
+  for (const agent of ["claude", "codex", "gemini", "auto"]) {
+    ask = play([["", { tab: true }]], { ...spaces, ask }).ui.ask;
+    expect(ask).toMatchObject({ agent });
+  }
+  const sent = play(["Add a README", ["", { tab: true }], enter], { ...spaces, ask: opened.ui.ask });
+  expect(sent.intents).toEqual([{ type: "newTask", spaceId: ids.atrium, text: "Add a README", agent: "claude" }]);
+  expect(play(["n"], spaces).ui.ask).toMatchObject({ purpose: "ask" });
+});
+
+test("on Home the Ask box makes something new, and N does anywhere in Spaces", () => {
+  const home = play([" ", "text mom happy birthday", enter]);
+  expect(home.intents).toEqual([{ type: "newSpace", text: "text mom happy birthday" }]);
+  const space = play(["N"], spaces);
+  expect(space.ui.ask).toMatchObject({ purpose: "space" });
+  expect(play(["a todo app", enter], { ...spaces, ask: space.ui.ask }).intents).toEqual([{ type: "newSpace", text: "a todo app" }]);
+  const empty = play([enter], { ask: space.ui.ask });
   expect(empty.intents).toEqual([]);
   expect(flashText(empty.all)).toEqual(["Type something first, or press esc to cancel."]);
-  expect(empty.ui.overlay).not.toBeNull();
+  expect(empty.ui.ask).not.toBeNull();
+});
+
+test("keys typed in the Ask box are text, not commands", () => {
+  const typed = play([" ", "qa1"]);
+  expect(typed.ui.ask?.value).toBe("qa1");
+  expect(typed.intents).toEqual([]);
+  expect(typed.all.some((c) => c.kind === "quit")).toBe(false);
+  expect(play([" ", "x", esc]).ui.ask).toBeNull();
 });
 
 test("A picks an agent for a queued work task", () => {
   const opened = play(["A"], onTask(2, ids.queued));
   expect(opened.ui.overlay).toEqual({ kind: "picker", purpose: "agent", targetId: ids.queued, options: ["auto", "claude", "codex", "gemini"], index: 0 });
-  const picked = play(["j", ["", { return: true }]], { ...onTask(2, ids.queued), overlay: opened.ui.overlay });
+  const picked = play(["j", enter], { ...onTask(2, ids.queued), overlay: opened.ui.overlay });
   expect(picked.intents).toEqual([{ type: "setAgent", taskId: ids.queued, agent: "claude" }]);
   expect(picked.ui.overlay).toBeNull();
   expect(flashText(play(["A"], onTask(0, ids.running)).all)).toEqual(["This task has already started, so its agent can't change."]);
@@ -127,26 +158,28 @@ test("q closes an overlay before quitting", () => {
   expect(play(["q"], { overlay: { kind: "help" } }).all.some((c) => c.kind === "quit")).toBe(false);
   expect(play(["q"]).last).toEqual({ kind: "quit" });
   const transcript: Overlay = { kind: "transcript", taskId: ids.review, runIndex: 0, scroll: 0 };
-  expect(play([["", { escape: true }]], { overlay: transcript }).ui.overlay).toBeNull();
+  expect(play([esc], { overlay: transcript }).ui.overlay).toBeNull();
 });
 
-test("filter prompt filters live", () => {
-  const opened = play(["2", "/"]);
-  expect(opened.ui.overlay).toMatchObject({ kind: "prompt", purpose: "filter" });
-  const typed = play(["lo"], { focus: "tasks", lastLeft: "tasks", overlay: opened.ui.overlay });
+test("the filter box filters live", () => {
+  const opened = play(["/"], onTask(1, ids.review));
+  expect(opened.ui.ask).toMatchObject({ purpose: "filter", targetId: "tasks" });
+  const typed = play(["lo"], { ...onTask(1, ids.review), ask: opened.ui.ask });
   expect(uiActions(typed.all)).toContainEqual({ type: "filter", pane: "tasks", text: "lo" });
   expect(typed.ui.filters.tasks).toBe("lo");
-  const cancelled = play([["", { escape: true }]], typed.ui);
+  const cancelled = play([esc], typed.ui);
   expect(cancelled.ui.filters.tasks).toBe("");
-  expect(cancelled.ui.overlay).toBeNull();
+  expect(cancelled.ui.ask).toBeNull();
+  expect(play(["/"]).ui.ask).toMatchObject({ purpose: "filter", targetId: "needs" });
+  expect(flashText(play(["/"], { tab: "money" }).all)[0]).toStartWith("Filter works in lists");
 });
 
 test("space keys", () => {
-  expect(play(["p"]).intents).toEqual([{ type: "private", spaceId: ids.atrium, on: true }]);
-  expect(play(["e"]).ui.overlay).toMatchObject({ kind: "prompt", purpose: "goal", value: "Ship the terminal app", targetId: ids.atrium });
+  expect(play(["p"], spaces).intents).toEqual([{ type: "private", spaceId: ids.atrium, on: true }]);
+  expect(play(["e"], spaces).ui.ask).toMatchObject({ purpose: "goal", value: "Ship the terminal app", targetId: ids.atrium });
   expect(flashText(play(["v"], inJobHunt).all)).toEqual(["Reviews are for repo spaces."]);
-  expect(play(["v"]).ui.overlay).toMatchObject({ kind: "picker", purpose: "reviewer", options: ["none", "codex", "gemini", "claude"], index: 1 });
-  const confirm = play(["X"]);
+  expect(play(["v"], spaces).ui.overlay).toMatchObject({ kind: "picker", purpose: "reviewer", options: ["none", "codex", "gemini", "claude"], index: 1 });
+  const confirm = play(["X"], spaces);
   expect(confirm.ui.overlay).toEqual({ kind: "confirm", purpose: "archive", targetId: ids.atrium });
   const yes = play(["y"], { overlay: confirm.ui.overlay });
   expect(yes.intents).toEqual([{ type: "archive", spaceId: ids.atrium }]);
@@ -154,10 +187,13 @@ test("space keys", () => {
   const no = play(["n"], { overlay: confirm.ui.overlay });
   expect(no.intents).toEqual([]);
   expect(no.ui.overlay).toBeNull();
+  // Space keys belong to Spaces; elsewhere they do nothing.
+  expect(play(["p"]).intents).toEqual([]);
 });
 
 test("t opens the transcript of the selected task's latest run", () => {
   expect(play(["t"], onTask(1, ids.review)).ui.overlay).toEqual({ kind: "transcript", taskId: ids.review, runIndex: 0, scroll: 0 });
+  expect(play(["t"]).ui.overlay).toEqual({ kind: "transcript", taskId: ids.review, runIndex: 0, scroll: 0 });
   expect(flashText(play(["t"], onTask(2, ids.queued)).all)).toEqual(["No runs yet."]);
 });
 
@@ -171,83 +207,109 @@ test("any key clears the flash", () => {
 
 test("help covers every key", async () => {
   const source = await Bun.file(join(import.meta.dir, "../../src/tui/keys.ts")).text();
-  const used = [...source.matchAll(/case "(.)":/g)].map((m) => m[1]!);
+  const used = [...source.matchAll(/case "(.)":/g)].map((m) => m[1]!).filter((k) => k !== " ");
   expect(used.length).toBeGreaterThan(20);
   const documented = HELP.map((h) => h.keys).join(" ");
   for (const k of used) expect(documented.split(/\s+/)).toContain(k);
 });
 
-test("hints follow the focused pane", () => {
+test("the key strip follows the tab and the focused pane, and always offers help", () => {
   const state = makeState();
-  const needs = { ...initialUi, focus: "needs" as const, lastLeft: "needs" as const };
-  expect(hints(needs, deriveView(state, needs))).toContain("a approve");
-  expect(hints(initialUi, deriveView(state, initialUi))).toContain("n new task");
+  const keysOf = (u: Ui) => strip(u, deriveView(state, u)).map((k) => `${k.key} ${k.label}`);
+  const home = pin(initialUi, deriveView(state, initialUi));
+  expect(keysOf(home)).toContain("? help");
+  expect(keysOf(home)).toContain("space ask");
+  const tasks = { ...home, tab: "spaces" as const, focus: "tasks" as const, lastLeft: "tasks" as const };
+  expect(keysOf(tasks)).toContain(". stop");
+  expect(keysOf({ ...home, tab: "money" })).toContain("b budget");
+  expect(keysOf({ ...home, ask: { purpose: "ask", value: "", cursor: 0, agent: "auto", targetId: null } })).toEqual(["enter send", "esc cancel"]);
+  expect(keysOf({ ...home, overlay: { kind: "confirm", purpose: "stop", targetId: ids.running } })).toEqual(["y stop it", "n keep running"]);
 });
 
-test("actions wait for a picked row", () => {
-  const cleared: Partial<Ui> = { focus: "needs", lastLeft: "needs", selected: { ...initialUi.selected, needs: { id: "", index: 0 } } };
+test("actions wait for a picked card", () => {
+  const cleared: Partial<Ui> = { selected: { ...initialUi.selected, needs: { id: "", index: 0 } } };
   const a = play(["a"], cleared);
   expect(a.intents).toEqual([]);
   expect(flashText(a.all)).toEqual(["Select an item first: press j or k."]);
   expect(play(["j", "a"], cleared).intents).toMatchObject([{ type: "approve", approvalId: ids.approval }]);
   const state = makeState();
   const ui = { ...initialUi, ...cleared } as Ui;
-  expect(hints(ui, deriveView(state, ui)).startsWith("j k select an item")).toBe(true);
-});
-
-test("help comes first in the status bar", () => {
-  const state = makeState();
-  const ui = pin(initialUi, deriveView(state, initialUi));
-  expect(hints(ui, deriveView(state, ui)).startsWith("? help  ")).toBe(true);
+  expect(strip(ui, deriveView(state, ui))[0]).toMatchObject({ key: "j k", label: "select an item" });
 });
 
 const files = [
   { path: "grocery-list.md", exists: true, root: "space" as const },
   { path: "week.ics", exists: true, root: "space" as const },
 ];
-
-function playFiles(steps: (string | [string, Partial<Key>])[], start: Partial<Ui>, list = files) {
-  const state = makeState();
-  let ui: Ui = pin({ ...initialUi, ...start }, deriveView(state, { ...initialUi, ...start }));
-  const all: Command[] = [];
-  for (const step of steps) {
-    const [input, flags] = typeof step === "string" ? [step, {}] : step;
-    const cmds = commandsFor(input, key(flags), ui, deriveView(state, ui), list);
-    all.push(...cmds);
-    for (const c of cmds) if (c.kind === "ui") ui = pin(reduce(ui, c.action, deriveView(state, ui), rows), deriveView(state, ui));
-  }
-  return { ui, all, intents: all.flatMap((c) => (c.kind === "intent" ? [c.intent] : [])) };
-}
-
+const withFiles = (list = files): KeyContext => ({ ...NO_CONTEXT, files: list });
 const inDetail = (index: number, id: string): Partial<Ui> => ({ ...onTask(index, id), focus: "detail", lastLeft: "tasks" });
 
 test("f picks a made file, then o opens it and R reveals it", () => {
   const start = inDetail(1, ids.review);
-  expect(playFiles(["f"], start).ui.detailFile).toBe(0);
-  expect(playFiles(["f", "f", "f"], start).ui.detailFile).toBe(0);
-  expect(playFiles(["F"], start).ui.detailFile).toBe(1);
-  const open = playFiles(["f", "o"], start).intents;
-  expect(open).toEqual([{ type: "openFile", spaceId: ids.atrium, path: "grocery-list.md", how: "open", name: "grocery-list.md" }]);
-  expect(playFiles(["f", "f", "R"], start).intents).toEqual([{ type: "openFile", spaceId: ids.atrium, path: "week.ics", how: "reveal", name: "week.ics" }]);
+  const s = makeState();
+  expect(play(["f"], start, s, withFiles()).ui.detailFile).toBe(0);
+  expect(play(["f", "f", "f"], start, s, withFiles()).ui.detailFile).toBe(0);
+  expect(play(["F"], start, s, withFiles()).ui.detailFile).toBe(1);
+  expect(play(["f", "o"], start, s, withFiles()).intents).toEqual([{ type: "openFile", spaceId: ids.atrium, path: "grocery-list.md", how: "open", name: "grocery-list.md" }]);
+  expect(play(["f", "f", "R"], start, s, withFiles()).intents).toEqual([{ type: "openFile", spaceId: ids.atrium, path: "week.ics", how: "reveal", name: "week.ics" }]);
 });
 
 test("with no file picked, o and R keep their usual meaning", () => {
   const start = inDetail(1, ids.review);
-  expect(playFiles(["o"], start).intents[0]?.type).toBe("overnight");
-  expect(flashText(playFiles(["R"], start).all)).toContain("Retry is for blocked or failed tasks.");
-  expect(flashText(playFiles(["f"], start, []).all)).toContain("This task didn't make any files.");
+  expect(play(["o"], start, makeState(), withFiles()).intents[0]?.type).toBe("overnight");
+  expect(flashText(play(["R"], start, makeState(), withFiles()).all)).toContain("Retry is for blocked or failed tasks.");
+  expect(flashText(play(["f"], start, makeState(), withFiles([])).all)).toContain("This task didn't make any files.");
 });
 
 test("esc clears the file before leaving detail", () => {
   const start = inDetail(1, ids.review);
-  const once = playFiles(["f", ["", { escape: true }]], start).ui;
+  const once = play(["f", esc], start, makeState(), withFiles()).ui;
   expect(once.detailFile).toBeNull();
   expect(once.focus).toBe("detail");
-  expect(playFiles(["f", ["", { escape: true }], ["", { escape: true }]], start).ui.focus).toBe("tasks");
+  expect(play(["f", esc, esc], start, makeState(), withFiles()).ui.focus).toBe("tasks");
 });
 
-test("help lists the file keys", () => {
-  expect(HELP).toContainEqual({ section: "Act", keys: "f F", does: "select a made file" });
-  expect(HELP).toContainEqual({ section: "Act", keys: "o", does: "open the selected file" });
-  expect(HELP).toContainEqual({ section: "Act", keys: "R", does: "reveal the selected file" });
+const money: KeyContext = { ...NO_CONTEXT, money: { spaceId: "spc_inv", month: "2026-10", months: ["2026-11", "2026-10", "2026-09"], categories: ["Housing", "Dining", "Groceries"] } };
+
+test("Money: arrows step through the months the engine lists, and say where they end", () => {
+  const onMoney: Partial<Ui> = { tab: "money" };
+  expect(uiActions(play([["", { leftArrow: true }]], onMoney, makeState(), money).all)).toContainEqual({ type: "month", month: "2026-09" });
+  expect(uiActions(play(["]"], onMoney, makeState(), money).all)).toContainEqual({ type: "month", month: "2026-11" });
+  const latest = { ...money, money: { ...money.money!, month: "2026-11" } };
+  expect(flashText(play(["]"], onMoney, makeState(), latest).all)).toEqual(["That's the latest month imported."]);
+});
+
+test("Money: e explains the month, b budgets the picked category, i imports by path", () => {
+  const onMoney: Partial<Ui> = { tab: "money", money: { month: null, row: 1 } };
+  expect(play(["e"], onMoney, makeState(), money).intents).toEqual([{ type: "explain", spaceId: "spc_inv", month: "2026-10" }]);
+  const budget = play(["b"], onMoney, makeState(), money);
+  expect(budget.ui.ask).toMatchObject({ purpose: "budget", targetId: "Dining" });
+  expect(play(["CA$1,200", enter], { ...onMoney, ask: budget.ui.ask }, makeState(), money).intents).toEqual([{ type: "budget", spaceId: "spc_inv", category: "Dining", limit: 1200 }]);
+  expect(play([enter], { ...onMoney, ask: budget.ui.ask }, makeState(), money).intents).toEqual([{ type: "budget", spaceId: "spc_inv", category: "Dining", limit: null }]);
+  expect(flashText(play(["lots", enter], { ...onMoney, ask: budget.ui.ask }, makeState(), money).all)).toEqual(["Type an amount like 400, or leave it empty for no budget."]);
+  const imp = play(["i"], onMoney, makeState(), money);
+  expect(imp.ui.ask).toMatchObject({ purpose: "import", targetId: "spc_inv" });
+  expect(play(["~/Downloads/td.csv", enter], { ...onMoney, ask: imp.ui.ask }, makeState(), money).intents).toEqual([{ type: "importPreview", spaceId: "spc_inv", path: "~/Downloads/td.csv" }]);
+  // The import's confirm imports what the preview read.
+  const confirm: Overlay = { kind: "confirm", purpose: "import", targetId: "spc_inv", csv: "a,b", account: "TD chequing", summary: ["TD · 2 rows"] };
+  expect(play(["y"], { overlay: confirm }).intents).toEqual([{ type: "importCsv", spaceId: "spc_inv", csv: "a,b", account: "TD chequing" }]);
+});
+
+test("Money: the Ask box asks Claude about money; with no Investing space it says how to get one", () => {
+  expect(play([" ", "where did it go?", enter], { tab: "money" }, makeState(), money).intents).toEqual([{ type: "moneyAsk", spaceId: "spc_inv", question: "where did it go?" }]);
+  const none = play(["e"], { tab: "money" });
+  expect(flashText(none.all)[0]).toStartWith("There's no Investing space yet.");
+});
+
+test("Investing: the Ask box asks about the picked symbol, or adds a task when none is listed", () => {
+  const invest: KeyContext = { ...NO_CONTEXT, invest: { spaceId: "spc_inv", keys: ["SHOP.TO", "NVDA"] } };
+  expect(play(["j", " ", "why down?", enter], { tab: "investing" }, makeState(), invest).intents).toEqual([{ type: "investAsk", spaceId: "spc_inv", key: "NVDA", question: "why down?" }]);
+  const empty: KeyContext = { ...NO_CONTEXT, invest: { spaceId: "spc_inv", keys: [] } };
+  expect(play([" ", "weekly check-in", enter], { tab: "investing" }, makeState(), empty).intents).toEqual([{ type: "newTask", spaceId: "spc_inv", text: "weekly check-in", agent: "auto" }]);
+});
+
+test("Activity: enter opens the picked line's space", () => {
+  const opened = play(["j", enter], { tab: "activity" });
+  expect(opened.ui.tab).toBe("spaces");
+  expect(opened.ui.selected.spaces.id).toBe(ids.jobHunt);
 });

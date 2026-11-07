@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SpaceDeletePreview } from "../../src/engine/delete";
 import type { State } from "../../src/engine/state";
-import { deleteBoxLines } from "../../src/tui/components/DeleteBox";
+import { deleteBoxLines } from "../../src/tui/screens/overlays";
 import { activityDetail } from "../../src/tui/detail";
 import { commandsFor } from "../../src/tui/keys";
 import { deriveView } from "../../src/tui/select";
@@ -30,7 +30,7 @@ function play(chars: (string | "enter")[], state: State, start: Partial<Ui>) {
   return { ui, intents, flashes };
 }
 
-const onOld = { selected: { ...initialUi.selected, spaces: { id: "spc_old", index: 2 } } };
+const onOld = { tab: "spaces" as const, selected: { ...initialUi.selected, spaces: { id: "spc_old", index: 2 } } };
 
 test("archived spaces list after the active ones", () => {
   expect(deriveView(withArchived(), initialUi).spaces.map((s) => s.name)).toEqual(["atrium", "job hunt", "Text Dana"]);
@@ -38,7 +38,7 @@ test("archived spaces list after the active ones", () => {
 
 test("X restores an archived space; on an active one it still asks first", () => {
   expect(play(["X"], withArchived(), onOld).intents).toEqual([{ type: "restore", spaceId: "spc_old" }]);
-  expect(play(["X"], withArchived(), {}).ui.overlay).toEqual({ kind: "confirm", purpose: "archive", targetId: ids.atrium });
+  expect(play(["X"], withArchived(), { tab: "spaces" }).ui.overlay).toEqual({ kind: "confirm", purpose: "archive", targetId: ids.atrium });
   expect(play(["n"], withArchived(), onOld).flashes).toEqual(["Text Dana is archived. Press X to restore it first."]);
 });
 
@@ -71,14 +71,14 @@ test("the delete box shows what goes and what stays", () => {
   expect(text).toContain("  · 2 tasks, with 2 runs and their transcripts");
   expect(text.replace(/\n/g, " ")).toContain("Atrium can't unsend a text.");
   expect(text).toContain("Type Text Dana to confirm. This can't be undone.");
-  expect(text).toContain("> Text");
+  expect(text).toContain("› Text");
 });
 
 test("the activity pane lists folded groups and the detail shows every line", () => {
   const s = makeState();
   const now = Date.now();
   s.activity = Array.from({ length: 12 }, (_, i) => ({ id: `a${i}`, spaceId: ids.atrium, taskId: null, actor: "atrium", message: "Alert: NVDA crossed $140", createdAt: now - i * 1000 }));
-  const view = deriveView(s, { ...initialUi, lastLeft: "activity", focus: "activity" });
+  const view = deriveView(s, { ...initialUi, tab: "activity" });
   expect(view.activity).toHaveLength(1);
   expect(view.activity[0]!.text).toBe("Alert: NVDA crossed $140 ×12");
   const lines = activityDetail(view).map((l) => l.map((x) => x.text).join(""));
@@ -94,8 +94,8 @@ test("D in the app opens the box with the engine's count", async () => {
   });
   client.respond("/api/spaces/spc_old", { ok: true, data: { name: "Text Dana", message: 'Deleted "Text Dana". Its folder ~/Atrium/text-dana went to the Trash.', kept: [] } });
   const app = openApp(client);
-  await app.frame((f) => f.includes("Text Dana"));
-  await app.type("j", "j", "D");
+  await app.frame((f) => f.includes("1 Home"));
+  await app.type("2", "j", "j", "D");
   await app.frame((f) => f.includes("Delete Text Dana for good") && f.includes("The space itself"));
   await app.type(..."Text Dana", KEY.enter);
   await app.frame(() => client.calls.some((c) => c.method === "DELETE"));

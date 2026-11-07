@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Runs the terminal app under a real pty, types a script of keys, and returns what the screen showed.
-// Usage: bun scripts/tui-screen.ts --port <p> [--cols 120] [--rows 36] [--keys "3,~300,?"] [--raw <file>]
+// Usage: bun scripts/tui-screen.ts --port <p> [--cols 120] [--rows 36] [--keys "3,~300,?,<click:10:0>"] [--raw <file>]
 import { Terminal } from "@xterm/headless";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -14,18 +14,25 @@ const KEY_GAP_MS = 60;
 const EXIT_TIMEOUT_MS = 5000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const NAMED: Record<string, string> = { "<esc>": "\x1b", "<enter>": "\r", "<tab>": "\t" };
+const NAMED: Record<string, string> = { "<esc>": "\x1b", "<enter>": "\r", "<tab>": "\t", "<space>": " " };
+
+// A left click at a 0-based cell, as the terminal reports it in SGR mouse mode: press, then release.
+export const click = (x: number, y: number) => `\x1b[<0;${x + 1};${y + 1}M\x1b[<0;${x + 1};${y + 1}m`;
 
 export function parseKeys(script: string): Step[] {
   return script
     .split(",")
     .filter((s) => s !== "")
-    .map((s) => (/^~\d+$/.test(s) ? { wait: Number(s.slice(1)) } : s.replace(/<esc>|<enter>|<tab>/g, (m) => NAMED[m]!)));
+    .map((s) =>
+      /^~\d+$/.test(s)
+        ? { wait: Number(s.slice(1)) }
+        : s.replace(/<click:(\d+):(\d+)>/g, (_, x, y) => click(Number(x), Number(y))).replace(/<esc>|<enter>|<tab>|<space>/g, (m) => NAMED[m]!),
+    );
 }
 
 // The screen is read before a final "q", since quitting leaves the alternate screen and the app's frame with it.
 // After the read, esc closes whatever overlay or prompt is open (a "q" would be typed into a prompt), then "q" quits.
-export async function screen(opts: { port: number; cols?: number; rows?: number; steps: Step[] }): Promise<Screen> {
+export async function screen(opts: { port: number; cols?: number; rows?: number; steps: Step[]; env?: Record<string, string | undefined> }): Promise<Screen> {
   const cols = opts.cols ?? 120;
   const rows = opts.rows ?? 36;
   const term = new Terminal({ cols, rows, allowProposedApi: true });
@@ -34,7 +41,8 @@ export async function screen(opts: { port: number; cols?: number; rows?: number;
   let written = Promise.resolve();
   const proc = Bun.spawn(["bun", join(root, "src", "cli.ts")], {
     cwd: root,
-    env: { ...process.env, ATRIUM_PORT: String(opts.port) },
+    // An undefined value in opts.env takes that variable out, so a test can pin the color mode.
+    env: Object.fromEntries(Object.entries({ ...process.env, ATRIUM_PORT: String(opts.port), ...opts.env }).filter(([, v]) => v !== undefined)) as Record<string, string>,
     terminal: {
       cols,
       rows,

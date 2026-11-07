@@ -87,9 +87,3 @@ export function tail(lines: string[], height: number, scroll: number | null): st
   const top = scroll === null ? max : Math.min(max, Math.max(0, scroll));
   return lines.slice(top, top + height);
 }
-
-// Ink can't put a title in a border, so the top edge is drawn as text.
-export function borderTop(label: string, cols: number): string {
-  const shown = truncate(oneLine(label), Math.max(0, cols - 4));
-  return `╭─${shown}${"─".repeat(Math.max(0, cols - 3 - width(shown)))}╮`;
-}

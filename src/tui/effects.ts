@@ -4,13 +4,44 @@ import type { PostResult } from "../dashboard/api";
 import type { State } from "../engine/state";
 import type { EngineClient } from "./client";
 import type { Intent } from "./keys";
-import type { Flash } from "./ui";
+import type { Flash, Overlay } from "./ui";
+import { homedir } from "node:os";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
 
-// `spaceId` is set after a new space is set up, so the app can select it.
-export type Outcome = Flash & { spaceId?: string };
+// `spaceId` is set after a new space is set up, so the app can select it; `overlay` opens a confirm (an import's).
+export type Outcome = Flash & { spaceId?: string; overlay?: Overlay };
+
+const MAX_CSV_BYTES = 2 * 1024 * 1024;
+type Preview = { format: "bank" | "wealthsimple" | "unknown"; bank: { label: string }; accounts: string[]; account: string | null; total: number; skipped: unknown[]; warnings: string[] };
+
+// Reads the file on this Mac; the engine's preview route does the parsing and masking, as for the dashboard.
+async function previewImport(client: EngineClient, spaceId: string, path: string): Promise<Outcome> {
+  const full = path.trim().replace(/^(["'])(.*)\1$/, "$2").replace(/\\ /g, " ").replace(/^~(?=\/|$)/, homedir());
+  const file = Bun.file(full);
+  if (!(await file.exists())) return { tone: "bad", text: `There's no file at ${path.trim()}. Check the path, or drag the file into the terminal to paste it.` };
+  if (file.size > MAX_CSV_BYTES) return { tone: "bad", text: "That file is over 2 MB; export a shorter date range." };
+  let csv: string;
+  try {
+    csv = await file.text();
+  } catch {
+    return { tone: "bad", text: "Atrium couldn't read that file. Check that it's a CSV you can open." };
+  }
+  const res = await client.post<Preview>(`/api/investing/${encodeURIComponent(spaceId)}/money/preview`, { csv });
+  if (!res.ok) return { tone: "bad", text: res.error };
+  const p = res.data;
+  if (p.format === "unknown" || p.total === 0) {
+    return { tone: "bad", text: `${p.warnings[0] ?? "Nothing in that file could be read."} Import it from the dashboard's Money tab, where you can pick the columns.` };
+  }
+  const account = p.account ?? p.accounts[0] ?? "";
+  const summary = [
+    `${p.bank.label} · ${p.total} ${p.total === 1 ? "row" : "rows"}${p.skipped.length ? ` · ${p.skipped.length} skipped` : ""}`,
+    p.account !== null ? `Into ${p.account}. Change the account on the dashboard if that's wrong.` : `Accounts: ${p.accounts.join(", ")}`,
+    ...p.warnings,
+  ];
+  return { tone: "info", text: "Check what's in the file, then press y to import it.", overlay: { kind: "confirm", purpose: "import", targetId: spaceId, csv, account, summary } };
+}
 
 const ALREADY_HANDLED = "Already handled";
 
@@ -47,7 +78,7 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       // Exactly the text, number and service the confirm showed: what the engine has stored for this draft.
       const text = state.messageActions.find((m) => m.id === intent.actionId);
       if (!text?.handle) return { tone: "bad", text: "Pick who this goes to on the dashboard first." };
-      const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: text.text, handle: text.handle, service: text.service });
+      const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: intent.text ?? text.text, handle: text.handle, service: text.service });
       return said(res, () => `Sending to ${intent.toName}… If it doesn't go, the text comes back in Needs you.`);
     }
     case "reject": {
@@ -68,13 +99,40 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return said(res, (d) => `Queued "${d.task.title}" in ${spaceName(intent.spaceId)}${by}.`);
     }
     case "newSpace": {
-      const res = await client.post<{ space: Space } | { draft: { draft: { name: string } | null } }>("/api/command", { text: intent.text });
+      type Reply = { space: Space; tasks?: Task[]; messaging?: true } | { draft: { draft: { name: string } | null } } | { message: { toName: string } };
+      const res = await client.post<Reply>("/api/command", { text: intent.text });
       if (!res.ok) return said(res, () => "");
       const data = res.data;
       // A new project is only a draft until Nakul approves it, so there's no space to select yet.
       if ("draft" in data) return said(res, () => `Drafted "${data.draft.draft?.name ?? "your project"}". It's waiting in Needs you.`);
+      // A text with its words is a card on Home right away; one without waits for an agent to draft it.
+      if ("message" in data) return said(res, () => `Drafted a text to ${data.message.toName}. It's waiting in Needs you.`);
+      if (data.messaging) {
+        const to = data.tasks?.[0]?.title.replace(/^Draft a text to /, "") ?? "them";
+        return said(res, () => `Atrium is drafting a text to ${to}. It'll be in Needs you to send.`);
+      }
       return { ...said(res, () => `Set up ${data.space.name}.`), spaceId: data.space.id };
     }
+    case "stop":
+      return said(await client.post(`/api/tasks/${enc(intent.taskId)}/stop`), () => `Stopped "${taskTitle(intent.taskId)}". Its edits so far are kept; R retries it.`);
+    case "dismissNudge":
+      return said(await client.post(`/api/investing/${enc(intent.spaceId)}/money/nudges/${enc(intent.nudgeId)}/dismiss`), () => "Dismissed. It won't come back for this month.");
+    case "explain":
+      return said(await client.post(`/api/investing/${enc(intent.spaceId)}/money/explain`, { month: intent.month }), () => "Claude is explaining your month. The answer shows up here.");
+    case "moneyAsk":
+      return said(await client.post(`/api/investing/${enc(intent.spaceId)}/money/ask`, { question: intent.question }), () => "Claude is looking at your money. The answer shows up here.");
+    case "budget":
+      return said(await client.put(`/api/investing/${enc(intent.spaceId)}/money/budgets`, { category: intent.category, limit: intent.limit }), () =>
+        intent.limit === null ? `No budget for ${intent.category} now.` : `${intent.category} budget set to CA$${intent.limit.toLocaleString("en-US")} a month.`,
+      );
+    case "importPreview":
+      return previewImport(client, intent.spaceId, intent.path);
+    case "importCsv": {
+      const res = await client.post<{ added: number; duplicates: number }>(`/api/investing/${enc(intent.spaceId)}/money/import`, { csv: intent.csv, account: intent.account });
+      return said(res, (d) => `Imported ${d.added} ${d.added === 1 ? "row" : "rows"}${d.duplicates ? `, skipped ${d.duplicates} already there` : ""}.`);
+    }
+    case "investAsk":
+      return said(await client.post(`/api/investing/${enc(intent.spaceId)}/symbol/${enc(intent.key)}/ask`, { question: intent.question }), () => `Asked Claude about ${intent.key}. The answer lands in the Investing space.`);
     case "setAgent":
       return said(
         await client.patch(`/api/tasks/${enc(intent.taskId)}`, { agent: intent.agent }),

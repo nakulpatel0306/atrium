@@ -1,18 +1,19 @@
 // What every key does, as a pure function of the key, the UI state, and what's on screen.
 import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
-import type { ReviewerId } from "../engine/spaces";
 import { nameMatches } from "../dashboard/deletion";
+import type { ReviewerId } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
-import type { Action, ListPane, Overlay, Pane, Ui } from "./ui";
+import { type Action, type Ask, type AskPurpose, listPaneOf, type ListPane, type Overlay, TABS, type Ui } from "./ui";
 
 export type Intent =
   | { type: "approve"; approvalId: string; title: string }
-  | { type: "send_message"; actionId: string; toName: string }
+  | { type: "send_message"; actionId: string; toName: string; text?: string }
   | { type: "reject"; approvalId: string; note: string }
   | { type: "retry"; taskId: string }
   | { type: "runNow"; taskId: string }
+  | { type: "stop"; taskId: string }
   | { type: "newTask"; spaceId: string; text: string; agent: AgentChoice }
   | { type: "newSpace"; text: string }
   | { type: "setAgent"; taskId: string; agent: AgentChoice }
@@ -25,125 +26,158 @@ export type Intent =
   | { type: "restore"; spaceId: string }
   | { type: "deleteSpace"; spaceId: string; name: string }
   | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
-  | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string };
+  | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
+  | { type: "dismissNudge"; spaceId: string; nudgeId: string }
+  | { type: "explain"; spaceId: string; month: string }
+  | { type: "moneyAsk"; spaceId: string; question: string }
+  | { type: "budget"; spaceId: string; category: string; limit: number | null }
+  | { type: "importPreview"; spaceId: string; path: string }
+  | { type: "importCsv"; spaceId: string; csv: string; account: string }
+  | { type: "investAsk"; spaceId: string; key: string; question: string };
 
 // A file the selected task made, as the keys need it.
 export type MadeFile = { path: string; exists: boolean; root: "space" | "branch" };
 
+// What the fetched Money and Investing views hold, as the keys need it.
+export type KeyContext = {
+  files: MadeFile[];
+  money: { spaceId: string; month: string | null; months: string[]; categories: string[] } | null;
+  invest: { spaceId: string; keys: string[] } | null;
+};
+
+export const NO_CONTEXT: KeyContext = { files: [], money: null, invest: null };
+
 export type Command = { kind: "ui"; action: Action } | { kind: "intent"; intent: Intent } | { kind: "quit" };
 
-type Section = "Move" | "Act" | "Space" | "Views";
+type Section = "Everywhere" | "Home" | "Spaces" | "Money" | "Investing" | "Activity";
 
 export const HELP: { section: Section; keys: string; does: string }[] = [
-  { section: "Move", keys: "1 2 3 4", does: "focus a left pane" },
-  { section: "Move", keys: "0 5", does: "detail, live" },
-  { section: "Move", keys: "tab", does: "next pane, S-tab back" },
-  { section: "Move", keys: "h l", does: "left / right column" },
-  { section: "Move", keys: "j k", does: "down / up, or scroll" },
-  { section: "Move", keys: "g G", does: "top / bottom, follow" },
-  { section: "Move", keys: "ctrl-d ctrl-u", does: "half page down / up" },
-  { section: "Move", keys: "enter", does: "open" },
-  { section: "Move", keys: "esc", does: "back / clear filter" },
-  { section: "Move", keys: "/", does: "filter" },
-  { section: "Act", keys: "a", does: "approve" },
-  { section: "Act", keys: "r", does: "send back" },
-  { section: "Act", keys: "R", does: "retry" },
-  { section: "Act", keys: "s", does: "run now" },
-  { section: "Act", keys: "n", does: "new task" },
-  { section: "Act", keys: "N", does: "new space" },
-  { section: "Act", keys: "A", does: "change agent" },
-  { section: "Act", keys: "y n N", does: "suggestion: yes/later/never" },
-  { section: "Act", keys: "f F", does: "select a made file" },
-  { section: "Act", keys: "o", does: "open the selected file" },
-  { section: "Act", keys: "R", does: "reveal the selected file" },
-  { section: "Space", keys: "p", does: "private on / off" },
-  { section: "Space", keys: "e", does: "edit goal" },
-  { section: "Space", keys: "v", does: "pick reviewer" },
-  { section: "Space", keys: "X", does: "archive or restore space" },
-  { section: "Space", keys: "D", does: "delete space for good" },
-  { section: "Views", keys: "t", does: "transcript" },
-  { section: "Views", keys: "u", does: "agents and usage" },
-  { section: "Views", keys: "o", does: "overnight mode" },
-  { section: "Views", keys: "?", does: "help" },
-  { section: "Views", keys: "q", does: "close, or quit" },
-  { section: "Views", keys: "[ ]", does: "run or pause point" },
-  { section: "Views", keys: "y", does: "yes, when asked" },
+  { section: "Everywhere", keys: "1 2 3 4 5", does: "switch tab" },
+  { section: "Everywhere", keys: "space or :", does: "type in the Ask box" },
+  { section: "Everywhere", keys: "j k ↑ ↓", does: "move or scroll" },
+  { section: "Everywhere", keys: "g G", does: "top, bottom" },
+  { section: "Everywhere", keys: "enter", does: "open" },
+  { section: "Everywhere", keys: "esc", does: "back, clear filter" },
+  { section: "Everywhere", keys: "/", does: "filter the list" },
+  { section: "Everywhere", keys: "u", does: "agents and usage" },
+  { section: "Everywhere", keys: "o", does: "overnight on / off" },
+  { section: "Everywhere", keys: "? q", does: "help, close, quit" },
+  { section: "Home", keys: "s e x", does: "text: send, edit, skip" },
+  { section: "Home", keys: "a r", does: "approve, send back" },
+  { section: "Home", keys: "y n N", does: "yes, not now, never" },
+  { section: "Home", keys: "t", does: "transcript" },
+  { section: "Home", keys: ".", does: "stop running task" },
+  { section: "Spaces", keys: "tab h l", does: "move between panes" },
+  { section: "Spaces", keys: "n N", does: "new task, new space" },
+  { section: "Spaces", keys: "a r", does: "approve, send back" },
+  { section: "Spaces", keys: "R s", does: "retry, run now" },
+  { section: "Spaces", keys: ".", does: "stop running task" },
+  { section: "Spaces", keys: "A", does: "change agent" },
+  { section: "Spaces", keys: "t [ ]", does: "transcript, runs" },
+  { section: "Spaces", keys: "f F", does: "pick a made file" },
+  { section: "Spaces", keys: "o R", does: "open, reveal file" },
+  { section: "Spaces", keys: "p e v", does: "private, goal, reviewer" },
+  { section: "Spaces", keys: "X D", does: "archive, delete" },
+  { section: "Spaces", keys: "ctrl-d/u", does: "half page" },
+  { section: "Money", keys: "← → [ ]", does: "earlier, later month" },
+  { section: "Money", keys: "b", does: "set a budget" },
+  { section: "Money", keys: "e", does: "explain my month" },
+  { section: "Money", keys: "i", does: "import a CSV" },
+  { section: "Investing", keys: "j k", does: "pick a symbol" },
+  { section: "Activity", keys: "enter", does: "open its space" },
+  { section: "Activity", keys: "ctrl-d/u", does: "scroll its lines" },
 ];
 
-const HINT_KEYS: Record<Pane, string[]> = {
-  spaces: ["enter", "n", "N", "e", "X", "D"],
-  tasks: ["enter", "n", "R", "s", "A", "t"],
-  needs: ["a", "r", "enter", "t"],
-  activity: ["enter", "/"],
-  detail: ["j k", "a", "r", "f F", "t"],
-  live: ["j k", "g G"],
+const SECTION: Record<Ui["tab"], Section> = { home: "Home", spaces: "Spaces", money: "Money", investing: "Investing", activity: "Activity" };
+export const helpFor = (tab: Ui["tab"]) => HELP.filter((h) => h.section === "Everywhere" || h.section === SECTION[tab]);
+
+// One key cap on the strip. `input` is what a click on it presses; none for keys a click can't stand for.
+export type StripKey = { key: string; label: string; input?: string };
+
+const k = (key: string, label: string, input: string | undefined = key): StripKey => ({ key, label, input });
+const MOVE = k("↑↓", "move", undefined);
+const HELP_KEY = k("?", "help");
+
+const OVERLAY_KEYS: Partial<Record<Overlay["kind"], StripKey[]>> = {
+  transcript: [k("j k", "scroll", undefined), k("g G", "top / end", undefined), k("[ ]", "older / newer", undefined), k("q", "close")],
+  agents: [k("[ ]", "pause point", undefined), k("o", "overnight"), k("j k", "scroll", undefined), k("q", "close")],
+  detail: [k("j k", "scroll", undefined), k("a", "approve"), k("r", "send back"), k("q", "close")],
+  help: [k("?", "close")],
+  picker: [k("j k", "move", undefined), k("enter", "pick", "\r"), k("esc", "cancel", "\x1b")],
+  delete: [k("enter", "delete", "\r"), k("esc", "keep it", "\x1b")],
 };
 
-// The status bar's reminder of what the focused pane's keys do.
-const OVERLAY_HINTS: Partial<Record<Overlay["kind"], string>> = {
-  transcript: "j k scroll  g G top / bottom  [ ] older / newer run  q close",
-  agents: "[ ] pause point  o overnight mode  j k scroll  q close",
-  help: "? or q close",
-  delete: "type the space's name  enter delete  esc keep it",
-};
-
-export function hints(ui: Ui, view: View): string {
-  const overlay = ui.overlay && OVERLAY_HINTS[ui.overlay.kind];
-  if (overlay) return ui.overlay?.kind === "help" ? overlay : `? help  ${overlay}`;
-  const keys = ["?", ...HINT_KEYS[ui.focus]].map((k) => `${k} ${HELP.find((h) => h.keys === k)?.does ?? ""}`);
-  const pane = ui.focus === "detail" || ui.focus === "live" ? null : ui.focus;
+// The key strip: what the keys do right now, always on screen.
+export function strip(ui: Ui, view: View): StripKey[] {
+  if (ui.ask) {
+    const keys = [k("enter", "send", "\r"), k("esc", "cancel", "\x1b")];
+    if (askAgentCycles(ui, view)) keys.push(k("tab", "agent", "\t"));
+    return keys;
+  }
+  if (ui.overlay?.kind === "confirm") {
+    const yes = { send: "send", accept: "accept", archive: "archive", stop: "stop it", import: "import" }[ui.overlay.purpose];
+    return [k("y", yes), k("n", ui.overlay.purpose === "stop" ? "keep running" : "not now")];
+  }
+  const overlay = ui.overlay && OVERLAY_KEYS[ui.overlay.kind];
+  if (overlay) return overlay;
+  const pane = listPaneOf(ui);
   const list = pane ? listOf(view, pane) : [];
-  if (pane && list.length > 0 && !pick(list, ui.selected[pane]).item) keys.unshift("j k select an item");
-  if (pane === "needs" && pinnedSuggestion(ui, view)) return ["? help", "y yes", "n not now", "N never", "enter open"].join("  ");
-  return keys.join("  ");
+  const lead = pane && list.length > 0 && !pick(list, ui.selected[pane]).item ? [k("j k", "select an item", "j")] : [MOVE];
+  const ask = k("space", "ask", " ");
+  switch (ui.tab) {
+    case "home":
+      return [...lead, k("↵", "open", "\r"), ask, k("1-5", "views", undefined), k("/", "filter"), HELP_KEY, k("q", "quit")];
+    case "spaces":
+      if (ui.focus === "spaces") return [...lead, k("↵", "tasks", "\r"), k("n", "new task"), k("N", "new space"), k("e", "goal"), k("X", "archive"), k("D", "delete"), HELP_KEY];
+      if (ui.focus === "tasks") return [...lead, k("↵", "detail", "\r"), k("n", "new task"), k("R", "retry"), k("s", "run now"), k(".", "stop"), k("A", "agent"), k("t", "transcript"), HELP_KEY];
+      if (ui.focus === "detail") return [k("j k", "scroll", undefined), k("a", "approve"), k("r", "send back"), k("f", "files"), k("t", "transcript"), k("esc", "back", "\x1b"), HELP_KEY];
+      return [k("j k", "scroll", undefined), k("g G", "top / follow", undefined), k(".", "stop"), k("esc", "back", "\x1b"), HELP_KEY];
+    case "money":
+      return [k("←→", "month", undefined), k("↑↓", "category", undefined), k("b", "budget"), k("e", "explain"), k("i", "import"), ask, HELP_KEY];
+    case "investing":
+      return [k("↑↓", "pick a symbol", undefined), k("space", "ask about it", " "), k("u", "usage"), HELP_KEY, k("q", "quit")];
+    case "activity":
+      return [...lead, k("↵", "open space", "\r"), k("/", "filter"), k("ctrl-d", "scroll lines", undefined), HELP_KEY, k("q", "quit")];
+  }
 }
 
 const REVIEWER_OPTIONS = ["none", "codex", "gemini", "claude"];
 const NO_SPACE = "Pick a space first, or press N to describe a new one.";
-const NO_TASK = "Pick a task in Tasks [2] first.";
+const NO_TASK = "Pick a task in Spaces first.";
+const NO_INVESTING = "There's no Investing space yet. Press space and ask Atrium to set one up, like \"track my investing\".";
 
 const ui = (action: Action): Command => ({ kind: "ui", action });
 const intent = (i: Intent): Command => ({ kind: "intent", intent: i });
 const info = (text: string): Command => ui({ type: "flash", flash: { tone: "info", text } });
 const open = (overlay: Overlay): Command => ui({ type: "open", overlay });
 const close: Command = ui({ type: "close" });
-
-const isList = (p: Pane): p is ListPane => p !== "detail" && p !== "live";
-// Detail and Live act on whatever the left column last selected.
-const leftOf = (u: Ui): ListPane => (isList(u.focus) ? u.focus : u.lastLeft);
+const ask = (purpose: AskPurpose, targetId: string | null = null, value = ""): Command =>
+  ui({ type: "ask", ask: { purpose, value, cursor: value.length, agent: "auto", targetId } });
+const leaveAsk: Command = ui({ type: "ask", ask: null });
 
 const pinnedSuggestion = (u: Ui, view: View) => view.proposal && u.selected.needs.id === view.proposal.id;
 
 // Actions act only on a row pinned by id, never on whatever happens to sit at the cursor's position.
-const pinned = <T extends { id: string }>(u: Ui, pane: ListPane, item: T | null): T | null =>
-  item && u.selected[pane].id === item.id ? item : null;
+const pinned = <T extends { id: string }>(u: Ui, pane: ListPane, item: T | null): T | null => (item && u.selected[pane].id === item.id ? item : null);
+
+const spaceOf = (u: Ui, view: View) => (u.tab === "spaces" ? pinned(u, "spaces", view.space) : null);
 
 function approvalOf(u: Ui, view: View) {
-  const pane = leftOf(u);
-  if (pane === "needs") return pinned(u, "needs", view.approval);
-  const task = pane === "tasks" ? pinned(u, "tasks", view.task) : null;
+  if (u.tab === "home") return pinned(u, "needs", view.approval);
+  const task = u.tab === "spaces" && u.lastLeft === "tasks" ? pinned(u, "tasks", view.task) : null;
   return task?.approvalId ? (view.state.approvals.find((a) => a.id === task.approvalId) ?? null) : null;
 }
 
-function proposalOf(u: Ui, view: View) {
-  return leftOf(u) === "needs" ? pinned(u, "needs", view.proposal) : null;
-}
-
-const ANSWERS = { y: "yes", n: "not_now", N: "never" } as const;
-
 function taskOf(u: Ui, view: View) {
-  const pane = leftOf(u);
-  if (pane === "tasks") return pinned(u, "tasks", view.task);
-  const approval = pane === "needs" ? pinned(u, "needs", view.approval) : null;
+  if (u.tab === "spaces" && u.lastLeft === "tasks") return pinned(u, "tasks", view.task);
+  const approval = u.tab === "home" ? pinned(u, "needs", view.approval) : null;
   return approval?.taskId ? (view.state.tasks.find((t) => t.id === approval.taskId) ?? null) : null;
 }
 
-// Why a key found nothing to act on: an empty pane, or rows with none picked.
+// Why a key found nothing to act on: an empty list, or rows with none picked.
 function nothingHere(u: Ui, view: View, empty: string): Command {
-  const pane = leftOf(u);
-  if (listOf(view, pane).length > 0 && !pick(listOf(view, pane), u.selected[pane]).item) {
-    return info("Select an item first: press j or k.");
-  }
+  const pane = listPaneOf(u) ?? (u.tab === "spaces" ? u.lastLeft : null);
+  if (pane && listOf(view, pane).length > 0 && !pick(listOf(view, pane), u.selected[pane]).item) return info("Select an item first: press j or k.");
   return info(empty);
 }
 
@@ -154,13 +188,90 @@ function transcript(u: Ui, view: View): Command {
   return open({ kind: "transcript", taskId: task.id, runIndex: 0, scroll: 0 });
 }
 
-function prompt(purpose: "task" | "space" | "reply" | "goal" | "filter", targetId: string | null, value = ""): Command {
-  return open({ kind: "prompt", purpose, value, cursor: value.length, agent: "auto", targetId });
+// A task to stop: the one picked in Spaces, or on Home the only one running.
+function stop(u: Ui, view: View): Command {
+  const running = view.state.tasks.filter((t) => t.status === "running");
+  let task = taskOf(u, view);
+  if (u.tab === "spaces" && (u.focus === "live" || (u.focus !== "tasks" && !task))) task = view.live?.task ?? task;
+  if (u.tab === "home") {
+    if (running.length === 0) return info("Nothing is running.");
+    if (running.length > 1) return info("More than one task is running. Pick the one to stop in Spaces.");
+    task = running[0]!;
+  }
+  if (!task) return nothingHere(u, view, NO_TASK);
+  if (task.status !== "running") return info("That task isn't running.");
+  return open({ kind: "confirm", purpose: "stop", targetId: task.id });
+}
+
+// Approve: a text opens the send confirm, a result the agent said it didn't finish asks first.
+function approve(u: Ui, view: View): Command {
+  const approval = approvalOf(u, view);
+  if (!approval) return nothingHere(u, view, u.tab === "home" ? "Nothing to approve here." : "Nothing to approve here. Pick a task in review.");
+  // A text goes only after a y on the confirm that shows exactly what's sent, and only once it has a number.
+  if (approval.alwaysAsk === "send_message") return sendText(view, approval.id);
+  const outcome = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId)?.outcome : null;
+  if (outcome === "couldnt" || outcome === "partial") return open({ kind: "confirm", purpose: "accept", targetId: approval.id });
+  return intent({ type: "approve", approvalId: approval.id, title: approval.title });
+}
+
+function sendText(view: View, approvalId: string, edited?: string): Command {
+  const text = view.state.messageActions.find((m) => m.approvalId === approvalId);
+  if (!text) return info("This text is being updated. Try again in a moment.");
+  if (!text.handle) return info("Pick who this goes to on the dashboard first.");
+  return open({ kind: "confirm", purpose: "send", targetId: text.id, ...(edited !== undefined ? { text: edited } : {}) });
+}
+
+function sendBack(u: Ui, view: View): Command {
+  const approval = approvalOf(u, view);
+  if (!approval) return nothingHere(u, view, "Nothing to send back here.");
+  if (approval.kind === "alert") return info("Price alerts are dismissed with a; turn one off on the dashboard.");
+  if (approval.alwaysAsk === "send_message") return intent({ type: "reject", approvalId: approval.id, note: "" });
+  return ask("reply", approval.id);
+}
+
+const ANSWERS = { y: "yes", n: "not_now", N: "never" } as const;
+
+// Keys on Home's selected card.
+function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
+  const suggestion = pinnedSuggestion(u, view) ? view.proposal : null;
+  if (suggestion) {
+    if (input === "y" || input === "n" || input === "N") return [intent({ type: "answer", proposalId: suggestion.id, answer: ANSWERS[input], label: suggestion.label })];
+    if (input === "a" || input === "r") return [info("That's a suggestion: y yes, n not now, N never.")];
+    if (key.return) return [open({ kind: "detail", scroll: 0 })];
+  }
+  const nudge = view.nudge && u.selected.needs.id === view.nudge.id ? view.nudge : null;
+  if (nudge) {
+    if (input === "x") return [intent({ type: "dismissNudge", spaceId: nudge.spaceId, nudgeId: nudge.id })];
+    if (key.return || input === "i") return [ui({ type: "tab", tab: "money" })];
+  }
+  const approval = pinned(u, "needs", view.approval);
+  if (!approval) return null;
+  const text = approval.alwaysAsk === "send_message" ? view.state.messageActions.find((m) => m.approvalId === approval.id) : undefined;
+  if (approval.alwaysAsk === "send_message") {
+    if (input === "s") return [sendText(view, approval.id)];
+    if (input === "x") return [intent({ type: "reject", approvalId: approval.id, note: "" })];
+    if (input === "e") return text ? [ask("edit", approval.id, text.text)] : [info("This text is being updated. Try again in a moment.")];
+  }
+  if (key.return) {
+    // A review opens on its task, where its runs, files and thread are; anything else opens its full text here.
+    const task = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId) : undefined;
+    const index = task ? view.spaces.findIndex((s) => s.id === task.spaceId) : -1;
+    if (task && index >= 0) {
+      return [
+        ui({ type: "select", pane: "spaces", id: task.spaceId }),
+        ui({ type: "focus", pane: "tasks" }),
+        ui({ type: "select", pane: "tasks", id: task.id }),
+        ui({ type: "focus", pane: "detail" }),
+      ];
+    }
+    return [open({ kind: "detail", scroll: 0 })];
+  }
+  return null;
 }
 
 // f, F, o and R on the files a task made, while its detail has focus. Null when the key means something else.
 function fileKey(input: string, u: Ui, view: View, files: MadeFile[]): Command[] | null {
-  if (u.focus !== "detail" || view.subject !== "task" || !view.task) return null;
+  if (u.tab !== "spaces" || u.focus !== "detail" || view.subject !== "task" || !view.task) return null;
   if (input === "f" || input === "F") {
     if (!files.length) return [info("This task didn't make any files.")];
     const step = input === "f" ? 1 : -1;
@@ -175,56 +286,60 @@ function fileKey(input: string, u: Ui, view: View, files: MadeFile[]): Command[]
   return null;
 }
 
-// One command key, outside any overlay.
-function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[] = []): Command[] {
-  if (key.tab) return [ui({ type: "cycle", dir: key.shift ? -1 : 1 })];
-  if (key.leftArrow) return [ui({ type: "column", dir: "left" })];
-  if (key.rightArrow) return [ui({ type: "column", dir: "right" })];
-  if (key.downArrow) return [ui({ type: "move", delta: 1 })];
-  if (key.upArrow) return [ui({ type: "move", delta: -1 })];
-  if (key.escape) return [ui({ type: "back" })];
-  if (key.return) {
-    if (u.focus === "detail" && view.subject === "task") return [transcript(u, view)];
-    return [ui({ type: "enter" })];
+function moneyKey(input: string, key: Key, u: Ui, ctx: KeyContext): Command[] | null {
+  const m = ctx.money;
+  const earlier = key.leftArrow || input === "[" || input === "h";
+  const later = key.rightArrow || input === "]" || input === "l";
+  if (!earlier && !later && !["b", "e", "i"].includes(input)) return null;
+  if (!m) return [info(NO_INVESTING)];
+  if (input === "i") return [ask("import", m.spaceId)];
+  if (earlier || later) {
+    // Months are listed newest first.
+    const at = m.month ? m.months.indexOf(m.month) : -1;
+    const next = m.months[at + (earlier ? 1 : -1)];
+    if (at < 0 || next === undefined) return [info(earlier ? "That's the earliest month imported." : "That's the latest month imported.")];
+    return [ui({ type: "month", month: next })];
   }
+  if (!m.month) return [info("Import a bank, card or Wealthsimple file first. Press i.")];
+  if (input === "e") return [intent({ type: "explain", spaceId: m.spaceId, month: m.month })];
+  const category = m.categories[u.money.row];
+  if (!category) return [info("Pick a category with j or k first.")];
+  return [ask("budget", category)];
+}
+
+// One command key, outside any overlay and the Ask box.
+function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext): Command[] {
+  if (key.escape) return [ui({ type: "back" })];
   if (key.ctrl) {
     if (input === "d") return [ui({ type: "page", dir: 1 })];
     if (input === "u") return [ui({ type: "page", dir: -1 })];
     return [];
   }
-  const onFile = fileKey(input, u, view, files);
+  if (u.tab === "money") {
+    const m = moneyKey(input, key, u, ctx);
+    if (m) return m;
+  }
+  if (key.tab) return u.tab === "spaces" ? [ui({ type: "cycle", dir: key.shift ? -1 : 1 })] : [ui({ type: "move", delta: key.shift ? -1 : 1 })];
+  if (key.leftArrow || key.rightArrow) return u.tab === "spaces" ? [ui({ type: "column", dir: key.leftArrow ? "left" : "right" })] : [];
+  if (key.downArrow) return [ui({ type: "move", delta: 1 })];
+  if (key.upArrow) return [ui({ type: "move", delta: -1 })];
+  if (u.tab === "home") {
+    const h = homeKey(input, key, u, view);
+    if (h) return h;
+  }
+  if (key.return) {
+    if (u.tab === "spaces" && u.focus === "detail" && view.subject === "task") return [transcript(u, view)];
+    if (u.tab === "home") return [nothingHere(u, view, "Nothing needs you right now.")];
+    return [ui({ type: "enter" })];
+  }
+  const onFile = fileKey(input, u, view, ctx.files);
   if (onFile) return onFile;
-  const space = pinned(u, "spaces", view.space);
-  const task = taskOf(u, view);
-  if (space?.status === "archived" && ["n", "p", "e", "v"].includes(input) && leftOf(u) === "spaces") {
-    return [info(`${space.name} is archived. Press X to restore it first.`)];
-  }
-  // On a suggestion in Needs you, y / n / N answer it; everywhere else n and N make a task and a space.
-  const suggestion = proposalOf(u, view);
-  if (suggestion) {
-    if (input === "y" || input === "n" || input === "N") {
-      return [intent({ type: "answer", proposalId: suggestion.id, answer: ANSWERS[input], label: suggestion.label })];
-    }
-    if (input === "a" || input === "r") return [info("That's a suggestion: y yes, n not now, N never.")];
-  }
-  if (input === "r" && approvalOf(u, view)?.kind === "alert") return [info("Price alerts are dismissed with a; turn one off on the dashboard.")];
+  const tab = "12345".indexOf(input);
+  if (input && tab >= 0) return [ui({ type: "tab", tab: TABS[tab]! })];
   switch (input) {
-    case "1":
-      return [ui({ type: "focus", pane: "spaces" })];
-    case "2":
-      return [ui({ type: "focus", pane: "tasks" })];
-    case "3":
-      return [ui({ type: "focus", pane: "needs" })];
-    case "4":
-      return [ui({ type: "focus", pane: "activity" })];
-    case "0":
-      return [ui({ type: "focus", pane: "detail" })];
-    case "5":
-      return [ui({ type: "focus", pane: "live" })];
-    case "h":
-      return [ui({ type: "column", dir: "left" })];
-    case "l":
-      return [ui({ type: "column", dir: "right" })];
+    case " ":
+    case ":":
+      return [ask("ask")];
     case "j":
       return [ui({ type: "move", delta: 1 })];
     case "k":
@@ -233,9 +348,6 @@ function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[]
       return [ui({ type: "edge", to: "top" })];
     case "G":
       return [ui({ type: "edge", to: "bottom" })];
-    case "/":
-      if (!isList(u.focus)) return [info("Filter works in the list panes, [1] to [4].")];
-      return [prompt("filter", u.focus, u.filters[u.focus])];
     case "?":
       return [open({ kind: "help" })];
     case "q":
@@ -244,74 +356,61 @@ function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[]
       return [open({ kind: "agents", scroll: 0 })];
     case "o":
       return [intent({ type: "overnight", on: !view.state.power.overnight })];
+    case "/": {
+      const pane = listPaneOf(u);
+      if (!pane) return [info("Filter works in lists: Home, the spaces and tasks in Spaces, and Activity.")];
+      return [ask("filter", pane, u.filters[pane])];
+    }
+    case ".":
+      return [stop(u, view)];
     case "t":
       return [transcript(u, view)];
-    case "a": {
-      const approval = approvalOf(u, view);
-      if (!approval) return [nothingHere(u, view, "Nothing to approve here. Pick a row in Needs you [3].")];
-      // A text goes only after a y on the confirm that shows exactly what's sent, and only once it has a number.
-      if (approval.alwaysAsk === "send_message") {
-        const text = view.state.messageActions.find((m) => m.approvalId === approval.id);
-        if (!text) return [info("This text is being updated. Try again in a moment.")];
-        if (!text.handle) return [info("Pick who this goes to on the dashboard first.")];
-        return [open({ kind: "confirm", purpose: "send", targetId: text.id })];
-      }
-      const outcome = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId)?.outcome : null;
-      if (outcome === "couldnt" || outcome === "partial") return [open({ kind: "confirm", purpose: "accept", targetId: approval.id })];
-      return [intent({ type: "approve", approvalId: approval.id, title: approval.title })];
-    }
-    case "r": {
-      const approval = approvalOf(u, view);
-      if (!approval) return [nothingHere(u, view, "Nothing to send back here. Pick a row in Needs you [3].")];
-      if (approval.alwaysAsk === "send_message") return [intent({ type: "reject", approvalId: approval.id, note: "" })];
-      return [prompt("reply", approval.id)];
-    }
+    case "a":
+      return [approve(u, view)];
+    case "r":
+      return [sendBack(u, view)];
+  }
+  if (u.tab !== "spaces") return [];
+  return spacesKey(input, u, view);
+}
+
+function spacesKey(input: string, u: Ui, view: View): Command[] {
+  const space = spaceOf(u, view);
+  const task = taskOf(u, view);
+  if (space?.status === "archived" && ["n", "p", "e", "v"].includes(input)) return [info(`${space.name} is archived. Press X to restore it first.`)];
+  switch (input) {
+    case "h":
+      return [ui({ type: "column", dir: "left" })];
+    case "l":
+      return [ui({ type: "column", dir: "right" })];
     case "R":
       if (!task) return [nothingHere(u, view, NO_TASK)];
       if (task.status !== "blocked" && task.status !== "failed") return [info("Retry is for blocked or failed tasks.")];
       return [intent({ type: "retry", taskId: task.id })];
     case "s":
-      if (!task || waitOf(task, view.state)?.kind !== "reserve") {
-        return [info("Run now is for tasks waiting on Claude's reserve.")];
-      }
+      if (!task || waitOf(task, view.state)?.kind !== "reserve") return [info("Run now is for tasks waiting on Claude's reserve.")];
       return [intent({ type: "runNow", taskId: task.id })];
     case "n":
       if (!space) return [info(NO_SPACE)];
-      return [prompt("task", space.id)];
+      return [ask("ask")];
     case "N":
-      return [prompt("space", null)];
+      return [ask("space")];
     case "A":
       if (!task) return [nothingHere(u, view, NO_TASK)];
       if (task.status !== "queued") return [info("This task has already started, so its agent can't change.")];
       if (task.kind !== "work") return [info("Reviews and fixes use the agent the space picked.")];
-      return [
-        open({
-          kind: "picker",
-          purpose: "agent",
-          targetId: task.id,
-          options: [...AGENT_CHOICES],
-          index: Math.max(0, AGENT_CHOICES.indexOf(task.agent as AgentChoice)),
-        }),
-      ];
+      return [open({ kind: "picker", purpose: "agent", targetId: task.id, options: [...AGENT_CHOICES], index: Math.max(0, AGENT_CHOICES.indexOf(task.agent as AgentChoice)) })];
     case "p":
       if (!space) return [info(NO_SPACE)];
       return [intent({ type: "private", spaceId: space.id, on: !space.private })];
     case "e":
       if (!space) return [info(NO_SPACE)];
-      return [prompt("goal", space.id, space.goal)];
+      return [ask("goal", space.id, space.goal)];
     case "v":
       if (!space) return [info(NO_SPACE)];
       // Reviews read the branch diff, so only repo spaces have anything to review.
       if (space.kind !== "repo") return [info("Reviews are for repo spaces.")];
-      return [
-        open({
-          kind: "picker",
-          purpose: "reviewer",
-          targetId: space.id,
-          options: REVIEWER_OPTIONS,
-          index: Math.max(0, REVIEWER_OPTIONS.indexOf(space.reviewBy ?? "none")),
-        }),
-      ];
+      return [open({ kind: "picker", purpose: "reviewer", targetId: space.id, options: REVIEWER_OPTIONS, index: Math.max(0, REVIEWER_OPTIONS.indexOf(space.reviewBy ?? "none")) })];
     case "X":
       if (!space) return [info(NO_SPACE)];
       // Restoring is undone by archiving again, so it needs no confirm.
@@ -325,37 +424,70 @@ function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[]
   }
 }
 
-function promptKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "prompt" }>): Command[] {
-  if (key.tab && overlay.purpose === "task") {
-    const next = AGENT_CHOICES[(AGENT_CHOICES.indexOf(overlay.agent) + 1) % AGENT_CHOICES.length]!;
-    return [ui({ type: "setOverlay", overlay: { ...overlay, agent: next } })];
-  }
-  const filterPane = overlay.purpose === "filter" ? (overlay.targetId as ListPane) : null;
-  const result = editLine(overlay, input, key);
-  if (result === "cancel") {
-    return filterPane ? [ui({ type: "filter", pane: filterPane, text: "" }), close] : [close];
-  }
-  if (result === "submit") {
-    const text = overlay.value.trim();
-    const target = overlay.targetId ?? "";
-    switch (overlay.purpose) {
-      case "filter":
-        return [close];
-      case "reply":
-        // The server accepts a send-back with no note.
-        return [intent({ type: "reject", approvalId: target, note: overlay.value }), close];
-      case "goal":
-        if (!text) return [info("A goal can't be empty. Describe what this space is for.")];
-        return [intent({ type: "goal", spaceId: target, goal: text }), close];
-      case "task":
-        if (!text) return [info("Type something first, or press esc to cancel.")];
-        return [intent({ type: "newTask", spaceId: target, text, agent: overlay.agent }), close];
-      case "space":
-        if (!text) return [info("Type something first, or press esc to cancel.")];
-        return [intent({ type: "newSpace", text }), close];
+// The new-task box on Spaces cycles its agent with tab; nothing else does.
+export function askAgentCycles(u: Ui, view: View): boolean {
+  return u.ask?.purpose === "ask" && u.tab === "spaces" && !!spaceOf(u, view) && spaceOf(u, view)!.status !== "archived";
+}
+
+// What the Ask box sends on enter, by what it's for and the tab it's on.
+function submitAsk(a: Ask, u: Ui, view: View, ctx: KeyContext): Command[] {
+  const text = a.value.trim();
+  const target = a.targetId ?? "";
+  const empty = info("Type something first, or press esc to cancel.");
+  switch (a.purpose) {
+    case "filter":
+      return [leaveAsk];
+    case "reply":
+      // The server accepts a send-back with no note.
+      return [intent({ type: "reject", approvalId: target, note: a.value }), leaveAsk];
+    case "goal":
+      if (!text) return [info("A goal can't be empty. Describe what this space is for.")];
+      return [intent({ type: "goal", spaceId: target, goal: text }), leaveAsk];
+    case "edit":
+      if (!text) return [info("The text can't be empty. Press esc to keep it as it was.")];
+      return [leaveAsk, sendText(view, target, a.value)];
+    case "budget": {
+      if (!ctx.money) return [leaveAsk, info(NO_INVESTING)];
+      const n = Number(text.replace(/[$,\s]|CA\$/gi, ""));
+      if (text && (!Number.isFinite(n) || n < 0)) return [info("Type an amount like 400, or leave it empty for no budget.")];
+      return [intent({ type: "budget", spaceId: ctx.money.spaceId, category: target, limit: !text || n === 0 ? null : n }), leaveAsk];
+    }
+    case "import":
+      if (!text) return [info("Type the path to a CSV file, or drag the file into the terminal.")];
+      return [intent({ type: "importPreview", spaceId: target, path: text }), leaveAsk];
+    case "space":
+      if (!text) return [empty];
+      return [intent({ type: "newSpace", text }), leaveAsk];
+    case "ask": {
+      if (!text) return [empty];
+      if (u.tab === "money") {
+        if (!ctx.money) return [leaveAsk, info(NO_INVESTING)];
+        return [intent({ type: "moneyAsk", spaceId: ctx.money.spaceId, question: text }), leaveAsk];
+      }
+      if (u.tab === "investing") {
+        if (!ctx.invest) return [leaveAsk, info(NO_INVESTING)];
+        const key = ctx.invest.keys[u.invest.row];
+        if (key) return [intent({ type: "investAsk", spaceId: ctx.invest.spaceId, key, question: text }), leaveAsk];
+        return [intent({ type: "newTask", spaceId: ctx.invest.spaceId, text, agent: "auto" }), leaveAsk];
+      }
+      const space = spaceOf(u, view);
+      if (u.tab === "spaces" && space && space.status !== "archived") return [intent({ type: "newTask", spaceId: space.id, text, agent: a.agent }), leaveAsk];
+      return [intent({ type: "newSpace", text }), leaveAsk];
     }
   }
-  const next = ui({ type: "setOverlay", overlay: { ...overlay, ...result } });
+}
+
+function askKey(input: string, key: Key, a: Ask, u: Ui, view: View, ctx: KeyContext): Command[] {
+  if (key.tab) {
+    if (!askAgentCycles(u, view)) return [];
+    const next = AGENT_CHOICES[(AGENT_CHOICES.indexOf(a.agent) + 1) % AGENT_CHOICES.length]!;
+    return [ui({ type: "ask", ask: { ...a, agent: next } })];
+  }
+  const filterPane = a.purpose === "filter" ? (a.targetId as ListPane) : null;
+  const result = editLine(a, input, key);
+  if (result === "cancel") return filterPane ? [ui({ type: "filter", pane: filterPane, text: "" }), leaveAsk] : [leaveAsk];
+  if (result === "submit") return submitAsk(a, u, view, ctx);
+  const next = ui({ type: "ask", ask: { ...a, ...result } });
   return filterPane ? [next, ui({ type: "filter", pane: filterPane, text: result.value })] : [next];
 }
 
@@ -372,24 +504,18 @@ function deleteKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "d
 }
 
 function pickerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "picker" }>): Command[] {
-  const move = (delta: number) => {
-    const index = (overlay.index + delta + overlay.options.length) % overlay.options.length;
-    return [ui({ type: "setOverlay", overlay: { ...overlay, index } })];
-  };
+  const move = (delta: number) => [ui({ type: "setOverlay", overlay: { ...overlay, index: (overlay.index + delta + overlay.options.length) % overlay.options.length } })];
   if (key.escape || input === "q") return [close];
   if (key.downArrow || input === "j") return move(1);
   if (key.upArrow || input === "k") return move(-1);
   if (!key.return) return [];
   const choice = overlay.options[overlay.index]!;
-  if (overlay.purpose === "agent") {
-    return [intent({ type: "setAgent", taskId: overlay.targetId, agent: choice as AgentChoice }), close];
-  }
-  const reviewBy = choice === "none" ? null : (choice as ReviewerId);
-  return [intent({ type: "reviewer", spaceId: overlay.targetId, reviewBy }), close];
+  if (overlay.purpose === "agent") return [intent({ type: "setAgent", taskId: overlay.targetId, agent: choice as AgentChoice }), close];
+  return [intent({ type: "reviewer", spaceId: overlay.targetId, reviewBy: choice === "none" ? null : (choice as ReviewerId) }), close];
 }
 
 const RESERVE_STEPS = [0.25, 0.5, 0.75] as const;
-// Half a screen of transcript; the App clamps the result to what the transcript holds.
+// Half a screen of transcript; the App clamps the result to what the view holds.
 const PAGE = 10;
 const BOTTOM = Number.MAX_SAFE_INTEGER;
 
@@ -429,16 +555,44 @@ function agentsKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "a
   return scroll === null ? [] : [ui({ type: "setOverlay", overlay: { ...overlay, scroll } })];
 }
 
-function overlayKey(input: string, key: Key, overlay: Overlay, view: View): Command[] {
+function detailKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "detail" }>, u: Ui, view: View): Command[] {
+  if (input === "q" || key.escape || key.return) return [close];
+  // The card's own keys still work from its full text.
+  if (["a", "r", "s", "x", "y", "n", "N", "t"].includes(input)) {
+    const out = input === "a" ? [approve(u, view)] : input === "r" ? [sendBack(u, view)] : input === "t" ? [transcript(u, view)] : (homeKey(input, key, u, view) ?? []);
+    return [close, ...out];
+  }
+  const scroll = scrollKey(input, key, overlay.scroll);
+  return scroll === null ? [] : [ui({ type: "setOverlay", overlay: { ...overlay, scroll } })];
+}
+
+function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): Command[] {
+  switch (overlay.purpose) {
+    case "archive":
+      return [intent({ type: "archive", spaceId: overlay.targetId })];
+    case "stop":
+      return [intent({ type: "stop", taskId: overlay.targetId })];
+    case "import":
+      return [intent({ type: "importCsv", spaceId: overlay.targetId, csv: overlay.csv, account: overlay.account })];
+    case "send": {
+      const text = view.state.messageActions.find((m) => m.id === overlay.targetId);
+      return text ? [intent({ type: "send_message", actionId: text.id, toName: text.toName, ...(overlay.text !== undefined ? { text: overlay.text } : {}) })] : [info("This text was already handled.")];
+    }
+    case "accept": {
+      const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
+      return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];
+    }
+  }
+}
+
+function overlayKey(input: string, key: Key, overlay: Overlay, u: Ui, view: View): Command[] {
   switch (overlay.kind) {
-    case "prompt":
-      return promptKey(input, key, overlay);
     case "picker":
       return pickerKey(input, key, overlay);
     case "delete":
       return deleteKey(input, key, overlay, view);
     case "confirm":
-      if (input === "y") return [...confirmed(overlay, view), close];
+      if (input === "y") return [close, ...confirmed(overlay, view)];
       return input === "n" || input === "q" || key.escape ? [close] : [];
     case "help":
       return input === "?" || input === "q" || key.escape ? [close] : [];
@@ -446,27 +600,19 @@ function overlayKey(input: string, key: Key, overlay: Overlay, view: View): Comm
       return agentsKey(input, key, overlay, view);
     case "transcript":
       return transcriptKey(input, key, overlay, view);
+    case "detail":
+      return detailKey(input, key, overlay, u, view);
   }
 }
 
-function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): Command[] {
-  if (overlay.purpose === "archive") return [intent({ type: "archive", spaceId: overlay.targetId })];
-  if (overlay.purpose === "send") {
-    const text = view.state.messageActions.find((m) => m.id === overlay.targetId);
-    return text ? [intent({ type: "send_message", actionId: text.id, toName: text.toName })] : [info("This text was already handled.")];
-  }
-  const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
-  return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];
-}
-
-export function commandsFor(input: string, key: Key, u: Ui, view: View, files: MadeFile[] = []): Command[] {
+export function commandsFor(input: string, key: Key, u: Ui, view: View, ctx: KeyContext = NO_CONTEXT): Command[] {
   const clear: Command[] = u.flash ? [ui({ type: "flash", flash: null })] : [];
-  // Inside a prompt the whole chunk is text, so a paste lands whole and never runs as commands.
-  if (u.overlay?.kind === "prompt") return [...clear, ...promptKey(input, key, u.overlay)];
+  // Inside the Ask box or the delete box the whole chunk is text, so a paste lands whole and never runs as commands.
   if (u.overlay?.kind === "delete") return [...clear, ...deleteKey(input, key, u.overlay, view)];
+  if (u.ask && !u.overlay) return [...clear, ...askKey(input, key, u.ask, u, view, ctx)];
   // Keys typed quickly arrive as one chunk; each character is its own command.
   const chars = input.length > 1 && !key.ctrl && !key.meta ? [...input] : [input];
   const out = [...clear];
-  for (const ch of chars) out.push(...(u.overlay ? overlayKey(ch, key, u.overlay, view) : globalKey(ch, key, u, view, files)));
+  for (const ch of chars) out.push(...(u.overlay ? overlayKey(ch, key, u.overlay, u, view) : globalKey(ch, key, u, view, ctx)));
   return out;
 }

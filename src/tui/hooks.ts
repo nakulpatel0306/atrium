@@ -15,14 +15,19 @@ export function useRunOutput(c: EngineClient, runId: string | null): string {
   return useSyncExternalStore(c.subscribe, () => (runId ? c.output(runId) : ""));
 }
 
-// Reads data that isn't part of the pushed state, again whenever `version` changes.
+// Reads data that isn't part of the pushed state, again whenever `version` changes. An answer the same as the last
+// one keeps the old object, so nothing redraws.
 function useFetched<T>(key: string | null, version: unknown, load: () => Promise<T | null>): T | null {
-  const [data, setData] = useState<{ key: string; value: T } | null>(null);
+  const [data, setData] = useState<{ key: string; value: T; json: string } | null>(null);
   useEffect(() => {
     if (!key) return;
     let live = true;
     // A failed read keeps what's shown; the next change tries again.
-    void load().then((value) => live && value !== null && setData({ key, value }));
+    void load().then((value) => {
+      if (!live || value === null) return;
+      const json = JSON.stringify(value);
+      setData((old) => (old && old.key === key && old.json === json ? old : { key, value, json }));
+    });
     return () => {
       live = false;
     };
@@ -86,6 +91,13 @@ export function useTick(ms: number, active: boolean): void {
     const id = setInterval(() => setTick((n) => n + 1), ms);
     return () => clearInterval(id);
   }, [ms, active]);
+}
+
+// An engine read that follows every state push while `path` is set (the Money and Investing views, Home's glance):
+// the same thing the dashboard does while those views are open.
+export function useEngineRead<T>(c: EngineClient, path: string | null): T | null {
+  const state = useEngineState(c);
+  return useFetched(path, state, () => c.get<T>(path!));
 }
 
 // What deleting a space would remove, read once when the delete box opens.

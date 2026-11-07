@@ -1,31 +1,45 @@
-// The terminal app's own state (focus, selection, scroll, overlays) and every way a key can change it.
+// The terminal app's own state (tab, focus, selection, scroll, the Ask box, overlays) and every way a key can change it.
 import type { AgentChoice } from "../dashboard/agents";
 import { CLEARED, listOf, pick, type View } from "./select";
 
+export const TABS = ["home", "spaces", "money", "investing", "activity"] as const;
+export type Tab = (typeof TABS)[number];
+
+// Lists whose selection is pinned to a row id: spaces and tasks (Spaces), needs (Home's cards), activity.
 export type ListPane = "spaces" | "tasks" | "needs" | "activity";
-export type Pane = ListPane | "detail" | "live";
-export type PromptPurpose = "task" | "space" | "reply" | "goal" | "filter";
+// Where the keys go on the Spaces tab.
+export type Pane = "spaces" | "tasks" | "detail" | "live";
+
+// What the Ask box is for right now. "ask" is the tab's own (new space, new task, money question, symbol ask); the
+// rest are the prompts other keys open in the same box.
+export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter" | "budget" | "import" | "edit";
+export type Ask = { purpose: AskPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null };
 
 export type Overlay =
   | { kind: "help" }
   | { kind: "agents"; scroll: number }
-  | { kind: "prompt"; purpose: PromptPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null }
   | { kind: "picker"; purpose: "agent" | "reviewer"; targetId: string; options: string[]; index: number }
   | { kind: "transcript"; taskId: string; runIndex: number; scroll: number }
+  // A Needs you item's full text (a question, an alert, a suggestion), scrollable.
+  | { kind: "detail"; scroll: number }
   | { kind: "confirm"; purpose: "archive"; targetId: string }
   // Deleting a space for good waits for its name, typed in full.
   | { kind: "delete"; spaceId: string; value: string; cursor: number }
-  // Sending a text, or accepting a result the agent said it didn't finish, waits for a y.
-  | { kind: "confirm"; purpose: "send"; targetId: string }
-  | { kind: "confirm"; purpose: "accept"; targetId: string };
+  // Sending a text waits for a y, showing exactly what goes: the draft, or Nakul's edit of it.
+  | { kind: "confirm"; purpose: "send"; targetId: string; text?: string }
+  | { kind: "confirm"; purpose: "accept"; targetId: string }
+  | { kind: "confirm"; purpose: "stop"; targetId: string }
+  // An import waits for a y on what the file holds (account, rows, dates), never its rows.
+  | { kind: "confirm"; purpose: "import"; targetId: string; csv: string; account: string; summary: string[] };
 
 export type Flash = { text: string; tone: "ok" | "bad" | "info" };
 
 type Selection = { id: string | null; index: number };
 
 export type Ui = {
+  tab: Tab;
   focus: Pane;
-  lastLeft: ListPane;
+  lastLeft: "spaces" | "tasks";
   lastRight: "detail" | "live";
   selected: Record<ListPane, Selection>;
   filters: Record<ListPane, string>;
@@ -33,11 +47,18 @@ export type Ui = {
   // The made file picked in the task's detail with f, which o and R then act on.
   detailFile: number | null;
   liveScroll: number | null;
+  // Money: the month asked for (null is the one the engine picks) and the category row; Investing: the symbol row.
+  money: { month: string | null; row: number };
+  invest: { row: number };
+  activityScroll: number;
+  // Null while the cursor isn't in the Ask box.
+  ask: Ask | null;
   overlay: Overlay | null;
   flash: Flash | null;
 };
 
 export type Action =
+  | { type: "tab"; tab: Tab }
   | { type: "focus"; pane: Pane }
   | { type: "cycle"; dir: 1 | -1 }
   | { type: "column"; dir: "left" | "right" }
@@ -53,14 +74,18 @@ export type Action =
   | { type: "unpin"; pane: ListPane }
   | { type: "filter"; pane: ListPane; text: string }
   | { type: "flash"; flash: Flash | null }
-  | { type: "file"; index: number | null };
+  | { type: "file"; index: number | null }
+  | { type: "ask"; ask: Ask | null }
+  | { type: "month"; month: string | null }
+  | { type: "row"; list: "money" | "invest"; index: number };
 
-// Pane heights, plus how many lines Detail and Live hold so scrolling knows where the end is.
-export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number };
+// How many lines each scrollable part holds and shows, so scrolling and moving know where the ends are.
+export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number; moneyRows?: number; investRows?: number; activityLines?: number; activity?: number };
 
 const none: Selection = { id: null, index: 0 };
 
 export const initialUi: Ui = {
+  tab: "home",
   focus: "spaces",
   lastLeft: "spaces",
   lastRight: "detail",
@@ -69,12 +94,24 @@ export const initialUi: Ui = {
   detailScroll: 0,
   detailFile: null,
   liveScroll: null,
+  money: { month: null, row: 0 },
+  invest: { row: 0 },
+  activityScroll: 0,
+  ask: null,
   overlay: null,
   flash: null,
 };
 
-const ORDER: Pane[] = ["spaces", "tasks", "needs", "activity", "detail", "live"];
-const isList = (p: Pane): p is ListPane => p !== "detail" && p !== "live";
+const ORDER: Pane[] = ["spaces", "tasks", "detail", "live"];
+const isList = (p: Pane): p is "spaces" | "tasks" => p === "spaces" || p === "tasks";
+
+// The list the arrow keys move through on this tab, if any.
+export function listPaneOf(ui: Ui): ListPane | null {
+  if (ui.tab === "home") return "needs";
+  if (ui.tab === "activity") return "activity";
+  if (ui.tab === "spaces" && isList(ui.focus)) return ui.focus;
+  return null;
+}
 
 function focus(ui: Ui, pane: Pane): Ui {
   if (!isList(pane)) return { ...ui, focus: pane, lastRight: pane };
@@ -85,11 +122,12 @@ function focus(ui: Ui, pane: Pane): Ui {
 
 // Selecting another space shows different tasks and output, so their selection and scroll start over.
 function select(ui: Ui, pane: ListPane, sel: Selection): Ui {
-  const next = { ...ui, selected: { ...ui.selected, [pane]: sel }, detailScroll: 0, detailFile: null };
-  if (pane === "spaces" && sel.id !== ui.selected.spaces.id) {
-    return { ...next, selected: { ...next.selected, tasks: none }, liveScroll: null };
-  }
-  return next;
+  const next = { ...ui, selected: { ...ui.selected, [pane]: sel } };
+  if (pane === "activity") return { ...next, activityScroll: 0 };
+  if (pane === "needs") return next;
+  const reset = { ...next, detailScroll: 0, detailFile: null };
+  if (pane === "spaces" && sel.id !== ui.selected.spaces.id) return { ...reset, selected: { ...reset.selected, tasks: none }, liveScroll: null };
+  return reset;
 }
 
 function moveTo(ui: Ui, view: View, pane: ListPane, index: (current: number, last: number) => number): Ui {
@@ -101,13 +139,13 @@ function moveTo(ui: Ui, view: View, pane: ListPane, index: (current: number, las
   return select(ui, pane, { id: list[to]!.id, index: to });
 }
 
+const clamp = (n: number, max: number) => Math.min(Math.max(0, max), Math.max(0, n));
 const detailMax = (rows: Rows) => Math.max(0, (rows.detailLines ?? 0) - rows.detail);
 const liveMax = (rows: Rows) => Math.max(0, (rows.liveLines ?? 0) - rows.live);
+const activityMax = (rows: Rows) => Math.max(0, (rows.activityLines ?? 0) - (rows.activity ?? 0));
 
 function scroll(ui: Ui, delta: number, rows: Rows): Ui {
-  if (ui.focus === "detail") {
-    return { ...ui, detailScroll: Math.min(detailMax(rows), Math.max(0, ui.detailScroll + delta)) };
-  }
+  if (ui.focus === "detail") return { ...ui, detailScroll: clamp(ui.detailScroll + delta, detailMax(rows)) };
   // Scrolling back down to the end resumes following, like a pager.
   const top = (ui.liveScroll ?? liveMax(rows)) + delta;
   return { ...ui, liveScroll: top >= liveMax(rows) ? null : Math.max(0, top) };
@@ -127,43 +165,66 @@ export function pin(ui: Ui, view: View): Ui {
   return next;
 }
 
+function moveRow(ui: Ui, list: "money" | "invest", to: number, count: number): Ui {
+  const index = clamp(to, count - 1);
+  return list === "money" ? { ...ui, money: { ...ui.money, row: index } } : { ...ui, invest: { row: index } };
+}
+
 export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
   switch (action.type) {
+    case "tab":
+      return { ...ui, tab: action.tab };
     case "focus":
-      return focus(ui, action.pane);
+      return focus({ ...ui, tab: "spaces" }, action.pane);
     case "cycle": {
       const at = ORDER.indexOf(ui.focus);
       return focus(ui, ORDER[(at + action.dir + ORDER.length) % ORDER.length]!);
     }
     case "column":
       return focus(ui, action.dir === "left" ? ui.lastLeft : ui.lastRight);
-    case "move":
-      if (isList(ui.focus)) return moveTo(ui, view, ui.focus, (i) => i + action.delta);
-      return scroll(ui, action.delta, rows);
-    case "edge":
-      if (isList(ui.focus)) return moveTo(ui, view, ui.focus, (_, last) => (action.to === "top" ? 0 : last));
+    case "move": {
+      const pane = listPaneOf(ui);
+      if (pane) return moveTo(ui, view, pane, (i) => i + action.delta);
+      if (ui.tab === "money") return moveRow(ui, "money", ui.money.row + action.delta, rows.moneyRows ?? 0);
+      if (ui.tab === "investing") return moveRow(ui, "invest", ui.invest.row + action.delta, rows.investRows ?? 0);
+      if (ui.tab === "spaces") return scroll(ui, action.delta, rows);
+      return ui;
+    }
+    case "edge": {
+      const pane = listPaneOf(ui);
+      if (pane) return moveTo(ui, view, pane, (_, last) => (action.to === "top" ? 0 : last));
+      if (ui.tab === "money") return moveRow(ui, "money", action.to === "top" ? 0 : Number.MAX_SAFE_INTEGER, rows.moneyRows ?? 0);
+      if (ui.tab === "investing") return moveRow(ui, "invest", action.to === "top" ? 0 : Number.MAX_SAFE_INTEGER, rows.investRows ?? 0);
+      if (ui.tab !== "spaces") return ui;
       if (ui.focus === "detail") return { ...ui, detailScroll: action.to === "top" ? 0 : detailMax(rows) };
       return { ...ui, liveScroll: action.to === "top" ? 0 : null };
+    }
     case "page": {
-      if (isList(ui.focus)) return ui;
+      if (ui.tab === "activity") {
+        const half = Math.max(1, Math.floor((rows.activity ?? 10) / 2));
+        return { ...ui, activityScroll: clamp(ui.activityScroll + half * action.dir, activityMax(rows)) };
+      }
+      if (ui.tab !== "spaces" || isList(ui.focus)) return ui;
       const half = Math.max(1, Math.floor((ui.focus === "detail" ? rows.detail : rows.live) / 2));
       return scroll(ui, half * action.dir, rows);
     }
     case "enter":
-      if (ui.focus === "spaces") return focus(ui, "tasks");
-      if (ui.focus === "tasks" || ui.focus === "needs") return focus(ui, "detail");
-      if (ui.focus === "activity") {
+      if (ui.tab === "spaces" && ui.focus === "spaces") return focus(ui, "tasks");
+      if (ui.tab === "spaces" && ui.focus === "tasks") return focus(ui, "detail");
+      if (ui.tab === "activity") {
         const spaceId = view.activityRow?.spaceId;
         const index = view.spaces.findIndex((s) => s.id === spaceId);
         if (index < 0) return ui;
-        return focus(select(ui, "spaces", { id: spaceId!, index }), "spaces");
+        return focus({ ...select(ui, "spaces", { id: spaceId!, index }), tab: "spaces" }, "spaces");
       }
       return ui;
-    case "back":
-      if (ui.focus === "detail" && ui.detailFile !== null) return { ...ui, detailFile: null };
-      if (isList(ui.focus) && ui.filters[ui.focus]) return { ...ui, filters: { ...ui.filters, [ui.focus]: "" } };
-      if (ui.focus === "spaces") return ui;
+    case "back": {
+      const pane = listPaneOf(ui);
+      if (ui.tab === "spaces" && ui.focus === "detail" && ui.detailFile !== null) return { ...ui, detailFile: null };
+      if (pane && ui.filters[pane]) return { ...ui, filters: { ...ui.filters, [pane]: "" } };
+      if (ui.tab !== "spaces" || ui.focus === "spaces") return ui;
       return focus(ui, isList(ui.focus) ? "spaces" : ui.lastLeft);
+    }
     case "open":
     case "setOverlay":
       return { ...ui, overlay: action.overlay };
@@ -177,14 +238,16 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
     case "unpin":
       return { ...ui, selected: { ...ui.selected, [action.pane]: { id: CLEARED, index: ui.selected[action.pane].index } } };
     case "filter":
-      return {
-        ...ui,
-        filters: { ...ui.filters, [action.pane]: action.text },
-        selected: { ...ui.selected, [action.pane]: none },
-      };
+      return { ...ui, filters: { ...ui.filters, [action.pane]: action.text }, selected: { ...ui.selected, [action.pane]: none } };
     case "flash":
       return { ...ui, flash: action.flash };
     case "file":
       return { ...ui, detailFile: action.index };
+    case "ask":
+      return { ...ui, ask: action.ask };
+    case "month":
+      return { ...ui, money: { month: action.month, row: 0 } };
+    case "row":
+      return action.list === "money" ? { ...ui, money: { ...ui.money, row: action.index } } : { ...ui, invest: { row: action.index } };
   }
 }

@@ -71,6 +71,11 @@ export function fakeClient(initial: State | null, opts: { online?: boolean } = {
       const r = responses.get(path);
       return r?.ok ? (r.data as SpaceDeletePreview) : null;
     },
+    async get<T>(path: string) {
+      calls.push({ method: "GET", path });
+      const r = responses.get(path);
+      return r?.ok ? (r.data as T) : null;
+    },
     async transcript(runId) {
       const path = `/api/runs/${runId}/transcript`;
       calls.push({ method: "GET", path });
@@ -80,6 +85,7 @@ export function fakeClient(initial: State | null, opts: { online?: boolean } = {
     },
     post: (path, body) => answer("POST", path, body),
     patch: (path, body) => answer("PATCH", path, body),
+    put: (path, body) => answer("PUT", path, body),
     del: (path, body) => answer("DELETE", path, body),
     close: () => listeners.clear(),
     push(next) {

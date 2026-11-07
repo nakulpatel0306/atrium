@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import type { Key } from "ink";
 import { cleanup } from "ink-testing-library";
 import type { State } from "../../src/engine/state";
-import { confirmLines } from "../../src/tui/components/Confirm";
+import { confirmLines } from "../../src/tui/screens/overlays";
 import { approvalDetail, taskDetail } from "../../src/tui/detail";
 import { runIntent, sendFollowUp } from "../../src/tui/effects";
 import { type Command, commandsFor } from "../../src/tui/keys";
@@ -42,7 +42,7 @@ function play(steps: string[], start: Partial<Ui>, state: State) {
   let ui: Ui = pin({ ...initialUi, ...start }, deriveView(state, { ...initialUi, ...start }));
   const all: Command[] = [];
   for (const input of steps) {
-    const cmds = commandsFor(input, key({} as Partial<Key>), ui, deriveView(state, ui));
+    const cmds = commandsFor(input, key((input === "\r" ? { return: true } : {}) as Partial<Key>), ui, deriveView(state, ui));
     all.push(...cmds);
     for (const c of cmds) {
       if (c.kind !== "ui") continue;
@@ -51,7 +51,7 @@ function play(steps: string[], start: Partial<Ui>, state: State) {
   }
   return { ui, intents: all.flatMap((c) => (c.kind === "intent" ? [c.intent] : [])), flashes: all.flatMap((c) => (c.kind === "ui" && c.action.type === "flash" && c.action.flash ? [c.action.flash.text] : [])) };
 }
-const onNeed = (id: string, index = 0): Partial<Ui> => ({ focus: "needs", lastLeft: "needs", selected: { ...initialUi.selected, needs: { id, index } } });
+const onNeed = (id: string, index = 0): Partial<Ui> => ({ selected: { ...initialUi.selected, needs: { id, index } } });
 const text = (lines: { text: string }[][]) => lines.map((l) => l.map((x) => x.text).join("")).join("\n");
 
 test("a on a text opens the confirm with the exact words; y sends the stored draft", async () => {
@@ -90,7 +90,7 @@ test("a on a couldn't result asks before accepting", () => {
 
 test("detail says couldn't above the summary, and shows a text's recipient and words", () => {
   const s = couldnt();
-  const onTask = { ...initialUi, focus: "tasks" as const, lastLeft: "tasks" as const, selected: { ...initialUi.selected, tasks: { id: ids.review, index: 1 } } };
+  const onTask = { ...initialUi, tab: "spaces" as const, focus: "tasks" as const, lastLeft: "tasks" as const, selected: { ...initialUi.selected, tasks: { id: ids.review, index: 1 } } };
   const lines = text(taskDetail(deriveView(s, onTask), null, { summary: { text: "Wrote it.", status: "pending", decidedBy: "you", at: Date.now() }, files: [] }, null));
   expect(lines).toContain("Couldn't do this: the file isn't there.");
   expect(lines.indexOf("Couldn't do this")).toBeLessThan(lines.indexOf("Summary"));
@@ -101,7 +101,23 @@ test("detail says couldn't above the summary, and shows a text's recipient and w
   expect(detail).toContain("you free sat?\nlet me know");
 });
 
-test("the panes mark a couldn't result and a text", async () => {
+test("s, e and x on a text card: send, edit then send the edit, skip", async () => {
+  const s = withText();
+  expect(play(["s"], onNeed(MSG_APR), s).ui.overlay).toEqual({ kind: "confirm", purpose: "send", targetId: "msa_1" });
+  expect(play(["x"], onNeed(MSG_APR), s).intents).toEqual([{ type: "reject", approvalId: MSG_APR, note: "" }]);
+  const editing = play(["e"], onNeed(MSG_APR), s);
+  expect(editing.ui.ask).toMatchObject({ purpose: "edit", targetId: MSG_APR, value: "you free sat?\nlet me know" });
+  const edited = play(["e", " :)", "\r"], onNeed(MSG_APR), s);
+  expect(edited.ui.overlay).toEqual({ kind: "confirm", purpose: "send", targetId: "msa_1", text: "you free sat?\nlet me know :)" });
+  expect(text(confirmLines(edited.ui.overlay as never, s, 60).lines)).toContain("let me know :)");
+  const sent = play(["e", " :)", "\r", "y"], onNeed(MSG_APR), s);
+  expect(sent.intents).toEqual([{ type: "send_message", actionId: "msa_1", toName: "Dana", text: "you free sat?\nlet me know :)" }]);
+  const client = fakeClient(s);
+  await runIntent(client, sent.intents[0]!, s);
+  expect(client.calls[0]).toEqual({ method: "POST", path: "/api/message-actions/msa_1/send", body: { text: "you free sat?\nlet me know :)", handle: "+15550100134", service: "iMessage" } });
+});
+
+test("the cards mark a couldn't result and a text", async () => {
   const s = withText();
   const r = s.tasks.find((x) => x.id === ids.review)!;
   r.outcome = "couldnt";
@@ -109,10 +125,13 @@ test("the panes mark a couldn't result and a text", async () => {
   s.tasks.push({ ...r, id: "tsk_done", title: "Send the text to Dana", status: "done", approvalId: null });
   const client = fakeClient(s);
   const app = openApp(client);
-  const f = await app.frame((f) => f.includes("Text Dana: you free sat?"));
+  const f = await app.frame((f) => f.includes("✉ Text to Dana"));
+  expect(f).toContain('"you free sat? let me know"');
+  expect(f).toContain(" s  Send");
   expect(f).toContain("! Review: Fix login redirect");
+  await app.type("2", "\t");
   const tasks = await app.frame((f) => f.includes("Send the text to Dana"));
-  expect(tasks).toMatch(/Send the text to Dana\s+not done/);
+  expect(tasks).toMatch(/! Send the text to Dana\s+not done/);
 });
 
 test("after Sending…, the activity says whether it went", () => {

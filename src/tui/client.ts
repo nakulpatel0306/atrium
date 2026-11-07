@@ -18,9 +18,12 @@ export type EngineClient = {
   reviewers(spaceId: string): Promise<Record<string, string | null> | null>;
   markets(spaceId: string): Promise<MarketsGlance | null>;
   deletePreview(spaceId: string): Promise<SpaceDeletePreview | null>;
+  // Any other engine read (money, portfolio, the markets view); null when it fails.
+  get<T>(path: string): Promise<T | null>;
   transcript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
   post<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>>;
   patch<T = unknown>(path: string, body: unknown): Promise<PostResult<T>>;
+  put<T = unknown>(path: string, body: unknown): Promise<PostResult<T>>;
   del<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>>;
   close(): void;
 };
@@ -193,7 +196,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     }
   }
 
-  async function send<T>(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<PostResult<T>> {
+  async function send<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown): Promise<PostResult<T>> {
     try {
       const res = await fetch(base + path, {
         method,
@@ -226,9 +229,11 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     reviewers: (spaceId) => read<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`),
     markets: (spaceId) => read<GlanceView>(`/api/investing/${encodeURIComponent(spaceId)}/glance`),
     deletePreview: (spaceId) => read<SpaceDeletePreview>(`/api/spaces/${encodeURIComponent(spaceId)}/delete-preview`),
+    get: (path) => read(path),
     transcript,
     post: (path, body) => send("POST", path, body),
     patch: (path, body) => send("PATCH", path, body),
+    put: (path, body) => send("PUT", path, body),
     del: (path, body) => send("DELETE", path, body),
     close() {
       closed = true;
