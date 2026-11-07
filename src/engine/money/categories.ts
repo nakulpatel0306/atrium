@@ -40,7 +40,8 @@ export function merchantOf(description: string): string {
     .split(/\s+/)
     .filter((t) => t && !/\d/.test(t) && /[a-z]/i.test(t));
   const name = tokens.slice(0, 2).join(" ");
-  return name ? name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : description.trim().slice(0, 40);
+  // With no word to use, the text without its digits: a merchant name never carries part of a number.
+  return name ? name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : description.replace(/[\d·]+/g, "").trim().slice(0, 40) || "Unknown";
 }
 
 const seededKey = (spaceId: string) => `money.rules.${spaceId}`;

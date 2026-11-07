@@ -734,3 +734,18 @@ test("card data: a number split across CSV fields that end up in one description
   const nb = previewMoney("Date,Description,Amount\n2026-10-02,\"CARD 4111\u00A01111\n1111\u30001111\",-5\n");
   expect(nb.rows[0]!.description).not.toMatch(/1111.*1111/);
 });
+
+test("card data: the merchant is derived from masked text, so a cut can't leave pieces of a number", () => {
+  const rows = [
+    "Date,Description 1,Description 2,Amount",
+    '2026-10-02,"41111 1111","1111 1111 STORE",-5',
+    '2026-10-03,"4111-1111-1111-1111",,-5',
+    '2026-10-04,"#41111",,-5',
+  ];
+  const p = previewMoney(rows.join("\n"));
+  importMoney(db, spaceId, p);
+  const stored = db.query("SELECT description, merchant FROM money_transactions").all() as { description: string; merchant: string }[];
+  for (const r of [...stored, ...p.rows]) {
+    for (const v of [r.description, r.merchant]) expect(v.replace(/\D/g, "")).not.toMatch(/\d{5}/);
+  }
+});

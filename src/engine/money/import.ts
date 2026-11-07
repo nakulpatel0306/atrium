@@ -229,13 +229,14 @@ function wealthsimple(headers: string[], body: string[][]): Pick<MoneyPreview, "
     const t = (r[type!] ?? "").trim().toLowerCase();
     const s = (r[sub!] ?? "").trim().toLowerCase();
     const kind = WS_KINDS[t === "trade" || t === "moneymovement" ? s : t] ?? "other";
-    const label = [r[symbol!], r[name!]].filter(Boolean).join(" · ") || (r[type!] ?? "").trim();
+    // Masked first; the description and merchant are built from the masked label.
+    const label = maskNumbers(safeText([r[symbol!], r[name!]].filter(Boolean).join(" · ") || (r[type!] ?? "").trim()));
     rows.push({
       source: "wealthsimple",
       account: maskNumbers(safeText(r[accountType!] ?? "")) || "Wealthsimple",
       date: d,
-      description: maskNumbers(safeText(`${kind[0]!.toUpperCase()}${kind.slice(1)} ${label}`.trim())),
-      merchant: maskNumbers(safeText(label)) || "Wealthsimple",
+      description: `${kind[0]!.toUpperCase()}${kind.slice(1)} ${label}`.trim(),
+      merchant: label || "Wealthsimple",
       amount,
       currency: (r[currency!] ?? "").trim().toUpperCase() === "USD" ? "USD" : "CAD",
       kind,
@@ -337,16 +338,19 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
       amount = !Number.isNaN(credit) && credit !== 0 ? Math.abs(credit) : -Math.abs(debit);
     }
     if (Number.isNaN(amount)) return skipped.push({ line, reason: "No amount Atrium can read." });
-    // Masked after joining, so a number split across the two columns is caught whole.
-    const d1 = safeText(cell(r, "description"));
-    const d2 = safeText(cell(r, "description2"));
+    // Masked first, before anything is derived: the description after joining, so a number split across the two
+    // columns is caught whole, and the merchant from its own masked column.
+    const raw1 = safeText(cell(r, "description"));
+    const raw2 = safeText(cell(r, "description2"));
+    const description = maskNumbers([raw1, raw2].filter(Boolean).join(" "));
+    const lead = maskNumbers(raw1 || raw2);
     const named = [cell(r, "account"), cell(r, "accountNumber")].filter(Boolean).join(" ") || OTHER_ACCOUNT;
     rows.push({
       source: "bank",
       account: fileAccount ?? maskNumbers(safeText(named)),
       date,
-      description: maskNumbers([d1, d2].filter(Boolean).join(" ")),
-      merchant: maskNumbers(merchantOf(d1 || d2)),
+      description,
+      merchant: merchantOf(lead),
       amount: Math.round(amount * 100) / 100,
       currency: "CAD",
       kind: amount < 0 ? "spend" : "income",

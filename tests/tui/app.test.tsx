@@ -119,3 +119,11 @@ test("activity times stay in one narrow column", async () => {
   expect(f).toContain("│now    Claude · finished Fix login redirect");
   expect(f).toContain("│15m    You · added Summarize postings · jo");
 });
+
+test("the monthly import reminder shows on top of Needs you as a plain line, not an item", async () => {
+  const nudge = { id: "mnd_1", spaceId: ids.atrium, spaceName: "Investing", kind: "import" as const, title: "Time to import October", body: "Amex isn't imported for October yet.", path: "/space/x?tab=money", createdAt: 0 };
+  const app = openApp(fakeClient(makeState({ nudges: [nudge] })));
+  const f = await app.frame((f) => f.includes("Time to import October"));
+  expect(f).toContain("✦ Time to import October · Amex");
+  expect(f).toContain("[3] Needs you · 1");
+});
