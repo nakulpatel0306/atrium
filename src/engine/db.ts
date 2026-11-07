@@ -265,6 +265,9 @@ function migrate(db: Database) {
   migrateWatchlists(db);
   // Ask Claude answers (about a symbol, or about money) are kept as write-ups of their own kinds.
   rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
+  // Nakul's own say on whether a money row is a transfer between his accounts: 1 yes, 0 no, NULL for Atrium to tell.
+  if (!has("money_transactions", "transfer")) db.exec("ALTER TABLE money_transactions ADD COLUMN transfer INTEGER");
+  backfillMoneyImports(db);
   // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
   if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");
   if (!has("instrument_meta", "market_cap")) db.exec("ALTER TABLE instrument_meta ADD COLUMN market_cap REAL");
@@ -277,6 +280,17 @@ function migrate(db: Database) {
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");
   migrateProvider(db);
+}
+
+// Money imported before imports were recorded gets one row per account, from its first to its last transaction, so
+// the recap and the monthly reminder know what those files covered.
+export function backfillMoneyImports(db: Database): void {
+  if (db.query("SELECT 1 FROM money_imports LIMIT 1").get()) return;
+  db.query(
+    `INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at)
+     SELECT 'mim_' || lower(hex(randomblob(8))), space_id, account, MIN(date), MAX(date), COUNT(*), MIN(imported_at)
+     FROM money_transactions GROUP BY space_id, account`,
+  ).run();
 }
 
 // Alpaca left the default path in Plan 10. A stored choice of it becomes Finnhub once; written directly, since

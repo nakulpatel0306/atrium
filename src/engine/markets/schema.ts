@@ -245,4 +245,31 @@ CREATE TABLE IF NOT EXISTS money_transactions (
   UNIQUE (space_id, fingerprint)
 );
 CREATE INDEX IF NOT EXISTS money_transactions_date ON money_transactions(space_id, date);
+CREATE TABLE IF NOT EXISTS money_imports (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  account TEXT NOT NULL,
+  first_date TEXT NOT NULL,
+  last_date TEXT NOT NULL,
+  rows INTEGER NOT NULL,
+  imported_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS money_budgets (
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  category TEXT NOT NULL,
+  monthly_limit REAL NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (space_id, category)
+);
+CREATE TABLE IF NOT EXISTS money_nudges (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  kind TEXT NOT NULL CHECK (kind IN ('budget','import')),
+  key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  dismissed_at INTEGER,
+  UNIQUE (space_id, key)
+);
 `;

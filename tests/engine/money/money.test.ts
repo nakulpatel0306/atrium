@@ -52,7 +52,7 @@ test("a Scotiabank card export reads Debit and Credit from its type column", () 
 
 test("a headerless TD export maps date, description, debit and credit", () => {
   const p = previewMoney(csv("td-headerless.csv"));
-  expect(p.guessed).toContain("This file has no header row, so Atrium read it as date, description, money out, money in.");
+  expect(p.guessed).toContain("This looks like a TD export with no header row, so Atrium read it as date, description, money out, money in, balance.");
   expect(p.rows.map((r) => [r.date, r.merchant, r.amount])).toEqual([
     ["2026-11-02", "Tim Hortons", -4.85],
     ["2026-11-03", "Costco Wholesale", -182.44],
@@ -242,7 +242,7 @@ test("masking keeps dates written in a description and still hides card and acco
   expect(maskNumbers("CARD 4510 1234 5678 9012")).toBe("CARD ··9012");
   expect(maskNumbers("ACCT 00123456789")).toBe("ACCT ··6789");
   expect(maskNumbers("REF 123456")).toBe("REF ··3456");
-  expect(maskNumbers("STORE #12345")).toBe("STORE #12345");
+  expect(maskNumbers("TIM HORTONS #4410")).toBe("TIM HORTONS #4410");
   // A run that only looks like a date's digits, without a date's shape, is still a number.
   expect(maskNumbers("ID 20261002")).toBe("ID ··1002");
   expect(maskNumbers("PAYMENT 2026-10-02 4510123456789012")).toBe("PAYMENT 2026-10-02 ··9012");
@@ -259,4 +259,120 @@ test("masking keeps dates written in a description and still hides card and acco
   expect(maskNumbers("\uE000 PAYMENT 2026-10-02 \uE000 4510123456789012")).toBe("\uE000 PAYMENT 2026-10-02 \uE000 ··9012");
   // Digits split around a kept date that add up to a long run mask everything.
   expect(maskNumbers("ACCT 123 2026-10-02 456")).not.toMatch(/2026-10-02/);
+});
+
+test("a TD chequing export is detected with medium confidence and named TD chequing", () => {
+  const p = previewMoney(csv("td-chequing.csv"));
+  expect(p.bank).toMatchObject({ id: "td", label: "TD", confidence: "medium" });
+  expect(p.account).toBe("TD chequing");
+  expect(p.accounts).toEqual(["TD chequing"]);
+  expect(p.rows[0]).toMatchObject({ date: "2026-08-01", amount: -1650, account: "TD chequing" });
+  expect(p.rows.find((r) => r.description.startsWith("PAYROLL"))!.amount).toBe(2150);
+});
+
+test("a TD credit card export is told apart by its card payments", () => {
+  const p = previewMoney(csv("td-credit.csv"));
+  expect(p.bank.id).toBe("td");
+  expect(p.account).toBe("TD credit card");
+  expect(p.rows.find((r) => r.description === "PAYMENT - THANK YOU")!.amount).toBe(612.4);
+  expect(p.rows.find((r) => r.description.startsWith("SPOTIFY"))!.amount).toBe(-11.99);
+  // Nakul can pick the account himself.
+  expect(previewMoney(csv("td-credit.csv"), { account: "TD chequing" }).accounts).toEqual(["TD chequing"]);
+});
+
+test("an Amex Canada export: positive amounts are charges, month-name dates are read", () => {
+  const p = previewMoney(csv("amex.csv"));
+  expect(p.bank).toMatchObject({ id: "amex", label: "Amex", confidence: "high" });
+  expect(p.account).toBe("Amex");
+  expect(p.signs).toBe("positive-out");
+  expect(p.warnings).toEqual([]);
+  expect(p.rows[0]).toMatchObject({ date: "2026-08-06", description: "NETFLIX.COM", amount: -16.49, account: "Amex" });
+  expect(p.rows.find((r) => r.description.startsWith("PAYMENT"))!.amount).toBe(402.11);
+  expect(previewMoney("Date,Description,Amount\n05 Nov. 2026,NETFLIX.COM,16.49\n\"Nov 07, 2026\",SPOTIFY,11.99\n").rows.map((r) => r.date)).toEqual(["2026-11-05", "2026-11-07"]);
+});
+
+test("a bare Date, Description, Amount file with charges as positives looks like Amex, with less confidence", () => {
+  const p = previewMoney("Date,Description,Amount\n2026-10-01,NETFLIX.COM,16.49\n2026-10-03,SPOTIFY,11.99\n");
+  expect(p.bank).toMatchObject({ id: "amex", confidence: "medium" });
+  expect(previewMoney("Date,Description,Amount\n2026-10-01,COFFEE,-4\n2026-10-03,PAY,-11.99\n").bank.id).toBe("generic");
+});
+
+test("a Wealthsimple Cash statement: interest is money in, transfers in are marked as transfers", () => {
+  const p = previewMoney(csv("ws-cash.csv"));
+  expect(p.bank).toMatchObject({ id: "ws-cash", label: "Wealthsimple Cash", confidence: "medium" });
+  expect(p.format).toBe("bank");
+  expect(p.rows[0]).toMatchObject({ date: "2026-08-17", amount: 500, kind: "transfer", account: "Wealthsimple Cash", source: "bank" });
+  expect(p.rows[1]).toMatchObject({ kind: "interest", description: "Interest" });
+});
+
+test("other layouts keep the old detection and the manual mapping", () => {
+  expect(previewMoney(csv("rbc.csv")).bank).toMatchObject({ id: "generic", confidence: "low" });
+  expect(previewMoney(csv("ws-activity-2026.csv")).bank).toMatchObject({ id: "ws-activity", confidence: "high" });
+});
+
+test("re-importing a file that was stored as Imported before doesn't double it", () => {
+  importMoney(db, spaceId, previewMoney(csv("td-headerless.csv"), { account: "Imported" }));
+  expect(importMoney(db, spaceId, previewMoney(csv("td-headerless.csv")))).toEqual({ added: 0, duplicates: 3 });
+});
+
+test("each import records which account it covered and its dates", () => {
+  importMoney(db, spaceId, previewMoney(csv("amex.csv")));
+  expect(db.query("SELECT account, first_date, last_date, rows FROM money_imports").all()).toEqual([{ account: "Amex", first_date: "2026-08-06", last_date: "2026-10-28", rows: 20 }]);
+});
+
+// ---- Card data ----
+import { isMasked, maskNumbers as mask } from "../../../src/engine/money/import";
+
+test("card data: 12 to 19 digit runs are masked with spaces, dashes or dots, keeping the last 4", () => {
+  for (const card of ["4111111111111111", "4111 1111 1111 1111", "4111-1111-1111-1111", "4111.1111.1111.1111", "411111111111", "4111111111111111111", "3782 822463 10005"]) {
+    const out = mask(`PAID ${card} THANKS`);
+    expect(out).toBe(`PAID ··${card.replace(/\D/g, "").slice(-4)} THANKS`);
+    expect(isMasked(out)).toBe(true);
+  }
+});
+
+test("card data: SIN-like and named account or transit numbers are masked; dates and amounts stay", () => {
+  expect(mask("SIN 046-454-286")).toBe("SIN ··4286");
+  expect(mask("ACCT 12345")).toBe("ACCT ··2345");
+  expect(mask("account: 98765 transit 00412")).toBe("account: ··8765 transit ··0412");
+  expect(mask("DEPOSIT #55123")).toBe("DEPOSIT #··5123");
+  expect(mask("TFR 2026-10-02 FOR 1234.56")).toBe("TFR 2026-10-02 FOR 1234.56");
+  expect(mask("Nakul holds 0.123456 of XEQT")).toBe("Nakul holds 0.123456 of XEQT");
+  expect(mask("PAID 12.50 123456")).toBe("PAID 12.50 ··3456");
+});
+
+test("card data at rest: no full card or account number reaches the database file or its WAL", () => {
+  const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+  const bank = ["Date,Description,Amount,Account Number", "2026-10-02,PAYMENT 4111 1111 1111 1111 REF 2026-10-02,-20.00,5500-0000-0000-0004", "2026-10-03,TRANSFER ACCT 77777123,-50.00,5500-0000-0000-0004"].join("\n");
+  const ws = ["transaction_date,account_type,activity_type,activity_sub_type,symbol,name,currency,net_cash_amount", "2026-01-05,TFSA 4012888888881881,MoneyMovement,DEPOSIT,,From 4111-1111-1111-1111,CAD,5"].join("\n");
+  const cash = ['"date","transaction","description","amount","balance"', '"2026-10-04","AFT_IN","From 4111.1111.1111.1111","10.00","10.00"'].join("\n");
+  for (const text of [bank, ws, cash]) importMoney(db, spaceId, previewMoney(text));
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const f of readdirSync(dir)) {
+      const full = join(dir, f);
+      if (statSync(full).isDirectory()) walk(full);
+      else files.push(full);
+    }
+  };
+  walk(home.home);
+  expect(files.some((f) => f.endsWith("-wal"))).toBe(true);
+  const raw = files.map((f) => readFileSync(f).toString("latin1")).join("\n");
+  for (const secret of ["4111111111111111", "4111 1111 1111 1111", "4111-1111-1111-1111", "4111.1111.1111.1111", "5500-0000-0000-0004", "5500000000000004", "4012888888881881", "77777123"]) {
+    expect(raw.includes(secret)).toBe(false);
+  }
+  const stored = db.query("SELECT account, description, merchant FROM money_transactions").all() as Record<string, string>[];
+  for (const r of stored) for (const v of Object.values(r)) expect(isMasked(v)).toBe(true);
+  expect(stored.some((r) => r.description!.includes("2026-10-02"))).toBe(true);
+});
+
+test("money imported before imports were recorded gets one coverage row per account", () => {
+  const { backfillMoneyImports } = require("../../../src/engine/db") as typeof import("../../../src/engine/db");
+  importMoney(db, spaceId, previewMoney(csv("rbc.csv")));
+  db.query("DELETE FROM money_imports").run();
+  backfillMoneyImports(db);
+  expect(db.query("SELECT account, first_date, last_date, rows FROM money_imports ORDER BY account").all()).toEqual([
+    { account: "Chequing ··1234", first_date: "2026-08-01", last_date: "2026-11-02", rows: 21 },
+    { account: "MasterCard ··4021", first_date: "2026-08-06", last_date: "2026-11-04", rows: 19 },
+  ]);
 });

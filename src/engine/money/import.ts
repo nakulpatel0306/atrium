@@ -3,15 +3,17 @@ import { createHash } from "node:crypto";
 import { bus } from "../events";
 import { newId } from "../ids";
 import { parseCsv } from "../markets/csv";
+import { detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_CODES, type Bank } from "./banks";
 import { merchantOf } from "./categories";
 
-// Bank and card exports (RBC, TD, Scotiabank and the like) and Wealthsimple activity exports, read on this Mac.
-// Columns are found by name, a headerless TD-style file by shape, and anything else is mapped by hand in the preview.
+// Bank and card exports (TD, Amex, Wealthsimple Cash, RBC, Scotiabank and the like) and Wealthsimple activity exports,
+// read on this Mac. Known banks are found by shape (banks.ts), other columns by name, and anything else is mapped by
+// hand in the preview.
 export type MoneyField = "date" | "description" | "description2" | "amount" | "debit" | "credit" | "account" | "accountNumber" | "type";
 export type MoneyMap = Partial<Record<MoneyField, number>>;
 export type Signs = "negative-out" | "positive-out";
 export type DateOrder = "mdy" | "dmy";
-export type MoneyKind = "spend" | "income" | "deposit" | "withdrawal" | "dividend" | "fee" | "buy" | "sell" | "interest" | "other";
+export type MoneyKind = "spend" | "income" | "deposit" | "withdrawal" | "dividend" | "fee" | "buy" | "sell" | "interest" | "transfer" | "other";
 export type MoneyRow = {
   source: "bank" | "wealthsimple";
   account: string;
@@ -34,7 +36,11 @@ export type MoneyPreview = {
   warnings: string[];
   guessed: string[];
   accounts: string[];
+  bank: Bank;
+  // The account every row was put in, for a file that doesn't name its own; null when the file does.
+  account: string | null;
 };
+export type PreviewOptions = { mapping?: MoneyMap; signs?: Signs; dates?: DateOrder; account?: string };
 
 export const MAX_ROWS = 20_000;
 const MAX_DESCRIPTION = 200;
@@ -83,9 +89,19 @@ function isoDate(raw: string, order: DateOrder): string | null {
   if (m) return valid(+m[1]!, +m[2]!, +m[3]!);
   m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (m) return order === "mdy" ? valid(+m[3]!, +m[1]!, +m[2]!) : valid(+m[3]!, +m[2]!, +m[1]!);
-  const parsed = Date.parse(t);
-  return Number.isNaN(parsed) || !/[a-z]/i.test(t) ? null : new Date(parsed).toISOString().slice(0, 10);
+  // Amex writes "05 Nov 2026" or "05 Nov. 2026"; some exports write "Nov 05, 2026". Read by hand, not by Date.parse,
+  // so the time zone can't move a date.
+  m = t.match(/^(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s+(\d{4})$/i);
+  if (m) return monthName(m[2]!) ? valid(+m[3]!, monthName(m[2]!)!, +m[1]!) : null;
+  m = t.match(/^([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})$/i);
+  if (m) return monthName(m[1]!) ? valid(+m[3]!, monthName(m[1]!)!, +m[2]!) : null;
+  return null;
 }
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const monthName = (s: string): number | null => {
+  const i = MONTHS.indexOf(s.slice(0, 3).toLowerCase());
+  return i < 0 ? null : i + 1;
+};
 // Round-tripped through a real date, so February 31 is refused rather than stored.
 function valid(y: number, mo: number, d: number): string | null {
   const t = new Date(Date.UTC(y, mo - 1, d));
@@ -96,27 +112,36 @@ function valid(y: number, mo: number, d: number): string | null {
 // A real date written with separators ("2026-10-02", "10/02/2026"), which masking leaves alone. Only years from 1990
 // to next year count, so a card number sliced like a date ("4510.12.31") is still a number.
 const DATE_RUN = /(?<![\d/.-])(?:(\d{4})([-/.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([-/.])(\d{1,2})\6(\d{4}))(?![\d/.-])/g;
+// An amount or quantity with one decimal point ("1234.56", "0.123456"), also left alone.
+const DECIMAL_RUN = /(?<![\d./-])(?:\d{1,9}\.\d{1,2}|\d{1,3}\.\d{1,6})(?![\d./-])/g;
+// Digits with spaces, dashes, dots, slashes or masking X and * between them.
 const NUMBER_RUN = /\d[\dX*\s./-]{4,}\d/gi;
+// An account, transit or reference number next to the word that names it: 5 digits are enough there.
+const NAMED_RUN = /(?<![a-z0-9])(acct|account|transit|no\.?|#)(\s*[:.]?\s*)(\d[\d\s-]{3,}\d)/gi;
 const realDate = (y: number, a: number, b: number) => y >= 1990 && y <= new Date().getUTCFullYear() + 1 && valid(y, a, b) !== null;
-const maskRuns = (s: string) =>
-  s.replace(NUMBER_RUN, (run) => {
-    const digits = run.replace(/\D/g, "");
-    return digits.length >= 6 ? `··${digits.slice(-4)}` : run;
-  });
+const last4 = (run: string) => `··${run.replace(/\D/g, "").slice(-4)}`;
+const maskRuns = (s: string) => s.replace(NUMBER_RUN, (run) => (run.replace(/\D/g, "").length >= 6 ? last4(run) : run));
 const longRun = (s: string) => (s.match(NUMBER_RUN) ?? []).some((run) => run.replace(/\D/g, "").length >= 6);
 
-// Card and account numbers keep their last four digits only ("4510 1234 5678 9012" → "··9012"), wherever they
-// appear: a run of six or more digits, with spaces, dashes, dots, slashes or masking X and * between them. A run
-// written as a real date isn't one. A bare 8-digit run is still masked, since part of an account number is worse to
-// leak than a date. Dates are kept by position, never by placeholder, and if any long run survives next to a kept
-// date the whole text is masked without keeping dates.
-export function maskNumbers(s: string): string {
+function keptSpans(s: string): { start: number; end: number }[] {
   const kept: { start: number; end: number }[] = [];
   for (const m of s.matchAll(DATE_RUN)) {
     const [, y1, , m1, d1, a2, , b2, y2] = m;
     const isDate = y1 ? realDate(+y1, +m1!, +d1!) : realDate(+y2!, +a2!, +b2!) || realDate(+y2!, +b2!, +a2!);
     if (isDate) kept.push({ start: m.index!, end: m.index! + m[0].length });
   }
+  for (const m of s.matchAll(DECIMAL_RUN)) kept.push({ start: m.index!, end: m.index! + m[0].length });
+  return kept.sort((a, b) => a.start - b.start);
+}
+
+// Card and account numbers keep their last four digits only ("4111 1111 1111 1111" → "··1111"), wherever they
+// appear: any run of six or more digits (a 12–19 digit card, a SIN written ddd-ddd-ddd), and 5 or more next to
+// "acct", "account", "transit" or "#". A real date or a plain amount isn't a number to hide. A bare 8-digit run is
+// still masked, since part of an account number is worse to leak than a date. Kept text is tracked by position,
+// never by placeholder, and if any long run survives beside it the whole text is masked with nothing kept.
+export function maskNumbers(input: string): string {
+  const s = input.replace(NAMED_RUN, (all, word: string, gap: string, run: string) => (run.replace(/\D/g, "").length >= 5 ? `${word}${gap}${last4(run)}` : all));
+  const kept = keptSpans(s);
   if (!kept.length) return maskRuns(s);
   const gaps: string[] = [];
   let at = 0;
@@ -125,10 +150,13 @@ export function maskNumbers(s: string): string {
     at = k.end;
   }
   gaps.push(maskRuns(s.slice(at)));
-  // Gaps checked together, so digits on both sides of a kept date can't add up to a number that slipped through.
-  if (longRun(gaps.join(" "))) return maskRuns(s.replace(DATE_RUN, (d) => d.replace(/[/.-]/g, "")));
+  // Gaps checked together, so digits on both sides of kept text can't add up to a number that slipped through.
+  if (longRun(gaps.join(" "))) return maskRuns(s.replace(/(\d)[/.-](?=\d)/g, "$1"));
   return gaps.reduce((out, g, i) => out + g + (i < kept.length ? s.slice(kept[i]!.start, kept[i]!.end) : ""), "");
 }
+
+// True when text has no card or account number left in it: masking would change nothing.
+export const isMasked = (s: string): boolean => maskNumbers(s) === s;
 
 // A cell starting (after any spaces) with =, +, -, @ or a control character could run as a formula if the text were ever opened in a
 // spreadsheet; Atrium keeps it as text without the trigger.
@@ -157,25 +185,45 @@ function wealthsimple(headers: string[], body: string[][]): Pick<MoneyPreview, "
     const label = [r[symbol!], r[name!]].filter(Boolean).join(" · ") || (r[type!] ?? "").trim();
     rows.push({
       source: "wealthsimple",
-      account: (r[accountType!] ?? "").trim() || "Wealthsimple",
+      account: maskNumbers(safeText(r[accountType!] ?? "")) || "Wealthsimple",
       date: d,
-      description: safeText(`${kind[0]!.toUpperCase()}${kind.slice(1)} ${label}`.trim()),
-      merchant: safeText(label) || "Wealthsimple",
+      description: maskNumbers(safeText(`${kind[0]!.toUpperCase()}${kind.slice(1)} ${label}`.trim())),
+      merchant: maskNumbers(safeText(label)) || "Wealthsimple",
       amount,
       currency: (r[currency!] ?? "").trim().toUpperCase() === "USD" ? "USD" : "CAD",
       kind,
-      symbol: (r[symbol!] ?? "").trim() || null,
+      symbol: maskNumbers(safeText(r[symbol!] ?? "")).slice(0, 20) || null,
     });
   });
   return { rows, skipped, accounts: [...new Set(rows.map((r) => r.account))] };
 }
 
-export function previewMoney(text: string, opts: { mapping?: MoneyMap; signs?: Signs; dates?: DateOrder } = {}): MoneyPreview {
+// A Wealthsimple Cash monthly statement: date, transaction code, description, signed amount, balance.
+function wsCash(headers: string[], body: string[][], account: string): Pick<MoneyPreview, "rows" | "skipped" | "accounts"> {
+  const col = (name: string) => headers.findIndex((h) => h.trim().toLowerCase() === name);
+  const [date, code, description, amountCol] = ["date", "transaction", "description", "amount"].map(col);
+  const rows: MoneyRow[] = [];
+  const skipped: MoneyPreview["skipped"] = [];
+  body.forEach((r, n) => {
+    const d = isoDate(r[date!] ?? "", "mdy");
+    const amount = num(r[amountCol!]);
+    if (!d) return skipped.push({ line: n + 2, reason: "No date Atrium can read." });
+    if (Number.isNaN(amount)) return skipped.push({ line: n + 2, reason: "No amount Atrium can read." });
+    const c = (r[code!] ?? "").trim();
+    const text = maskNumbers(safeText(r[description!] ?? "")) || c;
+    const kind: MoneyKind = WS_TRANSFER_CODES.test(c) ? "transfer" : WS_INTEREST_CODES.test(c) ? "interest" : amount < 0 ? "spend" : "income";
+    rows.push({ source: "bank", account, date: d, description: text, merchant: merchantOf(text), amount: Math.round(amount * 100) / 100, currency: "CAD", kind, symbol: null });
+  });
+  return { rows, skipped, accounts: rows.length ? [account] : [] };
+}
+
+export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPreview {
   const all = parseCsv(text).filter((r) => r.some((c) => c.trim() !== ""));
   const warnings: string[] = [];
   const guessed: string[] = [];
   const dates: DateOrder = opts.dates ?? "mdy";
-  const empty: MoneyPreview = { format: "unknown", headers: [], mapping: {}, signs: "negative-out", dates, rows: [], skipped: [], warnings, guessed, accounts: [] };
+  const generic: Bank = { id: "generic", label: "Bank or card export", confidence: "low", account: null };
+  const empty: MoneyPreview = { format: "unknown", headers: [], mapping: {}, signs: "negative-out", dates, rows: [], skipped: [], warnings, guessed, accounts: [], bank: generic, account: null };
   if (!all.length) return { ...empty, warnings: ["That file is empty."] };
 
   let headers = all[0]!;
@@ -184,8 +232,14 @@ export function previewMoney(text: string, opts: { mapping?: MoneyMap; signs?: S
     warnings.push(`That file has more than ${MAX_ROWS.toLocaleString("en-US")} rows; Atrium imported the first ${MAX_ROWS.toLocaleString("en-US")}.`);
     body = body.slice(0, MAX_ROWS);
   }
-  if (headers.some((h) => h.trim().toLowerCase() === "activity_type")) {
-    return { ...empty, format: "wealthsimple", headers, ...wealthsimple(headers, body), warnings };
+  // With one signed amount column, card exports often write charges as positive numbers.
+  const positives = (amounts: number[]) => amounts.length > 0 && amounts.filter((n) => n > 0).length / amounts.length >= 0.6;
+  const bank = detectBank(all, () => positives(body.map((r) => num(r[headers.findIndex((h) => h.trim().toLowerCase() === "amount")])).filter((n) => !Number.isNaN(n) && n !== 0)));
+  const account = (fallback: string | null) => opts.account?.trim().slice(0, 40) || fallback;
+  if (bank.id === "ws-activity") return { ...empty, format: "wealthsimple", headers, ...wealthsimple(headers, body), warnings, bank };
+  if (bank.id === "ws-cash") {
+    const named = account(bank.account)!;
+    return { ...empty, format: "bank", headers, ...wsCash(headers, body, named), warnings, bank, account: named };
   }
 
   let mapping: MoneyMap = opts.mapping ?? detect(headers);
@@ -194,7 +248,11 @@ export function previewMoney(text: string, opts: { mapping?: MoneyMap; signs?: S
     body = all.slice(0, MAX_ROWS);
     headers = headers.map((_, i) => `Column ${i + 1}`);
     mapping = { date: 0, description: 1, debit: 2, credit: 3 };
-    guessed.push("This file has no header row, so Atrium read it as date, description, money out, money in.");
+    guessed.push(
+      bank.id === "td"
+        ? "This looks like a TD export with no header row, so Atrium read it as date, description, money out, money in, balance."
+        : "This file has no header row, so Atrium read it as date, description, money out, money in.",
+    );
   }
   const has = (f: MoneyField) => mapping[f] !== undefined;
   if (!has("date") || !has("description") || !(has("amount") || has("debit") || has("credit"))) {
@@ -202,11 +260,14 @@ export function previewMoney(text: string, opts: { mapping?: MoneyMap; signs?: S
   }
 
   const cell = (r: string[], f: MoneyField) => (has(f) ? (r[mapping[f]!] ?? "").trim() : "");
-  // With one signed amount column, card exports often write charges as positive numbers.
   const amounts = has("amount") && !has("type") ? body.map((r) => num(cell(r, "amount"))).filter((n) => !Number.isNaN(n) && n !== 0) : [];
-  const mostlyPositive = amounts.length > 0 && amounts.filter((n) => n > 0).length / amounts.length >= 0.6;
-  const signs: Signs = opts.signs ?? (mostlyPositive ? "positive-out" : "negative-out");
-  if (!opts.signs && mostlyPositive) warnings.push("Most amounts are positive, so Atrium read them as money spent. Switch it if that's wrong.");
+  const mostlyPositive = positives(amounts);
+  // Amex always writes charges as positive numbers, so a file it clearly made isn't guessed at.
+  const amexSure = bank.id === "amex" && bank.confidence === "high";
+  const signs: Signs = opts.signs ?? (amexSure || mostlyPositive ? "positive-out" : "negative-out");
+  if (!opts.signs && !amexSure && mostlyPositive) warnings.push("Most amounts are positive, so Atrium read them as money spent. Switch it if that's wrong.");
+  // A file with no account column goes into the account Nakul picked, or the one its bank suggests.
+  const fileAccount = has("account") || has("accountNumber") ? null : account(bank.account ?? OTHER_ACCOUNT);
 
   const rows: MoneyRow[] = [];
   const skipped: MoneyPreview["skipped"] = [];
@@ -230,10 +291,10 @@ export function previewMoney(text: string, opts: { mapping?: MoneyMap; signs?: S
     if (Number.isNaN(amount)) return skipped.push({ line, reason: "No amount Atrium can read." });
     const d1 = maskNumbers(safeText(cell(r, "description")));
     const d2 = maskNumbers(safeText(cell(r, "description2")));
-    const account = [cell(r, "account"), cell(r, "accountNumber")].filter(Boolean).join(" ") || "Imported";
+    const named = [cell(r, "account"), cell(r, "accountNumber")].filter(Boolean).join(" ") || OTHER_ACCOUNT;
     rows.push({
       source: "bank",
-      account: maskNumbers(safeText(account)),
+      account: fileAccount ?? maskNumbers(safeText(named)),
       date,
       description: [d1, d2].filter(Boolean).join(" "),
       merchant: merchantOf(d1 || d2),
@@ -244,17 +305,22 @@ export function previewMoney(text: string, opts: { mapping?: MoneyMap; signs?: S
     });
   });
   if (!rows.length && !warnings.length) warnings.push("Nothing in that file could be read. Check the columns below.");
-  return { format: "bank", headers, mapping, signs, dates, rows, skipped, warnings, guessed, accounts: [...new Set(rows.map((r) => r.account))] };
+  return { format: "bank", headers, mapping, signs, dates, rows, skipped, warnings, guessed, accounts: [...new Set(rows.map((r) => r.account))], bank, account: fileAccount };
 }
 
 // Re-importing the same file adds nothing: each row's fingerprint is its account, date, amount and description,
-// plus how many identical rows came before it in the file, so two real identical charges both stay.
+// plus how many identical rows came before it in the file, so two real identical charges both stay. Rows stored
+// before Atrium named the account ("Imported") count as already here too.
 export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { added: number; duplicates: number } {
   const seen = new Map<string, number>();
   const put = db.query(
     `INSERT OR IGNORE INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol, fingerprint, imported_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  const legacy = db.query(
+    `SELECT COUNT(*) AS n FROM money_transactions WHERE space_id = ? AND source = ? AND account = ? AND date = ? AND ROUND(amount, 2) = ? AND lower(description) = ?`,
+  );
+  const covered = new Map<string, { first: string; last: string; rows: number }>();
   let added = 0;
   const at = Date.now();
   db.transaction(() => {
@@ -262,10 +328,15 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
       const base = [r.source, r.account, r.date, r.amount.toFixed(2), r.currency, r.description.toLowerCase()].join("|");
       const n = (seen.get(base) ?? 0) + 1;
       seen.set(base, n);
+      const c = covered.get(r.account) ?? { first: r.date, last: r.date, rows: 0 };
+      covered.set(r.account, { first: r.date < c.first ? r.date : c.first, last: r.date > c.last ? r.date : c.last, rows: c.rows + 1 });
+      if (r.account !== OTHER_ACCOUNT && (legacy.get(spaceId, r.source, OTHER_ACCOUNT, r.date, r.amount, r.description.toLowerCase()) as { n: number }).n >= n) continue;
       const fingerprint = createHash("sha256").update(`${base}|${n}`).digest("hex").slice(0, 32);
       added += put.run(newId("mtx"), spaceId, r.source, r.account, r.date, r.description, r.merchant, r.amount, r.currency, r.kind, r.symbol, fingerprint, at).changes;
     }
+    const log = db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    for (const [account, c] of covered) log.run(newId("mim"), spaceId, account, c.first, c.last, c.rows, at);
   })();
-  if (added) bus.emit({ type: "changed" });
+  bus.emit({ type: "changed" });
   return { added, duplicates: p.rows.length - added };
 }
