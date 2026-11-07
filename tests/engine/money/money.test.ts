@@ -259,7 +259,7 @@ test("masking keeps dates written in a description and still hides card and acco
   expect(maskNumbers("CARD 4510.12.31")).toBe("CARD ··1231");
   expect(maskNumbers("CARD 4510-12-31 7788")).toBe("CARD ··7788");
   // Text that already holds a private-use character can't confuse the restore.
-  expect(maskNumbers("\uE000 PAYMENT 2026-10-02 \uE000 4510123456789012")).toBe("\uE000 PAYMENT 2026-10-02 \uE000 ··9012");
+  expect(maskNumbers("\uE000 PAYMENT 2026-10-02 \uE000 4510123456789012")).toBe("\uE000 PAYMENT ··9012");
   // Digits split around a kept date that add up to a long run mask everything.
   expect(maskNumbers("ACCT 123 2026-10-02 456")).not.toMatch(/2026-10-02/);
 });
@@ -707,4 +707,30 @@ test("card data: 1,000 random card numbers with random separators never show mor
     // No run of more than 4 of the card's digits survives in order, with or without separators.
     expect(out.replace(/[^0-9]/g, "").includes(digits.slice(0, 5))).toBe(false);
   }
+});
+
+test("card data: 2,000 numbers split by newlines, Unicode spaces, punctuation or invisible characters never leak", () => {
+  let seed = 20261106;
+  const rnd = (n: number) => ((seed = (seed * 48271) % 2147483647) % n);
+  const seps = ["\n", "\t", "\u00A0", "\u2007", "\u202F", "\u3000", "  ", "    ", "/", "|", "_", "+", "\u200B", "\u200D", "\uFEFF", " ", "-", ".", ",", "X", "**"];
+  const words = ["PAYMENT", "UBER", "REF", "TO", "CARD", "THANK YOU", "ON", "2026-10-02", "12.50", "ACCT", "1,234.56"];
+  for (let i = 0; i < 2000; i++) {
+    const len = 12 + rnd(8);
+    const digits = Array.from({ length: len }, () => String(rnd(10))).join("");
+    let card = "";
+    for (let j = 0; j < len; j++) card += digits[j]! + (j < len - 1 && rnd(3) === 0 ? seps[rnd(seps.length)]! + (rnd(5) === 0 ? seps[rnd(seps.length)]! : "") : "");
+    const text = `${words[rnd(words.length)]} ${card} ${words[rnd(words.length)]}`;
+    const out = mask(text);
+    // Whatever is left of the card's digits, in order, is at most its last 4.
+    const left = out.normalize("NFKC").replace(/[^0-9]/g, "");
+    expect({ text, leaked: left.includes(digits.slice(0, 5)) || left.includes(digits.slice(-8, -3)) }).toEqual({ text, leaked: false });
+    expect(isMasked(out)).toBe(true);
+  }
+});
+
+test("card data: a number split across CSV fields that end up in one description is masked", () => {
+  const p = previewMoney(["Date,Description 1,Description 2,Amount", '2026-10-02,"PAYMENT 4111 1111","1111 1111 THANKS",-5'].join("\n"));
+  expect(p.rows[0]!.description).toBe("PAYMENT ··1111 THANKS");
+  const nb = previewMoney("Date,Description,Amount\n2026-10-02,\"CARD 4111\u00A01111\n1111\u30001111\",-5\n");
+  expect(nb.rows[0]!.description).not.toMatch(/1111.*1111/);
 });

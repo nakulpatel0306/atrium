@@ -139,6 +139,8 @@ export function createRunner(deps: {
   markets?: MarketsHooks;
   // Local copies of attached GitHub repos: cloned on demand, marked used, and checked for cleanup once a day.
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
+  // Money's once-a-day check (the monthly import reminder and budget heads-ups), from the same minute timer.
+  money?: { daily(now: number): void };
 }): { start(): void; stop(): Promise<void>; kick(): void; registry: Registry } {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
@@ -772,10 +774,19 @@ export function createRunner(deps: {
       unsubscribe = bus.on((e) => {
         if (e.type === "changed") kick();
       });
+      const moneyDaily = () => {
+        try {
+          deps.money?.daily(Date.now());
+        } catch (e) {
+          console.error(`Money's daily check failed: ${(e as Error).message}`);
+        }
+      };
       interval = setInterval(() => {
         deps.repos?.daily(Date.now());
+        moneyDaily();
         kick();
       }, POWER_CHECK_MS);
+      moneyDaily();
       kick();
     },
     async stop() {

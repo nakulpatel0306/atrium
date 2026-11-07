@@ -109,36 +109,72 @@ function valid(y: number, mo: number, d: number): string | null {
   return t.toISOString().slice(0, 10);
 }
 
-// The masker is an allow-list. Digits joined by short separators (spaces, a dash, dot, slash or comma, or masking
-// X and *) are one group. A group with 6 or more digits is masked to its last 4 unless it is only real dates and
-// money amounts. A lone date, amount or short number is left as it is; anything else with 6+ digits is hidden.
-const GROUP = /\d+(?:(?:[ \t]{0,3}[./,-][ \t]{0,3}|[ \t]{1,3}|[X*]+)\d+)*/gi;
+// The masker is an allow-list. Text is first normalised (NFKC, invisible format characters removed). A digit cluster
+// is digits whose gaps are at most 4 characters with no letter in them (masking X and * aside, a run of whitespace
+// counting as one), so any spaces,
+// newlines, punctuation or Unicode spaces still join a split number. A cluster with 6 or more digits is masked to its
+// last 4 unless it is one real date, one money amount, or real dates with at most one amount beside them.
+const MAX_GAP = 4;
+const MASK_CHAR = /[Xx*]/;
+const LETTER = /\p{L}/u;
 const DATE = /^(?:(\d{4})([-/.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([-/.])(\d{1,2})\6(\d{4}))$/;
 const AMOUNT = /^(?:\d{1,3}(?:,\d{3})*\.\d{2}|\d{1,7}\.\d{2})$/;
 // An account, transit or reference number next to the word that names it: 5 digits are enough there.
-const NAMED_RUN = /(?<![a-z0-9])(acct|account|transit|no\.?|#)(\s*[:.]?\s*)(\d[\d\s-]{3,}\d)/gi;
+const NAMED_RUN = /(?<![\p{L}\d])(acct|account|transit|no\.?|#)(\s*[:.]?\s*)(\d[\d\s-]{3,}\d)/giu;
 const realDate = (y: number, a: number, b: number) => y >= 1990 && y <= new Date().getUTCFullYear() + 1 && valid(y, a, b) !== null;
 const last4 = (run: string) => `··${run.replace(/\D/g, "").slice(-4)}`;
 
-function isDate(token: string): boolean {
-  const m = token.match(DATE);
+function isDate(part: string): boolean {
+  const m = part.match(DATE);
   if (!m) return false;
   const [, y1, , m1, d1, a2, , b2, y2] = m;
   return y1 ? realDate(+y1, +m1!, +d1!) : realDate(+y2!, +a2!, +b2!) || realDate(+y2!, +b2!, +a2!);
 }
 
-// A group is safe when it's short, or every part of it is a real date or a money amount. Short numbers are only
-// safe alone: "4111 1111 1111 1111" is four short numbers.
-function safeGroup(group: string): boolean {
-  if (group.replace(/\D/g, "").length < 6) return true;
-  const parts = group.trim().split(/[ \t]+/);
-  return parts.every((p) => isDate(p) || AMOUNT.test(p));
+function safeCluster(cluster: string): boolean {
+  if (cluster.replace(/\D/g, "").length < 6) return true;
+  const parts = cluster.split(/[^\d.,/-]+/).map((p) => p.replace(/^[.,/-]+|[.,/-]+$/g, "")).filter(Boolean);
+  const amounts = parts.filter((p) => AMOUNT.test(p)).length;
+  return parts.every((p) => isDate(p) || AMOUNT.test(p)) && (parts.length === 1 || amounts <= 1);
+}
+
+// A gap joins two digits unless it's too long, holds a letter, or holds Atrium's own "··" mask mark (so masked
+// output reads as masked when checked again).
+// Any run of whitespace counts as one character, so newlines or a row of spaces can't stretch a gap.
+function joins(gap: string): boolean {
+  if (gap.includes("··")) return false;
+  let length = 0;
+  let space = false;
+  for (const ch of gap) {
+    if (MASK_CHAR.test(ch)) continue;
+    if (LETTER.test(ch)) return false;
+    const isSpace = /\s/u.test(ch);
+    if (!isSpace || !space) length++;
+    space = isSpace;
+  }
+  return length <= MAX_GAP;
 }
 
 // Card and account numbers keep their last four digits only ("4111 1111 1111 1111" → "··1111"), wherever they appear.
 export function maskNumbers(input: string): string {
-  const named = input.replace(NAMED_RUN, (all, word: string, gap: string, run: string) => (run.replace(/\D/g, "").length >= 5 ? `${word}${gap}${last4(run)}` : all));
-  return named.replace(GROUP, (group) => (safeGroup(group) ? group : last4(group)));
+  const s = input
+    .replace(/\p{Cf}/gu, "")
+    .normalize("NFKC")
+    .replace(NAMED_RUN, (all, word: string, gap: string, run: string) => (run.replace(/\D/g, "").length >= 5 ? `${word}${gap}${last4(run)}` : all));
+  const digits = [...s.matchAll(/\d/g)].map((m) => m.index!);
+  let out = "";
+  let at = 0;
+  for (let i = 0; i < digits.length; ) {
+    let j = i;
+    while (j + 1 < digits.length && joins(s.slice(digits[j]! + 1, digits[j + 1]!))) j++;
+    const start = digits[i]!;
+    const end = digits[j]! + 1;
+    const cluster = s.slice(start, end);
+    out += s.slice(at, start) + (safeCluster(cluster) ? cluster : last4(cluster));
+    at = end;
+    i = j + 1;
+  }
+  return out + s.slice(at);
 }
 
 // True when text has no card or account number left in it: masking would change nothing.
@@ -301,15 +337,16 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
       amount = !Number.isNaN(credit) && credit !== 0 ? Math.abs(credit) : -Math.abs(debit);
     }
     if (Number.isNaN(amount)) return skipped.push({ line, reason: "No amount Atrium can read." });
-    const d1 = maskNumbers(safeText(cell(r, "description")));
-    const d2 = maskNumbers(safeText(cell(r, "description2")));
+    // Masked after joining, so a number split across the two columns is caught whole.
+    const d1 = safeText(cell(r, "description"));
+    const d2 = safeText(cell(r, "description2"));
     const named = [cell(r, "account"), cell(r, "accountNumber")].filter(Boolean).join(" ") || OTHER_ACCOUNT;
     rows.push({
       source: "bank",
       account: fileAccount ?? maskNumbers(safeText(named)),
       date,
-      description: [d1, d2].filter(Boolean).join(" "),
-      merchant: merchantOf(d1 || d2),
+      description: maskNumbers([d1, d2].filter(Boolean).join(" ")),
+      merchant: maskNumbers(merchantOf(d1 || d2)),
       amount: Math.round(amount * 100) / 100,
       currency: "CAD",
       kind: amount < 0 ? "spend" : "income",
