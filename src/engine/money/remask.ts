@@ -4,6 +4,9 @@ import { fingerprintOf, legacyMask, maskNumbers, storeRow, type MoneyRow } from 
 
 // The highest row already checked; rows written after it (by anything but today's importer) are checked on next open.
 const REMASK_KEY = "money.remaskedThrough";
+// The version of the full pass: v2 also covers answers, write-ups, reviews and transcripts. A database that ran only
+// v1 (money tables alone) runs the full pass again.
+const VERSION_KEY = "money.remask.v2";
 
 type Row = { id: string; space_id: string; source: "bank" | "wealthsimple"; account: string; date: string; description: string; merchant: string; amount: number; currency: "CAD" | "USD"; kind: string; symbol: string | null };
 
@@ -12,19 +15,21 @@ type Row = { id: string; space_id: string; source: "bank" | "wealthsimple"; acco
 // is also here with its date ("UBER TRIP 2026-10-01"). Import records, reminders, budgets, rules and the answers to
 // earlier money asks are re-masked too.
 // Safe to run again and on an empty table. Later opens only re-check rows added since.
-// True when it changed or deleted anything, so the caller can push the old text out of the WAL and free pages.
+// True when it may have changed anything (always for the full pass), so the caller pushes old text out of the WAL
+// and free pages.
 export function remaskMoney(db: Database): boolean {
   const done = db.query("SELECT value FROM settings WHERE key = ?").get(REMASK_KEY) as { value: string } | null;
   const top = (db.query("SELECT COALESCE(MAX(rowid), 0) AS n FROM money_transactions").get() as { n: number }).n;
-  const mark = (n: number) => db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(REMASK_KEY, String(n));
-  if (done) {
+  const set = (key: string, value: string) => db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+  const mark = (n: number) => set(REMASK_KEY, String(n));
+  const v2 = db.query("SELECT 1 FROM settings WHERE key = ?").get(VERSION_KEY);
+  if (done && v2) {
     const since = Number(done.value);
     return top > since ? db.transaction(() => recheck(db, since, top, mark))() : false;
   }
   return db.transaction(() => {
     const rows = db.query("SELECT id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol FROM money_transactions ORDER BY rowid").all() as Row[];
     const clean = rows.map((r) => ({ ...r, ...storeRow({ ...r, kind: r.kind as MoneyRow["kind"] }) }));
-    let changed = clean.some((c, i) => c.account !== rows[i]!.account || c.description !== rows[i]!.description || c.merchant !== rows[i]!.merchant || c.symbol !== rows[i]!.symbol);
 
     // A legacy twin: same space, source, date and amount, an account that matches (or the old "Imported"), and a
     // description equal to what the old masker made of the newer row's.
@@ -46,7 +51,6 @@ export function remaskMoney(db: Database): boolean {
       }
     }
 
-    if (gone.size) changed = true;
     const del = db.query("DELETE FROM money_transactions WHERE id = ?");
     for (const id of gone) del.run(id);
     // Fingerprints are unique per space, so they're cleared first and rebuilt in the rows' original order.
@@ -69,7 +73,6 @@ export function remaskMoney(db: Database): boolean {
         const v = maskNumbers(r.v);
         if (v === r.v) continue;
         db.query(`UPDATE OR IGNORE ${table} SET ${column} = ? WHERE ${key} = ?`).run(v, r.k);
-        changed = true;
       }
     };
     remaskColumn("money_imports", "id", "account");
@@ -82,10 +85,12 @@ export function remaskMoney(db: Database): boolean {
     remaskColumn("approvals", "id", "detail", "task_id IN (SELECT id FROM tasks WHERE purpose = 'money')");
     remaskColumn("approvals", "id", "note", "task_id IN (SELECT id FROM tasks WHERE purpose = 'money')");
     for (const r of db.query("SELECT transcript_path AS p FROM runs WHERE task_id IN (SELECT id FROM tasks WHERE purpose = 'money') AND transcript_path IS NOT NULL").all() as { p: string }[]) {
-      if (remaskTranscript(r.p)) changed = true;
+      remaskTranscript(r.p);
     }
     mark(top);
-    return changed;
+    set(VERSION_KEY, "1");
+    // Always true for the full pass, so the caller checkpoints and vacuums whatever an earlier version left behind.
+    return true;
   })();
 }
 

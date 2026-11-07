@@ -848,20 +848,17 @@ test("card data: rule and budget text is masked when it's saved", () => {
 
 // ---- Second fix wave ----
 
-test("readable shapes: a date with its time, date ranges with to, TO or -, phone numbers, and month-name dates", () => {
-  for (const s of [
-    "UBER TRIP 2026-10-01 12:34",
-    "E-TRANSFER CA2Y8kQ 2026-10-05 15:22",
-    "PRESTO 10/01/2026 TO 10/31/2026",
-    "PASS 2026-10-01 to 2026-10-30",
-    "PAID 10/01/2026 - 10/30/2026",
-    "ROGERS 416-555-0199",
-    "CALL (416) 555-0199",
-    "from Aug 1, 2026 to Oct 30, 2026",
-    "AMZN MKTP CA*2K4QX1 2026-10-04",
-  ]) expect(mask(s)).toBe(s);
-  // Only when no card hides among them.
+test("readable shapes are only single dates, amounts and date ranges; phones and times beside dates are masked", () => {
+  for (const s of ["PRESTO 10/01/2026 TO 10/31/2026", "PASS 2026-10-01 to 2026-10-30", "PAID 10/01/2026 - 10/30/2026", "from Aug 1, 2026 to Oct 30, 2026", "PAYMENT 2026-10-02 12.50"]) {
+    expect(mask(s)).toBe(s);
+  }
+  // Safety over readability: these are masked.
+  expect(mask("ROGERS 416-555-0199")).toBe("ROGERS ··0199");
+  expect(mask("CALL (416) 555-0199")).toBe("CALL (··0199");
+  expect(mask("UBER TRIP 2026-10-01 12:34")).toBe("UBER TRIP ··1234");
+  // A card among dates is still caught, and so is a bare day and year.
   expect(mask("2026-10-01 4111 1111 1111 1111")).not.toContain("4111");
+  expect(mask("PASS 2026-10-01 to 4111111111111111 to 2026-10-30")).not.toContain("411111");
   expect(mask("X 30, 2026")).toBe("X ··2026");
   expect(mask("Oct 31, 2026 4111111111111111")).not.toContain("411111");
 });
@@ -891,7 +888,27 @@ test("card data: answers to Plan 10 money asks are re-masked: write-ups, the tas
   expect((db.query("SELECT detail FROM tasks WHERE id = ?").get(t.id) as { detail: string }).detail).toBe("Is ··1111 mine?");
   expect((db.query("SELECT detail FROM approvals WHERE task_id = ?").get(t.id) as { detail: string }).detail).toBe("Said ··1111");
   expect(readFileSync(log, "utf8")).not.toMatch(/1111\s+1111/);
-  // Nothing left to do the second time.
-  db.query("DELETE FROM settings WHERE key = 'money.remaskedThrough'").run();
+  // Nothing new to check the second time.
+  expect(remaskMoney(db)).toBe(false);
+});
+
+test("card data: a database that ran only the first re-mask runs the full v2 pass, then checkpoints and vacuums", () => {
+  const { remaskMoney } = require("../../../src/engine/money/remask") as typeof import("../../../src/engine/money/remask");
+  const { createTask } = require("../../../src/engine/tasks") as typeof import("../../../src/engine/tasks");
+  const { saveWriteup } = require("../../../src/engine/markets/research") as typeof import("../../../src/engine/markets/research");
+  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+  // As a v1 engine left it: the row marker set, no v2 key, and an old answer with a raw number.
+  db.query("DELETE FROM settings WHERE key = 'money.remask.v2'").run();
+  db.query("INSERT INTO settings (key, value) VALUES ('money.remaskedThrough', '0') ON CONFLICT(key) DO UPDATE SET value = '0'").run();
+  const t = createTask(db, { spaceId, title: "Ask Claude about my money", detail: "Where?", agent: "claude", weight: "light", purpose: "money" });
+  saveWriteup(db, { spaceId, kind: "money", key: null, forDate: "2026-10-02T00:00:00.000Z", body: "Card 4111.1111.1111.1111.", taskId: t.id });
+  db.close();
+  db = openDb();
+  expect((db.query("SELECT body FROM market_writeups").get() as { body: string }).body).toBe("Card ··1111.");
+  expect(db.query("SELECT value FROM settings WHERE key = 'money.remask.v2'").get()).toEqual({ value: "1" });
+  db.close();
+  const raw = readdirSync(home.home).filter((f) => f.includes(".db")).map((f) => readFileSync(join(home.home, f)).toString("latin1")).join("");
+  expect(raw).not.toContain("4111.1111.1111");
+  db = openDb();
   expect(remaskMoney(db)).toBe(false);
 });
