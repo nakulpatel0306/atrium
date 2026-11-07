@@ -138,7 +138,7 @@ export function keyStrip(keys: StripKey[], cols: number, y: number): Block {
     if (w > room && k !== help) continue;
     if (w > cols - x) break;
     line.push(...cap, { text: "  " });
-    if (k.input !== undefined) hits.push({ x, y, w: w - 2, h: 1, click: { input: k.input } });
+    if (k.input !== undefined) hits.push({ x, y, w: w - 2, h: 1, click: { input: k.input, strip: true } });
     x += w;
   }
   return { lines: [fit(line, cols)], hits };

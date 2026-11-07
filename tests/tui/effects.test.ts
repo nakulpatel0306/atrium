@@ -28,7 +28,8 @@ const rows: Row[] = [
   { intent: { type: "reviewer", spaceId: ids.atrium, reviewBy: null }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { reviewBy: null }, text: "No automatic review in atrium." },
   { intent: { type: "archive", spaceId: ids.atrium }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { status: "archived" }, text: "Archived atrium. It's at the end of Spaces; press X there to restore it." },
   { intent: { type: "restore", spaceId: ids.atrium }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { status: "active" }, text: "Restored the space. Press X to archive it again." },
-  { intent: { type: "stop", taskId: ids.running }, method: "POST", path: `/api/tasks/${ids.running}/stop`, text: 'Stopped "Add the status bar". Its edits so far are kept; R retries it.' },
+  { intent: { type: "stop", taskId: ids.running }, method: "POST", path: `/api/tasks/${ids.running}/stop`, data: { status: "blocked" }, text: 'Stopped "Add the status bar". Its edits so far are kept; R retries it.' },
+  { intent: { type: "stop", taskId: ids.running }, method: "POST", path: `/api/tasks/${ids.running}/stop`, data: { status: "running" }, text: `Stopping "Add the status bar": the agent hasn't exited yet. Atrium marks it stopped when it does.` },
   { intent: { type: "dismissNudge", spaceId: "spc_inv", nudgeId: "mnd_1" }, method: "POST", path: "/api/investing/spc_inv/money/nudges/mnd_1/dismiss", text: "Dismissed. It won't come back for this month." },
   { intent: { type: "explain", spaceId: "spc_inv", month: "2026-10" }, method: "POST", path: "/api/investing/spc_inv/money/explain", body: { month: "2026-10" }, text: "Claude is explaining your month. The answer shows up here." },
   { intent: { type: "moneyAsk", spaceId: "spc_inv", question: "Where did it go?" }, method: "POST", path: "/api/investing/spc_inv/money/ask", body: { question: "Where did it go?" }, text: "Claude is looking at your money. The answer shows up here." },
@@ -102,6 +103,31 @@ test("importing by path reads the file here, previews it through the engine, and
     const unknown = fakeClient(state);
     unknown.respond("/api/investing/spc_inv/money/preview", { ok: true, data: { format: "unknown", bank: { label: "?" }, accounts: [], account: null, total: 0, skipped: [], warnings: ["Atrium couldn't find date, description and amount columns. Pick them below."] } });
     expect((await runIntent(unknown, { type: "importPreview", spaceId: "spc_inv", path: file }, state)).text).toContain("Import it from the dashboard's Money tab");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a stop that came too late says so in the engine's words", async () => {
+  const client = fakeClient(state);
+  client.respond(`/api/tasks/${ids.running}/stop`, { ok: false, error: "It finished before it could be stopped, so its result stands." });
+  expect(await runIntent(client, { type: "stop", taskId: ids.running }, state)).toEqual({ tone: "bad", text: "It finished before it could be stopped, so its result stands." });
+});
+
+test("a dragged-in path with shell escapes or quotes finds the file", async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "atrium-csv-"));
+  const file = join(dir, "Statement (1) & 'Oct' [TD].csv");
+  writeFileSync(file, "x\n");
+  try {
+    const escaped = file.replace(/([ ()&'[\]])/g, "\\$1");
+    for (const path of [escaped, `'${file}'`, `"${file}"`]) {
+      const client = fakeClient(state);
+      client.respond("/api/investing/spc_inv/money/preview", { ok: false, error: "read it" });
+      expect((await runIntent(client, { type: "importPreview", spaceId: "spc_inv", path }, state)).text).toBe("read it");
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

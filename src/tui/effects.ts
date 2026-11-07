@@ -18,7 +18,10 @@ type Preview = { format: "bank" | "wealthsimple" | "unknown"; bank: { label: str
 
 // Reads the file on this Mac; the engine's preview route does the parsing and masking, as for the dashboard.
 async function previewImport(client: EngineClient, spaceId: string, path: string): Promise<Outcome> {
-  const full = path.trim().replace(/^(["'])(.*)\1$/, "$2").replace(/\\ /g, " ").replace(/^~(?=\/|$)/, homedir());
+  // A dragged-in path arrives quoted, or with shell escapes before spaces, brackets, quotes and the like.
+  const trimmed = path.trim();
+  const quoted = /^(["'])(.*)\1$/.exec(trimmed);
+  const full = (quoted ? quoted[2]! : trimmed.replace(/\\(.)/g, "$1")).replace(/^~(?=\/|$)/, homedir());
   const file = Bun.file(full);
   if (!(await file.exists())) return { tone: "bad", text: `There's no file at ${path.trim()}. Check the path, or drag the file into the terminal to paste it.` };
   if (file.size > MAX_CSV_BYTES) return { tone: "bad", text: "That file is over 2 MB; export a shorter date range." };
@@ -63,6 +66,13 @@ export function sendFollowUp(state: State, pending: { toName: string; at: number
   }
   return null;
 }
+
+export const stopText = (title: string, status: Task["status"]) =>
+  status === "blocked"
+    ? `Stopped "${title}". Its edits so far are kept; R retries it.`
+    : status === "running"
+      ? `Stopping "${title}": the agent hasn't exited yet. Atrium marks it stopped when it does.`
+      : `"${title}" finished before it could be stopped.`;
 
 export async function runIntent(client: EngineClient, intent: Intent, state: State): Promise<Outcome> {
   const taskTitle = (id: string) => state.tasks.find((t) => t.id === id)?.title ?? "the task";
@@ -114,7 +124,8 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return { ...said(res, () => `Set up ${data.space.name}.`), spaceId: data.space.id };
     }
     case "stop":
-      return said(await client.post(`/api/tasks/${enc(intent.taskId)}/stop`), () => `Stopped "${taskTitle(intent.taskId)}". Its edits so far are kept; R retries it.`);
+      // The engine answers with the task as the stop left it, which isn't always stopped.
+      return said(await client.post<Task>(`/api/tasks/${enc(intent.taskId)}/stop`), (t) => stopText(taskTitle(intent.taskId), t.status));
     case "dismissNudge":
       return said(await client.post(`/api/investing/${enc(intent.spaceId)}/money/nudges/${enc(intent.nudgeId)}/dismiss`), () => "Dismissed. It won't come back for this month.");
     case "explain":

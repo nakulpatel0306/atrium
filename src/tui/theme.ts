@@ -35,11 +35,12 @@ export function palette(mode: ColorMode, contrast = false): Palette {
     return { mode, contrast, fg: none, bg: { accent: undefined, soft: undefined, key: undefined } };
   }
   if (mode === "ansi") {
+    // In high contrast, quiet text and lines take the terminal's own foreground: ANSI white vanishes on a light theme.
     const quiet = contrast ? undefined : "gray";
     return {
       mode,
       contrast,
-      fg: { text: undefined, dim: quiet, faint: quiet, line: contrast ? "white" : "gray", accent: "blue", ok: "green", warn: "yellow", bad: "red", info: "cyan", claude: "magenta" },
+      fg: { text: undefined, dim: quiet, faint: quiet, line: quiet, accent: "blue", ok: "green", warn: "yellow", bad: "red", info: "cyan", claude: "magenta" },
       bg: { accent: undefined, soft: undefined, key: undefined },
     };
   }

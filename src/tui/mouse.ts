@@ -21,12 +21,19 @@ function eventOf(button: number, x: number, y: number, press: boolean): MouseEve
   return null;
 }
 
+// A lone ESC or ESC[ at the end of a read might be the start of a report cut in two, or an Esc press. It's held this
+// long for the rest; if nothing comes, it goes on to Ink, so Esc is barely delayed.
+export const ESC_HOLD_MS = 25;
+
 // Splits each chunk into mouse events and the text Ink should get. A report cut across two chunks is held until its
-// end arrives; inside a bracketed paste nothing is touched.
-export function mouseFilter(onMouse: (e: MouseEvent) => void): (chunk: string) => string {
+// end arrives; inside a bracketed paste nothing is touched. `flush` gets a held ESC or ESC[ that turned out to be keys.
+export function mouseFilter(onMouse: (e: MouseEvent) => void, flush?: (text: string) => void): (chunk: string) => string {
   let held = "";
   let pasting = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   return (chunk) => {
+    if (timer) clearTimeout(timer);
+    timer = null;
     let s = held + chunk;
     held = "";
     let out = "";
@@ -66,6 +73,18 @@ export function mouseFilter(onMouse: (e: MouseEvent) => void): (chunk: string) =
         held = s;
         break;
       }
+      if (s === "\x1b" || s === "\x1b[") {
+        held = s;
+        if (flush) {
+          timer = setTimeout(() => {
+            timer = null;
+            const text = held;
+            held = "";
+            if (text) flush(text);
+          }, ESC_HOLD_MS);
+        }
+        break;
+      }
       out += "\x1b";
       s = s.slice(1);
     }
@@ -77,8 +96,8 @@ type RawStream = NodeJS.ReadStream & { setRawMode(mode: boolean): unknown };
 
 // A stand-in stdin for Ink: raw mode and ref counting go to the real one, and only filtered text comes out.
 export function filteredStdin(real: RawStream, onMouse: (e: MouseEvent) => void): NodeJS.ReadStream {
-  const filter = mouseFilter(onMouse);
   const proxy = new Readable({ read() {} }) as Readable & { isTTY: boolean; setRawMode(m: boolean): unknown; ref(): unknown; unref(): unknown };
+  const filter = mouseFilter(onMouse, (text) => proxy.push(text));
   let listening = false;
   const onData = (chunk: string | Buffer) => {
     const text = filter(typeof chunk === "string" ? chunk : chunk.toString("utf8"));

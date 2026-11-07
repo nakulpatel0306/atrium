@@ -54,6 +54,8 @@ test("high contrast lifts quiet text to the foreground and makes accents bold", 
   expect(p.fg.line).toBe("#9c9ca6");
   expect(paint({ text: "x", color: "accent" }, p).bold).toBe(true);
   expect(palette("ansi", true).fg.faint).toBeUndefined();
+  // ANSI white vanishes on a light terminal; lines keep the terminal's own foreground instead.
+  expect(palette("ansi", true).fg.line).toBeUndefined();
 });
 
 test("every status has a glyph of its own", () => {

@@ -5,7 +5,7 @@ import { cleanup } from "ink-testing-library";
 import { openDb } from "../../src/engine/db";
 import { importMoney, previewMoney } from "../../src/engine/money/import";
 import { setBudget } from "../../src/engine/money/budgets";
-import { moneyView, STARTERS } from "../../src/engine/money/summary";
+import { moneySummary, moneyView, type MoneyView, STARTERS } from "../../src/engine/money/summary";
 import { createSpace } from "../../src/engine/spaces";
 import type { State } from "../../src/engine/state";
 import type { MoneyPage } from "../../src/tui/screens/money";
@@ -19,6 +19,8 @@ afterEach(() => cleanup());
 const INV = "spc_inv";
 const NOW = Date.parse("2026-11-05T16:00:00Z");
 let money: MoneyPage;
+// The full view, only to check that none of its transaction text reaches the screen.
+let full: MoneyView;
 
 // Real money numbers from the test CSVs, computed by the engine, so the tab shows what the route would send.
 beforeAll(() => {
@@ -33,7 +35,8 @@ beforeAll(() => {
   setBudget(db, s.id, "Dining", 120);
   setBudget(db, s.id, "Shopping", 300);
   setBudget(db, s.id, "Groceries", 1000);
-  money = { ...moneyView(db, s.id, NOW), starters: STARTERS };
+  full = moneyView(db, s.id, NOW);
+  money = { ...moneySummary(full), starters: STARTERS };
   db.close();
   home.cleanup();
 });
@@ -69,7 +72,7 @@ function investingClient(state = withInvesting()): FakeClient {
   client.respond(`${base}/portfolio`, { ok: true, data: portfolio });
   client.respond(`/api/markets/${INV}`, { ok: true, data: { alerts } });
   // Home asks for this month; the Money tab for the month it's on (empty: the engine picks).
-  for (const m of ["", "2026-09", "2026-10", "2026-11", new Date().toISOString().slice(0, 7)]) client.respond(`${base}/money?month=${m}`, { ok: true, data: money });
+  for (const m of ["", "2026-09", "2026-10", "2026-11", new Date().toISOString().slice(0, 7)]) client.respond(`${base}/money?summary=1&month=${m}`, { ok: true, data: money });
   return client;
 }
 
@@ -92,7 +95,7 @@ test("Money: the month, its totals, categories against budgets with the 80% and 
   expect(f).toContain("TFSA ROOM");
   expect(f).toContain("Ask about your money");
   // No transaction row, masked or not, is drawn.
-  for (const t of money.transactions.slice(0, 20)) expect(f).not.toContain(t.description);
+  for (const t of full.transactions.slice(0, 20)) expect(f).not.toContain(t.description);
 });
 
 test("Money at 80×24 stacks into one column and still fits", async () => {
@@ -113,7 +116,7 @@ test("Money: ← goes to the month before, e explains it, b sets a budget on the
   await app.type("3");
   await app.frame((f) => f.includes("SPENDING BY CATEGORY"));
   await app.type(KEY.left);
-  await app.frame(() => client.calls.some((c) => c.path === `/api/investing/${INV}/money?month=2026-09`));
+  await app.frame(() => client.calls.some((c) => c.path === `/api/investing/${INV}/money?summary=1&month=2026-09`));
   await app.type("e");
   await app.frame((f) => f.includes("Claude is explaining your month."));
   expect(mutations(client.calls)).toEqual([{ method: "POST", path: `/api/investing/${INV}/money/explain`, body: { month: "2026-10" } }]);
@@ -210,6 +213,7 @@ test("every tab fits 80×24 exactly", async () => {
 
 test("the stop confirm says what happens, and y stops the task", async () => {
   const client = fakeClient(makeState());
+  client.respond(`/api/tasks/${ids.running}/stop`, { ok: true, data: { status: "blocked" } });
   const app = openApp(client);
   await app.frame((f) => f.includes("1 Home"));
   await app.type(".");
@@ -220,4 +224,33 @@ test("the stop confirm says what happens, and y stops the task", async () => {
   await app.type("y");
   await app.frame((f) => f.includes('Stopped "Add the status bar".'));
   expect(mutations(client.calls)).toEqual([{ method: "POST", path: `/api/tasks/${ids.running}/stop` }]);
+});
+
+test("while the Ask box is open the wheel never types, and a card's key cap acts instead of typing", async () => {
+  const client = fakeClient(makeState());
+  const app = openApp(client);
+  const f = await app.frame((f) => f.includes(" a  Approve"));
+  await app.type(" ", "hello");
+  await app.frame((f) => f.includes("› hello"));
+  await app.wheel(5, 8, 1);
+  await app.wheel(5, 8, 1);
+  await new Promise((r) => setTimeout(r, 30));
+  expect(app.lastFrame()).toContain("› hello");
+  expect(app.lastFrame()).not.toContain("› helloj");
+  const capY = f.split("\n").findIndex((l) => l.includes(" a  Approve"));
+  const capX = f.split("\n")[capY]!.indexOf(" a  Approve");
+  await app.click(capX + 2, capY);
+  await app.frame((f) => f.includes('Approved "Review: Fix login redirect".'));
+  expect(app.lastFrame()).not.toContain("› helloa");
+  expect(mutations(client.calls)).toEqual([{ method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "approve" } }]);
+});
+
+test("the strip's own keys still reach the Ask box: a click on esc leaves it", async () => {
+  const app = openApp(fakeClient(makeState()));
+  await app.frame((f) => f.includes("1 Home"));
+  await app.type(" ", "draft");
+  const f = await app.frame((f) => f.includes("› draft") && f.includes("esc  cancel"));
+  const strip = f.split("\n").at(-1)!;
+  await app.click(strip.indexOf("esc  cancel") + 1, 35);
+  await app.frame((f) => !f.includes("› draft") && f.includes("Describe something new"));
 });

@@ -1,7 +1,7 @@
 // Money: the month, its totals, categories against their budgets, subscriptions, TFSA room and Claude's latest
 // answer. Only what the money route returns is shown; it is already masked, and no transaction row is drawn here.
 import { relative } from "../../dashboard/format";
-import type { MoneyView } from "../../engine/money/summary";
+import type { MoneySummary } from "../../engine/money/summary";
 import { bar, type Block, columns, fit, type Hit, label, type Line, rowsOf } from "../canvas";
 import { markdownLines } from "../markdown";
 import { truncate, width } from "../text";
@@ -9,11 +9,11 @@ import { GLYPH, type Tone } from "../theme";
 import type { Ui } from "../ui";
 import { cad, monthYear, shortMonth } from "./format";
 
-export type MoneyPage = MoneyView & { starters: string[] };
+export type MoneyPage = MoneySummary & { starters: string[] };
 type Category = { category: string; spent: number; limit: number | null };
 
 // Spending by category with any budgets, plus budgets for categories with no spending this month: the rows j/k pick.
-export function moneyCategories(v: MoneyView): Category[] {
+export function moneyCategories(v: MoneySummary): Category[] {
   const limits = new Map(v.budgets.map((b) => [b.category, b.limit]));
   const rows: Category[] = v.spending.map((s) => ({ category: s.category, spent: s.amount, limit: limits.get(s.category) ?? null }));
   for (const b of v.budgets) if (!rows.some((r) => r.category === b.category)) rows.push({ category: b.category, spent: 0, limit: b.limit });
@@ -45,7 +45,7 @@ function categoryLine(c: Category, max: number, selected: boolean, cols: number)
   );
 }
 
-function subscriptionLines(v: MoneyView, cols: number): Line[] {
+function subscriptionLines(v: MoneySummary, cols: number): Line[] {
   const s = v.subscriptions;
   const out: Line[] = [[label("Subscriptions"), { text: s.list.length ? `   ${cad(s.perMonth)}/mo` : "", color: "faint" }], []];
   if (!s.list.length) out.push([{ text: "None found yet. Three monthly charges make one.", color: "faint" }]);
@@ -62,12 +62,12 @@ function subscriptionLines(v: MoneyView, cols: number): Line[] {
   return out;
 }
 
-function roomLines(v: MoneyView): Line[] {
+function roomLines(v: MoneySummary): Line[] {
   const r = v.room;
   return [[label("TFSA room")], [{ text: r.headline, bold: true, color: r.over > 0 ? "bad" : undefined }], ...(r.from ? [[{ text: r.from, color: "faint" as const }]] : []), ...(r.todo ? [[{ text: r.todo, color: "dim" as const }]] : [])];
 }
 
-function answerLines(v: MoneyView, cols: number, now: number): Line[] {
+function answerLines(v: MoneySummary, cols: number, now: number): Line[] {
   const a = v.asks[0];
   if (!a) return [[label("Ask Claude")], [{ text: "Press space and ask, like \"where did my money go last month?\"", color: "faint" }]];
   if (a.status === "queued" || a.status === "running") return [[label("Ask Claude")], [{ text: `${GLYPH.dot} Claude is looking at your money…`, color: "info" }], [{ text: a.question, color: "dim" }]];
@@ -101,8 +101,7 @@ export function moneyScreen(v: MoneyPage | null, ui: Ui, investing: boolean, col
     head.push({ text: t, color: "dim" });
     hits.push({ x, y: y0 + 1, w: width(t), h: 1, click: { input: "]" } });
   }
-  const last = v.imports[0];
-  const meta = [v.coverLine, last ? `Last import ${relative(last.importedAt, now)}` : null, `${v.accounts.length} ${v.accounts.length === 1 ? "account" : "accounts"}`].filter(Boolean).join(" · ");
+  const meta = [v.coverLine, v.lastImportAt !== null ? `Last import ${relative(v.lastImportAt, now)}` : null, `${v.accounts.length} ${v.accounts.length === 1 ? "account" : "accounts"}`].filter(Boolean).join(" · ");
   head.push({ text: `     ${meta}`, color: "faint" });
   const r = v.recap;
   const net = r ? r.net : v.income - v.spent;

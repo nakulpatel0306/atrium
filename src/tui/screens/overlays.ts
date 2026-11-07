@@ -144,7 +144,7 @@ export function helpOver(base: Line[], ui: Ui, cols: number, y0: number): Block 
     }
     lines.push([{ text: h.keys.padEnd(keysCol), color: "info" }, { text: truncate(h.does, col - keysCol - 1) }]);
   }
-  lines.push([], [{ text: "Clicks work: tabs, cards, rows, keys.", color: "faint" }]);
+  lines.push([], ...wrap("Clicks work on tabs, cards, rows and keys. To select text, drag with Option held in Terminal, Shift in Ghostty.", col, { color: "faint" }));
   if (!two) return floating(base, "Keys", lines.slice(0, fitRows), [{ key: "?", label: "Close", input: "?" }], w, y0);
   // Split at a section break near the middle, so a section isn't cut in two.
   const breaks = lines.flatMap((l, i) => (l.length === 0 ? [i] : []));

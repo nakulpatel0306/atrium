@@ -37,7 +37,8 @@ export const OFFLINE_ERROR = "Can't reach the Atrium engine. Check that it's run
 const MISSING_TRANSCRIPT = "This transcript isn't stored anymore. Atrium keeps the newest 200 MB of transcripts.";
 const engineError = (status: number) => `Atrium couldn't do that (error ${status}). Try again, and check the engine log if it keeps happening.`;
 
-type EngineMessage = { type: "changed" } | { type: "run-output"; runId: string; taskId: string; chunk: string };
+type EngineMessage = { type: "changed" } | { type: "run-output"; runId: string; taskId: string; chunk: string; seq?: number };
+type Transcript = { ok: true; text: string; seq?: number } | { ok: false; error: string };
 
 // Live output is only for watching; the full record is the transcript, so keep just the tail.
 const OUTPUT_TAIL = 200_000;
@@ -69,7 +70,9 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
   let refetch = false;
   const outputs = new Map<string, string>();
   const seeded = new Set<string>();
-  const loading = new Map<string, string[]>();
+  const loading = new Map<string, { line: string; seq?: number }[]>();
+  // For each seeded live run, the last line number its transcript already held.
+  const seededSeq = new Map<string, number>();
   const listeners = new Set<() => void>();
 
   const notify = () => {
@@ -124,8 +127,11 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
         void refresh();
       } else if (msg.type === "run-output") {
         const line = clean(msg.chunk);
+        // A line the loaded transcript already has; it can arrive after the transcript did, on the other connection.
+        const had = seededSeq.get(msg.runId);
+        if (had !== undefined && msg.seq !== undefined && msg.seq <= had) return;
         // Held while the run's transcript loads, then merged onto it without repeating what it already has.
-        loading.get(msg.runId)?.push(line);
+        loading.get(msg.runId)?.push({ line, seq: msg.seq });
         // Chunks are whole lines without their newline, the same as the transcript stores them.
         outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${line}\n`.slice(-OUTPUT_TAIL));
         batch ??= setTimeout(() => {
@@ -146,12 +152,13 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     };
   }
 
-  async function transcript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  async function transcript(runId: string): Promise<Transcript> {
     try {
       const res = await fetch(`${base}/api/runs/${encodeURIComponent(runId)}/transcript`);
       if (res.status === 404) return { ok: false, error: MISSING_TRANSCRIPT };
       if (!res.ok) return { ok: false, error: engineError(res.status) };
-      return { ok: true, text: clean(await res.text()) };
+      const seq = Number(res.headers.get("x-atrium-output-seq") ?? Number.NaN);
+      return { ok: true, text: clean(await res.text()), ...(Number.isInteger(seq) ? { seq } : {}) };
     } catch {
       return { ok: false, error: OFFLINE_ERROR };
     }
@@ -165,11 +172,19 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     const during = loading.get(runId) ?? [];
     loading.delete(runId);
     if (!res.ok || closed) return;
-    // Lines that arrived during the fetch may already be in the transcript (written before they were sent);
-    // only the ones after its end are new.
-    let skip = during.length;
-    while (skip > 0 && !res.text.endsWith(`${during.slice(0, skip).join("\n")}\n`)) skip--;
-    const fresh = during.slice(skip).map((l) => `${l}\n`).join("");
+    let fresh: string;
+    if (res.seq !== undefined) {
+      // The engine said how many lines the text holds: lines numbered past that are new, whenever they arrive.
+      seededSeq.set(runId, res.seq);
+      fresh = during.filter((d) => d.seq === undefined || d.seq > res.seq!).map((d) => `${d.line}\n`).join("");
+    } else {
+      // An engine that doesn't number lines: lines that arrived during the fetch may already be in the transcript
+      // (written before they were sent); only the ones after its end are new.
+      const lines = during.map((d) => d.line);
+      let skip = lines.length;
+      while (skip > 0 && !res.text.endsWith(`${lines.slice(0, skip).join("\n")}\n`)) skip--;
+      fresh = lines.slice(skip).map((l) => `${l}\n`).join("");
+    }
     outputs.set(runId, (res.text + fresh).slice(-OUTPUT_TAIL));
     notify();
   }
@@ -184,6 +199,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
       if (keep.has(id) || loading.has(id)) continue;
       outputs.delete(id);
       seeded.delete(id);
+      seededSeq.delete(id);
     }
   }
 

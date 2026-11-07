@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
-import { filteredStdin, type MouseEvent, mouseFilter } from "../../src/tui/mouse";
+import { ESC_HOLD_MS, filteredStdin, type MouseEvent, mouseFilter } from "../../src/tui/mouse";
 
 const run = (...chunks: string[]) => {
   const events: MouseEvent[] = [];
@@ -22,11 +22,21 @@ test("the wheel scrolls; right clicks, releases and drags are ignored", () => {
 });
 
 test("keys and escapes around a report pass through untouched", () => {
-  expect(run("j\x1b[<0;1;1Mk\x1b[A\x1b").out).toBe("jk\x1b[A\x1b");
+  expect(run("j\x1b[<0;1;1Mk\x1b[A\x1bq").out).toBe("jk\x1b[A\x1bq");
 });
 
 test("a report cut across two reads is held until its end arrives", () => {
   expect(run("a\x1b[<0;1", "0;2Mb")).toEqual({ out: "ab", events: [{ kind: "click", x: 9, y: 1 }] });
+});
+
+test("a report cut right after ESC or ESC[ is held for the rest, and a lone Esc still reaches Ink", async () => {
+  expect(run("j\x1b[", "<0;3;4M")).toEqual({ out: "j", events: [{ kind: "click", x: 2, y: 3 }] });
+  expect(run("\x1b", "[<0;3;4M")).toEqual({ out: "", events: [{ kind: "click", x: 2, y: 3 }] });
+  const flushed: string[] = [];
+  const filter = mouseFilter(() => {}, (t) => flushed.push(t));
+  expect(filter("\x1b")).toBe("");
+  await new Promise((r) => setTimeout(r, ESC_HOLD_MS + 20));
+  expect(flushed).toEqual(["\x1b"]);
 });
 
 test("inside a bracketed paste nothing is taken out", () => {

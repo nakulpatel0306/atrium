@@ -4,7 +4,7 @@ import { agentText } from "../../dashboard/agents";
 import { duration, relative } from "../../dashboard/format";
 import { liveStatus } from "../../dashboard/summary";
 import type { GlanceView } from "../../engine/markets/views";
-import type { MoneyView } from "../../engine/money/summary";
+import type { MoneySummary } from "../../engine/money/summary";
 import { displayHandle } from "../../engine/messaging/rules";
 import { outcomeText } from "../../engine/outcome";
 import { bar, type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
@@ -17,7 +17,7 @@ import { cad, change, hourText, monthName } from "./format";
 
 export type HomeData = {
   glance: GlanceView | null;
-  money: MoneyView | null;
+  money: MoneySummary | null;
   // Whether there's an Investing space at all, so Today can say how to get one.
   investing: boolean;
   // The last line the first running task's agent wrote.

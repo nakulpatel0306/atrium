@@ -162,18 +162,61 @@ test("output for runs no longer listed is let go", async () => {
   expect(client.output("run_gone")).toBe("");
 });
 
-test("live output that arrives while the transcript loads isn't lost or doubled", async () => {
+// The transcript and the live lines come over two connections, so a line already in the transcript can arrive before
+// or after it. The engine numbers the lines and says how many the transcript holds; both orders end the same.
+async function seededRun(seq: number | null) {
+  await server.stop(true);
+  server = startServer({ db, runner: { kick: () => {}, outputSeq: () => seq }, setup: async () => { throw new Error("no"); }, port: Number(new URL(base).port) });
   const space = createSpace(db, { name: "App", kind: "general", goal: "g" });
   const task = createTask(db, { spaceId: space.id, title: "Build" });
   const path = `${home.home}/seed.log`;
   await Bun.write(path, "line A\n");
   db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run("run_seed", task.id, "claude", Date.now(), path);
-  await until(() => client.state() !== null);
+  await until(() => client.state() !== null && client.online(), 5000);
+  return task;
+}
+
+test("a live line the transcript already has isn't doubled when it arrives before the transcript", async () => {
+  const task = await seededRun(1);
+  // The transcript fetch is held until both lines are in, so they arrive while it loads.
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/transcript")) await gate;
+    return realFetch(input, init);
+  }) as typeof fetch;
+  client.output("run_seed");
+  bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line A", seq: 1 });
+  bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line B", seq: 2 });
+  await until(() => client.output("run_seed").includes("line B"));
+  release();
+  await until(() => client.output("run_seed") === "line A\nline B\n");
+});
+
+test("a live line the transcript already has isn't doubled when it arrives after the transcript", async () => {
+  const task = await seededRun(1);
+  client.output("run_seed");
+  await until(() => client.output("run_seed") === "line A\n");
+  bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line A", seq: 1 });
+  bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line B", seq: 2 });
+  await until(() => client.output("run_seed").includes("line B"));
+  expect(client.output("run_seed")).toBe("line A\nline B\n");
+});
+
+test("with an engine that doesn't number lines, lines during the load are matched against the transcript's end", async () => {
+  const task = await seededRun(null);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/transcript")) await gate;
+    return realFetch(input, init);
+  }) as typeof fetch;
   client.output("run_seed");
   bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line A" });
   bus.emit({ type: "run-output", runId: "run_seed", taskId: task.id, chunk: "line B" });
-  await settle(200);
-  expect(client.output("run_seed")).toBe("line A\nline B\n");
+  await until(() => client.output("run_seed").includes("line B"));
+  release();
+  await until(() => client.output("run_seed") === "line A\nline B\n");
 });
 
 test("a frame that isn't JSON is ignored", async () => {

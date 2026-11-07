@@ -102,7 +102,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
   const investSpace = state?.spaces.find((s) => s.kind === "markets") ?? null;
   const base = investSpace ? `/api/investing/${encodeURIComponent(investSpace.id)}` : null;
   const tab = ui.tab;
-  const money = useEngineRead<MoneyPage>(client, base && (tab === "money" || tab === "home") ? `${base}/money?month=${tab === "home" ? thisMonth() : (ui.money.month ?? "")}` : null);
+  const money = useEngineRead<MoneyPage>(client, base && (tab === "money" || tab === "home") ? `${base}/money?summary=1&month=${tab === "home" ? thisMonth() : (ui.money.month ?? "")}` : null);
   const glance = useMarketsGlance(client, investSpace && (tab === "home" || tab === "investing") ? investSpace : null) as GlanceView | null;
   const portfolio = useEngineRead<PortfolioView>(client, base && tab === "investing" ? `${base}/portfolio` : null);
   const markets = useEngineRead<{ alerts: Alert[] }>(client, investSpace && tab === "investing" ? `/api/markets/${encodeURIComponent(investSpace.id)}` : null);
@@ -265,7 +265,8 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
     const s = client.state();
     if (!s) return;
     const actions: Action[] = [];
-    if (uiRef.current.ask && !c.ask && !c.input) actions.push({ type: "ask", ask: null });
+    // A click anywhere but the box (or its own keys on the strip) leaves it: a card's key cap then acts, never types.
+    if (uiRef.current.ask && !c.ask && !c.strip) actions.push({ type: "ask", ask: null });
     if (c.tab !== undefined) actions.push({ type: "tab", tab: (["home", "spaces", "money", "investing", "activity"] as const)[c.tab]! });
     if (c.select) actions.push({ type: "select", pane: c.select.pane, id: c.select.id });
     if (c.focus) actions.push({ type: "focus", pane: c.focus });
@@ -280,6 +281,8 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
   const onMouse = (e: MouseEvent) => {
     const hit = hitAt(hitsRef.current, e.x, e.y);
     if (e.kind === "click") return hit && click(hit.click);
+    // The wheel would arrive as j and k, which are text while the cursor is in a box.
+    if (inBox(uiRef.current)) return;
     if (uiRef.current.overlay && uiRef.current.overlay.kind !== "transcript" && uiRef.current.overlay.kind !== "agents" && uiRef.current.overlay.kind !== "detail") return;
     if (hit?.wheel && hit.click.focus && listPaneOf(uiRef.current) !== hit.click.focus) click({ focus: hit.click.focus });
     if (hit?.wheel === "detail" || hit?.wheel === "live") click({ focus: hit.wheel });

@@ -62,6 +62,8 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Everywhere", keys: "u", does: "agents and usage" },
   { section: "Everywhere", keys: "o", does: "overnight on / off" },
   { section: "Everywhere", keys: "? q", does: "help, close, quit" },
+  // Mouse reporting takes plain drags, so selecting text needs the terminal's own modifier.
+  { section: "Everywhere", keys: "Opt/Shift", does: "drag to select text" },
   { section: "Home", keys: "s e x", does: "text: send, edit, skip" },
   { section: "Home", keys: "a r", does: "approve, send back" },
   { section: "Home", keys: "y n N", does: "yes, not now, never" },
