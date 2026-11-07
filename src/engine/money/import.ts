@@ -174,12 +174,10 @@ function joins(gap: string): boolean {
   return length <= MAX_GAP;
 }
 
-// The backstop's looser join: up to 8 characters with at most 2 letters, and no letters beside whitespace (so
-// "2026-10-01 to 2026-10-30" stays two dates).
+// The backstop's looser join: up to 8 characters, letters and whitespace allowed, with at most 2 letters.
 function looseJoins(gap: string): boolean {
   if (gap.includes("··") || gap.length > LOOSE_GAP) return false;
-  const letters = [...gap].filter((c) => LETTER.test(c)).length;
-  return letters <= LOOSE_LETTERS && !(letters > 0 && /\s/u.test(gap));
+  return [...gap].filter((c) => LETTER.test(c)).length <= LOOSE_LETTERS;
 }
 
 function luhn(d: string): boolean {
@@ -192,15 +190,16 @@ function luhn(d: string): boolean {
   return sum % 10 === 0;
 }
 
-// Digits joined by a loose gap that hold a Luhn-valid 13–19 digit run are a card number, whatever their pieces look
-// like. Only a span that is exactly one date or one amount is left alone.
-function luhnBackstop(s: string): string {
+// Digits joined by a gap (the strict join, then the loose one) that hold a Luhn-valid 13–19 digit run are a card
+// number, whatever their pieces look like. Only a span that is exactly one date or one amount is left alone, so a
+// date range stays readable only when no Luhn-valid run crosses from one date into the next.
+function luhnBackstop(s: string, join: (gap: string) => boolean): string {
   const at = [...s.matchAll(/\d/g)].map((m) => m.index!);
   let out = "";
   let from = 0;
   for (let i = 0; i < at.length; ) {
     let j = i;
-    while (j + 1 < at.length && looseJoins(s.slice(at[j]! + 1, at[j + 1]!))) j++;
+    while (j + 1 < at.length && join(s.slice(at[j]! + 1, at[j + 1]!))) j++;
     const span = s.slice(at[i]!, at[j]! + 1);
     const digits = span.replace(/\D/g, "");
     const harmless = isDate(span) || AMOUNT.test(span);
@@ -245,7 +244,7 @@ export function maskNumbers(input: string): string {
     at = end;
     i = j + 1;
   }
-  return luhnBackstop(out + s.slice(at));
+  return luhnBackstop(luhnBackstop(out + s.slice(at), joins), looseJoins);
 }
 
 // True when text has no card or account number left in it: masking would change nothing.

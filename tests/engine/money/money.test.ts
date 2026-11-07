@@ -163,7 +163,7 @@ test("the facts Claude gets are compact and say where they come from", () => {
   expect(facts).toContain("Wealthsimple 2026: deposits CA$9,000.00 (TFSA CA$7,000.00), withdrawals CA$500.00, dividends CA$156.25, fees CA$1.50, buys CA$4,680.00 + US$1,150.00, sells US$280.00.");
   expect(facts).toContain("Recurring charges:");
   expect(facts).toContain("Netflix.com CA$16.49 monthly");
-  expect(facts).toContain("Bank and card: 40 transactions from 2026-08-01 to 2026-11-04 in Chequing ··1234 and MasterCard ··4021.");
+  expect(facts).toContain("Bank and card: 40 transactions from Aug 1, 2026 to Nov 4, 2026 in Chequing ··1234 and MasterCard ··4021.");
   expect(Buffer.byteLength(facts)).toBeLessThan(4000);
   expect(facts).not.toContain("5191XXXXXXXX4021");
 });
@@ -229,7 +229,7 @@ test("an impossible date is skipped", () => {
 
 test("one transaction reads as one", () => {
   importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-02,LOBLAWS,-20\n"));
-  expect(moneyFacts(db, spaceId, NOW).join("\n")).toContain("Bank and card: 1 transaction from 2026-10-02 to 2026-10-02");
+  expect(moneyFacts(db, spaceId, NOW).join("\n")).toContain("Bank and card: 1 transaction from Oct 2, 2026 to Oct 2, 2026");
 });
 
 // ---- Plan 14 ----
@@ -821,7 +821,9 @@ test("card data: the Luhn backstop checks a whole span, even one made of amount-
     expect(out.replace(/\D/g, "")).not.toContain("41111");
     expect(isMasked(out)).toBe(true);
   }
+  // Readable here because no Luhn-valid run crosses from one date into the other.
   expect(mask("From 2026-10-01 to 2026-10-30.")).toBe("From 2026-10-01 to 2026-10-30.");
+  expect(mask("4111 a 1111 b 1111 c 1111")).toBe("··1111");
   expect(mask("Groceries CA$58.14 (CA$374.40 to CA$432.54)")).toBe("Groceries CA$58.14 (CA$374.40 to CA$432.54)");
 });
 

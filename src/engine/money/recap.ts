@@ -170,16 +170,17 @@ export function coverText(cover: MonthCover): string | null {
   return gaps.length ? `Incomplete: ${gaps.join(" · ")}.` : null;
 }
 
-// The recap as facts for Claude to rephrase: merchant names and Atrium's numbers only, card numbers masked.
+// The recap as facts for Claude to rephrase: merchant names and Atrium's numbers only, card numbers masked. Dates
+// are written "Oct 26", not 2026-10-26, so two dates side by side never read as one long number to the masker.
 export function recapFacts(r: Recap): string[] {
   const out = [`Recap facts for ${monthYear(r.month)}, all worked out by Atrium from files Nakul imported on this Mac (CAD):`];
   out.push(`Spent ${cad(r.spent)}; money in ${cad(r.income)}; ${r.net >= 0 ? `left over ${cad(r.net)}` : `spent ${cad(r.net)} more than came in`}.`);
   if (r.before && r.previous) out.push(`${monthYear(r.previous)}: spent ${cad(r.before.spent)}; money in ${cad(r.before.income)}.`);
   if (r.changes.length) out.push(`Biggest category changes: ${r.changes.map((c) => `${c.category} ${c.delta > 0 ? "up" : "down"} ${cad(c.delta)} (${cad(c.before)} to ${cad(c.now)})`).join("; ")}.`);
-  if (r.notable.length) out.push(`Notable charges: ${r.notable.map((n) => `${maskNumbers(n.merchant)} ${cad(n.amount)} on ${n.date} (${n.why.replace(/\.$/, "")})`).join("; ")}.`);
+  if (r.notable.length) out.push(`Notable charges: ${r.notable.map((n) => `${maskNumbers(n.merchant)} ${cad(n.amount)} on ${dayText(n.date)} (${n.why.replace(/\.$/, "")})`).join("; ")}.`);
   if (r.moved.count) out.push(`${r.moved.count} transfers between Nakul's own accounts were left out.`);
   if (r.eTransfers.count) out.push(`${cad(r.eTransfers.total)} in ${r.eTransfers.count === 1 ? "1 e-transfer" : `${r.eTransfers.count} e-transfers`} sent was left out of spending.`);
-  out.push(`Based on ${r.basis.count} transactions from ${r.basis.from} to ${r.basis.to}.`);
+  out.push(`Based on ${r.basis.count} transactions from ${dayText(r.basis.from)} to ${dayText(r.basis.to)}.`);
   const gap = coverText(r.cover);
   if (gap) out.push(gap);
   return out;

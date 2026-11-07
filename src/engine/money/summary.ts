@@ -7,7 +7,7 @@ import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
 import { isMasked, maskNumbers } from "./import";
 import { budgetRows, listBudgets, type BudgetRow } from "./budgets";
 import { monthCover } from "./coverage";
-import { coverText, monthName, monthYear, recap, recapFacts, type Recap } from "./recap";
+import { coverText, dayText, monthName, monthYear, recap, recapFacts, type Recap } from "./recap";
 import { roomTie, tfsaRoom, type Room } from "./room";
 import { subscriptions, type SubscriptionList } from "./subscriptions";
 import { transfers, type TransferWhy } from "./transfers";
@@ -222,6 +222,8 @@ const cad = (n: number) => `CA$${n.toLocaleString("en-US", { minimumFractionDigi
 const usd = (n: number) => `US$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const both = (c: number, u: number) => (c && u ? `${cad(c)} + ${usd(u)}` : u ? usd(u) : cad(c));
 
+const longDay = (d: string) => `${dayText(d)}, ${d.slice(0, 4)}`;
+
 // Compact, sourced facts for "Ask about my money": Claude only, read-only, from Nakul's own files on this Mac.
 export function moneyFacts(db: Database, spaceId: string, now: number): string[] {
   const v = moneyView(db, spaceId, now);
@@ -244,7 +246,7 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
   const n = v.counts.bank;
   if (!n) out.push("No bank or card transactions imported.");
   else {
-    out.push(`Bank and card: ${n} ${n === 1 ? "transaction" : "transactions"} from ${v.range!.from} to ${v.range!.to} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
+    out.push(`Bank and card: ${n} ${n === 1 ? "transaction" : "transactions"} from ${longDay(v.range!.from)} to ${longDay(v.range!.to)} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
     for (const m of v.months.slice(0, 3)) {
       const s = spendingIn(bank, m, rules);
       const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");
@@ -255,8 +257,8 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
     for (const t of recent) merchants.set(t.merchant, (merchants.get(t.merchant) ?? 0) - t.amount);
     const top = [...merchants.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
     if (top.length) out.push(`Top places, last 90 days: ${top.map(([m, a]) => `${m} ${cad(a)}`).join(", ")}.`);
-    if (v.recurring.length) out.push(`Recurring charges: ${v.recurring.map((r) => `${r.merchant} ${cad(r.amount)} monthly (${r.count} times, last ${r.last})`).join("; ")}.`);
-    if (v.unusual.length) out.push(`Unusual: ${v.unusual.slice(0, 5).map((u) => `${u.date} ${u.merchant} ${cad(u.amount)}: ${u.reason}`).join("; ")}`);
+    if (v.recurring.length) out.push(`Recurring charges: ${v.recurring.map((r) => `${r.merchant} ${cad(r.amount)} monthly (${r.count} times, last ${dayText(r.last)})`).join("; ")}.`);
+    if (v.unusual.length) out.push(`Unusual: ${v.unusual.slice(0, 5).map((u) => `${dayText(u.date)} ${u.merchant} ${cad(u.amount)}: ${u.reason}`).join("; ")}`);
   }
   return out;
 }
