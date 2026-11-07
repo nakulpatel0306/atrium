@@ -424,3 +424,36 @@ test("marking a transaction as a transfer or not changes the month, and the mark
   expect(moneyView(db, spaceId, NOW, "2026-10").spent).toBeCloseTo(before + 1124.3, 2);
   expect(() => markTransfer(db, spaceId, "mtx_nope", true)).toThrow("That transaction isn't here anymore. Refresh the page.");
 });
+
+test("card data at rest: a card number in every column and in the account option is never written", () => {
+  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+  const card = "4111 1111 1111 1111";
+  const files = [
+    `Date,Description 1,Description 2,Amount,Account Type,Account Number,Type\n2026-10-02,${card},${card},-5.00,${card},${card},Debit`,
+    `Date,Description,Amount\n2026-10-02,${card},5.00`,
+    `transaction_date,account_type,activity_type,activity_sub_type,symbol,name,currency,net_cash_amount\n2026-01-05,${card},Dividend,,${card},${card},CAD,5`,
+    `"date","transaction","description","amount","balance"\n"2026-10-04","${card}","","10.00","10.00"`,
+    `10/02/2026,${card},5.00,,100.00`,
+  ];
+  for (const f of files) {
+    importMoney(db, spaceId, previewMoney(f));
+    importMoney(db, spaceId, previewMoney(f, { account: `Visa ${card}` }));
+  }
+  const accounts = (db.query("SELECT DISTINCT account FROM money_transactions").all() as { account: string }[]).map((r) => r.account);
+  expect(accounts).toContain("Visa ··1111");
+  const raw = readdirSync(home.home)
+    .filter((f) => f.includes(".db") || f.endsWith("-wal") || f.endsWith("-shm"))
+    .map((f) => readFileSync(join(home.home, f)).toString("latin1"))
+    .join("\n");
+  expect(raw.length).toBeGreaterThan(0);
+  for (const secret of [card, card.replace(/ /g, ""), "1111 1111 1111"]) expect(raw.includes(secret)).toBe(false);
+  for (const r of db.query("SELECT account, description, merchant, symbol FROM money_transactions").all() as Record<string, string | null>[]) {
+    for (const v of Object.values(r)) if (v) expect(isMasked(v)).toBe(true);
+  }
+});
+
+test("storeRow masks every text field, however the row was built", () => {
+  const { storeRow } = require("../../../src/engine/money/import") as typeof import("../../../src/engine/money/import");
+  const r = storeRow({ source: "bank", account: "4111111111111111", date: "2026-10-02", description: "=4111-1111-1111-1111", merchant: "4111 1111 1111 1111", amount: -1, currency: "CAD", kind: "spend", symbol: "4111111111111111" });
+  expect(r).toMatchObject({ account: "··1111", description: "··1111", merchant: "··1111", symbol: "··1111" });
+});

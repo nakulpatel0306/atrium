@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { bus } from "../events";
 import { newId } from "../ids";
 import { parseCsv } from "../markets/csv";
-import { detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_CODES, type Bank } from "./banks";
+import { ACCOUNTS, detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_CODES, type Bank } from "./banks";
 import { merchantOf } from "./categories";
 
 // Bank and card exports (TD, Amex, Wealthsimple Cash, RBC, Scotiabank and the like) and Wealthsimple activity exports,
@@ -158,6 +158,31 @@ export function maskNumbers(input: string): string {
 // True when text has no card or account number left in it: masking would change nothing.
 export const isMasked = (s: string): boolean => maskNumbers(s) === s;
 
+// A Wealthsimple Cash transaction code ("AFT_IN"), the only raw cell kept as text when a row has no description.
+const TYPE_CODE = /^[A-Z_ ]{1,20}$/;
+const MAX_ACCOUNT = 40;
+
+// An account name Nakul picked or typed: one of his known accounts as is, anything else cleaned and masked.
+function cleanAccount(raw: string | undefined): string | null {
+  const t = (raw ?? "").trim();
+  if (!t) return null;
+  if ((ACCOUNTS as readonly string[]).includes(t) || t === OTHER_ACCOUNT) return t;
+  return maskNumbers(safeText(t)).slice(0, MAX_ACCOUNT) || null;
+}
+
+// The one way a row reaches the database: every text field masked again, however it was built, so no full card or
+// account number is ever written, fingerprints included.
+export function storeRow(r: MoneyRow): MoneyRow {
+  const clean = (s: string) => maskNumbers(safeText(s));
+  return {
+    ...r,
+    account: clean(r.account).slice(0, MAX_ACCOUNT) || OTHER_ACCOUNT,
+    description: clean(r.description),
+    merchant: clean(r.merchant),
+    symbol: r.symbol === null ? null : clean(r.symbol).slice(0, 20) || null,
+  };
+}
+
 // A cell starting (after any spaces) with =, +, -, @ or a control character could run as a formula if the text were ever opened in a
 // spreadsheet; Atrium keeps it as text without the trigger.
 const safeText = (s: string) =>
@@ -210,7 +235,7 @@ function wsCash(headers: string[], body: string[][], account: string): Pick<Mone
     if (!d) return skipped.push({ line: n + 2, reason: "No date Atrium can read." });
     if (Number.isNaN(amount)) return skipped.push({ line: n + 2, reason: "No amount Atrium can read." });
     const c = (r[code!] ?? "").trim();
-    const text = maskNumbers(safeText(r[description!] ?? "")) || c;
+    const text = maskNumbers(safeText(r[description!] ?? "")) || (TYPE_CODE.test(c) ? c : maskNumbers(safeText(c)));
     const kind: MoneyKind = WS_TRANSFER_CODES.test(c) ? "transfer" : WS_INTEREST_CODES.test(c) ? "interest" : amount < 0 ? "spend" : "income";
     rows.push({ source: "bank", account, date: d, description: text, merchant: merchantOf(text), amount: Math.round(amount * 100) / 100, currency: "CAD", kind, symbol: null });
   });
@@ -235,7 +260,7 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
   // With one signed amount column, card exports often write charges as positive numbers.
   const positives = (amounts: number[]) => amounts.length > 0 && amounts.filter((n) => n > 0).length / amounts.length >= 0.6;
   const bank = detectBank(all, () => positives(body.map((r) => num(r[headers.findIndex((h) => h.trim().toLowerCase() === "amount")])).filter((n) => !Number.isNaN(n) && n !== 0)));
-  const account = (fallback: string | null) => opts.account?.trim().slice(0, 40) || fallback;
+  const account = (fallback: string | null) => cleanAccount(opts.account) || fallback;
   if (bank.id === "ws-activity") return { ...empty, format: "wealthsimple", headers, ...wealthsimple(headers, body), warnings, bank };
   if (bank.id === "ws-cash") {
     const named = account(bank.account)!;
@@ -324,7 +349,8 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
   let added = 0;
   const at = Date.now();
   db.transaction(() => {
-    for (const r of p.rows) {
+    for (const raw of p.rows) {
+      const r = storeRow(raw);
       const base = [r.source, r.account, r.date, r.amount.toFixed(2), r.currency, r.description.toLowerCase()].join("|");
       const n = (seen.get(base) ?? 0) + 1;
       seen.set(base, n);
