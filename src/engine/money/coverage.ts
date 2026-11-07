@@ -4,6 +4,7 @@ import { etDate } from "../markets/calendar";
 // Which days Nakul's imports cover, per account, from the import log. A file only shows the days that had
 // something on them, so a month is complete for an account when its files start in the first week and either reach
 // the last 3 days, or were imported after the month ended and reach its last week (the quiet days were just quiet).
+// A statement file (Wealthsimple Cash) covers its whole period, whatever days had activity.
 export type AccountCover = { account: string; complete: boolean; through: string | null };
 export type MonthCover = { month: string; inProgress: boolean; complete: boolean; accounts: AccountCover[] };
 
@@ -35,7 +36,7 @@ function activeAccounts(imports: Import[], month: string): string[] {
 export function monthCover(db: Database, spaceId: string, month: string, today: string): MonthCover {
   const imports = db
     .query(
-      `SELECT account, first_date, last_date, imported_at FROM money_imports i WHERE space_id = ?
+      `SELECT account, COALESCE(period_start, first_date) AS first_date, COALESCE(period_end, last_date) AS last_date, imported_at FROM money_imports i WHERE space_id = ?
        AND EXISTS (SELECT 1 FROM money_transactions t WHERE t.space_id = i.space_id AND t.account = i.account AND t.source = 'bank')`,
     )
     .all(spaceId) as Import[];

@@ -267,6 +267,9 @@ function migrate(db: Database) {
   rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
   // Nakul's own say on whether a money row is a transfer between his accounts: 1 yes, 0 no, NULL for Atrium to tell.
   if (!has("money_transactions", "transfer")) db.exec("ALTER TABLE money_transactions ADD COLUMN transfer INTEGER");
+  // A statement file covers its whole period, not just the days with activity (Wealthsimple Cash issues one a month).
+  if (!has("money_imports", "period_start")) db.exec("ALTER TABLE money_imports ADD COLUMN period_start TEXT");
+  if (!has("money_imports", "period_end")) db.exec("ALTER TABLE money_imports ADD COLUMN period_end TEXT");
   backfillMoneyImports(db);
   // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
   if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");

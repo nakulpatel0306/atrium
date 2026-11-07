@@ -41,7 +41,8 @@ export function detectBank(rows: string[][], mostlyPositive: () => boolean): Ban
   return { id: "generic", label: "Bank or card export", confidence: "low", account: null };
 }
 
-// Wealthsimple Cash transaction codes that move money between Nakul's own accounts (pre-authorised and electronic
-// funds transfers, internal transfers). Interac e-transfers (E_TRFIN, E_TRFOUT) can be to anyone, so they aren't.
-export const WS_TRANSFER_CODES = /^(AFT|EFT|TRF|TRANSFER)/i;
+// Wealthsimple Cash's own internal transfer codes. AFT and EFT aren't: a biller's pre-authorised debit and a payroll
+// deposit use them too, so they count as spending or money in unless they pair with another of his accounts.
+// Interac e-transfers (E_TRFIN, E_TRFOUT) can be to anyone.
+export const WS_TRANSFER_CODES = /^(TRF|INTERNAL_TRANSFER)/i;
 export const WS_INTEREST_CODES = /^(INT|FPLINT)$/i;

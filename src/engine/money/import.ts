@@ -5,6 +5,7 @@ import { newId } from "../ids";
 import { parseCsv } from "../markets/csv";
 import { ACCOUNTS, detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_CODES, type Bank } from "./banks";
 import { merchantOf } from "./categories";
+import { monthEnd } from "./coverage";
 
 // Bank and card exports (TD, Amex, Wealthsimple Cash, RBC, Scotiabank and the like) and Wealthsimple activity exports,
 // read on this Mac. Known banks are found by shape (banks.ts), other columns by name, and anything else is mapped by
@@ -453,8 +454,12 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
       const fingerprint = createHash("sha256").update(`${base}|${n}`).digest("hex").slice(0, 32);
       added += put.run(newId("mtx"), spaceId, r.source, r.account, r.date, r.description, r.merchant, r.amount, r.currency, r.kind, r.symbol, fingerprint, at).changes;
     }
-    const log = db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    for (const [account, c] of covered) log.run(newId("mim"), spaceId, account, c.first, c.last, c.rows, at);
+    const log = db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at, period_start, period_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // A Wealthsimple Cash statement covers whole calendar months, from its first row's month to its last row's.
+    const statement = p.bank.id === "ws-cash";
+    for (const [account, c] of covered) {
+      log.run(newId("mim"), spaceId, account, c.first, c.last, c.rows, at, statement ? `${c.first.slice(0, 7)}-01` : null, statement ? monthEnd(c.last.slice(0, 7)) : null);
+    }
   })();
   bus.emit({ type: "changed" });
   return { added, duplicates: p.rows.length - added };

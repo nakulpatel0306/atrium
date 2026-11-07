@@ -252,7 +252,9 @@ CREATE TABLE IF NOT EXISTS money_imports (
   first_date TEXT NOT NULL,
   last_date TEXT NOT NULL,
   rows INTEGER NOT NULL,
-  imported_at INTEGER NOT NULL
+  imported_at INTEGER NOT NULL,
+  period_start TEXT,
+  period_end TEXT
 );
 CREATE TABLE IF NOT EXISTS money_budgets (
   space_id TEXT NOT NULL REFERENCES spaces(id),
