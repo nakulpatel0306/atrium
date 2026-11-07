@@ -9,6 +9,7 @@ import { openDb } from "../../src/engine/db";
 import { DeleteRefused, deleteSpace, deleteTask, HANDLED, spaceDeletePreview, taskDeletePreview } from "../../src/engine/delete";
 import { finishPendingDeletes, queueDelete } from "../../src/engine/delete-files";
 import { listActivity, logActivity } from "../../src/engine/events";
+import { ensureSpaceFolder } from "../../src/engine/folders";
 import { newId } from "../../src/engine/ids";
 import { draftMessage, setMessageStatus } from "../../src/engine/messaging/store";
 import { recordRunFiles } from "../../src/engine/outputs/store";
@@ -80,7 +81,7 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   db.query("INSERT INTO market_writeups (id, space_id, kind, key, for_date, body, task_id, created_at) VALUES (?, ?, 'digest', 'k', 'd', 'b', ?, ?)").run(newId("wu"), space.id, task, now);
   db.query("INSERT INTO market_ideas (space_id, key, stage, stage_at, created_at) VALUES (?, 'AAPL', 'watching', ?, ?)").run(space.id, now, now);
   db.query("INSERT INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, kind, fingerprint, imported_at) VALUES (?, ?, 'bank', 'a', 'd', 'x', 'm', 1, 'spend', ?, ?)").run(newId("mt"), space.id, newId("fp"), now);
-  mkdirSync(space.folder!, { recursive: true });
+  ensureSpaceFolder(db, space);
   writeFileSync(join(space.folder!, "list.md"), "eggs");
   return { space, task, review, run, transcript };
 }
@@ -202,9 +203,9 @@ test("a recorded folder outside the files home is never removed", async () => {
   writeFileSync(join(outside, "precious.txt"), "keep me");
   db.query("UPDATE spaces SET folder = ? WHERE id = ?").run(outside, s.space.id);
   try {
-    const { kept } = await deleteSpace(db, s.space.id, "Escape");
+    const { message } = await deleteSpace(db, s.space.id, "Escape");
     expect(readFileSync(join(outside, "precious.txt"), "utf8")).toBe("keep me");
-    expect(kept[0]).toContain("isn't inside");
+    expect(message).toContain("isn't inside");
     for (const bad of ["/", join(config().filesHome, ".."), join(config().filesHome, ".hidden")]) {
       queueDelete(db, "folder", bad, config().filesHome);
     }

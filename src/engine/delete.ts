@@ -5,7 +5,7 @@ import type { Database } from "bun:sqlite";
 import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config";
-import { fileNow, finishPendingDeletes, queueDelete } from "./delete-files";
+import { fileNow, finishPendingDeletes, notesOf, queueDelete } from "./delete-files";
 import { bus } from "./events";
 import { spaceFolder, tildePath } from "./folders";
 import { presentCloneForPath } from "./repos/store";
@@ -225,7 +225,7 @@ export function spaceDeletePreview(db: Database, id: string, guards: DeleteGuard
 }
 
 // The name must match exactly (ignoring spaces around it), so a stale page or a mistyped id can't delete another space.
-export async function deleteSpace(db: Database, id: string, typedName: string, guards: DeleteGuards = {}): Promise<{ name: string; kept: string[] }> {
+export async function deleteSpace(db: Database, id: string, typedName: string, guards: DeleteGuards = {}): Promise<{ name: string; message: string; kept: string[] }> {
   const space = db.transaction(() => {
     const space = getSpace(db, id);
     if (!space) throw new DeleteRefused(404, SPACE_GONE);
@@ -233,6 +233,7 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     const tasks = taskClosure(db, idsOf(db, "SELECT id FROM tasks WHERE space_id = ?", id));
     const refused = refusal(db, tasks, id, guards);
     if (refused) throw new DeleteRefused(409, refused);
+    const pin = db.query("SELECT folder_dev AS dev, folder_ino AS ino FROM spaces WHERE id = ?").get(id) as { dev: number | null; ino: number | null };
     const linksBefore = brokenLinks(db);
     db.query("DELETE FROM message_actions WHERE space_id = ?").run(id);
     // A new project's approval belongs to no space, so it's found through its repo action.
@@ -259,12 +260,18 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
       throw new DeleteRefused(409, BROKE);
     }
     queueTranscripts(db, transcripts);
-    if (space.kind !== "repo") for (const f of foldersOf(space)) queueDelete(db, "folder", f.path, f.root);
-    if (clone) queueDelete(db, "clone", clone.path, config().projectsRoot, clone.id);
+    if (space.kind !== "repo") {
+      for (const f of foldersOf(space)) queueDelete(db, "folder", f.path, f.root, f.path === space.folder ? pin : {});
+    }
+    if (clone) queueDelete(db, "clone", clone.path, config().projectsRoot, { cloneId: clone.id });
     return space;
   })();
   bus.emit({ type: "changed" });
-  return { name: space.name, kept: await finishPendingDeletes(db) };
+  const done = await finishPendingDeletes(db);
+  // The result says plainly where the visible folder went, or that it's still there.
+  const folder = space.folder ? done.find((d) => d.kind === "folder" && d.path === space.folder) : undefined;
+  const where = folder?.trashed ? ` Its folder ${tildePath(space.folder!)} went to the Trash.` : folder?.note ? ` ${folder.note}` : "";
+  return { name: space.name, message: `Deleted "${space.name}".${where}`, kept: notesOf(done.filter((d) => d !== folder)) };
 }
 
 export type TaskDeletePreview = {
@@ -351,11 +358,11 @@ export async function deleteTask(db: Database, id: string): Promise<{ title: str
     const { transcripts } = deleteTaskRows(db, tasks);
     if (brokenLinks(db) > linksBefore) throw new DeleteRefused(409, BROKE);
     queueTranscripts(db, transcripts);
-    for (const f of files.remove) queueDelete(db, "file", f.path, root!, null, { size: f.size, mtimeMax: f.mtimeMax });
+    for (const f of files.remove) queueDelete(db, "file", f.path, root!, { size: f.size, mtimeMax: f.mtimeMax });
     return { title: task.title, edited: files.edited };
   })();
   bus.emit({ type: "changed" });
-  const kept = await finishPendingDeletes(db);
+  const kept = notesOf(await finishPendingDeletes(db));
   return { title, kept: [...(edited.length ? [keptEdited(edited)] : []), ...kept] };
 }
 

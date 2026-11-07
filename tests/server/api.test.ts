@@ -664,7 +664,7 @@ test("DELETE a space needs Origin, the right Host, JSON and the exact name", asy
   expect(getSpace(db, s.id)).not.toBeNull();
   const ok = await del(`/api/spaces/${s.id}`, { name: "Text Dana" });
   expect(ok.status).toBe(200);
-  expect(await ok.json()).toEqual({ name: "Text Dana", kept: [] });
+  expect(await ok.json()).toEqual({ name: "Text Dana", message: 'Deleted "Text Dana".', kept: [] });
   expect(getSpace(db, s.id)).toBeNull();
   expect((await del(`/api/spaces/${s.id}`, { name: "Text Dana" })).status).toBe(404);
 });

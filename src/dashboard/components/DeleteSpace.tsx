@@ -25,10 +25,10 @@ export function DeleteSpace({ space, onClose, onDeleted }: Props) {
   const remove = async () => {
     setBusy(true);
     setError(null);
-    const res = await del<{ name: string; kept: string[] }>(`/api/spaces/${encodeURIComponent(space.id)}`, { name: typed });
+    const res = await del<{ name: string; message: string; kept: string[] }>(`/api/spaces/${encodeURIComponent(space.id)}`, { name: typed });
     setBusy(false);
     if (!res.ok) return setError(res.error);
-    showToast(res.data.kept.length ? `Deleted "${res.data.name}". ${res.data.kept[0]}` : `Deleted "${res.data.name}".`);
+    showToast([res.data.message, ...res.data.kept.slice(0, 1)].join(" "));
     onDeleted?.();
     onClose();
   };

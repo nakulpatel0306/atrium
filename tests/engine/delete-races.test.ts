@@ -7,12 +7,15 @@ import { config } from "../../src/engine/config";
 import { openDb } from "../../src/engine/db";
 import { deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../../src/engine/delete";
 import { finishPendingDeletes, queueDelete } from "../../src/engine/delete-files";
+import { ensureSpaceFolder } from "../../src/engine/folders";
 import { newId } from "../../src/engine/ids";
 import { recordRunFiles } from "../../src/engine/outputs/store";
 import { createCloner } from "../../src/engine/repos/clones";
 import { listClones } from "../../src/engine/repos/store";
-import { createSpace, getSpace } from "../../src/engine/spaces";
-import { createTask, setTaskStatus } from "../../src/engine/tasks";
+import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
+import { createTask, getTask, setTaskStatus } from "../../src/engine/tasks";
+import { messagesSpace, mergeRestoredMessages, messagesMergeWait } from "../../src/engine/messaging/space";
+import { tildePath } from "../../src/engine/folders";
 import { draftMessage } from "../../src/engine/messaging/store";
 import { autoLookup } from "../../src/engine/messaging/contacts";
 import { setSetting } from "../../src/engine/settings";
@@ -27,6 +30,7 @@ beforeEach(() => {
   db = openDb();
 });
 afterEach(() => {
+  delete process.env.ATRIUM_TRASH;
   db.close();
   home.cleanup();
 });
@@ -158,7 +162,7 @@ test("a queued file removal re-checks the file on boot and keeps one changed sin
   const root = join(config().filesHome, "notes");
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, "a.md"), "abc");
-  queueDelete(db, "file", "a.md", root, null, { size: 3, mtimeMax: Date.now() + 2000 });
+  queueDelete(db, "file", "a.md", root, { size: 3, mtimeMax: Date.now() + 2000 });
   writeFileSync(join(root, "a.md"), "Nakul's own words now");
   await finishPendingDeletes(db);
   expect(readFileSync(join(root, "a.md"), "utf8")).toBe("Nakul's own words now");
@@ -167,7 +171,7 @@ test("a queued file removal re-checks the file on boot and keeps one changed sin
 
 test("a deleted space's folder goes to the Trash, and leftover trash is cleared first", async () => {
   const space = createSpace(db, { name: "Reading", kind: "general", goal: "g" });
-  mkdirSync(space.folder!, { recursive: true });
+  ensureSpaceFolder(db, space);
   writeFileSync(join(space.folder!, "list.md"), "books");
   await deleteSpace(db, space.id, "Reading");
   expect(existsSync(space.folder!)).toBe(false);
@@ -194,10 +198,60 @@ test("a files home that is the home folder is never cleared out", async () => {
   process.env.HOME = fakeHome;
   try {
     db.transaction(() => queueDelete(db, "folder", join(fakeHome, "projects"), fakeHome))();
-    const kept = await finishPendingDeletes(db);
-    expect(kept[0]).toContain("its files folder is your home folder");
+    const done = await finishPendingDeletes(db);
+    expect(done[0]!.note).toContain("its files folder is your home folder");
     expect(lstatSync(join(fakeHome, "projects", "mine.txt")).isFile()).toBe(true);
   } finally {
     process.env.HOME = saved;
   }
+});
+
+// W1 (second review): when the Trash can't take the folder, it stays, and the result says so plainly.
+test("W1 a folder that couldn't go to the Trash stays where it is, and the result says so", async () => {
+  const blocker = join(home.home, "not-a-dir");
+  writeFileSync(blocker, "x");
+  process.env.ATRIUM_TRASH = join(blocker, "trash");
+  const space = createSpace(db, { name: "Notes", kind: "general", goal: "g" });
+  ensureSpaceFolder(db, space);
+  writeFileSync(join(space.folder!, "mine.md"), "my own notes");
+  const res = await deleteSpace(db, space.id, "Notes");
+  expect(readFileSync(join(space.folder!, "mine.md"), "utf8")).toBe("my own notes");
+  expect(res.message).toBe(`Deleted "Notes". Atrium couldn't move ${tildePath(space.folder!)} to the Trash, so it's still there; delete it in Finder if you don't need it.`);
+  expect(getSpace(db, space.id)).toBeNull();
+});
+
+test("the result says where the folder went", async () => {
+  const space = createSpace(db, { name: "Notes", kind: "general", goal: "g" });
+  ensureSpaceFolder(db, space);
+  const res = await deleteSpace(db, space.id, "Notes");
+  expect(res.message).toBe(`Deleted "Notes". Its folder ${tildePath(space.folder!)} went to the Trash.`);
+});
+
+test("a folder Atrium never made, or one swapped in since, is left alone", async () => {
+  const never = createSpace(db, { name: "Never ran", kind: "general", goal: "g" });
+  mkdirSync(never.folder!, { recursive: true });
+  writeFileSync(join(never.folder!, "mine.md"), "Nakul made this folder himself");
+  expect((await deleteSpace(db, never.id, "Never ran")).message).toBe(`Deleted "Never ran". Atrium never made ${tildePath(never.folder!)}, so it left it where it is.`);
+  expect(existsSync(join(never.folder!, "mine.md"))).toBe(true);
+
+  const swapped = createSpace(db, { name: "Swapped", kind: "general", goal: "g" });
+  ensureSpaceFolder(db, swapped);
+  const { rmSync: rm } = await import("node:fs");
+  rm(swapped.folder!, { recursive: true });
+  mkdirSync(swapped.folder!);
+  writeFileSync(join(swapped.folder!, "other.md"), "a different folder now");
+  expect((await deleteSpace(db, swapped.id, "Swapped")).message).toContain("it isn't the folder Atrium made for this space");
+  expect(existsSync(join(swapped.folder!, "other.md"))).toBe(true);
+});
+
+// W2 (second review): a Messages merge waits while a task in the old space is running.
+test("W2 a Messages merge waits while a task in the old space is running", () => {
+  const old = messagesSpace(db);
+  const task = createTask(db, { spaceId: old.id, title: "Draft a text to Sam" }).id;
+  setTaskStatus(db, task, "running");
+  updateSpace(db, old.id, { status: "archived" });
+  messagesSpace(db);
+  expect(messagesMergeWait(db, old.id)).toBe("A text is still being drafted in the earlier Messages space. Try again once it's done.");
+  const merged = mergeRestoredMessages(db, old.id);
+  expect(merged === null && getSpace(db, old.id) !== null && getTask(db, task)?.spaceId === old.id).toBe(true);
 });

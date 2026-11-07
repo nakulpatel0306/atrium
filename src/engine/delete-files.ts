@@ -6,6 +6,7 @@ import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmdirSync, 
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { config } from "./config";
+import { tildePath } from "./folders";
 import { logActivity } from "./events";
 import { newId } from "./ids";
 import { FileRefused, resolveTarget } from "./outputs/files";
@@ -17,22 +18,27 @@ export type PendingKind = "folder" | "transcript" | "file" | "clone";
 
 // `root` is the only folder the item may be removed from: the files home for a space folder, the transcripts folder
 // for a transcript, the space folder for a file a task made (`path` relative to it).
-export function queueDelete(
-  db: Database,
-  kind: PendingKind,
-  path: string,
-  root: string,
-  cloneId: string | null = null,
-  expect: { size: number; mtimeMax: number } | null = null,
-): void {
-  db.query("INSERT INTO pending_deletes (id, kind, path, root, clone_id, size, mtime_max, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+export type QueueExtra = {
+  cloneId?: string | null;
+  // For a file a task made: the size and latest modified time it may have and still be the task's own.
+  size?: number | null;
+  mtimeMax?: number | null;
+  // For a space folder: the identity Atrium recorded when it made the folder; ino 0 means it never made one.
+  dev?: number | null;
+  ino?: number | null;
+};
+
+export function queueDelete(db: Database, kind: PendingKind, path: string, root: string, extra: QueueExtra = {}): void {
+  db.query("INSERT INTO pending_deletes (id, kind, path, root, clone_id, size, mtime_max, dev, ino, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
     newId("del"),
     kind,
     path,
     root,
-    cloneId,
-    expect?.size ?? null,
-    expect?.mtimeMax ?? null,
+    extra.cloneId ?? null,
+    extra.size ?? null,
+    extra.mtimeMax ?? null,
+    extra.dev ?? null,
+    extra.ino ?? null,
     Date.now(),
   );
 }
@@ -81,47 +87,62 @@ const realOrNull = (p: string): string | null => {
 
 const inside = (child: string, parent: string) => child === parent || child.startsWith(parent + sep);
 
-// A space folder goes only if it sits directly in its root (after resolving links in the root's own path), has an
-// ordinary name, and nothing still recorded lives in or at it. It's renamed aside first, so it leaves Finder at
-// once and a half-finished removal is never mistaken for the space's files; rmSync then removes links inside
-// without following them.
-function removeFolder(db: Database, id: string, path: string, root: string): string | null {
+type FolderResult = { note: string | null; trashed: boolean };
+const kept = (note: string): FolderResult => ({ note, trashed: false });
+const done: FolderResult = { note: null, trashed: false };
+
+// A space's visible folder holds Nakul's files, so Atrium never removes one for good: it goes to the Trash, and if
+// the Trash can't take it (no permission under launchd, another volume) it stays where it is and the note says so.
+// It must sit directly in its root, have an ordinary name, be the very folder Atrium made (when Atrium recorded
+// that), and not be in use by anything still recorded. The hidden legacy folder is Atrium's own and is removed.
+function removeFolder(db: Database, r: Pending): FolderResult {
+  const { id, path, root } = r;
   const name = basename(path);
-  const outside = `Atrium left ${path} alone: it isn't inside ${root}.`;
+  const shown = tildePath(path);
+  const outside = kept(`Atrium left ${shown} alone: it isn't inside ${tildePath(root)}.`);
   if (!name || name.startsWith(".") || resolve(dirname(path)) !== resolve(root)) return outside;
   const parent = realOrNull(dirname(path));
   // A space whose folder was never made (or whose files home is gone) has nothing to remove.
-  if (!parent) return null;
+  if (!parent) return done;
   if (parent !== realOrNull(root)) return outside;
+  const visible = resolve(root) === resolve(config().filesHome);
   // A files home that is the home folder itself (or above it) holds folders Nakul made; Atrium never removes one.
-  const realRoot = realOrNull(root)!;
   const home = realOrNull(process.env.HOME || homedir());
-  if (home && inside(home, realRoot)) return `Atrium left ${path} alone: its files folder is your home folder, where it can't tell its folders from yours.`;
-  const trash = join(parent, `.atrium-trash-${id}`);
-  // Left by an earlier try that stopped half-way; it only ever holds a folder already moved aside.
-  rmSync(trash, { recursive: true, force: true });
+  if (home && inside(home, parent)) return kept(`Atrium left ${shown} alone: its files folder is your home folder, where it can't tell its folders from yours.`);
+  // Left by an earlier version's half-finished removal: a visible folder's copy goes to the Trash too, never away.
+  const leftover = join(parent, `.atrium-trash-${id}`);
+  if (existsSync(leftover)) {
+    if (!visible) rmSync(leftover, { recursive: true, force: true });
+    else toTrash(leftover);
+  }
   const lower = path.toLowerCase();
   const used = (db.query("SELECT folder, repo_path FROM spaces").all() as { folder: string | null; repo_path: string | null }[]).some(
     (s) => s.folder?.toLowerCase() === lower || (s.repo_path !== null && inside(resolve(s.repo_path), resolve(path))),
   );
   const cloned = (db.query("SELECT path FROM repo_clones WHERE status = 'present'").all() as { path: string }[]).some((c) => inside(resolve(c.path), resolve(path)));
-  if (used || cloned) return `Atrium kept ${path}: another space still uses it.`;
+  if (used || cloned) return kept(`Atrium kept ${shown}: another space still uses it.`);
   let st: ReturnType<typeof lstatSync> | null = null;
   try {
     st = lstatSync(path);
   } catch {
     // Already gone.
   }
-  if (!st) return null;
-  if (st.isSymbolicLink()) unlinkSync(path);
-  else if (!st.isDirectory()) return `Atrium left ${path} alone: it isn't a folder.`;
-  // The visible folder goes to the Trash; the hidden legacy one, and anything the Trash can't take, is removed.
-  else if (resolve(root) === resolve(config().filesHome) && toTrash(path)) return null;
-  else {
-    renameSync(path, trash);
-    rmSync(trash, { recursive: true, force: true });
+  if (!st) return done;
+  if (st.isSymbolicLink()) {
+    unlinkSync(path);
+    return done;
   }
-  return null;
+  if (!st.isDirectory()) return kept(`Atrium left ${shown} alone: it isn't a folder.`);
+  if (!visible) {
+    const aside = join(parent, `.atrium-trash-${id}`);
+    renameSync(path, aside);
+    rmSync(aside, { recursive: true, force: true });
+    return done;
+  }
+  if (r.ino === 0) return kept(`Atrium never made ${shown}, so it left it where it is.`);
+  if (r.ino !== null && r.dev !== null && (st.dev !== r.dev || st.ino !== r.ino)) return kept(`Atrium kept ${shown}: it isn't the folder Atrium made for this space.`);
+  if (toTrash(path)) return { note: null, trashed: true };
+  return kept(`Atrium couldn't move ${shown} to the Trash, so it's still there; delete it in Finder if you don't need it.`);
 }
 
 function removeTranscript(path: string, root: string): string | null {
@@ -181,29 +202,42 @@ async function removeClone(db: Database, cloneId: string): Promise<string | null
   return null;
 }
 
-type Pending = { id: string; kind: PendingKind; path: string; root: string; clone_id: string | null; size: number | null; mtime_max: number | null };
+type Pending = {
+  id: string;
+  kind: PendingKind;
+  path: string;
+  root: string;
+  clone_id: string | null;
+  size: number | null;
+  mtime_max: number | null;
+  dev: number | null;
+  ino: number | null;
+};
+
+// What happened to one queued item: a note when something was kept, and whether a folder went to the Trash.
+export type DeleteDone = { kind: PendingKind; path: string; note: string | null; trashed: boolean };
 
 // Removes every queued item. One that can't be removed safely is dropped with a line in Activity rather than
 // retried forever; one that fails unexpectedly stays queued for the next boot.
-export async function finishPendingDeletes(db: Database): Promise<string[]> {
-  const rows = db.query("SELECT id, kind, path, root, clone_id, size, mtime_max FROM pending_deletes ORDER BY created_at, rowid").all() as Pending[];
-  const kept: string[] = [];
+export async function finishPendingDeletes(db: Database): Promise<DeleteDone[]> {
+  const rows = db.query("SELECT id, kind, path, root, clone_id, size, mtime_max, dev, ino FROM pending_deletes ORDER BY created_at, rowid").all() as Pending[];
+  const out: DeleteDone[] = [];
   for (const r of rows) {
-    let note: string | null;
+    let res: FolderResult;
     try {
-      if (r.kind === "folder") note = removeFolder(db, r.id, r.path, r.root);
-      else if (r.kind === "transcript") note = removeTranscript(r.path, r.root);
-      else if (r.kind === "file") note = existsSync(r.root) ? removeMadeFile(r.path, r.root, { size: r.size, mtimeMax: r.mtime_max }) : null;
-      else note = r.clone_id ? await removeClone(db, r.clone_id) : null;
+      if (r.kind === "folder") res = removeFolder(db, r);
+      else if (r.kind === "transcript") res = { note: removeTranscript(r.path, r.root), trashed: false };
+      else if (r.kind === "file") res = { note: existsSync(r.root) ? removeMadeFile(r.path, r.root, { size: r.size, mtimeMax: r.mtime_max }) : null, trashed: false };
+      else res = { note: r.clone_id ? await removeClone(db, r.clone_id) : null, trashed: false };
     } catch (e) {
       console.error(`Couldn't remove ${r.path}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
     db.query("DELETE FROM pending_deletes WHERE id = ?").run(r.id);
-    if (note) {
-      kept.push(note);
-      logActivity(db, null, "atrium", note);
-    }
+    if (res.note) logActivity(db, null, "atrium", res.note);
+    out.push({ kind: r.kind, path: r.path, ...res });
   }
-  return kept;
+  return out;
 }
+
+export const notesOf = (done: DeleteDone[]): string[] => done.flatMap((d) => (d.note ? [d.note] : []));

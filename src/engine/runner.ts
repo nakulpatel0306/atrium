@@ -9,7 +9,7 @@ import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
 import { applyRule } from "./autonomy/rules";
 import { bus, logActivity } from "./events";
-import { spaceFolder, tildePath } from "./folders";
+import { ensureSpaceFolder, spaceFolder, tildePath } from "./folders";
 import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from "./outputs/snapshot";
 import { madeLine, recordRunFiles } from "./outputs/store";
 import {
@@ -387,8 +387,7 @@ export function createRunner(deps: {
     let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript> };
     let cwd: string | null = null;
     try {
-      cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : spaceFolder(space);
-      if (!repo && !scratch) mkdirSync(cwd, { recursive: true });
+      cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : ensureSpaceFolder(db, space);
       const runId = newId("run");
       const transcript = openTranscript(runId);
       db.query(
@@ -714,7 +713,7 @@ export function createRunner(deps: {
   // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
   // A copy that fails must not lose the run's outcome; the approval says the files couldn't be kept.
   async function keepScratchFiles(space: Space, runId: string, cwd: string): Promise<Kept | null> {
-    const dir = join(spaceFolder(space), "runs", runId);
+    const dir = join(ensureSpaceFolder(db, space), "runs", runId);
     try {
       const res = await keepScratch(cwd, dir);
       return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;

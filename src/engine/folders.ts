@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { config } from "./config";
@@ -48,6 +48,31 @@ export function spaceFolder(space: Pick<Space, "id" | "folder">): string {
   return !existsSync(space.folder) && existsSync(legacy) ? legacy : space.folder;
 }
 
+// Records the folder's identity, so a later delete only ever touches the very folder Atrium made.
+export function pinFolder(db: Database, spaceId: string, dir: string): void {
+  const st = lstatSync(dir);
+  db.query("UPDATE spaces SET folder_dev = ?, folder_ino = ? WHERE id = ?").run(st.dev, st.ino, spaceId);
+}
+
+// Where a run works, made if it isn't there yet. A visible folder Atrium makes here is pinned; one that was already
+// there under that name (made by someone else) isn't, and a delete then leaves it alone.
+export function ensureSpaceFolder(db: Database, space: Pick<Space, "id" | "folder">): string {
+  const dir = spaceFolder(space);
+  if (dir !== space.folder) {
+    mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  mkdirSync(dirname(dir), { recursive: true });
+  try {
+    mkdirSync(dir);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+    return dir;
+  }
+  pinFolder(db, space.id, dir);
+  return dir;
+}
+
 const isEmptyDir = (dir: string) => {
   try {
     return readdirSync(dir).length === 0;
@@ -79,7 +104,9 @@ export function migrateSpaceFolders(db: Database): { spaceId: string; from: stri
       else if (existsSync(from) && (!existsSync(to) || isEmptyDir(to))) {
         move(from, to);
         moved.push({ spaceId: row.id, from, to });
-      }
+      } else continue;
+      // Atrium made this folder by moving its files there.
+      pinFolder(db, row.id, to);
     } catch {
       // The files stay where they are (spaceFolder still finds them) and the next boot tries again.
     }

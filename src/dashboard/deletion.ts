@@ -13,13 +13,14 @@ export function spaceDeleteLines(p: SpaceDeletePreview): { goes: string[]; stays
   else goes.push("The space itself (it has no tasks)");
   if (p.folder) {
     const what = p.folder.files === 0 ? "nothing in it yet" : `${p.folder.more ? "over " : ""}${plural(p.folder.files, "file")}, ${bytes(p.folder.bytes)}`;
-    goes.push(`Its folder ${p.folder.path} (${what}), moved to the Trash`);
+    goes.push(`Its folder ${p.folder.path} (${what})`);
   }
   if (p.history > 0) goes.push(`Its history: ${plural(p.history, "activity line")}`);
   if (p.texts.drafts > 0) goes.push(`${plural(p.texts.drafts, "unsent draft text")}`);
   if (p.investing > 0) goes.push("Its holdings, watchlists, alerts and other investing data");
 
   const stays: string[] = [];
+  if (p.folder) stays.push("Its folder goes to the Trash when macOS allows it. If it can't, Atrium leaves the folder where it is and tells you.");
   if (p.texts.sent > 0) {
     stays.push(`${p.texts.sent === 1 ? "The text already sent stays" : `The ${p.texts.sent} texts already sent stay`} in Messages on your Mac. Atrium can't unsend a text.`);
   }

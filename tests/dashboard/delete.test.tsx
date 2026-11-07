@@ -24,12 +24,15 @@ const preview = (over: Partial<SpaceDeletePreview> = {}): SpaceDeletePreview => 
 
 test("the confirm lists what goes and what stays, plainly", () => {
   expect(spaceDeleteLines(preview())).toEqual({
-    goes: ["3 tasks, with 4 runs and their transcripts", "Its folder ~/Atrium/text-dana (2 files, 2 KB), moved to the Trash", "Its history: 12 activity lines", "1 unsent draft text"],
-    stays: ["The text already sent stays in Messages on your Mac. Atrium can't unsend a text."],
+    goes: ["3 tasks, with 4 runs and their transcripts", "Its folder ~/Atrium/text-dana (2 files, 2 KB)", "Its history: 12 activity lines", "1 unsent draft text"],
+    stays: [
+      "Its folder goes to the Trash when macOS allows it. If it can't, Atrium leaves the folder where it is and tells you.",
+      "The text already sent stays in Messages on your Mac. Atrium can't unsend a text.",
+    ],
   });
   expect(spaceDeleteLines(preview({ tasks: 0, runs: 0, history: 0, folder: { path: "~/Atrium/x", files: 0, bytes: 0, more: false }, texts: { sent: 0, drafts: 0 } })).goes).toEqual([
     "The space itself (it has no tasks)",
-    "Its folder ~/Atrium/x (nothing in it yet), moved to the Trash",
+    "Its folder ~/Atrium/x (nothing in it yet)",
   ]);
   const yours = spaceDeleteLines(preview({ kind: "repo", folder: null, texts: { sent: 0, drafts: 0 }, repo: { path: "~/dev/app", atriumClone: false } }));
   expect(yours.stays).toEqual([
