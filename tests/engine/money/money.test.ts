@@ -749,3 +749,15 @@ test("card data: the merchant is derived from masked text, so a cut can't leave 
     for (const v of [r.description, r.merchant]) expect(v.replace(/\D/g, "")).not.toMatch(/\d{5}/);
   }
 });
+
+test("a million or more in the amount column is skipped as not an amount, and counted", () => {
+  const p = previewMoney("Date,Description,Amount\n2026-10-02,LOBLAWS,-20\n2026-10-03,REF,-4111111111111111\n2026-10-04,BIG,1000000\n", { signs: "negative-out" });
+  expect(p.rows).toHaveLength(1);
+  expect(p.skipped).toEqual([
+    { line: 3, reason: "That doesn't look like an amount. Check the Amount column." },
+    { line: 4, reason: "That doesn't look like an amount. Check the Amount column." },
+  ]);
+  expect(isMasked("Spent CA$9,999,999.99")).toBe(true);
+  expect(isMasked("Spent CA$12,345,678.00")).toBe(false);
+  expect(isMasked("Spent CA$12345678.00")).toBe(false);
+});

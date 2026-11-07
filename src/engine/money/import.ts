@@ -43,6 +43,10 @@ export type MoneyPreview = {
 export type PreviewOptions = { mapping?: MoneyMap; signs?: Signs; dates?: DateOrder; account?: string };
 
 export const MAX_ROWS = 20_000;
+// A million or more is a card or reference number in the wrong column, not one transaction: the row is skipped, so
+// the number is never stored.
+const MAX_AMOUNT = 1_000_000;
+const TOO_LARGE = "That doesn't look like an amount. Check the Amount column.";
 const MAX_DESCRIPTION = 200;
 
 const ALIASES: Record<MoneyField, string[]> = {
@@ -109,20 +113,26 @@ function valid(y: number, mo: number, d: number): string | null {
   return t.toISOString().slice(0, 10);
 }
 
-// The masker is an allow-list. Text is first normalised (NFKC, invisible format characters removed). A digit cluster
-// is digits whose gaps are at most 4 characters with no letter in them (masking X and * aside, a run of whitespace
-// counting as one), so any spaces,
-// newlines, punctuation or Unicode spaces still join a split number. A cluster with 6 or more digits is masked to its
-// last 4 unless it is one real date, one money amount, or real dates with at most one amount beside them.
+// The masker is an allow-list. Text is first normalised: invisible format characters removed, every decimal digit
+// from any script turned into 0–9, then NFKC. A digit cluster is digits whose gaps are at most 4 characters with no
+// letter in them (masking X and * aside, a run of whitespace counting as one), so spaces, newlines, punctuation or
+// Unicode spaces still join a split number. A cluster with 6 or more digits is masked to its last 4 unless it is one
+// real date, one money amount under CA$10,000,000, or real dates with at most one amount beside them. Last, a Luhn
+// check catches a card number whose pieces were split by letters or long gaps.
 const MAX_GAP = 4;
 const MASK_CHAR = /[Xx*]/;
 const LETTER = /\p{L}/u;
 const DATE = /^(?:(\d{4})([-/.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([-/.])(\d{1,2})\6(\d{4}))$/;
-const AMOUNT = /^(?:\d{1,3}(?:,\d{3})*\.\d{2}|\d{1,7}\.\d{2})$/;
+// At most 7 digits before the point, so a card number can never pass as a money amount.
+const AMOUNT = /^(?:\d{1,3}(?:,\d{3})?\.\d{2}|\d,\d{3},\d{3}\.\d{2}|\d{1,7}\.\d{2})$/;
 // An account, transit or reference number next to the word that names it: 5 digits are enough there.
 const NAMED_RUN = /(?<![\p{L}\d])(acct|account|transit|no\.?|#)(\s*[:.]?\s*)(\d[\d\s-]{3,}\d)/giu;
 const realDate = (y: number, a: number, b: number) => y >= 1990 && y <= new Date().getUTCFullYear() + 1 && valid(y, a, b) !== null;
 const last4 = (run: string) => `··${run.replace(/\D/g, "").slice(-4)}`;
+const LUHN_MIN = 13;
+const LUHN_MAX = 19;
+const LOOSE_GAP = 8;
+const LOOSE_LETTERS = 2;
 
 function isDate(part: string): boolean {
   const m = part.match(DATE);
@@ -131,16 +141,21 @@ function isDate(part: string): boolean {
   return y1 ? realDate(+y1, +m1!, +d1!) : realDate(+y2!, +a2!, +b2!) || realDate(+y2!, +b2!, +a2!);
 }
 
+const partsOf = (cluster: string) =>
+  cluster
+    .split(/[^\d.,/-]+/)
+    .map((p) => p.replace(/^[.,/-]+|[.,/-]+$/g, ""))
+    .filter(Boolean);
+
 function safeCluster(cluster: string): boolean {
   if (cluster.replace(/\D/g, "").length < 6) return true;
-  const parts = cluster.split(/[^\d.,/-]+/).map((p) => p.replace(/^[.,/-]+|[.,/-]+$/g, "")).filter(Boolean);
+  const parts = partsOf(cluster);
   const amounts = parts.filter((p) => AMOUNT.test(p)).length;
   return parts.every((p) => isDate(p) || AMOUNT.test(p)) && (parts.length === 1 || amounts <= 1);
 }
 
 // A gap joins two digits unless it's too long, holds a letter, or holds Atrium's own "··" mask mark (so masked
-// output reads as masked when checked again).
-// Any run of whitespace counts as one character, so newlines or a row of spaces can't stretch a gap.
+// output reads as masked when checked again). Any run of whitespace counts as one character.
 function joins(gap: string): boolean {
   if (gap.includes("··")) return false;
   let length = 0;
@@ -155,10 +170,57 @@ function joins(gap: string): boolean {
   return length <= MAX_GAP;
 }
 
+// The backstop's looser join: up to 8 characters with at most 2 letters in them.
+const looseJoins = (gap: string) => !gap.includes("··") && gap.length <= LOOSE_GAP && [...gap].filter((c) => LETTER.test(c)).length <= LOOSE_LETTERS;
+
+function luhn(d: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < d.length; i++) {
+    let n = +d[d.length - 1 - i]!;
+    if (i % 2) n = n * 2 > 9 ? n * 2 - 9 : n * 2;
+    sum += n;
+  }
+  return sum % 10 === 0;
+}
+
+// Digits joined by a loose gap that hold a Luhn-valid 13–19 digit run are a card number, unless every piece of them
+// is a date or an amount.
+function luhnBackstop(s: string): string {
+  const at = [...s.matchAll(/\d/g)].map((m) => m.index!);
+  let out = "";
+  let from = 0;
+  for (let i = 0; i < at.length; ) {
+    let j = i;
+    while (j + 1 < at.length && looseJoins(s.slice(at[j]! + 1, at[j + 1]!))) j++;
+    const span = s.slice(at[i]!, at[j]! + 1);
+    const digits = span.replace(/\D/g, "");
+    const harmless = partsOf(span).every((p) => isDate(p) || AMOUNT.test(p));
+    let card = false;
+    for (let len = LUHN_MIN; !harmless && !card && len <= Math.min(LUHN_MAX, digits.length); len++) {
+      for (let k = 0; k + len <= digits.length && !card; k++) card = luhn(digits.slice(k, k + len));
+    }
+    out += s.slice(from, at[i]!) + (card ? last4(span) : span);
+    from = at[j]! + 1;
+    i = j + 1;
+  }
+  return out + s.slice(from);
+}
+
+// Every Unicode decimal digit (Arabic-Indic, Devanagari, …) as its ASCII value: each script's digits run 0 to 9 in
+// blocks of ten.
+function asciiDigits(s: string): string {
+  return s.replace(/\p{Nd}/gu, (ch) => {
+    const cp = ch.codePointAt(0)!;
+    let zero = cp;
+    // Walk to the start of the run: some scripts put several blocks of ten side by side.
+    while (/\p{Nd}/u.test(String.fromCodePoint(zero - 1))) zero--;
+    return String((cp - zero) % 10);
+  });
+}
+
 // Card and account numbers keep their last four digits only ("4111 1111 1111 1111" → "··1111"), wherever they appear.
 export function maskNumbers(input: string): string {
-  const s = input
-    .replace(/\p{Cf}/gu, "")
+  const s = asciiDigits(input.replace(/\p{Cf}/gu, ""))
     .normalize("NFKC")
     .replace(NAMED_RUN, (all, word: string, gap: string, run: string) => (run.replace(/\D/g, "").length >= 5 ? `${word}${gap}${last4(run)}` : all));
   const digits = [...s.matchAll(/\d/g)].map((m) => m.index!);
@@ -174,7 +236,7 @@ export function maskNumbers(input: string): string {
     at = end;
     i = j + 1;
   }
-  return out + s.slice(at);
+  return luhnBackstop(out + s.slice(at));
 }
 
 // True when text has no card or account number left in it: masking would change nothing.
@@ -226,6 +288,7 @@ function wealthsimple(headers: string[], body: string[][]): Pick<MoneyPreview, "
     const amount = num(r[cash!]);
     if (!d) return skipped.push({ line: n + 2, reason: "No date Atrium can read." });
     if (Number.isNaN(amount)) return skipped.push({ line: n + 2, reason: "No amount Atrium can read." });
+    if (Math.abs(amount) >= MAX_AMOUNT) return skipped.push({ line: n + 2, reason: TOO_LARGE });
     const t = (r[type!] ?? "").trim().toLowerCase();
     const s = (r[sub!] ?? "").trim().toLowerCase();
     const kind = WS_KINDS[t === "trade" || t === "moneymovement" ? s : t] ?? "other";
@@ -257,6 +320,7 @@ function wsCash(headers: string[], body: string[][], account: string): Pick<Mone
     const amount = num(r[amountCol!]);
     if (!d) return skipped.push({ line: n + 2, reason: "No date Atrium can read." });
     if (Number.isNaN(amount)) return skipped.push({ line: n + 2, reason: "No amount Atrium can read." });
+    if (Math.abs(amount) >= MAX_AMOUNT) return skipped.push({ line: n + 2, reason: TOO_LARGE });
     const c = (r[code!] ?? "").trim();
     const text = maskNumbers(safeText(r[description!] ?? "")) || (TYPE_CODE.test(c) ? c : maskNumbers(safeText(c)));
     const kind: MoneyKind = WS_TRANSFER_CODES.test(c) ? "transfer" : WS_INTEREST_CODES.test(c) ? "interest" : amount < 0 ? "spend" : "income";
@@ -338,6 +402,7 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
       amount = !Number.isNaN(credit) && credit !== 0 ? Math.abs(credit) : -Math.abs(debit);
     }
     if (Number.isNaN(amount)) return skipped.push({ line, reason: "No amount Atrium can read." });
+    if (Math.abs(amount) >= MAX_AMOUNT) return skipped.push({ line, reason: TOO_LARGE });
     // Masked first, before anything is derived: the description after joining, so a number split across the two
     // columns is caught whole, and the merchant from its own masked column.
     const raw1 = safeText(cell(r, "description"));

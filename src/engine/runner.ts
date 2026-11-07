@@ -28,13 +28,13 @@ import {
 import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
 import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
-import { isMasked } from "./money/import";
+import { isMasked, maskNumbers } from "./money/import";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
 import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
-import { getSpace, type Space } from "./spaces";
+import { getSpace, isPrivate, type Space } from "./spaces";
 import { appendTaskDetail, getTask, listTasks, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
@@ -386,7 +386,8 @@ export function createRunner(deps: {
 
     // Codex and Gemini reads aren't sandboxed like Claude's: away from a repo each run gets an empty folder of
     // its own instead of the space folder, where earlier runs' files collect.
-    const scratch = !repo && agent !== "claude";
+    // A money question runs in an empty folder too, with no tools: the masked facts in its prompt are all it sees.
+    const scratch = !repo && (agent !== "claude" || task.purpose === "money");
     let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript> };
     let cwd: string | null = null;
     try {
@@ -457,10 +458,13 @@ export function createRunner(deps: {
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
-        allowedTools: task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
+        allowedTools: task.purpose === "money" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
+        privateData: isPrivate(space),
         mode: task.kind === "review" || task.purpose ? "review" : "work",
         signal: r.signal,
-        onChunk(chunk) {
+        onChunk(raw) {
+          // A money run's transcript and live view are masked like everything else it touches.
+          const chunk = task.purpose === "money" ? maskNumbers(raw) : raw;
           try {
             transcript.append(`${chunk}\n`);
           } catch {
@@ -475,6 +479,9 @@ export function createRunner(deps: {
           ? { status: "error", kind: "failed", message: MoneyGuard.text }
           : { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
     }
+
+    // Claude's answer to a money question is masked before anything saves it: the task, the review, the write-up.
+    if (task.purpose === "money") result = result.status === "ok" ? { ...result, summary: maskNumbers(result.summary) } : { ...result, message: maskNumbers(result.message) };
 
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
     // below can block or discard it.

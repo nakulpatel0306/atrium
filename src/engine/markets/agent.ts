@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { maskNumbers } from "../money/import";
 import { explainContext, moneyFacts } from "../money/summary";
 import { isAdvanced } from "./advanced";
 import { portfolioView } from "./views";
@@ -356,7 +357,9 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         }
       }
       if (task.purpose) {
-        const body = summary.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
+        // Money answers are masked again here, whatever the runner already did: nothing unmasked is ever saved.
+        const said = task.purpose === "money" ? maskNumbers(summary) : summary;
+        const body = said.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
         // Every answer to an ask is kept, so it's dated to the instant rather than the day.
         const forDate =
           task.purpose === "ask" || task.purpose === "money"

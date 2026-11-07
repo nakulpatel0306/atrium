@@ -337,3 +337,41 @@ test("I4: osascript, shortcuts and open are denied anywhere in a command", async
     delete process.env.FAKE_CLAUDE_MODE;
   }
 });
+
+// ---- Plan 14: money runs ----
+import { privateDenyPaths } from "../../src/engine/agents/private-paths";
+import { homedir } from "node:os";
+
+test("card data: a private or investing run's sandbox can't read Downloads, Desktop, Documents or bank exports elsewhere", () => {
+  const home = homedir();
+  const cwd = join(home, "Atrium", "Investing");
+  const deny: string[] = JSON.parse(sandboxSettings(cwd, { privateData: true })).sandbox.filesystem.denyRead;
+  for (const f of ["Downloads", "Desktop", "Documents"]) expect(deny).toContain(join(home, f));
+  for (const ext of ["csv", "CSV", "ofx", "qfx"]) {
+    expect(deny).toContain(join(home, `*.${ext}`));
+    expect(deny).toContain(join("/Volumes", "**", `*.${ext}`));
+  }
+  // Nothing rooted at the folder the run works in.
+  expect(deny.some((p) => p.startsWith(join(home, "Atrium") + "/**"))).toBe(false);
+  // Ordinary runs are unchanged.
+  const plain: string[] = JSON.parse(sandboxSettings(cwd)).sandbox.filesystem.denyRead;
+  expect(plain).not.toContain(join(home, "Downloads"));
+  // A run inside Documents keeps its own folder readable.
+  expect(privateDenyPaths(join(home, "Documents", "x"), home)).not.toContain(join(home, "Documents"));
+});
+
+test("card data: a run with no tools passes --tools '' and the private deny rules", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+  const argvFile = join(dir, "argv.json");
+  process.env.FAKE_CLAUDE_ARGV = argvFile;
+  const r = await claudeAdapter(FAKE).run({ ...input(), allowedTools: [], privateData: true });
+  expect(r.status).toBe("ok");
+  const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+  rmSync(dir, { recursive: true });
+  expect(argv[argv.indexOf("--tools") + 1]).toBe("");
+  expect(argv).not.toContain("--allowedTools");
+  const denied = argv.slice(argv.indexOf("--disallowedTools") + 1);
+  expect(denied).toContain(`Read(/${join(homedir(), "Downloads")}/**)`);
+  expect(denied).toContain("mcp__*");
+  expect(argv[argv.indexOf("--settings") + 1]).toBe(sandboxSettings(process.cwd(), { privateData: true }));
+});
