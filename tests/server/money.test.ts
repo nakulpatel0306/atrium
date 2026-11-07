@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -152,14 +152,20 @@ test("the view carries the recap, subscriptions, TFSA room and budgets; transfer
 });
 
 test("budget heads-ups and the reminder can be dismissed from the dashboard; summary carries them", async () => {
-  await call("POST", money("/import"), { csv: "Date,Description,Amount\n2026-11-02,STARBUCKS,-90\n", signs: "negative-out" });
-  await call("PUT", money("/budgets"), { category: "Dining", limit: 100 });
-  const s = await (await fetch(`${base}/api/summary`)).json();
-  expect(s.nudges).toEqual([expect.objectContaining({ kind: "budget", title: "Dining is at 90% of its November budget", path: `/space/${spaceId}?tab=money` })]);
-  expect(s.needsYou).toBe(0);
-  expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(200);
-  expect((await (await fetch(`${base}/api/summary`)).json()).nudges).toEqual([]);
-  expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(400);
+  // The summary shows a heads-up for two days by the wall clock; pin that to this file's engine clock.
+  setSystemTime(new Date(NOW));
+  try {
+    await call("POST", money("/import"), { csv: "Date,Description,Amount\n2026-11-02,STARBUCKS,-90\n", signs: "negative-out" });
+    await call("PUT", money("/budgets"), { category: "Dining", limit: 100 });
+    const s = await (await fetch(`${base}/api/summary`)).json();
+    expect(s.nudges).toEqual([expect.objectContaining({ kind: "budget", title: "Dining is at 90% of its November budget", path: `/space/${spaceId}?tab=money` })]);
+    expect(s.needsYou).toBe(0);
+    expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(200);
+    expect((await (await fetch(`${base}/api/summary`)).json()).nudges).toEqual([]);
+    expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(400);
+  } finally {
+    setSystemTime();
+  }
 });
 
 test("card data: uploaded CSV text never comes back in an error, and isn't logged", async () => {
