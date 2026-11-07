@@ -25,6 +25,9 @@ export type MoneyRow = {
   currency: "CAD" | "USD";
   kind: MoneyKind;
   symbol: string | null;
+  // What the Plan 10 masker would have stored for this description, so a row it saved with a date hidden is known
+  // as the same transaction. Only kept when it is itself fully masked; never shown or stored.
+  legacy?: string | null;
 };
 export type MoneyPreview = {
   format: "bank" | "wealthsimple" | "unknown";
@@ -410,6 +413,7 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
     const raw2 = safeText(cell(r, "description2"));
     const description = maskNumbers([raw1, raw2].filter(Boolean).join(" "));
     const lead = maskNumbers(raw1 || raw2);
+    const old = legacyMask([raw1, raw2].filter(Boolean).join(" "));
     const named = [cell(r, "account"), cell(r, "accountNumber")].filter(Boolean).join(" ") || OTHER_ACCOUNT;
     rows.push({
       source: "bank",
@@ -417,6 +421,7 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
       date,
       description,
       merchant: merchantOf(lead),
+      legacy: old !== description && isMasked(old) ? old : null,
       amount: Math.round(amount * 100) / 100,
       currency: "CAD",
       kind: amount < 0 ? "spend" : "income",
@@ -427,6 +432,18 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
   return { format: "bank", headers, mapping, signs, dates, rows, skipped, warnings, guessed, accounts: [...new Set(rows.map((r) => r.account))], bank, account: fileAccount };
 }
 
+// The Plan 10 masker, kept only to recognise what it stored: any run of 6+ digits with spaces, dashes or X/* between
+// them became "··" plus its last 4, dates included ("PAYMENT 2026-10-02" → "PAYMENT ··1002"). Never used to mask.
+export function legacyMask(s: string): string {
+  return s.replace(/\d[\dX*\s-]{4,}\d/gi, (run) => {
+    const digits = run.replace(/\D/g, "");
+    return digits.length >= 6 ? `··${digits.slice(-4)}` : run;
+  });
+}
+
+export const fingerprintOf = (r: Pick<MoneyRow, "source" | "account" | "date" | "amount" | "currency" | "description">, n: number) =>
+  createHash("sha256").update(`${[r.source, r.account, r.date, r.amount.toFixed(2), r.currency, r.description.toLowerCase()].join("|")}|${n}`).digest("hex").slice(0, 32);
+
 // Re-importing the same file adds nothing: each row's fingerprint is its account, date, amount and description,
 // plus how many identical rows came before it in the file, so two real identical charges both stay. Rows stored
 // before Atrium named the account ("Imported") count as already here too.
@@ -436,8 +453,11 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
     `INSERT OR IGNORE INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol, fingerprint, imported_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  const legacy = db.query(
-    `SELECT COUNT(*) AS n FROM money_transactions WHERE space_id = ? AND source = ? AND account = ? AND date = ? AND ROUND(amount, 2) = ? AND lower(description) = ?`,
+  // Rows stored before this masker: under the old "Imported" account, or with a date the old masker hid.
+  const twins = db.query(
+    `SELECT COUNT(*) AS n FROM money_transactions WHERE space_id = ?1 AND source = ?2 AND date = ?3 AND ROUND(amount, 2) = ?4 AND (
+       (account = 'Imported' AND ?5 != 'Imported' AND lower(description) = ?6)
+       OR (?7 IS NOT NULL AND (account = ?5 OR account = 'Imported') AND lower(description) = ?7))`,
   );
   const covered = new Map<string, { first: string; last: string; rows: number }>();
   let added = 0;
@@ -450,8 +470,8 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
       seen.set(base, n);
       const c = covered.get(r.account) ?? { first: r.date, last: r.date, rows: 0 };
       covered.set(r.account, { first: r.date < c.first ? r.date : c.first, last: r.date > c.last ? r.date : c.last, rows: c.rows + 1 });
-      if (r.account !== OTHER_ACCOUNT && (legacy.get(spaceId, r.source, OTHER_ACCOUNT, r.date, r.amount, r.description.toLowerCase()) as { n: number }).n >= n) continue;
-      const fingerprint = createHash("sha256").update(`${base}|${n}`).digest("hex").slice(0, 32);
+      if ((twins.get(spaceId, r.source, r.date, r.amount, r.account, r.description.toLowerCase(), raw.legacy?.toLowerCase() ?? null) as { n: number }).n >= n) continue;
+      const fingerprint = fingerprintOf(r, n);
       added += put.run(newId("mtx"), spaceId, r.source, r.account, r.date, r.description, r.merchant, r.amount, r.currency, r.kind, r.symbol, fingerprint, at).changes;
     }
     const log = db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at, period_start, period_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");

@@ -55,7 +55,7 @@ export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url
     if (req.method === "GET" && rest === "") return json({ ...moneyView(db, spaceId, now, url.searchParams.get("month") ?? undefined), starters: STARTERS });
     if (req.method === "POST" && rest === "/preview") {
       const p = previewOf(await readBody(req, BODY_LIMIT));
-      return json({ ...p, rows: p.rows.slice(0, PREVIEW_ROWS), total: p.rows.length, choices: [...ACCOUNTS, OTHER_ACCOUNT] });
+      return json({ ...p, rows: p.rows.slice(0, PREVIEW_ROWS).map(({ legacy: _legacy, ...r }) => r), total: p.rows.length, choices: [...ACCOUNTS, OTHER_ACCOUNT] });
     }
     if (req.method === "POST" && rest === "/import") {
       const p = previewOf(await readBody(req, BODY_LIMIT));

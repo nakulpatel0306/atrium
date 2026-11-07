@@ -763,3 +763,36 @@ test("a million or more in the amount column is skipped as not an amount, and co
   expect(isMasked("Spent CA$12,345,678.00")).toBe(false);
   expect(isMasked("Spent CA$12345678.00")).toBe(false);
 });
+
+// ---- Re-masking rows from Plan 10 ----
+import { remaskMoney } from "../../../src/engine/money/remask";
+
+test("the one-time re-mask cleans Plan 10 rows, drops their date-hidden twins, and is safe to run again", () => {
+  const ins = db.query(
+    "INSERT INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol, fingerprint, imported_at) VALUES (?, ?, 'bank', ?, ?, ?, ?, ?, 'CAD', 'spend', NULL, ?, 1)",
+  );
+  db.query("DELETE FROM settings WHERE key = 'money.remaskedThrough'").run();
+  remaskMoney(db);
+  expect(db.query("SELECT value FROM settings WHERE key = 'money.remaskedThrough'").get()).toEqual({ value: "0" });
+  db.query("DELETE FROM settings WHERE key = 'money.remaskedThrough'").run();
+  ins.run("mtx_a", spaceId, "Visa 4111.1111.1111.1111", "2026-09-02", "PAYMENT 4111.1111.1111.1111", "Payment", -5, "fp_a");
+  ins.run("mtx_b", spaceId, "Imported", "2026-10-02", "UBER TRIP ··1001", "Uber Trip", -12, "fp_b");
+  ins.run("mtx_c", spaceId, "TD chequing", "2026-10-02", "UBER TRIP 2026-10-01", "Uber Trip", -12, "fp_c");
+  ins.run("mtx_d", spaceId, "Imported", "2026-10-05", "COFFEE", "Coffee", -3, "fp_d");
+  db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at) VALUES ('mim_a', ?, 'Visa 4111.1111.1111.1111', '2026-09-02', '2026-09-02', 1, 1)").run(spaceId);
+  db.query("INSERT INTO money_nudges (id, space_id, kind, key, title, body, created_at) VALUES ('mnd_a', ?, 'import', 'k', 'Card 4111.1111.1111.1111', 'x', 1)").run(spaceId);
+  db.query("INSERT INTO money_budgets (space_id, category, monthly_limit, updated_at) VALUES (?, 'Ref 4111.1111.1111.1111', 5, 1)").run(spaceId);
+  remaskMoney(db);
+  const rows = db.query("SELECT id, account, description, fingerprint FROM money_transactions ORDER BY id").all() as { id: string; account: string; description: string; fingerprint: string }[];
+  expect(rows.map((r) => r.id)).toEqual(["mtx_a", "mtx_c", "mtx_d"]);
+  expect(rows[0]).toMatchObject({ account: "Visa ··1111", description: "PAYMENT ··1111" });
+  expect(rows.every((r) => !r.fingerprint.startsWith("fp_"))).toBe(true);
+  expect(db.query("SELECT account FROM money_imports WHERE id = 'mim_a'").get()).toEqual({ account: "Visa ··1111" });
+  expect(db.query("SELECT title FROM money_nudges").get()).toEqual({ title: "Card ··1111" });
+  expect(db.query("SELECT category FROM money_budgets").get()).toEqual({ category: "Ref ··1111" });
+  const before = JSON.stringify(db.query("SELECT * FROM money_transactions ORDER BY id").all());
+  remaskMoney(db);
+  expect(JSON.stringify(db.query("SELECT * FROM money_transactions ORDER BY id").all())).toBe(before);
+  // Re-importing the old file adds nothing; its date-hidden copy is already gone.
+  expect(importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-05,COFFEE,-3\n", { signs: "negative-out" }))).toEqual({ added: 0, duplicates: 1 });
+});

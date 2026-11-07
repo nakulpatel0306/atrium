@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { config } from "./config";
 import { migrateWatchlists } from "./markets/lists";
 import { MARKETS_SCHEMA } from "./markets/schema";
+import { remaskMoney } from "./money/remask";
 import { ALWAYS_ASK } from "./approvals";
 
 const schema = () => `
@@ -271,6 +272,8 @@ function migrate(db: Database) {
   if (!has("money_imports", "period_start")) db.exec("ALTER TABLE money_imports ADD COLUMN period_start TEXT");
   if (!has("money_imports", "period_end")) db.exec("ALTER TABLE money_imports ADD COLUMN period_end TEXT");
   backfillMoneyImports(db);
+  // Rows stored by the Plan 10 masker go through today's once (and drop their doubled twins).
+  remaskMoney(db);
   // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
   if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");
   if (!has("instrument_meta", "market_cap")) db.exec("ALTER TABLE instrument_meta ADD COLUMN market_cap REAL");
