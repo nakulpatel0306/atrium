@@ -93,13 +93,27 @@ function valid(y: number, mo: number, d: number): string | null {
   return t.toISOString().slice(0, 10);
 }
 
+// A real date written with separators ("2026-10-02", "10/02/2026"), which masking leaves alone.
+const DATE_RUN = /(?<![\d/.-])(?:(\d{4})([-/.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([-/.])(\d{1,2})\6(\d{4}))(?![\d/.-])/g;
+const HELD = "";
+const realDate = (y: number, a: number, b: number) => valid(y, a, b) !== null;
+
 // Card and account numbers keep their last four digits only ("4510 1234 5678 9012" → "··9012"), wherever they
-// appear: a run of six or more digits, with spaces, dashes or masking X and * between them.
+// appear: a run of six or more digits, with spaces, dashes or masking X and * between them. A run written as a
+// date isn't one. A bare 8-digit run is still masked, since part of an account number is worse to leak than a date.
 export function maskNumbers(s: string): string {
-  return s.replace(/\d[\dX*\s-]{4,}\d/gi, (run) => {
+  const dates: string[] = [];
+  const held = s.replace(DATE_RUN, (run, y1, _s1, m1, d1, a2, _s2, b2, y2) => {
+    const isDate = y1 ? realDate(+y1, +m1, +d1) : realDate(+y2, +a2, +b2) || realDate(+y2, +b2, +a2);
+    if (!isDate) return run;
+    dates.push(run);
+    return HELD;
+  });
+  const masked = held.replace(/\d[\dX*\s-]{4,}\d/gi, (run) => {
     const digits = run.replace(/\D/g, "");
     return digits.length >= 6 ? `··${digits.slice(-4)}` : run;
   });
+  return dates.length ? masked.replace(new RegExp(HELD, "g"), () => dates.shift()!) : masked;
 }
 
 // A cell starting (after any spaces) with =, +, -, @ or a control character could run as a formula if the text were ever opened in a

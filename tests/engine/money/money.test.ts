@@ -230,3 +230,23 @@ test("one transaction reads as one", () => {
   importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-02,LOBLAWS,-20\n"));
   expect(moneyFacts(db, spaceId, NOW).join("\n")).toContain("Bank and card: 1 transaction from 2026-10-02 to 2026-10-02");
 });
+
+// ---- Plan 14 ----
+
+test("masking keeps dates written in a description and still hides card and account numbers", () => {
+  const { maskNumbers } = require("../../../src/engine/money/import") as typeof import("../../../src/engine/money/import");
+  expect(maskNumbers("PAYMENT 2026-10-02")).toBe("PAYMENT 2026-10-02");
+  expect(maskNumbers("REFUND 10/02/2026 ONLINE")).toBe("REFUND 10/02/2026 ONLINE");
+  expect(maskNumbers("BILL 2026/10/02")).toBe("BILL 2026/10/02");
+  expect(maskNumbers("TRF 02-10-2026")).toBe("TRF 02-10-2026");
+  expect(maskNumbers("CARD 4510 1234 5678 9012")).toBe("CARD ··9012");
+  expect(maskNumbers("ACCT 00123456789")).toBe("ACCT ··6789");
+  expect(maskNumbers("REF 123456")).toBe("REF ··3456");
+  expect(maskNumbers("STORE #12345")).toBe("STORE #12345");
+  // A run that only looks like a date's digits, without a date's shape, is still a number.
+  expect(maskNumbers("ID 20261002")).toBe("ID ··1002");
+  expect(maskNumbers("PAYMENT 2026-10-02 4510123456789012")).toBe("PAYMENT 2026-10-02 ··9012");
+  expect(maskNumbers("5191XXXXXXXX4021")).toBe("··4021");
+  // Not a real date, so it's masked.
+  expect(maskNumbers("X 2026-19-45")).toBe("X ··1945");
+});
