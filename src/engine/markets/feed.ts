@@ -224,8 +224,9 @@ export function createFeed(deps: {
         const date = etDate(closesAt);
         // Prices from the last minute of the session are that day's close, kept as Atrium's own history.
         // Yahoo's price isn't a close here: the TSX can close later than New York (on a US early close).
+        // Demo prices are made up, so they never become history.
         for (const q of await fetchQuotes(pollable)) {
-          if (q.at >= closesAt - 60_000 && q.source !== "yahoo") recordCloses(db, q.key, [{ date, close: q.price, adjClose: null, source: q.source }]);
+          if (q.at >= closesAt - 60_000 && q.source !== "yahoo" && q.source !== "demo") recordCloses(db, q.key, [{ date, close: q.price, adjClose: null, source: q.source }]);
         }
         if (toronto.length) torontoAt = at;
       }

@@ -43,7 +43,7 @@ const watch = (symbol: string, exchange = "US") =>
 
 type Stream = { list: Instrument[]; ev: StreamEvents; closed: boolean; sets: Instrument[][] };
 
-function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boolean; yahoo?: boolean } = {}) {
+function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boolean; yahoo?: boolean; demo?: boolean } = {}) {
   const quoteCalls: Instrument[][] = [];
   const barCalls: { key: string; range: string }[] = [];
   const streams: Stream[] = [];
@@ -71,7 +71,7 @@ function fakeData(opts: { ready?: boolean; canStream?: boolean; barsFail?: boole
   const data: MarketData = {
     async quotes(list) {
       quoteCalls.push(list);
-      return { quotes: list.map((i): Quote => ({ key: instrumentKey(i), price: 10, prevClose: 9, at: now, source: i.exchange === "TSX" && opts.yahoo ? "yahoo" : "alpaca", freshness: "live" })), missing: [] };
+      return { quotes: list.map((i): Quote => ({ key: instrumentKey(i), price: 10, prevClose: 9, at: now, source: i.exchange === "TSX" && opts.yahoo ? "yahoo" : opts.demo ? "demo" : "alpaca", freshness: "live" })), missing: [] };
     },
     async bars(i, range) {
       barCalls.push({ key: instrumentKey(i), range });
@@ -209,6 +209,20 @@ test("the last price at the close is kept as the day's close", async () => {
     { key: "MSFT", date: "2026-11-05", close: 10, source: "alpaca" },
   ]);
   expect(closes(db, "AAPL", "2026-11-01")).toHaveLength(1);
+  s.feed.stop();
+});
+
+test("demo prices at the close never become closes", async () => {
+  const { setSetting } = await import("../../../src/engine/settings");
+  setSetting(db, "markets.provider", "demo");
+  watch("AAPL");
+  const s = setup("2026-11-05T20:57:00Z", { demo: true });
+  await s.feed.start();
+  now = Date.parse("2026-11-05T21:00:30Z");
+  s.timers.fireAll();
+  await s.feed.idle();
+  expect(s.feed.status().mode).toBe("off");
+  expect(db.query("SELECT COUNT(*) AS n FROM market_closes").get()).toEqual({ n: 0 });
   s.feed.stop();
 });
 
