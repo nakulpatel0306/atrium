@@ -169,7 +169,7 @@ this page is the record of the reading pass.
 | Engine | `src/engine/crash-guard.ts` | restart line | yes | Plan 13: "Atrium restarted after an error. Check engine.log if something looks off." |
 | Runs | `src/engine/handoff.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/atrium-paths.ts` | messages | yes | No change needed |
-| Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
+| Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only; Plan 14: a private space's run on an old Claude Code says to run `claude update` |
 | Agents | `src/engine/agents/codex.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
 | Agents | `src/engine/agents/gemini.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
 | Agents | `src/engine/agents/limits.ts` | messages | yes | No change needed |
@@ -193,7 +193,7 @@ this page is the record of the reading pass.
 | Repos | `src/engine/repos/store.ts` | messages | yes | No change needed |
 | Repos | `src/engine/repos/templates.ts` | messages | yes | No change needed |
 | Investing | `src/engine/money/categories.ts` | rule validation | yes | New in Plan 10 (Money view) |
-| Investing | `src/engine/money/import.ts` | skip reasons, warnings, guessed-layout line | yes | New in Plan 10 (Money view); every warning says what to do |
+| Investing | `src/engine/money/import.ts` | skip reasons, warnings, guessed-layout line | yes | New in Plan 10 (Money view); every warning says what to do; Plan 14: "That doesn't look like an amount. Check the Amount column." |
 | Investing | `src/engine/money/summary.ts` | unusual-charge reasons, ask refusals, facts for Claude | yes | New in Plan 10 (Money view); Plan 14: Explain my month refusals and brief, card-number refusal |
 | Investing | `src/engine/money/recap.ts` | recap sentences, notable reasons, incomplete line, recap facts | yes | New in Plan 14 |
 | Investing | `src/engine/money/room.ts` | room headline, source line, what to do, tie-in | yes | New in Plan 14 |
