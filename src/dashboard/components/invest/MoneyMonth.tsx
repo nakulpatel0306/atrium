@@ -30,7 +30,7 @@ export function MoneyMonth({ spaceId, view }: { spaceId: string; view: MoneyView
                 <td className="faint">{shortDate(t.date)}</td>
                 <td title={t.description}>{t.description}</td>
                 <td className="faint">{t.account}</td>
-                <td className="faint">{t.transfer ? <span className="money-flag transfer" title={WHY[t.transfer]}>transfer</span> : t.category}</td>
+                <td className="faint">{t.transfer ? <span className="money-flag flag-transfer" title={WHY[t.transfer]}>transfer</span> : t.category}</td>
                 <td className={t.amount < 0 ? "neg" : "pos"}>{amountText(t.amount)}</td>
                 <td>
                   <button className="btn link" onClick={() => void mark(t.id, !t.transfer)}>

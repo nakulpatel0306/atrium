@@ -52,7 +52,7 @@ test("a Scotiabank card export reads Debit and Credit from its type column", () 
 
 test("a headerless TD export maps date, description, debit and credit", () => {
   const p = previewMoney(csv("td-headerless.csv"));
-  expect(p.guessed).toContain("This looks like a TD export with no header row, so Atrium read it as date, description, money out, money in, balance.");
+  expect(p.guessed).toContain("TD files have no header row, so Atrium read it as date, description, money out, money in, balance.");
   expect(p.rows.map((r) => [r.date, r.merchant, r.amount])).toEqual([
     ["2026-11-02", "Tim Hortons", -4.85],
     ["2026-11-03", "Costco Wholesale", -182.44],

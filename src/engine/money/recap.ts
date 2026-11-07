@@ -28,6 +28,7 @@ export type Recap = {
 const CHANGE_MIN = 20;
 const CHANGES_SHOWN = 3;
 const NOTABLE_SHOWN = 3;
+const NOTABLE_SHARE = 0.05;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const cad = (n: number) => `CA$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const monthFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long" });
@@ -84,6 +85,8 @@ function notable(rows: Tx[], now: Totals, month: string): Notable[] {
   }
   for (const t of biggest) {
     if (out.length >= NOTABLE_SHOWN) break;
+    // A one-off is notable only if it's a real share of the month, not just the biggest grocery run.
+    if (-t.amount < now.spent * NOTABLE_SHARE) break;
     if (regular(t) || out.some((o) => o.date === t.date && o.merchant === t.merchant && o.amount === round2(-t.amount))) continue;
     out.push({ date: t.date, merchant: t.merchant, amount: round2(-t.amount), why: out.length ? "One of the largest charges this month." : "The largest charge this month." });
   }

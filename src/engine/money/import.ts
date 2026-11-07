@@ -299,7 +299,7 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
     mapping = { date: 0, description: 1, debit: 2, credit: 3 };
     guessed.push(
       bank.id === "td"
-        ? "This looks like a TD export with no header row, so Atrium read it as date, description, money out, money in, balance."
+        ? "TD files have no header row, so Atrium read it as date, description, money out, money in, balance."
         : "This file has no header row, so Atrium read it as date, description, money out, money in.",
     );
   }

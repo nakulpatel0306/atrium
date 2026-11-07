@@ -28,7 +28,8 @@ export function MoneyBudgets({ spaceId, view }: { spaceId: string; view: MoneyVi
       <ul className="money-cats money-budgets">
         {rows.map((r) => {
           const pct = r.limit ? (r.spent / r.limit) * 100 : null;
-          const tone = pct === null ? "" : pct >= 100 ? " over" : pct >= 80 ? " near" : "";
+          // Without a limit the bar only compares categories, so it stays quiet.
+          const tone = pct === null ? " plain" : pct >= 100 ? " over" : pct >= 80 ? " near" : "";
           return (
             <li key={r.category}>
               <span className="money-cat">{r.category}</span>

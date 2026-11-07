@@ -4,7 +4,6 @@ import { post } from "../../api";
 import { investPath } from "../../simple";
 
 type Preview = MoneyPreview & { total: number; choices: string[] };
-const SURE = { high: "sure", medium: "fairly sure", low: "not sure" } as const;
 const OTHER = "Imported";
 const FIELDS: { id: MoneyField; label: string }[] = [
   { id: "date", label: "Date" },
@@ -22,6 +21,8 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
   const [preview, setPreview] = useState<Preview | null>(null);
   const [opts, setOpts] = useState<{ mapping?: MoneyMap; signs?: Signs; dates?: DateOrder; account?: string }>({});
   const [line, setLine] = useState<{ ok: boolean; text: string } | null>(null);
+  // A file from a bank Atrium knows keeps its column choices out of the way until asked for.
+  const [columns, setColumns] = useState(false);
   const base = `${investPath(spaceId)}/money`;
 
   const look = async (text: string, next = opts) => {
@@ -62,7 +63,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
       {preview && (
         <>
           <p className="money-format">
-            {preview.format === "unknown" ? "Columns not found" : preview.bank.id === "generic" ? "Bank or card export" : `${preview.bank.label} · ${SURE[preview.bank.confidence]}`} · {preview.total}{" "}
+            {preview.format === "unknown" ? "Columns not found" : preview.bank.id === "generic" ? "Bank or card export" : preview.bank.confidence === "high" ? `${preview.bank.label} export` : `Looks like a ${preview.bank.label} export`} · {preview.total}{" "}
             {preview.total === 1 ? "row" : "rows"}
             {preview.accounts.length ? ` · ${preview.accounts.length === 1 ? "1 account" : `${preview.accounts.length} accounts`}` : ""}
             {preview.skipped.length ? ` · ${preview.skipped.length} skipped` : ""}
@@ -84,7 +85,12 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
               {w}
             </p>
           ))}
-          {preview.format !== "wealthsimple" && (
+          {preview.format !== "wealthsimple" && preview.bank.id !== "generic" && preview.format !== "unknown" && !columns && (
+            <button className="btn link money-columns" onClick={() => setColumns(true)}>
+              Columns look wrong?
+            </button>
+          )}
+          {preview.format !== "wealthsimple" && (preview.bank.id === "generic" || preview.format === "unknown" || columns) && (
             <div className="money-map">
               {FIELDS.map((f) => (
                 <label key={f.id}>

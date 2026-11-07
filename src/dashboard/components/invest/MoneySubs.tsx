@@ -9,6 +9,9 @@ const FLAG_HINT: Record<SubFlag, string> = {
   new: "Its first charge is in the latest month.",
 };
 
+// "Presto Fare/toronto" → "Presto Fare/Toronto": display only, the stored merchant stays as imported.
+const pretty = (merchant: string) => merchant.replace(/\/([a-z])/g, (_, c: string) => `/${c.toUpperCase()}`);
+
 // Every charge that comes back on a schedule. Facts only: Atrium can't cancel anything.
 export function MoneySubs({ subs }: { subs: SubscriptionList }) {
   if (!subs.list.length) return <p className="faint">No recurring charges found yet. They show up after two or three months of imports.</p>;
@@ -20,7 +23,7 @@ export function MoneySubs({ subs }: { subs: SubscriptionList }) {
       <ul className="money-list money-subs">
         {subs.list.map((s) => (
           <li key={s.merchant}>
-            <b>{s.merchant}</b>
+            <b>{pretty(s.merchant)}</b>
             <span>
               {cadText(s.amount)} {s.cadence === "monthly" ? "a month" : "a year"}
             </span>
@@ -28,7 +31,7 @@ export function MoneySubs({ subs }: { subs: SubscriptionList }) {
               Last {shortDate(s.last)} · next around {shortDate(s.next)}
               {s.was !== null && ` · was ${cadText(s.was)}`}
               {s.flags.map((f) => (
-                <span key={f} className={`money-flag ${f}`} title={FLAG_HINT[f]}>
+                <span key={f} className={`money-flag flag-${f}`} title={FLAG_HINT[f]}>
                   {FLAG[f]}
                 </span>
               ))}

@@ -4545,15 +4545,15 @@ code {
   line-height: 16px;
   color: var(--dim);
 }
-.money-flag.price-up {
+.money-flag.flag-price-up {
   border-color: color-mix(in srgb, var(--yellow) 50%, transparent);
   color: var(--yellow);
 }
-.money-flag.new {
+.money-flag.flag-new {
   border-color: color-mix(in srgb, var(--blue) 50%, transparent);
   color: var(--blue);
 }
-.money-flag.transfer {
+.money-flag.flag-transfer {
   margin-left: 0;
 }
 .money-room {
@@ -4633,4 +4633,15 @@ code {
   .money-recap-cols {
     grid-template-columns: 1fr;
   }
+}
+.money-bar.plain span {
+  background: var(--line-strong);
+}
+.money-inline .btn {
+  height: 28px;
+}
+.money-columns {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 12px;
 }
