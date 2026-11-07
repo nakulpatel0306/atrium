@@ -306,7 +306,7 @@ test("Money: the recap, budgets, subscriptions, Wealthsimple totals, and answers
   expect(html).toContain("Show 12 transactions");
   expect(html).toContain("Subscriptions");
   expect(html).toContain("Netflix.com");
-  expect(html).toContain("maybe forgotten");
+  expect(html).toContain("Bills");
   expect(html).toContain("CA$9,000.00");
   expect(html).toContain("<strong>CA$58.47</strong>");
   expect(html).toContain("Analysis, not advice");

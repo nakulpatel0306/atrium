@@ -14,8 +14,12 @@ export type Subscription = {
   flags: SubFlag[];
   // The amount before it went up, when it did.
   was: number | null;
+  // Rent, a bill, or over CA$200 a month: shown under Bills.
+  bill: boolean;
 };
-export type SubscriptionList = { list: Subscription[]; perMonth: number; perYear: number };
+export type Group = { list: Subscription[]; perMonth: number; perYear: number };
+// Subscriptions, with rent, bills and anything over CA$200 a month in a group of their own so they don't swamp it.
+export type SubscriptionList = Group & { bills: Group };
 
 const DAY_MS = 86_400_000;
 const SAME = 0.02;
@@ -30,8 +34,12 @@ const addMonths = (date: string, n: number) => {
 };
 const monthly = (g: number) => (g >= 25 && g <= 35) || (g >= 55 && g <= 65);
 const yearly = (g: number) => g >= 350 && g <= 380;
-// Rent and bills are expected to be the only charge from their payee.
-const NEVER_FORGOTTEN = new Set(["Housing", "Bills"]);
+// Rent and bills are expected to be the only charge from their payee, and they go in Bills.
+const BILL_CATEGORIES = new Set(["Housing", "Bills"]);
+const BILL_OVER = 200;
+// "Maybe forgotten" only for something small that has run a while: under CA$50 a month, first charged over 3 months ago.
+const FORGOTTEN_UNDER = 50;
+const FORGOTTEN_AGE_DAYS = 90;
 const firstWord = (merchant: string) => merchant.toLowerCase().split(/[\s.*/]+/)[0] ?? "";
 
 // Runs of about the same amount, in date order: [16.49, 16.49, 18.99] is two runs.
@@ -48,7 +56,7 @@ function runs(amounts: number[]): number[][] {
 export function subscriptions(rows: Tx[], rules: Rule[]): SubscriptionList {
   const spend = rows.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
   const latest = rows.at(-1)?.date;
-  if (!latest) return { list: [], perMonth: 0, perYear: 0 };
+  if (!latest) return { list: [], perMonth: 0, perYear: 0, bills: { list: [], perMonth: 0, perYear: 0 } };
   const latestMonth = latest.slice(0, 7);
   const byMerchant = new Map<string, Tx[]>();
   for (const t of spend) {
@@ -94,13 +102,17 @@ export function subscriptions(rows: Tx[], rules: Rule[]): SubscriptionList {
     const own = new Set(charges.map((t) => t.id));
     const word = firstWord(merchant);
     const elsewhere = (recentByWord.get(word) ?? []).some((t) => !own.has(t.id));
-    if (!elsewhere && !NEVER_FORGOTTEN.has(category) && charges.length >= 3 && days(last.date, latest) <= STILL_CHARGING_DAYS) flags.push("forgotten");
+    const perMonth = round2(cadence === "monthly" ? amount : amount / 12);
+    const bill = BILL_CATEGORIES.has(category) || perMonth > BILL_OVER;
+    const old = days(charges[0]!.date, latest) > FORGOTTEN_AGE_DAYS;
+    if (!elsewhere && !bill && perMonth < FORGOTTEN_UNDER && old && charges.length >= 3 && days(last.date, latest) <= STILL_CHARGING_DAYS) flags.push("forgotten");
     if (charges[0]!.date.startsWith(latestMonth)) flags.push("new");
     list.push({
       merchant,
       cadence,
       amount,
-      perMonth: round2(cadence === "monthly" ? amount : amount / 12),
+      perMonth,
+      bill,
       count: charges.length,
       last: last.date,
       next: addMonths(last.date, cadence === "monthly" ? 1 : 12),
@@ -109,7 +121,10 @@ export function subscriptions(rows: Tx[], rules: Rule[]): SubscriptionList {
     });
   }
   list.sort((a, b) => b.perMonth - a.perMonth);
-  const perMonth = round2(list.reduce((s, x) => s + x.perMonth, 0));
-  const perYear = round2(list.reduce((s, x) => s + (x.cadence === "monthly" ? x.amount * 12 : x.amount), 0));
-  return { list, perMonth, perYear };
+  const group = (xs: Subscription[]): Group => ({
+    list: xs,
+    perMonth: round2(xs.reduce((s, x) => s + x.perMonth, 0)),
+    perYear: round2(xs.reduce((s, x) => s + (x.cadence === "monthly" ? x.amount * 12 : x.amount), 0)),
+  });
+  return { ...group(list.filter((x) => !x.bill)), bills: group(list.filter((x) => x.bill)) };
 }

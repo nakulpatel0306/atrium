@@ -521,20 +521,32 @@ test("the facts Claude gets for Explain my month are Atrium's numbers only, mask
 import { subscriptions } from "../../../src/engine/money/subscriptions";
 import { counted, txs } from "../../../src/engine/money/rows";
 
-test("subscriptions: every recurring charge with its cost, last and next dates, and its flags", () => {
+test("subscriptions: every recurring charge with its cost, last and next dates, and its flags; rent and bills apart", () => {
   importAll();
   const s = subscriptions(counted(txs(db, spaceId, "bank")), listRules(db, spaceId));
   const by = Object.fromEntries(s.list.map((x) => [x.merchant, x]));
-  expect(Object.keys(by).sort()).toEqual(["Apple.com/bill", "Crave", "Summit Fitness Fitness", "Landlord Pap", "Netflix.com", "Presto Fare/toronto", "Rogers", "Spotify", "Uber One"]);
+  expect(Object.keys(by).sort()).toEqual(["Apple.com/bill", "Crave", "Summit Fitness Fitness", "Netflix.com", "Presto Fare/toronto", "Spotify", "Uber One"]);
+  expect(s.bills.list.map((x) => x.merchant)).toEqual(["Landlord Pap", "Rogers"]);
+  expect(s.bills.perMonth).toBe(1715);
   expect(by.Spotify).toMatchObject({ cadence: "monthly", amount: 12.99, was: 11.99, last: "2026-10-05", next: "2026-11-05", count: 3 });
   expect(by.Spotify!.flags).toContain("price-up");
-  expect(by["Summit Fitness Fitness"]!.flags).toEqual(["forgotten"]);
-  // Uber rides show he uses Uber One; rent is never "forgotten".
-  expect(by["Uber One"]!.flags).toEqual([]);
-  expect(by["Landlord Pap"]!.flags).toEqual([]);
+  // Three months of data is too short for "maybe forgotten".
+  expect(s.list.some((x) => x.flags.includes("forgotten"))).toBe(false);
   expect(by.Crave).toMatchObject({ count: 1, flags: ["new"], next: "2026-11-09" });
   expect(s.perMonth).toBeCloseTo(s.list.reduce((n, x) => n + x.perMonth, 0), 2);
   expect(s.perYear).toBeCloseTo(s.perMonth * 12, 2);
+});
+
+test("maybe forgotten: small, running over 3 months, nothing else from that merchant; never a big charge", () => {
+  const rows = ["Date,Description,Amount"];
+  for (const m of ["05", "06", "07", "08", "09", "10"]) rows.push(`2026-${m}-03,SUMMIT FITNESS FITNESS,-54.99`, `2026-${m}-04,SOUNDCLOUD,-9.99`, `2026-${m}-05,STORAGE UNIT,-249.00`);
+  rows.push("2026-10-20,UBER TRIP,-12", "2026-09-20,UBER TRIP,-12");
+  importMoney(db, spaceId, previewMoney(rows.join("\n"), { signs: "negative-out" }));
+  const s = subscriptions(counted(txs(db, spaceId, "bank")), listRules(db, spaceId));
+  const flags = Object.fromEntries([...s.list, ...s.bills.list].map((x) => [x.merchant, x.flags]));
+  expect(flags.Soundcloud).toEqual(["forgotten"]);
+  expect(flags["Summit Fitness Fitness"]).toEqual([]);
+  expect(s.bills.list.map((x) => x.merchant)).toEqual(["Storage Unit"]);
 });
 
 test("subscriptions: a yearly charge counts as a twelfth a month, and a stopped one drops off", () => {
