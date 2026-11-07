@@ -55,7 +55,7 @@ export function chartReducer(s: ChartState, e: ChartEvent): ChartState {
 }
 
 export type { EarningsRow, ListsView, PortfolioView, SearchResult, SymbolView };
-export type EarningsView = { rows: EarningsRow[]; source: string };
+export type EarningsView = { rows: EarningsRow[]; source: string; days: number };
 
 const base = (spaceId: string) => `/api/investing/${encodeURIComponent(spaceId)}`;
 export const usePortfolio = (spaceId: string) => useFetched<PortfolioView>(`${base(spaceId)}/portfolio`, useEngineState());

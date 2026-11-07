@@ -6,13 +6,14 @@ import { config } from "./engine/config";
 import { openDb } from "./engine/db";
 import { logActivity } from "./engine/events";
 import { migrateSpaceFolders, tildePath } from "./engine/folders";
-import { trimLog } from "./engine/logfile";
+import { stampConsole, trimLog } from "./engine/logfile";
 import { keepAwake, powerSource } from "./engine/power";
 import { createRunner, recoverOnBoot } from "./engine/runner";
 import { onApprovalResolved } from "./engine/approvals";
 import { createMarketsHooks } from "./engine/markets/agent";
 import { evaluateQuotes } from "./engine/markets/alerts";
 import { marketNow } from "./engine/markets/calendar";
+import { createCatchUp } from "./engine/markets/catchup";
 import { createMarketData } from "./engine/markets/data";
 import { createFeed } from "./engine/markets/feed";
 import { eodJob } from "./engine/markets/eod";
@@ -22,6 +23,7 @@ import { fxJob } from "./engine/markets/fx";
 import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
 import { metaJob } from "./engine/markets/meta";
+import { redact } from "./engine/markets/redact";
 import { addMetaOnBoot, seedOnBoot } from "./engine/markets/seed";
 import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
@@ -37,6 +39,7 @@ import { startServer } from "./server/server";
 
 // Keep launchd's log from growing forever; must run before anything logs.
 trimLog(join(config().home, "engine.log"), 1024 * 1024);
+stampConsole();
 
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();
@@ -61,6 +64,11 @@ const jobs = createJobs(
   ],
   marketClock,
 );
+// Steps the jobs skipped (no key yet) and missing earnings or metadata: on start, after a key is saved, and at
+// most hourly from the feed's steps.
+const catchUp = createCatchUp(db, { jobs, now: marketClock });
+const catchUpLogged = (force: boolean) =>
+  catchUp.run(force).catch((e) => console.error(`Market catch-up: ${redact(e instanceof Error ? e.message : String(e), data.secrets())}`));
 // Repo work wakes the runner when a clone lands or a new project's space is ready.
 const repos = createRepos({ db, kick: () => runner.kick() });
 const runner = createRunner({
@@ -78,7 +86,12 @@ const feed = createFeed({
   onQuotes: (quotes) => evaluateQuotes(db, quotes, marketClock()),
   strategyActive: () => anyStrategyActive(db),
   onTick: (now) => enqueueDueStrategies(db, now, () => runner.kick()),
-  jobs,
+  jobs: {
+    async runDue(now: number) {
+      await jobs.runDue(now);
+      await catchUpLogged(false);
+    },
+  },
 });
 onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
 // The only path to creating, pushing or removing a repo: Nakul's own decision on its approval.
@@ -95,7 +108,7 @@ try {
     runner,
     setup: (text) => setupSpace(db, claudeAdapter(), text),
     onViewers: (n) => void feed.setViewers(n),
-    markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs },
+    markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs, catchUp },
     repos,
     messaging,
   });
@@ -115,6 +128,7 @@ fixTalal(db);
 runner.start();
 repos.daily(Date.now());
 void feed.start();
+void catchUpLogged(true);
 console.log(`Atrium running at ${url}`);
 
 let stopping = false;

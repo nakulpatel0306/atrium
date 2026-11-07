@@ -6,20 +6,20 @@ import { cachedBars } from "./cache";
 import { etDate, etInstant } from "./calendar";
 import { currentQuote, type MarketData } from "./data";
 import { estimateFor, ESTIMATED } from "./estimate";
-import { recentNews, saveEarnings, upcomingEarnings, type Earnings } from "./events";
+import { recentNews, saveEarnings, saveNews, upcomingEarnings, type Earnings } from "./events";
 import { isFund } from "./funds/sources";
 import { listHoldings } from "./holdings";
 import { instrumentKey, parseInstrumentKey, type Exchange } from "./instrument";
 import { currencyOfKey } from "./labels";
 import { listItems, listLists } from "./lists";
-import { getMeta } from "./meta";
+import { getMeta, saveMetrics, saveProfile } from "./meta";
 import type { NewsItem } from "./providers/types";
 import { ProviderError } from "./providers/types";
 import { redact } from "./redact";
 import { getNotes, latestWriteups, type Writeup } from "./research";
 import { closeDayText, quoteSourced, type Sourced } from "./sourced";
 import { tvSymbol, widgetCoverage } from "./tradingview";
-import { portfolioView } from "./views";
+import { cleanName, portfolioView } from "./views";
 
 export type SymbolView = {
   key: string;
@@ -103,7 +103,7 @@ export function symbolView(db: Database, data: MarketData, spaceId: string, key:
     key: k,
     symbol: i.symbol,
     exchange: i.exchange,
-    name: meta?.name || holdings[0]?.name || listLists(db, spaceId).flatMap((l) => listItems(db, l.id)).find((x) => x.key === k)?.name || "",
+    name: meta?.name || listLists(db, spaceId).flatMap((l) => listItems(db, l.id)).find((x) => x.key === k)?.name || cleanName(holdings[0]?.name ?? ""),
     kind: isFund(k) || meta?.kind === "etf" ? "etf" : "stock",
     tv,
     chart: widgetCoverage(tv),
@@ -135,9 +135,14 @@ function failureNote(e: unknown, secrets: string[]): string {
   return redact(e instanceof Error ? e.message : String(e), secrets);
 }
 
-// One refresh when the page opens, at most every ten minutes per key: a quote, the profile (its listing picks the
-// TradingView symbol) and, for stocks, the next month of earnings. TradingView's widgets show fundamentals and news,
-// so those aren't fetched. At most three Finnhub calls; provider errors become one plain note, never a throw.
+const PROFILE_MAX_AGE = 30 * DAY_MS;
+const METRICS_MAX_AGE = 7 * DAY_MS;
+const NEWS_BACK_MS = 7 * DAY_MS;
+
+// One refresh when the page opens, at most every ten minutes per key: a quote; the profile when it's missing or a month
+// old (its listing picks the TradingView symbol); and, for stocks, key stats when missing or a week old, the next month
+// of earnings, and recent company news (TradingView's news widget can lag by weeks). At most five Finnhub calls;
+// provider errors become one plain note, never a throw.
 export async function refreshSymbol(db: Database, data: MarketData, key: string, now: number): Promise<{ refreshed: boolean; note: string | null }> {
   const i = parseInstrumentKey(key);
   if (!i) return { refreshed: false, note: null };
@@ -163,16 +168,17 @@ export async function refreshSymbol(db: Database, data: MarketData, key: string,
       }
     };
     db.query("INSERT OR IGNORE INTO instrument_meta (key) VALUES (?)").run(k);
-    if (p.profile) {
-      await attempt(async () => {
-        const pr = await p.profile!(i);
-        db.query("UPDATE instrument_meta SET name = COALESCE(?, name), listing = COALESCE(?, listing), profile_at = ? WHERE key = ?").run(pr?.name ?? null, pr?.exchange ?? null, now, k);
-      });
-    }
+    const ages = db.query("SELECT profile_at, metrics_at FROM instrument_meta WHERE key = ?").get(k) as { profile_at: number | null; metrics_at: number | null };
+    if (p.profile && now - (ages.profile_at ?? 0) > PROFILE_MAX_AGE) await attempt(async () => saveProfile(db, k, await p.profile!(i), now));
+    if (stock && p.metric && now - (ages.metrics_at ?? 0) > METRICS_MAX_AGE) await attempt(async () => saveMetrics(db, k, await p.metric!(i), now));
     if (stock && p.earnings) {
       const from = etDate(now);
       const to = etDate(now + 30 * DAY_MS);
       await attempt(async () => saveEarnings(db, await p.earnings!([i], from, to), "finnhub", { replaceFrom: { keys: [k], from } }));
+    }
+    if (stock && p.news) {
+      const newest = (db.query("SELECT MAX(at) AS at FROM market_news WHERE key = ?").get(k) as { at: number | null }).at;
+      await attempt(async () => saveNews(db, await p.news!([i], Math.max(newest ?? 0, now - NEWS_BACK_MS)), now));
     }
   }
   bus.emit({ type: "changed" });

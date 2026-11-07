@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../../src/engine/db";
-import { createJobs, lastSlot, type Job } from "../../../src/engine/markets/jobs";
+import { createJobs, lastSlot, type Job, type Skipped } from "../../../src/engine/markets/jobs";
 import { tempHome } from "../../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -93,4 +93,74 @@ test("a run that did something tells open dashboards", async () => {
   await jobs.runDue(et("2026-11-04T17:10:00"));
   off();
   expect(changed).toBe(1);
+});
+
+// A job with steps: earnings is "off" until its key is added; history is an optional source that stays quietly off;
+// flaky fails until `fixed`.
+function stepped(name: string, keyed: { has: boolean; fixed?: boolean }): Job & { runs: (string[] | undefined)[] } {
+  const runs: (string[] | undefined)[] = [];
+  return {
+    name,
+    slot: { at: "17:00", days: "weekdays" },
+    runs,
+    async run(_now, only) {
+      runs.push(only);
+      const skipped: Skipped[] = [];
+      const want = (s: string) => !only || only.includes(s);
+      if (want("earnings") && !keyed.has) skipped.push({ step: "earnings", reason: "Earnings dates weren't checked: add your Finnhub key.", status: "off" });
+      if (want("history")) skipped.push({ step: "history", reason: null, status: "off" });
+      if (want("flaky") && !keyed.fixed) skipped.push({ step: "flaky", reason: "Flaky failed." });
+      return { skipped };
+    },
+  };
+}
+const state = (name: string) => JSON.parse((db.query("SELECT value FROM settings WHERE key = ?").get(`markets.job.${name}`) as { value: string }).value);
+const pending = (jobs: ReturnType<typeof createJobs>, name: string) => Object.keys(jobs.steps(name)).sort();
+
+test("a run with a skipped step isn't recorded as a success, and isn't retried as a failure", async () => {
+  const keyed: { has: boolean; fixed?: boolean } = { has: false };
+  const job = stepped("eod", keyed);
+  const jobs = createJobs(db, [job], () => et("2026-11-05T19:32:00"));
+  expect(await jobs.runDue(et("2026-11-05T19:32:00"))).toEqual(["eod"]);
+  expect(jobs.status()[0]!.lastError).toBe("Earnings dates weren't checked: add your Finnhub key. Flaky failed.");
+  expect(pending(jobs, "eod")).toEqual(["earnings", "flaky", "history"]);
+  // The slot counts as run: no 30-minute retries spending other sources again.
+  expect(await jobs.runDue(et("2026-11-05T20:30:00"))).toEqual([]);
+  expect(job.runs).toEqual([undefined]);
+});
+
+test("catch-up reruns only failed steps; steps waiting on a key run when keys are added", async () => {
+  const keyed: { has: boolean; fixed?: boolean } = { has: false };
+  const job = stepped("eod", keyed);
+  const other = counting("fx");
+  const jobs = createJobs(db, [job, other], () => et("2026-11-05T19:40:00"));
+  await jobs.runDue(et("2026-11-05T19:32:00"));
+  // An hourly catch-up leaves the "off" steps alone.
+  expect(await jobs.rerunSkipped(et("2026-11-05T19:40:00"))).toEqual(["eod"]);
+  expect(job.runs.at(-1)).toEqual(["flaky"]);
+  keyed.has = true;
+  keyed.fixed = true;
+  expect(await jobs.rerunSkipped(et("2026-11-05T19:50:00"), true)).toEqual(["eod"]);
+  expect(job.runs.at(-1)!.sort()).toEqual(["earnings", "flaky", "history"]);
+  expect(other.runs).toHaveLength(1);
+  expect(jobs.status()[0]!.lastError).toBeNull();
+  // A quiet off step (an optional source not set up) stays pending without showing as an error.
+  expect(pending(jobs, "eod")).toEqual(["history"]);
+  expect(await jobs.rerunSkipped(et("2026-11-05T20:50:00"))).toEqual([]);
+  expect(state("eod").ranFor).toBe(et("2026-11-05T17:00:00"));
+});
+
+test("runNow keeps other steps' state and reasons, and a step that succeeds drops its own reason", async () => {
+  const keyed: { has: boolean; fixed?: boolean } = { has: false };
+  const job = stepped("eod", keyed);
+  const jobs = createJobs(db, [job], () => et("2026-11-05T19:40:00"));
+  await jobs.runDue(et("2026-11-05T19:32:00"));
+  keyed.fixed = true;
+  expect(await jobs.runNow("eod", et("2026-11-05T19:45:00"), ["flaky"])).toBe(true);
+  expect(job.runs.at(-1)).toEqual(["flaky"]);
+  expect(pending(jobs, "eod")).toEqual(["earnings", "history"]);
+  expect(jobs.status()[0]!.lastError).toBe("Earnings dates weren't checked: add your Finnhub key.");
+  jobs.mark("eod", "earnings", null);
+  expect(jobs.status()[0]!.lastError).toBeNull();
+  expect(await jobs.runNow("nope", et("2026-11-05T19:45:00"))).toBe(false);
 });

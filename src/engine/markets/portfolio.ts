@@ -3,7 +3,7 @@ import { getSetting } from "../settings";
 import { cachedQuotes } from "./cache";
 import { currentQuote, type MarketData } from "./data";
 import { latestFx } from "./fx";
-import { lookThrough, type LookThrough } from "./funds/lookthrough";
+import { companyKey, lookThrough, type LookThrough } from "./funds/lookthrough";
 import { fileFundFor, isFund } from "./funds/sources";
 import { fundError, loadFundFile } from "./funds/store";
 import { portfolioHealth, type Health, type Position } from "./health";
@@ -73,6 +73,29 @@ export function lookThroughFor(db: Database, key: string): LookThrough | null {
   return lt;
 }
 
+// Recomputed only when a fund file changes.
+const sectorMemo = new WeakMap<Database, { stamp: string; map: Map<string, string> }>();
+
+export function sectorsFromFunds(db: Database): Map<string, string> {
+  const stamp = (db.query("SELECT COALESCE(GROUP_CONCAT(fund || ':' || fetched_at), '') AS s FROM fund_files").get() as { s: string }).s;
+  const hit = sectorMemo.get(db);
+  if (hit?.stamp === stamp) return hit.map;
+  const map = new Map<string, string>();
+  const rows = db.query("SELECT ticker, key, name, country, sector FROM fund_lines WHERE sector IS NOT NULL AND kind = 'stock'").all() as {
+    ticker: string | null;
+    key: string | null;
+    name: string;
+    country: string | null;
+    sector: string;
+  }[];
+  for (const r of rows) {
+    const k = companyKey(r);
+    if (!map.has(k)) map.set(k, r.sector);
+  }
+  sectorMemo.set(db, { stamp, map });
+  return map;
+}
+
 export function healthFor(db: Database, data: MarketData, spaceId: string, now: number = Date.now()): Health {
   const positions = positionsFor(db, data, spaceId, now);
   const keys = [...new Set(positions.map((p) => p.key))];
@@ -83,7 +106,7 @@ export function healthFor(db: Database, data: MarketData, spaceId: string, now: 
     if (lt) lts.set(k, lt);
     else unavailable.set(k, fundError(db, fileFundFor(k)) ?? "no holdings file yet");
   }
-  return portfolioHealth({ positions, fx: latestFx(db), fxPrev: fxPrevFor(db, positions), lookThrough: lts, meta: getMeta(db, keys), unavailable, now });
+  return portfolioHealth({ positions, fx: latestFx(db), fxPrev: fxPrevFor(db, positions), lookThrough: lts, meta: getMeta(db, keys), unavailable, sectors: sectorsFromFunds(db), now });
 }
 
 // closes: how many priced holdings are at a previous close rather than live. dayLabel: "today", or the session the

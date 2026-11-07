@@ -76,7 +76,8 @@ test("a second engine exits without touching task state", async () => {
     new Response(second.stderr as ReadableStream).text(),
   ]);
   expect(code).toBe(1);
-  expect(`${out}${err}`.trim()).toBe(`Atrium is already running at http://127.0.0.1:${port}`);
+  // Engine log lines carry their time first.
+  expect(`${out}${err}`.trim()).toMatch(new RegExp(`^\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z Atrium is already running at http://127\\.0\\.0\\.1:${port}$`));
   expect(getTask(db, t.id)!.status).toBe("running");
   db.close();
 }, 15_000);

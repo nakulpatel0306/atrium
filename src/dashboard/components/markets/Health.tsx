@@ -185,6 +185,9 @@ export function Health({ spaceId }: { spaceId: string }) {
               </div>
             );
           })}
+          {v.performance.some((p) => p.portfolioPct !== null && p.portfolioNote) && (
+            <div className="empty-row">* {v.performance.find((p) => p.portfolioPct !== null && p.portfolioNote)!.portfolioNote}</div>
+          )}
           <div className="empty-row">{v.performance[0]?.note} Hover a row for its dates and any n/a reasons.</div>
         </div>
       </section>

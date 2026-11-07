@@ -4,24 +4,29 @@ import { edgarStatus } from "./edgar";
 
 // Counted per ET date in the settings table. Written directly rather than through setSetting so a spend doesn't
 // emit `changed` and wake every listener for a counter nobody displays live.
-export function dailyBudget(db: Database, name: string, limit: number, now: () => number): { remaining(): number; spend(): boolean } {
+// exhaust() marks the day used up when the provider itself says its daily limit is reached.
+export function dailyBudget(db: Database, name: string, limit: number, now: () => number): { remaining(): number; spend(): boolean; exhaust(): void } {
   const prefix = `markets.budget.${name}.`;
   const used = () => {
     const row = db.query("SELECT value FROM settings WHERE key = ?").get(prefix + etDate(now())) as { value: string } | null;
     return row ? Number(row.value) : 0;
+  };
+  const set = (n: number) => {
+    const key = prefix + etDate(now());
+    db.transaction(() => {
+      db.query("DELETE FROM settings WHERE key LIKE ? AND key != ?").run(`${prefix}%`, key);
+      db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, String(n));
+    })();
   };
   return {
     remaining: () => Math.max(0, limit - used()),
     spend() {
       const n = used();
       if (n >= limit) return false;
-      const key = prefix + etDate(now());
-      db.transaction(() => {
-        db.query("DELETE FROM settings WHERE key LIKE ? AND key != ?").run(`${prefix}%`, key);
-        db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, String(n + 1));
-      })();
+      set(n + 1);
       return true;
     },
+    exhaust: () => set(Math.max(limit, used())),
   };
 }
 
@@ -95,12 +100,15 @@ export function meteredFetch(db: Database, source: DataSource, f: typeof fetch, 
 
 type SourceState = { lastOkAt: number | null; lastError: string | null; lastErrorAt: number | null };
 
-// The caller passes an already redacted message.
+// The caller passes an already redacted message. A new error, and the recovery from one, also go to the engine log,
+// once each rather than on every retry, so the day's provider errors can be read there.
 export function noteSourceResult(db: Database, source: DataSource, ok: boolean, message?: string, now: number = Date.now()): void {
   const key = `markets.source.${source}`;
   const raw = readSetting(db, key);
   const cur: SourceState = raw ? (JSON.parse(raw) as SourceState) : { lastOkAt: null, lastError: null, lastErrorAt: null };
   const next: SourceState = ok ? { lastOkAt: now, lastError: null, lastErrorAt: null } : { ...cur, lastError: message ?? "Failed.", lastErrorAt: now };
+  if (!ok && next.lastError !== cur.lastError) console.error(`${SOURCE_INFO[source].label}: ${next.lastError}`);
+  if (ok && cur.lastError) console.log(`${SOURCE_INFO[source].label} is working again.`);
   upsert(db, key, JSON.stringify(next));
 }
 

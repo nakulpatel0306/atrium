@@ -208,7 +208,7 @@ function Ask({ spaceId, view, now }: { spaceId: string; view: SymbolView; now: n
 }
 
 function KeyStats({ view }: { view: SymbolView }) {
-  if (!view.stats.length) return <p className="faint sym-fact">No stats yet. Finnhub's figures arrive with the weekly refresh.</p>;
+  if (!view.stats.length) return <p className="faint sym-fact">No stats yet. Finnhub's figures load when this page opens with a Finnhub key saved.</p>;
   return (
     <dl className="sym-stats">
       {view.stats.map((s) => (
@@ -222,7 +222,7 @@ function KeyStats({ view }: { view: SymbolView }) {
 }
 
 function News({ view, now }: { view: SymbolView; now: number }) {
-  if (!view.news.length) return <p className="faint sym-fact">No recent news from Finnhub.</p>;
+  if (!view.news.length) return <p className="faint sym-fact">No company news from Finnhub in the last week.</p>;
   return (
     <ul className="sym-news">
       {view.news.map((n) => (
@@ -320,10 +320,12 @@ export function SymbolBody({
               </p>
             </section>
           )}
-          <section>
-            <h3>Next earnings</h3>
-            <EarningsDate spaceId={spaceId} view={view} />
-          </section>
+          {view.kind === "stock" && (
+            <section>
+              <h3>Next earnings</h3>
+              <EarningsDate spaceId={spaceId} view={view} />
+            </section>
+          )}
           {(view.kind === "stock" || view.stats.length > 0) && (
             <section>
               <h3>Key stats</h3>
@@ -342,15 +344,21 @@ export function SymbolBody({
           )}
         </div>
         <div>
-          {(view.kind === "stock" || view.news.length > 0) && (
+          {view.news.length > 0 ? (
             <section>
               <h3>News</h3>
-              {view.kind === "stock" ? (
-                <TvWidget tv={view.tv} kind="timeline" className="tvw-panel tvw-tall" title={`${view.key} news by TradingView`} fallback={<News view={view} now={now} />} />
-              ) : (
-                <News view={view} now={now} />
-              )}
+              <News view={view} now={now} />
             </section>
+          ) : (
+            view.kind === "stock" && (
+              // Finnhub's company news is dated and current; TradingView's feed can lag by weeks, so it only fills in
+              // when Finnhub has nothing, under its own name.
+              <section>
+                <h3>TradingView news</h3>
+                <TvWidget tv={view.tv} kind="timeline" className="tvw-panel tvw-tall" title={`${view.key} news by TradingView`} fallback={<News view={view} now={now} />} />
+                <p className="faint sym-fact">TradingView's feed. Its newest stories can be weeks old.</p>
+              </section>
+            )
           )}
           <section>
             <h3>Your note</h3>

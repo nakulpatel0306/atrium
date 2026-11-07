@@ -4,6 +4,7 @@ import { cachedBars } from "./cache";
 import { etDate, lastCompletedSession } from "./calendar";
 import { adjustedCloses, closes } from "./closes";
 import { currentQuote, type MarketData } from "./data";
+import { EARNINGS_CHECKED, EARNINGS_DAYS_AHEAD } from "./eod";
 import { upcomingEarnings } from "./events";
 import { latestFx } from "./fx";
 import { portfolioHealth } from "./health";
@@ -54,7 +55,9 @@ export type PortfolioView = {
   dayLabel: string | null;
   mix: string | null;
   fx: Sourced | null;
-  holdings: (PriceRow & { quantity: number; valueCad: number | null; gainCad: number | null; gainCadPct: number | null })[];
+  holdings: (PriceRow & { quantity: number; valueCad: number | null; gainCad: number | null; gainCadPct: number | null; weightPct: number | null })[];
+  // Unrealized gain against book, over the priced holdings that have a book value; complete is false when some don't.
+  gain: { cad: number; bookCad: number; pct: number | null; complete: boolean } | null;
   note: Writeup | null;
   empty: boolean;
   // Which holdings the total leaves out, and what would bring them in.
@@ -85,12 +88,30 @@ function currentNote(db: Database, spaceId: string, now: number): Writeup | null
   return w.forDate === lastCompletedSession(now).date || w.forDate === etDate(now) ? w : null;
 }
 
+// Wealthsimple's names are the issuer's legal ones ("Vanguard Investments Canada Inc. - S&P 500 Index ETF"); the
+// fund's own name with the issuer's brand reads better.
+export function cleanName(raw: string): string {
+  const t = raw.trim().replace(/^SSGA\s+(?=SPDR\b)/, "");
+  const m = t.match(/^(\S+).*?\s+-\s+(.+)$/);
+  if (!m) return t;
+  return m[2]!.startsWith(m[1]!) ? m[2]! : `${m[1]} ${m[2]}`;
+}
+
+// The profile's name (Finnhub), then the clean name a watchlist holds, then Wealthsimple's, tidied.
+function holdingNames(db: Database, spaceId: string, keys: string[]): Map<string, string> {
+  const meta = getMeta(db, keys);
+  const listed = new Map<string, string>();
+  for (const l of listLists(db, spaceId)) for (const i of listItems(db, l.id)) if (i.name && !listed.has(i.key)) listed.set(i.key, i.name);
+  const raw = new Map(listHoldings(db, spaceId).map((h) => [h.key, h.name ?? ""]));
+  return new Map(keys.map((k) => [k, meta.get(k)?.name || listed.get(k) || cleanName(raw.get(k) ?? "")]));
+}
+
 export function portfolioView(db: Database, data: MarketData, spaceId: string, now: number): PortfolioView {
   const positions = positionsFor(db, data, spaceId, now);
   const fx = latestFx(db);
   const health = portfolioHealth({ positions, fx, lookThrough: new Map(), meta: new Map(), now });
   const day = portfolioDay(db, data, spaceId, now);
-  const names = new Map(listHoldings(db, spaceId).map((h) => [h.key, h.name ?? ""]));
+  const names = holdingNames(db, spaceId, [...new Set(positions.map((p) => p.key))]);
 
   // One row per key, however many accounts hold it.
   const byKey = new Map<string, { quantity: number; valueCad: number | null; gainCad: number | null; costCad: number | null }>();
@@ -116,7 +137,12 @@ export function portfolioView(db: Database, data: MarketData, spaceId: string, n
       gainCadPct: h.gainCad !== null && h.costCad ? (h.gainCad / h.costCad) * 100 : null,
     }))
     .map((r) => (r.price ? r : { ...r, valueCad: null, gainCad: null, gainCadPct: null }))
+    .map((r) => ({ ...r, weightPct: r.valueCad !== null && health.totalCad ? (r.valueCad / health.totalCad.value) * 100 : null }))
     .sort((a, b) => (b.valueCad ?? -Infinity) - (a.valueCad ?? -Infinity));
+  const withGain = holdings.filter((h) => h.gainCad !== null && h.valueCad !== null);
+  const gainCad = withGain.reduce((a, h) => a + h.gainCad!, 0);
+  const bookCad = withGain.reduce((a, h) => a + h.valueCad! - h.gainCad!, 0);
+  const gain = withGain.length ? { cad: gainCad, bookCad, pct: bookCad > 0 ? (gainCad / bookCad) * 100 : null, complete: withGain.length === holdings.length } : null;
 
   return {
     total: health.totalCad,
@@ -126,6 +152,7 @@ export function portfolioView(db: Database, data: MarketData, spaceId: string, n
     mix: day?.mix ?? null,
     fx,
     holdings,
+    gain,
     note: currentNote(db, spaceId, now),
     empty: positions.length === 0,
     left: leftOut(holdings),
@@ -154,29 +181,32 @@ export function listsView(db: Database, data: MarketData, spaceId: string, now: 
 }
 
 export type EarningsRow = { key: string; name: string; date: string; hour: string | null; epsEstimate: number | null; source: "finnhub" | "you"; held: boolean };
-export const EARNINGS_DAYS = 14;
+// The same window the end-of-day job and catch-up fetch from Finnhub, so the tab shows everything Atrium knows.
+export const EARNINGS_DAYS = EARNINGS_DAYS_AHEAD;
 
-export function earningsView(db: Database, spaceId: string, now: number): { rows: EarningsRow[]; source: string } {
+export function earningsView(db: Database, spaceId: string, now: number): { rows: EarningsRow[]; source: string; days: number } {
   const held = new Set(listHoldings(db, spaceId).map((h) => h.key));
-  const names = new Map<string, string>();
-  for (const h of listHoldings(db, spaceId)) if (h.name) names.set(h.key, h.name);
-  for (const l of listLists(db, spaceId)) for (const i of listItems(db, l.id)) if (i.name && !names.has(i.key)) names.set(i.key, i.name);
-  const keys = [...new Set([...held, ...names.keys(), ...listLists(db, spaceId).flatMap((l) => listItems(db, l.id).map((i) => i.key))])];
-  const meta = getMeta(db, keys);
+  const keys = [...new Set([...held, ...listLists(db, spaceId).flatMap((l) => listItems(db, l.id).map((i) => i.key))])];
+  const names = holdingNames(db, spaceId, keys);
   const rows = upcomingEarnings(db, keys, etDate(now), EARNINGS_DAYS).map((e) => ({
     key: e.key,
-    name: names.get(e.key) || meta.get(e.key)?.name || "",
+    name: names.get(e.key) ?? "",
     date: e.date,
     hour: e.hour,
     epsEstimate: e.epsEstimate,
     source: e.source,
     held: held.has(e.key),
   }));
-  const checked = keys.length
+  // The last check counts even when it found no dates; older Finnhub rows say when they were fetched.
+  const raw = (db.query("SELECT value FROM settings WHERE key = ?").get(EARNINGS_CHECKED) as { value: string } | null)?.value;
+  const fetched = keys.length
     ? (db.query(`SELECT MAX(fetched_at) AS at FROM market_earnings WHERE source = 'finnhub' AND key IN (${keys.map(() => "?").join(",")})`).get(...keys) as { at: number | null }).at
     : null;
-  const source = checked ? `Finnhub earnings calendar · checked ${closeDayText(checked)}` : "No earnings dates yet. Atrium checks Finnhub after each close.";
-  return { rows, source };
+  const checked = Math.max(raw ? (JSON.parse(raw) as { at: number }).at : 0, fetched ?? 0) || null;
+  const source = checked
+    ? `Finnhub earnings calendar · checked ${closeDayText(checked)}`
+    : "Not checked yet. Atrium checks Finnhub's calendar after each close and as soon as a Finnhub key is added.";
+  return { rows, source, days: EARNINGS_DAYS };
 }
 
 export type GlanceView = {

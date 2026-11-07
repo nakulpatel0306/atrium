@@ -187,7 +187,7 @@ export function Settings() {
               {s.feed.reason}
             </span>
           </div>
-          <p className="hint">{tsxSourceHint(s.data.keys.alphavantage)}</p>
+          <p className="hint set-hint">{tsxSourceHint(s.data.keys.alphavantage)}</p>
           <div className="mk-form">
             <button className="btn" onClick={() => void runTest()} disabled={testing}>
               <PlugZap />

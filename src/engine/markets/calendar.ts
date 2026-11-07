@@ -145,7 +145,7 @@ export function tsxHolidays(year: number): { date: string; name: string }[] {
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function tsxTrading(date: string): boolean {
+export function tsxTrading(date: string): boolean {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
   const dow = weekday(y, m, d);
   return dow !== 0 && dow !== 6 && !tsxHolidays(y).some((h) => h.date === date);

@@ -89,10 +89,12 @@ test("earningsView covers two weeks of holdings and lists; your own date wins", 
     ["NVDA", "2026-11-10", "finnhub", false],
     ["NOW", "2026-11-11", "you", false],
     ["AMZN", "2026-11-12", "finnhub", true],
+    ["AMZN", "2026-11-25", "finnhub", true],
   ]);
+  expect(v.days).toBe(30);
   expect(v.source).toMatch(/^Finnhub earnings calendar · checked [A-Z][a-z]{2} \d{1,2}$/);
   const empty = createSpace(db, { name: "E", kind: "markets", goal: "g" });
-  expect(earningsView(db, empty.id, NOW)).toEqual({ rows: [], source: "No earnings dates yet. Atrium checks Finnhub after each close." });
+  expect(earningsView(db, empty.id, NOW)).toEqual({ rows: [], days: 30, source: "Not checked yet. Atrium checks Finnhub's calendar after each close and as soon as a Finnhub key is added." });
 });
 
 test("glanceView tags closing prices", () => {
@@ -121,4 +123,37 @@ test("holdings without a price are named under the total", () => {
   expect(v.left).toBe("1 Canadian holding isn't in the total yet. Yahoo Finance prices it during TSX hours (9:30 AM to 4:00 PM ET).");
   expect(v.total!.value).toBeCloseTo(10 * 250 * FX, 2);
   expect(portfolioView(db, viewData(), fx.spaceId, NOW).left).toBe("1 holding has no price yet and isn't in the total.");
+});
+
+test("portfolioView gives each holding's weight and the total gain against book", () => {
+  const v = portfolioView(db, viewData(), fx.spaceId, NOW);
+  const total = v.total!.value;
+  for (const h of v.holdings) expect(h.weightPct!).toBeCloseTo((h.valueCad! / total) * 100, 6);
+  const gain = v.holdings.reduce((a, h) => a + h.gainCad!, 0);
+  expect(v.gain!.cad).toBeCloseTo(gain, 6);
+  expect(v.gain!.bookCad).toBeCloseTo(total - gain, 6);
+  expect(v.gain!.pct).toBeCloseTo((gain / (total - gain)) * 100, 6);
+  expect(v.gain!.complete).toBe(true);
+});
+
+test("holding names: the profile name, then the watchlist's, then Wealthsimple's tidied", async () => {
+  const { addHolding } = await import("../../../src/engine/markets/holdings");
+  const { cleanName } = await import("../../../src/engine/markets/views");
+  expect(cleanName("Vanguard Investments Canada Inc. - S&P 500 Index ETF")).toBe("Vanguard S&P 500 Index ETF");
+  expect(cleanName("Roundhill ETF Trust - Space & Technology ETF")).toBe("Roundhill Space & Technology ETF");
+  expect(cleanName("SSGA SPDR S&P 500 ETF")).toBe("SPDR S&P 500 ETF");
+  expect(cleanName("Servicenow Inc.")).toBe("Servicenow Inc.");
+  addHolding(db, fx.spaceId, { account: "TFSA", symbol: "VFV", exchange: "TSX", name: "Vanguard Investments Canada Inc. - S&P 500 Index ETF", quantity: 1, bookValue: 100, currency: "CAD" });
+  db.query("INSERT INTO instrument_meta (key, name) VALUES ('AMZN', 'Amazon.com Inc')").run();
+  const names = Object.fromEntries(portfolioView(db, viewData(), fx.spaceId, NOW).holdings.map((h) => [h.key, h.name]));
+  expect(names.AMZN).toBe("Amazon.com Inc");
+  expect(names["VFV.TO"]).toBe("Vanguard S&P 500 Index ETF");
+});
+
+test("earnings rows use the same clean names as the Portfolio", async () => {
+  const { addHolding } = await import("../../../src/engine/markets/holdings");
+  addHolding(db, fx.spaceId, { account: "TFSA", symbol: "NOW", exchange: "US", name: "Servicenow Inc.", quantity: 1, bookValue: 100, currency: "USD" });
+  db.query("INSERT INTO instrument_meta (key, name) VALUES ('NOW', 'ServiceNow Inc')").run();
+  saveEarnings(db, [{ key: "NOW", date: "2026-11-09", hour: "amc", epsEstimate: null }], "finnhub");
+  expect(earningsView(db, fx.spaceId, NOW).rows.find((r) => r.key === "NOW")!.name).toBe("ServiceNow Inc");
 });

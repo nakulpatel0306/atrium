@@ -1,5 +1,5 @@
 // Pure: portfolio health from positions, the USD/CAD rate, fund look-through and instrument metadata.
-import type { LookThrough } from "./funds/lookthrough";
+import { companyKey, type LookThrough } from "./funds/lookthrough";
 import type { Meta } from "./meta";
 import { etDay, fxLabel, mixLabel, toCad, type Sourced } from "./sourced";
 
@@ -76,6 +76,9 @@ export function portfolioHealth(i: {
   meta: Map<string, Meta>;
   // Why a fund has no breakdown, for its warning.
   unavailable?: Map<string, string>;
+  // Sector by company (companyKey), from any fund file that names one: SSGA's file and the Nasdaq-100 estimate carry
+  // none, but the same companies appear in iShares' files with theirs.
+  sectors?: Map<string, string>;
   now?: number;
 }): Health {
   const warnings: Warning[] = [];
@@ -152,7 +155,7 @@ export function portfolioHealth(i: {
     bump(byListing, p.listingCcy, v);
     const m = i.meta.get(p.key);
     if (p.kind !== "etf") {
-      bump(bySector, m?.sector ?? UNKNOWN, v);
+      bump(bySector, m?.sector ?? i.sectors?.get(companyKey({ ticker: p.key, name: p.key, country: null })) ?? UNKNOWN, v);
       bump(byCountry, m?.country ?? UNKNOWN, v);
       bump(byCurrency, m?.currency ?? p.listingCcy, v);
       const c = company(p.key, p.key, p.key);
@@ -176,7 +179,7 @@ export function portfolioHealth(i: {
     for (const e of lt.exposures) {
       const ev = v * e.weight;
       const cash = e.kind === "cash";
-      bump(bySector, cash ? "Cash" : (e.sector ?? i.meta.get(e.key ?? "")?.sector ?? UNKNOWN), ev);
+      bump(bySector, cash ? "Cash" : (e.sector ?? i.sectors?.get(e.company) ?? i.meta.get(e.key ?? "")?.sector ?? UNKNOWN), ev);
       bump(byCountry, e.country ?? UNKNOWN, ev);
       bump(byCurrency, e.currency ?? p.listingCcy, ev);
       const id = cash ? "Cash in funds" : e.company;

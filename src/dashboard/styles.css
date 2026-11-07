@@ -1764,6 +1764,12 @@ code {
   margin: 4px 0 0;
   max-width: 680px;
 }
+.set-hint {
+  margin: 10px 0 12px;
+  max-width: 680px;
+  color: var(--faint);
+  font-size: 11px;
+}
 .markets .hint,
 .mk-dialog .hint,
 .mk-form .hint,
@@ -2688,12 +2694,20 @@ code {
 }
 .tv-labels {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 14px;
+  gap: 4px 14px;
   font-size: 12px;
   color: var(--faint);
 }
+.tv-labels > span:first-child,
+.tv-labels > .btn {
+  flex: none;
+  white-space: nowrap;
+}
 .tv-labels .tv-privacy {
+  flex: 1 1 280px;
+  min-width: 0;
   margin-left: auto;
   text-align: right;
 }
@@ -2984,6 +2998,13 @@ code {
 .inv-foot {
   margin: 14px 0 0;
   font-size: 12px;
+}
+.inv-foot .btn.link {
+  color: var(--accent);
+  font-size: 12px;
+}
+.inv-foot .btn.link:hover {
+  text-decoration: underline;
 }
 .inv-empty {
   padding: 28px 0;
@@ -3324,6 +3345,35 @@ code {
   height: 64px;
   border-radius: 4px;
   overflow: hidden;
+}
+.inv-gain-total {
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.inv-gain-total .up {
+  color: var(--green);
+}
+.inv-gain-total .down {
+  color: var(--red);
+}
+.inv-portfolio .inv-list-head,
+.inv-portfolio .inv-row-main {
+  grid-template-columns: minmax(0, 1fr) 180px 150px 56px 120px;
+}
+.inv-weight {
+  text-align: right;
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 760px) {
+  .inv-portfolio .inv-row-main {
+    grid-template-columns: minmax(0, 1fr) 180px 96px;
+  }
+  .inv-portfolio .inv-weight {
+    display: none;
+  }
 }
 .inv-left {
   margin-top: 6px;

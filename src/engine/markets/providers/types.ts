@@ -15,7 +15,9 @@ export type Profile = { name: string; country: string | null; currency: string |
 export type SearchHit = { key: string; symbol: string; exchange: Exchange; name: string; type: string; note: string | null };
 export type EarningsDate = { key: string; date: string; hour: string | null; epsEstimate: number | null };
 
+// partial: what a per-symbol call collected before it failed (earnings), so the caller can keep it and resume.
 export class ProviderError extends Error {
+  partial?: { done: string[]; rows: EarningsDate[]; failed?: { key: string; reason: string }[] };
   constructor(
     readonly kind: "auth" | "rate_limited" | "unavailable" | "no_history" | "unknown_symbol",
     message: string,

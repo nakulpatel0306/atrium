@@ -34,12 +34,15 @@ export const signedPctText = (n: number | null): string => (n === null ? "n/a" :
 export function perfRow(r: PerfResult): { label: string; you: string; spy: string; xeqt: string; title: string } {
   const b = (key: string) => r.benchmarks.find((x) => x.key === key);
   const why = [
+    ...(r.portfolioNote ? [r.portfolioNote] : []),
     ...r.missing.map((m) => `${m.key}: ${m.reason}`),
     ...r.benchmarks.filter((x) => x.reason).map((x) => `${x.key}: ${x.reason}`),
     `${r.start} to ${r.end}, ${r.basis}.`,
     r.note,
   ];
-  return { label: r.period, you: signedPctText(r.portfolioPct), spy: signedPctText(b("SPY")?.pct ?? null), xeqt: signedPctText(b("XEQT.TO")?.pct ?? null), title: why.join("\n") };
+  // A number from part of the portfolio is marked; with too little history there's no number at all.
+  const you = r.portfolioPct === null ? (r.portfolioNote ? "not enough history yet" : "n/a") : `${signedPctText(r.portfolioPct)}${r.portfolioNote ? "*" : ""}`;
+  return { label: r.period, you, spy: signedPctText(b("SPY")?.pct ?? null), xeqt: signedPctText(b("XEQT.TO")?.pct ?? null), title: why.join("\n") };
 }
 
 // Nulls sort last whichever way the column is sorted; sourced cells sort by their value.

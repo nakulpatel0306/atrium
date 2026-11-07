@@ -8,6 +8,7 @@ import { config } from "../../src/engine/config";
 import { createSpace } from "../../src/engine/spaces";
 import { setSetting } from "../../src/engine/settings";
 import { createMarketData } from "../../src/engine/markets/data";
+import type { CatchUp } from "../../src/engine/markets/catchup";
 import { createFeed } from "../../src/engine/markets/feed";
 import { createKeychain } from "../../src/engine/markets/keychain";
 import { demoProvider } from "../../src/engine/markets/providers/demo";
@@ -26,13 +27,13 @@ let server: ReturnType<typeof startServer>;
 let base: string;
 let now: number;
 
-function boot(opts: { demo?: boolean; fetch?: typeof fetch } = {}) {
+function boot(opts: { demo?: boolean; fetch?: typeof fetch; catchUp?: CatchUp } = {}) {
   if (opts.demo !== false) setSetting(db, "markets.provider", "demo");
   const keychain = createKeychain(FAKE);
   const clock = () => now;
   const data = createMarketData({ db, keychain, now: clock, fetch: opts.fetch, providers: opts.demo === false ? {} : { demo: demoProvider({ now: clock }) } });
   const feed = createFeed({ db, data, onQuotes: () => {}, strategyActive: () => false, now: clock });
-  server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0, markets: { data, feed, keychain, kick: () => {}, now: clock, fetch: opts.fetch } });
+  server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no"); }, port: 0, markets: { data, feed, keychain, kick: () => {}, now: clock, fetch: opts.fetch, catchUp: opts.catchUp } });
   base = `http://127.0.0.1:${server.port}`;
   return { keychain, data };
 }
@@ -241,6 +242,19 @@ test("a Tiingo key is validated, saved to the Keychain and removable", async () 
   expect(JSON.stringify(st)).not.toContain("TGTESTTOKEN99");
   expect((await call("DELETE", "/api/settings/market-data/keys/tiingo")).status).toBe(200);
   expect(await keychain.get("tiingo.token")).toBeNull();
+});
+
+test("saving a key starts a catch-up of what the missing key held back", async () => {
+  const { stubFetch, jsonResponse } = await import("../engine/markets/fakes");
+  const tiingoRows = JSON.parse(readFileSync(join(FIXTURES, "investing/tiingo-spy.json"), "utf8"));
+  const s = stubFetch((url) => (url.host === "api.tiingo.com" ? jsonResponse(tiingoRows) : new Response("no", { status: 500 })));
+  const forced: boolean[] = [];
+  boot({ fetch: s.fetch, catchUp: { run: async (force = false) => (forced.push(force), []) } });
+  expect((await call("POST", "/api/settings/market-data/keys", { provider: "tiingo", token: "TGTESTTOKEN99" })).status).toBe(200);
+  expect(forced).toEqual([true]);
+  // A key that fails its check starts nothing.
+  expect((await call("POST", "/api/settings/market-data/keys", { provider: "tiingo", token: "bad key" })).status).toBe(400);
+  expect(forced).toEqual([true]);
 });
 
 test("no trading hosts anywhere in the source", () => {

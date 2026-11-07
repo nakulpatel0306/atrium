@@ -4,7 +4,7 @@ export function Earnings({ spaceId, view }: { spaceId: string; view: EarningsVie
   if (!view.rows.length) {
     return (
       <section className="inv-empty">
-        <p>No earnings in the next two weeks for your holdings or watchlists.</p>
+        <p>No earnings in the next {view.days} days for your holdings or watchlists.</p>
         <p className="faint">{view.source}</p>
       </section>
     );

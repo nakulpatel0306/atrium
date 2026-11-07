@@ -81,8 +81,16 @@ test("Portfolio: the daily note renders markdown with the advice tag", () => {
   db.query("DELETE FROM market_writeups").run();
 });
 
+test("Portfolio: each row's weight and the total gain on what was invested", () => {
+  const view = portfolioView(db, viewData(), fx.spaceId, NOW);
+  const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={view} />);
+  expect(html).toContain(">Weight<");
+  for (const h of view.holdings) expect(html).toContain(`>${h.weightPct!.toFixed(1)}%<`);
+  expect(text(html)).toMatch(/\+CA\$1,896 \(\+37\.2%\)\s+total gain on CA\$5,094 invested/);
+});
+
 test("Portfolio: the empty state points to the import", () => {
-  const view = { total: null, dayCad: null, dayPct: null, dayLabel: null, mix: null, fx: null, holdings: [], note: null, empty: true, left: null };
+  const view = { total: null, dayCad: null, dayPct: null, dayLabel: null, mix: null, fx: null, holdings: [], gain: null, note: null, empty: true, left: null };
   const html = renderToStaticMarkup(<Portfolio spaceId="spc_x" view={view} />);
   expect(html).toContain("No holdings yet. Import your Wealthsimple holdings file to see your portfolio.");
   expect(html).toContain("Import holdings");
@@ -97,6 +105,7 @@ test("Earnings: grouped by day, with time, estimate and a held chip", () => {
       { key: "ATZ.TO", name: "Aritzia", date: "2026-11-13", hour: null, epsEstimate: null, source: "you" as const, held: true },
     ],
     source: "Finnhub earnings calendar · checked Nov 4",
+    days: 30,
   };
   const html = renderToStaticMarkup(<Earnings spaceId="spc_x" view={view} />);
   expect(html).toContain("Thu, Nov 12");
@@ -108,7 +117,7 @@ test("Earnings: grouped by day, with time, estimate and a held chip", () => {
   expect(html.match(/you hold this/g)).toHaveLength(2);
   expect(html).toContain("Finnhub earnings calendar · checked Nov 4");
   clean(html);
-  expect(renderToStaticMarkup(<Earnings spaceId="spc_x" view={{ rows: [], source: "x" }} />)).toContain("No earnings in the next two weeks for your holdings or watchlists.");
+  expect(renderToStaticMarkup(<Earnings spaceId="spc_x" view={{ rows: [], source: "x", days: 30 }} />)).toContain("No earnings in the next 30 days for your holdings or watchlists.");
 });
 
 test("AlertsSimple: indicator alerts are paused while Advanced is off", () => {
@@ -234,12 +243,28 @@ test("Symbol page: an ask answer renders markdown with advice and what it made; 
   db.query("DELETE FROM market_writeups").run();
 });
 
-test("Symbol page: a TSX key with no earnings offers to add a date", () => {
+test("Symbol page: a TSX stock with no earnings offers to add a date; a fund has no earnings section", () => {
+  const atz = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "ATZ.TO", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(atz).toContain("No date yet");
+  expect(atz).toContain("Add a date");
   const html = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "XEQT.TO", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
-  expect(html).toContain("No date yet");
-  expect(html).toContain("Add a date");
+  expect(html).not.toContain("Next earnings");
+  expect(html).not.toContain("Add a date");
   expect(html).toContain("CA$35.00");
   clean(html);
+});
+
+test("Symbol page: Finnhub's dated news comes first; TradingView's feed only fills in, under its own name", () => {
+  db.query("DELETE FROM market_news").run();
+  const none = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "AMZN", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(none).toContain("TradingView news");
+  expect(none).toContain("Its newest stories can be weeks old.");
+  saveNews(db, [{ key: "AMZN", headline: "Amazon beats on AWS", source: "Reuters", url: "https://example.com/aws", at: NOW - 3600_000 }], NOW);
+  const some = renderToStaticMarkup(<SymbolBody spaceId={fx.spaceId} view={symbolView(db, viewData(), fx.spaceId, "AMZN", NOW)} marketsView={null} frameUrl={fake} now={NOW} />);
+  expect(some).toContain("Amazon beats on AWS");
+  expect(some).toContain("Reuters · 1h ago");
+  expect(some).not.toContain("TradingView news");
+  db.query("DELETE FROM market_news").run();
 });
 
 test("Symbol page: no chart listener means Atrium's chart and no frame", () => {

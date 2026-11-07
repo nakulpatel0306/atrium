@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import { finnhubProvider } from "../../../src/engine/markets/providers/finnhub";
+import { finnhubProvider, pacer } from "../../../src/engine/markets/providers/finnhub";
 import { ProviderError, type Quote } from "../../../src/engine/markets/providers/types";
 import { fakeTimers, FakeWebSocket, fixture, jsonResponse, stubFetch } from "./fakes";
 
@@ -125,4 +125,48 @@ test("metric maps marketCapitalization", async () => {
   const s = stubFetch(() => jsonResponse(fixture("investing/finnhub-metric.json")));
   const p = finnhubProvider(TOKEN, { fetch: s.fetch, now: () => NOW });
   expect((await p.metric!({ symbol: "NOW", exchange: "US" })).marketCap).toBe(190000);
+});
+
+test("the pacer lets 50 calls through a minute and holds the 51st until the oldest leaves the window", async () => {
+  let clock = 0;
+  const waits: number[] = [];
+  const pace = pacer(50, 60_000, () => clock, async (ms) => void (waits.push(ms), (clock += ms)));
+  for (let n = 0; n < 50; n++) {
+    await pace();
+    clock += 100;
+  }
+  expect(waits).toEqual([]);
+  await pace();
+  expect(waits).toEqual([55_000]);
+  // Every REST call goes through it.
+  let paced = 0;
+  const f = stubFetch(() => jsonResponse(fixture("finnhub-quote.json")));
+  await finnhubProvider(TOKEN, { fetch: f.fetch, now: () => NOW, pace: async () => void paced++ }).quotes([AAPL, { symbol: "MSFT", exchange: "US" }]);
+  expect(paced).toBe(2);
+});
+
+test("earnings keep what came back before a 429, so the caller can save it and ask for the rest", async () => {
+  const f = stubFetch((url) =>
+    url.searchParams.get("symbol") === "QBTS"
+      ? new Response("Too Many Requests", { status: 429 })
+      : jsonResponse({ earningsCalendar: [{ date: "2026-11-09", hour: "amc", epsEstimate: null, symbol: url.searchParams.get("symbol") }] }),
+  );
+  const p = finnhubProvider(TOKEN, { fetch: f.fetch, now: () => NOW });
+  const e = await err(p.earnings!([{ symbol: "RKLB", exchange: "US" }, { symbol: "QBTS", exchange: "US" }, { symbol: "SOFI", exchange: "US" }], "2026-11-06", "2026-12-06"));
+  expect(e.kind).toBe("rate_limited");
+  expect(e.partial).toEqual({ done: ["RKLB"], rows: [{ key: "RKLB", date: "2026-11-09", hour: "amc", epsEstimate: null }], failed: [] });
+});
+
+test("one symbol's own error doesn't stop the symbols after it", async () => {
+  const f = stubFetch((url) =>
+    url.searchParams.get("symbol") === "QBTS"
+      ? new Response("oops", { status: 500 })
+      : jsonResponse({ earningsCalendar: [{ date: "2026-11-09", hour: "amc", epsEstimate: null, symbol: url.searchParams.get("symbol") }] }),
+  );
+  const p = finnhubProvider(TOKEN, { fetch: f.fetch, now: () => NOW });
+  const e = await err(p.earnings!(["QBTS", "RKLB", "SOFI"].map((symbol) => ({ symbol, exchange: "US" as const })), "2026-11-06", "2026-12-06"));
+  expect(e.kind).toBe("unavailable");
+  expect(e.partial!.done).toEqual(["RKLB", "SOFI"]);
+  expect(e.partial!.rows.map((r) => r.key)).toEqual(["RKLB", "SOFI"]);
+  expect(e.partial!.failed).toEqual([{ key: "QBTS", reason: "Finnhub returned an error (HTTP 500); Atrium will try again." }]);
 });

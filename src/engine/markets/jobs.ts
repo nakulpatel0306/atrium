@@ -7,10 +7,29 @@ import { etDate, etInstant } from "./calendar";
 export type Slot =
   | { at: string /* "HH:MM" ET */; days: "weekdays" | "daily" | number[] /* 0=Sun…6=Sat */ }
   | { everyMinutes: number; from: string; to: string; days: "weekdays" };
-export type Job = { name: string; slot: Slot; run(now: number): Promise<void> };
+// A step that couldn't do its work is returned rather than thrown, so the rest of the run still counts. Its status says
+// what brings it back:
+// - "off": its key isn't set; it runs again only when a key is added. A null reason keeps an optional source quiet.
+// - "skipped": it failed; catch-up runs it again.
+// - "waiting": it has its own catch-up (TSX closes) or heals by itself (the next day's previous close).
+// reason is shown on the data budget page.
+export type StepStatus = "off" | "skipped" | "waiting";
+export type Skipped = { step: string; reason: string | null; status?: StepStatus };
+type StepState = { status: StepStatus; reason: string | null };
+export type JobResult = void | { skipped: Skipped[] };
+// only: the steps to run, when catching up on skipped ones; every step otherwise.
+export type Job = { name: string; slot: Slot; run(now: number, only?: string[]): Promise<JobResult> };
 export type JobStatus = { name: string; lastRunAt: number | null; lastError: string | null; nextAt: number | null };
 
-type State = { ranFor: number | null; lastRunAt: number | null; lastError: string | null; attempts: number; lastAttemptAt: number | null; attemptFor?: number | null };
+type State = {
+  ranFor: number | null;
+  lastRunAt: number | null;
+  lastError: string | null;
+  attempts: number;
+  lastAttemptAt: number | null;
+  attemptFor?: number | null;
+  steps?: Record<string, StepState>;
+};
 
 const DAY_MS = 86_400_000;
 const LOOK_DAYS = 8;
@@ -56,6 +75,14 @@ export function nextSlot(now: number, slot: Slot): number | null {
   return null;
 }
 
+const stepsOf = (r: JobResult): Record<string, StepState> =>
+  Object.fromEntries((r && "skipped" in r ? r.skipped : []).map((x) => [x.step, { status: x.status ?? "skipped", reason: x.reason }]));
+// Reasons are kept per step, so a step that succeeds on a later run takes its reason with it.
+const errorOf = (steps: Record<string, StepState>): string | null => {
+  const reasons = [...new Set(Object.values(steps).flatMap((s) => (s.reason ? [s.reason] : [])))];
+  return reasons.length ? reasons.join(" ") : null;
+};
+
 export function createJobs(db: Database, jobs: Job[], now: () => number = Date.now) {
   const key = (name: string) => `markets.job.${name}`;
   const read = (name: string): State => {
@@ -66,8 +93,29 @@ export function createJobs(db: Database, jobs: Job[], now: () => number = Date.n
   const write = (name: string, s: State) =>
     db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key(name), JSON.stringify(s));
 
+  // runDue and catch-up runs never overlap, so a step isn't fetched twice at once.
+  let chain: Promise<unknown> = Promise.resolve();
+  const serial = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = chain.then(fn, fn);
+    chain = next.catch(() => {});
+    return next;
+  };
+
+  // Outside any slot: the given steps (or all), merged into the job's state; its slot bookkeeping is untouched.
+  const runNow = async (job: Job, at: number, only?: string[]): Promise<void> => {
+    const s = read(job.name);
+    try {
+      const fresh = stepsOf(await job.run(at, only));
+      const kept = only ? Object.fromEntries(Object.entries(s.steps ?? {}).filter(([k]) => !only.includes(k))) : {};
+      const steps = { ...kept, ...fresh };
+      write(job.name, { ...s, lastRunAt: at, lastError: errorOf(steps), steps });
+    } catch (e) {
+      write(job.name, { ...s, lastRunAt: at, lastError: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   return {
-    async runDue(at: number): Promise<string[]> {
+    runDue: (at: number): Promise<string[]> => serial(async () => {
       const ran: string[] = [];
       for (const job of jobs) {
         try {
@@ -78,8 +126,8 @@ export function createJobs(db: Database, jobs: Job[], now: () => number = Date.n
           if (attempts > 0 && s.lastAttemptAt !== null && at - s.lastAttemptAt < RETRY_MS) continue;
           ran.push(job.name);
           try {
-            await job.run(at);
-            write(job.name, { ranFor: slot, lastRunAt: at, lastError: null, attempts: 0, lastAttemptAt: at, attemptFor: null });
+            const steps = stepsOf(await job.run(at));
+            write(job.name, { ranFor: slot, lastRunAt: at, lastError: errorOf(steps), attempts: 0, lastAttemptAt: at, attemptFor: null, steps });
           } catch (e) {
             const n = attempts + 1;
             const message = e instanceof Error ? e.message : String(e);
@@ -93,6 +141,39 @@ export function createJobs(db: Database, jobs: Job[], now: () => number = Date.n
       // Pages read what the jobs stored; one change event lets an open dashboard pick it up.
       if (ran.length) bus.emit({ type: "changed" });
       return ran;
+    }),
+    // Each job's failed steps run again, and only those; with keys (engine start, a key added) also its "off" steps.
+    rerunSkipped: (at: number, keys = false): Promise<string[]> => serial(async () => {
+      const ran: string[] = [];
+      for (const job of jobs) {
+        const steps = Object.entries(read(job.name).steps ?? {})
+          .filter(([, v]) => v.status === "skipped" || (keys && v.status === "off"))
+          .map(([k]) => k);
+        if (!steps.length) continue;
+        ran.push(job.name);
+        await runNow(job, at, steps);
+      }
+      if (ran.length) bus.emit({ type: "changed" });
+      return ran;
+    }),
+    // A catch-up run of one job's steps, e.g. earnings dates that are missing or stale.
+    runNow: (name: string, at: number, only?: string[]): Promise<boolean> => serial(async () => {
+      const job = jobs.find((j) => j.name === name);
+      if (!job) return false;
+      await runNow(job, at, only);
+      bus.emit({ type: "changed" });
+      return true;
+    }),
+    steps: (name: string): Record<string, StepState> => read(name).steps ?? {},
+    // The slot instant the job last ran for.
+    ranFor: (name: string): number | null => read(name).ranFor,
+    // Set or clear one step's state from outside the job (catch-up saving the closes a step was waiting on).
+    mark: (name: string, step: string, state: StepState | null): void => {
+      const s = read(name);
+      const steps = { ...(s.steps ?? {}) };
+      if (state) steps[step] = state;
+      else delete steps[step];
+      write(name, { ...s, lastError: errorOf(steps), steps });
     },
     status(): JobStatus[] {
       const at = now();

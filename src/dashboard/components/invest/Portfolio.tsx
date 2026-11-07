@@ -38,6 +38,15 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
         <span className="inv-source" title={view.fx ? fxLabel(view.fx) : undefined}>
           <SourceTag s={view.total ? { ...view.total, source: view.mix ?? view.total.source } : null} missing="No prices yet" />
         </span>
+        {view.gain && (
+          <span className="inv-gain-total" title={view.gain.complete ? undefined : "Holdings without a book value or a price aren't counted."}>
+            <span className={toneOf(view.gain.cad)}>
+              {signedCadText(view.gain.cad, 0)}
+              {view.gain.pct !== null && ` (${signedPct(view.gain.pct)})`}
+            </span>{" "}
+            total gain on {cadText(view.gain.bookCad, 0)} invested{view.gain.complete ? "" : "*"}
+          </span>
+        )}
         {view.left && <span className="inv-left">{view.left}</span>}
       </header>
       {view.note && (
@@ -52,6 +61,7 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
           <span>Holding</span>
           <span>1 month</span>
           <span>Price · today</span>
+          <span>Weight</span>
           <span>Gain</span>
         </div>
         {view.holdings.map((h) => (
@@ -60,16 +70,19 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
             row={h}
             onOpen={() => openSymbol(spaceId, h.key)}
             extra={
-              <span className={`inv-gain ${toneOf(h.gainCadPct)}`}>
-                {h.gainCad !== null && h.gainCadPct !== null ? (
-                  <>
-                    <b>{signedCadText(h.gainCad, 0)}</b>
-                    <span>{signedPct(h.gainCadPct)}</span>
-                  </>
-                ) : (
-                  "—"
-                )}
-              </span>
+              <>
+                <span className="inv-weight">{h.weightPct !== null ? `${h.weightPct.toFixed(1)}%` : "—"}</span>
+                <span className={`inv-gain ${toneOf(h.gainCadPct)}`}>
+                  {h.gainCad !== null && h.gainCadPct !== null ? (
+                    <>
+                      <b>{signedCadText(h.gainCad, 0)}</b>
+                      <span>{signedPct(h.gainCadPct)}</span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </span>
+              </>
             }
           />
         ))}
