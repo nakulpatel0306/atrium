@@ -573,7 +573,13 @@ test("TFSA room: imported Wealthsimple TFSA deposits count, hand-logged entries 
   expect(tfsaRoom(db, spaceId, 2026)).toMatchObject({ source: "logged", contributed: 1000, left: 8500, from: "CA$9,500.00 on Jan 1 (you entered it) minus CA$1,000.00 contributed (entries you logged)." });
   importMoney(db, spaceId, previewMoney(csv("ws-activity-2026.csv")));
   const r = tfsaRoom(db, spaceId, 2026);
-  expect(r).toMatchObject({ source: "imported", contributed: 7000, left: 2500, headline: "CA$2,500.00 of TFSA room left for 2026.", todo: null });
+  expect(r).toMatchObject({
+    source: "imported",
+    contributed: 7000,
+    left: 2500,
+    headline: "CA$2,500.00 of TFSA room left for 2026.",
+    todo: "CA$1,000.00 you logged by hand isn't added, so nothing counts twice. If it went to a TFSA outside Wealthsimple, your room is that much lower.",
+  });
   expect(r.from).toMatch(/^CA\$9,500\.00 on Jan 1 \(you entered it\) minus CA\$7,000\.00 deposited \(your Wealthsimple activity, through [A-Z][a-z]{2} \d+\)\.$/);
   expect(roomTie(1234.5, "October", r)).toBe("You had CA$1,234.50 left over in October. You have CA$2,500.00 of TFSA room for 2026.");
   expect(roomTie(-5, "October", r)).toBeNull();
@@ -817,4 +823,20 @@ test("card data: the Luhn backstop checks a whole span, even one made of amount-
   }
   expect(mask("From 2026-10-01 to 2026-10-30.")).toBe("From 2026-10-01 to 2026-10-30.");
   expect(mask("Groceries CA$58.14 (CA$374.40 to CA$432.54)")).toBe("Groceries CA$58.14 (CA$374.40 to CA$432.54)");
+});
+
+test("e-transfers sent are left out of spending, and the recap says how much", () => {
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-01,E-TRANSFER SENT J SAMPLE,-1650\n2026-10-03,LOBLAWS,-80\n", { signs: "negative-out", account: "TD chequing" }));
+  const r = recap(db, spaceId, NOW, "2026-10")!;
+  expect(r.spent).toBe(80);
+  expect(r.eTransfers).toEqual({ count: 1, total: 1650 });
+  expect(recapFacts(r).join("\n")).toContain("CA$1,650.00 in 1 e-transfer sent was left out of spending.");
+});
+
+test("card data: rule and budget text is masked when it's saved", () => {
+  setRules(db, spaceId, [{ match: "ref 4111 1111 1111 1111", category: "Other" }]);
+  expect(listRules(db, spaceId)).toEqual([{ match: "ref ··1111", category: "Other" }]);
+  setBudget(db, spaceId, "Card 4111111111111111", 5);
+  expect(listBudgets(db, spaceId).map((b) => b.category)).toEqual(["Card ··1111"]);
+  expect(budgetRows([{ category: "Dining", limit: 100 }], [{ category: "Dining", amount: 79.9 }])[0]!.pct).toBe(79);
 });

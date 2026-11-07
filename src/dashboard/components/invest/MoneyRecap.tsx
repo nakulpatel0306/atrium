@@ -40,6 +40,7 @@ export function MoneyRecap({ spaceId, view, onMonth }: { spaceId: string; view: 
         <span className="faint">
           Based on {r.basis.count} {r.basis.count === 1 ? "transaction" : "transactions"}, {shortDate(r.basis.from)} to {shortDate(r.basis.to)}
           {r.moved.count > 0 && ` · ${r.moved.count} transfers left out`}
+          {r.eTransfers.count > 0 && ` · ${cadText(r.eTransfers.total)} in e-transfers left out`}
         </span>
       </div>
       {view.coverLine && <p className="money-cover">{view.coverLine}</p>}

@@ -28,9 +28,10 @@ export function importReminder(db: Database, spaceId: string, now: number): void
 export function moneyDaily(db: Database, now: number): void {
   const today = etDate(now);
   if (getSetting(db, "money.lastDaily") === today) return;
-  setSetting(db, "money.lastDaily", today);
   for (const space of listSpaces(db).filter((s) => s.kind === "markets")) {
     importReminder(db, space.id, now);
     checkBudgets(db, space.id, now);
   }
+  // Only once the day's checks ran, so one that throws is tried again on the next minute's tick.
+  setSetting(db, "money.lastDaily", today);
 }

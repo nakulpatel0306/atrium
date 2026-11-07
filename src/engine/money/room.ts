@@ -52,7 +52,9 @@ export function tfsaRoom(db: Database, spaceId: string, year: number): Room {
         ? "Import your Wealthsimple activity export so this year's deposits count."
         : over > 0
           ? "CRA charges 1% a month on the excess until it's withdrawn."
-          : null;
+          : source === "imported" && status.contributed > 0
+            ? `${cad(status.contributed)} you logged by hand isn't added, so nothing counts twice. If it went to a TFSA outside Wealthsimple, your room is that much lower.`
+            : null;
   return { year, roomJan1: status.roomJan1, contributed, left, over, source, through, headline, from, todo };
 }
 

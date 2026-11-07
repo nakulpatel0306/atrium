@@ -22,6 +22,8 @@ export type Recap = {
   notable: Notable[];
   basis: { count: number; from: string; to: string };
   moved: { count: number; total: number };
+  // Interac e-transfers sent (the Transfers category): left out of spending, so rent paid that way is said aloud.
+  eTransfers: { count: number; total: number };
   cover: MonthCover;
 };
 
@@ -38,21 +40,26 @@ export const monthYear = (m: string) => monthYearFmt.format(Date.parse(`${m}-15T
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 export const dayText = (d: string) => dayFmt.format(Date.parse(`${d}T12:00:00Z`));
 
-type Totals = { spent: number; income: number; cats: Map<string, number>; spend: (Tx & { category: string })[] };
+type Totals = { spent: number; income: number; cats: Map<string, number>; spend: (Tx & { category: string })[]; sent: { count: number; total: number } };
 
 function totals(rows: Tx[], month: string, rules: ReturnType<typeof listRules>): Totals {
   const cats = new Map<string, number>();
   const spend: Totals["spend"] = [];
+  const sent = { count: 0, total: 0 };
   let income = 0;
   for (const t of rows) {
     if (!t.date.startsWith(month)) continue;
     const category = categorize(t.description, rules);
     if (t.amount > 0 && category !== "Transfers") income += t.amount;
+    if (t.amount < 0 && category === "Transfers") {
+      sent.count++;
+      sent.total = round2(sent.total - t.amount);
+    }
     if (t.amount >= 0 || NOT_SPENDING.has(category)) continue;
     cats.set(category, (cats.get(category) ?? 0) - t.amount);
     spend.push({ ...t, category });
   }
-  return { spent: round2([...cats.values()].reduce((a, b) => a + b, 0)), income: round2(income), cats, spend };
+  return { spent: round2([...cats.values()].reduce((a, b) => a + b, 0)), income: round2(income), cats, spend, sent };
 }
 
 // The usual charge at each merchant before this month: a charge over 3× it is worth a mention.
@@ -151,6 +158,7 @@ export function recap(db: Database, spaceId: string, now: number, month: string)
     notable: notable(rows, cur, month),
     basis: { count: inMonth.length, from: inMonth[0]!.date, to: inMonth.at(-1)!.date },
     moved: { count: movedRows.length, total: round2(movedRows.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0)) },
+    eTransfers: cur.sent,
     cover,
   };
 }
@@ -170,6 +178,7 @@ export function recapFacts(r: Recap): string[] {
   if (r.changes.length) out.push(`Biggest category changes: ${r.changes.map((c) => `${c.category} ${c.delta > 0 ? "up" : "down"} ${cad(c.delta)} (${cad(c.before)} to ${cad(c.now)})`).join("; ")}.`);
   if (r.notable.length) out.push(`Notable charges: ${r.notable.map((n) => `${maskNumbers(n.merchant)} ${cad(n.amount)} on ${n.date} (${n.why.replace(/\.$/, "")})`).join("; ")}.`);
   if (r.moved.count) out.push(`${r.moved.count} transfers between Nakul's own accounts were left out.`);
+  if (r.eTransfers.count) out.push(`${cad(r.eTransfers.total)} in ${r.eTransfers.count === 1 ? "1 e-transfer" : `${r.eTransfers.count} e-transfers`} sent was left out of spending.`);
   out.push(`Based on ${r.basis.count} transactions from ${r.basis.from} to ${r.basis.to}.`);
   const gap = coverText(r.cover);
   if (gap) out.push(gap);

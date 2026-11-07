@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { etDate } from "../markets/calendar";
 import { listRules } from "./categories";
+import { maskNumbers } from "./import";
 import { shiftMonth } from "./coverage";
 import { addNudge, hasNudge } from "./nudges";
 import { monthName } from "./recap";
@@ -22,7 +23,7 @@ export function listBudgets(db: Database, spaceId: string): Budget[] {
 
 // A limit of null (or 0) removes the budget.
 export function setBudget(db: Database, spaceId: string, category: string, limit: number | null): void {
-  const c = category.trim();
+  const c = maskNumbers(category.trim());
   if (!c || c.length > MAX_CATEGORY) throw new Error("Pick a category for this budget.");
   if (limit === null || limit === 0) db.query("DELETE FROM money_budgets WHERE space_id = ? AND category = ?").run(spaceId, c);
   else {
@@ -37,7 +38,8 @@ export function setBudget(db: Database, spaceId: string, category: string, limit
 export function budgetRows(budgets: Budget[], spending: { category: string; amount: number }[]): BudgetRow[] {
   return budgets.map((b) => {
     const spent = spending.find((s) => s.category === b.category)?.amount ?? 0;
-    return { ...b, spent, pct: b.limit > 0 ? Math.round((spent / b.limit) * 100) : 0 };
+    // Rounded down, so 79.6% doesn't read as 80% and send the heads-up early.
+    return { ...b, spent, pct: b.limit > 0 ? Math.floor((spent / b.limit) * 100) : 0 };
   });
 }
 
