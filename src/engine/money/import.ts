@@ -237,7 +237,8 @@ export function previewMoney(text: string, opts: PreviewOptions = {}): MoneyPrev
   const empty: MoneyPreview = { format: "unknown", headers: [], mapping: {}, signs: "negative-out", dates, rows: [], skipped: [], warnings, guessed, accounts: [], bank: generic, account: null };
   if (!all.length) return { ...empty, warnings: ["That file is empty."] };
 
-  let headers = all[0]!;
+  // Headers go back to the dashboard in the preview, so a headerless file's first row is masked like any row.
+  let headers = all[0]!.map((h) => maskNumbers(h));
   let body = all.slice(1);
   if (body.length > MAX_ROWS) {
     warnings.push(`That file has more than ${MAX_ROWS.toLocaleString("en-US")} rows; Atrium imported the first ${MAX_ROWS.toLocaleString("en-US")}.`);

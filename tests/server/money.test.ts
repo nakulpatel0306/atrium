@@ -118,3 +118,66 @@ test("an oversized body is refused before it's parsed, with or without a Content
   expect([err.status, err.message]).toEqual([413, "too big"]);
   expect(pulled).toBeLessThan(40);
 });
+
+// ---- Plan 14 ----
+
+test("preview names the bank and the account; the account can be picked", async () => {
+  const p = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv") })).json();
+  expect(p).toMatchObject({ bank: { id: "td", confidence: "medium" }, account: "TD credit card", choices: ["TD chequing", "TD credit card", "Amex", "Wealthsimple Cash", "Imported"] });
+  const picked = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv"), account: "TD chequing" })).json();
+  expect(picked.accounts).toEqual(["TD chequing"]);
+});
+
+test("the view carries the recap, subscriptions, TFSA room and budgets; transfers, budgets and Explain have routes", async () => {
+  for (const f of ["td-chequing.csv", "td-credit.csv", "amex.csv", "ws-cash.csv"]) await call("POST", money("/import"), { csv: csv(f) });
+  let v = await (await fetch(base + money())).json();
+  expect(v.month).toBe("2026-10");
+  expect(v.recap.lines[0]).toStartWith("You spent CA$");
+  expect(v.subscriptions.list.length).toBeGreaterThan(5);
+  expect(v.room.headline).toBe("Your 2026 TFSA room isn't set yet.");
+  const best = v.transactions.find((t: { description: string }) => t.description.startsWith("BEST BUY"));
+  expect(await (await call("POST", money("/transfer"), { id: best.id, transfer: true })).json()).toEqual({ ok: true });
+  v = await (await fetch(base + money())).json();
+  expect(v.transactions.find((t: { id: string }) => t.id === best.id)).toMatchObject({ transfer: "marked", mark: 1 });
+  expect((await call("POST", money("/transfer"), { id: best.id, transfer: "yes" })).status).toBe(400);
+  expect(await (await call("PUT", money("/budgets"), { category: "Dining", limit: 50 })).json()).toEqual([{ category: "Dining", limit: 50 }]);
+  v = await (await fetch(base + money())).json();
+  expect(v.budgets[0]).toMatchObject({ category: "Dining", limit: 50 });
+  expect(await (await call("PUT", money("/budgets"), { category: "Dining", limit: null })).json()).toEqual([]);
+  const ex = await call("POST", money("/explain"), { month: "2026-10" });
+  expect(ex.status).toBe(200);
+  expect(kicks).toBeGreaterThan(0);
+  expect((await (await call("POST", money("/explain"), { month: "2026-10" })).json()).error).toBe("Claude is already looking at your money.");
+  expect(fetchCalls).toEqual([]);
+});
+
+test("budget heads-ups and the reminder can be dismissed from the dashboard; summary carries them", async () => {
+  await call("POST", money("/import"), { csv: "Date,Description,Amount\n2026-11-02,STARBUCKS,-90\n", signs: "negative-out" });
+  await call("PUT", money("/budgets"), { category: "Dining", limit: 100 });
+  const s = await (await fetch(`${base}/api/summary`)).json();
+  expect(s.nudges).toEqual([expect.objectContaining({ kind: "budget", title: "Dining is at 90% of its November budget", path: `/space/${spaceId}?tab=money` })]);
+  expect(s.needsYou).toBe(0);
+  expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(200);
+  expect((await (await fetch(`${base}/api/summary`)).json()).nudges).toEqual([]);
+  expect((await call("POST", money(`/nudges/${s.nudges[0].id}/dismiss`))).status).toBe(400);
+});
+
+test("card data: uploaded CSV text never comes back in an error, and isn't logged", async () => {
+  const errors: string[] = [];
+  const spy = console.error;
+  console.error = (...a: unknown[]) => void errors.push(a.join(" "));
+  try {
+    const card = "4111 1111 1111 1111";
+    for (const body of [{ csv: `Name,Colour\n${card},Red\n` }, { csv: `${card}\n` }, { csv: `Date,Description,Amount\nnot a date,${card},x\n` }]) {
+      for (const path of ["/preview", "/import"]) {
+        const res = await call("POST", money(path), body);
+        const text = await res.text();
+        expect(text.replace(/\s/g, "")).not.toContain("4111111111111111");
+        expect(text).not.toContain(card);
+      }
+    }
+    expect(errors.join("\n")).not.toContain("4111");
+  } finally {
+    console.error = spy;
+  }
+});
