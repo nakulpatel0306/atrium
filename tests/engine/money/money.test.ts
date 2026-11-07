@@ -539,3 +539,128 @@ test("subscriptions: a yearly charge counts as a twelfth a month, and a stopped 
   expect(s.list.map((x) => [x.merchant, x.cadence, x.perMonth, x.next])).toEqual([["Adobe Annual", "yearly", 19.99, "2026-10-03"]]);
   expect(s.perYear).toBe(239.88);
 });
+
+// ---- TFSA room ----
+import { roomTie, tfsaRoom } from "../../../src/engine/money/room";
+import { addEntry, setRoom } from "../../../src/engine/markets/tfsa";
+
+test("TFSA room: says what to enter or import when it can't tell", () => {
+  expect(tfsaRoom(db, spaceId, 2026)).toMatchObject({ left: null, source: "none", headline: "Your 2026 TFSA room isn't set yet.", todo: "Enter your Jan 1 room from CRA My Account." });
+  setRoom(db, 2026, 7000);
+  expect(tfsaRoom(db, spaceId, 2026)).toMatchObject({ left: 7000, source: "none", todo: "Import your Wealthsimple activity export so this year's deposits count." });
+});
+
+test("TFSA room: imported Wealthsimple TFSA deposits count, hand-logged entries only when there are none", () => {
+  setRoom(db, 2026, 9500);
+  addEntry(db, { date: "2026-02-01", kind: "contribution", amount: 1000 });
+  expect(tfsaRoom(db, spaceId, 2026)).toMatchObject({ source: "logged", contributed: 1000, left: 8500, from: "CA$9,500.00 on Jan 1 (you entered it) minus CA$1,000.00 contributed (entries you logged)." });
+  importMoney(db, spaceId, previewMoney(csv("ws-activity-2026.csv")));
+  const r = tfsaRoom(db, spaceId, 2026);
+  expect(r).toMatchObject({ source: "imported", contributed: 7000, left: 2500, headline: "CA$2,500.00 of TFSA room left for 2026.", todo: null });
+  expect(r.from).toMatch(/^CA\$9,500\.00 on Jan 1 \(you entered it\) minus CA\$7,000\.00 deposited \(your Wealthsimple activity, through [A-Z][a-z]{2} \d+\)\.$/);
+  expect(roomTie(1234.5, "October", r)).toBe("You had CA$1,234.50 left over in October. You have CA$2,500.00 of TFSA room for 2026.");
+  expect(roomTie(-5, "October", r)).toBeNull();
+  setRoom(db, 2026, 6000);
+  expect(tfsaRoom(db, spaceId, 2026)).toMatchObject({ over: 1000, headline: "Over your 2026 TFSA room by CA$1,000.00.", todo: "CRA charges 1% a month on the excess until it's withdrawn." });
+});
+
+// ---- Budgets, nudges and the monthly reminder ----
+import { budgetRows, checkBudgets, listBudgets, setBudget } from "../../../src/engine/money/budgets";
+import { activeNudges, dismissNudge } from "../../../src/engine/money/nudges";
+import { importReminder, moneyDaily } from "../../../src/engine/money/reminder";
+
+const nudgeRows = () => db.query("SELECT kind, key, title, body FROM money_nudges ORDER BY rowid").all() as { kind: string; key: string; title: string; body: string }[];
+
+test("budgets: set inline, changed and removed, and checked against the month", () => {
+  setBudget(db, spaceId, "Dining", 400);
+  setBudget(db, spaceId, "Groceries", 450.5);
+  setBudget(db, spaceId, "Dining", 380);
+  expect(listBudgets(db, spaceId)).toEqual([{ category: "Dining", limit: 380 }, { category: "Groceries", limit: 450.5 }]);
+  setBudget(db, spaceId, "Groceries", null);
+  expect(listBudgets(db, spaceId)).toEqual([{ category: "Dining", limit: 380 }]);
+  expect(() => setBudget(db, spaceId, "Dining", -1)).toThrow("Use an amount like 400.");
+  expect(() => setBudget(db, spaceId, " ", 5)).toThrow("Pick a category for this budget.");
+  expect(budgetRows([{ category: "Dining", limit: 200 }], [{ category: "Dining", amount: 150 }])).toEqual([{ category: "Dining", limit: 200, spent: 150, pct: 75 }]);
+});
+
+test("budget heads-ups: once at 80% and once at 100% per category per month, never twice", () => {
+  const at = Date.parse("2026-10-20T15:00:00Z");
+  setBudget(db, spaceId, "Dining", 100);
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-02,STARBUCKS,-85\n", { signs: "negative-out" }));
+  expect(checkBudgets(db, spaceId, at)).toBe(1);
+  expect(checkBudgets(db, spaceId, at)).toBe(0);
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-09,TIM HORTONS,-30\n", { signs: "negative-out" }));
+  expect(checkBudgets(db, spaceId, at)).toBe(1);
+  expect(checkBudgets(db, spaceId, at)).toBe(0);
+  expect(nudgeRows()).toEqual([
+    { kind: "budget", key: "budget:2026-10:Dining:80", title: "Dining is at 85% of its October budget", body: "CA$85.00 of CA$100.00 in October." },
+    { kind: "budget", key: "budget:2026-10:Dining:100", title: "Dining reached its October budget", body: "CA$115.00 of CA$100.00 in October." },
+  ]);
+});
+
+test("budget heads-ups: crossing 100% at once sends only that one, and last month counts after it ends", () => {
+  setBudget(db, spaceId, "Groceries", 100);
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-28,LOBLAWS,-140\n", { signs: "negative-out" }));
+  expect(checkBudgets(db, spaceId, Date.parse("2026-11-02T15:00:00Z"))).toBe(1);
+  expect(nudgeRows().map((n) => n.key)).toEqual(["budget:2026-10:Groceries:100"]);
+  // Two months later it's history, not a heads-up.
+  db.query("DELETE FROM money_nudges").run();
+  expect(checkBudgets(db, spaceId, Date.parse("2026-12-15T15:00:00Z"))).toBe(0);
+});
+
+test("budget heads-ups show for two days; nudges never carry a card number", () => {
+  const at = Date.parse("2026-10-20T15:00:00Z");
+  setBudget(db, spaceId, "Other", 10);
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-02,GADGET,-50\n", { signs: "negative-out" }));
+  checkBudgets(db, spaceId, at);
+  expect(activeNudges(db, at + 3600_000)).toMatchObject([{ kind: "budget", spaceName: "Investing", path: `/space/${spaceId}?tab=money`, title: "Other reached its October budget" }]);
+  expect(activeNudges(db, at + 3 * 86_400_000)).toEqual([]);
+  for (const n of nudgeRows()) expect(isMasked(`${n.title} ${n.body}`)).toBe(true);
+});
+
+test("the monthly reminder: on the 2nd, once, naming the accounts not imported for last month", () => {
+  for (const f of ["td-chequing.csv", "td-credit.csv", "amex.csv", "ws-cash.csv"]) importMoney(db, spaceId, previewMoney(csv(f)));
+  // November 1st: too early.
+  importReminder(db, spaceId, Date.parse("2026-11-01T15:00:00Z"));
+  expect(nudgeRows()).toEqual([]);
+  // October is in for every account: nothing to say.
+  importReminder(db, spaceId, Date.parse("2026-11-02T15:00:00Z"));
+  expect(nudgeRows()).toEqual([]);
+  // December 2nd: November is missing everywhere.
+  const dec2 = Date.parse("2026-12-02T15:00:00Z");
+  importReminder(db, spaceId, dec2);
+  importReminder(db, spaceId, dec2 + 3600_000);
+  expect(nudgeRows()).toEqual([
+    { kind: "import", key: "import:2026-11", title: "Time to import November", body: "Amex, TD chequing, TD credit card and Wealthsimple Cash aren't imported for November yet." },
+  ]);
+  expect(activeNudges(db, dec2 + 5 * 86_400_000)).toHaveLength(1);
+});
+
+test("the monthly reminder clears itself once the import is in, and stays gone when dismissed", () => {
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-01,COFFEE,-4\n2026-10-31,COFFEE,-4\n", { account: "Amex", signs: "negative-out" }));
+  const dec2 = Date.parse("2026-12-02T15:00:00Z");
+  importReminder(db, spaceId, dec2);
+  expect(activeNudges(db, dec2).map((n) => n.body)).toEqual(["Amex isn't imported for November yet."]);
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-11-02,COFFEE,-4\n2026-11-29,COFFEE,-4\n", { account: "Amex", signs: "negative-out" }));
+  importReminder(db, spaceId, dec2 + 1000);
+  expect(activeNudges(db, dec2 + 1000)).toEqual([]);
+  db.query("DELETE FROM money_nudges").run();
+  db.query("DELETE FROM money_transactions WHERE date LIKE '2026-11%'").run();
+  db.query("DELETE FROM money_imports WHERE first_date LIKE '2026-11%'").run();
+  importReminder(db, spaceId, dec2);
+  const [n] = activeNudges(db, dec2);
+  dismissNudge(db, n!.id, dec2);
+  importReminder(db, spaceId, dec2 + 86_400_000);
+  expect(activeNudges(db, dec2 + 86_400_000)).toEqual([]);
+  expect(() => dismissNudge(db, n!.id, dec2)).toThrow("That reminder is already gone. Refresh the page.");
+});
+
+test("nothing to remind about before the first import; the daily check runs once a day", () => {
+  moneyDaily(db, Date.parse("2026-12-02T15:00:00Z"));
+  expect(nudgeRows()).toEqual([]);
+  importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-01,COFFEE,-4\n2026-10-31,COFFEE,-4\n", { account: "Amex", signs: "negative-out" }));
+  moneyDaily(db, Date.parse("2026-12-02T16:00:00Z"));
+  expect(nudgeRows()).toEqual([]);
+  moneyDaily(db, Date.parse("2026-12-03T16:00:00Z"));
+  expect(nudgeRows().map((n) => n.key)).toEqual(["import:2026-11"]);
+});

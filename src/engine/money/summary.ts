@@ -5,7 +5,7 @@ import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
 import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
 import { maskNumbers } from "./import";
-import { counted, txs, type Tx } from "./rows";
+import { counted, spendingIn, txs, type Tx } from "./rows";
 
 
 export type Recurring = { merchant: string; amount: number; count: number; last: string; next: string };
@@ -153,21 +153,6 @@ function asks(db: Database, spaceId: string): MoneyView["asks"] {
     return { ...w, question: t?.detail ?? "", status: (t?.status === "failed" ? "failed" : "done") as "done" | "failed" };
   });
   return [...open, ...done].slice(0, 3);
-}
-
-function spendingIn(bank: Tx[], month: string | null, rules: Rule[]) {
-  const inMonth = month ? bank.filter((t) => t.date.startsWith(month)) : [];
-  const cats = new Map<string, { amount: number; count: number }>();
-  let income = 0;
-  for (const t of inMonth) {
-    const category = categorize(t.description, rules);
-    if (t.amount > 0 && category !== "Transfers") income += t.amount;
-    if (t.amount >= 0 || NOT_SPENDING.has(category)) continue;
-    const c = cats.get(category) ?? { amount: 0, count: 0 };
-    cats.set(category, { amount: c.amount - t.amount, count: c.count + 1 });
-  }
-  const spending = [...cats.entries()].map(([category, c]) => ({ category, amount: round2(c.amount), count: c.count })).sort((a, b) => b.amount - a.amount);
-  return { spending, spent: round2(spending.reduce((s, c) => s + c.amount, 0)), income: round2(income) };
 }
 
 export function moneyView(db: Database, spaceId: string, now: number, month?: string): MoneyView {
