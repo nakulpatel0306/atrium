@@ -31,6 +31,7 @@ import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/
 import { tempHome, tempRepo } from "../helpers";
 import { readdirSync } from "node:fs";
 import { config } from "../../src/engine/config";
+import { claudeAdapter } from "../../src/engine/agents/claude";
 import { importMoney, isMasked, previewMoney } from "../../src/engine/money/import";
 import { requestExplain, requestMoneyAsk } from "../../src/engine/money/summary";
 import { isPrivate } from "../../src/engine/spaces";
@@ -1520,6 +1521,30 @@ describe("markets spaces", () => {
     expect(calls[0]!.prompt).not.toContain("Holdings:");
     expect(isMasked(calls[0]!.prompt)).toBe(true);
   });
+
+  test("card data: a money question over his four bank files reaches the Claude CLI, tool-less and masked", async () => {
+    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
+    for (const f of ["td-chequing.csv", "td-credit.csv", "amex.csv", "ws-cash.csv"]) importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money", f), "utf8")));
+    const dir = mkdtempSync(join(tmpdir(), "atrium-cli-"));
+    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
+    process.env.FAKE_CLAUDE_STDIN = join(dir, "stdin.txt");
+    process.env.FAKE_CLAUDE_TEXT = "Rent was the biggest part.";
+    cleanups.push(() => {
+      delete process.env.FAKE_CLAUDE_ARGV;
+      delete process.env.FAKE_CLAUDE_STDIN;
+      delete process.env.FAKE_CLAUDE_TEXT;
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const task = requestMoneyAsk(db, space.id, "Where did my money go last month?");
+    marketsRunner(claudeAdapter(join(import.meta.dir, "../fixtures/fake-claude.ts")));
+    await waitFor(() => ["done", "failed", "blocked"].includes(getTask(db, task.id)!.status), 15000);
+    expect(getTask(db, task.id)!.status).toBe("done");
+    const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");
+    expect(prompt).toContain("Bank and card: 100 transactions from Aug 1, 2026 to Oct 30, 2026");
+    expect(isMasked(prompt)).toBe(true);
+    const argv = JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")) as string[];
+    expect(argv[argv.indexOf("--tools") + 1]).toBe("");
+  }, 20000);
 
   test("card data: a money task whose prompt isn't masked never reaches the agent", async () => {
     const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });

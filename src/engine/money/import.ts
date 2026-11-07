@@ -145,17 +145,49 @@ function isDate(part: string): boolean {
   return y1 ? realDate(+y1, +m1!, +d1!) : realDate(+y2!, +a2!, +b2!) || realDate(+y2!, +b2!, +a2!);
 }
 
+const TIME = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+// A North American phone number: (416) 555-0199, 416 555-0199 or 416-555-0199. The cluster starts at its first digit.
+const PHONE = /^\d{3}\)?[ -]?\d{3}-\d{4}$/;
+const MONTHS_RE = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
+// "Oct 30, 2026": the cluster is "30, 2026" and the month name sits just before it.
+const MONTH_BEFORE = new RegExp(`(?:^|[^\\p{L}])(${MONTHS_RE})[a-z]*\\.?\\s+$`, "iu");
+const DAY_YEAR = /^(\d{1,2}),?\s+(\d{4})$/;
+const CARD_MIN = 13;
+
 const partsOf = (cluster: string) =>
   cluster
-    .split(/[^\d.,/-]+/)
-    .map((p) => p.replace(/^[.,/-]+|[.,/-]+$/g, ""))
+    .split(/[^\d.,/:-]+/)
+    .map((p) => p.replace(/^[.,/:-]+|[.,/:-]+$/g, ""))
     .filter(Boolean);
 
-function safeCluster(cluster: string): boolean {
-  if (cluster.replace(/\D/g, "").length < 6) return true;
+// Safe when short; or one real date, one amount or one phone number; or real dates with times beside them, at most
+// one amount, and (if it's too short to be a card) a 1–2 digit number such as a store's.
+function safeCluster(cluster: string, before = ""): boolean {
+  const digits = cluster.replace(/\D/g, "").length;
+  if (digits < 6) return true;
+  if (PHONE.test(cluster)) return true;
+  const md = cluster.match(DAY_YEAR);
+  const month = before.match(MONTH_BEFORE);
+  if (md && month && realDate(+md[2]!, monthName(month[1]!)!, +md[1]!)) return true;
   const parts = partsOf(cluster);
   const amounts = parts.filter((p) => AMOUNT.test(p)).length;
-  return parts.every((p) => isDate(p) || AMOUNT.test(p)) && (parts.length === 1 || amounts <= 1);
+  const dated = parts.some(isDate);
+  const ok = (p: string) => isDate(p) || AMOUNT.test(p) || (dated && TIME.test(p)) || (dated && digits < CARD_MIN && /^\d{1,2}$/.test(p));
+  return parts.every(ok) && (parts.length === 1 || amounts <= 1);
+}
+
+// Where each real date (or time) sits in a span's digits, so a Luhn window that starts or ends inside one, or is made
+// of nothing but them, is skipped: a card number never begins halfway through a date.
+function datedRanges(span: string): [number, number][] {
+  const out: [number, number][] = [];
+  let at = 0;
+  for (const m of span.matchAll(/[\d.,/:-]+/g)) {
+    const part = m[0].replace(/^[.,/:-]+|[.,/:-]+$/g, "");
+    const n = part.replace(/\D/g, "").length;
+    if (isDate(part) || TIME.test(part)) out.push([at, at + n]);
+    at += m[0].replace(/\D/g, "").length;
+  }
+  return out;
 }
 
 // A gap joins two digits unless it's too long, holds a letter, or holds Atrium's own "··" mask mark (so masked
@@ -202,10 +234,18 @@ function luhnBackstop(s: string, join: (gap: string) => boolean): string {
     while (j + 1 < at.length && join(s.slice(at[j]! + 1, at[j + 1]!))) j++;
     const span = s.slice(at[i]!, at[j]! + 1);
     const digits = span.replace(/\D/g, "");
-    const harmless = isDate(span) || AMOUNT.test(span);
+    const harmless = isDate(span) || AMOUNT.test(span) || PHONE.test(span);
+    const dated = datedRanges(span);
+    const splits = (x: number) => dated.some(([a, b]) => x > a && x < b);
+    // A window made only of whole dates and times is a date range ("10/01/2026 TO 10/31/2026"), not a card.
+    const onlyDates = (k: number, end: number) => {
+      let x = k;
+      for (const [a, b] of dated) if (a === x && b <= end) x = b;
+      return x === end;
+    };
     let card = false;
     for (let len = LUHN_MIN; !harmless && !card && len <= Math.min(LUHN_MAX, digits.length); len++) {
-      for (let k = 0; k + len <= digits.length && !card; k++) card = luhn(digits.slice(k, k + len));
+      for (let k = 0; k + len <= digits.length && !card; k++) card = !splits(k) && !splits(k + len) && !onlyDates(k, k + len) && luhn(digits.slice(k, k + len));
     }
     out += s.slice(from, at[i]!) + (card ? last4(span) : span);
     from = at[j]! + 1;
@@ -240,7 +280,7 @@ export function maskNumbers(input: string): string {
     const start = digits[i]!;
     const end = digits[j]! + 1;
     const cluster = s.slice(start, end);
-    out += s.slice(at, start) + (safeCluster(cluster) ? cluster : last4(cluster));
+    out += s.slice(at, start) + (safeCluster(cluster, s.slice(Math.max(0, start - 12), start)) ? cluster : last4(cluster));
     at = end;
     i = j + 1;
   }

@@ -29,6 +29,7 @@ import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./ha
 import { newId } from "./ids";
 import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
 import { isMasked, maskNumbers } from "./money/import";
+import { remaskTranscript } from "./money/remask";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
 import { verdictOf } from "./verdict";
@@ -482,6 +483,9 @@ export function createRunner(deps: {
 
     // Claude's answer to a money question is masked before anything saves it: the task, the review, the write-up.
     if (task.purpose === "money") result = result.status === "ok" ? { ...result, summary: maskNumbers(result.summary) } : { ...result, message: maskNumbers(result.message) };
+    // Its transcript is masked again as one text once the run ends: a number written across several chunks was only
+    // masked piece by piece on the way in.
+    if (task.purpose === "money") remaskTranscript(transcript.path);
 
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
     // below can block or discard it.

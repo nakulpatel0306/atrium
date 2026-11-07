@@ -7,7 +7,10 @@ import { bus } from "../events";
 export type TransferWhy = "marked" | "known" | "pair";
 export type TransferTx = { id: string; date: string; account: string; description: string; amount: number; kind: string; transfer: number | null };
 
+// A pair with a known transfer description on either side may be up to 3 days apart; any other same-amount pair
+// only within a day.
 const PAIR_DAYS = 3;
+const PLAIN_PAIR_DAYS = 1;
 const DAY_MS = 86_400_000;
 // Descriptions that name a payment or top-up between accounts. One that names a bank only counts when an account at
 // that bank is among his imports; the card's own "thank you" line needs a second account of his to come from.
@@ -63,7 +66,11 @@ export function transfers(rows: TransferTx[]): Map<string, TransferWhy> {
   for (const t of rows) {
     if (t.amount >= 0 || t.transfer === 0) continue;
     const candidates = (incoming.get(Math.round(-t.amount * 100)) ?? []).filter(
-      (c) => !used.has(c.id) && c.account !== t.account && Math.abs(dayOf(c.date) - dayOf(t.date)) <= PAIR_DAYS && pairable(t, c),
+      (c) =>
+        !used.has(c.id) &&
+        c.account !== t.account &&
+        Math.abs(dayOf(c.date) - dayOf(t.date)) <= (shaped.has(t.id) || shaped.has(c.id) ? PAIR_DAYS : PLAIN_PAIR_DAYS) &&
+        pairable(t, c),
     );
     const match = candidates.sort((a, b) => Math.abs(dayOf(a.date) - dayOf(t.date)) - Math.abs(dayOf(b.date) - dayOf(t.date)))[0];
     if (!match) continue;

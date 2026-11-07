@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fingerprintOf, legacyMask, maskNumbers, storeRow, type MoneyRow } from "./import";
 
 // The highest row already checked; rows written after it (by anything but today's importer) are checked on next open.
@@ -8,20 +9,22 @@ type Row = { id: string; space_id: string; source: "bank" | "wealthsimple"; acco
 
 // Once: every money row stored by an earlier masker goes through today's, fingerprints are rebuilt from the masked
 // rows, and a row the old masker stored with a date hidden ("UBER TRIP ··1001") is dropped when the same transaction
-// is also here with its date ("UBER TRIP 2026-10-01"). Import records, reminders, budgets and rules are re-masked too.
+// is also here with its date ("UBER TRIP 2026-10-01"). Import records, reminders, budgets, rules and the answers to
+// earlier money asks are re-masked too.
 // Safe to run again and on an empty table. Later opens only re-check rows added since.
-export function remaskMoney(db: Database): void {
+// True when it changed or deleted anything, so the caller can push the old text out of the WAL and free pages.
+export function remaskMoney(db: Database): boolean {
   const done = db.query("SELECT value FROM settings WHERE key = ?").get(REMASK_KEY) as { value: string } | null;
   const top = (db.query("SELECT COALESCE(MAX(rowid), 0) AS n FROM money_transactions").get() as { n: number }).n;
   const mark = (n: number) => db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(REMASK_KEY, String(n));
   if (done) {
     const since = Number(done.value);
-    if (top > since) db.transaction(() => recheck(db, since, top, mark))();
-    return;
+    return top > since ? db.transaction(() => recheck(db, since, top, mark))() : false;
   }
-  db.transaction(() => {
+  return db.transaction(() => {
     const rows = db.query("SELECT id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol FROM money_transactions ORDER BY rowid").all() as Row[];
     const clean = rows.map((r) => ({ ...r, ...storeRow({ ...r, kind: r.kind as MoneyRow["kind"] }) }));
+    let changed = clean.some((c, i) => c.account !== rows[i]!.account || c.description !== rows[i]!.description || c.merchant !== rows[i]!.merchant || c.symbol !== rows[i]!.symbol);
 
     // A legacy twin: same space, source, date and amount, an account that matches (or the old "Imported"), and a
     // description equal to what the old masker made of the newer row's.
@@ -43,6 +46,7 @@ export function remaskMoney(db: Database): void {
       }
     }
 
+    if (gone.size) changed = true;
     const del = db.query("DELETE FROM money_transactions WHERE id = ?");
     for (const id of gone) del.run(id);
     // Fingerprints are unique per space, so they're cleared first and rebuilt in the rows' original order.
@@ -57,29 +61,51 @@ export function remaskMoney(db: Database): void {
       put.run(r.account, r.description, r.merchant, r.symbol, fingerprintOf(r, n), r.id);
     }
 
-    for (const t of ["money_imports"]) {
-      for (const r of db.query(`SELECT id, account FROM ${t}`).all() as { id: string; account: string }[]) {
-        const account = maskNumbers(r.account);
-        if (account !== r.account) db.query(`UPDATE ${t} SET account = ? WHERE id = ?`).run(account, r.id);
+    // Every other text column that can hold money text: import records, reminders, budgets, rules, and the answers
+    // to Plan 10 money asks (write-ups, the task's text, its review, and its transcripts on disk).
+    const remaskColumn = (table: string, key: string, column: string, where = "1") => {
+      for (const r of db.query(`SELECT ${key} AS k, ${column} AS v FROM ${table} WHERE ${where}`).all() as { k: string; v: string | null }[]) {
+        if (r.v === null) continue;
+        const v = maskNumbers(r.v);
+        if (v === r.v) continue;
+        db.query(`UPDATE OR IGNORE ${table} SET ${column} = ? WHERE ${key} = ?`).run(v, r.k);
+        changed = true;
       }
-    }
-    for (const r of db.query("SELECT id, title, body FROM money_nudges").all() as { id: string; title: string; body: string }[]) {
-      db.query("UPDATE money_nudges SET title = ?, body = ? WHERE id = ?").run(maskNumbers(r.title), maskNumbers(r.body), r.id);
-    }
-    for (const r of db.query("SELECT space_id, category FROM money_budgets").all() as { space_id: string; category: string }[]) {
-      const category = maskNumbers(r.category);
-      if (category !== r.category) db.query("UPDATE OR IGNORE money_budgets SET category = ? WHERE space_id = ? AND category = ?").run(category, r.space_id, r.category);
-    }
-    for (const r of db.query("SELECT key, value FROM settings WHERE key LIKE 'money.rules.%'").all() as { key: string; value: string }[]) {
-      const value = maskNumbers(r.value);
-      if (value !== r.value) db.query("UPDATE settings SET value = ? WHERE key = ?").run(value, r.key);
+    };
+    remaskColumn("money_imports", "id", "account");
+    remaskColumn("money_nudges", "id", "title");
+    remaskColumn("money_nudges", "id", "body");
+    remaskColumn("money_budgets", "rowid", "category");
+    remaskColumn("settings", "key", "value", "key LIKE 'money.rules.%'");
+    remaskColumn("market_writeups", "id", "body", "kind = 'money'");
+    remaskColumn("tasks", "id", "detail", "purpose = 'money'");
+    remaskColumn("approvals", "id", "detail", "task_id IN (SELECT id FROM tasks WHERE purpose = 'money')");
+    remaskColumn("approvals", "id", "note", "task_id IN (SELECT id FROM tasks WHERE purpose = 'money')");
+    for (const r of db.query("SELECT transcript_path AS p FROM runs WHERE task_id IN (SELECT id FROM tasks WHERE purpose = 'money') AND transcript_path IS NOT NULL").all() as { p: string }[]) {
+      if (remaskTranscript(r.p)) changed = true;
     }
     mark(top);
+    return changed;
   })();
 }
 
+// A transcript file, masked as one text and rewritten; false when it's gone or already masked.
+export function remaskTranscript(path: string): boolean {
+  try {
+    const text = readFileSync(path, "utf8");
+    const masked = maskNumbers(text);
+    if (masked === text) return false;
+    writeFileSync(path, masked);
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") console.error(`Couldn't re-mask a money transcript: ${(e as Error).message}`);
+    return false;
+  }
+}
+
 // Rows added since the last check: masked again where they need it, with a fresh fingerprint.
-function recheck(db: Database, since: number, top: number, mark: (n: number) => void): void {
+function recheck(db: Database, since: number, top: number, mark: (n: number) => void): boolean {
+  let changed = false;
   const rows = db.query("SELECT id, space_id, source, account, date, description, merchant, amount, currency, kind, symbol FROM money_transactions WHERE rowid > ? AND rowid <= ?").all(since, top) as Row[];
   const taken = db.query("SELECT 1 FROM money_transactions WHERE space_id = ? AND fingerprint = ? AND id != ?");
   const put = db.query("UPDATE money_transactions SET account = ?, description = ?, merchant = ?, symbol = ?, fingerprint = ? WHERE id = ?");
@@ -89,6 +115,8 @@ function recheck(db: Database, since: number, top: number, mark: (n: number) => 
     let n = 1;
     while (taken.get(r.space_id, fingerprintOf(c, n), r.id)) n++;
     put.run(c.account, c.description, c.merchant, c.symbol, fingerprintOf(c, n), r.id);
+    changed = true;
   }
   mark(top);
+  return changed;
 }

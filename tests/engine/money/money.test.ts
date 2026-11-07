@@ -402,10 +402,13 @@ test("paying the cards and topping up Wealthsimple Cash are transfers, not spend
   expect(v.spent).toBeLessThan(4000);
 });
 
-test("transfers: known descriptions, matching pairs across accounts within 3 days, and Nakul's own marks", () => {
+test("transfers: known descriptions, matching pairs across accounts (3 days if one side says so, else 1), and Nakul's own marks", () => {
   const rows = [
     { id: "a", date: "2026-10-10", account: "TD chequing", description: "ONLINE TFR", amount: -300, kind: "spend", transfer: null },
-    { id: "b", date: "2026-10-12", account: "Wealthsimple Cash", description: "Deposit", amount: 300, kind: "income", transfer: null },
+    { id: "b", date: "2026-10-11", account: "Wealthsimple Cash", description: "Deposit", amount: 300, kind: "income", transfer: null },
+    // The same amount 2 days apart with nothing saying it's a transfer: not paired.
+    { id: "i", date: "2026-10-15", account: "TD chequing", description: "STORE", amount: -77, kind: "spend", transfer: null },
+    { id: "j", date: "2026-10-17", account: "Amex", description: "REFUND", amount: 77, kind: "income", transfer: null },
     { id: "c", date: "2026-10-10", account: "TD chequing", description: "COFFEE", amount: -300, kind: "spend", transfer: null },
     { id: "d", date: "2026-10-20", account: "Amex", description: "PAYMENT RECEIVED - THANK YOU", amount: 90, kind: "income", transfer: null },
     { id: "e", date: "2026-10-01", account: "TD chequing", description: "REFUND", amount: 40, kind: "income", transfer: null },
@@ -841,4 +844,54 @@ test("card data: rule and budget text is masked when it's saved", () => {
   setBudget(db, spaceId, "Card 4111111111111111", 5);
   expect(listBudgets(db, spaceId).map((b) => b.category)).toEqual(["Card ··1111"]);
   expect(budgetRows([{ category: "Dining", limit: 100 }], [{ category: "Dining", amount: 79.9 }])[0]!.pct).toBe(79);
+});
+
+// ---- Second fix wave ----
+
+test("readable shapes: a date with its time, date ranges with to, TO or -, phone numbers, and month-name dates", () => {
+  for (const s of [
+    "UBER TRIP 2026-10-01 12:34",
+    "E-TRANSFER CA2Y8kQ 2026-10-05 15:22",
+    "PRESTO 10/01/2026 TO 10/31/2026",
+    "PASS 2026-10-01 to 2026-10-30",
+    "PAID 10/01/2026 - 10/30/2026",
+    "ROGERS 416-555-0199",
+    "CALL (416) 555-0199",
+    "from Aug 1, 2026 to Oct 30, 2026",
+    "AMZN MKTP CA*2K4QX1 2026-10-04",
+  ]) expect(mask(s)).toBe(s);
+  // Only when no card hides among them.
+  expect(mask("2026-10-01 4111 1111 1111 1111")).not.toContain("4111");
+  expect(mask("X 30, 2026")).toBe("X ··2026");
+  expect(mask("Oct 31, 2026 4111111111111111")).not.toContain("411111");
+});
+
+test("card data: the database is opened with secure_delete on", () => {
+  expect(db.query("PRAGMA secure_delete").get()).toEqual({ secure_delete: 1 });
+});
+
+test("card data: answers to Plan 10 money asks are re-masked: write-ups, the task, its review and its transcript", () => {
+  const { remaskMoney } = require("../../../src/engine/money/remask") as typeof import("../../../src/engine/money/remask");
+  const { createTask } = require("../../../src/engine/tasks") as typeof import("../../../src/engine/tasks");
+  const { saveWriteup } = require("../../../src/engine/markets/research") as typeof import("../../../src/engine/markets/research");
+  const { createApproval } = require("../../../src/engine/approvals") as typeof import("../../../src/engine/approvals");
+  const { writeFileSync, mkdirSync } = require("node:fs") as typeof import("node:fs");
+  const card = "4111.1111.1111.1111";
+  const t = createTask(db, { spaceId, title: "Ask Claude about my money", detail: `Is ${card} mine?`, agent: "claude", weight: "light", purpose: "money" });
+  saveWriteup(db, { spaceId, kind: "money", key: null, forDate: "2026-10-02T00:00:00.000Z", body: `Card ${card}.`, taskId: t.id });
+  createApproval(db, { spaceId, taskId: t.id, kind: "review", title: "x", detail: `Said ${card}` });
+  const dir = join(home.home, "transcripts");
+  mkdirSync(dir, { recursive: true });
+  const log = join(dir, "run_old.log");
+  writeFileSync(log, `Card 4111\n1111 1111\n1111\n`);
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES ('run_old', ?, 'claude', 1, ?)").run(t.id, log);
+  db.query("DELETE FROM settings WHERE key = 'money.remaskedThrough'").run();
+  expect(remaskMoney(db)).toBe(true);
+  expect((db.query("SELECT body FROM market_writeups WHERE kind = 'money'").get() as { body: string }).body).toBe("Card ··1111.");
+  expect((db.query("SELECT detail FROM tasks WHERE id = ?").get(t.id) as { detail: string }).detail).toBe("Is ··1111 mine?");
+  expect((db.query("SELECT detail FROM approvals WHERE task_id = ?").get(t.id) as { detail: string }).detail).toBe("Said ··1111");
+  expect(readFileSync(log, "utf8")).not.toMatch(/1111\s+1111/);
+  // Nothing left to do the second time.
+  db.query("DELETE FROM settings WHERE key = 'money.remaskedThrough'").run();
+  expect(remaskMoney(db)).toBe(false);
 });

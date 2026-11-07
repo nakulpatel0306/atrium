@@ -16,7 +16,13 @@ import { join, resolve, sep } from "node:path";
 //
 // Pattern syntax (sandbox.filesystem on macOS, and Read permission rules): `*`, `?`, `**` and bracket classes such
 // as `[cC]` are wildcards, so `*.[cC][sS][vV]` matches every case of ".csv". A wildcard deny can't be re-opened.
-export const EXPORT_GLOBS = ["*.[cC][sS][vV]", "*.[oO][fF][xX]", "*.[qQ][fF][xX]"];
+// Bank exports and statements: CSV, OFX, QFX, QBO, PDF, Excel, Numbers and ZIP, in any case.
+export const EXPORT_GLOBS = [
+  "*.[cC][sS][vV]", "*.[oO][fF][xX]", "*.[qQ][fF][xX]", "*.[qQ][bB][oO]", "*.[pP][dD][fF]",
+  "*.[xX][lL][sS]", "*.[xX][lL][sS][xX]", "*.[nN][uU][mM][bB][eE][rR][sS]", "*.[zZ][iI][pP]",
+];
+// Cloud and mail copies of the same files (iCloud Drive mirrors Desktop and Documents here), closed whole.
+export const CLOUD_FOLDERS = ["Library/Mobile Documents", "Library/CloudStorage", "Library/Mail", "Library/Containers/com.apple.mail"];
 export const PRIVATE_FOLDERS = ["Downloads", "Desktop", "Documents"];
 const SHARED_ROOTS = ["/Users/Shared", "/Volumes"];
 const OTHER_ROOTS = [...SHARED_ROOTS, "/tmp", "/private/tmp", "/private/var/folders"];
@@ -114,15 +120,17 @@ export function privateReads(cwd: string, opts: { bash: boolean; home?: string }
   const home = real(opts.home ?? homedir());
   const keep = real(cwd);
   const privateFolders = PRIVATE_FOLDERS.map((f) => join(home, f));
-  if (!opts.bash) return { denyRead: [home, ...SHARED_ROOTS], allowRead: [keep] };
-  const closeAll = (dir: string) => privateFolders.some((f) => inside(real(dir), f) || inside(dir, f));
+  const cloud = CLOUD_FOLDERS.map((f) => join(home, f)).filter((f) => !inside(keep, f));
+  if (!opts.bash) return { denyRead: [home, ...cloud, ...SHARED_ROOTS], allowRead: [keep] };
+  const closed = [...privateFolders, ...cloud];
+  const closeAll = (dir: string) => closed.some((f) => inside(real(dir), f) || inside(dir, f));
   const out: string[] = [];
   if (list(home) === null) {
     console.warn(`Atrium couldn't list ${home}; Claude's sandbox denies every bank export in it.`);
     out.push(...privateFolders, ...exports(home));
   } else denyExports(home, keep, closeAll, out);
   for (const root of OTHER_ROOTS) denyExports(real(root), keep, () => false, out);
-  for (const f of privateFolders) if (!inside(keep, f) && !out.includes(f)) out.push(f);
+  for (const f of [...privateFolders, ...cloud]) if (!inside(keep, f) && !out.includes(f)) out.push(f);
   return { denyRead: [...new Set(out)], allowRead: [] };
 }
 

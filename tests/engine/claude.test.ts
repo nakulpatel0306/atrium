@@ -477,3 +477,14 @@ describe("explicit read denies and symlink cycles", () => {
     expect(privateReadRules(keep, root)).toContain(`Read(/${join(root, "Atrium", "investing", "loop")})`);
   });
 });
+
+test("card data: a private run's sandbox closes iCloud Drive, cloud storage and mail, and denies statements of every kind", () => {
+  const home = realpathSync(homedir());
+  const plain = privateReads(join(home, "Atrium", "Investing"), { bash: false }).denyRead;
+  for (const f of ["Library/Mobile Documents", "Library/CloudStorage"]) expect(plain).toContain(join(home, f));
+  const withBash = privateReads(join(home, "Atrium", "Investing"), { bash: true }).denyRead;
+  for (const f of ["Library/Mobile Documents", "Library/CloudStorage", "Downloads"]) expect(withBash).toContain(join(home, f));
+  for (const g of ["*.[pP][dD][fF]", "*.[xX][lL][sS]", "*.[xX][lL][sS][xX]", "*.[qQ][bB][oO]", "*.[zZ][iI][pP]", "*.[nN][uU][mM][bB][eE][rR][sS]"]) {
+    expect(withBash).toContain(join("/Volumes", "**", g));
+  }
+});
