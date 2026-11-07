@@ -1,6 +1,8 @@
+import { Box } from "ink";
 import { truncate, width } from "../text";
 import { type AnsiColor, color, GLYPH, spaceColor } from "../theme";
 import { List, type ListProps, pad } from "./List";
+import { Row } from "./Row";
 
 type Approval = ListProps["view"]["approvals"][number];
 
@@ -19,9 +21,13 @@ export function NeedsPane(p: ListProps) {
   // A question with no space (a new repo, removing a local copy) is Atrium's own.
   const nameOf = (spaceId: string | null) => (spaceId ? names.get(spaceId) : { name: "Atrium", i: -1 });
   const nameWidth = Math.min(12, Math.max(0, ...items.map((a) => width(nameOf(a.spaceId)?.name ?? ""))));
-  return (
+  // The monthly import reminder sits on top as a plain line: it isn't something to approve, and the dashboard's Money
+  // tab is where it's done.
+  const nudges = p.view.state.nudges ?? [];
+  const list = (
     <List
       {...p}
+      rows={Math.max(1, p.rows - nudges.length)}
       items={items}
       pane="needs"
       empty="You're all caught up."
@@ -36,6 +42,15 @@ export function NeedsPane(p: ListProps) {
         ];
       }}
     />
+  );
+  if (!nudges.length) return list;
+  return (
+    <Box flexDirection="column">
+      {nudges.map((n) => (
+        <Row key={n.id} cols={p.cols} segments={[{ text: `${GLYPH.suggestion} `, color: color.info }, { text: `${n.title} · ${n.body}`, color: color.muted }]} />
+      ))}
+      {list}
+    </Box>
   );
 }
 

@@ -440,6 +440,8 @@ type Props = {
   tab?: SpaceTab;
   // A markets space's open symbol page, from `?symbol=`.
   symbol?: string | null;
+  // Open a markets space on its Money tab, from `?tab=money`.
+  money?: boolean;
 };
 
 // The Files count comes from the same listing the tab shows, so it's read whichever tab is open.
@@ -458,7 +460,7 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
   );
 }
 
-export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null }: Props) {
+export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null, money = false }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
   const [, setTick] = useState(0);
@@ -497,7 +499,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
   return (
     <div className="wrap">
       <Header key={space.id} space={space} />
-      {space.kind === "markets" && <InvestPanel spaceId={space.id} symbol={symbol} />}
+      {space.kind === "markets" && <InvestPanel key={money ? "money" : "invest"} spaceId={space.id} symbol={symbol} initial={money ? "money" : undefined} />}
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />

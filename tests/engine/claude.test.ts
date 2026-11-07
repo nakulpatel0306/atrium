@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atriumDenyPaths } from "../../src/engine/agents/atrium-paths";
@@ -335,5 +335,156 @@ test("I4: osascript, shortcuts and open are denied anywhere in a command", async
     for (const rule of ["Bash(*osascript*)", "Bash(*shortcuts*)", "Bash(*automator*)", "Bash(open *)", "Bash(* open *)", "Read(~/Library/Messages/**)"]) expect(denied).toContain(rule);
   } finally {
     delete process.env.FAKE_CLAUDE_MODE;
+  }
+});
+
+// ---- Plan 14: private and money runs ----
+import { privateReadRules, privateReads } from "../../src/engine/agents/private-paths";
+import { MIN_PRIVATE_VERSION, TOO_OLD, atLeast } from "../../src/engine/agents/claude";
+import { homedir } from "node:os";
+
+const argvOf = async (over: Partial<AgentRunInput>) => {
+  const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+  const argvFile = join(dir, "argv.json");
+  process.env.FAKE_CLAUDE_ARGV = argvFile;
+  const r = await claudeAdapter(FAKE).run({ ...input(), ...over });
+  expect(r.status).toBe("ok");
+  const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+  rmSync(dir, { recursive: true });
+  return argv;
+};
+
+test("card data: a private run has no Bash, reads only its own folder, and keeps the pinned settings", async () => {
+  const argv = await argvOf({ allowedTools: ["Read", "Edit", "Write", "Glob", "Grep"], privateData: true });
+  const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]!);
+  expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
+  expect(settings.permissions).toEqual({ blockReadsOutsideWorkingDirectories: true });
+  expect(settings.permissions.additionalDirectories).toBeUndefined();
+  const allowed = argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--disallowedTools"));
+  expect(allowed.some((t) => t.startsWith("Bash"))).toBe(false);
+  // No allow rule names a path, so nothing widens reads beyond the working directory.
+  expect(allowed.every((t) => !t.includes("("))).toBe(true);
+  const denied = argv.slice(argv.indexOf("--disallowedTools") + 1);
+  expect(denied).toContain("Bash");
+  expect(denied).toContain(`Read(/${join(realpathSync(homedir()), "Downloads")}/**)`);
+  // The sandbox denies the whole home folder and re-opens only this run's folder.
+  expect(settings.sandbox.filesystem.denyRead).toContain(realpathSync(homedir()));
+  expect(settings.sandbox.filesystem.denyRead).toContain("/Users/Shared");
+  expect(settings.sandbox.filesystem.allowRead).toEqual([realpathSync(process.cwd())]);
+});
+
+test("card data: an ordinary run is unchanged", async () => {
+  const argv = await argvOf({});
+  const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]!);
+  expect(settings.permissions).toBeUndefined();
+  expect(settings.sandbox.filesystem.allowRead).toBeUndefined();
+  expect(argv.slice(argv.indexOf("--disallowedTools") + 1)).not.toContain("Bash");
+});
+
+test("card data: a money run has no tools at all", async () => {
+  const argv = await argvOf({ allowedTools: [], privateData: true });
+  expect(argv[argv.indexOf("--tools") + 1]).toBe("");
+  expect(argv).not.toContain("--allowedTools");
+  expect(argv.slice(argv.indexOf("--disallowedTools") + 1)).toContain("mcp__*");
+});
+
+describe("a private repo's run, which keeps its test commands", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "atrium-home-")));
+    for (const d of ["Atrium/investing/run-x", "Atrium/investing/other-run", "Atrium/other", "Documents/taxes", "Downloads", "Desktop", "Projects", "outside"]) mkdirSync(join(root, d), { recursive: true });
+    symlinkSync(join(root, "outside"), join(root, "Atrium", "linked"));
+    symlinkSync(join(root, "Documents"), join(root, "Docs"));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+  const csv = (dir: string) => join(dir, "**", "*.[cC][sS][vV]");
+
+  test("only its own folder stays open; siblings at every level, links and their targets are denied", () => {
+    const { denyRead } = privateReads(join(root, "Atrium", "investing", "run-x"), { bash: true, home: root });
+    expect(denyRead).toContain(csv(join(root, "Atrium", "other")));
+    expect(denyRead).toContain(csv(join(root, "Atrium", "investing", "other-run")));
+    expect(denyRead).toContain(csv(join(root, "Projects")));
+    expect(denyRead).toContain(join(root, "Atrium", "investing", "*.[cC][sS][vV]"));
+    expect(denyRead).toContain(join(root, "Documents"));
+    // A link to Documents is closed as a whole too, and a linked folder's target is covered.
+    expect(denyRead).toContain(join(root, "Docs"));
+    expect(denyRead).toContain(csv(join(root, "Atrium", "linked")));
+    expect(denyRead).toContain(csv(join(root, "outside")));
+    const keep = join(root, "Atrium", "investing", "run-x");
+    expect(denyRead.some((p) => p.startsWith(keep))).toBe(false);
+  });
+
+  test("a home that can't be listed still denies the private folders and every export in it", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const gone = join(root, "missing");
+    const { denyRead } = privateReads(join(root, "Atrium", "investing", "run-x"), { bash: true, home: gone });
+    warn.mockRestore();
+    for (const f of ["Downloads", "Desktop", "Documents"]) expect(denyRead).toContain(join(gone, f));
+    expect(denyRead).toContain(csv(gone));
+  });
+});
+
+test("card data: a private run refuses an older or unreadable Claude Code, and nothing is spawned for real work", async () => {
+  expect(MIN_PRIVATE_VERSION).toEqual([2, 1, 257]);
+  expect(atLeast([2, 1, 318], MIN_PRIVATE_VERSION)).toBe(true);
+  expect(atLeast([2, 1, 257], MIN_PRIVATE_VERSION)).toBe(true);
+  expect(atLeast([2, 1, 256], MIN_PRIVATE_VERSION)).toBe(false);
+  expect(atLeast([2, 0, 999], MIN_PRIVATE_VERSION)).toBe(false);
+  for (const v of ["2.1.200", "unknown"]) {
+    process.env.FAKE_CLAUDE_VERSION = v;
+    const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
+    const r = await claudeAdapter(FAKE).run({ ...input(), privateData: true });
+    expect(r).toEqual({ status: "error", kind: "failed", message: TOO_OLD });
+    expect(existsSync(join(dir, "argv.json"))).toBe(false);
+    rmSync(dir, { recursive: true });
+  }
+  delete process.env.FAKE_CLAUDE_VERSION;
+  // An ordinary run doesn't ask.
+  process.env.FAKE_CLAUDE_VERSION = "2.1.200";
+  expect((await claudeAdapter(FAKE).run(input())).status).toBe("ok");
+  delete process.env.FAKE_CLAUDE_VERSION;
+});
+
+describe("explicit read denies and symlink cycles", () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "atrium-home-")));
+    for (const d of ["Atrium/investing/run-x", "Atrium/other", "Downloads", "Projects"]) mkdirSync(join(root, d), { recursive: true });
+    writeFileSync(join(root, "statement.csv"), "x");
+    // A link back up at an ancestor, and a two-link cycle.
+    symlinkSync(join(root, "Atrium"), join(root, "Atrium", "investing", "loop"));
+    symlinkSync(join(root, "b"), join(root, "a"));
+    symlinkSync(join(root, "a"), join(root, "b"));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  test("Read denies cover everything beside the way down, and never the run's folder", () => {
+    const keep = join(root, "Atrium", "investing", "run-x");
+    const rules = privateReadRules(keep, root);
+    for (const p of [join(root, "Downloads"), join(root, "Projects"), join(root, "statement.csv"), join(root, "Atrium", "other")]) expect(rules).toContain(`Read(/${p})`);
+    expect(rules).toContain("Read(//Users/Shared/**)");
+    expect(rules).toContain("Read(//Volumes/**)");
+    expect(rules.some((r) => r.startsWith(`Read(/${keep}`))).toBe(false);
+    expect(rules).not.toContain(`Read(/${root})`);
+    expect(rules).not.toContain(`Read(/${join(root, "Atrium")})`);
+  });
+
+  test("a symlink cycle ends, and a link back at an ancestor is closed", () => {
+    const keep = join(root, "Atrium", "investing", "run-x");
+    const { denyRead } = privateReads(keep, { bash: true, home: root });
+    expect(denyRead).toContain(join(root, "Atrium", "investing", "loop"));
+    expect(privateReadRules(keep, root)).toContain(`Read(/${join(root, "Atrium", "investing", "loop")})`);
+  });
+});
+
+test("card data: a private run's sandbox closes iCloud Drive, cloud storage and mail, and denies statements of every kind", () => {
+  const home = realpathSync(homedir());
+  const plain = privateReads(join(home, "Atrium", "Investing"), { bash: false }).denyRead;
+  for (const f of ["Library/Mobile Documents", "Library/CloudStorage"]) expect(plain).toContain(join(home, f));
+  const withBash = privateReads(join(home, "Atrium", "Investing"), { bash: true }).denyRead;
+  for (const f of ["Library/Mobile Documents", "Library/CloudStorage", "Downloads"]) expect(withBash).toContain(join(home, f));
+  for (const g of ["*.[pP][dD][fF]", "*.[xX][lL][sS]", "*.[xX][lL][sS][xX]", "*.[qQ][bB][oO]", "*.[zZ][iI][pP]", "*.[nN][uU][mM][bB][eE][rR][sS]"]) {
+    expect(withBash).toContain(join("/Volumes", "**", g));
   }
 });

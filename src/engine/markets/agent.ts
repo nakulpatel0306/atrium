@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { moneyFacts } from "../money/summary";
+import { maskNumbers } from "../money/import";
+import { explainContext, moneyFacts } from "../money/summary";
 import { isAdvanced } from "./advanced";
 import { portfolioView } from "./views";
 import { createApproval } from "../approvals";
@@ -178,6 +179,14 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
 
   async function buildContext(task: Task, space: Space, agent: string): Promise<string> {
     const at = now();
+    // Money stays with Claude, masked; Explain my month gets the month's recap and nothing else.
+    if (task.purpose === "money") {
+      if (agent !== "claude") return "";
+      const explain = explainContext(db, task, at);
+      if (explain) return explain.join("\n");
+      // A money question gets the portfolio summary and the money facts, not raw quotes, holdings or paper trades.
+      return investingContext(task, space, at).join("\n");
+    }
     const session = usSession(at);
     const status = await data.status();
     const watch = listWatchlist(db, space.id);
@@ -348,7 +357,9 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         }
       }
       if (task.purpose) {
-        const body = summary.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
+        // Money answers are masked again here, whatever the runner already did: nothing unmasked is ever saved.
+        const said = task.purpose === "money" ? maskNumbers(summary) : summary;
+        const body = said.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
         // Every answer to an ask is kept, so it's dated to the instant rather than the day.
         const forDate =
           task.purpose === "ask" || task.purpose === "money"

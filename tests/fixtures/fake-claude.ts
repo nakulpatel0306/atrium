@@ -5,10 +5,12 @@ const out = (o: unknown) => console.log(JSON.stringify(o));
 const sessionId = "fake-session";
 
 if (process.argv[2] === "--version") {
-  console.log("2.1.0 (Claude Code)");
+  console.log(`${process.env.FAKE_CLAUDE_VERSION ?? "2.1.318"} (Claude Code)`);
   process.exit(0);
 }
 if (process.env.FAKE_CLAUDE_ARGV) await Bun.write(process.env.FAKE_CLAUDE_ARGV, JSON.stringify(process.argv.slice(2)));
+// The prompt arrives on stdin; a test can keep a copy of exactly what the CLI was sent.
+if (process.env.FAKE_CLAUDE_STDIN) await Bun.write(process.env.FAKE_CLAUDE_STDIN, await Bun.stdin.text());
 // Names only, never values: tests check which variables reach the CLI.
 if (process.env.FAKE_CLAUDE_ENV) await Bun.write(process.env.FAKE_CLAUDE_ENV, JSON.stringify(Object.keys(process.env)));
 

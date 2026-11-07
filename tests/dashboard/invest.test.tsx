@@ -287,20 +287,26 @@ test("Money: empty state invites an import and still offers the starter question
   expect(html).toContain("Ask about my money");
   for (const q of STARTERS) expect(html).toContain(q.replace("'", "&#x27;"));
   expect(html).toContain("Import a bank, card or Wealthsimple file");
-  expect(html).toContain("No bank or card transactions yet.");
+  expect(html).toContain("Import a bank, card or Wealthsimple file to see where your money went.");
+  expect(html).toContain("Your 2026 TFSA room isn&#x27;t set yet.");
   clean(html);
 });
 
-test("Money: the month by category, recurring and unusual charges, Wealthsimple totals, and answers", () => {
+test("Money: the recap, budgets, subscriptions, Wealthsimple totals, and answers", () => {
   importMoney(db, fx.spaceId, previewMoney(moneyCsv("rbc.csv")));
   importMoney(db, fx.spaceId, previewMoney(moneyCsv("ws-activity-2026.csv")));
   saveWriteup(db, { spaceId: fx.spaceId, kind: "money", key: null, forDate: new Date(NOW).toISOString(), body: "You pay **CA$58.47** a month for subscriptions.\n\nAnalysis, not advice.", taskId: null });
   const view = { ...moneyView(db, fx.spaceId, NOW, "2026-10"), starters: STARTERS };
   const html = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={view} now={NOW} />);
   expect(html).toContain("Groceries");
-  expect(html).toContain("Recurring charges");
+  expect(html).toContain("Based on 12 transactions, Oct 1 to Oct 27");
+  expect(html).toContain("+CA$1,088.30 vs September");
+  expect(html).toContain("Explain my month");
+  expect(html).toContain("Set limit");
+  expect(html).toContain("Show 12 transactions");
+  expect(html).toContain("Subscriptions");
   expect(html).toContain("Netflix.com");
-  expect(html).toContain("Same amount at Best Buy within 3 days.");
+  expect(html).toContain("Bills");
   expect(html).toContain("CA$9,000.00");
   expect(html).toContain("<strong>CA$58.47</strong>");
   expect(html).toContain("Analysis, not advice");
@@ -324,4 +330,63 @@ test("the Settings TSX hint asks for an Alpha Vantage key only when there isn't 
   const { tsxSourceHint } = await import("../../src/dashboard/components/Settings");
   expect(tsxSourceHint(false)).toBe("TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Add a free Alpha Vantage key for official closing prices.");
   expect(tsxSourceHint(true)).toBe("TSX prices during the day come from Yahoo Finance's public feed (no key, unofficial). Alpha Vantage supplies the official closing prices.");
+});
+
+// ---- Plan 14: recap, budgets, subscriptions, TFSA room, reminder ----
+import { setBudget } from "../../src/engine/money/budgets";
+import { setRoom } from "../../src/engine/markets/tfsa";
+import { requestExplain } from "../../src/engine/money/summary";
+import { NeedsYou } from "../../src/dashboard/components/NeedsYou";
+import { makeState } from "../tui/fixtures";
+
+const wipeMoney = () => {
+  for (const t of ["tasks", "money_transactions", "money_imports", "money_budgets", "money_nudges", "tfsa_room"]) db.query(`DELETE FROM ${t}`).run();
+};
+
+test("Money: four banks' files give a recap with its basis, the room tie-in, budget bars, flags and Explain", () => {
+  wipeMoney();
+  for (const f of ["td-chequing.csv", "td-credit.csv", "amex.csv", "ws-cash.csv"]) importMoney(db, fx.spaceId, previewMoney(moneyCsv(f)));
+  setBudget(db, fx.spaceId, "Dining", 120);
+  setBudget(db, fx.spaceId, "Groceries", 400);
+  setRoom(db, 2026, 7000);
+  const view = { ...moneyView(db, fx.spaceId, NOW, "2026-10"), starters: STARTERS };
+  const html = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={view} now={NOW} />);
+  const t = text(html);
+  expect(t).toContain("transfers left out");
+  expect(t).toContain("Biggest changes");
+  expect(t).toContain("Best Buy");
+  expect(t).toContain("CA$7,000.00 of TFSA room left for 2026.");
+  expect(t).toMatch(/You had CA\$[\d,.]+ left over in October\. You have CA\$7,000\.00 of TFSA room for 2026\. Facts, not advice\./);
+  expect(html).toContain('class="money-bar over"');
+  expect(html).toContain('class="money-bar near"');
+  expect(t).toContain("price went up");
+  expect(t).toContain("new this month");
+  expect(t).toContain("was CA$11.99");
+  clean(html);
+  requestExplain(db, fx.spaceId, "2026-10", NOW);
+  const asking = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={{ ...moneyView(db, fx.spaceId, NOW, "2026-10"), starters: STARTERS }} now={NOW} />);
+  expect(asking).toContain("Claude is putting your month into words…");
+  // An Explain doesn't block the Ask box's own status line.
+  expect(asking).not.toContain("Claude is looking at your money…");
+  wipeMoney();
+});
+
+test("Money: an incomplete month says so plainly", () => {
+  wipeMoney();
+  importMoney(db, fx.spaceId, previewMoney("Date,Description,Amount\n2026-09-01,LUNCH,-14\n2026-09-30,LUNCH,-14\n2026-10-02,LUNCH,-14\n2026-10-12,LUNCH,-14\n", { account: "TD chequing", signs: "negative-out" }));
+  const html = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={{ ...moneyView(db, fx.spaceId, NOW, "2026-10"), starters: STARTERS }} now={NOW} />);
+  expect(text(html)).toContain("Incomplete: TD chequing only through Oct 12.");
+  db.query("DELETE FROM money_transactions").run();
+  db.query("DELETE FROM money_imports").run();
+});
+
+test("Needs you shows the import reminder as a quiet row with Import now and Dismiss, not counted", () => {
+  const s = makeState({ approvals: [], proposals: [] });
+  s.nudges = [{ id: "mnd_1", spaceId: "spc_1", spaceName: "Investing", kind: "import", title: "Time to import October", body: "Amex isn't imported for October yet.", path: "/space/spc_1?tab=money", createdAt: 0 }];
+  const t = text(renderToStaticMarkup(<NeedsYou state={s} />));
+  expect(t).toContain("Time to import October");
+  expect(t).toContain("Import now");
+  expect(t).toContain("Dismiss");
+  expect(t).not.toContain("all caught up");
+  expect(t).not.toContain("Needs you · 1");
 });

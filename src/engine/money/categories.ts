@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { getSetting } from "../settings";
+import { maskNumbers } from "./import";
 
 // Spending categories come from a short list of words matched against a transaction's description, on this Mac.
 // Nakul can edit the list; the first rule that matches wins, and anything unmatched is Other.
@@ -40,7 +41,8 @@ export function merchantOf(description: string): string {
     .split(/\s+/)
     .filter((t) => t && !/\d/.test(t) && /[a-z]/i.test(t));
   const name = tokens.slice(0, 2).join(" ");
-  return name ? name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : description.trim().slice(0, 40);
+  // With no word to use, the text without its digits: a merchant name never carries part of a number.
+  return name ? name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : description.replace(/[\d·]+/g, "").trim().slice(0, 40) || "Unknown";
 }
 
 const seededKey = (spaceId: string) => `money.rules.${spaceId}`;
@@ -53,7 +55,8 @@ export function listRules(db: Database, spaceId: string): Rule[] {
 
 export function setRules(db: Database, spaceId: string, rules: Rule[]): Rule[] {
   if (!Array.isArray(rules) || rules.length > MAX_RULES) throw new Error(`Keep it to ${MAX_RULES} rules or fewer.`);
-  const clean = rules.map((r) => ({ match: String(r?.match ?? "").trim(), category: String(r?.category ?? "").trim() }));
+  // Typed text is masked like any money text, in case a number found its way in.
+  const clean = rules.map((r) => ({ match: maskNumbers(String(r?.match ?? "").trim()), category: maskNumbers(String(r?.category ?? "").trim()) }));
   if (clean.some((r) => !r.match || !r.category)) throw new Error("Each rule needs words to match and a category.");
   if (clean.some((r) => r.match.length > 60 || r.category.length > 30)) throw new Error("Keep matches under 60 characters and categories under 30.");
   db.query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(seededKey(spaceId), JSON.stringify(clean));

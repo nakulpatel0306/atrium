@@ -1,13 +1,16 @@
 import { config } from "../config";
 import { ENV_GLOBS } from "../envpath";
 import { atriumDenyPaths } from "./atrium-paths";
+import { privateReadRules, privateReads } from "./private-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { agentEnv } from "./seatbelt";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
-const denyRules = (cwd: string) => [
+const usesBash = (tools: string[]) => tools.some((t) => t === "Bash" || t.startsWith("Bash("));
+
+const denyRules = (cwd: string, privateData = false, bash = true) => [
   // .env names in any case, names ending in .env, and everything inside a folder with such a name.
   ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
@@ -43,11 +46,19 @@ const denyRules = (cwd: string) => [
   "Read(~/Library/Contacts/**)",
   // Atrium's DB, transcripts and other spaces' folders; a general-space run keeps its own. "//" anchors at the root.
   ...atriumDenyPaths(cwd).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
+  // A private or investing space's run: the three folders bank exports land in, and no Bash at all unless it's a
+  // private repo's test commands.
+  ...(privateData ? privateReadRules(cwd) : []),
+  ...(privateData && !bash ? ["Bash"] : []),
 ];
 
 // Per-run settings: the sandbox must hard-fail rather than quietly run unconfined.
-export function sandboxSettings(cwd: string): string {
+export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash?: boolean } = {}): string {
+  const reads = opts.privateData ? privateReads(cwd, { bash: opts.bash ?? true }) : null;
   return JSON.stringify({
+    // A private or investing run's file tools refuse anything outside its working directory, in every mode. Without
+    // this, -p runs read outside it freely (Claude Code 2.1.257 or later honours it).
+    ...(reads && { permissions: { blockReadsOutsideWorkingDirectories: true } }),
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
@@ -66,7 +77,9 @@ export function sandboxSettings(cwd: string): string {
           // A wildcard entry that matches a folder blocks its contents too.
           ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
           ...atriumDenyPaths(cwd),
+          ...(reads?.denyRead ?? []),
         ],
+        ...(reads?.allowRead.length && { allowRead: reads.allowRead }),
       },
       network: { allowedDomains: ["registry.npmjs.org"], allowLocalBinding: false, allowAllUnixSockets: false },
     },
@@ -104,6 +117,24 @@ function windowUsage(w: any, fallbackResetsAt?: unknown): WindowUsage | undefine
   return typeof w?.utilization === "number" && Number.isFinite(resetsAt) ? { utilization: w.utilization, resetsAt } : undefined;
 }
 
+// permissions.blockReadsOutsideWorkingDirectories, which fences a private run's file tools to its folder, arrived in
+// Claude Code 2.1.257 (settings reference: "Requires Claude Code v2.1.257 or later"). An older CLI would ignore it, so
+// a private or investing run refuses to start there.
+export const MIN_PRIVATE_VERSION = [2, 1, 257] as const;
+export const TOO_OLD = "This space is private, and Claude Code is too old to keep its reads to the space's own folder. Run `claude update`, then retry.";
+
+export function atLeast(v: number[], min: readonly number[]): boolean {
+  for (let i = 0; i < min.length; i++) if ((v[i] ?? 0) !== min[i]) return (v[i] ?? 0) > min[i]!;
+  return true;
+}
+
+async function cliVersion(bin: string, signal?: AbortSignal): Promise<number[] | null> {
+  let line = "";
+  const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => void (line ||= l) });
+  const m = !proc.notInstalled && proc.exitCode === 0 ? line.match(/(\d+)\.(\d+)\.(\d+)/) : null;
+  return m ? [+m[1]!, +m[2]!, +m[3]!] : null;
+}
+
 export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
   return {
     id: "claude",
@@ -112,6 +143,11 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       // The variadic --allowedTools would swallow a flag-looking entry as another option.
       const flagLike = input.allowedTools.find((t) => t.startsWith("-"));
       if (flagLike) throw new Error(`Invalid allowedTools entry: ${flagLike}`);
+      // Fail closed: a version Atrium can't read counts as too old.
+      if (input.privateData) {
+        const v = await cliVersion(bin, input.signal);
+        if (!v || !atLeast(v, MIN_PRIVATE_VERSION)) return { status: "error", kind: "failed", message: TOO_OLD };
+      }
 
       let limitResetsAt: number | undefined;
       let limitRejected = false;
@@ -158,13 +194,14 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         [
           bin, "-p",
           "--setting-sources", "project,local",
-          "--settings", sandboxSettings(input.cwd),
+          "--settings", sandboxSettings(input.cwd, { privateData: input.privateData, bash: usesBash(input.allowedTools) }),
           "--strict-mcp-config", "--no-session-persistence",
           "--output-format", "stream-json", "--verbose",
           "--permission-mode", "dontAsk",
           "--append-system-prompt", input.systemPrompt,
-          "--allowedTools", ...input.allowedTools,
-          "--disallowedTools", ...denyRules(input.cwd),
+          // No tools at all ("--tools ''") rather than an empty allow list, which the variadic flag can't express.
+          ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : ["--tools", ""]),
+          "--disallowedTools", ...denyRules(input.cwd, input.privateData, usesBash(input.allowedTools)), ...(input.allowedTools.length ? [] : ["mcp__*"]),
         ],
         { cwd: input.cwd, stdin: input.prompt, env: agentEnv(process.env), signal: input.signal, onLine: handle },
       );

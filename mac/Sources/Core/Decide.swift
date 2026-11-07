@@ -40,8 +40,15 @@ func noteTitle(_ n: Need) -> String {
   return n.kind == "alert" ? alertTitle(n.topic, n.symbol) : "Atrium has a question"
 }
 
-func newNotes(previous: Summary?, next: Summary) -> [Note] {
-  guard let previous else { return [] }
+// The monthly import reminder is usually made on the 2nd before the app has seen a summary, so one made in the last
+// day is still announced at launch.
+func freshReminders(_ s: Summary, now: Date) -> [Note] {
+  (s.nudges ?? []).filter { $0.kind == "import" && now.timeIntervalSince1970 * 1000 - ($0.createdAt ?? 0) < 86_400_000 }
+    .map { Note(id: $0.id, title: $0.title, body: $0.body, path: $0.path) }
+}
+
+func newNotes(previous: Summary?, next: Summary, now: Date = Date()) -> [Note] {
+  guard let previous else { return freshReminders(next, now: now) }
   let seenNeeds = Set(previous.needs.map(\.id))
   let seenStopped = Set(previous.stopped.map(\.id))
   var notes: [Note] = next.needs.filter { !seenNeeds.contains($0.id) }.map {
@@ -55,6 +62,8 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
       id: $0.id, title: $0.status == "blocked" ? "Blocked" : "Didn't finish",
       body: "\($0.title) · \($0.reason ?? $0.spaceName)", path: $0.path)
   }
+  let seenNudges = Set((previous.nudges ?? []).map(\.id))
+  notes += (next.nudges ?? []).filter { !seenNudges.contains($0.id) }.map { Note(id: $0.id, title: $0.title, body: $0.body, path: $0.path) }
   if notes.count > 3 {
     return [Note(id: "batch-\(notes[0].id)", title: "\(notes.count) things need you", body: "Open Atrium to see them.", path: "/")]
   }

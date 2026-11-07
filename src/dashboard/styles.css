@@ -4346,3 +4346,308 @@ code {
 .set-row .t.bad {
   color: var(--yellow);
 }
+
+/* investing: Money recap, budgets, subscriptions, TFSA room (Plan 14) */
+.money-recap {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.money-recap-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.money-recap-head select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+.money-cover {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--yellow);
+}
+.money-hero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0 4px;
+}
+.money-hero > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.money-hero-label {
+  font-size: 12px;
+  color: var(--faint);
+}
+.money-hero b {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.money-delta {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+.money-recap-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 14px;
+}
+.money-recap h4 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+}
+.money-mini {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.money-mini li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.money-mini li:last-child {
+  border-bottom: 0;
+}
+.money-mini .up {
+  color: var(--text);
+}
+.money-mini .down {
+  color: var(--green);
+}
+.money-tie {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+.money-explain {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  font-size: 12px;
+}
+.money-explain .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+}
+.money-explain .btn svg {
+  width: 14px;
+  height: 14px;
+}
+.money-explained {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--raised);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.money-empty {
+  margin: 0 0 14px;
+  color: var(--dim);
+}
+.money-budgets li {
+  grid-template-columns: 110px minmax(0, 1fr) 96px 84px;
+}
+.money-bar.near span {
+  background: var(--yellow);
+}
+.money-bar.over span {
+  background: var(--red);
+}
+.money-limit {
+  justify-self: end;
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.money-limit.unset {
+  color: var(--faint);
+}
+.money-limit-form {
+  display: flex;
+  gap: 4px;
+  justify-self: end;
+}
+.money-limit-form input,
+.money-inline input {
+  width: 64px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.money-limit-form .btn {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.money-month {
+  margin-top: 10px;
+}
+.money-month > .btn.link {
+  font-size: 12px;
+}
+.money-tx tr.moved td {
+  color: var(--faint);
+}
+.money-tx td .btn.link {
+  font-size: 11px;
+}
+.money-subs-total {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--dim);
+}
+.money-subs-total b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.money-flag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dim);
+}
+.money-flag.flag-price-up {
+  border-color: color-mix(in srgb, var(--yellow) 50%, transparent);
+  color: var(--yellow);
+}
+.money-flag.flag-new {
+  border-color: color-mix(in srgb, var(--blue) 50%, transparent);
+  color: var(--blue);
+}
+.money-flag.flag-transfer {
+  margin-left: 0;
+}
+.money-room {
+  font-size: 13px;
+}
+.money-room p {
+  margin: 0 0 4px;
+}
+.money-room-head {
+  font-size: 16px;
+  font-weight: 600;
+}
+.money-room-head.over {
+  color: var(--yellow);
+}
+.money-room .hint {
+  font-size: 12px;
+  color: var(--dim);
+}
+.money-room > .btn.link {
+  font-size: 12px;
+}
+.money-inline {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+.money-inline label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.money-inline input {
+  width: 110px;
+}
+.money-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.money-account select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.nudge-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.nudge-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  flex: none;
+}
+.nudge-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 720px) {
+  .money-hero,
+  .money-recap-cols {
+    grid-template-columns: 1fr;
+  }
+}
+.money-bar.plain span {
+  background: var(--line-strong);
+}
+.money-inline .btn {
+  height: 28px;
+}
+.money-columns {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.money-subhead {
+  margin: 16px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+}

@@ -33,6 +33,7 @@ import { recoverRemovals } from "./engine/repos/cleanup";
 import { finishPendingDeletes } from "./engine/delete-files";
 import { recoverRepoActions } from "./engine/repos/create";
 import { createMessaging } from "./engine/messaging";
+import { moneyDaily } from "./engine/money/reminder";
 import { recoverMessageActions } from "./engine/messaging/send";
 import { fixTalal } from "./engine/fixes/dana-2026-11-05";
 import { getSetting } from "./engine/settings";
@@ -83,6 +84,7 @@ const runner = createRunner({
   keepAwake,
   markets: createMarketsHooks(db, { data, now: marketClock }),
   repos,
+  money: { daily: (now) => moneyDaily(db, now) },
 });
 const feed = createFeed({
   db,

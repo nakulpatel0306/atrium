@@ -5,6 +5,9 @@ export interface AgentRunInput {
   allowedTools: string[];
   // Review runs must not write; Claude enforces that through allowedTools, Codex through its sandbox.
   mode: "work" | "review";
+  // A private or investing space's run: Claude's sandbox also keeps it out of Downloads, Desktop, Documents and any
+  // bank export (CSV, OFX, QFX) outside its own folder.
+  privateData?: boolean;
   onChunk(text: string): void;
   signal?: AbortSignal;
 }

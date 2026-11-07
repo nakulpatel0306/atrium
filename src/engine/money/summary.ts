@@ -4,9 +4,15 @@ import { etDate } from "../markets/calendar";
 import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
 import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
-import { maskNumbers } from "./import";
+import { isMasked, maskNumbers } from "./import";
+import { budgetRows, listBudgets, type BudgetRow } from "./budgets";
+import { monthCover } from "./coverage";
+import { coverText, dayText, monthName, monthYear, recap, recapFacts, type Recap } from "./recap";
+import { roomTie, tfsaRoom, type Room } from "./room";
+import { subscriptions, type SubscriptionList } from "./subscriptions";
+import { transfers, type TransferWhy } from "./transfers";
+import { counted, spendingIn, txs, type Tx } from "./rows";
 
-type Tx = { date: string; account: string; description: string; merchant: string; amount: number; currency: string; kind: string; source: string };
 
 export type Recurring = { merchant: string; amount: number; count: number; last: string; next: string };
 export type Unusual = { date: string; merchant: string; amount: number; reason: string };
@@ -35,8 +41,20 @@ export type MoneyView = {
   range: { from: string; to: string } | null;
   accounts: string[];
   rules: number;
+  recap: Recap | null;
+  // What the recap's month is missing, or null when the imports cover all of it.
+  coverLine: string | null;
+  tie: string | null;
+  subscriptions: SubscriptionList;
+  room: Room;
+  budgets: BudgetRow[];
+  // Categories a budget can be set for: the rule list's spending ones, plus any seen this month.
+  categories: string[];
+  transactions: MonthTx[];
   asks: (Writeup & { question: string; status: "queued" | "running" | "done" | "failed"; taskId: string | null })[];
 };
+
+export type MonthTx = { id: string; date: string; description: string; account: string; amount: number; category: string; transfer: TransferWhy | null; mark: number | null };
 
 export const STARTERS = [
   "How much did I get in dividends this year?",
@@ -62,11 +80,6 @@ const nextMonth = (date: string) => {
   d.setUTCMonth(d.getUTCMonth() + 1);
   return d.toISOString().slice(0, 10);
 };
-
-const txs = (db: Database, spaceId: string, source: "bank" | "wealthsimple") =>
-  db
-    .query("SELECT date, account, description, merchant, amount, currency, kind, source FROM money_transactions WHERE space_id = ? AND source = ? ORDER BY date, rowid")
-    .all(spaceId, source) as Tx[];
 
 // Each merchant's charges in date order; rows arrive sorted, so one pass keeps the summary linear.
 function byMerchant(spend: Tx[]): Map<string, Tx[]> {
@@ -160,41 +173,47 @@ function asks(db: Database, spaceId: string): MoneyView["asks"] {
   return [...open, ...done].slice(0, 3);
 }
 
-function spendingIn(bank: Tx[], month: string | null, rules: Rule[]) {
-  const inMonth = month ? bank.filter((t) => t.date.startsWith(month)) : [];
-  const cats = new Map<string, { amount: number; count: number }>();
-  let income = 0;
-  for (const t of inMonth) {
-    const category = categorize(t.description, rules);
-    if (t.amount > 0 && category !== "Transfers") income += t.amount;
-    if (t.amount >= 0 || NOT_SPENDING.has(category)) continue;
-    const c = cats.get(category) ?? { amount: 0, count: 0 };
-    cats.set(category, { amount: c.amount - t.amount, count: c.count + 1 });
-  }
-  const spending = [...cats.entries()].map(([category, c]) => ({ category, amount: round2(c.amount), count: c.count })).sort((a, b) => b.amount - a.amount);
-  return { spending, spent: round2(spending.reduce((s, c) => s + c.amount, 0)), income: round2(income) };
-}
-
 export function moneyView(db: Database, spaceId: string, now: number, month?: string): MoneyView {
-  const bank = txs(db, spaceId, "bank");
+  const all = txs(db, spaceId, "bank");
+  const bank = counted(all);
   const ws = txs(db, spaceId, "wealthsimple");
   const rules = listRules(db, spaceId);
-  const months = [...new Set(bank.map((t) => t.date.slice(0, 7)))].sort().reverse();
+  const months = [...new Set(all.map((t) => t.date.slice(0, 7)))].sort().reverse();
   const current = etDate(now).slice(0, 7);
-  const picked = month && months.includes(month) ? month : months.includes(current) ? current : (months[0] ?? null);
+  // The latest month the imports fully cover, so a recap opens on a finished month rather than two days of the next.
+  const today = etDate(now);
+  const complete = months.find((m) => monthCover(db, spaceId, m, today).complete);
+  const picked = month && months.includes(month) ? month : (complete ?? (months.includes(current) ? current : (months[0] ?? null)));
+  const r = picked ? recap(db, spaceId, now, picked) : null;
+  const room = tfsaRoom(db, spaceId, Number(today.slice(0, 4)));
+  const monthSpending = spendingIn(bank, picked, rules);
+  const moved = transfers(all);
   const spend = bank.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
   const merchants = byMerchant(spend);
   return {
     months,
     month: picked,
-    ...spendingIn(bank, picked, rules),
+    ...monthSpending,
     recurring: recurring(merchants),
     unusual: unusual(merchants, spend.at(-1)?.date),
     ws: wsYears(ws),
-    counts: { bank: bank.length, wealthsimple: ws.length },
-    range: bank.length ? { from: bank[0]!.date, to: bank.at(-1)!.date } : null,
-    accounts: [...new Set(bank.map((t) => t.account))],
+    counts: { bank: all.length, wealthsimple: ws.length },
+    range: all.length ? { from: all[0]!.date, to: all.at(-1)!.date } : null,
+    accounts: [...new Set(all.map((t) => t.account))],
     rules: rules.length,
+    recap: r,
+    coverLine: r ? coverText(r.cover) : null,
+    tie: r ? roomTie(r.net, monthName(r.month), room) : null,
+    subscriptions: subscriptions(bank, rules),
+    room,
+    budgets: budgetRows(listBudgets(db, spaceId), monthSpending.spending),
+    categories: [...new Set([...rules.map((x) => x.category).filter((c) => !NOT_SPENDING.has(c)), "Other", ...monthSpending.spending.map((c) => c.category)])].sort(),
+    transactions: picked
+      ? all
+          .filter((t) => t.date.startsWith(picked))
+          .reverse()
+          .map((t) => ({ id: t.id, date: t.date, description: t.description, account: t.account, amount: t.amount, category: categorize(t.description, rules), transfer: moved.get(t.id) ?? null, mark: t.transfer }))
+      : [],
     asks: asks(db, spaceId),
   };
 }
@@ -203,10 +222,12 @@ const cad = (n: number) => `CA$${n.toLocaleString("en-US", { minimumFractionDigi
 const usd = (n: number) => `US$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const both = (c: number, u: number) => (c && u ? `${cad(c)} + ${usd(u)}` : u ? usd(u) : cad(c));
 
+const longDay = (d: string) => `${dayText(d)}, ${d.slice(0, 4)}`;
+
 // Compact, sourced facts for "Ask about my money": Claude only, read-only, from Nakul's own files on this Mac.
 export function moneyFacts(db: Database, spaceId: string, now: number): string[] {
   const v = moneyView(db, spaceId, now);
-  const bank = txs(db, spaceId, "bank");
+  const bank = counted(txs(db, spaceId, "bank"));
   const rules = listRules(db, spaceId);
   const out = ["Money facts (from files Nakul imported on this Mac; amounts in CAD unless marked US$):"];
   if (!v.counts.wealthsimple) out.push("No Wealthsimple activity imported.");
@@ -222,21 +243,22 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
     const put = logged.filter((e) => e.kind === "contribution").reduce((s, e) => s + e.amount, 0);
     out.push(`TFSA ${year} (Nakul's own entries): room on Jan 1 ${room.roomJan1 != null ? cad(room.roomJan1) : "not set"}, contributions logged ${cad(put)}.`);
   }
-  if (!bank.length) out.push("No bank or card transactions imported.");
+  const n = v.counts.bank;
+  if (!n) out.push("No bank or card transactions imported.");
   else {
-    out.push(`Bank and card: ${bank.length} ${bank.length === 1 ? "transaction" : "transactions"} from ${v.range!.from} to ${v.range!.to} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
+    out.push(`Bank and card: ${n} ${n === 1 ? "transaction" : "transactions"} from ${longDay(v.range!.from)} to ${longDay(v.range!.to)} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
     for (const m of v.months.slice(0, 3)) {
       const s = spendingIn(bank, m, rules);
       const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");
-      out.push(`- ${m}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}.`);
+      out.push(`- ${monthYear(m)}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}.`);
     }
     const recent = bank.filter((t) => t.amount < 0 && days(t.date, v.range!.to) <= 90);
     const merchants = new Map<string, number>();
     for (const t of recent) merchants.set(t.merchant, (merchants.get(t.merchant) ?? 0) - t.amount);
     const top = [...merchants.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
     if (top.length) out.push(`Top places, last 90 days: ${top.map(([m, a]) => `${m} ${cad(a)}`).join(", ")}.`);
-    if (v.recurring.length) out.push(`Recurring charges: ${v.recurring.map((r) => `${r.merchant} ${cad(r.amount)} monthly (${r.count} times, last ${r.last})`).join("; ")}.`);
-    if (v.unusual.length) out.push(`Unusual: ${v.unusual.slice(0, 5).map((u) => `${u.date} ${u.merchant} ${cad(u.amount)}: ${u.reason}`).join("; ")}`);
+    if (v.recurring.length) out.push(`Recurring charges: ${v.recurring.map((r) => `${r.merchant} ${cad(r.amount)} monthly (${r.count} times, last ${dayText(r.last)})`).join("; ")}.`);
+    if (v.unusual.length) out.push(`Unusual: ${v.unusual.slice(0, 5).map((u) => `${dayText(u.date)} ${u.merchant} ${cad(u.amount)}: ${u.reason}`).join("; ")}`);
   }
   return out;
 }
@@ -245,6 +267,36 @@ export function requestMoneyAsk(db: Database, spaceId: string, question: string)
   const q = question.trim();
   if (!q) throw new Error("Type a question, like How much did I get in dividends this year?");
   if (q.length > MONEY_ASK_MAX) throw new Error("Keep the question under 500 characters.");
+  // A card number typed into the question would go to Claude as is.
+  if (!isMasked(q)) throw new Error("Leave card and account numbers out of the question.");
   if (listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money")) throw new Error("Claude is already looking at your money.");
   return createTask(db, { spaceId, title: "Ask Claude about my money", detail: q, agent: "claude", weight: "light", allowOnBattery: true, purpose: "money" });
+}
+
+// "Explain my month": the same read-only Claude ask, given only the recap Atrium worked out for that month.
+export const RECAP_SUBJECT = "recap:";
+export function requestExplain(db: Database, spaceId: string, month: string, now: number): Task {
+  if (!/^\d{4}-\d{2}$/.test(month) || !recap(db, spaceId, now, month)) throw new Error("There's nothing imported for that month yet.");
+  if (listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money")) throw new Error("Claude is already looking at your money.");
+  return createTask(db, {
+    spaceId,
+    title: "Explain my month",
+    detail: `Explain my month: ${monthYear(month)}`,
+    agent: "claude",
+    weight: "light",
+    allowOnBattery: true,
+    purpose: "money",
+    subject: `${RECAP_SUBJECT}${month}`,
+  });
+}
+
+// The facts and the brief for an Explain my month task; null for an ordinary money question.
+export function explainContext(db: Database, task: Pick<Task, "spaceId" | "subject">, now: number): string[] | null {
+  if (!task.subject?.startsWith(RECAP_SUBJECT)) return null;
+  const r = recap(db, task.spaceId, now, task.subject.slice(RECAP_SUBJECT.length));
+  if (!r) return ["There's no recap for that month anymore. Say so in one sentence."];
+  return [
+    ...recapFacts(r),
+    "Rephrase these facts for Nakul in at most 120 words of plain, calm prose: where his money went this month compared with last month. Use only the numbers above, exactly as written; don't add, total or estimate any others. If the month is incomplete, say so first. No headings, no advice.",
+  ];
 }

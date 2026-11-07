@@ -42,9 +42,9 @@ export function InvestTabs({ advanced, tab, onTab }: { spaceId: string; advanced
   );
 }
 
-export function InvestPanel({ spaceId, symbol }: { spaceId: string; symbol: string | null }) {
+export function InvestPanel({ spaceId, symbol, initial = "portfolio" }: { spaceId: string; symbol: string | null; initial?: InvestTab }) {
   const view = useMarkets(spaceId);
-  const [picked, setTab] = useState<InvestTab>("portfolio");
+  const [picked, setTab] = useState<InvestTab>(initial);
   const advanced = view?.advanced ?? false;
   // An Advanced tab left open falls back to Portfolio once Advanced is off.
   const tab = !advanced && ADVANCED.includes(picked as AdvancedTab) ? "portfolio" : picked;

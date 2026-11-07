@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null };
+export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; money: boolean };
 export type SpaceTab = "tasks" | "files";
 
 const listeners = new Set<() => void>();
@@ -34,7 +34,8 @@ export function parseRoute(path: string): Route {
   if (!m) return { name: "home" };
   try {
     const q = new URLSearchParams(search);
-    return { name: "space", id: decodeURIComponent(m[1]!), task: q.get("task"), tab: q.get("tab") === "files" ? "files" : "tasks", symbol: q.get("symbol") };
+    // `?tab=money` opens an investing space on its Money tab, from a money reminder or heads-up.
+    return { name: "space", id: decodeURIComponent(m[1]!), task: q.get("task"), tab: q.get("tab") === "files" ? "files" : "tasks", symbol: q.get("symbol"), money: q.get("tab") === "money" };
   } catch {
     // A hand-typed URL with a stray "%" shouldn't crash the page.
     return { name: "home" };

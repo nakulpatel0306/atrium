@@ -120,6 +120,7 @@ export function makeState(over: Partial<State> = {}): State {
     disk: { totalBytes: 12 * 1024 * 1024, transcriptsBytes: 10 * 1024 * 1024, dbBytes: 2 * 1024 * 1024 },
     repoActions: [],
     messageActions: [],
+    nudges: [],
     messaging: { state: "untested", contactsReady: null },
     ...over,
   };

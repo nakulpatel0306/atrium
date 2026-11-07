@@ -29,6 +29,7 @@ export const HANDLED = {
     "tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions",
     "message_actions", "run_files", "rule_events", "market_lists", "market_watchlist", "market_holdings", "market_alerts",
     "paper_accounts", "paper_fills", "market_strategies", "research_notes", "market_writeups", "market_ideas", "money_transactions",
+    "money_imports", "money_budgets", "money_nudges",
   ],
   task: ["tasks", "runs", "approvals", "activity", "messages", "message_actions", "run_files", "paper_fills", "market_writeups"],
   run: ["run_files"],
@@ -37,7 +38,7 @@ export const HANDLED = {
 // Investing and money rows keyed only by space, children before parents.
 const SPACE_DATA = [
   "market_watchlist", "market_lists", "market_holdings", "market_alerts", "paper_fills", "paper_accounts", "market_strategies",
-  "research_notes", "market_writeups", "market_ideas", "money_transactions",
+  "research_notes", "market_writeups", "market_ideas", "money_transactions", "money_imports", "money_budgets", "money_nudges",
 ];
 
 const SPACE_GONE = "That space isn't here anymore. It may have been deleted somewhere else.";

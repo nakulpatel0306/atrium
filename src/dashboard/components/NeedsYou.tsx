@@ -1,4 +1,4 @@
-import { Inbox, SearchCheck, Wrench } from "lucide-react";
+import { CalendarClock, Inbox, SearchCheck, Wrench } from "lucide-react";
 import { useState } from "react";
 import { post, type State, useMessages } from "../api";
 import { absolute, relative } from "../format";
@@ -157,17 +157,48 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
   );
 }
 
+type Nudge = State["nudges"][number];
+
+// The monthly "time to import" reminder: a quiet row, not something to approve, so it isn't counted.
+function NudgeRow({ nudge }: { nudge: Nudge }) {
+  const [error, setError] = useState<string | null>(null);
+  const dismiss = async () => {
+    const res = await post(`/api/investing/${encodeURIComponent(nudge.spaceId)}/money/nudges/${encodeURIComponent(nudge.id)}/dismiss`);
+    if (!res.ok) setError(res.error);
+  };
+  return (
+    <div className="row nudge-row">
+      <CalendarClock className="nudge-icon" />
+      <div className="nudge-text">
+        <b>{nudge.title}</b>
+        <span className="faint">{nudge.body}</span>
+      </div>
+      <button className="btn" onClick={() => navigate(nudge.path)}>
+        Import now
+      </button>
+      <button className="btn link" onClick={() => void dismiss()}>
+        Dismiss
+      </button>
+      {error && <div className="row-err err">{error}</div>}
+    </div>
+  );
+}
+
 export function NeedsYou({ state }: { state: State }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
   const count = state.approvals.length + state.proposals.length;
+  const nudges = state.nudges ?? [];
   return (
     <>
       <h2 id="needs">
         <Inbox />
         Needs you{count > 0 && ` · ${count}`}</h2>
       <div className="list">
+        {nudges.map((n) => (
+          <NudgeRow key={n.id} nudge={n} />
+        ))}
         {count === 0 ? (
-          <div className="empty-row">You're all caught up.</div>
+          nudges.length === 0 && <div className="empty-row">You're all caught up.</div>
         ) : (
           <>
             {state.proposals.map((p) => (
