@@ -29,9 +29,10 @@ Atrium was built in numbered plans, each one a working step.
 | 9 | Seeing what agents made, and a full wording pass |
 | 10 | Simpler investing with TradingView charts, plus Money |
 | 11 | Sending texts, and honest "couldn't do it" results |
+| 12 | Talking to Atrium by voice (planned) |
 | 13 | Delete, undo and a shorter activity feed |
 
-Plan 12, talking to Atrium by voice, comes next.
+Plan 12 is written and not built yet.
 
 In [`plans/`](plans):
 - `YYYY-MM-DD-plan-N-*.md` is the plan as written.
