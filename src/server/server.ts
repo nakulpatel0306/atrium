@@ -1,7 +1,9 @@
 import type { Database } from "bun:sqlite";
 import type { Server, ServerWebSocket } from "bun";
+import { existsSync, readFileSync } from "node:fs";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
+import type { StopOutcome } from "../engine/runner";
 import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
 import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
 import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
@@ -35,7 +37,7 @@ import { mergeRestoredMessages, messagesMergeWait } from "../engine/messaging/sp
 
 type Deps = {
   db: Database;
-  runner: { kick(): void; stopTask?(taskId: string): Promise<boolean>; registry?: Registry };
+  runner: { kick(): void; stopTask?(taskId: string): Promise<StopOutcome>; outputSeq?(runId: string): number | null; registry?: Registry };
   setup: (text: string) => ReturnType<typeof setupSpace>;
   port?: number;
   // How many dashboard tabs are visible; the market feed only streams while someone is looking.
@@ -249,16 +251,19 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       return json(getTask(db, id));
     }
 
-    // Waits for the run to wind down, so the answer is the task as it ended (blocked, with where its edits went).
+    // Waits for the run to wind down, so the answer says what actually happened: 200 with the task blocked when it
+    // stopped; 202 with the task still running when the agent hasn't exited yet (it's marked stopped when it does);
+    // 409 when it finished first, since its result stands.
     const stopM = hit("POST", /^\/api\/tasks\/([^/]+)\/stop$/);
     if (stopM) {
       const id = stopM[1]!;
-      if (!getTask(db, id)) throw new HttpError(404, "No such task.");
-      if (getTask(db, id)!.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to stop.");
-      if (!(await runner.stopTask?.(id))) {
-        throw new HttpError(409, "Atrium isn't running this task right now. Restart the engine if it still shows as running.");
-      }
-      return json(getTask(db, id));
+      const task = getTask(db, id);
+      if (!task) throw new HttpError(404, "No such task.");
+      if (task.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to stop.");
+      const outcome = (await runner.stopTask?.(id)) ?? "not-running";
+      if (outcome === "not-running") throw new HttpError(409, "Atrium isn't running this task right now. Restart the engine if it still shows as running.");
+      if (outcome === "finished") throw new HttpError(409, "It finished before it could be stopped, so its result stands.");
+      return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
 
     const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
@@ -382,10 +387,15 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       const row = db.query("SELECT transcript_path FROM runs WHERE id = ?").get(trM[1]!) as {
         transcript_path: string;
       } | null;
-      const file = row ? Bun.file(row.transcript_path) : null;
-      if (!file || !(await file.exists())) throw new HttpError(404, "No transcript for that run.");
+      if (!row || !existsSync(row.transcript_path)) throw new HttpError(404, "No transcript for that run.");
+      // The line count and the file are read in one synchronous step, so no line is appended between them: a live
+      // reader skips the run-output lines numbered up to it, which the text already has.
+      const seq = runner.outputSeq?.(trM[1]!) ?? null;
+      const text = readFileSync(row.transcript_path);
       // Agent output is untrusted; a browser must never sniff it into HTML on the engine's origin.
-      return new Response(file, { headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
+      const headers: Record<string, string> = { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" };
+      if (seq !== null) headers["x-atrium-output-seq"] = String(seq);
+      return new Response(text, { headers });
     }
 
     const files = await filesRoute(db, req, url);

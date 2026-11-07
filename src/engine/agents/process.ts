@@ -1,4 +1,6 @@
 const KILL_GRACE_MS = 300;
+// How long an aborted agent gets to exit on SIGTERM before its whole group is killed outright.
+export const ABORT_GRACE_MS = 3000;
 
 export type AgentProcessResult = { notInstalled: true } | { notInstalled?: false; stderr: string; exitCode: number; aborted: boolean };
 
@@ -33,7 +35,7 @@ async function killGroup(pgid: number): Promise<void> {
 // The group is killed once the main process exits, so stray children can't outlive the run (or hold stdout open).
 export async function runAgentProcess(
   argv: string[],
-  opts: { cwd: string; stdin: string; env?: Record<string, string | undefined>; signal?: AbortSignal; onLine(line: string): void },
+  opts: { cwd: string; stdin: string; env?: Record<string, string | undefined>; signal?: AbortSignal; abortGraceMs?: number; onLine(line: string): void },
 ): Promise<AgentProcessResult> {
   let proc: ReturnType<typeof Bun.spawn>;
   try {
@@ -64,8 +66,25 @@ export async function runAgentProcess(
     if (buf.trim()) opts.onLine(buf);
   };
 
+  // Bun sends SIGTERM to the main process on abort; one that ignores it (or a child holding the group open) would
+  // keep the run alive, so the group is killed after a grace period.
+  let escalate: ReturnType<typeof setTimeout> | undefined;
+  const onAbort = () => {
+    escalate = setTimeout(() => {
+      try {
+        process.kill(-proc.pid, "SIGKILL");
+      } catch {
+        // ESRCH: everything already exited.
+      }
+    }, opts.abortGraceMs ?? ABORT_GRACE_MS);
+  };
+  if (opts.signal?.aborted) onAbort();
+  else opts.signal?.addEventListener("abort", onAbort, { once: true });
+
   const reading = Promise.all([readStdout(), new Response(proc.stderr as ReadableStream).text()]);
   const exitCode = await proc.exited;
+  clearTimeout(escalate);
+  opts.signal?.removeEventListener("abort", onAbort);
   await killGroup(proc.pid);
   const [, stderr] = await reading;
   return { stderr, exitCode, aborted: Boolean(opts.signal?.aborted) };

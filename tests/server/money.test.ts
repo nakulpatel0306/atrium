@@ -253,3 +253,16 @@ test("a statement's file name, with its account id, is never stored", async () =
   expect(raw.includes("Interest")).toBe(true);
   for (const s of ["WK000000000CAD", "monthly-statement", "Fake Person"]) expect(raw.includes(s)).toBe(false);
 });
+
+test("the terminal app's summary read carries totals and budgets but no transaction rows", async () => {
+  await call("POST", money("/import"), { csv: "Date,Description,Amount\n2026-11-02,STARBUCKS 4111 1111,-90\n2026-11-03,PAYROLL,2000\n", signs: "negative-out" });
+  await call("PUT", money("/budgets"), { category: "Dining", limit: 100 });
+  const full = await (await fetch(`${base}${money()}`)).json();
+  const slim = await (await fetch(`${base}${money("?summary=1")}`)).json();
+  expect(full.transactions.length).toBeGreaterThan(0);
+  for (const k of ["transactions", "unusual", "recurring", "ws", "imports", "importAccounts"]) expect(slim).not.toHaveProperty(k);
+  expect(slim.spent).toBe(full.spent);
+  expect(slim.budgets).toEqual(full.budgets);
+  expect(slim.lastImportAt).toBe(full.imports[0].importedAt);
+  expect(JSON.stringify(slim)).not.toContain("STARBUCKS");
+});

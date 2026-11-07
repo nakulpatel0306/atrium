@@ -4,7 +4,8 @@ import type { Quote } from "./markets/providers/types";
 
 export type EngineEvent =
   | { type: "changed" }
-  | { type: "run-output"; runId: string; taskId: string; chunk: string }
+  // seq counts a run's lines from 1, so a reader that loaded the transcript can tell which lines it already has.
+  | { type: "run-output"; runId: string; taskId: string; chunk: string; seq?: number }
   | { type: "quotes"; quotes: Quote[] };
 
 const listeners = new Set<(e: EngineEvent) => void>();

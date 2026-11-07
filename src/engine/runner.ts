@@ -142,14 +142,18 @@ export function createRunner(deps: {
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
   // Money's once-a-day check (the monthly import reminder and budget heads-ups), from the same minute timer.
   money?: { daily(now: number): void };
-}): { start(): void; stop(): Promise<void>; kick(): void; stopTask(taskId: string): Promise<boolean>; registry: Registry } {
+}): { start(): void; stop(): Promise<void>; kick(): void; stopTask(taskId: string): Promise<StopOutcome>; outputSeq(runId: string): number | null; registry: Registry } {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
   const maxConcurrent = deps.maxConcurrent ?? 1;
   const active = new Map<string, { taskId: string; done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
-  // Tasks Nakul asked to stop, so their aborted run ends blocked with his word rather than back in the queue.
+  // Tasks Nakul asked to stop, so their aborted run ends blocked with his word rather than back in the queue; and the
+  // ones whose run did end that way, so stopTask can say so.
   const stopRequested = new Set<string>();
+  const stoppedByStop = new Set<string>();
+  // Lines each live run has written to its transcript (and sent), for the transcript route's X-Atrium-Output-Seq.
+  const runSeq = new Map<string, number>();
   // Consecutive usage-limit outcomes per task, so a misread limit can't requeue a task forever.
   const limitHits = new Map<string, number>();
   let running = false;
@@ -386,6 +390,7 @@ export function createRunner(deps: {
       return recheck && "wait" in recheck ? { taskId: task.id, ...recheck.wait } : undefined;
     }
     setTaskStatus(db, task.id, "running", repo ? { branch: repo.branch } : {});
+    stoppedByStop.delete(task.id);
 
     // Codex and Gemini reads aren't sandboxed like Claude's: away from a repo each run gets an empty folder of
     // its own instead of the space folder, where earlier runs' files collect.
@@ -473,7 +478,9 @@ export function createRunner(deps: {
           } catch {
             // A disk error here would reject the run while the agent keeps working; the live view still gets it.
           }
-          bus.emit({ type: "run-output", runId, taskId: task.id, chunk });
+          const seq = (runSeq.get(runId) ?? 0) + 1;
+          runSeq.set(runId, seq);
+          bus.emit({ type: "run-output", runId, taskId: task.id, chunk, seq });
         },
       });
     } catch (e) {
@@ -482,6 +489,9 @@ export function createRunner(deps: {
           ? { status: "error", kind: "failed", message: MoneyGuard.text }
           : { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
     }
+    // Whether the run was cut short. An abort that lands after the agent answered (a stop during the commit step)
+    // mustn't relabel what the agent actually said, a failure or a usage limit included.
+    const cutShort = r.signal.aborted;
 
     // Claude's answer to a money question is masked before anything saves it: the task, the review, the write-up.
     if (task.purpose === "money") result = result.status === "ok" ? { ...result, summary: maskNumbers(result.summary) } : { ...result, message: maskNumbers(result.message) };
@@ -580,9 +590,9 @@ export function createRunner(deps: {
       } else if (commitError ?? leftRepo) {
         // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
         block(task, (commitError ?? leftRepo)!);
-      } else if (result.status !== "ok" && r.signal.aborted && stopRequested.has(task.id)) {
+      } else if (result.status !== "ok" && cutShort && stopRequested.has(task.id)) {
         stoppedByYou(task, saved);
-      } else if (result.status !== "ok" && r.signal.aborted) {
+      } else if (result.status !== "ok" && cutShort) {
         setTaskStatus(db, task.id, "queued");
         logActivity(db, space.id, "atrium", `The engine stopped, so ${task.title} is back in the queue.${saved ? ` Its unfinished edits are saved on ${saved}.` : ""}`, { taskId: task.id });
       } else if (result.status === "ok" && task.kind === "review") {
@@ -654,6 +664,7 @@ export function createRunner(deps: {
       }
     } finally {
       stopRequested.delete(task.id);
+      runSeq.delete(runId);
       enforceTranscriptCap();
     }
   }
@@ -662,22 +673,30 @@ export function createRunner(deps: {
   function stoppedByYou(task: Task, saved: string | null) {
     const reason = `You stopped this task. ${saved ? savedNote(task, saved) : "Retry to run it again."}`;
     setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
+    stoppedByStop.add(task.id);
     logActivity(db, task.spaceId, "you", `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
     if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: "You stopped the review." });
     if (task.kind === "fix") fixFailed(db, task, "You stopped the fix.", saved);
   }
 
-  // Aborting kills the agent's process group (see runAgentProcess); execute then saves its edits, puts the repo back
-  // and marks the task. Resolves once that has happened, or after the stop timeout for an agent that won't exit.
-  async function stopTask(taskId: string): Promise<boolean> {
+  // Aborting kills the agent's process group (see runAgentProcess, which escalates to SIGKILL); execute then saves
+  // its edits, puts the repo back and marks the task. Says what actually happened: stopped; finished (the agent had
+  // already answered, so its result stands); or timeout (still winding down; it's marked stopped when it ends).
+  async function stopTask(taskId: string): Promise<StopOutcome> {
     const run = [...active.values()].find((r) => r.taskId === taskId);
-    if (!run) return false;
+    if (!run) return "not-running";
+    stoppedByStop.delete(taskId);
     stopRequested.add(taskId);
     run.controller.abort();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([run.done, new Promise((resolve) => (timer = setTimeout(resolve, deps.stopTimeoutMs ?? STOP_TIMEOUT_MS)))]);
+    const settled = await Promise.race([
+      run.done.then(() => true),
+      new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), deps.stopTimeoutMs ?? STOP_TIMEOUT_MS))),
+    ]);
     clearTimeout(timer);
-    return true;
+    if (!settled) return "timeout";
+    const stopped = stoppedByStop.delete(taskId);
+    return stopped ? "stopped" : "finished";
   }
 
   // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A
@@ -848,6 +867,7 @@ export function createRunner(deps: {
     },
     kick,
     stopTask,
+    outputSeq: (runId) => runSeq.get(runId) ?? null,
     registry,
   };
 }
@@ -864,6 +884,8 @@ function readyLine(task: Task, o: ParsedOutcome): string {
   if (o.outcome === "partial") return `Partly done: ${task.title}.${why}`;
   return `Ready for review: ${task.title}`;
 }
+
+export type StopOutcome = "stopped" | "finished" | "timeout" | "not-running";
 
 class MoneyGuard extends Error {
   static text = "Atrium stopped this before sending anything: the money facts weren't fully masked or the agent wasn't Claude. Try again, and check the engine log if it keeps happening.";

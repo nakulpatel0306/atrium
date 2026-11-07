@@ -890,15 +890,18 @@ test("stopTask stops a running task: blocked with your word, edits saved on its 
   git(path, "checkout", "-b", "feature");
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Long job" });
+  const seen: string[][] = [];
   const r = start({
     adapter: fakeAdapter(async (input) => {
+      seen.push(readdirSync(input.cwd).filter((f) => f.endsWith(".txt")));
+      if (seen.length > 1) return ok("Carried on.");
       writeFileSync(join(input.cwd, "half.txt"), "half done\n");
       return untilAborted(input);
     }).adapter,
   });
   await waitFor(() => status(t.id) === "running");
   await Bun.sleep(20);
-  expect(await r.stopTask(t.id)).toBe(true);
+  expect(await r.stopTask(t.id)).toBe("stopped");
   const task = getTask(db, t.id)!;
   expect(task.status).toBe("blocked");
   expect(task.blockedReason).toBe(`You stopped this task. Atrium saved the agent's unfinished edits as a WIP commit on atrium/${t.id}; retry to carry on from there.`);
@@ -911,6 +914,11 @@ test("stopTask stops a running task: blocked with your word, edits saved on its 
   // It doesn't start again on its own.
   await Bun.sleep(50);
   expect(status(t.id)).toBe("blocked");
+  // Retry carries on from the saved edits on the task's branch.
+  setTaskStatus(db, t.id, "queued");
+  r.kick();
+  await waitFor(() => status(t.id) === "review");
+  expect(seen).toEqual([[], ["half.txt"]]);
 });
 
 test("stopTask leaves no agent process behind", async () => {
@@ -926,18 +934,139 @@ test("stopTask leaves no agent process behind", async () => {
   });
   await waitFor(() => status(t.id) === "running" && existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
   const child = Number(readFileSync(pidFile, "utf8").trim());
-  expect(await r.stopTask(t.id)).toBe(true);
+  expect(await r.stopTask(t.id)).toBe("stopped");
   expect(status(t.id)).toBe("blocked");
   expect(getTask(db, t.id)!.blockedReason).toBe("You stopped this task. Retry to run it again.");
   expect(() => process.kill(child, 0)).toThrow();
 });
 
-test("stopTask says no for a task that isn't running", async () => {
+test("an agent that ignores SIGTERM is killed after the grace period", async () => {
+  const { runAgentProcess } = await import("../../src/engine/agents/process");
+  const controller = new AbortController();
+  const pidFile = join(home.home, "stubborn.pid");
+  const started = Date.now();
+  const running = runAgentProcess(["bash", "-c", `trap '' TERM; echo $$ > ${pidFile}; while true; do sleep 0.05; done`], { cwd: home.home, stdin: "", signal: controller.signal, abortGraceMs: 200, onLine() {} });
+  await waitFor(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
+  const pid = Number(readFileSync(pidFile, "utf8").trim());
+  controller.abort();
+  const res = await running;
+  expect("aborted" in res && res.aborted).toBe(true);
+  expect(Date.now() - started).toBeLessThan(3000);
+  expect(() => process.kill(pid, 0)).toThrow();
+});
+
+test("stopTask says timeout while the run hasn't wound down, then the task ends stopped", async () => {
   const s = generalSpace();
-  const t = createTask(db, { spaceId: s.id, title: "Never started" });
-  const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter, power: async () => "battery" });
-  setTaskStatus(db, t.id, "blocked", { blockedReason: "x" });
-  expect(await r.stopTask(t.id)).toBe(false);
+  const t = createTask(db, { spaceId: s.id, title: "Slow to stop" });
+  let finish!: () => void;
+  const gate = new Promise<void>((res) => (finish = res));
+  const r = start({
+    adapter: fakeAdapter(async (input) => {
+      await untilAborted(input);
+      await gate;
+      return { status: "error", kind: "failed", message: "Stopped" };
+    }).adapter,
+    stopTimeoutMs: 30,
+  });
+  await waitFor(() => status(t.id) === "running");
+  expect(await r.stopTask(t.id)).toBe("timeout");
+  expect(status(t.id)).toBe("running");
+  finish();
+  await waitFor(() => status(t.id) === "blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe("You stopped this task. Retry to run it again.");
+});
+
+test("stopTask says finished when the agent had already answered, and its result stands", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Nearly done" });
+  // Hold the run in its after-work step, as a slow commit would.
+  let release!: () => void;
+  const held = new Promise<void>((res) => (release = res));
+  const real = gitOps.commitAll;
+  const spy = spyOn(gitOps, "commitAll").mockImplementation(async (...a: Parameters<typeof real>) => {
+    await held;
+    return real(...a);
+  });
+  cleanups.push(() => spy.mockRestore());
+  const r = start({ adapter: fakeAdapter(() => ok("All done.")).adapter });
+  await waitFor(() => spy.mock.calls.length > 0);
+  const outcome = r.stopTask(t.id);
+  release();
+  expect(await outcome).toBe("finished");
+  expect(status(t.id)).toBe("review");
+  expect(listActivity(db).some((a) => a.message.startsWith("Stopped by you"))).toBe(false);
+});
+
+for (const [label, result, expectStatus] of [
+  ["failed", { status: "error", kind: "failed", message: "The CLI crashed" }, "blocked"],
+  ["hit a usage limit", { status: "error", kind: "rate_limited", message: "Claude hit its limit", retryAfter: Date.now() + 60_000 }, "queued"],
+] as const) {
+  test(`a stop that lands after the agent ${label} keeps what the agent said`, async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Answered already" });
+    let release!: () => void;
+    const held = new Promise<void>((res) => (release = res));
+    const real = gitOps.commitAll;
+    const spy = spyOn(gitOps, "commitAll").mockImplementation(async (...a: Parameters<typeof real>) => {
+      await held;
+      return real(...a);
+    });
+    cleanups.push(() => spy.mockRestore());
+    const r = start({ adapter: fakeAdapter(() => result as AgentRunResult).adapter });
+    await waitFor(() => spy.mock.calls.length > 0);
+    const outcome = r.stopTask(t.id);
+    release();
+    expect(await outcome).toBe("finished");
+    expect(status(t.id)).toBe(expectStatus);
+    if (expectStatus === "blocked") expect(getTask(db, t.id)!.blockedReason).toBe("The CLI crashed");
+    expect(listActivity(db).some((a) => a.message.startsWith("Stopped by you"))).toBe(false);
+  });
+}
+
+test("stopping a review hands it back like any review that didn't happen", async () => {
+  const s = generalSpace();
+  const parent = createTask(db, { spaceId: s.id, title: "Work", agent: "codex" });
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run("run_w", parent.id, "codex", Date.now(), "/tmp/x.log");
+  setTaskStatus(db, parent.id, "running");
+  setTaskStatus(db, parent.id, "review");
+  const review = createTask(db, { spaceId: s.id, title: "Review: Work", kind: "review", parentTaskId: parent.id, agent: "claude" });
+  const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+  await waitFor(() => status(review.id) === "running");
+  expect(await r.stopTask(review.id)).toBe("stopped");
+  expect(status(review.id)).toBe("blocked");
+  const { listMessages } = await import("../../src/engine/messages");
+  expect(listMessages(db, parent.id).map((m) => m.body)).toContain("Claude's review didn't happen: You stopped the review. The approval is unchanged; decide on it as usual.");
+});
+
+test("stopping a fix says so on the work it was fixing", async () => {
+  const s = generalSpace();
+  const parent = createTask(db, { spaceId: s.id, title: "Add a note" });
+  setTaskStatus(db, parent.id, "running");
+  setTaskStatus(db, parent.id, "review");
+  const { createApproval } = await import("../../src/engine/approvals");
+  const a = createApproval(db, { spaceId: s.id, taskId: parent.id, kind: "review", title: "Add a note", detail: "Added it." });
+  const fix = createTask(db, { spaceId: s.id, title: "Fix: Add a note", kind: "fix", parentTaskId: parent.id, approvalId: a.id, agent: "claude" });
+  const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+  await waitFor(() => status(fix.id) === "running");
+  expect(await r.stopTask(fix.id)).toBe("stopped");
+  expect(status(fix.id)).toBe("blocked");
+  expect(getApproval(db, a.id)!.detail).toContain("The fix didn't finish: You stopped the fix.");
+});
+
+test("stopTask stops only the task asked for, and says no for one that isn't running", async () => {
+  const s = generalSpace();
+  const other = createSpace(db, { name: "Other", kind: "general", goal: "g" });
+  const idle = createTask(db, { spaceId: other.id, title: "Waiting its turn" });
+  setTaskStatus(db, idle.id, "blocked", { blockedReason: "x" });
+  const t = createTask(db, { spaceId: s.id, title: "Running" });
+  const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+  await waitFor(() => status(t.id) === "running");
+  expect(await r.stopTask(idle.id)).toBe("not-running");
+  expect(status(t.id)).toBe("running");
+  expect(await r.stopTask(t.id)).toBe("stopped");
+  expect(await r.stopTask(t.id)).toBe("not-running");
 });
 
 test("a repo run records the branch it started from and its git settings", async () => {
