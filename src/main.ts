@@ -3,7 +3,7 @@ import { claudeAdapter } from "./engine/agents/claude";
 import { codexAdapter } from "./engine/agents/codex";
 import { geminiAdapter } from "./engine/agents/gemini";
 import { config } from "./engine/config";
-import { installCrashGuard } from "./engine/crash-guard";
+import { installCrashGuard, noteRestart } from "./engine/crash-guard";
 import { openDb } from "./engine/db";
 import { logActivity } from "./engine/events";
 import { migrateSpaceFolders, tildePath } from "./engine/folders";
@@ -39,10 +39,12 @@ import { startServer } from "./server/server";
 
 // Keep launchd's log from growing forever; must run before anything logs.
 trimLog(join(config().home, "engine.log"), 1024 * 1024);
-installCrashGuard();
+const crashMarker = join(config().home, "crashed");
+installCrashGuard({ marker: crashMarker });
 
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();
+noteRestart(db, crashMarker);
 // Nakul's 13 tickers go into an Investing space the first time the real engine starts (never with ATRIUM_HOME).
 seedOnBoot(db);
 addMetaOnBoot(db);
