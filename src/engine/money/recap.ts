@@ -1,11 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { etDate } from "../markets/calendar";
 import { accountLabel } from "./banks";
-import { categorize, listRules, NOT_SPENDING } from "./categories";
+import { listRules } from "./categories";
 import { monthCover, monthEnd, shiftMonth, type MonthCover } from "./coverage";
 import { maskNumbers } from "./import";
 import { transfers } from "./transfers";
-import { txs, type Tx } from "./rows";
+import { countAs, movedIn, spendingIn, txs, type Tx } from "./rows";
 
 // "Where did my money go this month": every number here is worked out on this Mac. Claude only ever rephrases these
 // facts, when Nakul asks it to.
@@ -22,7 +22,10 @@ export type Recap = {
   changes: RecapChange[];
   notable: Notable[];
   basis: { count: number; from: string; to: string };
+  // Card payments and transfers between his own accounts: neither spending nor money in.
   moved: { count: number; total: number };
+  // Credits on his cards that aren't payments, already taken off spending.
+  refunds: { count: number; total: number };
   // Interac e-transfers sent (the Transfers category): left out of spending, so rent paid that way is said aloud.
   eTransfers: { count: number; total: number };
   cover: MonthCover;
@@ -41,26 +44,16 @@ export const monthYear = (m: string) => monthYearFmt.format(Date.parse(`${m}-15T
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 export const dayText = (d: string) => dayFmt.format(Date.parse(`${d}T12:00:00Z`));
 
-type Totals = { spent: number; income: number; cats: Map<string, number>; spend: (Tx & { category: string })[]; sent: { count: number; total: number } };
+type Totals = { spent: number; income: number; cats: Map<string, number>; spend: (Tx & { category: string })[]; sent: { count: number; total: number }; refunds: { count: number; total: number } };
 
 function totals(rows: Tx[], month: string, rules: ReturnType<typeof listRules>): Totals {
-  const cats = new Map<string, number>();
-  const spend: Totals["spend"] = [];
-  const sent = { count: 0, total: 0 };
-  let income = 0;
-  for (const t of rows) {
-    if (!t.date.startsWith(month)) continue;
-    const category = categorize(t.description, rules);
-    if (t.amount > 0 && category !== "Transfers") income += t.amount;
-    if (t.amount < 0 && category === "Transfers") {
-      sent.count++;
-      sent.total = round2(sent.total - t.amount);
-    }
-    if (t.amount >= 0 || NOT_SPENDING.has(category)) continue;
-    cats.set(category, (cats.get(category) ?? 0) - t.amount);
-    spend.push({ ...t, category });
-  }
-  return { spent: round2([...cats.values()].reduce((a, b) => a + b, 0)), income: round2(income), cats, spend, sent };
+  const m = spendingIn(rows, month, rules);
+  const spend = rows
+    .filter((t) => t.date.startsWith(month))
+    .map((t) => ({ t, c: countAs(t, rules) }))
+    .filter(({ c }) => c.as === "spend")
+    .map(({ t, c }) => ({ ...t, category: c.category }));
+  return { spent: m.spent, income: m.income, cats: new Map(m.spending.map((c) => [c.category, c.amount])), spend, sent: m.sent, refunds: m.refunds };
 }
 
 // The usual charge at each merchant before this month: a charge over 3× it is worth a mention.
@@ -146,7 +139,6 @@ export function recap(db: Database, spaceId: string, now: number, month: string)
         .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta))
         .slice(0, CHANGES_SHOWN)
     : [];
-  const movedRows = inMonth.filter((t) => moved.has(t.id));
   return {
     month,
     previous: hasPrevious ? previous : null,
@@ -158,7 +150,8 @@ export function recap(db: Database, spaceId: string, now: number, month: string)
     changes,
     notable: notable(rows, cur, month),
     basis: { count: inMonth.length, from: inMonth[0]!.date, to: inMonth.at(-1)!.date },
-    moved: { count: movedRows.length, total: round2(movedRows.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0)) },
+    moved: movedIn(all, month),
+    refunds: cur.refunds,
     eTransfers: cur.sent,
     cover,
   };
@@ -176,10 +169,12 @@ export function coverText(cover: MonthCover): string | null {
 export function recapFacts(r: Recap): string[] {
   const out = [`Recap facts for ${monthYear(r.month)}, all worked out by Atrium from files Nakul imported on this Mac (CAD):`];
   out.push(`Spent ${cad(r.spent)}; money in ${cad(r.income)}; ${r.net >= 0 ? `left over ${cad(r.net)}` : `spent ${cad(r.net)} more than came in`}.`);
+  if (r.income) out.push("Money in is pay, e-transfers received and interest.");
+  if (r.refunds.count) out.push(`Refunds of ${cad(r.refunds.total)} on ${r.refunds.count === 1 ? "1 charge" : `${r.refunds.count} charges`} were taken off spending.`);
+  if (r.moved.count) out.push(`Moved between Nakul's own accounts (card payments and transfers): ${cad(r.moved.total)}, not counted as spending or money in.`);
   if (r.before && r.previous) out.push(`${monthYear(r.previous)}: spent ${cad(r.before.spent)}; money in ${cad(r.before.income)}.`);
   if (r.changes.length) out.push(`Biggest category changes: ${r.changes.map((c) => `${c.category} ${c.delta > 0 ? "up" : "down"} ${cad(c.delta)} (${cad(c.before)} to ${cad(c.now)})`).join("; ")}.`);
   if (r.notable.length) out.push(`Notable charges: ${r.notable.map((n) => `${maskNumbers(n.merchant)} ${cad(n.amount)} on ${dayText(n.date)} (${n.why.replace(/\.$/, "")})`).join("; ")}.`);
-  if (r.moved.count) out.push(`${r.moved.count} transfers between Nakul's own accounts were left out.`);
   if (r.eTransfers.count) out.push(`${cad(r.eTransfers.total)} in ${r.eTransfers.count === 1 ? "1 e-transfer" : `${r.eTransfers.count} e-transfers`} sent was left out of spending.`);
   out.push(`Based on ${r.basis.count} transactions from ${dayText(r.basis.from)} to ${dayText(r.basis.to)}.`);
   const gap = coverText(r.cover);

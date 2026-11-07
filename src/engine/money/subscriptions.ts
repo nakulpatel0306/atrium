@@ -54,7 +54,8 @@ function runs(amounts: number[]): number[][] {
 }
 
 export function subscriptions(rows: Tx[], rules: Rule[]): SubscriptionList {
-  const spend = rows.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
+  // A payment to a card is many charges at once, not one service, even when it counts as spending.
+  const spend = rows.filter((t) => t.amount < 0 && !t.flow && !NOT_SPENDING.has(categorize(t.description, rules)));
   const latest = rows.at(-1)?.date;
   if (!latest) return { list: [], perMonth: 0, perYear: 0, bills: { list: [], perMonth: 0, perYear: 0 } };
   const latestMonth = latest.slice(0, 7);

@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { listTasks } from "../tasks";
 import { ACCOUNTS, OTHER_ACCOUNT } from "./banks";
+import { reflowMoney } from "./flows";
 import { fingerprintOf, normalDescription, twinCounter, type MoneyRow } from "./import";
 
 // Each import Nakul did, with the rows it added, so a wrong one can be undone or moved to the right account.
@@ -43,10 +44,11 @@ function logged(db: Database, id: string): Logged {
 
 // Deletes exactly the rows this import added, and its record, so coverage forgets it too.
 export function undoImport(db: Database, id: string): { removed: number } {
-  logged(db, id);
+  const imp = logged(db, id);
   const removed = db.transaction(() => {
     const n = db.query("DELETE FROM money_transactions WHERE import_id = ?").run(id).changes;
     db.query("DELETE FROM money_imports WHERE id = ?").run(id);
+    reflowMoney(db, imp.space_id);
     return n;
   })();
   bus.emit({ type: "changed" });
@@ -83,6 +85,7 @@ export function changeImportAccount(db: Database, id: string, account: string): 
       moved++;
     }
     db.query("UPDATE money_imports SET account = ? WHERE id = ?").run(account, id);
+    reflowMoney(db, imp.space_id);
   })();
   bus.emit({ type: "changed" });
   return { moved, dropped };

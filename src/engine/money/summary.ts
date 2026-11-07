@@ -3,7 +3,7 @@ import { createTask, listTasks, type Task } from "../tasks";
 import { etDate } from "../markets/calendar";
 import { latestWriteups, type Writeup } from "../markets/research";
 import { listEntries, roomStatus } from "../markets/tfsa";
-import { categorize, listRules, NOT_SPENDING, type Rule } from "./categories";
+import { listRules, NOT_SPENDING, type Rule } from "./categories";
 import { isMasked, maskNumbers } from "./import";
 import { budgetRows, listBudgets, type BudgetRow } from "./budgets";
 import { monthCover } from "./coverage";
@@ -11,7 +11,8 @@ import { coverText, dayText, monthName, monthYear, recap, recapFacts, type Recap
 import { roomTie, tfsaRoom, type Room } from "./room";
 import { subscriptions, type SubscriptionList } from "./subscriptions";
 import { transfers, type TransferWhy } from "./transfers";
-import { counted, spendingIn, txs, type Tx } from "./rows";
+import { countAs, counted, movedIn, spendingIn, txs, type Tx } from "./rows";
+import type { Flow } from "./flows";
 import { knownAccounts, listImports, moneyBusy, type ImportRow } from "./imports";
 
 
@@ -60,7 +61,9 @@ export type MoneyView = {
   busy: boolean;
 };
 
-export type MonthTx = { id: string; date: string; description: string; account: string; amount: number; category: string; transfer: TransferWhy | null; mark: number | null };
+// flow is Atrium's stored call on the row (a card payment, a refund, a bill for a card that isn't imported), so the
+// list can say why it counts the way it does.
+export type MonthTx = { id: string; date: string; description: string; account: string; amount: number; category: string; transfer: TransferWhy | null; mark: number | null; flow: Flow | null };
 
 export const STARTERS = [
   "How much did I get in dividends this year?",
@@ -193,13 +196,16 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
   const r = picked ? recap(db, spaceId, now, picked) : null;
   const room = tfsaRoom(db, spaceId, Number(today.slice(0, 4)));
   const monthSpending = spendingIn(bank, picked, rules);
+  const { spending, spent, income } = monthSpending;
   const moved = transfers(all);
-  const spend = bank.filter((t) => t.amount < 0 && !NOT_SPENDING.has(categorize(t.description, rules)));
+  const spend = bank.filter((t) => countAs(t, rules).as === "spend");
   const merchants = byMerchant(spend);
   return {
     months,
     month: picked,
-    ...monthSpending,
+    spending,
+    spent,
+    income,
     recurring: recurring(merchants),
     unusual: unusual(merchants, spend.at(-1)?.date),
     ws: wsYears(ws),
@@ -218,7 +224,7 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
       ? all
           .filter((t) => t.date.startsWith(picked))
           .reverse()
-          .map((t) => ({ id: t.id, date: t.date, description: t.description, account: t.account, amount: t.amount, category: categorize(t.description, rules), transfer: moved.get(t.id) ?? null, mark: t.transfer }))
+          .map((t) => ({ id: t.id, date: t.date, description: t.description, account: t.account, amount: t.amount, category: countAs(t, rules).category, transfer: moved.get(t.id) ?? null, mark: t.transfer, flow: t.flow }))
       : [],
     asks: asks(db, spaceId),
     imports: listImports(db, spaceId),
@@ -256,10 +262,14 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
   if (!n) out.push("No bank or card transactions imported.");
   else {
     out.push(`Bank and card: ${n} ${n === 1 ? "transaction" : "transactions"} from ${longDay(v.range!.from)} to ${longDay(v.range!.to)} in ${v.accounts.map(maskNumbers).join(" and ")}.`);
+    const all = txs(db, spaceId, "bank");
     for (const m of v.months.slice(0, 3)) {
       const s = spendingIn(bank, m, rules);
+      const moved = movedIn(all, m);
       const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");
-      out.push(`- ${monthYear(m)}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}.`);
+      const refunds = s.refunds.count ? `; refunds ${cad(s.refunds.total)}` : "";
+      const between = moved.count ? `; moved between his accounts ${cad(moved.total)}` : "";
+      out.push(`- ${monthYear(m)}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}${refunds}${between}.`);
     }
     const recent = bank.filter((t) => t.amount < 0 && days(t.date, v.range!.to) <= 90);
     const merchants = new Map<string, number>();

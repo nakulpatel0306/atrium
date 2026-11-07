@@ -4,6 +4,7 @@ import { config } from "./config";
 import { migrateWatchlists } from "./markets/lists";
 import { MARKETS_SCHEMA } from "./markets/schema";
 import { remaskMoney } from "./money/remask";
+import { reflowMoney } from "./money/flows";
 import { ALWAYS_ASK } from "./approvals";
 
 const schema = () => `
@@ -287,6 +288,10 @@ function migrate(db: Database): boolean {
   backfillImportIds(db);
   // Rows stored by the Plan 10 masker go through today's once (and drop their doubled twins).
   const remasked = remaskMoney(db);
+  // Atrium's own call on card payments, refunds and transfers, stored so the transactions list can say why; worked
+  // out again on every open, so rows from before it and from older rules get today's decision.
+  if (!has("money_transactions", "flow")) db.exec("ALTER TABLE money_transactions ADD COLUMN flow TEXT");
+  reflowMoney(db);
   // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
   if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");
   if (!has("instrument_meta", "market_cap")) db.exec("ALTER TABLE instrument_meta ADD COLUMN market_cap REAL");

@@ -410,14 +410,14 @@ test("transfers: known descriptions, matching pairs across accounts (3 days if o
     { id: "i", date: "2026-10-15", account: "TD chequing", description: "STORE", amount: -77, kind: "spend", transfer: null },
     { id: "j", date: "2026-10-17", account: "Amex", description: "REFUND", amount: 77, kind: "income", transfer: null },
     { id: "c", date: "2026-10-10", account: "TD chequing", description: "COFFEE", amount: -300, kind: "spend", transfer: null },
-    { id: "d", date: "2026-10-20", account: "Amex", description: "PAYMENT RECEIVED - THANK YOU", amount: 90, kind: "income", transfer: null },
+    { id: "d", date: "2026-10-20", account: "Amex", description: "PAYMENT RECEIVED - THANK YOU", amount: 90, kind: "income", transfer: null, flow: "card-payment" as const },
     { id: "e", date: "2026-10-01", account: "TD chequing", description: "REFUND", amount: 40, kind: "income", transfer: null },
     { id: "f", date: "2026-10-09", account: "TD credit card", description: "STORE", amount: -40, kind: "spend", transfer: null },
     { id: "g", date: "2026-10-03", account: "TD chequing", description: "WEALTHSIMPLE", amount: -25, kind: "spend", transfer: 0 },
     { id: "h", date: "2026-10-03", account: "TD chequing", description: "CASH TO SAVINGS", amount: -25, kind: "spend", transfer: 1 },
   ];
   const t = transfers(rows);
-  expect(Object.fromEntries(t)).toEqual({ a: "pair", b: "pair", d: "known", h: "marked" });
+  expect(Object.fromEntries(t)).toEqual({ a: "pair", b: "pair", d: "card-payment", h: "marked" });
 });
 
 test("marking a transaction as a transfer or not changes the month, and the mark can be handed back", () => {
