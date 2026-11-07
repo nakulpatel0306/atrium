@@ -174,8 +174,13 @@ function joins(gap: string): boolean {
   return length <= MAX_GAP;
 }
 
-// The backstop's looser join: up to 8 characters with at most 2 letters in them.
-const looseJoins = (gap: string) => !gap.includes("··") && gap.length <= LOOSE_GAP && [...gap].filter((c) => LETTER.test(c)).length <= LOOSE_LETTERS;
+// The backstop's looser join: up to 8 characters with at most 2 letters, and no letters beside whitespace (so
+// "2026-10-01 to 2026-10-30" stays two dates).
+function looseJoins(gap: string): boolean {
+  if (gap.includes("··") || gap.length > LOOSE_GAP) return false;
+  const letters = [...gap].filter((c) => LETTER.test(c)).length;
+  return letters <= LOOSE_LETTERS && !(letters > 0 && /\s/u.test(gap));
+}
 
 function luhn(d: string): boolean {
   let sum = 0;
@@ -187,8 +192,8 @@ function luhn(d: string): boolean {
   return sum % 10 === 0;
 }
 
-// Digits joined by a loose gap that hold a Luhn-valid 13–19 digit run are a card number, unless every piece of them
-// is a date or an amount.
+// Digits joined by a loose gap that hold a Luhn-valid 13–19 digit run are a card number, whatever their pieces look
+// like. Only a span that is exactly one date or one amount is left alone.
 function luhnBackstop(s: string): string {
   const at = [...s.matchAll(/\d/g)].map((m) => m.index!);
   let out = "";
@@ -198,7 +203,7 @@ function luhnBackstop(s: string): string {
     while (j + 1 < at.length && looseJoins(s.slice(at[j]! + 1, at[j + 1]!))) j++;
     const span = s.slice(at[i]!, at[j]! + 1);
     const digits = span.replace(/\D/g, "");
-    const harmless = partsOf(span).every((p) => isDate(p) || AMOUNT.test(p));
+    const harmless = isDate(span) || AMOUNT.test(span);
     let card = false;
     for (let len = LUHN_MIN; !harmless && !card && len <= Math.min(LUHN_MAX, digits.length); len++) {
       for (let k = 0; k + len <= digits.length && !card; k++) card = luhn(digits.slice(k, k + len));

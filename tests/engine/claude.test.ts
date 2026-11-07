@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atriumDenyPaths } from "../../src/engine/agents/atrium-paths";
@@ -342,22 +342,62 @@ test("I4: osascript, shortcuts and open are denied anywhere in a command", async
 import { privateDenyPaths } from "../../src/engine/agents/private-paths";
 import { homedir } from "node:os";
 
-test("card data: a private or investing run's sandbox can't read Downloads, Desktop, Documents or bank exports elsewhere", () => {
+test("card data: a private run's sandbox denies Downloads, Desktop, Documents and every bank export outside its folder", () => {
   const home = homedir();
   const cwd = join(home, "Atrium", "Investing");
   const deny: string[] = JSON.parse(sandboxSettings(cwd, { privateData: true })).sandbox.filesystem.denyRead;
   for (const f of ["Downloads", "Desktop", "Documents"]) expect(deny).toContain(join(home, f));
-  for (const ext of ["csv", "CSV", "ofx", "qfx"]) {
-    expect(deny).toContain(join(home, `*.${ext}`));
-    expect(deny).toContain(join("/Volumes", "**", `*.${ext}`));
+  for (const g of ["*.[cC][sS][vV]", "*.[oO][fF][xX]", "*.[qQ][fF][xX]"]) {
+    expect(deny).toContain(join("/Volumes", "**", g));
+    expect(deny).toContain(join("/Users/Shared", "**", g));
   }
-  // Nothing rooted at the folder the run works in.
-  expect(deny.some((p) => p.startsWith(join(home, "Atrium") + "/**"))).toBe(false);
   // Ordinary runs are unchanged.
   const plain: string[] = JSON.parse(sandboxSettings(cwd)).sandbox.filesystem.denyRead;
   expect(plain).not.toContain(join(home, "Downloads"));
-  // A run inside Documents keeps its own folder readable.
-  expect(privateDenyPaths(join(home, "Documents", "x"), home)).not.toContain(join(home, "Documents"));
+});
+
+describe("private deny paths", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "atrium-home-"));
+    for (const d of ["Atrium/investing/run-x", "Atrium/investing/other-run", "Atrium/other", "Documents/taxes", "Downloads", "Desktop", "Projects", "outside"]) mkdirSync(join(root, d), { recursive: true });
+    symlinkSync(join(root, "outside"), join(root, "Atrium", "linked"));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  test("only the run's own folder stays open; siblings at every level, links and their targets are denied", () => {
+    const deny = privateDenyPaths(join(root, "Atrium", "investing", "run-x"), root);
+    const csv = (dir: string) => join(dir, "**", "*.[cC][sS][vV]");
+    expect(deny).toContain(csv(join(root, "Atrium", "other")));
+    expect(deny).toContain(csv(join(root, "Atrium", "investing", "other-run")));
+    expect(deny).toContain(csv(join(root, "Projects")));
+    expect(deny).toContain(join(root, "Atrium", "investing", "*.[cC][sS][vV]"));
+    expect(deny).toContain(join(root, "Documents"));
+    // The symlinked folder and the folder it points at.
+    expect(deny).toContain(csv(join(root, "Atrium", "linked")));
+    expect(deny).toContain(csv(realpathSync(join(root, "outside"))));
+    // Nothing covers the run's own folder.
+    const keep = join(root, "Atrium", "investing", "run-x");
+    expect(deny.some((p) => p.startsWith(keep))).toBe(false);
+    expect(deny).not.toContain(csv(join(root, "Atrium")));
+  });
+
+  test("a run inside Documents keeps its own folder and closes its siblings outright", () => {
+    const deny = privateDenyPaths(join(root, "Documents", "taxes"), root);
+    expect(deny).not.toContain(join(root, "Documents"));
+    expect(deny).toContain(join(root, "Downloads"));
+    expect(deny.some((p) => p.startsWith(join(root, "Documents", "taxes")))).toBe(false);
+  });
+
+  test("a home that can't be listed still denies the private folders and every export in it", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const gone = join(root, "missing");
+    const deny = privateDenyPaths(join(root, "Atrium", "investing", "run-x"), gone);
+    warn.mockRestore();
+    for (const f of ["Downloads", "Desktop", "Documents"]) expect(deny).toContain(join(gone, f));
+    expect(deny).toContain(join(gone, "**", "*.[cC][sS][vV]"));
+    expect(deny.length).toBeGreaterThan(5);
+  });
 });
 
 test("card data: a run with no tools passes --tools '' and the private deny rules", async () => {

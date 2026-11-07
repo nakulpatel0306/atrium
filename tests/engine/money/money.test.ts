@@ -796,3 +796,13 @@ test("the one-time re-mask cleans Plan 10 rows, drops their date-hidden twins, a
   // Re-importing the old file adds nothing; its date-hidden copy is already gone.
   expect(importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-05,COFFEE,-3\n", { signs: "negative-out" }))).toEqual({ added: 0, duplicates: 1 });
 });
+
+test("card data: the Luhn backstop checks a whole span, even one made of amount-looking pieces", () => {
+  for (const s of ["X 4111.11 1111.11 1111.11", "REF 4111a1111b1111c1111", "4111-----1111-----1111-----1111"]) {
+    const out = mask(s);
+    expect(out.replace(/\D/g, "")).not.toContain("41111");
+    expect(isMasked(out)).toBe(true);
+  }
+  expect(mask("From 2026-10-01 to 2026-10-30.")).toBe("From 2026-10-01 to 2026-10-30.");
+  expect(mask("Groceries CA$58.14 (CA$374.40 to CA$432.54)")).toBe("Groceries CA$58.14 (CA$374.40 to CA$432.54)");
+});
