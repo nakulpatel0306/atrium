@@ -47,7 +47,7 @@ export async function sendMessage(db: Database, actionId: string, opts: { timeou
   if (approval?.status === "pending") return action;
   if (!approval || !isOwnYes(approval) || approval.alwaysAsk !== "send_message" || !action.handle) {
     const why = approval && isOwnYes(approval) && approval.alwaysAsk === "send_message" ? NO_HANDLE_COPY : REFUSED_COPY;
-    logActivity(db, action.spaceId, "atrium", `Didn't send the text to ${action.toName}: ${why}`);
+    logActivity(db, action.spaceId, "atrium", `Didn't send the text to ${action.toName}: ${why}`, { taskId: action.taskId });
     return setMessageStatus(db, action.id, "failed", { error: why });
   }
   try {
@@ -66,14 +66,14 @@ export async function sendMessage(db: Database, actionId: string, opts: { timeou
   if (!problem) {
     const sent = setMessageStatus(db, action.id, "sent", { sentAt: Date.now() });
     setMessagingState(db, "ready");
-    logActivity(db, action.spaceId, "atrium", `Sent via Messages to ${toName} (${displayHandle(handle)}). Atrium can't confirm delivery.`);
+    logActivity(db, action.spaceId, "atrium", `Sent via Messages to ${toName} (${displayHandle(handle)}). Atrium can't confirm delivery.`, { taskId: action.taskId });
     finishTask(db, action.taskId, "done", `Sent via Messages to ${toName}. Delivery isn't confirmed.`);
     return sent;
   }
   const failed = setMessageStatus(db, action.id, "failed", { error: problem.message });
   if (problem.kind === "automation_denied") setMessagingState(db, "needs_automation");
   if (problem.kind === "signed_out") setMessagingState(db, "signed_out");
-  logActivity(db, action.spaceId, "atrium", `Couldn't send the text to ${toName}: ${problem.message}`);
+  logActivity(db, action.spaceId, "atrium", `Couldn't send the text to ${toName}: ${problem.message}`, { taskId: action.taskId });
   redraft(db, failed, problem.message);
   return failed;
 }

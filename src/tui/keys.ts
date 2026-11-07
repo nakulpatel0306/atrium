@@ -2,6 +2,7 @@
 import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import type { ReviewerId } from "../engine/spaces";
+import { nameMatches } from "../dashboard/deletion";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
 import type { Action, ListPane, Overlay, Pane, Ui } from "./ui";
@@ -21,6 +22,8 @@ export type Intent =
   | { type: "goal"; spaceId: string; goal: string }
   | { type: "reviewer"; spaceId: string; reviewBy: ReviewerId | null }
   | { type: "archive"; spaceId: string }
+  | { type: "restore"; spaceId: string }
+  | { type: "deleteSpace"; spaceId: string; name: string }
   | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string };
 
@@ -56,7 +59,8 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Space", keys: "p", does: "private on / off" },
   { section: "Space", keys: "e", does: "edit goal" },
   { section: "Space", keys: "v", does: "pick reviewer" },
-  { section: "Space", keys: "X", does: "archive space" },
+  { section: "Space", keys: "X", does: "archive or restore space" },
+  { section: "Space", keys: "D", does: "delete space for good" },
   { section: "Views", keys: "t", does: "transcript" },
   { section: "Views", keys: "u", does: "agents and usage" },
   { section: "Views", keys: "o", does: "overnight mode" },
@@ -67,7 +71,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
 ];
 
 const HINT_KEYS: Record<Pane, string[]> = {
-  spaces: ["enter", "n", "N", "p", "e", "X"],
+  spaces: ["enter", "n", "N", "e", "X", "D"],
   tasks: ["enter", "n", "R", "s", "A", "t"],
   needs: ["a", "r", "enter", "t"],
   activity: ["enter", "/"],
@@ -80,6 +84,7 @@ const OVERLAY_HINTS: Partial<Record<Overlay["kind"], string>> = {
   transcript: "j k scroll  g G top / bottom  [ ] older / newer run  q close",
   agents: "[ ] pause point  o overnight mode  j k scroll  q close",
   help: "? or q close",
+  delete: "type the space's name  enter delete  esc keep it",
 };
 
 export function hints(ui: Ui, view: View): string {
@@ -191,6 +196,9 @@ function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[]
   if (onFile) return onFile;
   const space = pinned(u, "spaces", view.space);
   const task = taskOf(u, view);
+  if (space?.status === "archived" && ["n", "p", "e", "v"].includes(input) && leftOf(u) === "spaces") {
+    return [info(`${space.name} is archived. Press X to restore it first.`)];
+  }
   // On a suggestion in Needs you, y / n / N answer it; everywhere else n and N make a task and a space.
   const suggestion = proposalOf(u, view);
   if (suggestion) {
@@ -306,7 +314,12 @@ function globalKey(input: string, key: Key, u: Ui, view: View, files: MadeFile[]
       ];
     case "X":
       if (!space) return [info(NO_SPACE)];
+      // Restoring is undone by archiving again, so it needs no confirm.
+      if (space.status === "archived") return [intent({ type: "restore", spaceId: space.id })];
       return [open({ kind: "confirm", purpose: "archive", targetId: space.id })];
+    case "D":
+      if (!space) return [info(NO_SPACE)];
+      return [open({ kind: "delete", spaceId: space.id, value: "", cursor: 0 })];
     default:
       return [];
   }
@@ -344,6 +357,18 @@ function promptKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "p
   }
   const next = ui({ type: "setOverlay", overlay: { ...overlay, ...result } });
   return filterPane ? [next, ui({ type: "filter", pane: filterPane, text: result.value })] : [next];
+}
+
+function deleteKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "delete" }>, view: View): Command[] {
+  const result = editLine(overlay, input, key);
+  if (result === "cancel") return [close];
+  if (result === "submit") {
+    const space = [...view.state.spaces, ...(view.state.archived ?? [])].find((s) => s.id === overlay.spaceId);
+    if (!space) return [close, info("That space isn't here anymore.")];
+    if (!nameMatches(overlay.value, space.name)) return [info(`Type "${space.name}" exactly to delete it, or press esc to keep it.`)];
+    return [intent({ type: "deleteSpace", spaceId: space.id, name: overlay.value }), close];
+  }
+  return [ui({ type: "setOverlay", overlay: { ...overlay, ...result } })];
 }
 
 function pickerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "picker" }>): Command[] {
@@ -410,6 +435,8 @@ function overlayKey(input: string, key: Key, overlay: Overlay, view: View): Comm
       return promptKey(input, key, overlay);
     case "picker":
       return pickerKey(input, key, overlay);
+    case "delete":
+      return deleteKey(input, key, overlay, view);
     case "confirm":
       if (input === "y") return [...confirmed(overlay, view), close];
       return input === "n" || input === "q" || key.escape ? [close] : [];
@@ -436,6 +463,7 @@ export function commandsFor(input: string, key: Key, u: Ui, view: View, files: M
   const clear: Command[] = u.flash ? [ui({ type: "flash", flash: null })] : [];
   // Inside a prompt the whole chunk is text, so a paste lands whole and never runs as commands.
   if (u.overlay?.kind === "prompt") return [...clear, ...promptKey(input, key, u.overlay)];
+  if (u.overlay?.kind === "delete") return [...clear, ...deleteKey(input, key, u.overlay, view)];
   // Keys typed quickly arrive as one chunk; each character is its own command.
   const chars = input.length > 1 && !key.ctrl && !key.meta ? [...input] : [input];
   const out = [...clear];

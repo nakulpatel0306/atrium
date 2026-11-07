@@ -3,6 +3,7 @@ import { claudeAdapter } from "./engine/agents/claude";
 import { codexAdapter } from "./engine/agents/codex";
 import { geminiAdapter } from "./engine/agents/gemini";
 import { config } from "./engine/config";
+import { installCrashGuard, noteRestart } from "./engine/crash-guard";
 import { openDb } from "./engine/db";
 import { logActivity } from "./engine/events";
 import { migrateSpaceFolders, tildePath } from "./engine/folders";
@@ -29,6 +30,7 @@ import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { createRepos } from "./engine/repos";
 import { recoverRemovals } from "./engine/repos/cleanup";
+import { finishPendingDeletes } from "./engine/delete-files";
 import { recoverRepoActions } from "./engine/repos/create";
 import { createMessaging } from "./engine/messaging";
 import { recoverMessageActions } from "./engine/messaging/send";
@@ -40,9 +42,12 @@ import { startServer } from "./server/server";
 // Keep launchd's log from growing forever; must run before anything logs.
 trimLog(join(config().home, "engine.log"), 1024 * 1024);
 stampConsole();
+const crashMarker = join(config().home, "crashed");
+installCrashGuard({ marker: crashMarker });
 
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();
+noteRestart(db, crashMarker);
 // Nakul's 13 tickers go into an Investing space the first time the real engine starts (never with ATRIUM_HOME).
 seedOnBoot(db);
 addMetaOnBoot(db);
@@ -123,6 +128,8 @@ await recoverOnBoot(db);
 for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);
 recoverRepoActions(db);
 recoverRemovals(db);
+// Files a delete queued but didn't get to remove before the engine stopped; their rows are already gone.
+void finishPendingDeletes(db).catch((e) => console.error("Couldn't finish removing deleted files:", e));
 recoverMessageActions(db);
 fixTalal(db);
 runner.start();

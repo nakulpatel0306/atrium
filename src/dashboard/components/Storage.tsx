@@ -80,9 +80,17 @@ export function Storage() {
             </span>
             <span className="num">{bytes(view.atrium.totalBytes)}</span>
           </div>
-          {view.repos.map((r) => (
-            <RepoRow key={r.spaceId} repo={r} onAsked={() => setVersion((v) => v + 1)} />
-          ))}
+          {view.repos
+            .filter((r) => r.spaceId !== null)
+            .map((r) => (
+              <RepoRow key={r.spaceId} repo={r} onAsked={() => setVersion((v) => v + 1)} />
+            ))}
+          {view.repos.some((r) => r.spaceId === null) && <div className="day-head storage-group">From deleted spaces</div>}
+          {view.repos
+            .filter((r) => r.spaceId === null)
+            .map((r) => (
+              <RepoRow key={r.path} repo={r} onAsked={() => setVersion((v) => v + 1)} />
+            ))}
           {view.repos.length === 0 && <div className="empty-row">No repo folders yet.</div>}
         </div>
       )}

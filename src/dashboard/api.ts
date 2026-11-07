@@ -183,7 +183,7 @@ export type PostResult<T> = { ok: true; data: T } | { ok: false; error: string }
 export const post = <T = unknown>(path: string, body?: unknown) => send<T>("POST", path, body);
 export const patch = <T = unknown>(path: string, body: unknown) => send<T>("PATCH", path, body);
 export const put = <T = unknown>(path: string, body: unknown) => send<T>("PUT", path, body);
-export const del = <T = unknown>(path: string) => send<T>("DELETE", path);
+export const del = <T = unknown>(path: string, body?: unknown) => send<T>("DELETE", path, body);
 
 async function send<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown): Promise<PostResult<T>> {
   try {

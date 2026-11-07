@@ -2,6 +2,7 @@
 import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboard/agents";
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
 import { actorName, reviewHint, reviewLine, runOutcome, spaceStatus, STATUS_TEXT } from "../dashboard/summary";
+import { type ActivityGroup, type ActivityTone, byDay, groupActivity, leadOf, visibleGroups } from "../engine/activity-groups";
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
@@ -20,7 +21,16 @@ type Run = State["runs"][number];
 export type Styled = { text: string; color?: AnsiColor; bold?: boolean; dim?: boolean };
 export type DetailLine = Styled[];
 
-const SPACE_ACTIVITY = 10;
+const SPACE_ACTIVITY = 5;
+
+// How a feed line's time reads in a narrow column: "5m" today, "Yest", then "Nov 3".
+export function groupWhen(g: ActivityGroup, now = Date.now()): string {
+  if (g.day === "Today") return relative(g.at, now).replace(" ago", "").replace("just now", "now");
+  if (g.day === "Yesterday") return "Yest";
+  return new Date(g.at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+export const TONE_COLOR: Record<ActivityTone, AnsiColor | undefined> = { routine: undefined, attention: color.warn, failure: color.bad, notice: color.ok };
 const TONE = { ok: color.ok, waiting: color.warn, bad: color.bad } as const;
 
 const blank: DetailLine = [];
@@ -249,6 +259,15 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
   const space = view.space;
   if (!space) return [muted(view.spaces.length ? PICK : "No spaces yet. Press N to describe one.")];
   const { state } = view;
+  if (space.status === "archived") {
+    return [
+      [{ text: space.name, bold: true }, { text: `  ${space.kind}  archived`, color: color.muted }],
+      plain(space.goal || "No goal."),
+      blank,
+      plain("Archived spaces don't pick up tasks."),
+      muted("X restores it · D deletes it for good"),
+    ];
+  }
   const tasks = state.tasks.filter((t) => t.spaceId === space.id);
   const status = spaceStatus(space, tasks, state);
   const head: DetailLine = [{ text: space.name, bold: true }, { text: `  ${space.kind}`, color: color.muted }];
@@ -276,25 +295,41 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
     if (markets) lines.push(...marketsLines(markets));
     lines.push(muted("Open the app for the chart."));
   }
-  const activity = state.activity.filter((a) => a.spaceId === space.id).slice(0, SPACE_ACTIVITY);
+  // Failures and lines waiting on Nakul always show, past the newest few.
+  const { visible: groups } = visibleGroups(
+    groupActivity(state.activity.filter((a) => a.spaceId === space.id), { tasks: state.tasks, files: state.activityFiles }),
+    SPACE_ACTIVITY,
+  );
   lines.push(blank, heading("Recent activity"));
-  if (activity.length === 0) lines.push(muted("Nothing yet."));
-  for (const a of activity) {
-    lines.push([{ text: `${relative(a.createdAt)}  `, color: color.muted }, { text: `${actorName(a.actor)}: ${a.message}` }]);
+  if (groups.length === 0) lines.push(muted("Nothing yet."));
+  for (const day of byDay(groups)) {
+    lines.push(muted(day.day));
+    for (const g of day.groups) {
+      const lead = leadOf(g);
+      lines.push([{ text: `  ${clock(g.at)}  `, color: color.muted }, { text: lead ? `${lead} · ${g.text}` : g.text, color: TONE_COLOR[g.tone] }]);
+    }
   }
   return lines;
 }
 
 export function activityDetail(view: View): DetailLine[] {
-  const row = view.activityRow;
-  if (!row) return [muted(view.activity.length ? PICK : "No activity yet. Agent runs and your decisions will show up here.")];
-  const space = row.spaceId ? view.state.spaces.find((s) => s.id === row.spaceId) : undefined;
-  const byRule = ruleApproved(row);
+  const g = view.activityRow;
+  if (!g) return [muted(view.activity.length ? PICK : "No activity yet. Agent runs and your decisions will show up here.")];
+  const space = g.spaceId ? view.state.spaces.find((s) => s.id === g.spaceId) : undefined;
+  const lead = leadOf(g);
+  const byRule = g.events.some(ruleApproved);
+  const first = g.events.at(-1)!;
+  const span = g.events.length > 1 ? `${g.day} · ${clock(first.createdAt)} to ${clock(g.at)}` : `${g.day} · ${clock(g.at)}`;
   return [
-    [{ text: byRule ? "Your rule" : actorName(row.actor), bold: true }, ...(space ? [{ text: ` · ${space.name}`, color: color.info }] : [])],
-    muted(absolute(row.createdAt)),
+    [{ text: lead ?? (g.title ? g.title : actorName(g.actor)), bold: true }, ...(space ? [{ text: ` · ${space.name}`, color: color.info }] : [])],
+    muted(span),
     blank,
-    ...block(row.message),
+    [{ text: g.text, color: TONE_COLOR[g.tone] }],
+    blank,
+    heading(g.events.length > 1 ? `All ${g.events.length} lines` : "The line"),
+    ...g.events.flatMap((e): DetailLine[] => [
+      [{ text: `${clock(e.createdAt)}  `, color: color.muted }, { text: `${ruleApproved(e) ? "Your rule" : actorName(e.actor)}: `, color: color.info }, { text: e.message }],
+    ]),
     ...(byRule
       ? [blank, plain("This was approved by your rule, not by you. Undo it, or turn the rule off, on the dashboard's Rules page.", { color: color.info })]
       : []),

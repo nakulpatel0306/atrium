@@ -77,7 +77,7 @@ export function createSpace(
   const id = newId("spc");
   const now = Date.now();
   db.query(
-    "INSERT INTO spaces (id, name, kind, goal, color, repo_path, private, github, folder, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO spaces (id, name, kind, goal, color, repo_path, private, github, folder, folder_ino, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.name,
@@ -88,6 +88,8 @@ export function createSpace(
     (input.private ?? true) ? 1 : 0,
     input.github ?? null,
     input.kind === "repo" ? null : pickFolder(db, input.name),
+    // Not made yet: a run makes the folder and records its identity (see ensureSpaceFolder).
+    input.kind === "repo" ? null : 0,
     now,
     now,
   );

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
+import { lstatSync } from "node:fs";
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -77,6 +78,9 @@ test("the migration moves an old hidden space folder into the visible one", () =
   expect(existsSync(legacy)).toBe(false);
   expect(getSpace(db, fresh.id)!.folder).toBe(join(config().filesHome, "empty"));
   expect(moved).toEqual([{ spaceId: s.id, from: legacy, to: after.folder! }]);
+  // Atrium made the visible folder by moving into it, so its identity is recorded for a later delete.
+  const st = lstatSync(after.folder!);
+  expect(db.query("SELECT folder_dev AS dev, folder_ino AS ino FROM spaces WHERE id = ?").get(s.id)).toEqual({ dev: st.dev, ino: st.ino });
   // Running it again changes nothing.
   expect(migrateSpaceFolders(db)).toEqual([]);
 });

@@ -6,7 +6,7 @@ import { atriumDiskUsage } from "../storage";
 import { askToRemove, checkRemovable, dirBytes, pendingRemovalId, removeClone, scanIdleClones } from "./cleanup";
 import { createCloner } from "./clones";
 import { createProject } from "./create";
-import { actionForApproval, markDeclined, presentCloneForPath, setActionStatus, touchClone } from "./store";
+import { actionForApproval, listClones, markDeclined, presentCloneForPath, setActionStatus, touchClone } from "./store";
 
 const DAY_MS = 86_400_000;
 const SIZE_CACHE_MS = 10 * 60_000;
@@ -14,7 +14,8 @@ const SIZE_CACHE_MS = 10 * 60_000;
 export type StorageView = {
   atrium: ReturnType<typeof atriumDiskUsage>;
   repos: {
-    spaceId: string;
+    // Null for a copy Atrium kept after its space was deleted (it had work that isn't on GitHub).
+    spaceId: string | null;
     spaceName: string;
     path: string;
     github: string | null;
@@ -100,6 +101,22 @@ export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: nu
           lastUsedAt: clone?.lastUsedAt ?? null,
           removable: check ? (check.ok ? { ok: true } : { ok: false, reasons: check.reasons }) : null,
           pendingApprovalId: clone ? pendingRemovalId(db, clone.id) : null,
+        });
+      }
+      for (const clone of listClones(db)) {
+        if (clone.status !== "present" || clone.spaceId !== null || repos.some((r) => r.path === clone.path)) continue;
+        const check = await checkRemovable(db, clone.id);
+        repos.push({
+          spaceId: null,
+          spaceName: clone.github,
+          path: clone.path,
+          github: clone.github,
+          createdBy: "atrium",
+          cloneId: clone.id,
+          bytes: await sizeOf(clone.path),
+          lastUsedAt: clone.lastUsedAt,
+          removable: check.ok ? { ok: true } : { ok: false, reasons: check.reasons },
+          pendingApprovalId: pendingRemovalId(db, clone.id),
         });
       }
       return { atrium: atriumDiskUsage(), repos };

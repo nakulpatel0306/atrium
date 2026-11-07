@@ -119,6 +119,19 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return said(res, (d) => (intent.how === "reveal" ? `Showing ${intent.name} in Finder.` : `Opened a copy of ${intent.name} in ${d.app}.`));
     }
     case "archive":
-      return space(intent.spaceId, { status: "archived" }, `Archived ${spaceName(intent.spaceId)}. Its agents stop picking up tasks.`);
+      return space(intent.spaceId, { status: "archived" }, `Archived ${spaceName(intent.spaceId)}. It's at the end of Spaces; press X there to restore it.`);
+    case "restore": {
+      const name = state.archived?.find((s) => s.id === intent.spaceId)?.name ?? "the space";
+      const res = await client.patch<Space>(`/api/spaces/${enc(intent.spaceId)}`, { status: "active" });
+      // An earlier Messages space joins the current one rather than coming back as a second; X then means that one.
+      if (res.ok && res.data.id && res.data.id !== intent.spaceId) {
+        return { tone: "ok", text: `Moved the earlier ${name} into your current one, so there's only one.`, spaceId: res.data.id };
+      }
+      return said(res, () => `Restored ${name}. Press X to archive it again.`);
+    }
+    case "deleteSpace": {
+      const res = await client.del<{ name: string; message: string; kept: string[] }>(`/api/spaces/${enc(intent.spaceId)}`, { name: intent.name });
+      return said(res, (d) => [d.message, ...d.kept.slice(0, 1)].join(" "));
+    }
   }
 }

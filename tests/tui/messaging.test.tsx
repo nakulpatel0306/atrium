@@ -119,7 +119,7 @@ test("after Sending…, the activity says whether it went", () => {
   const s = withText();
   const at = Date.now() - 1000;
   expect(sendFollowUp(s, { toName: "Dana", at })).toBeNull();
-  s.activity.unshift({ id: "act_s", spaceId: ids.jobHunt, actor: "atrium", message: "Sent via Messages to Dana (+1 555 010 0134). Atrium can't confirm delivery.", createdAt: Date.now() });
+  s.activity.unshift({ id: "act_s", spaceId: ids.jobHunt, taskId: null, actor: "atrium", message: "Sent via Messages to Dana (+1 555 010 0134). Atrium can't confirm delivery.", createdAt: Date.now() });
   expect(sendFollowUp(s, { toName: "Dana", at })).toEqual({ tone: "ok", text: "Sent to Dana. Atrium can't confirm delivery." });
   s.activity[0] = { ...s.activity[0]!, message: "Couldn't send the text to Dana: Messages didn't answer." };
   expect(sendFollowUp(s, { toName: "Dana", at })?.tone).toBe("bad");

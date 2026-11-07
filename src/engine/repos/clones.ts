@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { config } from "../config";
 import { logActivity } from "../events";
 import { git } from "../git";
-import { setSpaceRepo, type Space } from "../spaces";
+import { getSpace, setSpaceRepo, type Space } from "../spaces";
 import { listTasks, setTaskStatus } from "../tasks";
 import { GhProblem } from "./gh";
 import { cloneRepo } from "./gitops";
@@ -49,11 +49,23 @@ export function createCloner(db: Database, kick: () => void): { request(space: S
       blockQueued(space, e instanceof Error ? e.message : String(e));
       return;
     }
-    db.transaction(() => {
-      recordClone(db, { spaceId: space.id, path: dest, github: slug, origin: "clone" });
-      setSpaceRepo(db, space.id, { repoPath: dest });
-      logActivity(db, space.id, "atrium", `Cloned ${slug} into ${tildePath(dest)}`);
-    })();
+    // The space may have been deleted while the clone downloaded; then the copy has no one to belong to.
+    if (!getSpace(db, space.id)) {
+      rmSync(dest, { recursive: true, force: true });
+      logActivity(db, null, "atrium", `Removed the new copy of ${slug}: its space was deleted while it downloaded.`);
+      return;
+    }
+    try {
+      db.transaction(() => {
+        recordClone(db, { spaceId: space.id, path: dest, github: slug, origin: "clone" });
+        setSpaceRepo(db, space.id, { repoPath: dest });
+        logActivity(db, space.id, "atrium", `Cloned ${slug} into ${tildePath(dest)}`);
+      })();
+    } catch (e) {
+      // Unrecorded, the folder would later pass for Nakul's own checkout; this run made it, so it goes.
+      rmSync(dest, { recursive: true, force: true });
+      throw e;
+    }
   }
 
   return {
@@ -70,7 +82,13 @@ export function createCloner(db: Database, kick: () => void): { request(space: S
         return;
       }
       const job = run(space, `${owner}/${name}`, name, dest)
-        .catch((e) => logActivity(db, space.id, "atrium", `Couldn't get a local copy of ${space.github}: ${(e as Error).message}`))
+        .catch((e) => {
+          try {
+            logActivity(db, space.id, "atrium", `Couldn't get a local copy of ${space.github}: ${(e as Error).message}`);
+          } catch (inner) {
+            console.error(`Couldn't get a local copy of ${space.github}: ${(e as Error).message}`, inner);
+          }
+        })
         .finally(() => {
           inflight.delete(key);
           kick();

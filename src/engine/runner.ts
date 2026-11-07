@@ -9,7 +9,7 @@ import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
 import { applyRule } from "./autonomy/rules";
 import { bus, logActivity } from "./events";
-import { spaceFolder, tildePath } from "./folders";
+import { ensureSpaceFolder, spaceFolder, tildePath } from "./folders";
 import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from "./outputs/snapshot";
 import { madeLine, recordRunFiles } from "./outputs/store";
 import {
@@ -299,14 +299,14 @@ export function createRunner(deps: {
   function skipReview(task: Task, reason: string) {
     setTaskStatus(db, task.id, "done");
     afterReview(db, task, { status: "error", kind: "failed", message: reason });
-    logActivity(db, task.spaceId, "atrium", `Skipped: ${task.title}. ${reason}`);
+    logActivity(db, task.spaceId, "atrium", `Skipped: ${task.title}. ${reason}`, { taskId: task.id });
   }
 
   // `saved` is the branch Atrium committed the agent's unfinished edits to, if it did.
   function block(task: Task, reason: string, saved: string | null = null) {
     const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
     setTaskStatus(db, task.id, "blocked", { blockedReason: full });
-    logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`);
+    logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`, { taskId: task.id });
     if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: reason });
     if (task.kind === "fix") fixFailed(db, task, reason, saved);
   }
@@ -387,8 +387,7 @@ export function createRunner(deps: {
     let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript> };
     let cwd: string | null = null;
     try {
-      cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : spaceFolder(space);
-      if (!repo && !scratch) mkdirSync(cwd, { recursive: true });
+      cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : ensureSpaceFolder(db, space);
       const runId = newId("run");
       const transcript = openTranscript(runId);
       db.query(
@@ -401,7 +400,7 @@ export function createRunner(deps: {
       const left = repo ? await leaveRepo(repo) : null;
       return block(task, left ?? `Atrium couldn't start the run: ${sentence((e as Error).message)} Check that the Atrium folder isn't full or read-only, then retry.`);
     }
-    logActivity(db, space.id, agent, `Started: ${task.title}`);
+    logActivity(db, space.id, agent, `Started: ${task.title}`, { taskId: task.id });
 
     activeSpaces.add(space.id);
     const controller = new AbortController();
@@ -555,17 +554,17 @@ export function createRunner(deps: {
           lateBranch && !problem
             ? `Kept the late fix on ${lateBranch}; the branch you decided on is unchanged.`
             : `Discarded the result for ${task.title}: the task was moved while it ran.${problem ? ` ${problem}` : ""}${saved ? ` Its unfinished edits are on ${saved}.` : ""}`;
-        logActivity(db, space.id, "atrium", message);
+        logActivity(db, space.id, "atrium", message, { taskId: task.id });
       } else if (commitError ?? leftRepo) {
         // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
         block(task, (commitError ?? leftRepo)!);
       } else if (result.status !== "ok" && r.signal.aborted) {
         setTaskStatus(db, task.id, "queued");
-        logActivity(db, space.id, "atrium", `The engine stopped, so ${task.title} is back in the queue.${saved ? ` Its unfinished edits are saved on ${saved}.` : ""}`);
+        logActivity(db, space.id, "atrium", `The engine stopped, so ${task.title} is back in the queue.${saved ? ` Its unfinished edits are saved on ${saved}.` : ""}`, { taskId: task.id });
       } else if (result.status === "ok" && task.kind === "review") {
         setTaskStatus(db, task.id, "done");
         afterReview(db, task, result);
-        logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
+        logActivity(db, space.id, adapter.id, `Finished: ${task.title}`, { taskId: task.id });
         if (task.approvalId) await considerRule(task.approvalId, { reviewed: verdictOf(result.summary) === "approve" });
       } else if (result.status === "ok" && task.kind === "fix") {
         // The parent's approval covers the branch, so the fix reports there instead of asking on its own. The
@@ -574,20 +573,21 @@ export function createRunner(deps: {
         const report = repo ? await repoReport(base ? { ...repo, start: base } : repo) : null;
         setTaskStatus(db, task.id, "done");
         afterFix(db, task, outcome, report?.lines[0] ?? "");
-        logActivity(db, space.id, adapter.id, `Finished: ${task.title}`);
+        logActivity(db, space.id, adapter.id, `Finished: ${task.title}`, { taskId: task.id });
       } else if (result.status === "ok" && (settled = markets ? await settleMarkets(markets, task, space, adapter.id, result.summary) : null)?.done) {
         // A paper strategy run settled its own orders; there is nothing for Nakul to review.
         if (settled.lines.length) appendTaskDetail(db, task.id, `\n\nThis run:\n${settled.lines.join("\n")}`);
         setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "done");
-        logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`);
+        logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`, { taskId: task.id });
       } else if (result.status === "ok" && message) {
         setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "review");
         // The number is never the agent's: Nakul types it or picks it from his own Contacts lookup.
         const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text });
-        logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`);
-        void autoLookup(db, action.id);
+        logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`, { taskId: task.id });
+        // It catches its own failures; this only guards the engine if one slips past.
+        autoLookup(db, action.id).catch((e) => console.error(`Contacts lookup failed: ${e instanceof Error ? e.message : String(e)}`));
       } else if (result.status === "ok") {
         const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
         // Repo runs already count their files in the branch summary.
@@ -610,7 +610,7 @@ export function createRunner(deps: {
           // A result that isn't done has no kind, so no rule can ever approve it.
           fingerprint: outcome.outcome === "done" && facts ? fingerprintOf(facts) : null,
         });
-        logActivity(db, space.id, adapter.id, readyLine(task, outcome));
+        logActivity(db, space.id, adapter.id, readyLine(task, outcome), { taskId: task.id });
         if (repo && report?.commits) await handOff(task, repo, approval.id);
         await considerRule(approval.id, { filesKept });
       } else if (result.kind === "rate_limited") {
@@ -623,7 +623,7 @@ export function createRunner(deps: {
           // The task did nothing wrong; it goes back in line and runs when the limit resets.
           setTaskStatus(db, task.id, "queued");
           const kept = saved ? ` ${savedNote(task, saved)}` : "";
-          logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.${kept}`);
+          logActivity(db, space.id, "atrium", `Paused: ${result.message}. ${task.title} will run again after that.${kept}`, { taskId: task.id });
         }
       } else {
         block(task, result.message, saved);
@@ -696,7 +696,7 @@ export function createRunner(deps: {
       return { changes };
     } catch (e) {
       const why = (e as Error).message.trim().replace(/\.$/, "");
-      logActivity(db, r.space.id, "atrium", `Couldn't list the files this run made: ${why}. The work itself is saved; open the space's Files tab to see the folder.`);
+      logActivity(db, r.space.id, "atrium", `Couldn't list the files this run made: ${why}. The work itself is saved; open the space's Files tab to see the folder.`, { taskId: r.task.id });
       return null;
     }
   }
@@ -713,7 +713,7 @@ export function createRunner(deps: {
   // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
   // A copy that fails must not lose the run's outcome; the approval says the files couldn't be kept.
   async function keepScratchFiles(space: Space, runId: string, cwd: string): Promise<Kept | null> {
-    const dir = join(spaceFolder(space), "runs", runId);
+    const dir = join(ensureSpaceFolder(db, space), "runs", runId);
     try {
       const res = await keepScratch(cwd, dir);
       return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;
@@ -743,7 +743,7 @@ export function createRunner(deps: {
       if (reviewed && !opts.reviewed) return;
       applyRule(db, approvalId, await factsFor(db, task, space, opts.filesKept ?? 0));
     } catch (e) {
-      logActivity(db, a.spaceId, "atrium", `Couldn't check your rules for ${a.title}: ${(e as Error).message}. It's waiting for you as usual.`);
+      logActivity(db, a.spaceId, "atrium", `Couldn't check your rules for ${a.title}: ${(e as Error).message}. It's waiting for you as usual.`, { taskId: a.taskId });
     }
   }
 
@@ -754,7 +754,7 @@ export function createRunner(deps: {
     try {
       afterWork(db, getTask(db, task.id)!, space, approvalId, await reviewDiff(repo.path, repo.start, repo.branch));
     } catch (e) {
-      logActivity(db, space.id, "atrium", `Couldn't send ${task.title} for review: ${(e as Error).message}. Check it yourself as usual.`);
+      logActivity(db, space.id, "atrium", `Couldn't send ${task.title} for review: ${(e as Error).message}. Check it yourself as usual.`, { taskId: task.id });
     }
   }
 
@@ -908,7 +908,7 @@ export async function recoverOnBoot(db: Database): Promise<number> {
       if (!(await settingsUnchanged(path, last.fingerprint))) {
         const reason = tamperedReason(path);
         setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
-        logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`);
+        logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`, { taskId: task.id });
         continue;
       }
       // A crash mid-run leaves the repo on the task branch. A clean one goes back now; a dirty one
@@ -920,7 +920,7 @@ export async function recoverOnBoot(db: Database): Promise<number> {
       }
     }
     setTaskStatus(db, task.id, "queued");
-    logActivity(db, task.spaceId, "atrium", `The engine restarted, so ${task.title} is back in the queue.`);
+    logActivity(db, task.spaceId, "atrium", `The engine restarted, so ${task.title} is back in the queue.`, { taskId: task.id });
   }
   db.query("UPDATE runs SET ended_at = ?, exit_code = -1 WHERE ended_at IS NULL").run(Date.now());
   return stuck.length;

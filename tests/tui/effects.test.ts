@@ -26,7 +26,8 @@ const rows: Row[] = [
   { intent: { type: "goal", spaceId: ids.atrium, goal: "Ship it" }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { goal: "Ship it" }, text: "Goal saved." },
   { intent: { type: "reviewer", spaceId: ids.atrium, reviewBy: "gemini" }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { reviewBy: "gemini" }, text: "Gemini reviews finished work in atrium." },
   { intent: { type: "reviewer", spaceId: ids.atrium, reviewBy: null }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { reviewBy: null }, text: "No automatic review in atrium." },
-  { intent: { type: "archive", spaceId: ids.atrium }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { status: "archived" }, text: "Archived atrium. Its agents stop picking up tasks." },
+  { intent: { type: "archive", spaceId: ids.atrium }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { status: "archived" }, text: "Archived atrium. It's at the end of Spaces; press X there to restore it." },
+  { intent: { type: "restore", spaceId: ids.atrium }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { status: "active" }, text: "Restored the space. Press X to archive it again." },
 ];
 
 for (const row of rows) {

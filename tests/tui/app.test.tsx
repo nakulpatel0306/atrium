@@ -116,6 +116,6 @@ test("activity times stay in one narrow column", async () => {
   state.activity[0] = { ...state.activity[0]!, createdAt: Date.now() };
   const app = openApp(fakeClient(state));
   const f = await app.frame((f) => f.includes("[4] Activity"));
-  expect(f).toContain("│now   Claude · atrium");
-  expect(f).toContain("│15m   You · job hunt");
+  expect(f).toContain("│now    Claude · finished Fix login redirect");
+  expect(f).toContain("│15m    You · added Summarize postings · jo");
 });

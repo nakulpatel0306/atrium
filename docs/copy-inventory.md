@@ -17,7 +17,12 @@ this page is the record of the reading pass.
 
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
-| Views | `src/dashboard/components/Activity.tsx` | activity rows, empty state | yes | No change needed |
+| Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier" |
+| Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |
+| Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that Atrium can't unsend a text and never touches Nakul's repo or GitHub |
+| Views | `src/dashboard/components/DeleteTask.tsx` | Delete task…, what goes with it | yes | New in Plan 13 |
+| Views | `src/dashboard/components/Toast.tsx` | toast text, Undo, Dismiss | yes | New in Plan 13: Archived / Restored / Deleted lines |
+| Shared | `src/dashboard/deletion.ts` | delete lists for space and task | yes | New in Plan 13; shared with the terminal app |
 | Views | `src/dashboard/components/AgentPicker.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Agents.tsx` | agent cards, status lines, reserve | yes | Cards say Claude, not Claude Code; straight quotes around "Run now" |
 | Views | `src/dashboard/components/Avatar.tsx` | labels, buttons, empty states, errors | yes | No change needed |
@@ -108,7 +113,8 @@ this page is the record of the reading pass.
 | Shared | `src/tui/text.ts` | messages | yes | No change needed |
 | Shared | `src/tui/theme.ts` | messages | yes | No change needed |
 | Shared | `src/tui/ui.ts` | messages | yes | No change needed |
-| Panes | `src/tui/components/ActivityPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Panes | `src/tui/components/ActivityPane.tsx` | labels, buttons, empty states, errors | yes | Plan 13: one row per folded group; time column says 5m, Yest or Nov 3 |
+| Panes | `src/tui/components/DeleteBox.tsx` | Delete Name for good, typed-name prompt | yes | New in Plan 13 |
 | Panes | `src/tui/components/AgentsView.tsx` | labels, buttons, empty states, errors | yes | Agents are named Claude, Codex, Gemini, not Claude Code |
 | Panes | `src/tui/components/App.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Panes | `src/tui/components/Body.tsx` | labels, buttons, empty states, errors | yes | No change needed |
@@ -153,6 +159,9 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Runs | `src/engine/runner.ts` | messages | yes | "Runner error:" became a sentence with a next step; "Atrium couldn't start the run" says what to check; "Repo is on …" says what to do; requeue lines are sentences; em dashes removed; made line added to reviews; kept-files path shown with ~ |
 | Runs | `src/engine/approvals.ts` | messages | yes | No change needed |
+| Delete | `src/engine/delete.ts`, `src/engine/delete-files.ts` | refusals, kept-folder lines | yes | New in Plan 13: every refusal says nothing was deleted and what to do; "Kept <file>: it changed after the task made it."; clone-in-flight and space-busy refusals; "Deleted "X". Its folder … went to the Trash." / "Atrium couldn't move … to the Trash, so it's still there; delete it in Finder if you don't need it." |
+| Messaging | `src/engine/messaging/space.ts` | merge line, merge wait | yes | Plan 13: "Moved the earlier Messages space's texts and history into this one."; "A text is still being drafted in the earlier Messages space. Try again once it's done." |
+| Engine | `src/engine/crash-guard.ts` | restart line | yes | Plan 13: "Atrium restarted after an error. Check engine.log if something looks off." |
 | Runs | `src/engine/handoff.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/atrium-paths.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |

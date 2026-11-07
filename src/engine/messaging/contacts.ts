@@ -65,7 +65,13 @@ export async function autoLookup(db: Database, actionId: string): Promise<void> 
   try {
     await lookup(db, actionId);
   } catch (e) {
+    // The draft went while Contacts answered (its task or space was deleted): there's nothing left to fill in.
+    if (!getMessageAction(db, actionId)) return;
     const why = e instanceof MessagingProblem ? e.message : `${(e as Error).message}.`;
-    logActivity(db, action.spaceId, "atrium", `Couldn't look up ${action.toName} in Contacts. ${why}`);
+    try {
+      logActivity(db, action.spaceId, "atrium", `Couldn't look up ${action.toName} in Contacts. ${why}`, { taskId: action.taskId });
+    } catch {
+      // A background lookup must never take the engine down over a log line.
+    }
   }
 }

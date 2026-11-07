@@ -6,7 +6,10 @@ import { absolute, duration, relative, tokens } from "../format";
 import { navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
-import { Activity } from "./Activity";
+import { setArchived } from "../spaces";
+import { Activity, TaskHistory } from "./Activity";
+import { DeleteSpace } from "./DeleteSpace";
+import { DeleteTask } from "./DeleteTask";
 import { AgentPicker } from "./AgentPicker";
 import { FilesTab } from "./FilesTab";
 import { Markdown } from "./Markdown";
@@ -91,10 +94,11 @@ function Header({ space }: { space: Space }) {
   const [editing, setEditing] = useState(false);
   const [goal, setGoal] = useState(space.goal);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const save = async (body: Partial<Pick<Space, "goal" | "private" | "status">>) => {
+  const save = async (body: Partial<Pick<Space, "goal" | "private">>) => {
     setBusy(true);
     setError(null);
     const res = await patch<Space>(`/api/spaces/${space.id}`, body);
@@ -110,8 +114,13 @@ function Header({ space }: { space: Space }) {
   };
 
   const archive = async () => {
+    setBusy(true);
+    setError(null);
+    const res = await setArchived(space, true);
+    setBusy(false);
     // Archived spaces leave the sidebar, so there's nothing left to show here.
-    if (await save({ status: "archived" })) navigate("/");
+    if (res.ok) navigate("/");
+    else setError(res.error ?? null);
   };
 
   return (
@@ -153,9 +162,14 @@ function Header({ space }: { space: Space }) {
               </button>
             </>
           ) : (
-            <button className="btn" onClick={() => setConfirmArchive(true)}>
-              Archive
-            </button>
+            <>
+              <button className="btn" onClick={() => setConfirmArchive(true)}>
+                Archive
+              </button>
+              <button className="btn" onClick={() => setDeleting(true)}>
+                Delete…
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -198,6 +212,7 @@ function Header({ space }: { space: Space }) {
       {error && <div className="err">{error}</div>}
       {/* Reviews read the branch diff, so only repo spaces have anything to review. */}
       {space.kind === "repo" && <ReviewSetting space={space} />}
+      {deleting && <DeleteSpace space={space} onClose={() => setDeleting(false)} onDeleted={() => navigate("/")} />}
     </div>
   );
 }
@@ -343,6 +358,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
             {task.ignoreReserve && <span>Runs during Claude's reserve</span>}
           </div>
           {task.kind === "work" && <Thread taskId={task.id} />}
+          <TaskHistory task={task} state={state} />
           {runs.length === 0 ? (
             <p className="runs-empty">No runs yet.</p>
           ) : (
@@ -352,6 +368,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
               ))}
             </ul>
           )}
+          <DeleteTask task={task} />
         </div>
       )}
       {error && <div className="row-err err">{error}</div>}
