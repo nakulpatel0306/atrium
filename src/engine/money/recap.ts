@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { etDate } from "../markets/calendar";
+import { accountLabel } from "./banks";
 import { categorize, listRules, NOT_SPENDING } from "./categories";
 import { monthCover, monthEnd, shiftMonth, type MonthCover } from "./coverage";
 import { maskNumbers } from "./import";
@@ -166,7 +167,7 @@ export function recap(db: Database, spaceId: string, now: number, month: string)
 // What's missing from a month, in a few words: "TD chequing only through Oct 24 · Amex not imported".
 export function coverText(cover: MonthCover): string | null {
   if (cover.inProgress) return `${monthName(cover.month)} isn't over yet.`;
-  const gaps = cover.accounts.filter((a) => !a.complete).map((a) => (a.through ? `${a.account} only through ${dayText(a.through)}` : `${a.account} not imported`));
+  const gaps = cover.accounts.filter((a) => !a.complete).map((a) => (a.through ? `${accountLabel(a.account)} only through ${dayText(a.through)}` : `${accountLabel(a.account)} not imported`));
   return gaps.length ? `Incomplete: ${gaps.join(" · ")}.` : null;
 }
 

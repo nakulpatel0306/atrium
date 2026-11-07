@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 
-// Money moving between Nakul's own accounts (paying the Amex from TD, topping up Wealthsimple Cash) is neither
+// Money moving between Nakul's own accounts (paying the Amex from TD, topping up Wealthsimple savings) is neither
 // spending nor money in. His own mark always wins; otherwise a known description, or the same amount leaving one
 // account and arriving in another within 3 days.
 export type TransferWhy = "marked" | "known" | "pair";

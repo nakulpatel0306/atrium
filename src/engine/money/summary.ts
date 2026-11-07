@@ -12,6 +12,7 @@ import { roomTie, tfsaRoom, type Room } from "./room";
 import { subscriptions, type SubscriptionList } from "./subscriptions";
 import { transfers, type TransferWhy } from "./transfers";
 import { counted, spendingIn, txs, type Tx } from "./rows";
+import { knownAccounts, listImports, moneyBusy, type ImportRow } from "./imports";
 
 
 export type Recurring = { merchant: string; amount: number; count: number; last: string; next: string };
@@ -52,6 +53,11 @@ export type MoneyView = {
   categories: string[];
   transactions: MonthTx[];
   asks: (Writeup & { question: string; status: "queued" | "running" | "done" | "failed"; taskId: string | null })[];
+  imports: ImportRow[];
+  // The accounts an import can be moved to.
+  importAccounts: string[];
+  // True while a Claude money run is queued or going; imports can't be undone or moved then.
+  busy: boolean;
 };
 
 export type MonthTx = { id: string; date: string; description: string; account: string; amount: number; category: string; transfer: TransferWhy | null; mark: number | null };
@@ -215,6 +221,9 @@ export function moneyView(db: Database, spaceId: string, now: number, month?: st
           .map((t) => ({ id: t.id, date: t.date, description: t.description, account: t.account, amount: t.amount, category: categorize(t.description, rules), transfer: moved.get(t.id) ?? null, mark: t.transfer }))
       : [],
     asks: asks(db, spaceId),
+    imports: listImports(db, spaceId),
+    importAccounts: knownAccounts(db, spaceId),
+    busy: moneyBusy(db, spaceId),
   };
 }
 
@@ -269,7 +278,7 @@ export function requestMoneyAsk(db: Database, spaceId: string, question: string)
   if (q.length > MONEY_ASK_MAX) throw new Error("Keep the question under 500 characters.");
   // A card number typed into the question would go to Claude as is.
   if (!isMasked(q)) throw new Error("Leave card and account numbers out of the question.");
-  if (listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money")) throw new Error("Claude is already looking at your money.");
+  if (moneyBusy(db, spaceId)) throw new Error("Claude is already looking at your money.");
   return createTask(db, { spaceId, title: "Ask Claude about my money", detail: q, agent: "claude", weight: "light", allowOnBattery: true, purpose: "money" });
 }
 
@@ -277,7 +286,7 @@ export function requestMoneyAsk(db: Database, spaceId: string, question: string)
 export const RECAP_SUBJECT = "recap:";
 export function requestExplain(db: Database, spaceId: string, month: string, now: number): Task {
   if (!/^\d{4}-\d{2}$/.test(month) || !recap(db, spaceId, now, month)) throw new Error("There's nothing imported for that month yet.");
-  if (listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money")) throw new Error("Claude is already looking at your money.");
+  if (moneyBusy(db, spaceId)) throw new Error("Claude is already looking at your money.");
   return createTask(db, {
     spaceId,
     title: "Explain my month",
