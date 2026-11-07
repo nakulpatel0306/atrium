@@ -109,51 +109,36 @@ function valid(y: number, mo: number, d: number): string | null {
   return t.toISOString().slice(0, 10);
 }
 
-// A real date written with separators ("2026-10-02", "10/02/2026"), which masking leaves alone. Only years from 1990
-// to next year count, so a card number sliced like a date ("4510.12.31") is still a number.
-const DATE_RUN = /(?<![\d/-]|\d\.)(?:(\d{4})([-/.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([-/.])(\d{1,2})\6(\d{4}))(?![\d/-]|\.\d)/g;
-// An amount or quantity with one decimal point ("1234.56", "0.123456"), also left alone when it has at most 11 digits.
-const DECIMAL_RUN = /(?<![\d/-]|\d\.)\d{1,9}\.\d{1,6}(?![\d/-]|\.\d)/g;
-const DECIMAL_MAX_DIGITS = 11;
-// Digits with spaces, dashes, dots, slashes or masking X and * between them.
-const NUMBER_RUN = /\d[\dX*\s./-]{4,}\d/gi;
+// The masker is an allow-list. Digits joined by short separators (spaces, a dash, dot, slash or comma, or masking
+// X and *) are one group. A group with 6 or more digits is masked to its last 4 unless it is only real dates and
+// money amounts. A lone date, amount or short number is left as it is; anything else with 6+ digits is hidden.
+const GROUP = /\d+(?:(?:[ \t]{0,3}[./,-][ \t]{0,3}|[ \t]{1,3}|[X*]+)\d+)*/gi;
+const DATE = /^(?:(\d{4})([-/.])(\d{1,2})\2(\d{1,2})|(\d{1,2})([-/.])(\d{1,2})\6(\d{4}))$/;
+const AMOUNT = /^(?:\d{1,3}(?:,\d{3})*\.\d{2}|\d{1,7}\.\d{2})$/;
 // An account, transit or reference number next to the word that names it: 5 digits are enough there.
 const NAMED_RUN = /(?<![a-z0-9])(acct|account|transit|no\.?|#)(\s*[:.]?\s*)(\d[\d\s-]{3,}\d)/gi;
 const realDate = (y: number, a: number, b: number) => y >= 1990 && y <= new Date().getUTCFullYear() + 1 && valid(y, a, b) !== null;
 const last4 = (run: string) => `··${run.replace(/\D/g, "").slice(-4)}`;
-const maskRuns = (s: string) => s.replace(NUMBER_RUN, (run) => (run.replace(/\D/g, "").length >= 6 ? last4(run) : run));
-const longRun = (s: string) => (s.match(NUMBER_RUN) ?? []).some((run) => run.replace(/\D/g, "").length >= 6);
 
-function keptSpans(s: string): { start: number; end: number }[] {
-  const kept: { start: number; end: number }[] = [];
-  for (const m of s.matchAll(DATE_RUN)) {
-    const [, y1, , m1, d1, a2, , b2, y2] = m;
-    const isDate = y1 ? realDate(+y1, +m1!, +d1!) : realDate(+y2!, +a2!, +b2!) || realDate(+y2!, +b2!, +a2!);
-    if (isDate) kept.push({ start: m.index!, end: m.index! + m[0].length });
-  }
-  for (const m of s.matchAll(DECIMAL_RUN)) if (m[0].length - 1 <= DECIMAL_MAX_DIGITS) kept.push({ start: m.index!, end: m.index! + m[0].length });
-  return kept.sort((a, b) => a.start - b.start);
+function isDate(token: string): boolean {
+  const m = token.match(DATE);
+  if (!m) return false;
+  const [, y1, , m1, d1, a2, , b2, y2] = m;
+  return y1 ? realDate(+y1, +m1!, +d1!) : realDate(+y2!, +a2!, +b2!) || realDate(+y2!, +b2!, +a2!);
 }
 
-// Card and account numbers keep their last four digits only ("4111 1111 1111 1111" → "··1111"), wherever they
-// appear: any run of six or more digits (a 12–19 digit card, a SIN written ddd-ddd-ddd), and 5 or more next to
-// "acct", "account", "transit" or "#". A real date or a plain amount isn't a number to hide. A bare 8-digit run is
-// still masked, since part of an account number is worse to leak than a date. Kept text is tracked by position,
-// never by placeholder, and if any long run survives beside it the whole text is masked with nothing kept.
+// A group is safe when it's short, or every part of it is a real date or a money amount. Short numbers are only
+// safe alone: "4111 1111 1111 1111" is four short numbers.
+function safeGroup(group: string): boolean {
+  if (group.replace(/\D/g, "").length < 6) return true;
+  const parts = group.trim().split(/[ \t]+/);
+  return parts.every((p) => isDate(p) || AMOUNT.test(p));
+}
+
+// Card and account numbers keep their last four digits only ("4111 1111 1111 1111" → "··1111"), wherever they appear.
 export function maskNumbers(input: string): string {
-  const s = input.replace(NAMED_RUN, (all, word: string, gap: string, run: string) => (run.replace(/\D/g, "").length >= 5 ? `${word}${gap}${last4(run)}` : all));
-  const kept = keptSpans(s);
-  if (!kept.length) return maskRuns(s);
-  const gaps: string[] = [];
-  let at = 0;
-  for (const k of kept) {
-    gaps.push(maskRuns(s.slice(at, k.start)));
-    at = k.end;
-  }
-  gaps.push(maskRuns(s.slice(at)));
-  // Gaps checked together, so digits on both sides of kept text can't add up to a number that slipped through.
-  if (longRun(gaps.join(" "))) return maskRuns(s.replace(/(\d)[/.-](?=\d)/g, "$1"));
-  return gaps.reduce((out, g, i) => out + g + (i < kept.length ? s.slice(kept[i]!.start, kept[i]!.end) : ""), "");
+  const named = input.replace(NAMED_RUN, (all, word: string, gap: string, run: string) => (run.replace(/\D/g, "").length >= 5 ? `${word}${gap}${last4(run)}` : all));
+  return named.replace(GROUP, (group) => (safeGroup(group) ? group : last4(group)));
 }
 
 // True when text has no card or account number left in it: masking would change nothing.

@@ -1508,6 +1508,19 @@ describe("markets spaces", () => {
     expect(logs).not.toContain("4111");
   });
 
+  test("card data: an ordinary money question with imported files and holdings passes the mask check", async () => {
+    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
+    importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money/rbc.csv"), "utf8")));
+    importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money/ws-activity-2026.csv"), "utf8")));
+    const { adapter, calls } = fakeAdapter(() => ok("You spent most on rent.\n\nAnalysis, not advice."));
+    const task = requestMoneyAsk(db, space.id, "Where did my money go last month?");
+    marketsRunner(adapter);
+    await waitFor(() => getTask(db, task.id)!.status === "done");
+    expect(calls[0]!.prompt).toContain("Money facts");
+    expect(calls[0]!.prompt).not.toContain("Holdings:");
+    expect(isMasked(calls[0]!.prompt)).toBe(true);
+  });
+
   test("card data: a money task whose prompt isn't masked never reaches the agent", async () => {
     const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
     const { adapter, calls } = fakeAdapter();

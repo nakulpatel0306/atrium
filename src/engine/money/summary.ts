@@ -248,7 +248,7 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
     for (const m of v.months.slice(0, 3)) {
       const s = spendingIn(bank, m, rules);
       const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");
-      out.push(`- ${m}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}.`);
+      out.push(`- ${monthYear(m)}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}.`);
     }
     const recent = bank.filter((t) => t.amount < 0 && days(t.date, v.range!.to) <= 90);
     const merchants = new Map<string, number>();

@@ -178,11 +178,13 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
 
   async function buildContext(task: Task, space: Space, agent: string): Promise<string> {
     const at = now();
-    // Money stays with Claude; Explain my month gets the month's recap and nothing else.
+    // Money stays with Claude, masked; Explain my month gets the month's recap and nothing else.
     if (task.purpose === "money") {
       if (agent !== "claude") return "";
       const explain = explainContext(db, task, at);
       if (explain) return explain.join("\n");
+      // A money question gets the portfolio summary and the money facts, not raw quotes, holdings or paper trades.
+      return investingContext(task, space, at).join("\n");
     }
     const session = usSession(at);
     const status = await data.status();

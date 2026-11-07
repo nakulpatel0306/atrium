@@ -247,7 +247,8 @@ test("masking keeps dates written in a description and still hides card and acco
   expect(maskNumbers("TIM HORTONS #4410")).toBe("TIM HORTONS #4410");
   // A run that only looks like a date's digits, without a date's shape, is still a number.
   expect(maskNumbers("ID 20261002")).toBe("ID ··1002");
-  expect(maskNumbers("PAYMENT 2026-10-02 4510123456789012")).toBe("PAYMENT 2026-10-02 ··9012");
+  // A number right next to a date takes the date with it: masking errs towards hiding.
+  expect(maskNumbers("PAYMENT 2026-10-02 4510123456789012")).toBe("PAYMENT ··9012");
   expect(maskNumbers("5191XXXXXXXX4021")).toBe("··4021");
   // Not a real date, so it's masked.
   expect(maskNumbers("X 2026-19-45")).toBe("X ··1945");
@@ -339,8 +340,9 @@ test("card data: SIN-like and named account or transit numbers are masked; dates
   expect(mask("account: 98765 transit 00412")).toBe("account: ··8765 transit ··0412");
   expect(mask("DEPOSIT #55123")).toBe("DEPOSIT #··5123");
   expect(mask("TFR 2026-10-02 FOR 1234.56")).toBe("TFR 2026-10-02 FOR 1234.56");
-  expect(mask("Nakul holds 0.123456 of XEQT")).toBe("Nakul holds 0.123456 of XEQT");
-  expect(mask("PAID 12.50 123456")).toBe("PAID 12.50 ··3456");
+  // Only dates, money amounts and short numbers are kept; anything else with 6+ digits is hidden.
+  expect(mask("Nakul holds 0.123456 of XEQT")).toBe("Nakul holds ··3456 of XEQT");
+  expect(mask("PAID 12.50 123456")).toBe("PAID ··3456");
 });
 
 test("card data at rest: no full card or account number reaches the database file or its WAL", () => {
@@ -676,4 +678,33 @@ test("card data: no money code talks to the network; only Claude's prompt ever c
   // Provider code never imports money code.
   const markets = join(import.meta.dir, "../../../src/engine/markets/providers");
   for (const f of readdirSync(markets)) expect(readFileSync(join(markets, f), "utf8")).not.toContain("money");
+});
+
+test("card data: the masker is an allow-list of dates, money amounts and short numbers", () => {
+  expect(mask("X 41111 111111.11111 Y")).toBe("X ··1111 Y");
+  expect(mask("X 41111.111111 11111 Y")).toBe("X ··1111 Y");
+  for (const card of ["4111 1111 1111 1111", "4111-1111-1111-1111", "4111.1111.1111.1111", "4111,1111,1111,1111", "4111  1111  1111  1111", "4111 - 1111 - 1111 - 1111"]) expect(mask(`CARD ${card}`)).toBe("CARD ··1111");
+  expect(mask("PAYMENT 2026-10-02 12.50")).toBe("PAYMENT 2026-10-02 12.50");
+  expect(mask("Costco 1,234.56")).toBe("Costco 1,234.56");
+  expect(mask("acct 1234567")).toBe("acct ··4567");
+  expect(mask("Store #4410 on 10/02/2026 for 54.99")).toBe("Store #4410 on 10/02/2026 for 54.99");
+});
+
+test("card data: 1,000 random card numbers with random separators never show more than the last 4 digits", () => {
+  let seed = 42;
+  const rnd = (n: number) => ((seed = (seed * 16807) % 2147483647) % n);
+  const seps = [" ", "-", ".", "/", ",", "", "  ", " - ", "X", "*"];
+  const words = ["PAYMENT", "UBER", "REF", "TO", "CARD", "THANK YOU", "#", "ON", "2026-10-02", "12.50", "ACCT"];
+  for (let i = 0; i < 1000; i++) {
+    const len = 12 + rnd(8);
+    const digits = Array.from({ length: len }, () => String(rnd(10))).join("");
+    let card = "";
+    for (let j = 0; j < len; j++) card += digits[j]! + (j < len - 1 && rnd(4) === 0 ? seps[rnd(seps.length)]! : "");
+    const text = `${words[rnd(words.length)]} ${card} ${words[rnd(words.length)]}`;
+    const out = mask(text);
+    const visible = out.replace(/\D+/g, " ").trim().split(" ").filter((r) => digits.includes(r) && r.length > 4 && !words.join(" ").includes(r));
+    expect({ text, out, visible }).toEqual({ text, out, visible: [] });
+    // No run of more than 4 of the card's digits survives in order, with or without separators.
+    expect(out.replace(/[^0-9]/g, "").includes(digits.slice(0, 5))).toBe(false);
+  }
 });
