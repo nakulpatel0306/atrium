@@ -21,6 +21,7 @@ this page is the record of the reading pass.
 | Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |
 | Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that Atrium can't unsend a text and never touches Nakul's repo or GitHub |
 | Views | `src/dashboard/components/DeleteTask.tsx` | Delete task…, what goes with it | yes | New in Plan 13 |
+| Views | `src/dashboard/components/StopTask.tsx` | Stop…, the two-step confirm, Keep running | yes | New in Plan 15 |
 | Views | `src/dashboard/components/Toast.tsx` | toast text, Undo, Dismiss | yes | New in Plan 13: Archived / Restored / Deleted lines |
 | Shared | `src/dashboard/deletion.ts` | delete lists for space and task | yes | New in Plan 13; shared with the terminal app |
 | Views | `src/dashboard/components/AgentPicker.tsx` | labels, buttons, empty states, errors | yes | No change needed |
@@ -107,40 +108,27 @@ this page is the record of the reading pass.
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
 | Shared | `src/tui/client.ts` | messages | yes | Error copy matches the dashboard ("Atrium couldn't do that (error 500). Try again…") |
-| Shared | `src/tui/detail.ts` | messages | yes | Summary and What it made; agent text through markdownLines; straight quotes around the parent task |
+| Shared | `src/tui/detail.ts` | messages | yes | Plan 15: empty states point at the new layout ("Pick a task on the left", "Press space and describe one") |
 | Shared | `src/tui/edit.ts` | messages | yes | No change needed |
-| Shared | `src/tui/effects.ts` | messages | yes | Open and reveal flashes |
+| Shared | `src/tui/effects.ts` | messages | yes | Plan 15: stop, money ask, explain, budget, import, symbol ask, dismiss reminder, and the text and messaging replies to a new request |
 | Shared | `src/tui/hooks.ts` | messages | yes | No change needed |
-| Shared | `src/tui/keys.ts` | messages | yes | f F, o and R file keys in help and hints |
-| Shared | `src/tui/layout.ts` | messages | yes | No change needed |
-| Shared | `src/tui/markdown.ts` | messages | yes | New in this plan |
+| Shared | `src/tui/keys.ts` | help, key strip, flashes | yes | Plan 15: help grouped by tab; key strip labels; Money and Investing flashes |
+| Shared | `src/tui/markdown.ts` | messages | yes | No change needed |
 | Shared | `src/tui/select.ts` | messages | yes | No change needed |
 | Shared | `src/tui/text.ts` | messages | yes | No change needed |
-| Shared | `src/tui/theme.ts` | messages | yes | No change needed |
+| Shared | `src/tui/theme.ts` | Claude meter | yes | Plan 15: "Claude · no reading yet", "paused" when tasks wait on the reserve |
 | Shared | `src/tui/ui.ts` | messages | yes | No change needed |
-| Panes | `src/tui/components/ActivityPane.tsx` | labels, buttons, empty states, errors | yes | Plan 13: one row per folded group; time column says 5m, Yest or Nov 3 |
-| Panes | `src/tui/components/DeleteBox.tsx` | Delete Name for good, typed-name prompt | yes | New in Plan 13 |
-| Panes | `src/tui/components/AgentsView.tsx` | labels, buttons, empty states, errors | yes | Agents are named Claude, Codex, Gemini, not Claude Code |
-| Panes | `src/tui/components/App.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Body.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Confirm.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/DetailPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Float.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Header.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Help.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Lines.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/List.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/LivePane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/NeedsPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Pane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Picker.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Prompt.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Row.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/SpacesPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/StatusBar.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/TasksPane.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Panes | `src/tui/components/Transcript.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Shared | `src/tui/main.tsx` | labels, buttons, empty states, errors | yes | No change needed |
+| Shared | `src/tui/canvas.ts`, `src/tui/mouse.ts`, `src/tui/boot-env.ts` | none | yes | New in Plan 15; no user-facing text |
+| Screens | `src/tui/screens/chrome.ts` | tabs, Ask box titles and suggestions, offline word | yes | New in Plan 15 |
+| Screens | `src/tui/screens/home.ts` | briefing, Needs you cards and their keys, Today, Running | yes | New in Plan 15 |
+| Screens | `src/tui/screens/spaces.ts` | section labels, empty lists, Live | yes | New in Plan 15 (from the Plan 3 panes) |
+| Screens | `src/tui/screens/money.ts` | month, totals, budget marks, subscriptions, TFSA room, answers, empty states | yes | New in Plan 15; no transaction text is shown |
+| Screens | `src/tui/screens/investing.ts` | portfolio, holdings table, watchlists, alerts, earnings | yes | New in Plan 15 |
+| Screens | `src/tui/screens/activity.ts` | feed, Lines | yes | New in Plan 15 (from the Plan 13 pane) |
+| Screens | `src/tui/screens/overlays.ts` | confirms (send, accept, archive, stop, import), delete box, pickers, help, agents and usage | yes | New in Plan 15 (from Confirm, DeleteBox, Picker, Help, AgentsView); buttons in sentence case |
+| Screens | `src/tui/screens/compose.ts`, `src/tui/screens/format.ts` | full view titles, money and dates | yes | New in Plan 15 |
+| Views | `src/tui/components/App.tsx` | connecting, offline, too small | yes | Plan 15: no change to the words |
+| Views | `src/tui/components/Screen.tsx` | none | yes | New in Plan 15 |
 
 ### Mac app
 
