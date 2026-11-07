@@ -31,8 +31,9 @@ Atrium was built in numbered plans, each one a working step.
 | 11 | Sending texts, and honest "couldn't do it" results |
 | 12 | Talking to Atrium by voice (on hold, built last) |
 | 13 | Delete, undo and a shorter activity feed |
+| 14 | Money: monthly recap, subscriptions, TFSA room and budgets |
 
-Plan 12 is written but on hold. Voice will be the last thing added, after Money (Plan 14) and the rest.
+Plan 12 is written but on hold. Voice will be the last thing added, after everything else.
 
 In [`plans/`](plans):
 - `YYYY-MM-DD-plan-N-*.md` is the plan as written.
