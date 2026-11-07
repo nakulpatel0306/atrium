@@ -235,7 +235,7 @@ export function homeScreen(view: View, ui: Ui, d: HomeData, cols: number, rows: 
   const needs = needsColumn(view, ui, cols, rows - 5, d.now);
   const t = today(view, d, cols);
   const glance: Line = [label("Today"), { text: "  " }, ...(t.portfolio[1] ?? []), ...(t.money[1] ? [{ text: "  ·  ", color: "faint" as const }, { text: t.money[0]![0]!.text.replace("Money · ", ""), color: "dim" as const }, { text: " " }, ...t.money[1]!] : [])];
-  const run: Line = [label("Running"), { text: "  " }, ...(t.running[0] ?? []), ...(running ? [{ text: ` ${t.running[1]?.[0]?.text.trim() ?? ""}`, color: "faint" as const }] : [])];
+  const run: Line = [label("Running"), { text: "  " }, ...(t.running[0] ?? []), ...(running ? [{ text: ` · ${t.running[1]?.[0]?.text.trim() ?? ""}`, color: "faint" as const }] : [])];
   const lines = [...top, ...rowsOf(needs.lines, cols, rows - 5), [{ text: "─".repeat(cols), color: "line" as const }], [{ text: " " }, ...glance], [{ text: " " }, ...run]];
   return { lines: rowsOf(lines.map((l) => fit(l, cols)), cols, rows), hits: shift(needs.hits, 0, 2) };
 }

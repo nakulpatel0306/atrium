@@ -24,8 +24,9 @@ const NO_KEY = {} as Key;
 const SETTING_UP = "Setting up your space. This usually takes under a minute.";
 const MIN_COLS = 80;
 const MIN_ROWS = 24;
-// Four frames a second is enough to show something is alive, and only while a task runs.
-const SPIN_MS = 250;
+// A spinner frame costs Ink a full redraw (about 40 ms of CPU), so it turns once a second: enough to show something
+// is alive without keeping a laptop's core busy for the length of a run.
+const SPIN_MS = 1000;
 const inBox = (u: Ui) => (u.ask !== null && !u.overlay) || u.overlay?.kind === "delete";
 
 type Size = { columns: number; rows: number };
@@ -87,14 +88,17 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
   }, [state, ui]);
 
   const running = state?.tasks.some((t) => t.status === "running") ?? false;
+  // Only Home and Spaces draw a spinner, and not under a full view.
+  const spinning = running && (ui.tab === "home" || ui.tab === "spaces") && !["transcript", "agents", "detail"].includes(ui.overlay?.kind ?? "");
   useTick(60_000, true);
   useEffect(() => {
-    if (!running) return;
+    if (!spinning) return;
     const id = setInterval(() => setFrame((n) => n + 1), SPIN_MS);
     return () => clearInterval(id);
-  }, [running]);
+  }, [spinning]);
 
-  const view = state ? deriveView(state, ui) : null;
+  // The spinner redraws four times a second with nothing else changed; the view (activity grouping and all) is kept.
+  const view = useMemo(() => (state ? deriveView(state, ui) : null), [state, ui]);
   const investSpace = state?.spaces.find((s) => s.kind === "markets") ?? null;
   const base = investSpace ? `/api/investing/${encodeURIComponent(investSpace.id)}` : null;
   const tab = ui.tab;

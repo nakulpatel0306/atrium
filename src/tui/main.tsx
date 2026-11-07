@@ -1,6 +1,5 @@
 import { writeSync } from "node:fs";
 import { render } from "ink";
-import "./color-env";
 import { createClient } from "./client";
 import { App } from "./components/App";
 import { filteredStdin, MOUSE_OFF, MOUSE_ON, mouseBus } from "./mouse";

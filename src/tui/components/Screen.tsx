@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { memo } from "react";
 import type { Line, Seg } from "../canvas";
 import { ON_FILL, type Palette, theme } from "../theme";
 
@@ -37,23 +38,36 @@ export function runs(line: Line): Seg[] {
   return line.flatMap((s) => (s.text.match(ASCII) ?? []).map((text) => ({ ...s, text })));
 }
 
+const same = (a: Line, b: Line) =>
+  a.length === b.length && a.every((s, i) => { const t = b[i]!; return s.text === t.text && s.color === t.color && s.bg === t.bg && s.bold === t.bold && s.italic === t.italic && s.inverse === t.inverse && s.dim === t.dim; });
+
+// One screen row. Rows that didn't change aren't rebuilt: a spinner frame or a keypress usually changes a few.
+const Row = memo(
+  function Row({ line, p }: { line: Line; p: Palette }) {
+    return (
+      <Box flexDirection="row" height={1} flexShrink={0}>
+        {runs(line).map((s, j) =>
+          RULE.test(s.text) ? (
+            <Box key={j} width={s.text.length} height={1} flexShrink={0} borderStyle="single" borderBottom={false} borderLeft={false} borderRight={false} borderColor={paint(s, p).color} />
+          ) : (
+            <Text key={j} wrap="truncate" {...paint(s, p)}>
+              {s.text}
+            </Text>
+          ),
+        )}
+      </Box>
+    );
+  },
+  (a, b) => a.p === b.p && same(a.line, b.line),
+);
+
 // Prints composed lines, one Ink row each. The lines are already exactly the window's width.
 export function Screen({ lines }: { lines: Line[] }) {
   const p = theme();
   return (
     <Box flexDirection="column" flexShrink={0}>
       {lines.map((line, i) => (
-        <Box key={i} flexDirection="row" height={1} flexShrink={0}>
-          {runs(line).map((s, j) =>
-            RULE.test(s.text) ? (
-              <Box key={j} width={s.text.length} height={1} flexShrink={0} borderStyle="single" borderBottom={false} borderLeft={false} borderRight={false} borderColor={paint(s, p).color} />
-            ) : (
-              <Text key={j} wrap="truncate" {...paint(s, p)}>
-                {s.text}
-              </Text>
-            ),
-          )}
-        </Box>
+        <Row key={i} line={line} p={p} />
       ))}
     </Box>
   );

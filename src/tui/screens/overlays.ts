@@ -20,7 +20,7 @@ type Confirm = Extract<Overlay, { kind: "confirm" }>;
 
 // What each confirm says, as lines, so it's tested without a terminal.
 export function confirmLines(c: Confirm, state: State, cols: number): { title: string; lines: Line[]; keys: { key: string; label: string; input: string; hot?: boolean }[] } {
-  const no = (label = "not now") => ({ key: "n", label, input: "n" });
+  const no = (label = "Not now") => ({ key: "n", label, input: "n" });
   if (c.purpose === "send") {
     const m = state.messageActions.find((x) => x.id === c.targetId);
     const to = m?.handle ? `${m.toName} (${displayHandle(m.handle)})` : (m?.toName ?? "them");
@@ -57,7 +57,7 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
         [],
         ...wrap("The agent stops right away. Its edits so far are kept (on its branch in a repo), and the task waits as blocked until you retry it.", cols, { color: "dim" }),
       ],
-      keys: [{ key: "y", label: "Stop it", input: "y", hot: true }, no("keep running")],
+      keys: [{ key: "y", label: "Stop it", input: "y", hot: true }, no("Keep running")],
     };
   }
   if (c.purpose === "import") {
@@ -68,7 +68,7 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
     };
   }
   const name = state.spaces.find((s) => s.id === c.targetId)?.name ?? "this space";
-  return { title: "Archive space", lines: wrap(`Archive ${name}? Its agents stop picking up tasks. X restores it.`, cols), keys: [{ key: "y", label: "Archive", input: "y", hot: true }, no("keep it")] };
+  return { title: "Archive space", lines: wrap(`Archive ${name}? Its agents stop picking up tasks. X restores it.`, cols), keys: [{ key: "y", label: "Archive", input: "y", hot: true }, no("Keep it")] };
 }
 
 // A box centred over the body, with its keys as caps on the last line.

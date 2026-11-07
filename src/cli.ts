@@ -189,6 +189,8 @@ export async function main(cmd: string | undefined): Promise<number> {
     case "tui":
     // The terminal app reads the flag itself (theme.ts), so `atrium --high-contrast` is the app too.
     case "--high-contrast":
+      // chalk reads the environment as it loads, so the color mode is settled before the app is imported.
+      await import("./tui/boot-env");
       await import("./tui/main");
       return -1;
     case "start":

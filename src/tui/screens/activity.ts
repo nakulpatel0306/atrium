@@ -42,7 +42,6 @@ export function activityScreen(view: View, ui: Ui, cols: number, rows: number, y
             { text: `${MARK[g.tone]} `, color: tone ?? "faint", ...fill },
             ...(lead ? [{ text: lead, color: "info" as const, ...fill }, { text: " · ", ...fill }] : []),
             { text: g.text, color: tone, bold: sel, ...fill },
-            ...(g.count > 1 ? [{ text: ` ×${g.count}`, color: "faint" as const, ...fill }] : []),
             ...(space ? [{ text: ` · ${space}`, color: "faint" as const, ...fill }] : []),
           ],
           listW,
