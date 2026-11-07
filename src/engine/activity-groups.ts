@@ -12,6 +12,7 @@ export type ActivityKind =
   | "rule"
   | "skipped"
   | "requeued"
+  | "stopped"
   | "paused"
   | "partial"
   | "couldnt"
@@ -67,6 +68,7 @@ const KINDS: [RegExp, ActivityKind][] = [
   [/^(Approved|Rejected|Accepted anyway|Accepted as is|Pressed Send|Chose not to send|Dismissed): /, "decided"],
   [/^Skipped: /, "skipped"],
   [/^The engine (stopped|restarted), so /, "requeued"],
+  [/^Stopped by you: /, "stopped"],
   [/^Paused: /, "paused"],
   [/^Partly done: /, "partial"],
   [/^Couldn't do: /, "couldnt"],
@@ -109,6 +111,8 @@ function titleIn(kind: ActivityKind, message: string): string | null {
       return after(/^Drafted a text to [^:]+: /);
     case "skipped":
       return message.startsWith("Skipped: you already decided. ") ? after(/^Skipped: you already decided\. /) : null;
+    case "stopped":
+      return after(/^Stopped by you: /).replace(/\. (?:Its|Atrium|Retry) .*$/, "").replace(/\.$/, "");
     case "requeued":
       return message.match(/^The engine (?:stopped|restarted), so (.+?) is back in the queue\./)?.[1] ?? null;
     default:
@@ -142,6 +146,7 @@ const PHRASE: Partial<Record<ActivityKind, (message: string) => string>> = {
   rule: () => "approved by your rule",
   skipped: () => "review skipped",
   requeued: () => "back in the queue",
+  stopped: () => "stopped by you",
   paused: () => "paused for a usage limit",
   decided: (m) =>
     m.startsWith("Rejected")

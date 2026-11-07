@@ -35,7 +35,7 @@ import { mergeRestoredMessages, messagesMergeWait } from "../engine/messaging/sp
 
 type Deps = {
   db: Database;
-  runner: { kick(): void; registry?: Registry };
+  runner: { kick(): void; stopTask?(taskId: string): Promise<boolean>; registry?: Registry };
   setup: (text: string) => ReturnType<typeof setupSpace>;
   port?: number;
   // How many dashboard tabs are visible; the market feed only streams while someone is looking.
@@ -246,6 +246,18 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       if (res.changes === 0) throw new HttpError(409, "This task isn't waiting to start, so there's nothing to run now.");
       bus.emit({ type: "changed" });
       runner.kick();
+      return json(getTask(db, id));
+    }
+
+    // Waits for the run to wind down, so the answer is the task as it ended (blocked, with where its edits went).
+    const stopM = hit("POST", /^\/api\/tasks\/([^/]+)\/stop$/);
+    if (stopM) {
+      const id = stopM[1]!;
+      if (!getTask(db, id)) throw new HttpError(404, "No such task.");
+      if (getTask(db, id)!.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to stop.");
+      if (!(await runner.stopTask?.(id))) {
+        throw new HttpError(409, "Atrium isn't running this task right now. Restart the engine if it still shows as running.");
+      }
       return json(getTask(db, id));
     }
 

@@ -885,6 +885,61 @@ test("stop gives up waiting on a run that ignores the abort", async () => {
   await Bun.sleep(30);
 });
 
+test("stopTask stops a running task: blocked with your word, edits saved on its branch, repo put back", async () => {
+  const path = repo();
+  git(path, "checkout", "-b", "feature");
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Long job" });
+  const r = start({
+    adapter: fakeAdapter(async (input) => {
+      writeFileSync(join(input.cwd, "half.txt"), "half done\n");
+      return untilAborted(input);
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "running");
+  await Bun.sleep(20);
+  expect(await r.stopTask(t.id)).toBe(true);
+  const task = getTask(db, t.id)!;
+  expect(task.status).toBe("blocked");
+  expect(task.blockedReason).toBe(`You stopped this task. Atrium saved the agent's unfinished edits as a WIP commit on atrium/${t.id}; retry to carry on from there.`);
+  expect(git(path, "branch", "--show-current")).toBe("feature");
+  expect(git(path, "status", "--porcelain")).toBe("");
+  expect(git(path, "log", "-1", "--format=%s", `atrium/${t.id}`)).toBe("WIP (stopped): Long job");
+  const lines = listActivity(db).map((a) => a.message);
+  expect(lines).toContain(`Stopped by you: Long job. Atrium saved the agent's unfinished edits as a WIP commit on atrium/${t.id}; retry to carry on from there.`);
+  expect(lines.some((m) => m.startsWith("The engine stopped"))).toBe(false);
+  // It doesn't start again on its own.
+  await Bun.sleep(50);
+  expect(status(t.id)).toBe("blocked");
+});
+
+test("stopTask leaves no agent process behind", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Spawns a child" });
+  const pidFile = join(home.home, "child.pid");
+  const { runAgentProcess } = await import("../../src/engine/agents/process");
+  const r = start({
+    adapter: fakeAdapter(async (input) => {
+      const res = await runAgentProcess(["bash", "-c", `sleep 30 & echo $! > ${pidFile}; wait`], { cwd: input.cwd, stdin: "", signal: input.signal, onLine() {} });
+      return "notInstalled" in res && res.notInstalled ? ok() : { status: "error", kind: "failed", message: "Stopped" };
+    }).adapter,
+  });
+  await waitFor(() => status(t.id) === "running" && existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
+  const child = Number(readFileSync(pidFile, "utf8").trim());
+  expect(await r.stopTask(t.id)).toBe(true);
+  expect(status(t.id)).toBe("blocked");
+  expect(getTask(db, t.id)!.blockedReason).toBe("You stopped this task. Retry to run it again.");
+  expect(() => process.kill(child, 0)).toThrow();
+});
+
+test("stopTask says no for a task that isn't running", async () => {
+  const s = generalSpace();
+  const t = createTask(db, { spaceId: s.id, title: "Never started" });
+  const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter, power: async () => "battery" });
+  setTaskStatus(db, t.id, "blocked", { blockedReason: "x" });
+  expect(await r.stopTask(t.id)).toBe(false);
+});
+
 test("a repo run records the branch it started from and its git settings", async () => {
   const path = repo();
   git(path, "checkout", "-b", "feature");

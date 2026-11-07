@@ -828,6 +828,16 @@ h2 {
   color: var(--dim);
   font-size: 12px;
 }
+.task-stop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.task-stop .hint {
+  color: var(--dim);
+  font-size: 12px;
+}
 .btn.link.subtle {
   padding-left: 0;
   color: var(--faint);

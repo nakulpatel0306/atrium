@@ -142,12 +142,14 @@ export function createRunner(deps: {
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
   // Money's once-a-day check (the monthly import reminder and budget heads-ups), from the same minute timer.
   money?: { daily(now: number): void };
-}): { start(): void; stop(): Promise<void>; kick(): void; registry: Registry } {
+}): { start(): void; stop(): Promise<void>; kick(): void; stopTask(taskId: string): Promise<boolean>; registry: Registry } {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
   const maxConcurrent = deps.maxConcurrent ?? 1;
   const active = new Map<string, { taskId: string; done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
+  // Tasks Nakul asked to stop, so their aborted run ends blocked with his word rather than back in the queue.
+  const stopRequested = new Set<string>();
   // Consecutive usage-limit outcomes per task, so a misread limit can't requeue a task forever.
   const limitHits = new Map<string, number>();
   let running = false;
@@ -578,6 +580,8 @@ export function createRunner(deps: {
       } else if (commitError ?? leftRepo) {
         // The commit failure is why the tree is dirty, so it explains more than the dirty-tree message.
         block(task, (commitError ?? leftRepo)!);
+      } else if (result.status !== "ok" && r.signal.aborted && stopRequested.has(task.id)) {
+        stoppedByYou(task, saved);
       } else if (result.status !== "ok" && r.signal.aborted) {
         setTaskStatus(db, task.id, "queued");
         logActivity(db, space.id, "atrium", `The engine stopped, so ${task.title} is back in the queue.${saved ? ` Its unfinished edits are saved on ${saved}.` : ""}`, { taskId: task.id });
@@ -649,8 +653,31 @@ export function createRunner(deps: {
         block(task, result.message, saved);
       }
     } finally {
+      stopRequested.delete(task.id);
       enforceTranscriptCap();
     }
+  }
+
+  // Blocked rather than failed or queued: nothing went wrong, and Retry is how he runs it again.
+  function stoppedByYou(task: Task, saved: string | null) {
+    const reason = `You stopped this task. ${saved ? savedNote(task, saved) : "Retry to run it again."}`;
+    setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
+    logActivity(db, task.spaceId, "you", `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
+    if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: "You stopped the review." });
+    if (task.kind === "fix") fixFailed(db, task, "You stopped the fix.", saved);
+  }
+
+  // Aborting kills the agent's process group (see runAgentProcess); execute then saves its edits, puts the repo back
+  // and marks the task. Resolves once that has happened, or after the stop timeout for an agent that won't exit.
+  async function stopTask(taskId: string): Promise<boolean> {
+    const run = [...active.values()].find((r) => r.taskId === taskId);
+    if (!run) return false;
+    stopRequested.add(taskId);
+    run.controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([run.done, new Promise((resolve) => (timer = setTimeout(resolve, deps.stopTimeoutMs ?? STOP_TIMEOUT_MS)))]);
+    clearTimeout(timer);
+    return true;
   }
 
   // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A
@@ -820,6 +847,7 @@ export function createRunner(deps: {
       setSetting(db, "power.keepAwake", "false");
     },
     kick,
+    stopTask,
     registry,
   };
 }
