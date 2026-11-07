@@ -37,6 +37,8 @@ export type ActivityGroup = {
   // The task the line is about, when there is one.
   title: string | null;
   tone: ActivityTone;
+  // Its task is still in review: the line is about something waiting on Nakul right now.
+  waiting: boolean;
   text: string;
   count: number;
   actor: string;
@@ -246,7 +248,8 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
       const taskId = b.events.find((e) => e.taskId)?.taskId ?? null;
       const task = taskId ? tasks.get(taskId) : undefined;
       const title = task?.title ?? b.events.map((e) => titleIn(activityKind(e.message), e.message)).find((t) => t) ?? null;
-      const base = { id: newest.id, day: dayLabel(newest.createdAt, now), dayKey, at: newest.createdAt, spaceId: newest.spaceId, taskId, title, count: b.events.length, actor: newest.actor, events: b.events };
+      const waiting = task?.status === "review";
+      const base = { id: newest.id, waiting, day: dayLabel(newest.createdAt, now), dayKey, at: newest.createdAt, spaceId: newest.spaceId, taskId, title, count: b.events.length, actor: newest.actor, events: b.events };
       if (b.kind === "own") out.push({ ...base, tone: OWN_LINE[kind]!, text: newest.message });
       else if (b.kind === "task") {
         const filesKey = b.key;
@@ -266,10 +269,10 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
   return out.sort((a, b) => b.at - a.at || order.get(a.id)! - order.get(b.id)!);
 }
 
-// What a feed shows before "Show more": the newest `shown` groups, plus every failure and every line waiting on
-// Nakul, wherever they fall, so nothing that needs him is ever folded away.
+// What a feed shows before "Show more": the newest `shown` groups, plus today's failures and any line whose task is
+// still waiting on Nakul, wherever they fall. Older failures fold away like everything else.
 export function visibleGroups(groups: ActivityGroup[], shown: number): { visible: ActivityGroup[]; hidden: number } {
-  const visible = groups.filter((g, i) => i < shown || g.tone === "failure" || g.tone === "attention");
+  const visible = groups.filter((g, i) => i < shown || (g.tone === "failure" && g.day === "Today") || (g.tone === "attention" && g.waiting));
   return { visible, hidden: groups.length - visible.length };
 }
 

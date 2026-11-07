@@ -92,7 +92,7 @@ test("D in the app opens the box with the engine's count", async () => {
     ok: true,
     data: { id: "spc_old", name: "Text Dana", kind: "general", tasks: 0, runs: 0, history: 0, folder: null, texts: { sent: 0, drafts: 0 }, repo: null, investing: 0, refusal: null },
   });
-  client.respond("/api/spaces/spc_old", { ok: true, data: { name: "Text Dana", kept: [] } });
+  client.respond("/api/spaces/spc_old", { ok: true, data: { name: "Text Dana", message: 'Deleted "Text Dana". Its folder ~/Atrium/text-dana went to the Trash.', kept: [] } });
   const app = openApp(client);
   await app.frame((f) => f.includes("Text Dana"));
   await app.type("j", "j", "D");
@@ -100,6 +100,18 @@ test("D in the app opens the box with the engine's count", async () => {
   await app.type(..."Text Dana", KEY.enter);
   await app.frame(() => client.calls.some((c) => c.method === "DELETE"));
   expect(client.calls.find((c) => c.method === "DELETE")).toEqual({ method: "DELETE", path: "/api/spaces/spc_old", body: { name: "Text Dana" } });
-  await app.frame((f) => f.includes("Deleted Text Dana."));
+  await app.frame((f) => f.includes('Deleted "Text Dana". Its folder ~/Atrium/text-dana went'));
   app.unmount();
+});
+
+test("restoring an earlier Messages says it merged, and points X at the current one", async () => {
+  const { runIntent } = await import("../../src/tui/effects");
+  const state = makeState({ archived: [space({ id: "spc_oldmsg", name: "Messages", status: "archived" })] });
+  const client = fakeClient(state);
+  client.respond("/api/spaces/spc_oldmsg", { ok: true, data: { id: "spc_current", name: "Messages" } });
+  expect(await runIntent(client, { type: "restore", spaceId: "spc_oldmsg" }, state)).toEqual({
+    tone: "ok",
+    text: "Moved the earlier Messages into your current one, so there's only one.",
+    spaceId: "spc_current",
+  });
 });

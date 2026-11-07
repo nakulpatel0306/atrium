@@ -159,8 +159,9 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Runs | `src/engine/runner.ts` | messages | yes | "Runner error:" became a sentence with a next step; "Atrium couldn't start the run" says what to check; "Repo is on …" says what to do; requeue lines are sentences; em dashes removed; made line added to reviews; kept-files path shown with ~ |
 | Runs | `src/engine/approvals.ts` | messages | yes | No change needed |
-| Delete | `src/engine/delete.ts`, `src/engine/delete-files.ts` | refusals, kept-folder lines | yes | New in Plan 13: every refusal says nothing was deleted and what to do; "Kept <file>: it changed after the task made it."; clone-in-flight and space-busy refusals |
-| Messaging | `src/engine/messaging/space.ts` | merge line | yes | Plan 13: "Moved the earlier Messages space's texts and history into this one." |
+| Delete | `src/engine/delete.ts`, `src/engine/delete-files.ts` | refusals, kept-folder lines | yes | New in Plan 13: every refusal says nothing was deleted and what to do; "Kept <file>: it changed after the task made it."; clone-in-flight and space-busy refusals; "Deleted "X". Its folder … went to the Trash." / "Atrium couldn't move … to the Trash, so it's still there; delete it in Finder if you don't need it." |
+| Messaging | `src/engine/messaging/space.ts` | merge line, merge wait | yes | Plan 13: "Moved the earlier Messages space's texts and history into this one."; "A text is still being drafted in the earlier Messages space. Try again once it's done." |
+| Engine | `src/engine/crash-guard.ts` | restart line | yes | Plan 13: "Atrium restarted after an error. Check engine.log if something looks off." |
 | Runs | `src/engine/handoff.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/atrium-paths.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |

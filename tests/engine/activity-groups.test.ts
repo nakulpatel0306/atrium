@@ -202,12 +202,30 @@ test("activity lines keep the task they're about", async () => {
   }
 });
 
-test("failures and lines waiting on Nakul are never folded under Show more", () => {
+test("today's failures and lines still waiting on Nakul stay above Show more; older ones fold", () => {
   const routine = Array.from({ length: 8 }, (_, i) => row(at(6, 14, i), `Cloned repo-${i} into ~/dev`));
-  const groups = groupActivity(feed(...routine, row(at(6, 9), "Blocked: Old job. No disk."), row(at(5, 9), "Alert: NVDA crossed $140")), { now: NOW });
+  const groups = groupActivity(
+    feed(
+      ...routine,
+      row(at(6, 9), "Blocked: Old job. No disk."),
+      row(at(4, 9), "Blocked: Older job. No disk."),
+      row(at(3, 9), "Ready for review: Groceries", { taskId: "tsk_g" }),
+      row(at(3, 8), "Alert: NVDA crossed $140"),
+      row(at(2, 9), "Ready for review: Laundry", { taskId: "tsk_l" }),
+    ),
+    { now: NOW, tasks: [{ id: "tsk_g", title: "Groceries", status: "review" }, { id: "tsk_l", title: "Laundry", status: "done" }] },
+  );
   const { visible, hidden } = visibleGroups(groups, 5);
-  expect(visible.map((g) => g.tone)).toEqual(["routine", "routine", "routine", "routine", "routine", "failure", "attention"]);
-  expect(hidden).toBe(3);
+  expect(visible.map((g) => g.title ?? g.text)).toEqual([
+    "Cloned repo-7 into ~/dev",
+    "Cloned repo-6 into ~/dev",
+    "Cloned repo-5 into ~/dev",
+    "Cloned repo-4 into ~/dev",
+    "Cloned repo-3 into ~/dev",
+    "Blocked: Old job. No disk.",
+    "Groceries",
+  ]);
+  expect(hidden).toBe(groups.length - 7);
 });
 
 test("notes about kept or removed files get a line of their own", () => {

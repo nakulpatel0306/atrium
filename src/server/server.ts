@@ -31,7 +31,7 @@ import { PushRefused } from "../engine/repos/push";
 import { reposRoute } from "./repos";
 import type { Messaging } from "../engine/messaging";
 import { messagingRoute } from "./messaging";
-import { mergeRestoredMessages } from "../engine/messaging/space";
+import { mergeRestoredMessages, messagesMergeWait } from "../engine/messaging/space";
 
 type Deps = {
   db: Database;
@@ -137,6 +137,8 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       }
       // A second Messages space never comes back; the restored one's texts join the current one.
       if (status === "active" && Object.keys(b).length === 1) {
+        const wait = messagesMergeWait(db, id);
+        if (wait) throw new HttpError(409, wait);
         const merged = mergeRestoredMessages(db, id);
         if (merged) return json(merged);
       }
