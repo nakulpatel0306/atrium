@@ -26,7 +26,7 @@ export type Recap = {
   moved: { count: number; total: number };
   // Credits on his cards that aren't payments, already taken off spending.
   refunds: { count: number; total: number };
-  // Interac e-transfers sent (the Transfers category): left out of spending, so rent paid that way is said aloud.
+  // Interac e-transfers sent to other people: in spending, and said aloud, since rent paid that way has no merchant.
   eTransfers: { count: number; total: number };
   cover: MonthCover;
 };
@@ -175,7 +175,7 @@ export function recapFacts(r: Recap): string[] {
   if (r.before && r.previous) out.push(`${monthYear(r.previous)}: spent ${cad(r.before.spent)}; money in ${cad(r.before.income)}.`);
   if (r.changes.length) out.push(`Biggest category changes: ${r.changes.map((c) => `${c.category} ${c.delta > 0 ? "up" : "down"} ${cad(c.delta)} (${cad(c.before)} to ${cad(c.now)})`).join("; ")}.`);
   if (r.notable.length) out.push(`Notable charges: ${r.notable.map((n) => `${maskNumbers(n.merchant)} ${cad(n.amount)} on ${dayText(n.date)} (${n.why.replace(/\.$/, "")})`).join("; ")}.`);
-  if (r.eTransfers.count) out.push(`${cad(r.eTransfers.total)} in ${r.eTransfers.count === 1 ? "1 e-transfer" : `${r.eTransfers.count} e-transfers`} sent was left out of spending.`);
+  if (r.eTransfers.count) out.push(`Spending includes ${cad(r.eTransfers.total)} in ${r.eTransfers.count === 1 ? "1 e-transfer" : `${r.eTransfers.count} e-transfers`} sent to other people.`);
   out.push(`Based on ${r.basis.count} transactions from ${dayText(r.basis.from)} to ${dayText(r.basis.to)}.`);
   const gap = coverText(r.cover);
   if (gap) out.push(gap);

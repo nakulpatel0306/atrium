@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { categorize, NOT_SPENDING, type Rule } from "./categories";
-import { CARD_BILL, isCard, type Flow } from "./flows";
+import { CARD_BILL, E_TRANSFER, isCard, type Flow } from "./flows";
 import { transfers } from "./transfers";
 
 export type Tx = { id: string; date: string; account: string; description: string; merchant: string; amount: number; currency: string; kind: string; source: string; transfer: number | null; flow: Flow | null };
@@ -16,12 +16,13 @@ export function counted(bank: Tx[]): Tx[] {
   return bank.filter((t) => !moved.has(t.id));
 }
 
-const E_TRANSFER = /e-?\s?transfer|e-?tfr|e-?trf|interac/i;
+export const E_TRANSFERS = "E-transfers";
 
 // How a counted row adds up. A credit on a card is a refund, never money in, even when he said a card payment isn't
 // a transfer. Money in is pay, interest and e-transfers received; other Transfers-category credits stay out.
-// Charges in the Transfers category (e-transfers sent) are named on the recap but aren't spending.
-export type Counts = { as: "spend" | "refund" | "income" | "sent" | "none"; category: string };
+// An e-transfer sent to someone else is spending (those between his own accounts were taken out as moved), and
+// is also named on the recap; any other Transfers-category charge isn't.
+export type Counts = { as: "spend" | "refund" | "income" | "none"; category: string; sent?: true };
 export function countAs(t: Tx, rules: Rule[]): Counts {
   const named = categorize(t.description, rules);
   if (t.amount > 0) {
@@ -30,7 +31,7 @@ export function countAs(t: Tx, rules: Rule[]): Counts {
   }
   if (t.amount === 0) return { as: "none", category: named };
   if (t.flow === "card-bill" || t.flow === "card-paid") return { as: "spend", category: CARD_BILL };
-  if (named === "Transfers") return { as: "sent", category: named };
+  if (E_TRANSFER.test(t.description)) return { as: "spend", category: NOT_SPENDING.has(named) ? E_TRANSFERS : named, sent: true };
   return { as: NOT_SPENDING.has(named) ? "none" : "spend", category: named };
 }
 
@@ -41,7 +42,7 @@ export type MonthTotals = {
   spent: number;
   income: number;
   refunds: { count: number; total: number };
-  // Interac e-transfers sent (the Transfers category): left out of spending, so rent paid that way is said aloud.
+  // Interac e-transfers sent to other people: in spending, and said aloud, since rent paid that way has no merchant.
   sent: { count: number; total: number };
 };
 
@@ -55,11 +56,12 @@ export function spendingIn(bank: Tx[], month: string | null, rules: Rule[]): Mon
   let income = 0;
   for (const t of inMonth) {
     const c = countAs(t, rules);
-    if (c.as === "income") income += t.amount;
-    else if (c.as === "sent") {
+    if (c.sent) {
       sent.count++;
       sent.total -= t.amount;
-    } else if (c.as === "spend" || c.as === "refund") {
+    }
+    if (c.as === "income") income += t.amount;
+    else if (c.as === "spend" || c.as === "refund") {
       if (c.as === "refund") {
         refunds.count++;
         refunds.total += t.amount;

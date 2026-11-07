@@ -830,12 +830,12 @@ test("card data: the Luhn backstop checks a whole span, even one made of amount-
   expect(mask("Groceries CA$58.14 (CA$374.40 to CA$432.54)")).toBe("Groceries CA$58.14 (CA$374.40 to CA$432.54)");
 });
 
-test("e-transfers sent are left out of spending, and the recap says how much", () => {
+test("e-transfers sent to other people are spending, and the recap says how much", () => {
   importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-01,E-TRANSFER SENT J SAMPLE,-1650\n2026-10-03,LOBLAWS,-80\n", { signs: "negative-out", account: "TD chequing" }));
   const r = recap(db, spaceId, NOW, "2026-10")!;
-  expect(r.spent).toBe(80);
+  expect(r.spent).toBe(1730);
   expect(r.eTransfers).toEqual({ count: 1, total: 1650 });
-  expect(recapFacts(r).join("\n")).toContain("CA$1,650.00 in 1 e-transfer sent was left out of spending.");
+  expect(recapFacts(r).join("\n")).toContain("Spending includes CA$1,650.00 in 1 e-transfer sent to other people.");
 });
 
 test("card data: rule and budget text is masked when it's saved", () => {

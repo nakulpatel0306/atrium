@@ -1,11 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
-import { MOVED_FLOWS, type Flow } from "./flows";
+import { E_TRANSFER, MOVED_FLOWS, reflowMoney, type Flow } from "./flows";
 
 // Money moving between Nakul's own accounts (paying the Amex from TD, topping up Wealthsimple savings) is neither
 // spending nor money in. His own mark always wins; otherwise a card payment or bank transfer Atrium stored (see
 // flows.ts), a known description, or the same amount leaving one account and arriving in another within 3 days.
-export type TransferWhy = "marked" | "card-payment" | "card-paid" | "known" | "pair";
+export type TransferWhy = "marked" | "card-payment" | "card-paid" | "own" | "known" | "pair";
 export type TransferTx = { id: string; date: string; account: string; description: string; amount: number; kind: string; transfer: number | null; flow?: Flow | null };
 
 // A pair with a known transfer description on either side may be up to 3 days apart; any other same-amount pair
@@ -21,7 +21,6 @@ const KNOWN: { re: RegExp; bank: RegExp }[] = [
   { re: /transfer (in|out) (from|to) amex\b/i, bank: /amex/i },
   { re: /transfer (in|out) (from|to) wealthsimple\b/i, bank: /wealthsimple/i },
 ];
-const E_TRANSFER = /e-?\s?transfer|e-?tfr|e-?trf|interac/i;
 
 const known = (t: Pick<TransferTx, "description" | "account">, accounts: string[]) => {
   const others = accounts.filter((a) => a !== t.account);
@@ -32,6 +31,7 @@ const known = (t: Pick<TransferTx, "description" | "account">, accounts: string[
 function shapeOf(t: TransferTx, accounts: string[]): TransferWhy | null {
   const flow = t.flow ?? null;
   if (flow === "card-payment" || flow === "card-paid") return flow;
+  if (flow === "moved" && E_TRANSFER.test(t.description)) return "own";
   if (flow === "moved" || t.kind === "transfer" || (flow === null && known(t, accounts))) return "known";
   return null;
 }
@@ -56,8 +56,9 @@ export function transfers(rows: TransferTx[]): Map<string, TransferWhy> {
     if (!eA && !eB) return true;
     return (eA || shaped.has(a.id)) && (eB || shaped.has(b.id)) && (shaped.has(a.id) || shaped.has(b.id));
   };
-  // A refund, or a bill paid to a card he hasn't imported, is never one side of a transfer.
-  const pairs = (t: TransferTx) => t.transfer !== 0 && (t.flow == null || MOVED_FLOWS.has(t.flow));
+  // A refund, or a bill paid to a card he hasn't imported, is never one side of a transfer, and an e-transfer
+  // between his accounts was already paired when its flow was stored.
+  const pairs = (t: TransferTx) => t.transfer !== 0 && (t.flow == null || (MOVED_FLOWS.has(t.flow) && !(t.flow === "moved" && E_TRANSFER.test(t.description))));
   // Pairs, nearest date first; rows he marked as not a transfer never pair, and each row pairs once.
   const incoming = new Map<number, TransferTx[]>();
   for (const t of rows) {
@@ -90,5 +91,7 @@ export function transfers(rows: TransferTx[]): Map<string, TransferWhy> {
 export function markTransfer(db: Database, spaceId: string, id: string, value: boolean | null): void {
   const res = db.query("UPDATE money_transactions SET transfer = ? WHERE id = ? AND space_id = ?").run(value === null ? null : value ? 1 : 0, id, spaceId);
   if (!res.changes) throw new Error("That transaction isn't here anymore. Refresh the page.");
+  // An e-transfer he says isn't a transfer stops pairing, so its other side is looked at again too.
+  reflowMoney(db, spaceId);
   bus.emit({ type: "changed" });
 }
