@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { anyAdvanced, bigNewsArmed } from "./advanced";
 import { evaluateEvents } from "./alerts";
+import { backedOff, backOff } from "./backoff";
 import { AV_RESERVE, dailyBudget, noteSourceResult, planAlphaVantage } from "./budget";
 import { etDate, etInstant, lastCompletedSession, tsxOpen, tsxTrading } from "./calendar";
 import { recordCloses } from "./closes";
@@ -48,9 +49,11 @@ const readChecked = (db: Database): Checked | null => {
 };
 const usStocks = (db: Database) => trackedInstruments(db).filter((i) => i.exchange === "US" && !isFund(instrumentKey(i)));
 
-// The stocks whose dates are missing or older than 20 hours: a new holding, or a day since the last check.
+// The stocks whose dates are missing or older than 20 hours (a new holding, or a day since the last check), less any
+// symbol backed off after its own call failed.
 export function earningsDue(db: Database, now: number): Instrument[] {
-  const stocks = usStocks(db);
+  const out = backedOff(db, "earnings", now);
+  const stocks = usStocks(db).filter((i) => !out.has(instrumentKey(i)));
   const c = readChecked(db);
   if (!c || now - c.at > EARNINGS_MAX_AGE) return stocks;
   return stocks.filter((i) => !c.keys.includes(instrumentKey(i)));
@@ -59,7 +62,8 @@ export function earningsDue(db: Database, now: number): Instrument[] {
 // The 16:30 run checks every stock; a catch-up (resume) only the due ones. Finnhub answers per symbol, so a rate limit
 // partway keeps the dates already fetched, and the rest are due on the next catch-up.
 export async function fetchEarnings(db: Database, data: MarketData, now: number, opts: { resume?: boolean } = {}): Promise<Skipped | null> {
-  const stocks = opts.resume ? earningsDue(db, now) : usStocks(db);
+  const out = backedOff(db, "earnings", now);
+  const stocks = opts.resume ? earningsDue(db, now) : usStocks(db).filter((i) => !out.has(instrumentKey(i)));
   if (!stocks.length) return null;
   const research = data.research?.();
   if (!research?.earnings) return { step: "earnings", reason: `Earnings dates weren't checked: ${NO_FINNHUB}.`, status: "off" };
@@ -78,7 +82,10 @@ export async function fetchEarnings(db: Database, data: MarketData, now: number,
   } catch (e) {
     const partial = e instanceof ProviderError ? e.partial : undefined;
     if (partial?.done.length) save(partial.rows, partial.done);
-    return { step: "earnings", reason: `Earnings dates failed: ${errorText(e, data.secrets?.() ?? [])}` };
+    if (partial?.failed?.length) backOff(db, "earnings", partial.failed.map((f) => f.key), now);
+    // Catch-up's own due check brings it back (the rest after a rate limit, a failed symbol after its back-off), so
+    // it waits rather than being rerun as a failed step too.
+    return { step: "earnings", reason: `Earnings dates failed: ${errorText(e, data.secrets?.() ?? [])}`, status: "waiting" };
   }
 }
 

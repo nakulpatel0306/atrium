@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { anyAdvanced } from "./advanced";
+import { backedOff, backOff } from "./backoff";
 import type { MarketData } from "./data";
 import { refreshEdgar } from "./edgar";
 import { trackedInstruments } from "./feed";
@@ -117,10 +118,11 @@ const usStock = (key: string) => parseInstrumentKey(key)?.exchange === "US" && !
 
 // A tracked key with no metadata row, or a US stock whose Finnhub profile or figures are missing or past their age.
 export function metaStale(db: Database, now: number): boolean {
+  const out = backedOff(db, "meta", now);
   return trackedKeys(db).some((key) => {
     const row = db.query("SELECT kind FROM instrument_meta WHERE key = ?").get(key) as { kind: string | null } | null;
     if (!row) return true;
-    if (!usStock(key)) return false;
+    if (!usStock(key) || out.has(key)) return false;
     const a = ages(db, key);
     return now - (a.profile_at ?? 0) > PROFILE_MAX_AGE || now - (a.metrics_at ?? 0) > METRICS_MAX_AGE;
   });
@@ -162,18 +164,27 @@ export function metaJob(db: Database, deps: { data: MarketData; now: () => numbe
       await deps.data.prepare?.();
       const p = deps.data.research?.();
       if (!p) return { skipped: [{ step: "finnhub", reason: "Company profiles and key stats weren't fetched: add your Finnhub key in Settings → Market data." }] };
-      for (const key of stocks) {
+      const out = backedOff(db, "meta", now);
+      const failed: { key: string; why: string }[] = [];
+      for (const key of stocks.filter((k) => !out.has(k))) {
         const i = parseInstrumentKey(key)!;
         const a = ages(db, key);
         try {
           if (p.profile && now - (a.profile_at ?? 0) > PROFILE_MAX_AGE) saveProfile(db, key, await p.profile(i), now);
           if (p.metric && now - (a.metrics_at ?? 0) > METRICS_MAX_AGE) saveMetrics(db, key, await p.metric(i), now);
         } catch (e) {
+          const why = redact(e instanceof Error ? e.message : String(e), deps.data.secrets?.() ?? []);
+          // Catch-up's staleness check brings these back, so they wait rather than rerun as failed steps.
           if (e instanceof ProviderError && (e.kind === "auth" || e.kind === "rate_limited")) {
-            const why = redact(e.message, deps.data.secrets?.() ?? []);
-            return { skipped: [{ step: "finnhub", reason: `Company profiles and key stats stopped at ${key}: ${why}` }] };
+            return { skipped: [{ step: "finnhub", reason: `Company profiles and key stats stopped at ${key}: ${why}`, status: "waiting" as const }] };
           }
+          // One symbol's own failure sits out its back-off; the rest carry on.
+          failed.push({ key, why });
         }
+      }
+      if (failed.length) {
+        backOff(db, "meta", failed.map((f) => f.key), now);
+        return { skipped: [{ step: "finnhub", reason: `Key stats for ${failed.map((f) => f.key).join(", ")} failed: ${failed[0]!.why}`, status: "waiting" as const }] };
       }
     },
   };

@@ -205,7 +205,7 @@ test("a rate limit partway through earnings keeps the dates it got, and catch-up
   const catchUp = createCatchUp(db, { jobs, now: () => clock });
   await catchUp.run(true);
   expect(earningsView(db, spaceId, START).rows.map((x) => x.key)).toEqual(["RKLB"]);
-  expect(jobs.steps("eod").earnings?.status).toBe("skipped");
+  expect(jobs.steps("eod").earnings?.status).toBe("waiting");
   limited = false;
   clock += 61 * 60_000;
   await catchUp.run();
@@ -235,4 +235,77 @@ test("with only tonight's share left, the retry waits and says why", async () =>
     status: "waiting",
     reason: "Canadian closes for 2026-11-06 wait for ATZ.TO, VFV.TO, XEQT.TO: Alpha Vantage's budget is kept for tonight's closes.",
   });
+});
+
+test("one symbol whose earnings call always errors doesn't block the others, runs once per catch-up, and backs off", async () => {
+  for (const s of ["SOFI", "TSLA"]) {
+    db.query("INSERT INTO market_holdings (id, space_id, account, symbol, exchange, quantity, currency, source, updated_at) VALUES (?, ?, 'TFSA', ?, 'US', 1, 'USD', 'manual', 2)").run(`h_${s}`, spaceId, s);
+  }
+  const asked: string[] = [];
+  const cal: Record<string, string> = { RKLB: "2026-11-09", SOFI: "2026-11-24", TSLA: "2026-11-18" };
+  const research = {
+    async earnings(list: Instrument[]) {
+      asked.push(list.map(instrumentKey).join(","));
+      const rows = list.filter((i) => cal[i.symbol]).map((i) => ({ key: i.symbol, date: cal[i.symbol]!, hour: null, epsEstimate: null }));
+      const done = list.filter((i) => i.symbol !== "QBTS").map(instrumentKey);
+      if (!list.some((i) => i.symbol === "QBTS")) return rows;
+      const e = new ProviderError("unavailable", "Finnhub returned an error (HTTP 500); Atrium will try again.");
+      e.partial = { done, rows, failed: [{ key: "QBTS", reason: e.message }] };
+      throw e;
+    },
+  };
+  const data = { quotes: async () => ({ quotes: [], missing: [] }), news: async () => [], research: () => research, status: async () => ({ keys: { alphavantage: false } }), prepare: async () => {} } as unknown as MarketData;
+  let clock = START;
+  const jobs = createJobs(db, [eodJob(db, { data, tiingo: () => null, now: () => clock })], () => clock);
+  const catchUp = createCatchUp(db, { jobs, now: () => clock });
+  await catchUp.run(true);
+  // QBTS sits first in the list and still doesn't stop RKLB, SOFI or TSLA.
+  expect(asked).toEqual(["RKLB,QBTS,META,SOFI,TSLA"]);
+  expect(earningsView(db, spaceId, START).rows.map((x) => x.key).sort()).toEqual(["RKLB", "SOFI", "TSLA"]);
+  expect(jobs.steps("eod").earnings).toMatchObject({ status: "waiting" });
+  // Hourly catch-ups while QBTS is backed off ask nothing.
+  for (let h = 1; h <= 5; h++) {
+    clock = START + h * 61 * 60_000;
+    await catchUp.run();
+  }
+  expect(asked).toHaveLength(1);
+  // Once its six hours are up, QBTS alone is asked again, once in that catch-up.
+  clock = START + 7 * 3_600_000;
+  await catchUp.run();
+  expect(asked).toEqual(["RKLB,QBTS,META,SOFI,TSLA", "QBTS"]);
+});
+
+test("a metric that keeps failing backs off its symbol and doesn't bring the meta job back every hour", async () => {
+  const asked: string[] = [];
+  const research = {
+    async profile(i: Instrument) {
+      asked.push(`profile ${i.symbol}`);
+      return { name: `${i.symbol} Inc`, country: "US", currency: "USD", industry: null, exchange: "NASDAQ" };
+    },
+    async metric(i: Instrument) {
+      asked.push(`metric ${i.symbol}`);
+      if (i.symbol === "QBTS") throw new ProviderError("unavailable", "Finnhub returned an error (HTTP 500); Atrium will try again.");
+      return { pe: 1, high52: 2, low52: 1, divYield: null, marketCap: 10 };
+    },
+    async earnings() {
+      return [];
+    },
+  };
+  const data = { quotes: async () => ({ quotes: [], missing: [] }), news: async () => [], research: () => research, status: async () => ({ keys: { alphavantage: false } }), prepare: async () => {} } as unknown as MarketData;
+  let clock = START;
+  const jobs = createJobs(db, [eodJob(db, { data, tiingo: () => null, now: () => clock }), metaJob(db, { data, now: () => clock })], () => clock);
+  const catchUp = createCatchUp(db, { jobs, now: () => clock });
+  await catchUp.run(true);
+  expect(asked.filter((a) => a.startsWith("metric"))).toEqual(["metric RKLB", "metric QBTS", "metric META"]);
+  expect(getMeta(db, ["RKLB", "META"]).get("META")!.pe).toBe(1);
+  expect(jobs.steps("meta").finnhub).toEqual({ status: "waiting", reason: "Key stats for QBTS failed: Finnhub returned an error (HTTP 500); Atrium will try again." });
+  const n = asked.length;
+  for (let h = 1; h <= 5; h++) {
+    clock = START + h * 61 * 60_000;
+    expect(await catchUp.run()).toEqual([]);
+  }
+  expect(asked).toHaveLength(n);
+  clock = START + 7 * 3_600_000;
+  await catchUp.run();
+  expect(asked.slice(n)).toEqual(["metric QBTS"]);
 });

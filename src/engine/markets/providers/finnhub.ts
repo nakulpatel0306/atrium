@@ -95,20 +95,32 @@ export function finnhubProvider(token: string, deps: Deps = {}): MarketProvider 
   const earnings = async (list: Instrument[], from: string, to: string): Promise<EarningsDate[]> => {
     const out: EarningsDate[] = [];
     const done: string[] = [];
+    const failed: { key: string; reason: string }[] = [];
     for (const i of list) {
       let r: { earningsCalendar?: { date: string; hour: string; epsEstimate: number | null; symbol: string }[] };
       try {
         r = (await get("/calendar/earnings", { from, to, symbol: i.symbol })) as typeof r;
       } catch (e) {
-        // What came back before the failure is kept, so the caller can save it and ask for the rest later.
-        if (e instanceof ProviderError) e.partial = { done, rows: out };
-        throw e;
+        // A rate limit or a rejected key stops the rest; what came back before it is kept, so the caller can save it
+        // and ask for the rest later. Any other error is that symbol's alone, and the next symbols are still asked.
+        if (!(e instanceof ProviderError)) throw e;
+        if (e.kind === "rate_limited" || e.kind === "auth") {
+          e.partial = { done, rows: out, failed };
+          throw e;
+        }
+        failed.push({ key: instrumentKey(i), reason: e.message });
+        continue;
       }
       for (const e of r?.earningsCalendar ?? []) {
         if (e.symbol !== i.symbol || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) continue;
         out.push({ key: instrumentKey(i), date: e.date, hour: e.hour || null, epsEstimate: numOrNull(e.epsEstimate) });
       }
       done.push(instrumentKey(i));
+    }
+    if (failed.length) {
+      const e = new ProviderError("unavailable", `Finnhub's earnings calendar failed for ${failed.map((f) => f.key).join(", ")}: ${failed[0]!.reason}`);
+      e.partial = { done, rows: out, failed };
+      throw e;
     }
     return out;
   };

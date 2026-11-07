@@ -154,5 +154,19 @@ test("earnings keep what came back before a 429, so the caller can save it and a
   const p = finnhubProvider(TOKEN, { fetch: f.fetch, now: () => NOW });
   const e = await err(p.earnings!([{ symbol: "RKLB", exchange: "US" }, { symbol: "QBTS", exchange: "US" }, { symbol: "SOFI", exchange: "US" }], "2026-11-06", "2026-12-06"));
   expect(e.kind).toBe("rate_limited");
-  expect(e.partial).toEqual({ done: ["RKLB"], rows: [{ key: "RKLB", date: "2026-11-09", hour: "amc", epsEstimate: null }] });
+  expect(e.partial).toEqual({ done: ["RKLB"], rows: [{ key: "RKLB", date: "2026-11-09", hour: "amc", epsEstimate: null }], failed: [] });
+});
+
+test("one symbol's own error doesn't stop the symbols after it", async () => {
+  const f = stubFetch((url) =>
+    url.searchParams.get("symbol") === "QBTS"
+      ? new Response("oops", { status: 500 })
+      : jsonResponse({ earningsCalendar: [{ date: "2026-11-09", hour: "amc", epsEstimate: null, symbol: url.searchParams.get("symbol") }] }),
+  );
+  const p = finnhubProvider(TOKEN, { fetch: f.fetch, now: () => NOW });
+  const e = await err(p.earnings!(["QBTS", "RKLB", "SOFI"].map((symbol) => ({ symbol, exchange: "US" as const })), "2026-11-06", "2026-12-06"));
+  expect(e.kind).toBe("unavailable");
+  expect(e.partial!.done).toEqual(["RKLB", "SOFI"]);
+  expect(e.partial!.rows.map((r) => r.key)).toEqual(["RKLB", "SOFI"]);
+  expect(e.partial!.failed).toEqual([{ key: "QBTS", reason: "Finnhub returned an error (HTTP 500); Atrium will try again." }]);
 });
