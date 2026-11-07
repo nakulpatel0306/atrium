@@ -1,14 +1,16 @@
 import { config } from "../config";
 import { ENV_GLOBS } from "../envpath";
 import { atriumDenyPaths } from "./atrium-paths";
-import { privateDenyPaths } from "./private-paths";
+import { privateReadRules, privateReads } from "./private-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { agentEnv } from "./seatbelt";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
-const denyRules = (cwd: string, privateData = false) => [
+const usesBash = (tools: string[]) => tools.some((t) => t === "Bash" || t.startsWith("Bash("));
+
+const denyRules = (cwd: string, privateData = false, bash = true) => [
   // .env names in any case, names ending in .env, and everything inside a folder with such a name.
   ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
@@ -44,13 +46,19 @@ const denyRules = (cwd: string, privateData = false) => [
   "Read(~/Library/Contacts/**)",
   // Atrium's DB, transcripts and other spaces' folders; a general-space run keeps its own. "//" anchors at the root.
   ...atriumDenyPaths(cwd).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
-  // Bank exports, for a private or investing space's run.
-  ...(privateData ? privateDenyPaths(cwd).flatMap((p) => (p.includes("*") ? [`Read(/${p})`] : [`Read(/${p})`, `Read(/${p}/**)`])) : []),
+  // A private or investing space's run: the three folders bank exports land in, and no Bash at all unless it's a
+  // private repo's test commands.
+  ...(privateData ? privateReadRules(cwd) : []),
+  ...(privateData && !bash ? ["Bash"] : []),
 ];
 
 // Per-run settings: the sandbox must hard-fail rather than quietly run unconfined.
-export function sandboxSettings(cwd: string, opts: { privateData?: boolean } = {}): string {
+export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash?: boolean } = {}): string {
+  const reads = opts.privateData ? privateReads(cwd, { bash: opts.bash ?? true }) : null;
   return JSON.stringify({
+    // A private or investing run's file tools refuse anything outside its working directory, in every mode. Without
+    // this, -p runs read outside it freely (Claude Code 2.1.257 or later honours it).
+    ...(reads && { permissions: { blockReadsOutsideWorkingDirectories: true } }),
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
@@ -69,8 +77,9 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean } = {
           // A wildcard entry that matches a folder blocks its contents too.
           ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
           ...atriumDenyPaths(cwd),
-          ...(opts.privateData ? privateDenyPaths(cwd) : []),
+          ...(reads?.denyRead ?? []),
         ],
+        ...(reads?.allowRead.length && { allowRead: reads.allowRead }),
       },
       network: { allowedDomains: ["registry.npmjs.org"], allowLocalBinding: false, allowAllUnixSockets: false },
     },
@@ -162,14 +171,14 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         [
           bin, "-p",
           "--setting-sources", "project,local",
-          "--settings", sandboxSettings(input.cwd, { privateData: input.privateData }),
+          "--settings", sandboxSettings(input.cwd, { privateData: input.privateData, bash: usesBash(input.allowedTools) }),
           "--strict-mcp-config", "--no-session-persistence",
           "--output-format", "stream-json", "--verbose",
           "--permission-mode", "dontAsk",
           "--append-system-prompt", input.systemPrompt,
           // No tools at all ("--tools ''") rather than an empty allow list, which the variadic flag can't express.
           ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : ["--tools", ""]),
-          "--disallowedTools", ...denyRules(input.cwd, input.privateData), ...(input.allowedTools.length ? [] : ["mcp__*"]),
+          "--disallowedTools", ...denyRules(input.cwd, input.privateData, usesBash(input.allowedTools)), ...(input.allowedTools.length ? [] : ["mcp__*"]),
         ],
         { cwd: input.cwd, stdin: input.prompt, env: agentEnv(process.env), signal: input.signal, onLine: handle },
       );
