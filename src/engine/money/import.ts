@@ -6,6 +6,7 @@ import { parseCsv } from "../markets/csv";
 import { ACCOUNTS, detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_CODES, type Bank } from "./banks";
 import { merchantOf } from "./categories";
 import { monthEnd } from "./coverage";
+import { reflowMoney } from "./flows";
 
 // Bank and card exports (TD, Amex, Wealthsimple chequing and savings, RBC, Scotiabank and the like) and Wealthsimple activity exports,
 // read on this Mac. Known banks are found by shape (banks.ts), other columns by name, and anything else is mapped by
@@ -583,6 +584,7 @@ export function importMoney(db: Database, spaceId: string, p: MoneyPreview): { a
     for (const [account, c] of covered) {
       log.run(c.id, spaceId, account, c.first, c.last, c.rows, at, statement ? `${c.first.slice(0, 7)}-01` : null, statement ? monthEnd(c.last.slice(0, 7)) : null);
     }
+    reflowMoney(db, spaceId);
   })();
   bus.emit({ type: "changed" });
   return { added, duplicates: p.rows.length - added };

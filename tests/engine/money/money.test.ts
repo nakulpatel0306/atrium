@@ -410,14 +410,14 @@ test("transfers: known descriptions, matching pairs across accounts (3 days if o
     { id: "i", date: "2026-10-15", account: "TD chequing", description: "STORE", amount: -77, kind: "spend", transfer: null },
     { id: "j", date: "2026-10-17", account: "Amex", description: "REFUND", amount: 77, kind: "income", transfer: null },
     { id: "c", date: "2026-10-10", account: "TD chequing", description: "COFFEE", amount: -300, kind: "spend", transfer: null },
-    { id: "d", date: "2026-10-20", account: "Amex", description: "PAYMENT RECEIVED - THANK YOU", amount: 90, kind: "income", transfer: null },
+    { id: "d", date: "2026-10-20", account: "Amex", description: "PAYMENT RECEIVED - THANK YOU", amount: 90, kind: "income", transfer: null, flow: "card-payment" as const },
     { id: "e", date: "2026-10-01", account: "TD chequing", description: "REFUND", amount: 40, kind: "income", transfer: null },
     { id: "f", date: "2026-10-09", account: "TD credit card", description: "STORE", amount: -40, kind: "spend", transfer: null },
     { id: "g", date: "2026-10-03", account: "TD chequing", description: "WEALTHSIMPLE", amount: -25, kind: "spend", transfer: 0 },
     { id: "h", date: "2026-10-03", account: "TD chequing", description: "CASH TO SAVINGS", amount: -25, kind: "spend", transfer: 1 },
   ];
   const t = transfers(rows);
-  expect(Object.fromEntries(t)).toEqual({ a: "pair", b: "pair", d: "known", h: "marked" });
+  expect(Object.fromEntries(t)).toEqual({ a: "pair", b: "pair", d: "card-payment", h: "marked" });
 });
 
 test("marking a transaction as a transfer or not changes the month, and the mark can be handed back", () => {
@@ -830,12 +830,12 @@ test("card data: the Luhn backstop checks a whole span, even one made of amount-
   expect(mask("Groceries CA$58.14 (CA$374.40 to CA$432.54)")).toBe("Groceries CA$58.14 (CA$374.40 to CA$432.54)");
 });
 
-test("e-transfers sent are left out of spending, and the recap says how much", () => {
+test("e-transfers sent to other people are spending, and the recap says how much", () => {
   importMoney(db, spaceId, previewMoney("Date,Description,Amount\n2026-10-01,E-TRANSFER SENT J SAMPLE,-1650\n2026-10-03,LOBLAWS,-80\n", { signs: "negative-out", account: "TD chequing" }));
   const r = recap(db, spaceId, NOW, "2026-10")!;
-  expect(r.spent).toBe(80);
+  expect(r.spent).toBe(1730);
   expect(r.eTransfers).toEqual({ count: 1, total: 1650 });
-  expect(recapFacts(r).join("\n")).toContain("CA$1,650.00 in 1 e-transfer sent was left out of spending.");
+  expect(recapFacts(r).join("\n")).toContain("Spending includes CA$1,650.00 in 1 e-transfer sent to other people.");
 });
 
 test("card data: rule and budget text is masked when it's saved", () => {

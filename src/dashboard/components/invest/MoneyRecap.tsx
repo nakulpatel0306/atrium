@@ -39,8 +39,7 @@ export function MoneyRecap({ spaceId, view, onMonth }: { spaceId: string; view: 
         </select>
         <span className="faint">
           Based on {r.basis.count} {r.basis.count === 1 ? "transaction" : "transactions"}, {shortDate(r.basis.from)} to {shortDate(r.basis.to)}
-          {r.moved.count > 0 && ` · ${r.moved.count} transfers left out`}
-          {r.eTransfers.count > 0 && ` · ${cadText(r.eTransfers.total)} in e-transfers left out`}
+          {r.eTransfers.count > 0 && ` · ${cadText(r.eTransfers.total)} in e-transfers sent`}
         </span>
       </div>
       {view.coverLine && <p className="money-cover">{view.coverLine}</p>}
@@ -55,7 +54,7 @@ export function MoneyRecap({ spaceId, view, onMonth }: { spaceId: string; view: 
           )}
         </div>
         <div>
-          <span className="money-hero-label">Money in</span>
+          <span className="money-hero-label" title="Pay, e-transfers received and interest.">Money in</span>
           <b>{cadText(r.income)}</b>
         </div>
         <div>
@@ -63,6 +62,11 @@ export function MoneyRecap({ spaceId, view, onMonth }: { spaceId: string; view: 
           <b>{cadText(Math.abs(r.net))}</b>
         </div>
       </div>
+      {(r.refunds.count > 0 || r.moved.count > 0) && (
+        <p className="money-aside">
+          {[r.refunds.count > 0 && `Refunds ${cadText(r.refunds.total)}`, r.moved.count > 0 && `Moved between your accounts ${cadText(r.moved.total)}`].filter(Boolean).join(" · ")}
+        </p>
+      )}
       {(r.changes.length > 0 || r.notable.length > 0) && (
         <div className="money-recap-cols">
           {r.changes.length > 0 && (

@@ -19,7 +19,7 @@ export const DEFAULT_RULES: Rule[] = [
   ...["presto", "uber", "lyft", "shell", "petro", "esso", "go transit", "ttc"].map((match) => ({ match, category: "Transport" })),
   ...["rogers", "bell", "telus", "fido", "koodo", "hydro", "enbridge", "insurance"].map((match) => ({ match, category: "Bills" })),
   ...["amazon", "amzn", "best buy", "ikea", "walmart", "winners"].map((match) => ({ match, category: "Shopping" })),
-  ...["e transfer", "e trf", "interac", "payment thank you", "payment from", "transfer"].map((match) => ({ match, category: "Transfers" })),
+  ...["e transfer", "e trf", "e tfr", "interac", "payment thank you", "payment from", "transfer"].map((match) => ({ match, category: "Transfers" })),
 ];
 
 const words = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;

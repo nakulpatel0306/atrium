@@ -352,7 +352,7 @@ test("Money: four banks' files give a recap with its basis, the room tie-in, bud
   const view = { ...moneyView(db, fx.spaceId, NOW, "2026-10"), starters: STARTERS };
   const html = renderToStaticMarkup(<MoneyBody spaceId={fx.spaceId} view={view} now={NOW} />);
   const t = text(html);
-  expect(t).toContain("transfers left out");
+  expect(t).toContain("Moved between your accounts CA$2,313.25");
   expect(t).toContain("Biggest changes");
   expect(t).toContain("Best Buy");
   expect(t).toContain("CA$7,000.00 of TFSA room left for 2026.");
