@@ -522,6 +522,52 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
   .who-panels { min-height: 0; }
 }
 
+
+/* The Keeper: the logo's center square with a face. Eyes on the hero mark, and a small companion in the corner. */
+.hero-eyes { animation: eyesIn .6s 1.3s both; transition: transform .25s ease-out; }
+.hero-eyes .he { transform-box: fill-box; transform-origin: center; animation: blink 5s 2.5s infinite; }
+@keyframes eyesIn { from { opacity: 0; } }
+@keyframes blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+.keeper { position: fixed; right: calc(20px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: flex; align-items: flex-end; gap: 10px; opacity: 0; transform: translateY(16px); pointer-events: none; transition: opacity .4s, transform .4s cubic-bezier(.2,.7,.2,1); }
+.keeper.on { opacity: 1; transform: none; pointer-events: auto; }
+.keeper .say { max-width: 230px; background: var(--panel); border: 1px solid var(--line2); border-radius: 14px 14px 4px 14px; padding: 10px 12px; font-size: 14px; line-height: 1.4; color: var(--text); box-shadow: 0 16px 40px -16px #000; opacity: 0; transform: translateY(6px) scale(.97); transform-origin: 100% 100%; transition: opacity .25s, transform .25s; }
+.keeper .say.on { opacity: 1; transform: none; }
+.keeper .k-wrap { position: relative; flex: none; }
+.keeper .k-btn { position: relative; width: 64px; height: 64px; padding: 0; border: 0; background: none; cursor: pointer; flex: none; border-radius: 18px; }
+.keeper .k-btn:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 3px; }
+.keeper svg { width: 64px; height: 64px; overflow: visible; filter: drop-shadow(0 10px 18px rgba(0,0,0,.55)); }
+.keeper .x { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line2); background: var(--raised); color: var(--dim); font: 12px/18px var(--sans); text-align: center; cursor: pointer; opacity: 0; transition: opacity .2s; }
+.keeper:hover .x, .keeper .x:focus-visible { opacity: 1; }
+.kp .core { transform-box: fill-box; transform-origin: 50% 100%; }
+.kp .eyes { transform-box: fill-box; transition: transform .3s ease; }
+.kp .eye { transform-box: fill-box; transform-origin: center; }
+.kp .lid, .kp .dots, .kp .badge, .kp .check, .kp .zz { opacity: 0; transition: opacity .25s; }
+.keeper[data-k="idle"] .kp .core { animation: kBreathe 3.2s ease-in-out infinite; }
+.keeper[data-k="idle"] .kp .eye { animation: blink 4.5s infinite; }
+.keeper[data-k="working"] .kp .eyes { transform: translate(-2px, 4px); }
+.keeper[data-k="working"] .kp .core { animation: kNod 1.4s ease-in-out infinite; }
+.keeper[data-k="working"] .kp .dots { opacity: 1; }
+.keeper[data-k="working"] .kp .dots circle { animation: kDot 1.2s ease-in-out infinite; }
+.keeper[data-k="working"] .kp .dots circle:nth-child(2) { animation-delay: .15s; }
+.keeper[data-k="working"] .kp .dots circle:nth-child(3) { animation-delay: .3s; }
+.keeper[data-k="needs"] .kp .core { animation: kLean 2.4s ease-in-out infinite; }
+.keeper[data-k="needs"] .kp .eyes { transform: translate(-5px, -2px); }
+.keeper[data-k="needs"] .kp .badge { opacity: 1; }
+.keeper[data-k="happy"] .kp .core { animation: kHop 1.1s cubic-bezier(.3,.7,.3,1) 2; }
+.keeper[data-k="happy"] .kp .eye { opacity: 0; }
+.keeper[data-k="happy"] .kp .lid, .keeper[data-k="happy"] .kp .check { opacity: 1; }
+.keeper[data-k="sleep"] .kp .core { animation: kBreathe 4.5s ease-in-out infinite; }
+.keeper[data-k="sleep"] .kp .eye { opacity: 0; }
+.keeper[data-k="sleep"] .kp .lid { opacity: 1; transform: translateY(3px) scaleY(-1); transform-box: fill-box; transform-origin: center; }
+.keeper[data-k="sleep"] .kp .zz { opacity: 1; animation: kZz 2.4s ease-in-out infinite; }
+@keyframes kBreathe { 50% { transform: scale(1.05, .96); } }
+@keyframes kNod { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-5deg) translateY(1px); } }
+@keyframes kDot { 0%, 100% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(-4px); opacity: 1; } }
+@keyframes kLean { 0%, 100% { transform: translate(-20px, -8px) rotate(-10deg); } 50% { transform: translate(-24px, -11px) rotate(-13deg); } }
+@keyframes kHop { 0%, 100% { transform: none; } 20% { transform: scale(1.1, .88); } 50% { transform: translateY(-48px) scale(.94, 1.08); } 80% { transform: scale(1.06, .94); } }
+@keyframes kZz { 0% { transform: translate(0, 0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(8px, -18px); opacity: 0; } }
+@media (max-width: 600px) { .keeper .say { max-width: 180px; font-size: 13px; } .keeper .k-btn, .keeper svg { width: 52px; height: 52px; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }
@@ -550,7 +596,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
   <div class="floor"></div>
   <div class="wrap">
     <div class="hero-copy">
-      <svg class="mark-big" viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c2"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c2)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect class="core" x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/></svg>
+      <svg class="mark-big" viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c2"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c2)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect class="core" x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/><g class="hero-eyes" id="hero-eyes"><rect class="he" x="10.35" y="11.1" width=".8" height="1.3" rx=".4" fill="#0b0b0d"/><rect class="he" x="12.85" y="11.1" width=".8" height="1.3" rx=".4" fill="#0b0b0d"/></g></svg>
       <h1 class="rise d1">Every thread, in <em>one calm place</em>.</h1>
       <p class="lede rise d2">Atrium is a command center for the AI agents on my Mac. I say what I want in plain words, an agent does the work, and nothing counts until I say yes.</p>
       <div class="ctas rise d3">
@@ -805,6 +851,23 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
   </div>
 </section>
 
+
+<div class="keeper" id="keeper" data-k="idle" role="complementary" aria-label="Keeper, Atrium's helper">
+  <p class="say" id="keeper-say" aria-live="polite"></p>
+  <span class="k-wrap"><button class="k-btn" id="keeper-btn" type="button" aria-label="Keeper: say something">
+    <svg class="kp" viewBox="0 0 200 200" aria-hidden="true">
+      <defs><clipPath id="kf"><rect x="20" y="20" width="160" height="160" rx="38"/></clipPath></defs>
+      <g clip-path="url(#kf)"><rect x="20" y="20" width="160" height="160" fill="#141417"/><path d="M20 20h160l-46 46H66z" fill="#e6e6ea" opacity=".6"/><path d="M180 20v160l-46-46V66z" fill="#e6e6ea" opacity=".4"/><path d="M180 180H20l46-46h68z" fill="#e6e6ea" opacity=".22"/><path d="M20 180V20l46 46v68z" fill="#e6e6ea" opacity=".78"/><rect x="66" y="66" width="68" height="68" fill="#0b0b0d"/></g>
+      <g class="core"><rect x="74" y="74" width="52" height="52" rx="10" fill="#7c7cf5"/><g class="eyes"><rect class="eye" x="86" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/><rect class="eye" x="106" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/><path class="lid" d="M85 99 q5 -6 10 0 M105 99 q5 -6 10 0" stroke="#0b0b0d" stroke-width="3.5" fill="none" stroke-linecap="round"/></g></g>
+      <g class="dots" fill="#a5a5ff"><circle cx="18" cy="58" r="6"/><circle cx="2" cy="48" r="6"/><circle cx="-14" cy="38" r="6"/></g>
+      <circle class="badge" cx="34" cy="34" r="13" fill="#f2c94c" stroke="#0b0b0d" stroke-width="4"/>
+      <g class="check"><circle cx="40" cy="40" r="16" fill="#4cb782"/><path d="M33 40l5 5 9-10" stroke="#0b0b0d" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+      <text class="zz" x="150" y="50" font-family="JetBrains Mono, monospace" font-weight="600" font-size="30" fill="#a5a5ff">z</text>
+    </svg>
+  </button>
+  <button class="x" id="keeper-x" type="button" aria-label="Hide the Keeper">×</button></span>
+</div>
+
 <footer>
   <div class="wrap"><span>Atrium · made by Nakul Patel</span><span>MIT License · 2026</span></div>
 </footer>
@@ -1037,6 +1100,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
       const el = $("m-toast");
       el.textContent = text;
       el.classList.add("on");
+      dispatchEvent(new CustomEvent("atrium:demo", { detail: text }));
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => el.classList.remove("on"), 2800);
     }
@@ -1567,5 +1631,57 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
     document.getElementById("try").scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
   }));
 
+
+  // The Keeper: eyes on the hero mark follow the cursor; a companion in the corner comments on sections and reacts to the demo.
+  (() => {
+    const eyes = document.getElementById("hero-eyes"), mark = document.querySelector(".mark-big");
+    if (eyes && mark && !reduced) addEventListener("pointermove", (e) => {
+      const r = mark.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), d = Math.hypot(dx, dy) || 1;
+      eyes.style.transform = `translate(${(dx / d) * 0.5}px, ${(dy / d) * 0.4}px)`;
+    }, { passive: true });
+    const k = document.getElementById("keeper"), say = document.getElementById("keeper-say");
+    let hidden = false;
+    try { hidden = localStorage.getItem("keeper-hidden") === "1"; } catch {}
+    if (hidden) return;
+    const LINES = {
+      try: "This is a live copy of the app. Click around, or type something into the bar.",
+      why: "I'm the Keeper. I watch every thread so you don't have to.",
+      how: "Watch: I draft it, then I wait. Nothing goes out without your yes.",
+      uses: "Pick a role, then press Try it. I'll set it up in the demo.",
+      ways: "Same Atrium in the Mac app, the browser and the terminal.",
+      private: "Your stuff never leaves your Mac. I only see what you hand me.",
+      end: "Want your own Keeper? It's free and open source.",
+    };
+    const TIPS = ["Psst. Press Approve on something in the demo.", "Try typing \u201chelp me plan a trip to Lisbon\u201d in the demo.", "I get sleepy if you stop scrolling.", "Every Atrium has one of me in the logo."];
+    let tip = 0, sayTimer, moodTimer, sleepTimer, last = "", shown = false;
+    const mood = (m, ms) => { k.dataset.k = m; clearTimeout(moodTimer); if (ms) moodTimer = setTimeout(() => (k.dataset.k = "idle"), ms); };
+    const talk = (text, ms = 4200) => { if (!text) return; say.textContent = text; say.classList.add("on"); clearTimeout(sayTimer); sayTimer = setTimeout(() => say.classList.remove("on"), ms); };
+    const awake = () => { if (k.dataset.k === "sleep") mood("idle"); clearTimeout(sleepTimer); sleepTimer = setTimeout(() => { if (shown) { mood("sleep"); say.classList.remove("on"); } }, 25000); };
+    ["pointermove", "scroll", "keydown"].forEach((ev) => addEventListener(ev, awake, { passive: true }));
+    // Shows up once the hero is out of view, and speaks once per section.
+    const check = () => { const now = scrollY > innerHeight * 0.45; if (now !== shown) { shown = now; k.classList.toggle("on", shown); if (shown) awake(); } };
+    addEventListener("scroll", check, { passive: true }); check();
+    const sections = [["try", "#try"], ["why", "#why"], ["how", "#how"], ["uses", "#uses"], ["ways", "#ways"], ["private", "#private"], ["end", ".end"]];
+    const seen = new Set();
+    const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+      const id = e.target.dataset.keeper;
+      if (!e.isIntersecting || seen.has(id) || !shown) return;
+      seen.add(id); last = id; talk(LINES[id]);
+    }), { threshold: 0.35 });
+    sections.forEach(([id, sel]) => { const el = document.querySelector(sel); if (el) { el.dataset.keeper = id; io.observe(el); } });
+    // Reacts to what happens in the demo.
+    addEventListener("atrium:demo", (e) => {
+      const t = e.detail || "";
+      if (/^Ready for review/.test(t)) { mood("needs", 5000); talk("Something's ready for you. Have a look?"); }
+      else if (/started|Set up|Sent back/.test(t)) { mood("working", 4500); talk("On it."); }
+      else if (/^Sent to|^Kept|Added|Alert set/.test(t)) { mood("happy", 2400); talk(["Nice.", "Done. That one's yours now.", "Sent, only because you said so."][Math.floor(Math.random() * 3)]); }
+      else if (/^Not sent|Skipped/.test(t)) { mood("idle"); talk("Fine by me. Nothing went out."); }
+    });
+    document.getElementById("keeper-btn").addEventListener("click", (e) => {
+      awake(); mood("happy", 1600); talk(TIPS[tip++ % TIPS.length]);
+    });
+    const hide = (e) => { e.stopPropagation(); k.classList.remove("on"); k.hidden = true; try { localStorage.setItem("keeper-hidden", "1"); } catch {} };
+    document.getElementById("keeper-x").addEventListener("click", hide);
+  })();
 })();
 </script>
