@@ -17,7 +17,7 @@ afterEach(() => {
 
 const HEADING = "What Atrium can and can't do right now:";
 const MESSAGE_TASK_MSG =
-  'Messages: you can\'t send texts yourself. To have Atrium send one, end your reply with a fenced block tagged atrium-message holding {"to": "<name, phone or email>", "text": "<exact text>"}, then the OUTCOME line. Atrium shows it to Nakul and sends it only when he presses Send.';
+  'Messages: you can\'t send texts yourself. To have Atrium send one, end your reply with a fenced block tagged atrium-message holding {"to": "<name, phone or email>", "text": "<exact text>"}, then the OUTCOME line. For a group chat, hold {"group": "<chat name>", "people": ["<name>", …], "text": "<exact text>"} instead (either "group" or "people" may be left out). Atrium shows it to Nakul and sends it only when he presses Send.';
 const TASK_MSG =
   "Messages: you can't send texts, and Atrium won't send one from this task. If the task needs a text sent, say so in your summary; Nakul can ask Atrium to text them.";
 const SETUP_MSG = 'Messages: for a request to text or message someone, reply with {"kind":"message", …} (see the rules below), not a space of tasks.';

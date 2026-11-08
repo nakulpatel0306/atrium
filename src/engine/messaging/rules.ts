@@ -1,4 +1,5 @@
 import { hasHidden, stripHidden } from "../repos/rules";
+import type { Group } from "./store";
 
 // The message rules with no file system or database access, so the dashboard checks a draft with the engine's
 // exact wording.
@@ -68,4 +69,56 @@ export const handleProblem = (raw: string): string | null => (normalizeHandle(ra
 export function displayHandle(h: string): string {
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(h);
   return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : h;
+}
+
+// A group chat member's handle as the card shows it: enough to tell two people apart, not enough to copy.
+export function maskHandle(raw: string): string {
+  const t = plainLine(raw);
+  const at = t.indexOf("@");
+  if (at > 0) return `${t[0]}••@${t.slice(at + 1)}`;
+  const digits = t.replace(/[^0-9]/g, "");
+  if (digits.length < 4) return "••••";
+  return `${t.startsWith("+") && digits.startsWith("1") && digits.length === 11 ? "+1 ••• ••• " : "••• "}${digits.slice(-4)}`;
+}
+
+const plainLine = (s: string) => stripHidden(s.replace(/[\u0000-\u001f\u007f]/g, "")).trim();
+
+export const MAX_PEOPLE = 12;
+
+// How a group with no chat name yet reads on the card: "Sam, Priya and Jo", shortened to stay one name.
+export function peopleLine(people: readonly string[]): string {
+  if (people.length <= 1) return people[0] ?? "";
+  const all = `${people.slice(0, -1).join(", ")} and ${people.at(-1)}`;
+  const short = `${people[0]}, ${people[1]} and ${people.length - 2} other${people.length === 3 ? "" : "s"}`;
+  for (const line of [all, short]) if ([...line].length <= MAX_NAME) return line;
+  return `${people.length} people`;
+}
+
+// The chat's own name once Find picked it, else what the agent called the group.
+export function groupTitle(toName: string, g: Group): string {
+  if (!g.chat) return toName;
+  return g.chat.name ?? (g.chat.participants.length ? peopleLine(memberNames(g)) : toName);
+}
+
+// Who's in the group: the picked chat's members (a masked handle stands in for an unnamed one), else whom the agent named.
+export const memberNames = (g: Group): string[] => (g.chat ? g.chat.participants.map((p) => p.name ?? p.handle) : g.people);
+
+// What the agent asked for, shown beside whatever Messages calls the chat it picked.
+export const askLine = (g: Group): string => [g.name ? `"${g.name}"` : null, g.people.length ? peopleLine(g.people) : null].filter(Boolean).join(" with ");
+
+// Whom a text goes to as the cards say it, and whether it has somewhere to go yet (a number, or a picked chat).
+export const recipientOf = (m: { toName: string; group: Group | null }): string => (m.group ? groupTitle(m.toName, m.group) : m.toName);
+export const hasTarget = (m: { handle: string | null; group: Group | null }): boolean => (m.group ? m.group.chat !== null : m.handle !== null);
+
+export const NO_NAME_COPY = "Messages has no Contacts name for them, so Atrium can't look up their number. Text them yourself.";
+
+// Who "Send separately" texts: exactly the people the card shows (the picked chat's members, else whom the agent
+// named). A member known only by masked handle can't get a text of their own, so they're listed with why, never
+// dropped quietly.
+export function separatePlan(g: Group): { people: string[]; skipped: { who: string; why: string }[] } {
+  if (!g.chat) return { people: g.people, skipped: [] };
+  return {
+    people: g.chat.participants.flatMap((p) => (p.name ? [p.name] : [])),
+    skipped: g.chat.participants.flatMap((p) => (p.name ? [] : [{ who: p.handle, why: NO_NAME_COPY }])),
+  };
 }

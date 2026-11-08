@@ -39,9 +39,10 @@ import { getSpace, isPrivate, type Space } from "./spaces";
 import { appendTaskDetail, getTask, listTasks, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
-import { parseMessageBlock } from "./messaging/block";
+import { type MessageBlock, parseMessageBlock } from "./messaging/block";
 import { autoLookup } from "./messaging/contacts";
-import { draftMessage } from "./messaging/store";
+import { peopleLine } from "./messaging/rules";
+import { draftGroupMessage, draftMessage } from "./messaging/store";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -570,7 +571,7 @@ export function createRunner(deps: {
     // its own last line, so reviews are left alone.
     let outcome: ParsedOutcome = { outcome: "unknown", reason: null, body: "" };
     // A text the agent asked Atrium to send; it becomes a draft that only Nakul's Send can send.
-    let message: { to: string; text: string } | null = null;
+    let message: MessageBlock | null = null;
     if (result.status === "ok" && task.kind !== "review") {
       ({ outcome, message } = honestOutcome(task, result.summary));
       result = { ...result, summary: outcome.body };
@@ -617,11 +618,17 @@ export function createRunner(deps: {
       } else if (result.status === "ok" && message) {
         setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "review");
-        // The number is never the agent's: Nakul types it or picks it from his own Contacts lookup.
-        const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text });
-        logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`, { taskId: task.id });
-        // It catches its own failures; this only guards the engine if one slips past.
-        autoLookup(db, action.id).catch((e) => console.error(`Contacts lookup failed: ${e instanceof Error ? e.message : String(e)}`));
+        if (message.group) {
+          // The chat is never the agent's either: Nakul's own Find on the card picks it.
+          const { action } = draftGroupMessage(db, { spaceId: space.id, taskId: task.id, name: message.group.name, people: message.group.people, text: message.text });
+          logActivity(db, space.id, adapter.id, `Drafted a group text to ${action.toName}: ${task.title}`, { taskId: task.id });
+        } else {
+          // The number is never the agent's: Nakul types it or picks it from his own Contacts lookup.
+          const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text });
+          logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`, { taskId: task.id });
+          // It catches its own failures; this only guards the engine if one slips past.
+          autoLookup(db, action.id).catch((e) => console.error(`Contacts lookup failed: ${e instanceof Error ? e.message : String(e)}`));
+        }
       } else if (result.status === "ok") {
         const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
         // Repo runs already count their files in the branch summary.
@@ -701,12 +708,13 @@ export function createRunner(deps: {
 
   // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A
   // message block satisfies a send only as far as a draft goes: the task is partly done until Nakul presses Send.
-  function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: { to: string; text: string } | null } {
+  function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: MessageBlock | null } {
     const parsed = parseOutcome(summary);
     const block = task.kind === "work" ? parseMessageBlock(parsed.body) : null;
     if (block && isMessageTask(task)) {
-      const reason = `Drafted a text to ${block.to}. It sends only when you press Send.`;
-      return { outcome: { outcome: "partial", reason, body: block.body }, message: { to: block.to, text: block.text } };
+      const who = block.group ? (block.group.name ?? peopleLine(block.group.people)) : block.to;
+      const reason = `Drafted a text to ${who}. It sends only when you press Send.`;
+      return { outcome: { outcome: "partial", reason, body: block.body }, message: block };
     }
     // Anywhere else a block is ignored (an agent reading a repo or a web page could be talked into writing one)
     // and the result goes to review as usual, with a note saying what the agent asked for.

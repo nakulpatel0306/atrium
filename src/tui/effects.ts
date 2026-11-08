@@ -59,7 +59,7 @@ function said<T>(res: PostResult<T>, ok: (data: T) => string): Outcome {
 export function sendFollowUp(state: State, pending: { toName: string; at: number }): Flash | null {
   for (const row of state.activity) {
     if (row.createdAt < pending.at) continue;
-    if (row.message.startsWith(`Sent via Messages to ${pending.toName} (`)) return { tone: "ok", text: `Sent to ${pending.toName}. Atrium can't confirm delivery.` };
+    if (row.message.startsWith(`Sent via Messages to ${pending.toName} (`) || row.message.startsWith(`Sent a text to ${pending.toName} (`)) return { tone: "ok", text: `Sent to ${pending.toName}. Atrium can't confirm delivery.` };
     if (row.message.startsWith(`Couldn't send the text to ${pending.toName}:`)) {
       return { tone: "bad", text: `Couldn't send the text to ${pending.toName}. It's back in Needs you with what went wrong.` };
     }
@@ -87,6 +87,11 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
     case "send_message": {
       // Exactly the text, number and service the confirm showed: what the engine has stored for this draft.
       const text = state.messageActions.find((m) => m.id === intent.actionId);
+      if (text?.group) {
+        if (!intent.chatId) return { tone: "bad", text: "Find the group chat on the dashboard first." };
+        const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: intent.text ?? text.text, chatId: intent.chatId });
+        return said(res, () => `Sending to ${intent.toName}… If it doesn't go, the text comes back in Needs you.`);
+      }
       if (!text?.handle) return { tone: "bad", text: "Pick who this goes to on the dashboard first." };
       const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: intent.text ?? text.text, handle: text.handle, service: text.service });
       return said(res, () => `Sending to ${intent.toName}… If it doesn't go, the text comes back in Needs you.`);

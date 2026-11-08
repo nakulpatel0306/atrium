@@ -1,11 +1,15 @@
 import { MessageSquare } from "lucide-react";
+import { groupTitle } from "../../engine/messaging/rules";
 import type { MessageAction } from "../../engine/messaging/store";
 import { useEngineState, useFetched } from "../api";
 import { absolute, relative } from "../format";
 
 export function sentLine(m: MessageAction): string {
-  if (m.status === "sent") return `Sent to ${m.toName} · ${relative(m.sentAt ?? m.updatedAt)}`;
+  const to = m.group ? groupTitle(m.toName, m.group) : m.toName;
+  const size = m.group?.chat ? ` (${m.group.chat.participants.length} people)` : "";
+  if (m.status === "sent") return `Sent to ${to}${size} · ${relative(m.sentAt ?? m.updatedAt)}`;
   if (m.status === "rejected") return "Not sent · you chose not to send it";
+  if (m.status === "split") return `Split into one text per person · ${to}`;
   return `Didn't send · ${m.error ?? "Atrium couldn't tell why."}`;
 }
 
@@ -31,7 +35,7 @@ export function SentList({ messages }: { messages: MessageAction[] }) {
   );
 }
 
-// Every text this space sent, failed to send, or Nakul chose not to send; newest first.
+// Every text this space sent, failed to send, split into one per person, or Nakul chose not to send; newest first.
 export function SentMessages({ spaceId }: { spaceId: string }) {
   const messages = useFetched<MessageAction[]>(`/api/spaces/${encodeURIComponent(spaceId)}/messages`, useEngineState());
   return <SentList messages={messages ?? []} />;

@@ -26,7 +26,7 @@ function withText(handle: string | null = "+15550100134"): State {
     createdAt: Date.now(), resolvedAt: null,
   });
   s.messageActions = [
-    { id: "msa_1", approvalId: MSG_APR, spaceId: ids.jobHunt, taskId: null, toName: "Dana", handle, handleSource: handle ? "contacts" : null, candidates: null, service: "iMessage", text: "you free sat?\nlet me know", lastError: null, contactsReady: true },
+    { id: "msa_1", approvalId: MSG_APR, spaceId: ids.jobHunt, taskId: null, toName: "Dana", handle, handleSource: handle ? "contacts" : null, candidates: null, service: "iMessage", text: "you free sat?\nlet me know", group: null, lastError: null, contactsReady: true },
   ];
   return s;
 }

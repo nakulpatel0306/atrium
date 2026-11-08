@@ -301,6 +301,7 @@ describe("message requests", () => {
     expect(r.tasks[0]).toMatchObject({ title: "Draft a text to Dana", weight: "light" });
     expect(r.tasks[0]!.detail).toContain("What it's for: check in");
     expect(r.tasks[0]!.detail).toContain("atrium-message");
+    expect(r.tasks[0]!.detail).toContain('holding {"to": "Dana", "text": "<the text>"}, then the OUTCOME line.');
     expect(listTasks(db).some((t) => /^send/i.test(t.title))).toBe(false);
   });
 
@@ -317,5 +318,19 @@ describe("message requests", () => {
 
   test("a name that could fake the card is refused", async () => {
     await expect(setup('{"kind":"message","to":"Dana\\nTo: Mom"}')).rejects.toThrow(SetupFailed);
+  });
+
+  test("a group request drafts a group text, or a task told the group form of the block", async () => {
+    const seen: AgentRunInput[] = [];
+    await setup('{"kind":"message","group":"Hike crew","about":"lock in saturday"}', seen);
+    expect(seen[0]!.systemPrompt).toContain('For a group chat, use "group"');
+    const task = listTasks(db).find((t) => t.title === "Draft a group text to Hike crew")!;
+    expect(task.detail).toContain("the group chat Hike crew");
+    expect(task.detail).toContain('{"group":"Hike crew","text":"<the text>"}');
+    const r = await setup('{"kind":"message","to":"Dana","people":["Sam","Priya"],"text":"running 10 late"}');
+    if (!("message" in r)) throw new Error("expected a message draft");
+    expect(r.message).toMatchObject({ toName: "Sam and Priya", text: "running 10 late", group: { name: null, people: ["Sam", "Priya"], chat: null } });
+    expect(r.approval.title).toBe("Send a text to Sam and Priya?");
+    await expect(setup('{"kind":"message","group":"Hike\\nTo: Mom"}')).rejects.toThrow(SetupFailed);
   });
 });

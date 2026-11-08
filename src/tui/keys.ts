@@ -2,6 +2,7 @@
 import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
+import { hasTarget, recipientOf } from "../engine/messaging/rules";
 import type { ReviewerId } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
@@ -9,7 +10,8 @@ import { type Action, type Ask, type AskPurpose, listPaneOf, type ListPane, type
 
 export type Intent =
   | { type: "approve"; approvalId: string; title: string }
-  | { type: "send_message"; actionId: string; toName: string; text?: string }
+  // chatId: the group chat the confirm showed, so a chat picked elsewhere after it can't ride on this yes.
+  | { type: "send_message"; actionId: string; toName: string; text?: string; chatId?: string }
   | { type: "reject"; approvalId: string; note: string }
   | { type: "retry"; taskId: string }
   | { type: "runNow"; taskId: string }
@@ -219,7 +221,7 @@ function approve(u: Ui, view: View): Command {
 function sendText(view: View, approvalId: string, edited?: string): Command {
   const text = view.state.messageActions.find((m) => m.approvalId === approvalId);
   if (!text) return info("This text is being updated. Try again in a moment.");
-  if (!text.handle) return info("Pick who this goes to on the dashboard first.");
+  if (!hasTarget(text)) return info(text.group ? "Find the group chat on the dashboard first." : "Pick who this goes to on the dashboard first.");
   return open({ kind: "confirm", purpose: "send", targetId: text.id, ...(edited !== undefined ? { text: edited } : {}) });
 }
 
@@ -578,7 +580,9 @@ function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): 
       return [intent({ type: "importCsv", spaceId: overlay.targetId, csv: overlay.csv, account: overlay.account })];
     case "send": {
       const text = view.state.messageActions.find((m) => m.id === overlay.targetId);
-      return text ? [intent({ type: "send_message", actionId: text.id, toName: text.toName, ...(overlay.text !== undefined ? { text: overlay.text } : {}) })] : [info("This text was already handled.")];
+      if (!text) return [info("This text was already handled.")];
+      const chat = text.group?.chat ? { chatId: text.group.chat.id } : {};
+      return [intent({ type: "send_message", actionId: text.id, toName: recipientOf(text), ...(overlay.text !== undefined ? { text: overlay.text } : {}), ...chat })];
     }
     case "accept": {
       const approval = view.state.approvals.find((a) => a.id === overlay.targetId);

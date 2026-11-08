@@ -12,7 +12,7 @@ import { atriumDiskUsage } from "./storage";
 import { config } from "./config";
 import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
-import { type Candidate, type HandleSource, pendingMessageActions, type Service } from "./messaging/store";
+import { type Candidate, type Group, type HandleSource, pendingMessageActions, type Service } from "./messaging/store";
 import { type MessagingState, messagingState } from "./capabilities";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
@@ -90,6 +90,8 @@ export type MessageActionView = {
   candidates: Candidate[] | null;
   service: Service;
   text: string;
+  // A group text: whom the agent named and the chat Find picked (members' handles masked). Null for one person.
+  group: Group | null;
   lastError: string | null;
   // Whether a Contacts lookup has worked before, so the card knows macOS won't ask again.
   contactsReady: boolean;
@@ -113,6 +115,7 @@ function messageActionViews(db: Database): MessageActionView[] {
     candidates: a.candidates,
     service: a.service,
     text: a.text,
+    group: a.group,
     lastError: a.error,
     contactsReady,
   }));
