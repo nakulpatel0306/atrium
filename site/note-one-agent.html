@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why one agent isn't enough · Atrium Notes</title>
+<script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
+<meta name="description" content="A single agent gets worse the longer it runs. So Atrium is built by a plan, one builder, a fresh reviewer and a human merge, each with a small context.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* The landing page's tokens and chrome. Articles sit in a ~68ch column, with the contents pinned beside long ones
+   on wide screens. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --raised: #111114;
+  --panel: #141417;
+  --text: #e6e6ea;
+  --dim: #9c9ca6;
+  --faint: #6f6f7a;
+  --line: #24242a;
+  --line2: #34343c;
+  --accent: #7c7cf5;
+  --accent-hi: #a5a5ff;
+  --accent-soft: #1e1e3d;
+  --green: #4cb782;
+  --yellow: #f2c94c;
+  --blue: #4ea7fc;
+  --orange: #d97757;
+  --red: #eb5757;
+  --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --col: 1120px;
+  --gutter: max(16px, env(safe-area-inset-left, 0px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 17px; line-height: 1.6; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+.wrap { max-width: var(--col); margin: 0 auto; padding-left: var(--gutter); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -.02em; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 3px; border-radius: 4px; }
+
+/* Top bar */
+nav#nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 72%, transparent); border-bottom: 1px solid transparent; transition: border-color .3s; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+nav#nav.scrolled { border-bottom-color: var(--line); }
+nav#nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; text-decoration: none; }
+.brand svg { width: 22px; height: 22px; }
+nav#nav ul { display: flex; gap: 28px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 14px; color: var(--dim); }
+nav#nav ul a { text-decoration: none; transition: color .2s; }
+nav#nav ul a:hover, nav#nav ul a[aria-current] { color: var(--text); }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 500 15px var(--sans); text-decoration: none; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--line2); color: var(--text); background: var(--raised); transition: border-color .2s, background .2s, transform .2s; cursor: pointer; }
+.btn:hover { border-color: var(--faint); transform: translateY(-1px); }
+.btn.small { padding: 7px 14px; font-size: 14px; }
+/* Only two links here, so they stay visible on phones instead of hiding like the landing page's four. */
+@media (max-width: 720px) { nav#nav ul { gap: 18px; } }
+
+/* Scroll reveals: visible by default, animated only where the browser ties them to scrolling. */
+@supports (animation-timeline: view()) {
+  .reveal { animation: up linear both; animation-timeline: view(); animation-range: entry 5% cover 24%; }
+  @keyframes up { from { opacity: 0; transform: translateY(32px); } }
+}
+
+/* Page header: a dimmer version of the landing page's skylight */
+.top { position: relative; overflow: hidden; isolation: isolate; padding-block: clamp(48px, 8vw, 100px) clamp(40px, 6vw, 68px); border-bottom: 1px solid var(--line); }
+.sky { position: absolute; inset: -20% 0 auto; height: 640px; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 40% 55% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  animation: breathe 9s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .7; transform: scaleX(1.06); } }
+.top .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px; }
+.top h1 { font-size: clamp(34px, 5.6vw, 62px); line-height: 1.05; font-weight: 600; letter-spacing: -.035em; max-width: 19ch; }
+.top h1 em { font-style: normal; background: linear-gradient(180deg, var(--accent-hi), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.top .lede { color: var(--dim); font-size: clamp(17px, 1.6vw, 20px); max-width: 60ch; }
+.back { font: 13px var(--mono); color: var(--dim); text-decoration: none; transition: color .2s; }
+.back:hover { color: var(--text); }
+.byline { display: flex; align-items: center; gap: 10px 12px; color: var(--dim); font-size: 15px; flex-wrap: wrap; justify-content: center; }
+.byline b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); font-size: 13px; }
+.byline .sep { color: var(--line2); }
+.rise { animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+.d1 { animation-delay: .1s } .d2 { animation-delay: .25s } .d3 { animation-delay: .4s }
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+
+/* Tags, one hue per topic */
+.tag { display: inline-flex; align-items: center; gap: 7px; font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--c, var(--accent-hi)); }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--c, var(--accent)); }
+.t-workflow { --c: var(--accent-hi); } .t-tokens { --c: var(--blue); } .t-git { --c: var(--yellow); }
+.t-safety { --c: var(--orange); } .t-testing { --c: var(--green); } .t-review { --c: #c8a2f0; } .t-guide { --c: #5fcfbf; }
+
+/* Two columns on wide screens for long articles: contents on the left, the article on the right */
+.layout { max-width: var(--col); margin: 0 auto; padding: clamp(40px, 6vw, 72px) max(16px, env(safe-area-inset-right, 0px)) clamp(64px, 9vw, 112px) var(--gutter); display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+.layout.single { grid-template-columns: minmax(0, 660px); justify-content: center; }
+@media (min-width: 1100px) { .layout.toc-on { grid-template-columns: 220px minmax(0, 660px); gap: 80px; justify-content: center; } }
+
+.toc { font-size: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
+.toc summary { cursor: pointer; padding: 12px 16px; font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.toc summary::-webkit-details-marker { display: none; }
+.toc summary::after { content: "+"; color: var(--faint); font-size: 16px; }
+.toc[open] summary::after { content: "–"; }
+.toc ol { list-style: none; margin: 0; padding: 0 8px 10px; counter-reset: t; }
+.toc li { counter-increment: t; }
+.toc a { display: grid; grid-template-columns: 24px 1fr; gap: 6px; padding: 7px 8px; border-radius: 6px; color: var(--dim); text-decoration: none; line-height: 1.4; transition: color .2s, background .2s; }
+.toc a::before { content: counter(t, decimal-leading-zero); font: 11px/1.9 var(--mono); color: var(--faint); }
+.toc a:hover { color: var(--text); background: var(--panel); }
+.toc a.on { color: var(--text); }
+.toc a.on::before { color: var(--accent); }
+@media (min-width: 1100px) {
+  .toc { position: sticky; top: 96px; align-self: start; border: 0; background: none; }
+  .toc summary { pointer-events: none; padding: 0 8px 12px; }
+  .toc summary::after { display: none; }
+  .toc ol { padding: 0; border-left: 1px solid var(--line); }
+  .toc a { border-radius: 0 6px 6px 0; margin-left: -1px; border-left: 1px solid transparent; }
+  .toc a.on { border-left-color: var(--accent); }
+}
+
+/* The article */
+article { min-width: 0; font-size: 18px; line-height: 1.72; }
+article > section + section { margin-top: clamp(56px, 8vw, 88px); }
+article section > * + * { margin-top: 1.15em; }
+article h2 { font-size: clamp(26px, 3.2vw, 34px); line-height: 1.15; font-weight: 600; }
+article h2 + p { margin-top: 18px; }
+article h3 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; line-height: 1.35; margin-top: 2em; }
+article h3 + p { margin-top: .5em; }
+article strong { font-weight: 600; color: #fff; }
+article a:not(.btn) { color: var(--accent-hi); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+article a:not(.btn):hover { text-decoration-color: var(--accent-hi); }
+article ul.plain { padding-left: 1.2em; }
+article ul.plain li + li { margin-top: .5em; }
+dfn { font-style: normal; font-weight: 600; color: #fff; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 30%, transparent) 62%); }
+code { font-variant-ligatures: none; font: .84em var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: .1em .35em; overflow-wrap: anywhere; }
+.muted { color: var(--dim); }
+
+/* Code blocks, framed like the terminal */
+.code { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.code .file { display: block; padding: 9px 14px; border-bottom: 1px solid var(--line); font: 11.5px var(--mono); color: var(--faint); }
+.code pre { margin: 0; padding: 14px; font: 13px/1.6 var(--mono); font-variant-ligatures: none; width: max-content; min-width: 100%; color: var(--text); }
+.code pre code { font: inherit; background: none; border: 0; padding: 0; overflow-wrap: normal; }
+.code .c { color: #868690; } .code .s { color: var(--green); } .code .k { color: var(--accent-hi); } .code .n { color: var(--yellow); }
+
+/* "In plain terms" boxes, for the words the rest of the article leans on */
+.term { border-left: 2px solid var(--accent); padding: 4px 0 4px 18px; display: flex; flex-direction: column; gap: 4px; }
+.term span { font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.term p { color: var(--text); font-size: 17px; }
+.term p + p { margin-top: 6px; }
+
+/* Figures */
+.fig { margin: 2.2em 0 0; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); padding: clamp(16px, 3vw, 28px); }
+.fig + * { margin-top: 2.2em; }
+.fig .ft { font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+.fig svg { display: block; width: 100%; height: auto; margin-inline: auto; overflow: visible; }
+.fig figcaption { margin-top: 18px; color: var(--dim); font-size: 15px; line-height: 1.6; }
+.fig .s { font-family: var(--sans); }
+.fig .m { font-family: var(--mono); }
+.pipe svg { max-width: 420px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 14px; color: var(--dim); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 14px; height: 10px; border-radius: 3px; display: block; flex: none; }
+.legend .sw-ac { background: #7c7cf5; } .legend .sw-tool { background: #3d3d47; } .legend .sw-rep { background: #4cb782; }
+.legend .sw-or { background: #d97757; } .legend .sw-ye { background: #f2c94c; } .legend .sw-bl { background: #4ea7fc; }
+.legend i.hatch { background: repeating-linear-gradient(45deg, #26262c 0 3px, #5a5a64 3px 5px); }
+.fig details { margin-top: 14px; font-size: 14px; color: var(--dim); }
+.fig summary { cursor: pointer; color: var(--accent-hi); font-family: var(--mono); font-size: 12.5px; }
+.fig table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.fig th, .fig td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.fig th { color: var(--faint); font-weight: 500; font-size: 13px; }
+.fig td.r, .fig th.r { text-align: right; }
+.fig > table { font-size: 15px; line-height: 1.45; margin-top: 0; }
+
+/* Tokenizer strip */
+.toks { display: flex; flex-wrap: wrap; gap: 4px; font: 14.5px/1 var(--mono); font-variant-ligatures: none; }
+.toks span { padding: 7px 6px; border-radius: 5px; white-space: pre; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.toks span:nth-child(even) { background: color-mix(in srgb, var(--blue) 12%, var(--panel)); border-color: color-mix(in srgb, var(--blue) 26%, transparent); }
+.toks + .toks { margin-top: 12px; }
+.tokcount { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+
+/* Stat tiles */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.stats div { background: var(--bg); padding: 18px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stats b { font-size: clamp(22px, 2.6vw, 28px); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stats span { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.stats .add { color: var(--green); } .stats .del { color: var(--red); }
+.stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stats, .stats.three { grid-template-columns: 1fr 1fr; } }
+
+/* Findings and rules */
+.findings { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.findings li { border: 1px solid var(--line2); border-radius: 12px; padding: 16px 18px; background: var(--raised); display: flex; flex-direction: column; gap: 6px; font-size: 17px; }
+.findings .sev { font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--yellow); }
+.findings .sev.race { color: var(--blue); }
+.findings .sev.minor { color: var(--dim); }
+.findings .sev.ok { color: var(--green); }
+.findings .sev.no { color: var(--orange); }
+.findings b { font-weight: 600; }
+.findings p { color: var(--dim); font-size: 16px; line-height: 1.65; }
+.rules { list-style: none; padding: 0; counter-reset: r; border-top: 1px solid var(--line); }
+.rules li { counter-increment: r; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+.rules li::before { content: counter(r); font: 600 13px var(--mono); color: var(--accent); width: 30px; height: 30px; border: 1px solid var(--accent); border-radius: 8px; display: grid; place-items: center; }
+.rules b { font-weight: 600; display: block; }
+.rules p { color: var(--dim); font-size: 16px; line-height: 1.65; margin-top: 4px; }
+
+.pull { font-size: clamp(22px, 2.6vw, 27px); line-height: 1.4; font-weight: 500; letter-spacing: -.015em; padding: 4px 0 4px 22px; border-left: 2px solid var(--accent); text-wrap: balance; }
+
+/* Small labelled chips, for lists of names like test groups */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
+.chips li { font: 13px var(--mono); padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); }
+.chips li small { color: var(--faint); font-size: 11.5px; margin-left: 6px; }
+
+/* A brief, laid out as a document with its parts labelled */
+.brief { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line2); border-radius: 12px; background: #0d0d0f; overflow: hidden; }
+.brief li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.brief li:last-child { border-bottom: 0; }
+.brief span { font: 11px/1.9 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); }
+.brief p { font: 13.5px/1.65 var(--mono); font-variant-ligatures: none; color: var(--text); overflow-wrap: anywhere; }
+@media (max-width: 520px) { .brief li { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+
+/* The terminal frame, colored like the real terminal app */
+.tty { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.tty pre { margin: 0; padding: 14px; font: 10.5px/1.5 var(--mono); font-variant-ligatures: none; width: max-content; color: var(--text); }
+.tty .b { font-weight: 600; } .tty .dim { color: var(--dim); } .tty .faint { color: #868690; } .tty .ln2 { color: var(--line2); }
+.tty .ac { color: var(--accent); } .tty .up { color: var(--green); } .tty .q { font-style: italic; color: var(--text); }
+.tty .lbl { color: #868690; font-weight: 600; letter-spacing: .04em; }
+.tty .tab, .tty .kh { background: var(--accent); color: #0d0d0f; font-weight: 600; }
+.tty .k { background: #26262c; color: var(--text); font-weight: 600; }
+.scroll-hint { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+@media (min-width: 760px) { .scroll-hint { display: none; } }
+
+/* End of an article: the neighbouring notes */
+.pn { margin-top: clamp(64px, 9vw, 96px); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pn a { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid var(--line2); border-radius: 14px; background: var(--raised); text-decoration: none; transition: border-color .2s, transform .2s; min-width: 0; }
+.pn a:hover { border-color: var(--accent); transform: translateY(-2px); }
+.pn span { font: 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.pn b { font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.pn .next { text-align: right; grid-column: 2; }
+.pn .prev { grid-column: 1; }
+@media (max-width: 560px) { .pn { grid-template-columns: 1fr; } .pn .next, .pn .prev { grid-column: 1; } .pn .next { text-align: left; } }
+.allnotes { margin-top: 20px; text-align: center; font-size: 15px; }
+.allnotes a { color: var(--dim); text-decoration: none; font-family: var(--mono); font-size: 13px; }
+.allnotes a:hover { color: var(--text); }
+
+/* The index */
+.list { padding-block: clamp(40px, 6vw, 72px) clamp(64px, 9vw, 112px); }
+.cards { list-style: none; margin: 0 auto; padding: 0; max-width: 980px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cards li:first-child { grid-column: 1 / -1; }
+.card { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: clamp(20px, 3vw, 28px); border: 1px solid var(--line); border-radius: 16px; background: var(--raised); text-decoration: none; position: relative; overflow: hidden; isolation: isolate; transition: border-color .25s, transform .25s; }
+.card:hover { border-color: var(--line2); transform: translateY(-2px); }
+.card:hover h2 { color: #fff; }
+.card::after { content: ""; position: absolute; inset: auto -30% -70% auto; width: 60%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c, var(--accent)) 14%, transparent), transparent 70%); z-index: -1; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.card:hover::after { opacity: 1; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font: 12.5px var(--mono); color: var(--faint); }
+.card h2 { font-size: clamp(21px, 2.3vw, 25px); line-height: 1.22; font-weight: 600; transition: color .2s; }
+.cards li:first-child h2 { font-size: clamp(24px, 3vw, 32px); }
+.card p { color: var(--dim); font-size: 16px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .go { margin-top: auto; font: 13px var(--mono); color: var(--accent-hi); }
+@media (max-width: 720px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--faint); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+.col { min-width: 0; }
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Atrium home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c1"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c1)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/></svg>
+      Atrium
+    </a>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="notes.html" aria-current="page">Notes</a></li>
+    </ul>
+    <a class="btn small" href="https://github.com/nakulpatel0306/atrium">GitHub</a>
+  </div>
+</nav>
+
+<header class="top">
+  <div class="sky"></div>
+  <div class="wrap">
+    <a class="back rise" href="notes.html">← All notes</a>
+    <span class="tag t-workflow rise">Workflow</span>
+    <h1 class="rise d1">Why one agent <em>isn't enough</em>.</h1>
+    <p class="lede rise d2">A single agent doing everything drifts and grades its own work. Here's the pipeline I build Atrium with instead, and the three rules that hold it together.</p>
+    <div class="byline rise d3"><b>NP</b> Nakul Patel <span class="sep">/</span> <time datetime="2026-11-05">November 5, 2026</time> <span class="sep">/</span> 5 min read</div>
+  </div>
+</header>
+
+<div class="layout single">
+  <div class="col">
+    <article>
+<section id="intro">
+  <p>This week I started building Atrium, a command center for the AI agents on my Mac. I type what I want in plain words, an agent (Claude, Codex or Gemini) does the work in a sandbox, and the finished work waits in a list called <strong>Needs you</strong>. Nothing gets sent or kept until I say yes. I call that rule <em>draft and wait</em>.</p>
+  <p>Under the hood it's a bun and TypeScript engine running on the Mac. Most of its code is being written by agents too, working from plans I write with them. This note is about how that's set up, and why it isn't one agent doing everything.</p>
+</section>
+
+<section id="drift">
+  <h2>Two reasons one agent drifts</h2>
+  <p>A single agent doing a whole feature gets worse the longer it runs. There are two reasons, and they're worth separating.</p>
+  <h3>It runs out of room</h3>
+  <p>A model only knows what's in its <dfn>context window</dfn>: all the text it can see at once. That includes my instructions, every file it opened, the output of every command it ran and its own earlier replies.</p>
+  <p>The window is big, but a real feature fills it. Long before it's full, the requirement I wrote at the start is competing with pages of test output. When it does fill, the tool summarizes older parts to make room, and summaries lose the exact details. I wrote more about this in <a href="note-tokens.html">Tokens, explained simply</a>.</p>
+  <h3>It agrees with itself</h3>
+  <p>Ask a model to review code it just wrote and it mostly agrees with itself. It remembers why it made each choice, so each choice feels justified. People have the same problem proofreading their own writing: you read what you meant, not what's on the page.</p>
+  <p>Software teams solved both problems a long time ago by splitting the work into roles. One person writes the spec, one builds, someone else reviews. I do the same with agents. Each role gets its own, smaller context holding only what that role needs.</p>
+  <div class="term">
+    <span>In plain terms</span>
+    <p>A <dfn>subagent</dfn> is a fresh agent session that a main session starts with a written brief. It begins with an empty context, sees only the brief and whatever it reads, does its job on its own, and sends back a short report. Then its context is thrown away.</p>
+  </div>
+</section>
+
+<section id="pipeline">
+  <h2>The pipeline</h2>
+  <p>Every plan for Atrium goes through the same seven steps. None of it is new. It's the way a careful team works, with agents filling most of the seats.</p>
+
+  <figure class="fig pipe reveal">
+    <div class="ft">The build pipeline</div>
+    <svg viewBox="0 0 360 624" role="img" aria-labelledby="fp-t fp-d">
+      <title id="fp-t">The build pipeline</title>
+      <desc id="fp-d">Seven steps from top to bottom. Plan, written by me with a model. Then, inside a dashed box marking a separate branch and git worktree: build by one agent, review by a fresh agent, one fix wave, a re-review of only the fix diff, and the full test groups, which loop back to the fix wave if anything fails. Last, outside the box, I merge into main. The main branch runs down the left side and agents never write to it.</desc>
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#6f6f7a"/></marker>
+      </defs>
+      <text class="m" x="22" y="14" text-anchor="middle" font-size="10.5" fill="#9c9ca6">main</text>
+      <line x1="22" y1="22" x2="22" y2="612" stroke="#34343c" stroke-width="2"/>
+      <text class="m" transform="translate(12 330) rotate(-90)" text-anchor="middle" font-size="10" fill="#6f6f7a">agents never write here</text>
+      <path d="M22 84C22 104 28 112 36 112" fill="none" stroke="#7c7cf5" stroke-width="2"/>
+      <rect x="36" y="104" width="320" height="420" rx="14" fill="#7c7cf5" fill-opacity=".04" stroke="#7c7cf5" stroke-opacity=".55" stroke-dasharray="4 4"/>
+      <text class="m" x="50" y="123" font-size="10" fill="#a5a5ff" letter-spacing=".06em">BRANCH · WORKTREE</text>
+      <g stroke="#6f6f7a" stroke-width="1.5" marker-end="url(#ah)">
+        <line x1="190" y1="84" x2="190" y2="129"/><line x1="190" y1="192" x2="190" y2="209"/><line x1="190" y1="272" x2="190" y2="289"/>
+        <line x1="190" y1="352" x2="190" y2="369"/><line x1="190" y1="432" x2="190" y2="449"/><line x1="190" y1="512" x2="190" y2="545"/>
+      </g>
+      <path d="M330 482H343V322H333" fill="none" stroke="#6f6f7a" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#ah)"/>
+      <g class="s">
+        <rect x="50" y="24" width="280" height="60" rx="10" fill="#141417" stroke="#34343c"/>
+        <text class="m" x="64" y="50" font-size="12" fill="#7c7cf5">1</text><text x="80" y="50" font-size="15" font-weight="600" fill="#e6e6ea">Plan</text>
+        <text class="m" x="318" y="50" text-anchor="end" font-size="9.5" fill="#4cb782">YOU + MODEL</text>
+        <text x="64" y="71" font-size="12" fill="#9c9ca6">Spec, tasks, files to touch, test groups</text>
+        <rect x="50" y="132" width="280" height="60" rx="10" fill="#141417" stroke="#34343c"/>
+        <text class="m" x="64" y="158" font-size="12" fill="#7c7cf5">2</text><text x="80" y="158" font-size="15" font-weight="600" fill="#e6e6ea">Build</text>
+        <text class="m" x="318" y="158" text-anchor="end" font-size="9.5" fill="#a5a5ff">AGENT</text>
+        <text x="64" y="179" font-size="12" fill="#9c9ca6">One agent, its own checkout and branch</text>
+        <rect x="50" y="212" width="280" height="60" rx="10" fill="#141417" stroke="#34343c"/>
+        <text class="m" x="64" y="238" font-size="12" fill="#7c7cf5">3</text><text x="80" y="238" font-size="15" font-weight="600" fill="#e6e6ea">Review</text>
+        <text class="m" x="318" y="238" text-anchor="end" font-size="9.5" fill="#a5a5ff">FRESH AGENT</text>
+        <text x="64" y="259" font-size="12" fill="#9c9ca6">Never saw the builder's conversation</text>
+        <rect x="50" y="292" width="280" height="60" rx="10" fill="#141417" stroke="#34343c"/>
+        <text class="m" x="64" y="318" font-size="12" fill="#7c7cf5">4</text><text x="80" y="318" font-size="15" font-weight="600" fill="#e6e6ea">Fix wave</text>
+        <text class="m" x="318" y="318" text-anchor="end" font-size="9.5" fill="#a5a5ff">AGENT</text>
+        <text x="64" y="339" font-size="12" fill="#9c9ca6">Every finding, fixed in one batch</text>
+        <rect x="50" y="372" width="280" height="60" rx="10" fill="#141417" stroke="#34343c"/>
+        <text class="m" x="64" y="398" font-size="12" fill="#7c7cf5">5</text><text x="80" y="398" font-size="15" font-weight="600" fill="#e6e6ea">Re-review</text>
+        <text class="m" x="318" y="398" text-anchor="end" font-size="9.5" fill="#a5a5ff">FRESH AGENT</text>
+        <text x="64" y="419" font-size="12" fill="#9c9ca6">Only the fix diff, against the findings</text>
+        <rect x="50" y="452" width="280" height="60" rx="10" fill="#141417" stroke="#34343c"/>
+        <text class="m" x="64" y="478" font-size="12" fill="#7c7cf5">6</text><text x="80" y="478" font-size="15" font-weight="600" fill="#e6e6ea">Tests</text>
+        <text class="m" x="318" y="478" text-anchor="end" font-size="9.5" fill="#9c9ca6">BUN TEST</text>
+        <text x="64" y="499" font-size="12" fill="#9c9ca6">Every group, zero failures</text>
+        <line x1="22" y1="578" x2="50" y2="578" stroke="#4cb782" stroke-width="2"/>
+        <circle cx="22" cy="578" r="5" fill="#4cb782"/>
+        <rect x="50" y="548" width="280" height="60" rx="10" fill="#141417" stroke="#4cb782"/>
+        <text class="m" x="64" y="574" font-size="12" fill="#4cb782">7</text><text x="80" y="574" font-size="15" font-weight="600" fill="#e6e6ea">Merge</text>
+        <text class="m" x="318" y="574" text-anchor="end" font-size="9.5" fill="#4cb782">YOU</text>
+        <text x="64" y="595" font-size="12" fill="#9c9ca6">I read the diff and merge to main</text>
+      </g>
+    </svg>
+    <figcaption>Everything inside the dashed box happens on a branch, in a separate folder. The dotted arrow is the only loop: if a test fails, it goes back to fixing. Main only changes at step 7, and only by my hand.</figcaption>
+  </figure>
+
+  <h3>A written plan</h3>
+  <p>Each piece of work starts as a numbered plan in the repo's <code>docs/plans</code> folder. It says what the feature is, which files it touches, what's out of scope, and which test groups have to pass. I write it in conversation with the strongest model I have, and I read every line. The plan is the contract: the builder is judged against it, and the reviewer checks the code against it.</p>
+
+  <h3>One builder, in its own worktree</h3>
+  <div class="term">
+    <span>In plain terms</span>
+    <p>A git <dfn>worktree</dfn> is a second working copy of the same repository, checked out in its own folder on its own branch. Changes there don't touch the files in my main checkout.</p>
+  </div>
+  <p>The builder agent gets one worktree and one branch, in a folder next to the repo like <code>atrium-wt-tui</code>. It can commit to that branch as often as it likes. It can't merge, can't push and never touches main. My main checkout is where the installed engine runs, so keeping builders out of it means the Atrium I use every day keeps working while they build. If a run goes badly, I delete the folder and nothing is lost.</p>
+  <p>It's one builder per plan. Two builders on the same plan edit the same files, and untangling their work is a job I'd rather not have. Separate plans can run side by side in their own worktrees when they touch different files. When they share files, the second one waits for the first to merge.</p>
+
+  <h3>An independent reviewer</h3>
+  <p>When the builder says it's done, a fresh agent reviews the branch. It reads what's on disk: the plan, the diff, the tests and the builder's written report. It never sees the builder's conversation, so it never watched the builder talk itself into a choice.</p>
+  <p>That matters because of <dfn>anchoring</dfn>: the first explanation you hear shapes everything you look for afterwards. A reviewer that had followed the builder's reasoning would tend to check the edge cases the builder thought of, the way the builder thought of them. A fresh one has to form its own view from the code. Its findings come back sorted as critical, important or minor.</p>
+
+  <h3>One fix wave, then a scoped re-review</h3>
+  <p>All the findings go to a fix agent in one batch. One wave, not a back-and-forth. Every round trip costs a new brief and a rebuilt context, and fixes handled one at a time have a way of undoing each other.</p>
+  <p>Then a second review looks at only the fix diff, meaning just the changes the fix wave made, checked against the list of findings. Re-reviewing the whole branch would cost nearly as much as the first review and mostly re-confirm what was already checked.</p>
+
+  <h3>Tests, then a human</h3>
+  <p>Then every test group runs, and the bar is zero failures. Not “zero except the flaky one”. A <dfn>flaky test</dfn> is one that sometimes passes and sometimes fails on the same code, and in my experience a lot of them turn out to be real bugs.</p>
+  <p>Only then do I read the diff, try the feature and merge it myself.</p>
+</section>
+
+<section id="rules">
+  <h2>Three rules that hold the whole way through</h2>
+  <ol class="rules">
+    <li><div><b>Builders never merge or push.</b><p>Agents write to a branch. A person moves code to main. That keeps exactly one place where a human has to look.</p></div></li>
+    <li><div><b>No subagents spawning subagents.</b><p>One level of delegation. A subagent that starts its own helpers multiplies the token bill, and its report back becomes a summary of summaries that nobody can check.</p></div></li>
+    <li><div><b>Nothing touches live data.</b><p>Agents work against temporary folders, seeded sample data and a separate copy of the engine on its own port. Never my real Atrium on port 7420, with my real texts and portfolio.</p></div></li>
+  </ol>
+  <p>None of this is exotic. It's the separation of duties software teams already use: someone writes the spec, someone builds, someone else reviews, and someone accountable presses merge. Agents make each role cheap to fill. They don't make the roles unnecessary.</p>
+</section>
+    </article>
+
+    <nav class="pn" aria-label="More notes">
+      <a class="prev" href="note-tokens.html"><span>← Previous note</span><b>Tokens, explained simply</b></a>
+      <a class="next" href="note-branches.html"><span>Next note →</span><b>A branch for every task</b></a>
+    </nav>
+    <p class="allnotes"><a href="notes.html">All notes</a></p>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel</span><span>MIT License · 2026</span></div>
+</footer>
+
+<script>
+(() => {
+  const nav = document.getElementById("nav");
+  addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 8), { passive: true });
+})();
+</script>
+</body>
+</html>

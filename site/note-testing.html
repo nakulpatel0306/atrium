@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing code that agents write · Atrium Notes</title>
+<script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
+<meta name="description" content="Nine test groups, fake agent binaries, a throwaway ATRIUM_HOME per test, and a “flaky” test that turned out to be a real race between two connections.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* The landing page's tokens and chrome. Articles sit in a ~68ch column, with the contents pinned beside long ones
+   on wide screens. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --raised: #111114;
+  --panel: #141417;
+  --text: #e6e6ea;
+  --dim: #9c9ca6;
+  --faint: #6f6f7a;
+  --line: #24242a;
+  --line2: #34343c;
+  --accent: #7c7cf5;
+  --accent-hi: #a5a5ff;
+  --accent-soft: #1e1e3d;
+  --green: #4cb782;
+  --yellow: #f2c94c;
+  --blue: #4ea7fc;
+  --orange: #d97757;
+  --red: #eb5757;
+  --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --col: 1120px;
+  --gutter: max(16px, env(safe-area-inset-left, 0px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 17px; line-height: 1.6; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+.wrap { max-width: var(--col); margin: 0 auto; padding-left: var(--gutter); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -.02em; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 3px; border-radius: 4px; }
+
+/* Top bar */
+nav#nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 72%, transparent); border-bottom: 1px solid transparent; transition: border-color .3s; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+nav#nav.scrolled { border-bottom-color: var(--line); }
+nav#nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; text-decoration: none; }
+.brand svg { width: 22px; height: 22px; }
+nav#nav ul { display: flex; gap: 28px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 14px; color: var(--dim); }
+nav#nav ul a { text-decoration: none; transition: color .2s; }
+nav#nav ul a:hover, nav#nav ul a[aria-current] { color: var(--text); }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 500 15px var(--sans); text-decoration: none; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--line2); color: var(--text); background: var(--raised); transition: border-color .2s, background .2s, transform .2s; cursor: pointer; }
+.btn:hover { border-color: var(--faint); transform: translateY(-1px); }
+.btn.small { padding: 7px 14px; font-size: 14px; }
+/* Only two links here, so they stay visible on phones instead of hiding like the landing page's four. */
+@media (max-width: 720px) { nav#nav ul { gap: 18px; } }
+
+/* Scroll reveals: visible by default, animated only where the browser ties them to scrolling. */
+@supports (animation-timeline: view()) {
+  .reveal { animation: up linear both; animation-timeline: view(); animation-range: entry 5% cover 24%; }
+  @keyframes up { from { opacity: 0; transform: translateY(32px); } }
+}
+
+/* Page header: a dimmer version of the landing page's skylight */
+.top { position: relative; overflow: hidden; isolation: isolate; padding-block: clamp(48px, 8vw, 100px) clamp(40px, 6vw, 68px); border-bottom: 1px solid var(--line); }
+.sky { position: absolute; inset: -20% 0 auto; height: 640px; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 40% 55% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  animation: breathe 9s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .7; transform: scaleX(1.06); } }
+.top .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px; }
+.top h1 { font-size: clamp(34px, 5.6vw, 62px); line-height: 1.05; font-weight: 600; letter-spacing: -.035em; max-width: 19ch; }
+.top h1 em { font-style: normal; background: linear-gradient(180deg, var(--accent-hi), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.top .lede { color: var(--dim); font-size: clamp(17px, 1.6vw, 20px); max-width: 60ch; }
+.back { font: 13px var(--mono); color: var(--dim); text-decoration: none; transition: color .2s; }
+.back:hover { color: var(--text); }
+.byline { display: flex; align-items: center; gap: 10px 12px; color: var(--dim); font-size: 15px; flex-wrap: wrap; justify-content: center; }
+.byline b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); font-size: 13px; }
+.byline .sep { color: var(--line2); }
+.rise { animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+.d1 { animation-delay: .1s } .d2 { animation-delay: .25s } .d3 { animation-delay: .4s }
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+
+/* Tags, one hue per topic */
+.tag { display: inline-flex; align-items: center; gap: 7px; font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--c, var(--accent-hi)); }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--c, var(--accent)); }
+.t-workflow { --c: var(--accent-hi); } .t-tokens { --c: var(--blue); } .t-git { --c: var(--yellow); }
+.t-safety { --c: var(--orange); } .t-testing { --c: var(--green); } .t-review { --c: #c8a2f0; } .t-guide { --c: #5fcfbf; }
+
+/* Two columns on wide screens for long articles: contents on the left, the article on the right */
+.layout { max-width: var(--col); margin: 0 auto; padding: clamp(40px, 6vw, 72px) max(16px, env(safe-area-inset-right, 0px)) clamp(64px, 9vw, 112px) var(--gutter); display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+.layout.single { grid-template-columns: minmax(0, 660px); justify-content: center; }
+@media (min-width: 1100px) { .layout.toc-on { grid-template-columns: 220px minmax(0, 660px); gap: 80px; justify-content: center; } }
+
+.toc { font-size: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
+.toc summary { cursor: pointer; padding: 12px 16px; font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.toc summary::-webkit-details-marker { display: none; }
+.toc summary::after { content: "+"; color: var(--faint); font-size: 16px; }
+.toc[open] summary::after { content: "–"; }
+.toc ol { list-style: none; margin: 0; padding: 0 8px 10px; counter-reset: t; }
+.toc li { counter-increment: t; }
+.toc a { display: grid; grid-template-columns: 24px 1fr; gap: 6px; padding: 7px 8px; border-radius: 6px; color: var(--dim); text-decoration: none; line-height: 1.4; transition: color .2s, background .2s; }
+.toc a::before { content: counter(t, decimal-leading-zero); font: 11px/1.9 var(--mono); color: var(--faint); }
+.toc a:hover { color: var(--text); background: var(--panel); }
+.toc a.on { color: var(--text); }
+.toc a.on::before { color: var(--accent); }
+@media (min-width: 1100px) {
+  .toc { position: sticky; top: 96px; align-self: start; border: 0; background: none; }
+  .toc summary { pointer-events: none; padding: 0 8px 12px; }
+  .toc summary::after { display: none; }
+  .toc ol { padding: 0; border-left: 1px solid var(--line); }
+  .toc a { border-radius: 0 6px 6px 0; margin-left: -1px; border-left: 1px solid transparent; }
+  .toc a.on { border-left-color: var(--accent); }
+}
+
+/* The article */
+article { min-width: 0; font-size: 18px; line-height: 1.72; }
+article > section + section { margin-top: clamp(56px, 8vw, 88px); }
+article section > * + * { margin-top: 1.15em; }
+article h2 { font-size: clamp(26px, 3.2vw, 34px); line-height: 1.15; font-weight: 600; }
+article h2 + p { margin-top: 18px; }
+article h3 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; line-height: 1.35; margin-top: 2em; }
+article h3 + p { margin-top: .5em; }
+article strong { font-weight: 600; color: #fff; }
+article a:not(.btn) { color: var(--accent-hi); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+article a:not(.btn):hover { text-decoration-color: var(--accent-hi); }
+article ul.plain { padding-left: 1.2em; }
+article ul.plain li + li { margin-top: .5em; }
+dfn { font-style: normal; font-weight: 600; color: #fff; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 30%, transparent) 62%); }
+code { font-variant-ligatures: none; font: .84em var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: .1em .35em; overflow-wrap: anywhere; }
+.muted { color: var(--dim); }
+
+/* Code blocks, framed like the terminal */
+.code { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.code .file { display: block; padding: 9px 14px; border-bottom: 1px solid var(--line); font: 11.5px var(--mono); color: var(--faint); }
+.code pre { margin: 0; padding: 14px; font: 13px/1.6 var(--mono); font-variant-ligatures: none; width: max-content; min-width: 100%; color: var(--text); }
+.code pre code { font: inherit; background: none; border: 0; padding: 0; overflow-wrap: normal; }
+.code .c { color: #868690; } .code .s { color: var(--green); } .code .k { color: var(--accent-hi); } .code .n { color: var(--yellow); }
+
+/* "In plain terms" boxes, for the words the rest of the article leans on */
+.term { border-left: 2px solid var(--accent); padding: 4px 0 4px 18px; display: flex; flex-direction: column; gap: 4px; }
+.term span { font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.term p { color: var(--text); font-size: 17px; }
+.term p + p { margin-top: 6px; }
+
+/* Figures */
+.fig { margin: 2.2em 0 0; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); padding: clamp(16px, 3vw, 28px); }
+.fig + * { margin-top: 2.2em; }
+.fig .ft { font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+.fig svg { display: block; width: 100%; height: auto; margin-inline: auto; overflow: visible; }
+.fig figcaption { margin-top: 18px; color: var(--dim); font-size: 15px; line-height: 1.6; }
+.fig .s { font-family: var(--sans); }
+.fig .m { font-family: var(--mono); }
+.pipe svg { max-width: 420px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 14px; color: var(--dim); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 14px; height: 10px; border-radius: 3px; display: block; flex: none; }
+.legend .sw-ac { background: #7c7cf5; } .legend .sw-tool { background: #3d3d47; } .legend .sw-rep { background: #4cb782; }
+.legend .sw-or { background: #d97757; } .legend .sw-ye { background: #f2c94c; } .legend .sw-bl { background: #4ea7fc; }
+.legend i.hatch { background: repeating-linear-gradient(45deg, #26262c 0 3px, #5a5a64 3px 5px); }
+.fig details { margin-top: 14px; font-size: 14px; color: var(--dim); }
+.fig summary { cursor: pointer; color: var(--accent-hi); font-family: var(--mono); font-size: 12.5px; }
+.fig table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.fig th, .fig td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.fig th { color: var(--faint); font-weight: 500; font-size: 13px; }
+.fig td.r, .fig th.r { text-align: right; }
+.fig > table { font-size: 15px; line-height: 1.45; margin-top: 0; }
+
+/* Tokenizer strip */
+.toks { display: flex; flex-wrap: wrap; gap: 4px; font: 14.5px/1 var(--mono); font-variant-ligatures: none; }
+.toks span { padding: 7px 6px; border-radius: 5px; white-space: pre; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.toks span:nth-child(even) { background: color-mix(in srgb, var(--blue) 12%, var(--panel)); border-color: color-mix(in srgb, var(--blue) 26%, transparent); }
+.toks + .toks { margin-top: 12px; }
+.tokcount { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+
+/* Stat tiles */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.stats div { background: var(--bg); padding: 18px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stats b { font-size: clamp(22px, 2.6vw, 28px); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stats span { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.stats .add { color: var(--green); } .stats .del { color: var(--red); }
+.stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stats, .stats.three { grid-template-columns: 1fr 1fr; } }
+
+/* Findings and rules */
+.findings { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.findings li { border: 1px solid var(--line2); border-radius: 12px; padding: 16px 18px; background: var(--raised); display: flex; flex-direction: column; gap: 6px; font-size: 17px; }
+.findings .sev { font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--yellow); }
+.findings .sev.race { color: var(--blue); }
+.findings .sev.minor { color: var(--dim); }
+.findings .sev.ok { color: var(--green); }
+.findings .sev.no { color: var(--orange); }
+.findings b { font-weight: 600; }
+.findings p { color: var(--dim); font-size: 16px; line-height: 1.65; }
+.rules { list-style: none; padding: 0; counter-reset: r; border-top: 1px solid var(--line); }
+.rules li { counter-increment: r; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+.rules li::before { content: counter(r); font: 600 13px var(--mono); color: var(--accent); width: 30px; height: 30px; border: 1px solid var(--accent); border-radius: 8px; display: grid; place-items: center; }
+.rules b { font-weight: 600; display: block; }
+.rules p { color: var(--dim); font-size: 16px; line-height: 1.65; margin-top: 4px; }
+
+.pull { font-size: clamp(22px, 2.6vw, 27px); line-height: 1.4; font-weight: 500; letter-spacing: -.015em; padding: 4px 0 4px 22px; border-left: 2px solid var(--accent); text-wrap: balance; }
+
+/* Small labelled chips, for lists of names like test groups */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
+.chips li { font: 13px var(--mono); padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); }
+.chips li small { color: var(--faint); font-size: 11.5px; margin-left: 6px; }
+
+/* A brief, laid out as a document with its parts labelled */
+.brief { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line2); border-radius: 12px; background: #0d0d0f; overflow: hidden; }
+.brief li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.brief li:last-child { border-bottom: 0; }
+.brief span { font: 11px/1.9 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); }
+.brief p { font: 13.5px/1.65 var(--mono); font-variant-ligatures: none; color: var(--text); overflow-wrap: anywhere; }
+@media (max-width: 520px) { .brief li { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+
+/* The terminal frame, colored like the real terminal app */
+.tty { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.tty pre { margin: 0; padding: 14px; font: 10.5px/1.5 var(--mono); font-variant-ligatures: none; width: max-content; color: var(--text); }
+.tty .b { font-weight: 600; } .tty .dim { color: var(--dim); } .tty .faint { color: #868690; } .tty .ln2 { color: var(--line2); }
+.tty .ac { color: var(--accent); } .tty .up { color: var(--green); } .tty .q { font-style: italic; color: var(--text); }
+.tty .lbl { color: #868690; font-weight: 600; letter-spacing: .04em; }
+.tty .tab, .tty .kh { background: var(--accent); color: #0d0d0f; font-weight: 600; }
+.tty .k { background: #26262c; color: var(--text); font-weight: 600; }
+.scroll-hint { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+@media (min-width: 760px) { .scroll-hint { display: none; } }
+
+/* End of an article: the neighbouring notes */
+.pn { margin-top: clamp(64px, 9vw, 96px); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pn a { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid var(--line2); border-radius: 14px; background: var(--raised); text-decoration: none; transition: border-color .2s, transform .2s; min-width: 0; }
+.pn a:hover { border-color: var(--accent); transform: translateY(-2px); }
+.pn span { font: 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.pn b { font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.pn .next { text-align: right; grid-column: 2; }
+.pn .prev { grid-column: 1; }
+@media (max-width: 560px) { .pn { grid-template-columns: 1fr; } .pn .next, .pn .prev { grid-column: 1; } .pn .next { text-align: left; } }
+.allnotes { margin-top: 20px; text-align: center; font-size: 15px; }
+.allnotes a { color: var(--dim); text-decoration: none; font-family: var(--mono); font-size: 13px; }
+.allnotes a:hover { color: var(--text); }
+
+/* The index */
+.list { padding-block: clamp(40px, 6vw, 72px) clamp(64px, 9vw, 112px); }
+.cards { list-style: none; margin: 0 auto; padding: 0; max-width: 980px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cards li:first-child { grid-column: 1 / -1; }
+.card { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: clamp(20px, 3vw, 28px); border: 1px solid var(--line); border-radius: 16px; background: var(--raised); text-decoration: none; position: relative; overflow: hidden; isolation: isolate; transition: border-color .25s, transform .25s; }
+.card:hover { border-color: var(--line2); transform: translateY(-2px); }
+.card:hover h2 { color: #fff; }
+.card::after { content: ""; position: absolute; inset: auto -30% -70% auto; width: 60%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c, var(--accent)) 14%, transparent), transparent 70%); z-index: -1; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.card:hover::after { opacity: 1; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font: 12.5px var(--mono); color: var(--faint); }
+.card h2 { font-size: clamp(21px, 2.3vw, 25px); line-height: 1.22; font-weight: 600; transition: color .2s; }
+.cards li:first-child h2 { font-size: clamp(24px, 3vw, 32px); }
+.card p { color: var(--dim); font-size: 16px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .go { margin-top: auto; font: 13px var(--mono); color: var(--accent-hi); }
+@media (max-width: 720px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--faint); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+.col { min-width: 0; }
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Atrium home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c1"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c1)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/></svg>
+      Atrium
+    </a>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="notes.html" aria-current="page">Notes</a></li>
+    </ul>
+    <a class="btn small" href="https://github.com/nakulpatel0306/atrium">GitHub</a>
+  </div>
+</nav>
+
+<header class="top">
+  <div class="sky"></div>
+  <div class="wrap">
+    <a class="back rise" href="notes.html">← All notes</a>
+    <span class="tag t-testing rise">Testing</span>
+    <h1 class="rise d1">Testing code that <em>agents write</em>.</h1>
+    <p class="lede rise d2">Agents write most of Atrium's code and most of its tests. That makes the tests both more important and less trustworthy, so a few rules decide what counts.</p>
+    <div class="byline rise d3"><b>NP</b> Nakul Patel <span class="sep">/</span> <time datetime="2026-11-07">November 7, 2026</time> <span class="sep">/</span> 6 min read</div>
+  </div>
+</header>
+
+<div class="layout toc-on">
+  <details class="toc" id="toc" open>
+    <summary>On this page</summary>
+    <ol>
+      <li><a href="#groups">Nine groups, zero failures</a></li>
+      <li><a href="#fakes">Agents that aren't agents</a></li>
+      <li><a href="#home">A fresh home for every test</a></li>
+      <li><a href="#race">The flaky test that was a race</a></li>
+      <li><a href="#fails">A fix only counts if its test fails without it</a></li>
+    </ol>
+  </details>
+
+  <div class="col">
+    <article>
+<section id="intro">
+  <p>Here's the uncomfortable part of having agents build software: the agent that writes the code usually writes the tests too. Its tests check what it thought to check. If it misunderstood something, the code and the test agree with each other and both are wrong.</p>
+  <p>In <a href="note-plan-15.html">Plan 15</a>, the two important bugs the reviewer found had passed every test. So I don't treat a green test run as proof. I treat it as one piece of evidence, and I've built a few habits around making that evidence worth more.</p>
+</section>
+
+<section id="groups">
+  <h2>Nine groups, zero failures</h2>
+  <p>Atrium's tests run with <code>bun test</code>, in nine groups, each run on its own:</p>
+  <ul class="chips">
+    <li>engine<small>runner, git, sandbox, money</small></li>
+    <li>server<small>HTTP routes</small></li>
+    <li>dashboard<small>web UI</small></li>
+    <li>e2e<small>end to end</small></li>
+    <li>tui<small>terminal app</small></li>
+    <li>mac<small>Mac app</small></li>
+    <li>copy<small>UI wording</small></li>
+    <li>cli</li>
+    <li>main</li>
+  </ul>
+  <p>A plan isn't done until every group reports zero failures and <code>bunx tsc --noEmit</code>, the TypeScript type check, is clean. When Plan 15 merged today, that was 1,881 tests across the nine groups, all passing.</p>
+  <p>The copy group is the odd one out, and one of my favorites. It pulls every user-facing string out of the code and checks it against the copy rules written down in the repo: buttons in sentence case, no “Error:” prefixes, errors that end with a full stop, a real ellipsis instead of three dots. An agent that labels a button “Save Changes” fails a test, not just my taste.</p>
+</section>
+
+<section id="fakes">
+  <h2>Agents that aren't agents</h2>
+  <p>Atrium's whole job is running Claude, Codex and Gemini. Tests can't call the real ones: that would be slow, cost money, depend on the network and do unpredictable things.</p>
+  <div class="term">
+    <span>In plain terms</span>
+    <p>A <dfn>fake</dfn> is a small stand-in program that behaves like the real one from the outside: same arguments, same output format, same exit codes. It just doesn't do the real work.</p>
+  </div>
+  <p>The repo has a fake for every outside program Atrium starts, in <code>tests/fixtures</code>. <code>fake-claude.ts</code> prints the same stream of JSON lines Claude Code 2.1.x emits. <code>fake-codex.ts</code> and <code>fake-agy.ts</code> do the same for Codex and for <code>agy</code>, the CLI Atrium runs Gemini through. There are fakes for the GitHub CLI (its “repos” are bare git repos in a temp folder), for <code>open</code>, for <code>osascript</code> (which logs its arguments and never scripts any app), and for <code>security</code>, where a JSON file plays the Keychain.</p>
+  <div class="code" role="region" tabindex="0" aria-label="Code from tests/fixtures/fake-claude.ts">
+    <span class="file">tests/fixtures/fake-claude.ts, first lines</span>
+<pre><code>#!/usr/bin/env bun
+<span class="c">// Stands in for the `claude` CLI; mirrors the stream-json lines Claude Code 2.1.x emits.</span>
+const mode = process.env.FAKE_CLAUDE_MODE ?? "ok";</code></pre>
+  </div>
+  <p>The mode picks a behavior: <code>ok</code>, <code>crash</code>, <code>logged_out</code>, <code>rate_limited</code>, <code>slow</code>, <code>write_files</code>, <code>sandbox_unavailable</code> and more. So a test of “what does Atrium say when Claude hits its usage limit” runs in milliseconds and never touches my real account.</p>
+  <p>This only works because the engine was built for it. The path to each CLI comes from config, so a test can point it at a fake. That was in the project rules from the first day.</p>
+</section>
+
+<section id="home">
+  <h2>A fresh home for every test</h2>
+  <p>Atrium keeps its database, transcripts and settings in a data folder. The folder comes from the <code>ATRIUM_HOME</code> environment variable when it's set, and every test sets it to a brand new temporary folder:</p>
+  <div class="code" role="region" tabindex="0" aria-label="Code from tests/helpers.ts">
+    <span class="file">tests/helpers.ts, trimmed</span>
+<pre><code>export function tempHome(): { home: string; cleanup(): void } {
+  const home = mkdtempSync(join(tmpdir(), "atrium-home-"));
+  process.env.ATRIUM_HOME = home;
+  <span class="c">// Space folders stay inside the temp home, never the real ~/Atrium.</span>
+  process.env.ATRIUM_FILES_HOME = join(home, "files");
+  <span class="c">// Tests never launch real apps.</span>
+  process.env.ATRIUM_OPEN_BIN ??= join(import.meta.dir, "fixtures", "fake-open.ts");
+  <span class="c">// Tests never script Messages or Contacts.</span>
+  process.env.ATRIUM_OSASCRIPT_BIN ??= join(import.meta.dir, "fixtures", "fake-osascript.ts");
+  <span class="c">// … cleanup() removes the folder</span>
+}</code></pre>
+  </div>
+  <p>That buys two things. Tests can't see each other's leftovers, so the order they run in doesn't matter. And my real Atrium, with my real texts and portfolio, is never in reach. A test that tried to send a message would reach a fake that writes to a log.</p>
+  <h3>Pin the clock, too</h3>
+  <p>Time is the other shared thing tests forget about. A money test failed today on main, with no code change. It pinned the engine's clock to November 5, but the summary it checked read the real wall clock with a two-day window. On November 7 the window closed and the test broke. The fix was to pin the system time for the length of the test. Any test that reads “now” should decide what now is.</p>
+</section>
+
+<section id="race">
+  <h2>The flaky test that was a race</h2>
+  <p>During the Plan 15 review, one terminal-app test failed once under load and then passed three times on its own. The easy call is to label it flaky and move on.</p>
+  <div class="term">
+    <span>In plain terms</span>
+    <p>A <dfn>flaky test</dfn> passes and fails on the same code. A <dfn>race</dfn> is a bug where the result depends on which of two things happens first. Races make flaky tests, because the order changes with how busy the machine is.</p>
+  </div>
+  <p>Here's what was going on. When I open a running task, the terminal app shows the agent's live output. That output reaches it two ways: a catch-up request over HTTP for the transcript so far, and a live stream over a <dfn>WebSocket</dfn>, a connection that stays open so the engine can push each new line as it happens.</p>
+  <p>The engine writes each line to the transcript file first, then sends it on the socket. Two connections means no promise about which arrives first. If the transcript response, which already held the newest line, got to the app before that line's socket message did, the app had finished loading. Then the late message arrived and was added again. The line showed twice.</p>
+
+  <figure class="fig reveal">
+    <div class="ft">One line, two connections</div>
+    <svg viewBox="0 0 360 256" role="img" aria-labelledby="fr-t fr-d">
+      <title id="fr-t">The duplicate line race</title>
+      <desc id="fr-d">Four lanes over time: engine, HTTP, socket and client. The engine appends line 42 to the transcript and sends it on the socket, where it travels slowly. Then the engine reads the line count, 42, and the file together and answers the HTTP transcript request with both. The client finishes loading with lines up to 42. The socket message for line 42 arrives last. Before the fix it was added again and showed twice; after the fix its number, 42, is not above the loaded count, so it is skipped.</desc>
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#9c9ca6"/></marker>
+        <marker id="arb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#4ea7fc"/></marker>
+        <marker id="ara" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#7c7cf5"/></marker>
+      </defs>
+      <g class="m" font-size="10.5" fill="#9c9ca6">
+        <text x="8" y="44">engine</text><text x="8" y="94">HTTP</text><text x="8" y="144">socket</text><text x="8" y="194">client</text>
+      </g>
+      <g stroke="#24242a" stroke-width="1.5">
+        <line x1="66" y1="40" x2="352" y2="40"/><line x1="66" y1="90" x2="352" y2="90"/><line x1="66" y1="140" x2="352" y2="140"/><line x1="66" y1="190" x2="352" y2="190"/>
+      </g>
+      <g stroke="#34343c" stroke-width="1" stroke-dasharray="2 3">
+        <line x1="104" y1="45" x2="104" y2="136"/><line x1="160" y1="45" x2="160" y2="86"/><line x1="236" y1="94" x2="236" y2="185"/><line x1="306" y1="144" x2="306" y2="184"/>
+      </g>
+      <circle cx="104" cy="40" r="5" fill="#7c7cf5"/>
+      <text class="m" x="104" y="26" text-anchor="middle" font-size="10" fill="#e6e6ea">append 42</text>
+      <circle cx="160" cy="40" r="5" fill="#7c7cf5"/>
+      <text class="m" x="168" y="60" font-size="10" fill="#e6e6ea">read count + file</text>
+      <line x1="160" y1="90" x2="232" y2="90" stroke="#7c7cf5" stroke-width="2" marker-end="url(#ara)"/>
+      <text class="m" x="196" y="82" text-anchor="middle" font-size="10" fill="#a5a5ff">text, seq 42</text>
+      <line x1="104" y1="140" x2="302" y2="140" stroke="#4ea7fc" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arb)"/>
+      <text class="m" x="204" y="132" text-anchor="middle" font-size="10" fill="#4ea7fc">line 42 (arrives late)</text>
+      <circle cx="236" cy="190" r="5" fill="#7c7cf5"/>
+      <text class="m" x="230" y="212" text-anchor="end" font-size="10" fill="#e6e6ea">loaded up to 42</text>
+      <circle cx="306" cy="190" r="6" fill="#0b0b0d" stroke="#e6e6ea" stroke-width="1.5"/>
+      <g class="s" font-size="11.5" text-anchor="end">
+        <text x="352" y="232" fill="#eb5757">Before: 42 shows twice</text>
+        <text x="352" y="250" fill="#4cb782">After: 42 ≤ 42, skipped</text>
+      </g>
+    </svg>
+    <div class="legend"><span><i class="sw-ac"></i>HTTP catch-up</span><span><i class="sw-bl"></i>WebSocket live line</span></div>
+    <figcaption>The same line travels two roads. Numbering it lets the client tell a copy from a new line, whichever road is faster.</figcaption>
+  </figure>
+
+  <p>The fix numbers each run's lines. Every live message carries a <code>seq</code>, a count that goes up by one per line. The transcript route reads the current count and the file in one synchronous step, so no line can be appended between the two, and sends the count in an <code>X-Atrium-Output-Seq</code> header. The app then skips any line numbered at or below that count, whichever connection brings it.</p>
+  <div class="code" role="region" tabindex="0" aria-label="Code from src/tui/client.ts">
+    <span class="file">src/tui/client.ts</span>
+<pre><code><span class="c">// A line the loaded transcript already has; it can arrive after the transcript did, on the other connection.</span>
+const had = seededSeq.get(msg.runId);
+if (had !== undefined &amp;&amp; msg.seq !== undefined &amp;&amp; msg.seq &lt;= had) return;</code></pre>
+  </div>
+  <p>Engines that don't send the header still work: the app falls back to the old way of matching lines by their text.</p>
+  <p>Not every red run is a bug, to be fair. Earlier in the same fix wave, a full run failed a scattered handful of unrelated tests that each took one to six minutes. That was the machine stalling, not the code, and the clean run straight after had normal timings. The difference is evidence. A stalled machine shows up in the timings. A race shows up in the logic, once you look.</p>
+</section>
+
+<section id="fails">
+  <h2>A fix only counts if its test fails without it</h2>
+  <p>This is the rule I'd keep if I could only keep one. A test that passes before and after a fix proves nothing about the fix.</p>
+  <p>The race was tricky to test because it depends on timing. So the new tests don't wait for luck. They drive both orders on purpose: one holds the transcript request back so the live line arrives first, the other sends the line after the transcript has loaded. The “after” test fails on the old client. That's what makes it a real test of the fix, and not just a test that happens to be green.</p>
+  <p>The second reviewer caught the opposite case in the same plan. The fix wave's test for the money summary checked that transaction rows were gone, but its sample data had no notable charge, so it couldn't have failed. The fix was half-done and the test was green. The new test first checks that its sample data really has a notable charge, then that the summary's list of them is empty.</p>
+  <p>The Money review yesterday did it best. It left 12 small tests in its scratchpad, one per finding plus a control. Eleven failed on the branch as it was, and the control passed. Each finding came with its own proof.</p>
+  <ol class="rules">
+    <li><div><b>Fakes for everything outside the process.</b><p>No real agents, no real apps, no real Keychain. The engine takes every binary path from config so tests can swap them.</p></div></li>
+    <li><div><b>A temp home and a pinned clock.</b><p>Nothing shared between tests: not files, not settings, not “now”.</p></div></li>
+    <li><div><b>“Flaky” is a hypothesis, not a verdict.</b><p>Look at the timings and the logic before deciding it's the machine.</p></div></li>
+    <li><div><b>Red first.</b><p>Every fix comes with a test that fails without it. If you can't make it fail, you haven't tested the fix.</p></div></li>
+  </ol>
+</section>
+    </article>
+
+    <nav class="pn" aria-label="More notes">
+      <a class="prev" href="note-stopping.html"><span>← Previous note</span><b>Stopping a running agent safely</b></a>
+      <a class="next" href="note-one-request.html"><span>Next note →</span><b>One request, start to finish</b></a>
+    </nav>
+    <p class="allnotes"><a href="notes.html">All notes</a></p>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel</span><span>MIT License · 2026</span></div>
+</footer>
+
+<script>
+(() => {
+  const nav = document.getElementById("nav");
+  addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 8), { passive: true });
+
+  // The contents start open so they show without JS; on narrow screens they fold away above the article.
+  const toc = document.getElementById("toc");
+  const wide = matchMedia("(min-width: 1100px)");
+  const fit = () => { toc.open = wide.matches; };
+  fit();
+  wide.addEventListener("change", fit);
+  toc.addEventListener("click", (e) => { if (e.target.closest("a") && !wide.matches) toc.open = false; });
+
+  // Highlight the section being read: the last heading that has passed the top third of the screen. It only marks
+  // the link; it never scrolls the page.
+  const links = [...toc.querySelectorAll("a")];
+  const sections = links.map((a) => document.getElementById(a.getAttribute("href").slice(1)));
+  const mark = () => {
+    const line = innerHeight * 0.33;
+    let current = -1;
+    sections.forEach((s, i) => { if (s.getBoundingClientRect().top < line) current = i; });
+    links.forEach((a, i) => a.classList.toggle("on", i === current));
+  };
+  addEventListener("scroll", mark, { passive: true });
+  addEventListener("resize", mark);
+  mark();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan 15, start to finish · Atrium Notes</title>
+<script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
+<meta name="description" content="Two mockups, one builder, two reviews and 1,881 passing tests: what a real feature cost in tokens, and the bugs only the review caught.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* The landing page's tokens and chrome. Articles sit in a ~68ch column, with the contents pinned beside long ones
+   on wide screens. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --raised: #111114;
+  --panel: #141417;
+  --text: #e6e6ea;
+  --dim: #9c9ca6;
+  --faint: #6f6f7a;
+  --line: #24242a;
+  --line2: #34343c;
+  --accent: #7c7cf5;
+  --accent-hi: #a5a5ff;
+  --accent-soft: #1e1e3d;
+  --green: #4cb782;
+  --yellow: #f2c94c;
+  --blue: #4ea7fc;
+  --orange: #d97757;
+  --red: #eb5757;
+  --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --col: 1120px;
+  --gutter: max(16px, env(safe-area-inset-left, 0px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 17px; line-height: 1.6; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+.wrap { max-width: var(--col); margin: 0 auto; padding-left: var(--gutter); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -.02em; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 3px; border-radius: 4px; }
+
+/* Top bar */
+nav#nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 72%, transparent); border-bottom: 1px solid transparent; transition: border-color .3s; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+nav#nav.scrolled { border-bottom-color: var(--line); }
+nav#nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; text-decoration: none; }
+.brand svg { width: 22px; height: 22px; }
+nav#nav ul { display: flex; gap: 28px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 14px; color: var(--dim); }
+nav#nav ul a { text-decoration: none; transition: color .2s; }
+nav#nav ul a:hover, nav#nav ul a[aria-current] { color: var(--text); }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 500 15px var(--sans); text-decoration: none; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--line2); color: var(--text); background: var(--raised); transition: border-color .2s, background .2s, transform .2s; cursor: pointer; }
+.btn:hover { border-color: var(--faint); transform: translateY(-1px); }
+.btn.small { padding: 7px 14px; font-size: 14px; }
+/* Only two links here, so they stay visible on phones instead of hiding like the landing page's four. */
+@media (max-width: 720px) { nav#nav ul { gap: 18px; } }
+
+/* Scroll reveals: visible by default, animated only where the browser ties them to scrolling. */
+@supports (animation-timeline: view()) {
+  .reveal { animation: up linear both; animation-timeline: view(); animation-range: entry 5% cover 24%; }
+  @keyframes up { from { opacity: 0; transform: translateY(32px); } }
+}
+
+/* Page header: a dimmer version of the landing page's skylight */
+.top { position: relative; overflow: hidden; isolation: isolate; padding-block: clamp(48px, 8vw, 100px) clamp(40px, 6vw, 68px); border-bottom: 1px solid var(--line); }
+.sky { position: absolute; inset: -20% 0 auto; height: 640px; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 40% 55% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  animation: breathe 9s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .7; transform: scaleX(1.06); } }
+.top .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px; }
+.top h1 { font-size: clamp(34px, 5.6vw, 62px); line-height: 1.05; font-weight: 600; letter-spacing: -.035em; max-width: 19ch; }
+.top h1 em { font-style: normal; background: linear-gradient(180deg, var(--accent-hi), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.top .lede { color: var(--dim); font-size: clamp(17px, 1.6vw, 20px); max-width: 60ch; }
+.back { font: 13px var(--mono); color: var(--dim); text-decoration: none; transition: color .2s; }
+.back:hover { color: var(--text); }
+.byline { display: flex; align-items: center; gap: 10px 12px; color: var(--dim); font-size: 15px; flex-wrap: wrap; justify-content: center; }
+.byline b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); font-size: 13px; }
+.byline .sep { color: var(--line2); }
+.rise { animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+.d1 { animation-delay: .1s } .d2 { animation-delay: .25s } .d3 { animation-delay: .4s }
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+
+/* Tags, one hue per topic */
+.tag { display: inline-flex; align-items: center; gap: 7px; font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--c, var(--accent-hi)); }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--c, var(--accent)); }
+.t-workflow { --c: var(--accent-hi); } .t-tokens { --c: var(--blue); } .t-git { --c: var(--yellow); }
+.t-safety { --c: var(--orange); } .t-testing { --c: var(--green); } .t-review { --c: #c8a2f0; } .t-guide { --c: #5fcfbf; }
+
+/* Two columns on wide screens for long articles: contents on the left, the article on the right */
+.layout { max-width: var(--col); margin: 0 auto; padding: clamp(40px, 6vw, 72px) max(16px, env(safe-area-inset-right, 0px)) clamp(64px, 9vw, 112px) var(--gutter); display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+.layout.single { grid-template-columns: minmax(0, 660px); justify-content: center; }
+@media (min-width: 1100px) { .layout.toc-on { grid-template-columns: 220px minmax(0, 660px); gap: 80px; justify-content: center; } }
+
+.toc { font-size: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
+.toc summary { cursor: pointer; padding: 12px 16px; font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.toc summary::-webkit-details-marker { display: none; }
+.toc summary::after { content: "+"; color: var(--faint); font-size: 16px; }
+.toc[open] summary::after { content: "–"; }
+.toc ol { list-style: none; margin: 0; padding: 0 8px 10px; counter-reset: t; }
+.toc li { counter-increment: t; }
+.toc a { display: grid; grid-template-columns: 24px 1fr; gap: 6px; padding: 7px 8px; border-radius: 6px; color: var(--dim); text-decoration: none; line-height: 1.4; transition: color .2s, background .2s; }
+.toc a::before { content: counter(t, decimal-leading-zero); font: 11px/1.9 var(--mono); color: var(--faint); }
+.toc a:hover { color: var(--text); background: var(--panel); }
+.toc a.on { color: var(--text); }
+.toc a.on::before { color: var(--accent); }
+@media (min-width: 1100px) {
+  .toc { position: sticky; top: 96px; align-self: start; border: 0; background: none; }
+  .toc summary { pointer-events: none; padding: 0 8px 12px; }
+  .toc summary::after { display: none; }
+  .toc ol { padding: 0; border-left: 1px solid var(--line); }
+  .toc a { border-radius: 0 6px 6px 0; margin-left: -1px; border-left: 1px solid transparent; }
+  .toc a.on { border-left-color: var(--accent); }
+}
+
+/* The article */
+article { min-width: 0; font-size: 18px; line-height: 1.72; }
+article > section + section { margin-top: clamp(56px, 8vw, 88px); }
+article section > * + * { margin-top: 1.15em; }
+article h2 { font-size: clamp(26px, 3.2vw, 34px); line-height: 1.15; font-weight: 600; }
+article h2 + p { margin-top: 18px; }
+article h3 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; line-height: 1.35; margin-top: 2em; }
+article h3 + p { margin-top: .5em; }
+article strong { font-weight: 600; color: #fff; }
+article a:not(.btn) { color: var(--accent-hi); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+article a:not(.btn):hover { text-decoration-color: var(--accent-hi); }
+article ul.plain { padding-left: 1.2em; }
+article ul.plain li + li { margin-top: .5em; }
+dfn { font-style: normal; font-weight: 600; color: #fff; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 30%, transparent) 62%); }
+code { font-variant-ligatures: none; font: .84em var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: .1em .35em; overflow-wrap: anywhere; }
+.muted { color: var(--dim); }
+
+/* Code blocks, framed like the terminal */
+.code { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.code .file { display: block; padding: 9px 14px; border-bottom: 1px solid var(--line); font: 11.5px var(--mono); color: var(--faint); }
+.code pre { margin: 0; padding: 14px; font: 13px/1.6 var(--mono); font-variant-ligatures: none; width: max-content; min-width: 100%; color: var(--text); }
+.code pre code { font: inherit; background: none; border: 0; padding: 0; overflow-wrap: normal; }
+.code .c { color: #868690; } .code .s { color: var(--green); } .code .k { color: var(--accent-hi); } .code .n { color: var(--yellow); }
+
+/* "In plain terms" boxes, for the words the rest of the article leans on */
+.term { border-left: 2px solid var(--accent); padding: 4px 0 4px 18px; display: flex; flex-direction: column; gap: 4px; }
+.term span { font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.term p { color: var(--text); font-size: 17px; }
+.term p + p { margin-top: 6px; }
+
+/* Figures */
+.fig { margin: 2.2em 0 0; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); padding: clamp(16px, 3vw, 28px); }
+.fig + * { margin-top: 2.2em; }
+.fig .ft { font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+.fig svg { display: block; width: 100%; height: auto; margin-inline: auto; overflow: visible; }
+.fig figcaption { margin-top: 18px; color: var(--dim); font-size: 15px; line-height: 1.6; }
+.fig .s { font-family: var(--sans); }
+.fig .m { font-family: var(--mono); }
+.pipe svg { max-width: 420px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 14px; color: var(--dim); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 14px; height: 10px; border-radius: 3px; display: block; flex: none; }
+.legend .sw-ac { background: #7c7cf5; } .legend .sw-tool { background: #3d3d47; } .legend .sw-rep { background: #4cb782; }
+.legend .sw-or { background: #d97757; } .legend .sw-ye { background: #f2c94c; } .legend .sw-bl { background: #4ea7fc; }
+.legend i.hatch { background: repeating-linear-gradient(45deg, #26262c 0 3px, #5a5a64 3px 5px); }
+.fig details { margin-top: 14px; font-size: 14px; color: var(--dim); }
+.fig summary { cursor: pointer; color: var(--accent-hi); font-family: var(--mono); font-size: 12.5px; }
+.fig table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.fig th, .fig td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.fig th { color: var(--faint); font-weight: 500; font-size: 13px; }
+.fig td.r, .fig th.r { text-align: right; }
+.fig > table { font-size: 15px; line-height: 1.45; margin-top: 0; }
+
+/* Tokenizer strip */
+.toks { display: flex; flex-wrap: wrap; gap: 4px; font: 14.5px/1 var(--mono); font-variant-ligatures: none; }
+.toks span { padding: 7px 6px; border-radius: 5px; white-space: pre; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.toks span:nth-child(even) { background: color-mix(in srgb, var(--blue) 12%, var(--panel)); border-color: color-mix(in srgb, var(--blue) 26%, transparent); }
+.toks + .toks { margin-top: 12px; }
+.tokcount { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+
+/* Stat tiles */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.stats div { background: var(--bg); padding: 18px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stats b { font-size: clamp(22px, 2.6vw, 28px); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stats span { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.stats .add { color: var(--green); } .stats .del { color: var(--red); }
+.stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stats, .stats.three { grid-template-columns: 1fr 1fr; } }
+
+/* Findings and rules */
+.findings { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.findings li { border: 1px solid var(--line2); border-radius: 12px; padding: 16px 18px; background: var(--raised); display: flex; flex-direction: column; gap: 6px; font-size: 17px; }
+.findings .sev { font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--yellow); }
+.findings .sev.race { color: var(--blue); }
+.findings .sev.minor { color: var(--dim); }
+.findings .sev.ok { color: var(--green); }
+.findings .sev.no { color: var(--orange); }
+.findings b { font-weight: 600; }
+.findings p { color: var(--dim); font-size: 16px; line-height: 1.65; }
+.rules { list-style: none; padding: 0; counter-reset: r; border-top: 1px solid var(--line); }
+.rules li { counter-increment: r; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+.rules li::before { content: counter(r); font: 600 13px var(--mono); color: var(--accent); width: 30px; height: 30px; border: 1px solid var(--accent); border-radius: 8px; display: grid; place-items: center; }
+.rules b { font-weight: 600; display: block; }
+.rules p { color: var(--dim); font-size: 16px; line-height: 1.65; margin-top: 4px; }
+
+.pull { font-size: clamp(22px, 2.6vw, 27px); line-height: 1.4; font-weight: 500; letter-spacing: -.015em; padding: 4px 0 4px 22px; border-left: 2px solid var(--accent); text-wrap: balance; }
+
+/* Small labelled chips, for lists of names like test groups */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
+.chips li { font: 13px var(--mono); padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); }
+.chips li small { color: var(--faint); font-size: 11.5px; margin-left: 6px; }
+
+/* A brief, laid out as a document with its parts labelled */
+.brief { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line2); border-radius: 12px; background: #0d0d0f; overflow: hidden; }
+.brief li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.brief li:last-child { border-bottom: 0; }
+.brief span { font: 11px/1.9 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); }
+.brief p { font: 13.5px/1.65 var(--mono); font-variant-ligatures: none; color: var(--text); overflow-wrap: anywhere; }
+@media (max-width: 520px) { .brief li { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+
+/* The terminal frame, colored like the real terminal app */
+.tty { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.tty pre { margin: 0; padding: 14px; font: 10.5px/1.5 var(--mono); font-variant-ligatures: none; width: max-content; color: var(--text); }
+.tty .b { font-weight: 600; } .tty .dim { color: var(--dim); } .tty .faint { color: #868690; } .tty .ln2 { color: var(--line2); }
+.tty .ac { color: var(--accent); } .tty .up { color: var(--green); } .tty .q { font-style: italic; color: var(--text); }
+.tty .lbl { color: #868690; font-weight: 600; letter-spacing: .04em; }
+.tty .tab, .tty .kh { background: var(--accent); color: #0d0d0f; font-weight: 600; }
+.tty .k { background: #26262c; color: var(--text); font-weight: 600; }
+.scroll-hint { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+@media (min-width: 760px) { .scroll-hint { display: none; } }
+
+/* End of an article: the neighbouring notes */
+.pn { margin-top: clamp(64px, 9vw, 96px); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pn a { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid var(--line2); border-radius: 14px; background: var(--raised); text-decoration: none; transition: border-color .2s, transform .2s; min-width: 0; }
+.pn a:hover { border-color: var(--accent); transform: translateY(-2px); }
+.pn span { font: 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.pn b { font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.pn .next { text-align: right; grid-column: 2; }
+.pn .prev { grid-column: 1; }
+@media (max-width: 560px) { .pn { grid-template-columns: 1fr; } .pn .next, .pn .prev { grid-column: 1; } .pn .next { text-align: left; } }
+.allnotes { margin-top: 20px; text-align: center; font-size: 15px; }
+.allnotes a { color: var(--dim); text-decoration: none; font-family: var(--mono); font-size: 13px; }
+.allnotes a:hover { color: var(--text); }
+
+/* The index */
+.list { padding-block: clamp(40px, 6vw, 72px) clamp(64px, 9vw, 112px); }
+.cards { list-style: none; margin: 0 auto; padding: 0; max-width: 980px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cards li:first-child { grid-column: 1 / -1; }
+.card { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: clamp(20px, 3vw, 28px); border: 1px solid var(--line); border-radius: 16px; background: var(--raised); text-decoration: none; position: relative; overflow: hidden; isolation: isolate; transition: border-color .25s, transform .25s; }
+.card:hover { border-color: var(--line2); transform: translateY(-2px); }
+.card:hover h2 { color: #fff; }
+.card::after { content: ""; position: absolute; inset: auto -30% -70% auto; width: 60%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c, var(--accent)) 14%, transparent), transparent 70%); z-index: -1; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.card:hover::after { opacity: 1; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font: 12.5px var(--mono); color: var(--faint); }
+.card h2 { font-size: clamp(21px, 2.3vw, 25px); line-height: 1.22; font-weight: 600; transition: color .2s; }
+.cards li:first-child h2 { font-size: clamp(24px, 3vw, 32px); }
+.card p { color: var(--dim); font-size: 16px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .go { margin-top: auto; font: 13px var(--mono); color: var(--accent-hi); }
+@media (max-width: 720px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--faint); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+.col { min-width: 0; }
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Atrium home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c1"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c1)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/></svg>
+      Atrium
+    </a>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="notes.html" aria-current="page">Notes</a></li>
+    </ul>
+    <a class="btn small" href="https://github.com/nakulpatel0306/atrium">GitHub</a>
+  </div>
+</nav>
+
+<header class="top">
+  <div class="sky"></div>
+  <div class="wrap">
+    <a class="back rise" href="notes.html">← All notes</a>
+    <span class="tag t-review rise">Review</span>
+    <h1 class="rise d1">Plan 15, <em>start to finish</em>.</h1>
+    <p class="lede rise d2">One feature end to end, with the numbers the tools reported: the mockups, the build, what the reviewers found, and what none of the agents could check.</p>
+    <div class="byline rise d3"><b>NP</b> Nakul Patel <span class="sep">/</span> <time datetime="2026-11-07">November 7, 2026</time> <span class="sep">/</span> 6 min read</div>
+  </div>
+</header>
+
+<div class="layout toc-on">
+  <details class="toc" id="toc" open>
+    <summary>On this page</summary>
+    <ol>
+      <li><a href="#design">Two mockups, one pick</a></li>
+      <li><a href="#build">The build</a></li>
+      <li><a href="#review">The review</a></li>
+      <li><a href="#rereview">The second review</a></li>
+      <li><a href="#cost">What it cost</a></li>
+      <li><a href="#unseen">What no agent could check</a></li>
+    </ol>
+  </details>
+
+  <div class="col">
+    <article>
+<section id="intro">
+  <p>Plan 15 was a redesign of Atrium's terminal app, plus a way to stop a running task. The terminal app is built with <dfn>Ink</dfn>, a library that lets you write terminal interfaces in React. It went from plan to merge today.</p>
+  <p>It went through the pipeline I described in <a href="note-one-agent.html">Why one agent isn't enough</a>: a plan, one builder in its own worktree, a fresh reviewer, a fix wave, a scoped re-review, every test group, then me. Here's how each step went, with the real numbers.</p>
+</section>
+
+<section id="design">
+  <h2>Two mockups, one pick</h2>
+  <p>Before Plan 15 had a builder, it had mockups. For interface work the human decision moves earlier: I'd rather pick between pictures than describe a layout in words.</p>
+  <p>An agent drew two directions for the terminal app, A and B, as static frames at a real terminal size. I picked A, “Home with tabs”: tabs across the top, the things that need me as cards, what's running underneath, and an Ask box that's always there. Choosing between two concrete pictures took me a few minutes. Describing what I wanted would have taken longer and come out less accurate.</p>
+
+  <figure class="fig reveal">
+    <div class="ft">Direction A, as built</div>
+    <div class="tty" role="region" tabindex="0" aria-label="Atrium terminal app home screen, re-created with sample data"><pre><span class="ac"> ◆ </span><span class="tab"> 1 Home </span> <span class="dim"> 2 Spaces </span> <span class="dim"> 3 Money </span> <span class="dim"> 4 Investing </span> <span class="dim"> 5 Activity </span>          <span class="faint">plugged in </span>
+<span class="ln2">────────────────────────────────────────────────────────────────────────────────</span>
+  <span class="b">Good afternoon, Nakul.</span> <span class="dim">Nothing ran since you were last here.</span>
+
+ <span class="lbl">NEEDS YOU</span><span class="ac">  2</span>
+
+ <span class="ac">╭─ </span><span class="ac">◆ </span><span class="dim">Draft a cover letter for the product posting</span> <span class="ac">───────────────────────────</span><span class="ac">╮</span>
+ <span class="ac">│</span> <span class="up">Job hunt</span><span class="faint">  ·  Claude · ready for review · 1h ago</span>                            <span class="ac">│</span>
+ <span class="ac">│</span> <span class="kh"> Approve </span> <span class="k"> Send back </span> <span class="k"> Open </span>                                               <span class="ac">│</span>
+ <span class="ac">╰────────────────────────────────────────────────────────────────────────────╯</span>
+ <span class="ln2">╭─ </span><span class="ac">◇ </span><span class="dim">Text to Sam</span> <span class="ln2">────────────────────────────────────────────────────────────</span><span class="ln2">╮</span>
+ <span class="ln2">│</span> <span class="faint">to </span><span class="dim">Sam</span><span class="faint">  ·  iMessage · drafted 1h ago</span>                                       <span class="ln2">│</span>
+ <span class="ln2">│</span> <span class="q">“Hike is on! Trailhead at 9 Saturday.”</span>                                     <span class="ln2">│</span>
+ <span class="ln2">╰────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="ln2">────────────────────────────────────────────────────────────────────────────────</span>
+ <span class="lbl">TODAY</span>    <span class="dim">Portfolio </span><span class="up">+0.8%</span><span class="faint">  ·  </span><span class="dim">Money </span><span class="b">$1,240</span><span class="faint"> of $2,000 budget</span>
+ <span class="lbl">RUNNING</span>  <span class="up">● </span><span class="b">Research product launches this fall</span><span class="faint"> · Claude · 31s</span>
+<span class="ln2">╭─ </span><span class="dim">Ask Atrium</span><span class="ln2"> ─────────────────────────────────────────────────────────────────╮</span>
+<span class="ln2">│</span> <span class="ac">› </span><span class="faint">Describe something new, like “keep my job search organized”</span>                <span class="ln2">│</span>
+<span class="ln2">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+ <span class="k"> ↑↓ </span><span class="dim"> move</span>  <span class="k"> ↵ </span><span class="dim"> open</span>  <span class="k"> space </span><span class="dim"> ask</span>  <span class="k"> 1-5 </span><span class="dim"> views</span>  <span class="k"> ? </span><span class="dim"> help</span></pre></div>
+    <div class="scroll-hint">Scroll sideways to see the full 80 columns.</div>
+    <figcaption>The Home screen at 80 columns, re-created here with sample data. The selected card has the accent border and its actions right on it.</figcaption>
+  </figure>
+
+  <p>The mockup became the target and the plan became the contract. One ruling in the plan shaped everything after: screens are composed as fixed-width lines of text, not with Ink's flexbox layout. That way box edges line up exactly, 80×24 is laid out on purpose instead of squeezed, and mouse clicks are looked up in the same regions the screen drew. It also means every screen can be tested as text, without a terminal.</p>
+</section>
+
+<section id="build">
+  <h2>The build</h2>
+  <div class="stats reveal">
+    <div><b>~650k</b><span>tokens used by the builder</span></div>
+    <div><b>~108 min</b><span>of builder time</span></div>
+    <div><b>270</b><span>tool calls</span></div>
+    <div><b>7</b><span>commits</span></div>
+    <div><b>~115</b><span>files changed</span></div>
+    <div><b class="add">+5,042</b><span>lines added</span></div>
+    <div><b class="del">−1,794</b><span>lines removed</span></div>
+    <div><b>1,881</b><span>tests in 9 groups, all passing at merge</span></div>
+  </div>
+  <p>The builder ran for about 108 minutes and made 270 tool calls: reading files, editing them, running tests. It used about 650,000 tokens and finished with 7 commits across roughly 115 files.</p>
+  <p>That token count is a total over the whole run, not what it held at any one moment. A <dfn>token</dfn> is a chunk of text of about four characters, and an agent re-reads its whole conversation on every step, so most of a long run's tokens are the same context being read again. I wrote about why in <a href="note-tokens.html">Tokens, explained simply</a>.</p>
+</section>
+
+<section id="review">
+  <h2>The review</h2>
+  <p>Then a fresh reviewer read the branch. It used about 189,000 tokens over about 16 minutes, and found no critical issues, 2 important ones and 8 minor ones. The two important ones were both bugs I would have shipped.</p>
+  <ul class="findings">
+    <li>
+      <span class="sev">Important</span>
+      <b>Scrolling the mouse wheel typed letters into the Ask box.</b>
+      <p>Terminals don't send mouse events as events. They send them as escape sequences, short strings of characters mixed in with your keystrokes, and the app has to pick them back out. The filter decoded them fine, but while the Ask box was open, the wheel's scroll keys were still handed to the box as typing, and clicking a card's key label typed that letter instead of pressing it. The fix: ignore the wheel while you're typing, and close the box on any click outside it.</p>
+    </li>
+    <li>
+      <span class="sev">Important</span>
+      <b>Stop said it worked when it hadn't.</b>
+      <p>If the task had already finished, or the agent ignored the stop signal, the app still reported that the task was stopped. For an app whose whole premise is telling me the truth about what agents did, that's the worst kind of bug. Now Stop reports what actually happened. I wrote that up in <a href="note-stopping.html">Stopping a running agent safely</a>.</p>
+    </li>
+    <li>
+      <span class="sev race">Found in the fix wave</span>
+      <b>A “flaky” test was a real race.</b>
+      <p>The reviewer saw one terminal-app test fail under load and pass on its own. The fix wave dug in and found a real race between two connections that could show a line of agent output twice. That one gets its own note: <a href="note-testing.html">Testing code that agents write</a>.</p>
+    </li>
+  </ul>
+  <p>Neither of the first two showed up in the tests, because the tests checked what the builder thought to check. Neither was in the builder's report, because the builder believed both worked. The fix wave took about 78,000 tokens and fixed every finding. None was rejected.</p>
+</section>
+
+<section id="rereview">
+  <h2>The second review</h2>
+  <p>A second fresh reviewer then looked at only the fix wave's changes, checked against the list of findings. It used about 114,000 tokens. Nine findings were fixed and one only partly, and it found one new important issue and two minor ones.</p>
+  <ul class="findings">
+    <li>
+      <span class="sev">Important</span>
+      <b>The money summary still carried real transactions.</b>
+      <p>One of the minor fixes made the terminal app read a slimmed-down money summary, so no transaction rows reach it at all. But the monthly recap inside that summary still listed up to 3 real “notable” transactions a month, like the largest charge. The app never drew them, so nothing reached the screen. The data was in the process anyway, which is what the fix was meant to stop. It's stripped now.</p>
+    </li>
+    <li>
+      <span class="sev minor">Minor</span>
+      <b>Two stops at once could disagree.</b>
+      <p>If the dashboard and the terminal app stopped the same task at the same moment, the second could be told the task “finished before it could be stopped”, when it had in fact been stopped. Both now get the same answer.</p>
+    </li>
+    <li>
+      <span class="sev minor">Minor</span>
+      <b>Esc followed quickly by a key could merge into one keypress.</b>
+      <p>The mouse filter holds a lone Esc for 25 ms in case it's the start of a split mouse report. A key typed inside that window was joined to it. Now a held Esc is only joined to what follows when that could finish a mouse report.</p>
+    </li>
+  </ul>
+  <p>All three were fixed with tests before I merged. The money one is my favorite example of why the re-review exists: the fix wave's own test passed because its sample data had no notable charge in it. It tested the fix, just not the case the fix was for.</p>
+</section>
+
+<section id="cost">
+  <h2>What it cost</h2>
+  <figure class="fig reveal">
+    <div class="ft">Where Plan 15's tokens went</div>
+    <svg viewBox="0 0 360 252" role="img" aria-labelledby="fc-t fc-d">
+      <title id="fc-t">Plan 15 token use by role</title>
+      <desc id="fc-d">Horizontal bars. Builder about 650 thousand tokens over 108 minutes. First reviewer about 189 thousand tokens over 16 minutes. Fix wave about 78 thousand tokens. Second reviewer about 114 thousand tokens. A dashed line marks one third of the build; every bar after the builder ends before it.</desc>
+      <g class="s">
+        <text x="8" y="18" font-size="13" fill="#e6e6ea">Builder</text>
+        <text class="m" x="352" y="18" text-anchor="end" font-size="11.5" fill="#9c9ca6">650k tokens · 108 min</text>
+        <rect x="8" y="26" width="344" height="20" rx="4" fill="#7c7cf5"><title>Builder: about 650,000 tokens, about 108 minutes</title></rect>
+        <text x="8" y="80" font-size="13" fill="#e6e6ea">First reviewer</text>
+        <text class="m" x="352" y="80" text-anchor="end" font-size="11.5" fill="#9c9ca6">189k · 16 min</text>
+        <rect x="8" y="88" width="100" height="20" rx="4" fill="#7c7cf5"><title>First reviewer: about 189,000 tokens, about 16 minutes</title></rect>
+        <text x="8" y="142" font-size="13" fill="#e6e6ea">Fix wave</text>
+        <text class="m" x="352" y="142" text-anchor="end" font-size="11.5" fill="#9c9ca6">78k</text>
+        <rect x="8" y="150" width="41" height="20" rx="4" fill="#7c7cf5"><title>Fix wave: about 78,000 tokens</title></rect>
+        <text x="8" y="204" font-size="13" fill="#e6e6ea">Second reviewer</text>
+        <text class="m" x="352" y="204" text-anchor="end" font-size="11.5" fill="#9c9ca6">114k</text>
+        <rect x="8" y="212" width="60" height="20" rx="4" fill="#7c7cf5"><title>Second reviewer: about 114,000 tokens</title></rect>
+      </g>
+      <line x1="122.7" y1="86" x2="122.7" y2="236" stroke="#9c9ca6" stroke-width="1.2" stroke-dasharray="3 3"/>
+      <text class="m" x="128" y="102" font-size="10" fill="#9c9ca6">⅓ of the build</text>
+    </svg>
+    <details>
+      <summary>Show as a table</summary>
+      <table>
+        <thead><tr><th scope="col">Step</th><th scope="col" class="r">Tokens</th><th scope="col" class="r">Time</th><th scope="col" class="r">Share of build</th></tr></thead>
+        <tbody>
+          <tr><td>Builder</td><td class="r">~650,000</td><td class="r">~108 min</td><td class="r">100%</td></tr>
+          <tr><td>First reviewer</td><td class="r">~189,000</td><td class="r">~16 min</td><td class="r">29%</td></tr>
+          <tr><td>Fix wave</td><td class="r">~78,000</td><td class="r">not recorded</td><td class="r">12%</td></tr>
+          <tr><td>Second reviewer</td><td class="r">~114,000</td><td class="r">not recorded</td><td class="r">18%</td></tr>
+        </tbody>
+      </table>
+    </details>
+    <figcaption>The first review cost 29% of the build. Everything after the build came to about 381,000 tokens, roughly 59% on top. The last small fix after the second review isn't counted here.</figcaption>
+  </figure>
+  <p class="pull">The first review cost under a third of the build, and it caught two bugs that the tests and the builder both missed.</p>
+  <p>I'll take that trade. The alternative was finding the Stop bug a week later, in a moment when I was trusting the app to tell me the truth.</p>
+</section>
+
+<section id="unseen">
+  <h2>What no agent could check</h2>
+  <p><strong>The builder couldn't see.</strong> It had no display. It rendered every screen at 80×24 and 120×36 and saved the frames as text, and it ran the app in a pseudo-terminal to check real clicks and raw bytes. That caught real problems. But it couldn't know how the app feels in Ghostty with a real font, a real mouse and a window being resized. The wheel bug was caught by a reviewer reading code and confirming it in a test harness, not by anyone scrolling. A human still has to sit with it in a real terminal, and for now that's me.</p>
+  <p><strong>Spinners cost CPU.</strong> Each spinner frame is a full Ink redraw, about 40 to 60 ms of CPU. At four frames a second that was 25 to 30% of a core. The spinner now ticks once a second, only on the tabs that show it, and only while a task runs: about 8% of a core on Home while something runs, 0.8% on other tabs and 0.3% idle. Going lower means dropping the spinner or replacing Ink's renderer, and that's a decision I haven't made.</p>
+  <p><strong>Voice comes last.</strong> I'd like to talk to Atrium from across the room. It's planned, but it goes after everything else, because a voice interface on top of a shaky core just gets you to the shaky parts faster.</p>
+</section>
+    </article>
+
+    <nav class="pn" aria-label="More notes">
+      <a class="prev" href="note-draft-and-wait.html"><span>← Previous note</span><b>Draft and wait</b></a>
+      <a class="next" href="note-stopping.html"><span>Next note →</span><b>Stopping a running agent safely</b></a>
+    </nav>
+    <p class="allnotes"><a href="notes.html">All notes</a></p>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel</span><span>MIT License · 2026</span></div>
+</footer>
+
+<script>
+(() => {
+  const nav = document.getElementById("nav");
+  addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 8), { passive: true });
+
+  // The contents start open so they show without JS; on narrow screens they fold away above the article.
+  const toc = document.getElementById("toc");
+  const wide = matchMedia("(min-width: 1100px)");
+  const fit = () => { toc.open = wide.matches; };
+  fit();
+  wide.addEventListener("change", fit);
+  toc.addEventListener("click", (e) => { if (e.target.closest("a") && !wide.matches) toc.open = false; });
+
+  // Highlight the section being read: the last heading that has passed the top third of the screen. It only marks
+  // the link; it never scrolls the page.
+  const links = [...toc.querySelectorAll("a")];
+  const sections = links.map((a) => document.getElementById(a.getAttribute("href").slice(1)));
+  const mark = () => {
+    const line = innerHeight * 0.33;
+    let current = -1;
+    sections.forEach((s, i) => { if (s.getBoundingClientRect().top < line) current = i; });
+    links.forEach((a, i) => a.classList.toggle("on", i === current));
+  };
+  addEventListener("scroll", mark, { passive: true });
+  addEventListener("resize", mark);
+  mark();
+})();
+</script>
+</body>
+</html>

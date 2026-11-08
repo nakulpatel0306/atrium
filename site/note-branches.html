@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A branch for every task · Atrium Notes</title>
+<script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
+<meta name="description" content="How Atrium lets an agent change code in my repos without touching my work: atrium/&lt;taskId> branches, a clean-tree rule, engine-made commits and WIP saves.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* The landing page's tokens and chrome. Articles sit in a ~68ch column, with the contents pinned beside long ones
+   on wide screens. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --raised: #111114;
+  --panel: #141417;
+  --text: #e6e6ea;
+  --dim: #9c9ca6;
+  --faint: #6f6f7a;
+  --line: #24242a;
+  --line2: #34343c;
+  --accent: #7c7cf5;
+  --accent-hi: #a5a5ff;
+  --accent-soft: #1e1e3d;
+  --green: #4cb782;
+  --yellow: #f2c94c;
+  --blue: #4ea7fc;
+  --orange: #d97757;
+  --red: #eb5757;
+  --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --col: 1120px;
+  --gutter: max(16px, env(safe-area-inset-left, 0px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 17px; line-height: 1.6; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+.wrap { max-width: var(--col); margin: 0 auto; padding-left: var(--gutter); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -.02em; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 3px; border-radius: 4px; }
+
+/* Top bar */
+nav#nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 72%, transparent); border-bottom: 1px solid transparent; transition: border-color .3s; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+nav#nav.scrolled { border-bottom-color: var(--line); }
+nav#nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; text-decoration: none; }
+.brand svg { width: 22px; height: 22px; }
+nav#nav ul { display: flex; gap: 28px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 14px; color: var(--dim); }
+nav#nav ul a { text-decoration: none; transition: color .2s; }
+nav#nav ul a:hover, nav#nav ul a[aria-current] { color: var(--text); }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 500 15px var(--sans); text-decoration: none; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--line2); color: var(--text); background: var(--raised); transition: border-color .2s, background .2s, transform .2s; cursor: pointer; }
+.btn:hover { border-color: var(--faint); transform: translateY(-1px); }
+.btn.small { padding: 7px 14px; font-size: 14px; }
+/* Only two links here, so they stay visible on phones instead of hiding like the landing page's four. */
+@media (max-width: 720px) { nav#nav ul { gap: 18px; } }
+
+/* Scroll reveals: visible by default, animated only where the browser ties them to scrolling. */
+@supports (animation-timeline: view()) {
+  .reveal { animation: up linear both; animation-timeline: view(); animation-range: entry 5% cover 24%; }
+  @keyframes up { from { opacity: 0; transform: translateY(32px); } }
+}
+
+/* Page header: a dimmer version of the landing page's skylight */
+.top { position: relative; overflow: hidden; isolation: isolate; padding-block: clamp(48px, 8vw, 100px) clamp(40px, 6vw, 68px); border-bottom: 1px solid var(--line); }
+.sky { position: absolute; inset: -20% 0 auto; height: 640px; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 40% 55% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  animation: breathe 9s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .7; transform: scaleX(1.06); } }
+.top .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px; }
+.top h1 { font-size: clamp(34px, 5.6vw, 62px); line-height: 1.05; font-weight: 600; letter-spacing: -.035em; max-width: 19ch; }
+.top h1 em { font-style: normal; background: linear-gradient(180deg, var(--accent-hi), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.top .lede { color: var(--dim); font-size: clamp(17px, 1.6vw, 20px); max-width: 60ch; }
+.back { font: 13px var(--mono); color: var(--dim); text-decoration: none; transition: color .2s; }
+.back:hover { color: var(--text); }
+.byline { display: flex; align-items: center; gap: 10px 12px; color: var(--dim); font-size: 15px; flex-wrap: wrap; justify-content: center; }
+.byline b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); font-size: 13px; }
+.byline .sep { color: var(--line2); }
+.rise { animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+.d1 { animation-delay: .1s } .d2 { animation-delay: .25s } .d3 { animation-delay: .4s }
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+
+/* Tags, one hue per topic */
+.tag { display: inline-flex; align-items: center; gap: 7px; font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--c, var(--accent-hi)); }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--c, var(--accent)); }
+.t-workflow { --c: var(--accent-hi); } .t-tokens { --c: var(--blue); } .t-git { --c: var(--yellow); }
+.t-safety { --c: var(--orange); } .t-testing { --c: var(--green); } .t-review { --c: #c8a2f0; } .t-guide { --c: #5fcfbf; }
+
+/* Two columns on wide screens for long articles: contents on the left, the article on the right */
+.layout { max-width: var(--col); margin: 0 auto; padding: clamp(40px, 6vw, 72px) max(16px, env(safe-area-inset-right, 0px)) clamp(64px, 9vw, 112px) var(--gutter); display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+.layout.single { grid-template-columns: minmax(0, 660px); justify-content: center; }
+@media (min-width: 1100px) { .layout.toc-on { grid-template-columns: 220px minmax(0, 660px); gap: 80px; justify-content: center; } }
+
+.toc { font-size: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
+.toc summary { cursor: pointer; padding: 12px 16px; font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.toc summary::-webkit-details-marker { display: none; }
+.toc summary::after { content: "+"; color: var(--faint); font-size: 16px; }
+.toc[open] summary::after { content: "–"; }
+.toc ol { list-style: none; margin: 0; padding: 0 8px 10px; counter-reset: t; }
+.toc li { counter-increment: t; }
+.toc a { display: grid; grid-template-columns: 24px 1fr; gap: 6px; padding: 7px 8px; border-radius: 6px; color: var(--dim); text-decoration: none; line-height: 1.4; transition: color .2s, background .2s; }
+.toc a::before { content: counter(t, decimal-leading-zero); font: 11px/1.9 var(--mono); color: var(--faint); }
+.toc a:hover { color: var(--text); background: var(--panel); }
+.toc a.on { color: var(--text); }
+.toc a.on::before { color: var(--accent); }
+@media (min-width: 1100px) {
+  .toc { position: sticky; top: 96px; align-self: start; border: 0; background: none; }
+  .toc summary { pointer-events: none; padding: 0 8px 12px; }
+  .toc summary::after { display: none; }
+  .toc ol { padding: 0; border-left: 1px solid var(--line); }
+  .toc a { border-radius: 0 6px 6px 0; margin-left: -1px; border-left: 1px solid transparent; }
+  .toc a.on { border-left-color: var(--accent); }
+}
+
+/* The article */
+article { min-width: 0; font-size: 18px; line-height: 1.72; }
+article > section + section { margin-top: clamp(56px, 8vw, 88px); }
+article section > * + * { margin-top: 1.15em; }
+article h2 { font-size: clamp(26px, 3.2vw, 34px); line-height: 1.15; font-weight: 600; }
+article h2 + p { margin-top: 18px; }
+article h3 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; line-height: 1.35; margin-top: 2em; }
+article h3 + p { margin-top: .5em; }
+article strong { font-weight: 600; color: #fff; }
+article a:not(.btn) { color: var(--accent-hi); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+article a:not(.btn):hover { text-decoration-color: var(--accent-hi); }
+article ul.plain { padding-left: 1.2em; }
+article ul.plain li + li { margin-top: .5em; }
+dfn { font-style: normal; font-weight: 600; color: #fff; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 30%, transparent) 62%); }
+code { font-variant-ligatures: none; font: .84em var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: .1em .35em; overflow-wrap: anywhere; }
+.muted { color: var(--dim); }
+
+/* Code blocks, framed like the terminal */
+.code { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.code .file { display: block; padding: 9px 14px; border-bottom: 1px solid var(--line); font: 11.5px var(--mono); color: var(--faint); }
+.code pre { margin: 0; padding: 14px; font: 13px/1.6 var(--mono); font-variant-ligatures: none; width: max-content; min-width: 100%; color: var(--text); }
+.code pre code { font: inherit; background: none; border: 0; padding: 0; overflow-wrap: normal; }
+.code .c { color: #868690; } .code .s { color: var(--green); } .code .k { color: var(--accent-hi); } .code .n { color: var(--yellow); }
+
+/* "In plain terms" boxes, for the words the rest of the article leans on */
+.term { border-left: 2px solid var(--accent); padding: 4px 0 4px 18px; display: flex; flex-direction: column; gap: 4px; }
+.term span { font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.term p { color: var(--text); font-size: 17px; }
+.term p + p { margin-top: 6px; }
+
+/* Figures */
+.fig { margin: 2.2em 0 0; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); padding: clamp(16px, 3vw, 28px); }
+.fig + * { margin-top: 2.2em; }
+.fig .ft { font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+.fig svg { display: block; width: 100%; height: auto; margin-inline: auto; overflow: visible; }
+.fig figcaption { margin-top: 18px; color: var(--dim); font-size: 15px; line-height: 1.6; }
+.fig .s { font-family: var(--sans); }
+.fig .m { font-family: var(--mono); }
+.pipe svg { max-width: 420px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 14px; color: var(--dim); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 14px; height: 10px; border-radius: 3px; display: block; flex: none; }
+.legend .sw-ac { background: #7c7cf5; } .legend .sw-tool { background: #3d3d47; } .legend .sw-rep { background: #4cb782; }
+.legend .sw-or { background: #d97757; } .legend .sw-ye { background: #f2c94c; } .legend .sw-bl { background: #4ea7fc; }
+.legend i.hatch { background: repeating-linear-gradient(45deg, #26262c 0 3px, #5a5a64 3px 5px); }
+.fig details { margin-top: 14px; font-size: 14px; color: var(--dim); }
+.fig summary { cursor: pointer; color: var(--accent-hi); font-family: var(--mono); font-size: 12.5px; }
+.fig table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.fig th, .fig td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.fig th { color: var(--faint); font-weight: 500; font-size: 13px; }
+.fig td.r, .fig th.r { text-align: right; }
+.fig > table { font-size: 15px; line-height: 1.45; margin-top: 0; }
+
+/* Tokenizer strip */
+.toks { display: flex; flex-wrap: wrap; gap: 4px; font: 14.5px/1 var(--mono); font-variant-ligatures: none; }
+.toks span { padding: 7px 6px; border-radius: 5px; white-space: pre; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.toks span:nth-child(even) { background: color-mix(in srgb, var(--blue) 12%, var(--panel)); border-color: color-mix(in srgb, var(--blue) 26%, transparent); }
+.toks + .toks { margin-top: 12px; }
+.tokcount { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+
+/* Stat tiles */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.stats div { background: var(--bg); padding: 18px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stats b { font-size: clamp(22px, 2.6vw, 28px); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stats span { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.stats .add { color: var(--green); } .stats .del { color: var(--red); }
+.stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stats, .stats.three { grid-template-columns: 1fr 1fr; } }
+
+/* Findings and rules */
+.findings { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.findings li { border: 1px solid var(--line2); border-radius: 12px; padding: 16px 18px; background: var(--raised); display: flex; flex-direction: column; gap: 6px; font-size: 17px; }
+.findings .sev { font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--yellow); }
+.findings .sev.race { color: var(--blue); }
+.findings .sev.minor { color: var(--dim); }
+.findings .sev.ok { color: var(--green); }
+.findings .sev.no { color: var(--orange); }
+.findings b { font-weight: 600; }
+.findings p { color: var(--dim); font-size: 16px; line-height: 1.65; }
+.rules { list-style: none; padding: 0; counter-reset: r; border-top: 1px solid var(--line); }
+.rules li { counter-increment: r; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+.rules li::before { content: counter(r); font: 600 13px var(--mono); color: var(--accent); width: 30px; height: 30px; border: 1px solid var(--accent); border-radius: 8px; display: grid; place-items: center; }
+.rules b { font-weight: 600; display: block; }
+.rules p { color: var(--dim); font-size: 16px; line-height: 1.65; margin-top: 4px; }
+
+.pull { font-size: clamp(22px, 2.6vw, 27px); line-height: 1.4; font-weight: 500; letter-spacing: -.015em; padding: 4px 0 4px 22px; border-left: 2px solid var(--accent); text-wrap: balance; }
+
+/* Small labelled chips, for lists of names like test groups */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
+.chips li { font: 13px var(--mono); padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); }
+.chips li small { color: var(--faint); font-size: 11.5px; margin-left: 6px; }
+
+/* A brief, laid out as a document with its parts labelled */
+.brief { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line2); border-radius: 12px; background: #0d0d0f; overflow: hidden; }
+.brief li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.brief li:last-child { border-bottom: 0; }
+.brief span { font: 11px/1.9 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); }
+.brief p { font: 13.5px/1.65 var(--mono); font-variant-ligatures: none; color: var(--text); overflow-wrap: anywhere; }
+@media (max-width: 520px) { .brief li { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+
+/* The terminal frame, colored like the real terminal app */
+.tty { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.tty pre { margin: 0; padding: 14px; font: 10.5px/1.5 var(--mono); font-variant-ligatures: none; width: max-content; color: var(--text); }
+.tty .b { font-weight: 600; } .tty .dim { color: var(--dim); } .tty .faint { color: #868690; } .tty .ln2 { color: var(--line2); }
+.tty .ac { color: var(--accent); } .tty .up { color: var(--green); } .tty .q { font-style: italic; color: var(--text); }
+.tty .lbl { color: #868690; font-weight: 600; letter-spacing: .04em; }
+.tty .tab, .tty .kh { background: var(--accent); color: #0d0d0f; font-weight: 600; }
+.tty .k { background: #26262c; color: var(--text); font-weight: 600; }
+.scroll-hint { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+@media (min-width: 760px) { .scroll-hint { display: none; } }
+
+/* End of an article: the neighbouring notes */
+.pn { margin-top: clamp(64px, 9vw, 96px); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pn a { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid var(--line2); border-radius: 14px; background: var(--raised); text-decoration: none; transition: border-color .2s, transform .2s; min-width: 0; }
+.pn a:hover { border-color: var(--accent); transform: translateY(-2px); }
+.pn span { font: 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.pn b { font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.pn .next { text-align: right; grid-column: 2; }
+.pn .prev { grid-column: 1; }
+@media (max-width: 560px) { .pn { grid-template-columns: 1fr; } .pn .next, .pn .prev { grid-column: 1; } .pn .next { text-align: left; } }
+.allnotes { margin-top: 20px; text-align: center; font-size: 15px; }
+.allnotes a { color: var(--dim); text-decoration: none; font-family: var(--mono); font-size: 13px; }
+.allnotes a:hover { color: var(--text); }
+
+/* The index */
+.list { padding-block: clamp(40px, 6vw, 72px) clamp(64px, 9vw, 112px); }
+.cards { list-style: none; margin: 0 auto; padding: 0; max-width: 980px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cards li:first-child { grid-column: 1 / -1; }
+.card { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: clamp(20px, 3vw, 28px); border: 1px solid var(--line); border-radius: 16px; background: var(--raised); text-decoration: none; position: relative; overflow: hidden; isolation: isolate; transition: border-color .25s, transform .25s; }
+.card:hover { border-color: var(--line2); transform: translateY(-2px); }
+.card:hover h2 { color: #fff; }
+.card::after { content: ""; position: absolute; inset: auto -30% -70% auto; width: 60%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c, var(--accent)) 14%, transparent), transparent 70%); z-index: -1; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.card:hover::after { opacity: 1; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font: 12.5px var(--mono); color: var(--faint); }
+.card h2 { font-size: clamp(21px, 2.3vw, 25px); line-height: 1.22; font-weight: 600; transition: color .2s; }
+.cards li:first-child h2 { font-size: clamp(24px, 3vw, 32px); }
+.card p { color: var(--dim); font-size: 16px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .go { margin-top: auto; font: 13px var(--mono); color: var(--accent-hi); }
+@media (max-width: 720px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--faint); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+.col { min-width: 0; }
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Atrium home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c1"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c1)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/></svg>
+      Atrium
+    </a>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="notes.html" aria-current="page">Notes</a></li>
+    </ul>
+    <a class="btn small" href="https://github.com/nakulpatel0306/atrium">GitHub</a>
+  </div>
+</nav>
+
+<header class="top">
+  <div class="sky"></div>
+  <div class="wrap">
+    <a class="back rise" href="notes.html">← All notes</a>
+    <span class="tag t-git rise">Git</span>
+    <h1 class="rise d1">A branch for <em>every task</em>.</h1>
+    <p class="lede rise d2">When an agent works in one of my repos, it gets a branch of its own, it never lands on top of my uncommitted work, and an unfinished run is saved rather than lost.</p>
+    <div class="byline rise d3"><b>NP</b> Nakul Patel <span class="sep">/</span> <time datetime="2026-11-05">November 5, 2026</time> <span class="sep">/</span> 5 min read</div>
+  </div>
+</header>
+
+<div class="layout toc-on">
+  <details class="toc" id="toc" open>
+    <summary>On this page</summary>
+    <ol>
+      <li><a href="#tools">Two tools from git</a></li>
+      <li><a href="#branch">One branch per task</a></li>
+      <li><a href="#clean">Never over your uncommitted work</a></li>
+      <li><a href="#commits">The agent edits, the engine commits</a></li>
+      <li><a href="#wip">When a run doesn't finish</a></li>
+      <li><a href="#local">Nothing leaves the Mac</a></li>
+    </ol>
+  </details>
+
+  <div class="col">
+    <article>
+<section id="intro">
+  <p>Atrium can point an agent at one of my code repos and ask it to change something. That's useful, and it's also the most obvious way for an agent to make a mess of my day.</p>
+  <p>Two things worry me. The agent's edits could get mixed up with mine. And a run that stops halfway, because it failed, hit a usage limit or the engine shut down, could leave half-edited files lying around in a repo I'm about to open.</p>
+  <p>Git already has the tools to prevent both. This note is about how Atrium uses them.</p>
+</section>
+
+<section id="tools">
+  <h2>Two tools from git</h2>
+  <div class="term">
+    <span>In plain terms</span>
+    <p>A <dfn>branch</dfn> is a named line of commits. Work on one branch doesn't change another until someone merges them.</p>
+    <p>A <dfn>worktree</dfn> is a second working copy of the same repository, in its own folder, with its own branch checked out.</p>
+  </div>
+  <p>I use both, for different jobs. The agents that build Atrium itself each get a worktree, which I wrote about in <a href="note-one-agent.html">Why one agent isn't enough</a>. That keeps my main checkout, where the installed engine runs, untouched while they work.</p>
+  <p>Atrium's own repo tasks work differently. They use a branch in the repo I pointed the space at. While an agent works, that repo is switched to the task's branch, and when the run ends Atrium switches it back. That's simpler, but it means the rules about when it's safe to switch matter a lot.</p>
+</section>
+
+<section id="branch">
+  <h2>One branch per task</h2>
+  <p>Every repo task gets a branch named <code>atrium/&lt;taskId&gt;</code>, like <code>atrium/tsk_4f9a2c</code>. The name says who made it and which task it belongs to, so I can tell an agent's branch from mine at a glance in lazygit.</p>
+  <p>Before creating it, Atrium checks that the name is a valid branch name with <code>git check-ref-format</code>, and it refuses outright to work on <code>main</code> or <code>master</code>. The agent's instructions say the same thing in words: work only on the current branch, don't switch or create branches, never push or merge. But the engine doesn't rely on the agent listening.</p>
+
+  <figure class="fig reveal">
+    <div class="ft">A task's branch, from start to Needs you</div>
+    <svg viewBox="0 0 360 170" role="img" aria-labelledby="fb-t fb-d">
+      <title id="fb-t">The life of a task branch</title>
+      <desc id="fb-d">Your branch runs along the top. At the first dot Atrium checks there are no uncommitted changes, then creates the branch atrium slash task id below it. The first run ends early and the engine saves its edits as a WIP commit. A retry checks out the same branch and carries on, and the engine commits the finished work. Then the repo goes back to your branch, and the task waits in Needs you.</desc>
+      <defs>
+        <marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#9c9ca6"/></marker>
+      </defs>
+      <text class="m" x="352" y="24" text-anchor="end" font-size="10.5" fill="#9c9ca6">your branch</text>
+      <line x1="10" y1="38" x2="352" y2="38" stroke="#34343c" stroke-width="2"/>
+      <circle cx="44" cy="38" r="6" fill="#0b0b0d" stroke="#4cb782" stroke-width="2"/>
+      <text class="m" x="44" y="24" text-anchor="middle" font-size="10" fill="#4cb782">clean?</text>
+      <path d="M44 44C44 80 62 104 92 104H300" fill="none" stroke="#7c7cf5" stroke-width="2"/>
+      <text class="m" x="98" y="94" font-size="10.5" fill="#a5a5ff">atrium/&lt;taskId&gt;</text>
+      <line x1="120" y1="104" x2="186" y2="104" stroke="#d97757" stroke-width="2" stroke-dasharray="3 3"/>
+      <circle cx="150" cy="104" r="7" fill="#d97757"/>
+      <circle cx="244" cy="104" r="7" fill="#7c7cf5"/>
+      <path d="M300 104C324 104 330 80 330 47" fill="none" stroke="#9c9ca6" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#ab)"/>
+      <g class="s" font-size="11.5" fill="#9c9ca6" text-anchor="middle">
+        <text x="150" y="130" fill="#e6e6ea">Run ends early</text>
+        <text x="150" y="146">WIP commit</text>
+        <text x="244" y="130" fill="#e6e6ea">Retry</text>
+        <text x="244" y="146">carries on</text>
+      </g>
+      <g class="s" font-size="11.5" fill="#9c9ca6">
+        <text x="294" y="64" text-anchor="end">switches back,</text>
+        <text x="294" y="78" text-anchor="end">waits in Needs you</text>
+      </g>
+    </svg>
+    <div class="legend"><span><i class="sw-or"></i>Engine's WIP commit of an unfinished run</span><span><i class="sw-ac"></i>Engine's commit of a finished run</span></div>
+    <figcaption>The agent only ever edits files. Every commit on the branch is made by the engine, after the agent's process has exited.</figcaption>
+  </figure>
+</section>
+
+<section id="clean">
+  <h2>Never over your uncommitted work</h2>
+  <p>This is the rule I care about most: Atrium never checks out over uncommitted changes of mine.</p>
+  <p>It's easy to get wrong, because <code>git checkout</code> is friendlier than you'd expect. If you have uncommitted edits that don't conflict with the branch you're switching to, git carries them along. That's handy for a person. For Atrium it would mean my half-finished work quietly ending up on the agent's branch, and then in the agent's commit.</p>
+  <p>So before it creates or switches to a task branch, the engine runs <code>git status --porcelain</code>. If anything at all is listed, it stops and tells me.</p>
+
+  <div class="code" role="region" tabindex="0" aria-label="Code from src/engine/git.ts">
+    <span class="file">src/engine/git.ts · prepareBranch, trimmed</span>
+<pre><code><span class="c">// checkout carries non-conflicting uncommitted changes along, which would put the user's WIP on the agent branch.</span>
+const status = await git(path, ["status", "--porcelain"]);
+if (status.out.trim() !== "") throw new Error(`You have uncommitted changes in ${path}`);
+<span class="c">// A retry after a send-back reuses the existing branch. Plain checkout (never --force)</span>
+<span class="c">// fails rather than overwrite local changes.</span>
+const exists = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+const res = await git(path, exists.code === 0 ? ["checkout", branch] : ["checkout", "-b", branch]);</code></pre>
+  </div>
+
+  <p>The task goes to <strong>blocked</strong> with that message, and it runs once I've committed or stashed. Two more checks sit next to this one:</p>
+  <ul class="plain">
+    <li>If the repo is already on some <code>atrium/</code> branch, Atrium won't branch from it. Starting from a leftover agent branch would stack unreviewed work on top of unreviewed work.</li>
+    <li>If the repo is dirty <em>and</em> on this task's own branch, those changes are what a killed run left behind, not mine. The task blocks with a message that says exactly that, and where to commit or stash them.</li>
+  </ul>
+</section>
+
+<section id="commits">
+  <h2>The agent edits, the engine commits</h2>
+  <p>Agents in Atrium don't run <code>git commit</code>. Their instructions say to leave changes uncommitted, and in a repo the only git commands Claude is allowed are <code>git status</code>, <code>git diff</code> and <code>git log</code>, next to reading and editing files, <code>bun test</code> and <code>bunx tsc</code>. When the run ends, the engine commits whatever the agent left.</p>
+  <p>Moving the commit to the engine sounds like a small thing. It's where most of the safety lives, because an agent can write files inside the repo, including git's own settings. So the engine's commit step is careful:</p>
+  <ul class="plain">
+    <li><strong>Hooks are off.</strong> Every git call runs with <code>core.hooksPath=/dev/null</code>, so a hook the agent planted never runs with the engine's permissions.</li>
+    <li><strong>Settings are fingerprinted.</strong> Before the run, Atrium takes a fingerprint of the repo's git config, hooks and attributes. If it changed, the engine refuses to commit or even switch branches, and tells me to check them.</li>
+    <li><strong>No <code>.env</code> files, ever.</strong> Any path that looks like a <code>.env</code> file blocks the commit, including the old name in a rename, so <code>.env → notes.txt</code> can't sneak a secret out under a new name.</li>
+    <li><strong>My identity, my signing.</strong> Commits use my configured git identity. Signing is left to my own git config rather than forced, so repos without signing set up still work.</li>
+  </ul>
+</section>
+
+<section id="wip">
+  <h2>When a run doesn't finish</h2>
+  <p>Runs end early. The agent fails, the account hits its usage limit, or I quit the engine. Before today, that left uncommitted edits sitting on the task branch, and the next task in that repo would refuse to start because the tree wasn't clean.</p>
+  <p>Now the engine commits them anyway, as a <dfn>WIP commit</dfn>: a work-in-progress commit with a message that says so.</p>
+  <div class="code" role="region" tabindex="0" aria-label="Code from src/engine/runner.ts">
+    <span class="file">src/engine/runner.ts</span>
+<pre><code>const message = stopped ? `WIP (stopped): ${task.title}` : task.title;</code></pre>
+  </div>
+  <p>Then the repo switches back to the branch I was on, but only if the tree is clean. If something is still uncommitted, Atrium leaves it alone and tells me, rather than carrying it onto my branch.</p>
+  <p>The task's reason line says where the work went: “Atrium saved the agent's unfinished edits as a WIP commit on atrium/tsk_4f9a2c; retry to carry on from there.” And that's exactly what Retry does. The branch already exists, so it's checked out instead of created, and the agent starts with the earlier edits in place. The summary in Needs you counts from where the first run started, so it shows all the work on the branch, not just the last run's.</p>
+  <h3>Fixes are a little different</h3>
+  <p>A fix is a follow-up task that adds to a branch I'm reviewing. If a fix doesn't finish, its half-done edits shouldn't land on the branch I'm about to decide on. So they go on a branch of their own, numbered if the name is taken: <code>atrium/tsk_8k2m1q</code>, then <code>atrium/tsk_8k2m1q-2</code>.</p>
+  <p>The same goes for a fix that commits just after I've already approved or rejected. Its commit is moved to its own branch, and the reviewed branch is put back with a compare-and-swap: git only moves it if it still points where the engine expects, so nothing anyone else put there is lost.</p>
+</section>
+
+<section id="local">
+  <h2>Nothing leaves the Mac</h2>
+  <p>The last line of every repo result is the same: “Branch atrium/tsk_4f9a2c is on your machine. Push it when you're ready.”</p>
+  <p>Atrium never pushes as me. Agents can't push: they get no GitHub CLI, no SSH and none of my GitHub tokens. The engine only pushes or creates repos after I've said yes to that specific thing. A branch is a draft, and drafts wait for me. Same rule as everything else in Atrium.</p>
+</section>
+    </article>
+
+    <nav class="pn" aria-label="More notes">
+      <a class="prev" href="note-one-agent.html"><span>← Previous note</span><b>Why one agent isn't enough</b></a>
+      <a class="next" href="note-spaces.html"><span>Next note →</span><b>A space, not a chat thread</b></a>
+    </nav>
+    <p class="allnotes"><a href="notes.html">All notes</a></p>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel</span><span>MIT License · 2026</span></div>
+</footer>
+
+<script>
+(() => {
+  const nav = document.getElementById("nav");
+  addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 8), { passive: true });
+
+  // The contents start open so they show without JS; on narrow screens they fold away above the article.
+  const toc = document.getElementById("toc");
+  const wide = matchMedia("(min-width: 1100px)");
+  const fit = () => { toc.open = wide.matches; };
+  fit();
+  wide.addEventListener("change", fit);
+  toc.addEventListener("click", (e) => { if (e.target.closest("a") && !wide.matches) toc.open = false; });
+
+  // Highlight the section being read: the last heading that has passed the top third of the screen. It only marks
+  // the link; it never scrolls the page.
+  const links = [...toc.querySelectorAll("a")];
+  const sections = links.map((a) => document.getElementById(a.getAttribute("href").slice(1)));
+  const mark = () => {
+    const line = innerHeight * 0.33;
+    let current = -1;
+    sections.forEach((s, i) => { if (s.getBoundingClientRect().top < line) current = i; });
+    links.forEach((a, i) => a.classList.toggle("on", i === current));
+  };
+  addEventListener("scroll", mark, { passive: true });
+  addEventListener("resize", mark);
+  mark();
+})();
+</script>
+</body>
+</html>

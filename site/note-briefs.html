@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing a brief an agent can't misread · Atrium Notes</title>
+<script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
+<meta name="description" content="A subagent knows only what its brief says. When delegating is worth it, and the seven parts every brief of mine now has.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* The landing page's tokens and chrome. Articles sit in a ~68ch column, with the contents pinned beside long ones
+   on wide screens. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --raised: #111114;
+  --panel: #141417;
+  --text: #e6e6ea;
+  --dim: #9c9ca6;
+  --faint: #6f6f7a;
+  --line: #24242a;
+  --line2: #34343c;
+  --accent: #7c7cf5;
+  --accent-hi: #a5a5ff;
+  --accent-soft: #1e1e3d;
+  --green: #4cb782;
+  --yellow: #f2c94c;
+  --blue: #4ea7fc;
+  --orange: #d97757;
+  --red: #eb5757;
+  --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --col: 1120px;
+  --gutter: max(16px, env(safe-area-inset-left, 0px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 17px; line-height: 1.6; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+.wrap { max-width: var(--col); margin: 0 auto; padding-left: var(--gutter); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -.02em; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 3px; border-radius: 4px; }
+
+/* Top bar */
+nav#nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 72%, transparent); border-bottom: 1px solid transparent; transition: border-color .3s; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+nav#nav.scrolled { border-bottom-color: var(--line); }
+nav#nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; text-decoration: none; }
+.brand svg { width: 22px; height: 22px; }
+nav#nav ul { display: flex; gap: 28px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 14px; color: var(--dim); }
+nav#nav ul a { text-decoration: none; transition: color .2s; }
+nav#nav ul a:hover, nav#nav ul a[aria-current] { color: var(--text); }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 500 15px var(--sans); text-decoration: none; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--line2); color: var(--text); background: var(--raised); transition: border-color .2s, background .2s, transform .2s; cursor: pointer; }
+.btn:hover { border-color: var(--faint); transform: translateY(-1px); }
+.btn.small { padding: 7px 14px; font-size: 14px; }
+/* Only two links here, so they stay visible on phones instead of hiding like the landing page's four. */
+@media (max-width: 720px) { nav#nav ul { gap: 18px; } }
+
+/* Scroll reveals: visible by default, animated only where the browser ties them to scrolling. */
+@supports (animation-timeline: view()) {
+  .reveal { animation: up linear both; animation-timeline: view(); animation-range: entry 5% cover 24%; }
+  @keyframes up { from { opacity: 0; transform: translateY(32px); } }
+}
+
+/* Page header: a dimmer version of the landing page's skylight */
+.top { position: relative; overflow: hidden; isolation: isolate; padding-block: clamp(48px, 8vw, 100px) clamp(40px, 6vw, 68px); border-bottom: 1px solid var(--line); }
+.sky { position: absolute; inset: -20% 0 auto; height: 640px; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 40% 55% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  animation: breathe 9s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .7; transform: scaleX(1.06); } }
+.top .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px; }
+.top h1 { font-size: clamp(34px, 5.6vw, 62px); line-height: 1.05; font-weight: 600; letter-spacing: -.035em; max-width: 19ch; }
+.top h1 em { font-style: normal; background: linear-gradient(180deg, var(--accent-hi), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.top .lede { color: var(--dim); font-size: clamp(17px, 1.6vw, 20px); max-width: 60ch; }
+.back { font: 13px var(--mono); color: var(--dim); text-decoration: none; transition: color .2s; }
+.back:hover { color: var(--text); }
+.byline { display: flex; align-items: center; gap: 10px 12px; color: var(--dim); font-size: 15px; flex-wrap: wrap; justify-content: center; }
+.byline b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); font-size: 13px; }
+.byline .sep { color: var(--line2); }
+.rise { animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+.d1 { animation-delay: .1s } .d2 { animation-delay: .25s } .d3 { animation-delay: .4s }
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+
+/* Tags, one hue per topic */
+.tag { display: inline-flex; align-items: center; gap: 7px; font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--c, var(--accent-hi)); }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--c, var(--accent)); }
+.t-workflow { --c: var(--accent-hi); } .t-tokens { --c: var(--blue); } .t-git { --c: var(--yellow); }
+.t-safety { --c: var(--orange); } .t-testing { --c: var(--green); } .t-review { --c: #c8a2f0; } .t-guide { --c: #5fcfbf; }
+
+/* Two columns on wide screens for long articles: contents on the left, the article on the right */
+.layout { max-width: var(--col); margin: 0 auto; padding: clamp(40px, 6vw, 72px) max(16px, env(safe-area-inset-right, 0px)) clamp(64px, 9vw, 112px) var(--gutter); display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+.layout.single { grid-template-columns: minmax(0, 660px); justify-content: center; }
+@media (min-width: 1100px) { .layout.toc-on { grid-template-columns: 220px minmax(0, 660px); gap: 80px; justify-content: center; } }
+
+.toc { font-size: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
+.toc summary { cursor: pointer; padding: 12px 16px; font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.toc summary::-webkit-details-marker { display: none; }
+.toc summary::after { content: "+"; color: var(--faint); font-size: 16px; }
+.toc[open] summary::after { content: "–"; }
+.toc ol { list-style: none; margin: 0; padding: 0 8px 10px; counter-reset: t; }
+.toc li { counter-increment: t; }
+.toc a { display: grid; grid-template-columns: 24px 1fr; gap: 6px; padding: 7px 8px; border-radius: 6px; color: var(--dim); text-decoration: none; line-height: 1.4; transition: color .2s, background .2s; }
+.toc a::before { content: counter(t, decimal-leading-zero); font: 11px/1.9 var(--mono); color: var(--faint); }
+.toc a:hover { color: var(--text); background: var(--panel); }
+.toc a.on { color: var(--text); }
+.toc a.on::before { color: var(--accent); }
+@media (min-width: 1100px) {
+  .toc { position: sticky; top: 96px; align-self: start; border: 0; background: none; }
+  .toc summary { pointer-events: none; padding: 0 8px 12px; }
+  .toc summary::after { display: none; }
+  .toc ol { padding: 0; border-left: 1px solid var(--line); }
+  .toc a { border-radius: 0 6px 6px 0; margin-left: -1px; border-left: 1px solid transparent; }
+  .toc a.on { border-left-color: var(--accent); }
+}
+
+/* The article */
+article { min-width: 0; font-size: 18px; line-height: 1.72; }
+article > section + section { margin-top: clamp(56px, 8vw, 88px); }
+article section > * + * { margin-top: 1.15em; }
+article h2 { font-size: clamp(26px, 3.2vw, 34px); line-height: 1.15; font-weight: 600; }
+article h2 + p { margin-top: 18px; }
+article h3 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; line-height: 1.35; margin-top: 2em; }
+article h3 + p { margin-top: .5em; }
+article strong { font-weight: 600; color: #fff; }
+article a:not(.btn) { color: var(--accent-hi); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+article a:not(.btn):hover { text-decoration-color: var(--accent-hi); }
+article ul.plain { padding-left: 1.2em; }
+article ul.plain li + li { margin-top: .5em; }
+dfn { font-style: normal; font-weight: 600; color: #fff; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 30%, transparent) 62%); }
+code { font-variant-ligatures: none; font: .84em var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: .1em .35em; overflow-wrap: anywhere; }
+.muted { color: var(--dim); }
+
+/* Code blocks, framed like the terminal */
+.code { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.code .file { display: block; padding: 9px 14px; border-bottom: 1px solid var(--line); font: 11.5px var(--mono); color: var(--faint); }
+.code pre { margin: 0; padding: 14px; font: 13px/1.6 var(--mono); font-variant-ligatures: none; width: max-content; min-width: 100%; color: var(--text); }
+.code pre code { font: inherit; background: none; border: 0; padding: 0; overflow-wrap: normal; }
+.code .c { color: #868690; } .code .s { color: var(--green); } .code .k { color: var(--accent-hi); } .code .n { color: var(--yellow); }
+
+/* "In plain terms" boxes, for the words the rest of the article leans on */
+.term { border-left: 2px solid var(--accent); padding: 4px 0 4px 18px; display: flex; flex-direction: column; gap: 4px; }
+.term span { font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.term p { color: var(--text); font-size: 17px; }
+.term p + p { margin-top: 6px; }
+
+/* Figures */
+.fig { margin: 2.2em 0 0; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); padding: clamp(16px, 3vw, 28px); }
+.fig + * { margin-top: 2.2em; }
+.fig .ft { font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+.fig svg { display: block; width: 100%; height: auto; margin-inline: auto; overflow: visible; }
+.fig figcaption { margin-top: 18px; color: var(--dim); font-size: 15px; line-height: 1.6; }
+.fig .s { font-family: var(--sans); }
+.fig .m { font-family: var(--mono); }
+.pipe svg { max-width: 420px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 14px; color: var(--dim); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 14px; height: 10px; border-radius: 3px; display: block; flex: none; }
+.legend .sw-ac { background: #7c7cf5; } .legend .sw-tool { background: #3d3d47; } .legend .sw-rep { background: #4cb782; }
+.legend .sw-or { background: #d97757; } .legend .sw-ye { background: #f2c94c; } .legend .sw-bl { background: #4ea7fc; }
+.legend i.hatch { background: repeating-linear-gradient(45deg, #26262c 0 3px, #5a5a64 3px 5px); }
+.fig details { margin-top: 14px; font-size: 14px; color: var(--dim); }
+.fig summary { cursor: pointer; color: var(--accent-hi); font-family: var(--mono); font-size: 12.5px; }
+.fig table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.fig th, .fig td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.fig th { color: var(--faint); font-weight: 500; font-size: 13px; }
+.fig td.r, .fig th.r { text-align: right; }
+.fig > table { font-size: 15px; line-height: 1.45; margin-top: 0; }
+
+/* Tokenizer strip */
+.toks { display: flex; flex-wrap: wrap; gap: 4px; font: 14.5px/1 var(--mono); font-variant-ligatures: none; }
+.toks span { padding: 7px 6px; border-radius: 5px; white-space: pre; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.toks span:nth-child(even) { background: color-mix(in srgb, var(--blue) 12%, var(--panel)); border-color: color-mix(in srgb, var(--blue) 26%, transparent); }
+.toks + .toks { margin-top: 12px; }
+.tokcount { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+
+/* Stat tiles */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.stats div { background: var(--bg); padding: 18px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stats b { font-size: clamp(22px, 2.6vw, 28px); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stats span { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.stats .add { color: var(--green); } .stats .del { color: var(--red); }
+.stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stats, .stats.three { grid-template-columns: 1fr 1fr; } }
+
+/* Findings and rules */
+.findings { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.findings li { border: 1px solid var(--line2); border-radius: 12px; padding: 16px 18px; background: var(--raised); display: flex; flex-direction: column; gap: 6px; font-size: 17px; }
+.findings .sev { font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--yellow); }
+.findings .sev.race { color: var(--blue); }
+.findings .sev.minor { color: var(--dim); }
+.findings .sev.ok { color: var(--green); }
+.findings .sev.no { color: var(--orange); }
+.findings b { font-weight: 600; }
+.findings p { color: var(--dim); font-size: 16px; line-height: 1.65; }
+.rules { list-style: none; padding: 0; counter-reset: r; border-top: 1px solid var(--line); }
+.rules li { counter-increment: r; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+.rules li::before { content: counter(r); font: 600 13px var(--mono); color: var(--accent); width: 30px; height: 30px; border: 1px solid var(--accent); border-radius: 8px; display: grid; place-items: center; }
+.rules b { font-weight: 600; display: block; }
+.rules p { color: var(--dim); font-size: 16px; line-height: 1.65; margin-top: 4px; }
+
+.pull { font-size: clamp(22px, 2.6vw, 27px); line-height: 1.4; font-weight: 500; letter-spacing: -.015em; padding: 4px 0 4px 22px; border-left: 2px solid var(--accent); text-wrap: balance; }
+
+/* Small labelled chips, for lists of names like test groups */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
+.chips li { font: 13px var(--mono); padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); }
+.chips li small { color: var(--faint); font-size: 11.5px; margin-left: 6px; }
+
+/* A brief, laid out as a document with its parts labelled */
+.brief { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line2); border-radius: 12px; background: #0d0d0f; overflow: hidden; }
+.brief li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.brief li:last-child { border-bottom: 0; }
+.brief span { font: 11px/1.9 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); }
+.brief p { font: 13.5px/1.65 var(--mono); font-variant-ligatures: none; color: var(--text); overflow-wrap: anywhere; }
+@media (max-width: 520px) { .brief li { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+
+/* The terminal frame, colored like the real terminal app */
+.tty { background: #0d0d0f; border: 1px solid var(--line2); border-radius: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.tty pre { margin: 0; padding: 14px; font: 10.5px/1.5 var(--mono); font-variant-ligatures: none; width: max-content; color: var(--text); }
+.tty .b { font-weight: 600; } .tty .dim { color: var(--dim); } .tty .faint { color: #868690; } .tty .ln2 { color: var(--line2); }
+.tty .ac { color: var(--accent); } .tty .up { color: var(--green); } .tty .q { font-style: italic; color: var(--text); }
+.tty .lbl { color: #868690; font-weight: 600; letter-spacing: .04em; }
+.tty .tab, .tty .kh { background: var(--accent); color: #0d0d0f; font-weight: 600; }
+.tty .k { background: #26262c; color: var(--text); font-weight: 600; }
+.scroll-hint { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+@media (min-width: 760px) { .scroll-hint { display: none; } }
+
+/* End of an article: the neighbouring notes */
+.pn { margin-top: clamp(64px, 9vw, 96px); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pn a { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid var(--line2); border-radius: 14px; background: var(--raised); text-decoration: none; transition: border-color .2s, transform .2s; min-width: 0; }
+.pn a:hover { border-color: var(--accent); transform: translateY(-2px); }
+.pn span { font: 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.pn b { font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.pn .next { text-align: right; grid-column: 2; }
+.pn .prev { grid-column: 1; }
+@media (max-width: 560px) { .pn { grid-template-columns: 1fr; } .pn .next, .pn .prev { grid-column: 1; } .pn .next { text-align: left; } }
+.allnotes { margin-top: 20px; text-align: center; font-size: 15px; }
+.allnotes a { color: var(--dim); text-decoration: none; font-family: var(--mono); font-size: 13px; }
+.allnotes a:hover { color: var(--text); }
+
+/* The index */
+.list { padding-block: clamp(40px, 6vw, 72px) clamp(64px, 9vw, 112px); }
+.cards { list-style: none; margin: 0 auto; padding: 0; max-width: 980px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cards li:first-child { grid-column: 1 / -1; }
+.card { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: clamp(20px, 3vw, 28px); border: 1px solid var(--line); border-radius: 16px; background: var(--raised); text-decoration: none; position: relative; overflow: hidden; isolation: isolate; transition: border-color .25s, transform .25s; }
+.card:hover { border-color: var(--line2); transform: translateY(-2px); }
+.card:hover h2 { color: #fff; }
+.card::after { content: ""; position: absolute; inset: auto -30% -70% auto; width: 60%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c, var(--accent)) 14%, transparent), transparent 70%); z-index: -1; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.card:hover::after { opacity: 1; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font: 12.5px var(--mono); color: var(--faint); }
+.card h2 { font-size: clamp(21px, 2.3vw, 25px); line-height: 1.22; font-weight: 600; transition: color .2s; }
+.cards li:first-child h2 { font-size: clamp(24px, 3vw, 32px); }
+.card p { color: var(--dim); font-size: 16px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .go { margin-top: auto; font: 13px var(--mono); color: var(--accent-hi); }
+@media (max-width: 720px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--faint); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+.col { min-width: 0; }
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Atrium home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c1"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c1)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/></svg>
+      Atrium
+    </a>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="notes.html" aria-current="page">Notes</a></li>
+    </ul>
+    <a class="btn small" href="https://github.com/nakulpatel0306/atrium">GitHub</a>
+  </div>
+</nav>
+
+<header class="top">
+  <div class="sky"></div>
+  <div class="wrap">
+    <a class="back rise" href="notes.html">← All notes</a>
+    <span class="tag t-workflow rise">Workflow</span>
+    <h1 class="rise d1">Writing a brief an agent <em>can't misread</em>.</h1>
+    <p class="lede rise d2">A fresh agent starts with nothing but the brief I hand it. Most bad agent runs I've had came from a vague brief, not a weak model.</p>
+    <div class="byline rise d3"><b>NP</b> Nakul Patel <span class="sep">/</span> <time datetime="2026-11-06">November 6, 2026</time> <span class="sep">/</span> 5 min read</div>
+  </div>
+</header>
+
+<div class="layout single">
+  <div class="col">
+    <article>
+<section id="intro">
+  <p>Atrium is built by a handful of agents with separate jobs: one builds, a fresh one reviews, another fixes. I wrote about that split in <a href="note-one-agent.html">Why one agent isn't enough</a>. What I didn't say is that the split only works if each agent is told the right things.</p>
+  <div class="term">
+    <span>In plain terms</span>
+    <p>A <dfn>subagent</dfn> is a fresh agent session started by a main session. It begins with an empty context, the text a model can see at once, and reads only its <dfn>brief</dfn>: the written instructions it's handed. It works on its own and sends back a report.</p>
+  </div>
+  <p>The brief is the only context it has. Anything I know and didn't write down, it doesn't know. So this note is about two questions: when to hand work off at all, and what goes in the brief when I do.</p>
+</section>
+
+<section id="when">
+  <h2>When delegating is worth it</h2>
+  <p>Delegation has a fixed cost, and it's easy to forget. Before a subagent does any work, it costs a brief someone has to write, a handoff where detail gets lost in both directions, and a context it has to rebuild by reading files the main session may already have read.</p>
+
+  <figure class="fig reveal">
+    <div class="ft">One context vs. fresh subagents</div>
+    <svg viewBox="0 0 360 392" role="img" aria-labelledby="fx-t fx-d">
+      <title id="fx-t">Where context goes</title>
+      <desc id="fx-d">Top: one agent's context window filling with a brief, a plan, file reads, test logs, diffs and its own review until it is full. Bottom: a main agent whose window holds only the brief, the plan and three short reports, with lots of room left. Three subagents, a builder, a reviewer and a fixer, each have their own window holding a copy of the brief, re-read files and their work, and each is thrown away after sending its report back.</desc>
+      <defs>
+        <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#9c9ca6"/></marker>
+      </defs>
+      <text class="m" x="8" y="16" font-size="10.5" fill="#a5a5ff" letter-spacing=".06em">ONE AGENT DOES EVERYTHING</text>
+      <text class="m" x="352" y="16" text-anchor="end" font-size="10.5" fill="#f2c94c">full</text>
+      <rect x="8" y="26" width="344" height="34" rx="6" fill="none" stroke="#34343c"/>
+      <rect x="11" y="29" width="20" height="28" rx="3" fill="#7c7cf5"/>
+      <rect x="33" y="29" width="26" height="28" rx="3" fill="#7c7cf5" fill-opacity=".6"/>
+      <rect x="61" y="29" width="104" height="28" rx="3" fill="#3d3d47"/>
+      <rect x="167" y="29" width="80" height="28" rx="3" fill="#3d3d47"/>
+      <rect x="249" y="29" width="54" height="28" rx="3" fill="#3d3d47"/>
+      <rect x="305" y="29" width="44" height="28" rx="3" fill="#3d3d47"/>
+      <g class="m" font-size="10" fill="#c9c9d1" text-anchor="middle">
+        <text x="113" y="47">file reads</text><text x="207" y="47">test logs</text><text x="276" y="47">diffs</text><text x="327" y="47">review</text>
+      </g>
+      <line x1="352" y1="22" x2="352" y2="64" stroke="#f2c94c" stroke-width="2"/>
+      <g class="s" font-size="12" fill="#9c9ca6">
+        <text x="8" y="84">Every step re-reads all of this. Near the limit,</text>
+        <text x="8" y="100">early details get summarized away.</text>
+      </g>
+      <line x1="8" y1="120" x2="352" y2="120" stroke="#24242a"/>
+      <text class="m" x="8" y="144" font-size="10.5" fill="#a5a5ff" letter-spacing=".06em">MAIN AGENT + FRESH SUBAGENTS</text>
+      <rect x="8" y="152" width="344" height="34" rx="6" fill="none" stroke="#34343c"/>
+      <rect x="11" y="155" width="20" height="28" rx="3" fill="#7c7cf5"/>
+      <rect x="33" y="155" width="26" height="28" rx="3" fill="#7c7cf5" fill-opacity=".6"/>
+      <rect x="61" y="155" width="18" height="28" rx="3" fill="#4cb782"/>
+      <rect x="81" y="155" width="18" height="28" rx="3" fill="#4cb782"/>
+      <rect x="101" y="155" width="18" height="28" rx="3" fill="#4cb782"/>
+      <text class="m" x="236" y="173" text-anchor="middle" font-size="10" fill="#6f6f7a">room to think</text>
+      <line x1="21" y1="190" x2="21" y2="229" stroke="#9c9ca6" stroke-width="1.5" marker-end="url(#ah2)"/>
+      <text class="m" x="28" y="213" font-size="10" fill="#9c9ca6">brief</text>
+      <line x1="90" y1="230" x2="90" y2="191" stroke="#4cb782" stroke-width="1.5" marker-end="url(#ah2)"/>
+      <text class="m" x="97" y="213" font-size="10" fill="#9c9ca6">report</text>
+      <text class="s" x="352" y="213" text-anchor="end" font-size="11.5" fill="#6f6f7a">thrown away when done</text>
+      <g class="m" font-size="10.5" fill="#9c9ca6">
+        <text x="8" y="254">builder</text><text x="8" y="290">reviewer</text><text x="8" y="326">fixer</text>
+      </g>
+      <g>
+        <rect x="66" y="236" width="286" height="28" rx="6" fill="none" stroke="#34343c"/>
+        <rect x="69" y="239" width="20" height="22" rx="3" fill="#7c7cf5"/><rect x="91" y="239" width="96" height="22" rx="3" fill="#3d3d47"/><rect x="189" y="239" width="160" height="22" rx="3" fill="#4a4a55"/>
+        <rect x="66" y="272" width="286" height="28" rx="6" fill="none" stroke="#34343c"/>
+        <rect x="69" y="275" width="20" height="22" rx="3" fill="#7c7cf5"/><rect x="91" y="275" width="96" height="22" rx="3" fill="#3d3d47"/><rect x="189" y="275" width="110" height="22" rx="3" fill="#4a4a55"/>
+        <rect x="66" y="308" width="286" height="28" rx="6" fill="none" stroke="#34343c"/>
+        <rect x="69" y="311" width="20" height="22" rx="3" fill="#7c7cf5"/><rect x="91" y="311" width="96" height="22" rx="3" fill="#3d3d47"/><rect x="189" y="311" width="70" height="22" rx="3" fill="#4a4a55"/>
+      </g>
+      <g class="m" font-size="10" fill="#c9c9d1" text-anchor="middle">
+        <text x="139" y="254">re-read files</text><text x="269" y="254">work</text>
+        <text x="139" y="290">re-read files</text><text x="244" y="290">work</text>
+        <text x="139" y="326">re-read files</text><text x="224" y="326">work</text>
+      </g>
+      <g class="s" font-size="12" fill="#9c9ca6">
+        <text x="8" y="362">Each subagent pays up front for its brief and for</text>
+        <text x="8" y="378">re-reading files. The main window keeps only reports.</text>
+      </g>
+    </svg>
+    <div class="legend"><span><i class="sw-ac"></i>Instructions (brief, plan)</span><span><i class="sw-tool"></i>Tool output (files, logs, diffs)</span><span><i class="sw-rep"></i>Short reports</span></div>
+    <figcaption>Splitting work spends more tokens in total, because each subagent rebuilds some context from scratch. In return the main context stays small and sharp, and the reviewer never sees the builder's reasoning.</figcaption>
+  </figure>
+
+  <p>For a big, separable job that overhead is small next to the work. For a small job it's most of the cost. A few habits follow from that.</p>
+  <h3>Do small lookups yourself</h3>
+  <p>If I already know which file holds the answer, the main session just reads it. Starting an agent to find one function costs more than reading the function.</p>
+  <h3>Batch same-shape edits</h3>
+  <p>Renaming something across thirty files, or updating the wording on every screen, is one brief and one context for one agent. Thirty small agents would each pay the setup cost for a two-line change.</p>
+  <h3>Match the model to the job</h3>
+  <p>Mechanical work, like moving code, applying a pattern that's already decided or writing test fixtures, goes to cheaper, faster models. Plans, architecture and reviews get the strongest model I have. A wrong plan is the most expensive mistake in the pipeline, because everything after it inherits it.</p>
+</section>
+
+<section id="anatomy">
+  <h2>The seven parts of a brief</h2>
+  <p>When I do delegate, every brief now has the same seven parts. Here's the shape, filled in for a review like the one the Money feature got today.</p>
+
+  <figure class="fig reveal">
+    <div class="ft">A brief, part by part</div>
+    <ol class="brief">
+      <li><span>Goal</span><p>Final and security review of branch plan-14-money against docs/plans/2026-11-06-plan-14-money.md. Findings sorted critical, important, minor.</p></li>
+      <li><span>Scope</span><p>git diff main...HEAD on that branch, 17 commits. Not the rest of the codebase.</p></li>
+      <li><span>Ruled out</span><p>Money questions go to Claude only, masked. That's decided. Check that it holds; don't re-argue it.</p></li>
+      <li><span>Read</span><p>CLAUDE.md, the plan, plan-14-record/report.md, docs/copy-inventory.md, the shots in plan-14-shots/.</p></li>
+      <li><span>Exact values</span><p>Worktree ../atrium-wt-money. Your engine runs on its own port, never 7420. ATRIUM_HOME is a temp folder. Repro tests go in your scratchpad.</p></li>
+      <li><span>Rules</span><p>Don't merge, push or commit. Don't touch live data. Don't start subagents.</p></li>
+      <li><span>Report</span><p>Write plan-14-record/review.md: counts, what you ran, then each finding with file, line and a failing test. Change no other file.</p></li>
+    </ol>
+    <figcaption>An illustration of the shape, not a copy of a real brief. Every line is something the agent would otherwise have to guess.</figcaption>
+  </figure>
+
+  <h3>Goal and scope</h3>
+  <p>One sentence for what “done” means, and one for where the edges are. Scope is the part people skip, and it's the part agents need most. Without it, a reviewer asked to check a branch will happily review the whole repo and bill me for it.</p>
+
+  <h3>What's already ruled out</h3>
+  <p>If I've already decided something, the brief says so. Otherwise a fresh agent will rediscover the same trade-off and propose the option I rejected yesterday, with a confident paragraph about why. Saying “this is decided, check that it holds” turns a debate into a test.</p>
+
+  <h3>Files to read, not history</h3>
+  <p>A brief that says “read the plan in <code>docs/plans</code> and <code>CLAUDE.md</code>” is short, exact and always current. Pasting the last hour of conversation into a brief carries along every false start with the decisions. If something matters, it belongs in a file the agent can read.</p>
+
+  <h3>Exact values</h3>
+  <p>Vague words get filled in with guesses. “Use a different port” could mean anything. “Never 7420” can't be misread. Plan 4's reviewer got ports 7450 to 7459, and plan 6's got 7480 to 7489, so two reviews running overnight couldn't collide. The same goes for branch names, commit ranges, folder paths and test commands like <code>bun test ./tests/engine</code>.</p>
+
+  <h3>Rules</h3>
+  <p>The three rules from my pipeline go in every brief, word for word: no merge or push, no live data, no subagents. They're written as rules, not hopes. They're also backed by things the agent can't talk its way around, like running with <code>ATRIUM_HOME</code> pointed at a temporary folder so my real database isn't even in reach.</p>
+
+  <h3>A report file</h3>
+  <p>The last line says exactly where the result goes. Not “report back”, but a path. The Money review's file starts with what it reviewed, then its verdict and counts, then each finding with where it is (file and line), how it happens and the fix.</p>
+  <p>A file beats a chat reply for three reasons. It survives when my main session's context gets summarized. I can read it without scrolling. And the next agent, the one fixing the findings, can be told to read it, which is far more exact than me retelling it.</p>
+  <p>That review also left 12 small tests in its scratchpad, one per finding plus a control. Eleven failed on the branch as it was, and the control passed. That's the kind of report I want: not “I think this leaks”, but a test that shows it does.</p>
+</section>
+
+<section id="ledger">
+  <h2>Keep a ledger</h2>
+  <p>Briefs are for subagents. The main session needs its own memory too.</p>
+  <p>A long session eventually gets summarized when its context fills up, and the summary forgets things. So my main session keeps a plain markdown ledger in the repo: what's done, what's running, which worktree and branch, what's next and why. Each ruling gets one line, with what it costs if it turns out wrong.</p>
+  <p>The ledger from Wednesday night ran through four plans while I slept, with a usage limit in the middle. After the limit reset, the session reread the ledger and picked up where it left off. The ledger costs a few hundred tokens to keep current, and it's what lets a long session survive its own memory loss.</p>
+  <p class="pull">A brief is the agent's whole world. If it isn't written down, it doesn't exist.</p>
+</section>
+    </article>
+
+    <nav class="pn" aria-label="More notes">
+      <a class="prev" href="note-spaces.html"><span>← Previous note</span><b>A space, not a chat thread</b></a>
+      <a class="next" href="note-sandbox.html"><span>Next note →</span><b>Sandboxing agents on macOS</b></a>
+    </nav>
+    <p class="allnotes"><a href="notes.html">All notes</a></p>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel</span><span>MIT License · 2026</span></div>
+</footer>
+
+<script>
+(() => {
+  const nav = document.getElementById("nav");
+  addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 8), { passive: true });
+})();
+</script>
+</body>
+</html>
