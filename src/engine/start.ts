@@ -25,14 +25,14 @@ export function saveProgress(db: Database, change: { step?: unknown; skip?: unkn
   if (change.step !== undefined) {
     if (!isStep(change.step)) throw new Error("That isn't a step of Get started.");
     // Stepping onto Done is finishing, so it follows the same rule.
-    if (change.step === "done" && claudeProblem) throw new Error(`Claude Code comes first: ${claudeProblem}`);
+    if (change.step === "done" && claudeProblem) throw new Error(`Claude comes first: ${claudeProblem}`);
     step = change.step;
   }
   // Agents can't be skipped, since Claude is required.
   if (isStep(change.skip) && change.skip !== "agents" && !skipped.includes(change.skip)) skipped = [...skipped, change.skip];
   if (isStep(change.unskip)) skipped = skipped.filter((s) => s !== change.unskip);
   if (change.done === true) {
-    if (claudeProblem) throw new Error(`Claude Code comes first: ${claudeProblem}`);
+    if (claudeProblem) throw new Error(`Claude comes first: ${claudeProblem}`);
     setSetting(db, DONE_KEY, "1");
     step = "done";
   }

@@ -25,7 +25,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
   // A file from a bank Atrium knows keeps its column choices out of the way until asked for.
   const [columns, setColumns] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ name: "", kind: "chequing", institution: "" });
+  const [draft, setDraft] = useState({ title: "", kind: "chequing", institution: "" });
   const base = `${investPath(spaceId)}/money`;
 
   const look = async (text: string, next = opts) => {
@@ -43,11 +43,11 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
     await look(text, {});
   };
   const addAccount = async () => {
-    const res = await post<{ name: string }>(`${base}/accounts`, draft);
+    const res = await post<{ account: string }>(`${base}/accounts`, { name: draft.title, kind: draft.kind, institution: draft.institution });
     if (!res.ok) return setLine({ ok: false, text: res.error });
     setAdding(false);
-    setDraft({ name: "", kind: "chequing", institution: "" });
-    await look(csv, { ...opts, account: res.data.name });
+    setDraft({ title: "", kind: "chequing", institution: "" });
+    await look(csv, { ...opts, account: res.data.account });
   };
   const save = async () => {
     const res = await post<{ added: number; duplicates: number }>(`${base}/import`, { csv, ...opts });
@@ -96,7 +96,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
           )}
           {adding && (
             <div className="money-account-add">
-              <input placeholder="Name, like Everyday chequing" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              <input placeholder="Name, like Everyday chequing" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
               <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
                 {ACCOUNT_KINDS.map((k) => (
                   <option key={k} value={k}>

@@ -130,7 +130,7 @@ test("preview names the bank and the account; the account can be picked", async 
 
 test("Add an account makes it a choice, and bad input is a plain 400", async () => {
   const made = await (await call("POST", money("/accounts"), { name: "Everyday", kind: "chequing", institution: "Example Bank" })).json();
-  expect(made).toEqual({ name: "Everyday" });
+  expect(made).toEqual({ account: "Everyday" });
   const p = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv") })).json();
   expect(p.choices).toEqual(["Everyday", "TD credit card", "Imported"]);
   const bad = await call("POST", money("/accounts"), { name: "Everyday", kind: "savings account" });

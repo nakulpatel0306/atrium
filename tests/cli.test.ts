@@ -131,7 +131,7 @@ test("atrium doctor and atrium data run from the command line", () => {
   const doctor = run("doctor");
   expect(doctor.exitCode).toBe(0);
   const text = doctor.stdout.toString();
-  expect(text).toContain("ok       Claude Code 2.1.318 (required)");
+  expect(text).toContain("ok       Claude 2.1.318 (required)");
   expect(text).toContain("missing  Codex (optional)");
   expect(text).toContain("npm install -g @openai/codex");
   const data = run("data");

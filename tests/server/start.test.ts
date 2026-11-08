@@ -44,7 +44,7 @@ test("PUT /api/start moves and skips steps, and Done waits for Claude", async ()
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const blocked = await put("/api/start", { done: true });
   expect(blocked.status).toBe(400);
-  expect((await blocked.json()).error).toContain("Claude Code comes first");
+  expect((await blocked.json()).error).toContain("Claude comes first");
   delete process.env.FAKE_CLAUDE_AUTH;
   expect(await (await put("/api/start", { done: true })).json()).toMatchObject({ step: "done", done: true });
   expect((await (await fetch(base + "/api/start")).json()).autoOpen).toBe(false);

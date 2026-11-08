@@ -74,7 +74,7 @@ export function StartView(p: ViewProps) {
       {step === "welcome" && (
         <>
           <p>Atrium is a command center on your Mac for the AI agents you already use. You describe the work, agents do it in the background, and anything that leaves your Mac waits for your yes.</p>
-          <p className="hint">Next: check your agents, pick optional tools, then choose your name and projects folder. Everything except Claude Code can be skipped, and you can come back to this from Settings.</p>
+          <p className="hint">Next: check your agents, pick optional tools, then choose your name and projects folder. Everything except Claude can be skipped, and you can come back to this from Settings.</p>
         </>
       )}
 
@@ -86,7 +86,7 @@ export function StartView(p: ViewProps) {
           <button className="btn" onClick={p.onRecheck} disabled={p.busy}>
             Check again
           </button>
-          {blocked && <p className="hint">Claude Code is required before you can finish. {blocked}</p>}
+          {blocked && <p className="hint">Claude is required before you can finish. {blocked}</p>}
         </>
       )}
 
@@ -169,7 +169,7 @@ export function StartView(p: ViewProps) {
             <li>Projects folder: {report.profile.projectsRoot}</li>
           </ul>
           {progress.skipped.length > 0 && <p className="hint">Skipped: {progress.skipped.map((s) => STEP_TITLES[s]).join(", ")}. Find them again in Settings → Get started.</p>}
-          {blocked && <p className="hint">Claude Code is required before you can finish. {blocked}</p>}
+          {blocked && <p className="hint">Claude is required before you can finish. {blocked}</p>}
         </>
       )}
 
@@ -196,7 +196,7 @@ export function StartView(p: ViewProps) {
         )}
         {step === "done" && (
           <button className="btn primary" onClick={p.onFinish} disabled={blocked !== null}>
-            Open Home
+            Open home
           </button>
         )}
       </div>

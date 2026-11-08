@@ -61,7 +61,7 @@ test("doctor output names the install and sign-in commands, and never prints sig
   process.env.ATRIUM_CODEX_BIN = join(FIX, "does-not-exist");
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const text = formatDoctor(await doctor(null));
-  expect(text).toContain("sign in  Claude Code");
+  expect(text).toContain("sign in  Claude");
   expect(text).toContain("install:  npm install -g @openai/codex");
   expect(text).toContain("sign in:  claude auth login");
   expect(text).not.toContain("someone@example.com");
@@ -100,8 +100,8 @@ test("Claude missing blocks Done, and a signed-in Claude lets it finish", async 
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "does-not-exist");
   const missing = claudeBlocks(await doctor(db));
   expect(missing).toContain("isn't installed");
-  expect(() => saveProgress(db, { step: "done" }, missing)).toThrow("Claude Code comes first");
-  expect(() => saveProgress(db, { done: true }, missing)).toThrow("Claude Code comes first");
+  expect(() => saveProgress(db, { step: "done" }, missing)).toThrow("Claude comes first");
+  expect(() => saveProgress(db, { done: true }, missing)).toThrow("Claude comes first");
   expect(getProgress(db).done).toBe(false);
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "fake-claude.ts");
   expect(claudeBlocks(await doctor(db))).toBeNull();
@@ -131,7 +131,7 @@ async function view(over: Partial<Report> = {}, step = "agents" as (typeof STEPS
 test("the screen shows each step's states, and Next into Done is disabled while Claude is missing", async () => {
   expect(await view({}, "welcome")).toContain("Step 1 of 6");
   const agents = await view({}, "agents");
-  expect(agents).toContain("Claude Code");
+  expect(agents).toContain("Claude");
   expect(agents).toContain("Required");
   expect(agents).toContain("Check again");
   expect(agents).not.toContain("Skip");
@@ -141,6 +141,6 @@ test("the screen shows each step's states, and Next into Done is disabled while 
   expect(blocked).toContain("Save");
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const done = await view({}, "done");
-  expect(done).toContain("Open Home");
-  expect(done).toContain("Claude Code is required before you can finish");
+  expect(done).toContain("Open home");
+  expect(done).toContain("Claude is required before you can finish");
 });

@@ -92,7 +92,7 @@ export const MONEY_FORMATS = ["TD", "Amex", "Wealthsimple (chequing, savings, ac
 export async function doctor(db: Database | null): Promise<Report> {
   const c = config();
   const [claude, codex, gemini, github] = await Promise.all([
-    agentCheck({ id: "claude", label: "Claude Code", required: true, bin: c.claudeBin, install: "curl -fsSL https://claude.ai/install.sh | bash", signIn: "claude auth login", adapter: claudeAdapter(), minimum: MIN_PRIVATE_VERSION }),
+    agentCheck({ id: "claude", label: "Claude", required: true, bin: c.claudeBin, install: "curl -fsSL https://claude.ai/install.sh | bash", signIn: "claude auth login", adapter: claudeAdapter(), minimum: MIN_PRIVATE_VERSION }),
     agentCheck({ id: "codex", label: "Codex", required: false, bin: c.codexBin, install: "npm install -g @openai/codex", signIn: "codex login", adapter: codexAdapter() }),
     agentCheck({ id: "gemini", label: "Gemini (Antigravity)", required: false, bin: c.geminiBin, install: "Install Antigravity, which provides the agy command", signIn: "agy", adapter: geminiAdapter() }),
     githubCheck(),

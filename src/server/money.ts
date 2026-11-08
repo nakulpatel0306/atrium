@@ -88,7 +88,7 @@ export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url
     }
     if (req.method === "POST" && rest === "/accounts") {
       const b = await readBody(req);
-      return json({ name: check(() => addAccount(db, spaceId, { name: String(b.name ?? ""), kind: String(b.kind ?? ""), institution: typeof b.institution === "string" ? b.institution : "" })) });
+      return json({ account: check(() => addAccount(db, spaceId, { name: String(b.name ?? ""), kind: String(b.kind ?? ""), institution: typeof b.institution === "string" ? b.institution : "" })) });
     }
     if (req.method === "GET" && rest === "/rules") return json(listRules(db, spaceId));
     if (req.method === "PUT" && rest === "/rules") {
