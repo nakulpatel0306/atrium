@@ -61,7 +61,7 @@ nav ul a:hover { color: var(--text); }
 @media (max-width: 720px) { nav ul { display: none; } }
 
 /* Hero: the skylight */
-.hero { padding-block: clamp(64px, 10vw, 120px) 0; overflow: hidden; isolation: isolate; }
+.hero { padding-block: clamp(64px, 10vw, 120px) clamp(64px, 9vw, 112px); overflow: hidden; isolation: isolate; }
 .sky { position: absolute; inset: -10% 0 auto; height: 900px; z-index: -1; pointer-events: none;
   background:
     radial-gradient(ellipse 40% 55% at 50% 0%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%),

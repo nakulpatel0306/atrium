@@ -6,15 +6,28 @@ You tell Atrium what you want in plain words. It hands the job to an AI agent, s
 
 Site: <https://nakulpatel0306.github.io/atrium/>
 
+![Atrium's Home: finished work waiting for a yes, your spaces, and what happened today](docs/screenshots/home.jpg)
+
 ## What it does
 
 - **Everyday life and work.** Ask for a grocery list, a packing plan or a study guide. You get a file you can open in Finder.
-- **Texts.** "Text Sam happy birthday" writes the message and finds the number in your Contacts. Nothing is sent until you press Send.
+- **Texts.** "Text Sam and Priya to lock in Saturday's hike" writes the message and finds each number in your Contacts, or sends to an existing group chat. Nothing is sent until you press Send.
 - **Code.** Point it at a repo and ask for a fix or a review. Agents work on their own branch, and you review every change. Starting a new project creates the GitHub repo too, after you say yes.
 - **Investing.** Your portfolio in Canadian dollars, a page for any stock or ETF, watchlists, alerts, and questions answered from your own holdings. It's analysis, not advice.
 - **Money.** Import a bank or card CSV monthly to see spending by category, recurring charges and anything unusual.
 
 Work is organized into **spaces**. Each space has **tasks**, and each task goes to an agent: Claude on your Claude subscription, or Codex and Gemini for some code work. Anything that needs you waits in **Needs you**.
+
+## Screenshots
+
+All screenshots use made-up data.
+
+| | |
+|---|---|
+| ![Two texts about a weekend hike, each showing who it goes to, waiting for Send](docs/screenshots/texts.jpg) | ![A stock page with a live chart, alerts and Ask Claude](docs/screenshots/chart.jpg) |
+| **Texts** wait for your Send and show exactly who they go to. | **Investing**: any stock or ETF gets a chart, alerts and answers from your own holdings. |
+| ![The Money tab: spending, money in, budgets and subscriptions from a bank CSV](docs/screenshots/money.jpg) | ![Get started: checking that Claude, Codex and Gemini are installed and signed in](docs/screenshots/setup.jpg) |
+| **Money**: import a bank CSV to see the month, budgets and subscriptions. | **Get started** checks your agents and walks you through setup. |
 
 ## Requirements
 
