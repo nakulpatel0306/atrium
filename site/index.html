@@ -573,11 +573,11 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .keeper[data-k="working"] .kp .dots circle { animation: kDot 1.2s ease-in-out infinite; }
 .keeper[data-k="working"] .kp .dots circle:nth-child(2) { animation-delay: .15s; }
 .keeper[data-k="working"] .kp .dots circle:nth-child(3) { animation-delay: .3s; }
-.keeper[data-k="needs"] .kp .core { animation: kLean 2.4s ease-in-out infinite; }
+.keeper[data-k="needs"] .kp .core { transform-origin: 50% 50%; animation: kWiggle .5s ease-in-out 2, kGlow 1.2s ease-in-out 2; }
 .keeper[data-k="needs"] .kp .eyes { transform: translate(-5px, -2px); }
+.keeper[data-k="needs"] .kp .eye { animation: blink 1.1s .5s 2; }
 .keeper[data-k="needs"] .kp .badge { opacity: 1; }
-.keeper[data-k="happy"] .kp .core { transform-origin: 50% 50%; animation: kSpin 1s cubic-bezier(.3,.7,.3,1) 1; }
-html.m .keeper[data-k="happy"] .kp .core { animation: none; }
+.keeper[data-k="happy"] .kp .core { transform-origin: 50% 100%; animation: kBounce .75s ease-out 1, kGlow 1s ease-in-out 1; }
 html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 .keeper[data-k="happy"] .kp .eye { opacity: 0; }
 .keeper[data-k="happy"] .kp .lid { opacity: 1; }
@@ -589,6 +589,9 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 @keyframes kNod { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-5deg) translateY(1px); } }
 @keyframes kDot { 0%, 100% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(-4px); opacity: 1; } }
 @keyframes kLean { 0%, 100% { transform: translate(-20px, -8px) rotate(-10deg); } 50% { transform: translate(-24px, -11px) rotate(-13deg); } }
+@keyframes kWiggle { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(-7deg); } 80% { transform: rotate(4deg); } }
+@keyframes kBounce { 0%, 100% { transform: none; } 15% { transform: scale(1.18, .8); } 35% { transform: scale(.9, 1.12); } 55% { transform: scale(1.08, .92); } 75% { transform: scale(.97, 1.03); } }
+@keyframes kGlow { 0%, 100% { filter: none; } 50% { filter: brightness(1.35) drop-shadow(0 0 10px #a5a5ff); } }
 @keyframes kSpin { 0% { transform: none; } 15% { transform: scale(1.12, .86); } 55% { transform: translateY(-44px) rotate(360deg) scale(1.05); } 85% { transform: rotate(360deg) scale(1.06, .94); } 100% { transform: rotate(360deg); } }
 @keyframes kHop { 0%, 100% { transform: none; } 20% { transform: scale(1.1, .88); } 50% { transform: translateY(-48px) scale(.94, 1.08); } 80% { transform: scale(1.06, .94); } }
 @keyframes kZz { 0% { transform: translate(0, 0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(8px, -18px); opacity: 0; } }
@@ -1792,11 +1795,6 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     const k = document.getElementById("keeper"), kb = document.getElementById("keeper-btn");
     if (k && kb) {
       new MutationObserver(() => { if (k.classList.contains("on")) animate(kb, { scale: [0.4, 1], rotate: [-25, 0] }, { type: "spring", bounce: 0.5, visualDuration: 0.5 }); }).observe(k, { attributeFilter: ["class"] });
-      addEventListener("keeper:happy", async () => {
-        await animate(kb, { y: -42, rotate: 200, scale: 1.08 }, { duration: 0.28, ease: "easeOut" });
-        await animate(kb, { y: 0, rotate: 360, scale: 1 }, { type: "spring", bounce: 0.55, visualDuration: 0.5 });
-        animate(kb, { rotate: 0 }, { duration: 0 });
-      });
     }
     // The footer silhouette rises as you reach the bottom of the page.
     const ghost = document.querySelector(".ghost"), end = document.querySelector(".end");
