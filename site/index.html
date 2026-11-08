@@ -193,6 +193,10 @@ nav ul a:hover { color: var(--text); }
 .end .ctas { margin-top: 36px; }
 footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--faint); font-size: 14px; }
 footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.keeper-back { font: inherit; color: var(--accent-hi); background: none; border: 0; padding: 0; cursor: pointer; }
+.keeper-back:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mark-big { cursor: pointer; }
 
 /* The clickable demo: a copy of the Mac app's chrome, type and spacing, scoped under .mac so the page's
    own classes never leak in. Values come from the dashboard's styles.css. */
@@ -935,7 +939,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 </div>
 
 <footer>
-  <div class="wrap"><span>Atrium · made by Nakul Patel</span><span>MIT License · 2026</span></div>
+  <div class="wrap"><span>Atrium · made by Nakul Patel</span><span class="foot-r"><button class="keeper-back" id="keeper-back" type="button" hidden>Bring back the Keeper</button><span>MIT License · 2026</span></span></div>
 </footer>
 
 <script>
@@ -1715,7 +1719,8 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     const k = document.getElementById("keeper"), say = document.getElementById("keeper-say");
     let hidden = false;
     try { hidden = localStorage.getItem("keeper-hidden") === "1"; } catch {}
-    if (hidden) return;
+    const back = document.getElementById("keeper-back");
+    if (hidden) { k.hidden = true; back.hidden = false; }
     const LINES = {
       try: "This is a live copy of the app. Click around, or type something into the bar.",
       why: "I'm the Keeper. I watch every thread so you don't have to.",
@@ -1753,7 +1758,16 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     document.getElementById("keeper-btn").addEventListener("click", (e) => {
       awake(); mood("happy", 1600); talk(TIPS[tip++ % TIPS.length]);
     });
-    const hide = (e) => { e.stopPropagation(); k.classList.remove("on"); k.hidden = true; try { localStorage.setItem("keeper-hidden", "1"); } catch {} };
+    const hide = (e) => { e.stopPropagation(); k.classList.remove("on"); k.hidden = true; back.hidden = false; try { localStorage.setItem("keeper-hidden", "1"); } catch {} };
+    // Bring it back from the footer link, or by clicking the logo at the top of the page.
+    const restore = () => {
+      if (!k.hidden) return;
+      k.hidden = false; back.hidden = true;
+      try { localStorage.removeItem("keeper-hidden"); } catch {}
+      shown = true; k.classList.add("on"); awake(); mood("happy", 1600); talk("I'm back. Missed me?");
+    };
+    back.addEventListener("click", restore);
+    document.querySelector(".mark-big")?.addEventListener("click", restore);
     document.getElementById("keeper-x").addEventListener("click", hide);
   })();
 })();
