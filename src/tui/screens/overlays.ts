@@ -4,7 +4,7 @@ import { AGENT_IDS, agentName } from "../../dashboard/agents";
 import { type SpaceDeletePreview, spaceDeleteLines } from "../../dashboard/deletion";
 import { bytes, clock, tokens } from "../../dashboard/format";
 import { AGENT_ROLES, agentStatus, runOutcome } from "../../dashboard/summary";
-import { displayHandle, memberNames, recipientOf } from "../../engine/messaging/rules";
+import { askLine, displayHandle, memberNames, recipientOf } from "../../engine/messaging/rules";
 import type { State } from "../../engine/state";
 import { type Block, box, type Hit, keyRow, type Line, rowsOf, splice } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
@@ -30,7 +30,8 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
       title: m?.group ? "Send a group text" : "Send a text",
       lines: [
         ...wrap(`Send this to ${to}?`, cols),
-        ...(m?.group ? wrap(memberNames(m.group).join(", "), cols, { color: "dim" }) : []),
+        ...(m?.group ? wrap(`In it: ${memberNames(m.group).join(", ")}`, cols) : []),
+        ...(m?.group ? wrap(`You asked for ${askLine(m.group)}.`, cols, { color: "faint" }) : []),
         [{ text: `Via ${m?.service ?? "iMessage"}${c.text !== undefined && c.text !== m?.text ? " · your edit" : ""}`, color: "faint" }],
         [],
         ...text.split("\n").flatMap((l) => wrap(l, cols, { bold: true })),

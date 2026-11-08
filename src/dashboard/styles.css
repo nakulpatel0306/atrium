@@ -4349,6 +4349,38 @@ code {
   gap: 6px;
 }
 
+.msg-members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+}
+.msg-members ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.msg-members li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.msg-picks .chat-pick {
+  align-items: flex-start;
+}
+.msg-picks .chat-name,
+.msg-picks .chat-members {
+  display: block;
+}
+.msg-picks .chat-members {
+  color: var(--dim);
+  font-size: 11px;
+}
+
 /* sent history */
 .sent-list .item.failed .t {
   color: var(--red);

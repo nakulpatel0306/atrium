@@ -95,7 +95,7 @@ test("s confirms with the group, its size and the words; y posts only the text",
   expect(text(c.lines)).toContain("Send this to Hike crew (4 people)?");
   expect(text(c.lines)).toContain("Sam Lee, Priya Shah, Jo Park, +1 ••• ••• 0177");
   const sent = play(["e", " 8am", "\r", "y"], onNeed, s);
-  expect(sent.intents).toEqual([{ type: "send_message", actionId: "msa_g", toName: "Hike crew", text: "lock in saturday? 8am" }]);
+  expect(sent.intents).toEqual([{ type: "send_message", actionId: "msa_g", toName: "Hike crew", text: "lock in saturday? 8am", chatId: "iMessage;+;chat-hike" }]);
   const client = fakeClient(s);
   const flash = await runIntent(client, sent.intents[0]!, s);
   expect(client.calls).toEqual([{ method: "POST", path: "/api/message-actions/msa_g/send", body: { text: "lock in saturday? 8am", chatId: "iMessage;+;chat-hike" } }]);
@@ -106,10 +106,22 @@ test("s confirms with the group, its size and the words; y posts only the text",
 test("detail shows the group, the people and the words; the follow-up reads the group line", () => {
   const s = withGroup();
   const detail = text(approvalDetail(deriveView(s, { ...initialUi, ...onNeed }), null));
-  expect(detail).toContain("To      Hike crew  group chat");
+  expect(detail).toContain("To      Hike crew  chat name from Messages");
+  expect(detail).toContain('Asked   "hikers" with Sam and Priya');
   expect(detail).toContain("People  Sam Lee, Priya Shah, Jo Park, +1 ••• ••• 0177");
   expect(detail).toContain("lock in saturday?");
   const at = Date.now() - 1000;
   s.activity.unshift({ id: "act_g", spaceId: ids.jobHunt, taskId: null, actor: "atrium", message: "Sent a text to Hike crew (4 people). Atrium can't confirm delivery.", createdAt: Date.now() });
   expect(sendFollowUp(s, { toName: "Hike crew", at })).toEqual({ tone: "ok", text: "Sent to Hike crew. Atrium can't confirm delivery." });
+});
+
+test("L2: y sends the chat the confirm showed, even if a newer pick lands before the post", async () => {
+  const s = withGroup();
+  const [send] = play(["s", "y"], onNeed, s).intents;
+  const newer = withGroup({ ...HIKE, id: "iMessage;+;chat-other", name: "Other" });
+  const client = fakeClient(newer);
+  await runIntent(client, send!, newer);
+  expect(client.calls).toEqual([{ method: "POST", path: "/api/message-actions/msa_g/send", body: { text: "lock in saturday?", chatId: "iMessage;+;chat-hike" } }]);
+  const c = confirmLines({ kind: "confirm", purpose: "send", targetId: "msa_g" }, s, 70);
+  expect(text(c.lines)).toContain('You asked for "hikers" with Sam and Priya.');
 });

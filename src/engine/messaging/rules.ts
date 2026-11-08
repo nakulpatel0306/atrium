@@ -103,6 +103,22 @@ export function groupTitle(toName: string, g: Group): string {
 // Who's in the group: the picked chat's members (a masked handle stands in for an unnamed one), else whom the agent named.
 export const memberNames = (g: Group): string[] => (g.chat ? g.chat.participants.map((p) => p.name ?? p.handle) : g.people);
 
+// What the agent asked for, shown beside whatever Messages calls the chat it picked.
+export const askLine = (g: Group): string => [g.name ? `"${g.name}"` : null, g.people.length ? peopleLine(g.people) : null].filter(Boolean).join(" with ");
+
 // Whom a text goes to as the cards say it, and whether it has somewhere to go yet (a number, or a picked chat).
 export const recipientOf = (m: { toName: string; group: Group | null }): string => (m.group ? groupTitle(m.toName, m.group) : m.toName);
 export const hasTarget = (m: { handle: string | null; group: Group | null }): boolean => (m.group ? m.group.chat !== null : m.handle !== null);
+
+export const NO_NAME_COPY = "Messages has no Contacts name for them, so Atrium can't look up their number. Text them yourself.";
+
+// Who "Send separately" texts: exactly the people the card shows (the picked chat's members, else whom the agent
+// named). A member known only by masked handle can't get a text of their own, so they're listed with why, never
+// dropped quietly.
+export function separatePlan(g: Group): { people: string[]; skipped: { who: string; why: string }[] } {
+  if (!g.chat) return { people: g.people, skipped: [] };
+  return {
+    people: g.chat.participants.flatMap((p) => (p.name ? [p.name] : [])),
+    skipped: g.chat.participants.flatMap((p) => (p.name ? [] : [{ who: p.handle, why: NO_NAME_COPY }])),
+  };
+}

@@ -10,6 +10,10 @@ import { BadMessage, getMessageAction, messageHistory, updateGroupText, updateMe
 import { getSpace } from "../engine/spaces";
 import { HttpError, json, readBody } from "./http";
 
+// System Settings is offered only when it's the fix: a denied permission, not a timeout or an unknown failure.
+const problemBody = (e: MessagingProblem) =>
+  e.kind === "automation_denied" || e.kind === "contacts_denied" ? { error: e.message, pane: "automation" } : { error: e.message };
+
 function guarded(fn: () => Response): Response {
   try {
     return fn();
@@ -56,7 +60,7 @@ export async function messagingRoute(db: Database, messaging: Messaging, req: Re
       const { shown, picked, message } = await messaging.findChat(action.id);
       return json({ chats: shown, picked: picked?.id ?? null, message });
     } catch (e) {
-      if (e instanceof MessagingProblem) return json({ error: e.message, pane: "automation" }, 409);
+      if (e instanceof MessagingProblem) return json(problemBody(e), 409);
       if (e instanceof AlreadyResolved) throw new HttpError(409, e.message);
       throw e;
     }
@@ -79,7 +83,7 @@ export async function messagingRoute(db: Database, messaging: Messaging, req: Re
     const b = await readBody(req);
     if (typeof b.text !== "string") throw new HttpError(400, textProblem("")!);
     const text = b.text;
-    return guarded(() => json({ drafts: messaging.separately(action.id, text) }));
+    return guarded(() => json(messaging.separately(action.id, text)));
   }
 
   const lookM = method === "POST" ? pathname.match(/^\/api\/message-actions\/([^/]+)\/lookup$/) : null;
@@ -91,7 +95,7 @@ export async function messagingRoute(db: Database, messaging: Messaging, req: Re
       const message = candidates.length === 0 ? noMatchCopy(action.toName) : candidates.length > 1 ? severalCopy(action.toName) : null;
       return json({ candidates, picked, message });
     } catch (e) {
-      if (e instanceof MessagingProblem) return json({ error: e.message, pane: "automation" }, 409);
+      if (e instanceof MessagingProblem) return json(problemBody(e), 409);
       if (e instanceof AlreadyResolved) throw new HttpError(409, e.message);
       throw e;
     }

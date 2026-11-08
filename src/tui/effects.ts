@@ -88,8 +88,8 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       // Exactly the text, number and service the confirm showed: what the engine has stored for this draft.
       const text = state.messageActions.find((m) => m.id === intent.actionId);
       if (text?.group) {
-        if (!text.group.chat) return { tone: "bad", text: "Find the group chat on the dashboard first." };
-        const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: intent.text ?? text.text, chatId: text.group.chat.id });
+        if (!intent.chatId) return { tone: "bad", text: "Find the group chat on the dashboard first." };
+        const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: intent.text ?? text.text, chatId: intent.chatId });
         return said(res, () => `Sending to ${intent.toName}… If it doesn't go, the text comes back in Needs you.`);
       }
       if (!text?.handle) return { tone: "bad", text: "Pick who this goes to on the dashboard first." };

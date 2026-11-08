@@ -94,11 +94,25 @@ test("Find lists the chats with masked handles, and Send goes to the one he pick
   expect(getApproval(db, approval.id)).toMatchObject({ status: "approved", decidedBy: "you" });
 });
 
-test("a clear match is picked by Find on its own", async () => {
-  const { action } = group("Book club");
-  const found = (await (await post(`/api/message-actions/${action.id}/find-chat`)).json()) as Found;
-  expect([found.picked, found.message]).toEqual(["iMessage;+;chat-book", null]);
-  expect(getMessageAction(db, action.id)!.group!.chat!.name).toBe("Book club");
+test("Find picks a chat only on its members and says why; a name alone waits for his click", async () => {
+  const named = group("Book club");
+  const byName = (await (await post(`/api/message-actions/${named.action.id}/find-chat`)).json()) as Found;
+  expect([byName.picked, byName.message]).toEqual([null, 'Found 1 group chat named "Book club" in Messages: Ann, Bo. Pick it if that\'s who you mean.']);
+  expect(getMessageAction(db, named.action.id)!.group!.chat).toBeNull();
+  const people = group(null, ["Ann", "Bo"]);
+  const byPeople = (await (await post(`/api/message-actions/${people.action.id}/find-chat`)).json()) as Found;
+  expect([byPeople.picked, byPeople.message]).toEqual(["iMessage;+;chat-book", 'Picked "Book club" because its members are exactly Ann and Bo.']);
+  expect(getMessageAction(db, people.action.id)!.group!.chat!.name).toBe("Book club");
+});
+
+test("L3: System Settings is offered only for a denied permission", async () => {
+  const { action } = group();
+  process.env.FAKE_OSASCRIPT_MODE = "fail";
+  const failed = await post(`/api/message-actions/${action.id}/find-chat`);
+  expect(failed.status).toBe(409);
+  expect(await failed.json()).toEqual({ error: FIND_COPY.other });
+  const one = draftMessage(db, { spaceId: space.id, toName: "Dana", text: "hi" });
+  expect(await (await post(`/api/message-actions/${one.action.id}/lookup`)).json()).toEqual({ error: "Contacts didn't answer, and Atrium couldn't tell why. Type the number yourself, or look again." });
 });
 
 test("Find denied says how to allow it; Find on a person text is 404", async () => {
@@ -115,8 +129,9 @@ test("Send separately makes per-person drafts and sends nothing", async () => {
   const { action, approval } = group(null, ["Sam", "Priya"]);
   const r = await post(`/api/message-actions/${action.id}/separately`, { text: "edited" });
   expect(r.status).toBe(200);
-  const { drafts } = (await r.json()) as { drafts: { toName: string; text: string }[] };
+  const { drafts, skipped } = (await r.json()) as { drafts: { toName: string; text: string }[]; skipped: unknown[] };
   expect(drafts.map((d) => [d.toName, d.text])).toEqual([["Sam", "edited"], ["Priya", "edited"]]);
+  expect(skipped).toEqual([]);
   expect(getApproval(db, approval.id)!.status).toBe("rejected");
   expect(pendingMessageActions(db).map((m) => m.toName)).toEqual(["Sam", "Priya"]);
   const again = await post(`/api/message-actions/${action.id}/separately`, { text: "edited" });

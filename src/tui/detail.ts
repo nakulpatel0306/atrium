@@ -7,7 +7,7 @@ import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import { money } from "../engine/markets/labels";
-import { displayHandle, hasTarget, memberNames, recipientOf } from "../engine/messaging/rules";
+import { askLine, displayHandle, hasTarget, memberNames, recipientOf } from "../engine/messaging/rules";
 import { outcomeText } from "../engine/outcome";
 import { fileSize, plural } from "../engine/text";
 import type { MarketsGlance } from "./client";
@@ -152,7 +152,10 @@ function messageLines(m: State["messageActions"][number]): DetailLine[] {
     const people = memberNames(m.group);
     lines.push(
       blank,
-      [{ text: "To      ", color: color.muted }, { text: recipientOf(m), bold: true }, { text: m.group.chat ? "  group chat" : "  group chat needed", color: m.group.chat ? undefined : color.warn }],
+      m.group.chat
+        ? [{ text: "To      ", color: color.muted }, { text: m.group.chat.name ?? "Unnamed group", bold: true }, { text: m.group.chat.name ? "  chat name from Messages" : "  group chat in Messages", color: color.muted }]
+        : [{ text: "To      ", color: color.muted }, { text: recipientOf(m), bold: true }, { text: "  group chat needed", color: color.warn }],
+      [{ text: "Asked   ", color: color.muted }, { text: askLine(m.group) }],
       [{ text: "People  ", color: color.muted }, { text: people.length ? people.join(", ") : "not known until you find the chat" }],
       [{ text: "Via     ", color: color.muted }, { text: m.service }],
       blank,

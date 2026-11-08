@@ -5,6 +5,10 @@ import { autoLookup, lookup } from "./contacts";
 import { actionForApproval, BadMessage, type GroupChat, type MessageAction, setGroupChat } from "./store";
 import { rejectMessage, sendMessage, sendSeparately } from "./send";
 
+// Reading every group chat's members can take longer than a send, on a Mac with years of chats.
+export const FIND_TIMEOUT_MS = 60_000;
+export const findTimeout = (configured?: number): number => configured ?? FIND_TIMEOUT_MS;
+
 export const PICK_AGAIN_COPY = "That chat isn't on the list Atrium found. Press Find group chat again.";
 
 export type Messaging = {
@@ -12,7 +16,7 @@ export type Messaging = {
   lookup(actionId: string): ReturnType<typeof lookup>;
   findChat(actionId: string): Promise<ChatMatch>;
   pickChat(actionId: string, chatId: string): MessageAction;
-  separately(actionId: string, text: string): MessageAction[];
+  separately(actionId: string, text: string): ReturnType<typeof sendSeparately>;
   settle(): Promise<void>;
 };
 
@@ -51,7 +55,7 @@ export function createMessaging(deps: { db: Database; kick(): void; timeoutMs?: 
     lookup: (actionId) => track(`lookup:${actionId}`, () => lookup(db, actionId, { timeoutMs: deps.timeoutMs })),
     findChat: (actionId) =>
       track(`chats:${actionId}`, async () => {
-        const match = await findChats(db, actionId, { timeoutMs: deps.timeoutMs });
+        const match = await findChats(db, actionId, { timeoutMs: findTimeout(deps.timeoutMs) });
         listed.set(actionId, match.shown);
         return match;
       }),
@@ -64,7 +68,7 @@ export function createMessaging(deps: { db: Database; kick(): void; timeoutMs?: 
       const made = sendSeparately(db, actionId, text);
       listed.delete(actionId);
       // Each new card looks its person up the same way a drafted text does: only once a lookup of his has worked.
-      for (const m of made) void track(`lookup:${m.id}`, () => autoLookup(db, m.id));
+      for (const m of made.drafts) void track(`lookup:${m.id}`, () => autoLookup(db, m.id));
       return made;
     },
     async settle() {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { chatLine, GroupMessageCard } from "../../src/dashboard/components/GroupMessageCard";
+import { chatMembers, GroupMessageCard } from "../../src/dashboard/components/GroupMessageCard";
 import { NeedsYou } from "../../src/dashboard/components/NeedsYou";
 import { sentLine } from "../../src/dashboard/components/SentMessages";
 import type { GroupChat, MessageAction } from "../../src/engine/messaging/store";
@@ -34,8 +34,11 @@ test("with its chat: the group, the people, the editable words, the service, and
   const html = renderToStaticMarkup(<GroupMessageCard approval={approval()} action={action({ name: "hikers", people: [], chat: HIKE })} />);
   const t = text(html);
   expect(t).toContain("Send a text to Hike crew?");
-  expect(t).toMatch(/To Hike crew · group chat in Messages/);
-  expect(t).toContain("People Sam Lee, Priya Shah, Jo Park, +1 ••• ••• 0177 (4)");
+  // H1: what Messages calls the chat is labelled as such, beside what the agent asked for, above the real members.
+  expect(t).toContain("To Hike crew chat name from Messages");
+  expect(t).toContain('You asked for "hikers"');
+  expect(t).toContain("In this chat (4) Sam Lee +1 ••• ••• 0134 Priya Shah p••@example.com Jo Park +1 ••• ••• 0199 No name in Contacts +1 ••• ••• 0177");
+  expect(html).toContain('<div class="msg-members">');
   expect(html).toContain(">lock in saturday?</textarea>");
   expect(t).toContain("Via iMessage");
   expect(t).toContain("Don't send");
@@ -51,14 +54,15 @@ test("with no chat yet: Send waits, Find is offered with what it reads, and Send
   const t = text(html);
   expect(html).toMatch(/<button class="btn p" disabled=""[^>]*>Send<\/button>/);
   expect(t).toContain("group chat needed");
-  expect(t).toContain("People Sam, Priya");
+  expect(t).toContain("People Sam Priya");
+  expect(t).toContain('You asked for "Hike crew" with Sam and Priya');
   expect(t).toContain("Find group chat");
   expect(t).toContain("Send separately");
   expect(t).toContain("Find reads only your Messages chat names and who's in them, never what was said, and only when you press it.");
-  expect(t).toContain("Send separately makes one text per person, and each still waits for your Send.");
+  expect(t).toContain("Send separately makes one text each for Sam and Priya, and each still waits for your Send.");
   const bare = text(renderToStaticMarkup(<GroupMessageCard approval={approval()} action={action({ name: "Hike crew", people: [], chat: null })} />));
   expect(bare).not.toContain("Send separately");
-  expect(bare).toContain("not known until you find the chat");
+  expect(bare).toContain("Not known until you find the chat.");
 });
 
 test("a chat that went away leads with why", () => {
@@ -67,9 +71,16 @@ test("a chat that went away leads with why", () => {
   expect(t.indexOf("Last try failed:")).toBeLessThan(t.indexOf("To Hike crew"));
 });
 
-test("chat lines name the chat and its members", () => {
-  expect(chatLine(HIKE)).toBe("Hike crew · Sam Lee, Priya Shah, Jo Park, +1 ••• ••• 0177");
-  expect(chatLine({ ...HIKE, name: null })).toMatch(/^Unnamed group · /);
+test("M2: the picker puts a chat's members in their own element, not after a separator a name could copy", () => {
+  expect(chatMembers(HIKE)).toBe("Sam Lee, Priya Shah, Jo Park, +1 ••• ••• 0177");
+});
+
+test("M6: Send separately names exactly who gets a text and who can't, and why", () => {
+  const t = text(renderToStaticMarkup(<GroupMessageCard approval={approval()} action={action({ name: "hikers", people: ["Sam", "Priya"], chat: HIKE })} />));
+  expect(t).toContain("Send separately makes one text each for Sam Lee, Priya Shah and Jo Park, and each still waits for your Send.");
+  expect(t).toContain("Not included: +1 ••• ••• 0177. Messages has no Contacts name for them, so Atrium can't look up their number. Text them yourself.");
+  const nobody = { ...HIKE, participants: HIKE.participants.map((p) => ({ ...p, name: null })) };
+  expect(text(renderToStaticMarkup(<GroupMessageCard approval={approval()} action={action({ name: "hikers", people: [], chat: nobody })} />))).not.toContain("Send separately");
 });
 
 test("Needs you routes a group text to the group card and a person text to the person card", () => {

@@ -5,7 +5,7 @@ import { logActivity } from "../events";
 import { getTask, setTaskOutcome, setTaskStatus } from "../tasks";
 import { runOsa } from "./osascript";
 import { MessagingProblem, problemFor } from "./problems";
-import { displayHandle } from "./rules";
+import { displayHandle, separatePlan } from "./rules";
 import { SEND_CHAT_SCRIPT, SEND_SCRIPT } from "./scripts";
 import { BadMessage, draftMessage, getMessageAction, groupTitle, type MessageAction, setMessageStatus } from "./store";
 
@@ -71,7 +71,7 @@ export async function sendMessage(db: Database, actionId: string, opts: { timeou
   try {
     // Same as a text to one person: the chat id and the words are argv, never part of the script.
     const res = action.group ? await runOsa(SEND_CHAT_SCRIPT, [target, text], opts) : await runOsa(SEND_SCRIPT, [service, target, text], opts);
-    if (res.code !== 0 || res.timedOut || res.out.trim() !== "ATRIUM_SENT") problem = problemFor(res, "Messages", service);
+    if (res.code !== 0 || res.timedOut || res.out.trim() !== "ATRIUM_SENT") problem = problemFor(res, "Messages", service, !!action.group);
   } catch (e) {
     problem = new MessagingProblem("other", problemFor({ code: 1, out: "", err: "", timedOut: false }, "Messages").message, (e as Error).message);
   }
@@ -91,20 +91,21 @@ export async function sendMessage(db: Database, actionId: string, opts: { timeou
   return failed;
 }
 
-// "Send separately": the group draft becomes one ordinary draft per person, each with its own card and its own
-// Send, as every text has. Nothing is sent here. Returns the new drafts.
-export function sendSeparately(db: Database, actionId: string, text: string): MessageAction[] {
+// "Send separately": the group draft becomes one ordinary draft per person the card shows, each with its own card and
+// its own Send, as every text has. Nothing is sent here. Returns the new drafts and whoever couldn't get one, with why.
+export function sendSeparately(db: Database, actionId: string, text: string): { drafts: MessageAction[]; skipped: { who: string; why: string }[] } {
   return db.transaction(() => {
     const action = getMessageAction(db, actionId);
     if (!action?.group) throw new BadMessage("This text goes to one person already.");
     if (action.status !== "draft" || getApproval(db, action.approvalId)?.status !== "pending") throw new AlreadyResolved();
-    // Whom the agent named, else the picked chat's members that Messages has a name for.
-    const people = action.group.people.length ? action.group.people : (action.group.chat?.participants.flatMap((p) => (p.name ? [p.name] : [])) ?? []);
+    const { people, skipped } = separatePlan(action.group);
     if (people.length === 0) throw new BadMessage(NO_PEOPLE_COPY);
     // Both are guarded (on draft, on pending), so a second press or an earlier Send throws and undoes the whole split.
     setMessageStatus(db, action.id, "split");
     resolveApproval(db, action.approvalId, "reject", SEPARATELY_NOTE);
-    return people.map((toName) => draftMessage(db, { spaceId: action.spaceId, taskId: action.taskId, toName, text, service: action.service }).action);
+    for (const s of skipped) logActivity(db, action.spaceId, "atrium", `No separate text for ${s.who}: ${s.why}`, { taskId: action.taskId });
+    const drafts = people.map((toName) => draftMessage(db, { spaceId: action.spaceId, taskId: action.taskId, toName, text, service: action.service }).action);
+    return { drafts, skipped };
   })();
 }
 

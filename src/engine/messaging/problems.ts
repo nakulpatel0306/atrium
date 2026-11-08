@@ -30,7 +30,7 @@ export const PROBLEM_COPY = {
     Contacts: "Contacts didn't answer within 30 seconds. If macOS is asking for permission, answer that dialog, then look again.",
   },
   chat_gone:
-    "That group chat isn't in Messages on this Mac anymore. Press Find group chat on the card to pick it again, or send the text to each person separately.",
+    "That group chat isn't in Messages on this Mac anymore. Press Find group chat on the dashboard card to pick it again, or send the text to each person separately.",
   not_installed: "Atrium couldn't find osascript, which macOS normally includes. Paste the text into Messages yourself for now.",
   other: {
     Messages: "Messages didn't accept that, and Atrium couldn't tell why. Check that Messages is open and signed in, then press Send again.",
@@ -42,7 +42,8 @@ export const PROBLEM_COPY = {
 export const FIND_COPY = {
   automation_denied:
     'Atrium isn\'t allowed to read your Messages chat list yet. Open System Settings, go to Privacy & Security › Automation, turn on Messages under "bun" (Atrium\'s engine), then press Find group chat again.',
-  timeout: "Messages didn't answer within 30 seconds. If macOS is asking for permission, answer that dialog, then press Find group chat again.",
+  timeout:
+    "Messages didn't finish listing your group chats within 60 seconds. A very long chat history can take that long, and so can a permission dialog nobody has answered. Answer any dialog, then press Find group chat again.",
   other: "Messages didn't list its chats, and Atrium couldn't tell why. Check that Messages is open and signed in, then press Find group chat again.",
 } as const;
 
@@ -53,9 +54,9 @@ export function findProblem(res: OsaResult): MessagingProblem {
   return new MessagingProblem("other", FIND_COPY.other, p.raw);
 }
 
-// -1743 is macOS refusing the Apple event: Automation permission for this app is off or was never granted. -1728 on
-// a chat is "can't get chat id …": the chat Find picked is gone.
-export function problemFor(res: OsaResult, app: "Messages" | "Contacts", service?: "iMessage" | "SMS"): MessagingProblem {
+// -1743 is macOS refusing the Apple event: Automation permission for this app is off or was never granted. For a
+// chat send, ATRIUM_NO_CHAT (the script's -1728 or -1719) means the chat Find picked is gone; nothing else does.
+export function problemFor(res: OsaResult, app: "Messages" | "Contacts", service?: "iMessage" | "SMS", chatSend = false): MessagingProblem {
   if (res.timedOut) return new MessagingProblem("timeout", PROBLEM_COPY.timeout[app]);
   if (res.code === 127) return new MessagingProblem("not_installed", PROBLEM_COPY.not_installed);
   const raw = (res.err.trim() || res.out.trim()).split("\n")[0]!.slice(0, 200);
@@ -64,9 +65,7 @@ export function problemFor(res: OsaResult, app: "Messages" | "Contacts", service
       ? new MessagingProblem("contacts_denied", PROBLEM_COPY.contacts_denied, raw)
       : new MessagingProblem("automation_denied", PROBLEM_COPY.automation_denied, raw);
   }
-  if (res.out.trim() === "ATRIUM_NO_CHAT" || (app === "Messages" && /-1728\b/.test(res.err) && /chat/i.test(res.err))) {
-    return new MessagingProblem("chat_gone", PROBLEM_COPY.chat_gone, raw || undefined);
-  }
+  if (chatSend && (res.out.trim() === "ATRIUM_NO_CHAT" || /\((-1728|-1719)\)/.test(res.err))) return new MessagingProblem("chat_gone", PROBLEM_COPY.chat_gone, raw || undefined);
   if (res.out.trim() === "ATRIUM_NO_ACCOUNT") {
     return service === "SMS" ? new MessagingProblem("no_sms", PROBLEM_COPY.no_sms) : new MessagingProblem("signed_out", PROBLEM_COPY.signed_out);
   }

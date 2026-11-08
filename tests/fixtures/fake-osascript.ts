@@ -3,7 +3,8 @@
 // FAKE_OSASCRIPT_MODE picks how Messages or Contacts "answers"; FAKE_OSASCRIPT_CONTACTS holds the people a lookup
 // finds, as a JSON array of [personId, name, kind, label, value] (inline, or a path to a JSON file).
 // FAKE_OSASCRIPT_CHATS holds the group chats Messages lists, as [chatId, name, service, [[handle, name], …]] (a null
-// name stands for missing value). A chat send answers ATRIUM_NO_CHAT for an id not in that list.
+// name stands for missing value); FAKE_OSASCRIPT_SKIPPED is how many chats the script "couldn't read". A chat send
+// answers ATRIUM_NO_CHAT for an id not in that list.
 import { appendFileSync, readFileSync } from "node:fs";
 
 const argv = process.argv.slice(2);
@@ -30,7 +31,8 @@ const chats = load(process.env.FAKE_OSASCRIPT_CHATS ?? "[]") as [string, string 
 const field = (v: string | null) => v ?? "missing value";
 if (listChats) {
   const C = String.fromCharCode;
-  console.log(chats.map(([id, name, svc, ps]) => [id, field(name), svc, ps.map(([h, n]) => `${h}${C(28)}${field(n)}`).join(C(29))].join(C(31))).join(C(30)));
+  const recs = chats.map(([id, name, svc, ps]) => [id, field(name), svc, ps.map(([h, n]) => `${h}${C(28)}${field(n)}`).join(C(29))].join(C(31)));
+  console.log([...recs, `ATRIUM_SKIPPED${C(31)}${process.env.FAKE_OSASCRIPT_SKIPPED ?? "0"}`].join(C(30)));
   process.exit(0);
 }
 if (chatSend && mode === "chat_error") {
