@@ -2,6 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openArgs, renderPlist, statusLine } from "../src/cli";
+import { openDb } from "../src/engine/db";
+import { setSetting } from "../src/engine/settings";
 import { trimLog } from "../src/engine/logfile";
 import type { State } from "../src/engine/state";
 import { tempHome } from "./helpers";
@@ -134,6 +136,11 @@ test("atrium doctor and atrium data run from the command line", () => {
   expect(text).toContain("ok       Claude 2.1.318 (required)");
   expect(text).toContain("missing  Codex (optional)");
   expect(text).toContain("npm install -g @openai/codex");
+  // The saved projects folder is read from the database without opening it for writing.
+  const db = openDb();
+  setSetting(db, "projects.root", "/Users/me/Elsewhere");
+  db.close();
+  expect(run("doctor").stdout.toString()).toContain("Projects folder: /Users/me/Elsewhere");
   const data = run("data");
   expect(data.exitCode).toBe(0);
   expect(data.stdout.toString()).toContain(join(home(), "atrium.db"));

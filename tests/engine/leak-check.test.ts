@@ -49,3 +49,14 @@ test("the denylist file is read from a path, skipping blanks and comments; docs/
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("denylist terms match whole words only, and terms with spaces or punctuation still work", () => {
+  const hit = (text: string, term: string) => scanText("f.md", text, [term]).length;
+  expect(hit("Jordan came by", "jordan")).toBe(1);
+  expect(hit("hi jordan, hello", "jordan")).toBe(1);
+  expect(hit("The MARSH road", "jordan")).toBe(0);
+  expect(hit("Lives at 12 Elm St., Toronto", "12 Elm St.")).toBe(1);
+  expect(hit("Doe, Jane signed", "doe, jane")).toBe(1);
+  expect(hit("a.b matches", "a.b")).toBe(1);
+  expect(hit("axb is not it", "a.b")).toBe(0);
+});

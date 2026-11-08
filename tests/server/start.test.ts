@@ -35,12 +35,12 @@ const put = (path: string, body: unknown) => fetch(base + path, { method: "PUT",
 test("GET /api/start gives the checks, the saved place and whether to open on its own", async () => {
   const r = await (await fetch(base + "/api/start")).json();
   expect(r.report.agents.map((a: { id: string; state: string }) => [a.id, a.state])).toEqual([["claude", "ready"], ["codex", "not_installed"], ["gemini", "not_installed"]]);
-  expect(r.progress).toEqual({ step: "welcome", skipped: [], done: false });
+  expect(r.progress).toEqual({ step: "welcome", skipped: [], done: false, dismissed: false });
   expect(r.autoOpen).toBe(true);
 });
 
 test("PUT /api/start moves and skips steps, and Done waits for Claude", async () => {
-  expect(await (await put("/api/start", { skip: "tools", step: "investing" })).json()).toEqual({ step: "investing", skipped: ["tools"], done: false });
+  expect(await (await put("/api/start", { skip: "tools", step: "investing" })).json()).toEqual({ step: "investing", skipped: ["tools"], done: false, dismissed: false });
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const blocked = await put("/api/start", { done: true });
   expect(blocked.status).toBe(400);
@@ -50,11 +50,30 @@ test("PUT /api/start moves and skips steps, and Done waits for Claude", async ()
   expect((await (await fetch(base + "/api/start")).json()).autoOpen).toBe(false);
 });
 
+test("sending back the default folder doesn't pin it as a choice", async () => {
+  process.env.ATRIUM_USER_HOME = home.home;
+  try {
+    const shown = (await (await fetch(base + "/api/profile")).json()).projectsRoot;
+    expect((await put("/api/profile", { name: "Sam", projectsRoot: shown })).status).toBe(200);
+    expect(db.query("SELECT value FROM settings WHERE key = 'projects.root'").get()).toBeNull();
+  } finally {
+    delete process.env.ATRIUM_USER_HOME;
+  }
+});
+
 test("the profile keeps a name and a projects folder in settings, and the currency is read-only", async () => {
+  // Folders must be inside the home folder, so the test's home is the temp one.
+  process.env.ATRIUM_USER_HOME = home.home;
   const folder = join(home.home, "code");
   const saved = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder, homeCurrency: "USD" })).json();
   expect(saved).toMatchObject({ name: "Sam Rivera", projectsRoot: folder, homeCurrency: "CAD" });
   expect(db.query("SELECT value FROM settings WHERE key = 'projects.root'").get()).toEqual({ value: folder });
   const bad = await put("/api/profile", { projectsRoot: "nope" });
   expect(bad.status).toBe(400);
+  // Outside the home folder is refused in plain words, and the name beside it isn't saved.
+  const outside = await put("/api/profile", { name: "Changed", projectsRoot: "/etc/atrium-projects" });
+  expect(outside.status).toBe(400);
+  expect((await outside.json()).error).toBe("Pick a folder inside your home folder, like ~/Projects.");
+  expect(db.query("SELECT value FROM settings WHERE key = 'user.name'").get()).toEqual({ value: "Sam Rivera" });
+  delete process.env.ATRIUM_USER_HOME;
 });

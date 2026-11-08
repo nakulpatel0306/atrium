@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { config } from "./engine/config";
 import { dataLocations, formatData } from "./engine/data-report";
 import { doctor, formatDoctor } from "./engine/doctor";
+import { applyProjectsRootFromFile } from "./engine/profile";
 import type { State } from "./engine/state";
 import { buildApp } from "./mac/build";
 import { APP_ID, xml } from "./mac/plists";
@@ -210,6 +211,7 @@ export async function main(cmd: string | undefined): Promise<number> {
     case "investing":
       return process.argv[3] === "setup" ? investingSetup() : fail(USAGE);
     case "doctor": {
+      applyProjectsRootFromFile(config().dbPath);
       const report = await doctor(null);
       console.log(formatDoctor(report));
       return report.agents[0]!.state === "ready" || report.agents[0]!.state === "unknown" ? 0 : 1;

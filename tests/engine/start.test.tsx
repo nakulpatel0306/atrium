@@ -83,7 +83,7 @@ test("steps run in order, back goes back, and the ends hold", () => {
 });
 
 test("skipping is remembered, except for agents, and progress resumes", () => {
-  expect(getProgress(db)).toEqual({ step: "welcome", skipped: [], done: false });
+  expect(getProgress(db)).toEqual({ step: "welcome", skipped: [], done: false, dismissed: false });
   saveProgress(db, { step: "tools" }, null);
   saveProgress(db, { skip: "tools", step: "investing" }, null);
   saveProgress(db, { skip: "agents" }, null);
@@ -91,7 +91,7 @@ test("skipping is remembered, except for agents, and progress resumes", () => {
   db.close();
   // A new connection to the same database, as after closing the app and coming back.
   db = openDb();
-  expect(getProgress(db)).toEqual({ step: "investing", skipped: ["tools"], done: false });
+  expect(getProgress(db)).toEqual({ step: "investing", skipped: ["tools"], done: false, dismissed: false });
   expect(saveProgress(db, { unskip: "tools" }, null).skipped).toEqual([]);
   expect(() => saveProgress(db, { step: "nowhere" }, null)).toThrow("isn't a step");
 });
@@ -106,6 +106,32 @@ test("Claude missing blocks Done, and a signed-in Claude lets it finish", async 
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "fake-claude.ts");
   expect(claudeBlocks(await doctor(db))).toBeNull();
   expect(saveProgress(db, { done: true }, null)).toMatchObject({ step: "done", done: true });
+});
+
+test("a failed sign-in check is 'couldn't check', not signed out, and keeps Done blocked until one succeeds", async () => {
+  process.env.FAKE_CLAUDE_AUTH = "error";
+  const r = await doctor(db);
+  expect(r.agents[0]).toMatchObject({ state: "unknown", message: "Couldn't check whether Claude is signed in. Try again." });
+  const problem = claudeBlocks(r);
+  expect(problem).toContain("Couldn't check");
+  expect(() => saveProgress(db, { done: true }, problem)).toThrow("Claude comes first");
+  delete process.env.FAKE_CLAUDE_AUTH;
+  expect(claudeBlocks(await doctor(db))).toBeNull();
+});
+
+test("Skip for now stops auto-open, lapses once a space exists, and reopening clears it", () => {
+  expect(shouldAutoOpen(db)).toBe(true);
+  saveProgress(db, { dismiss: true }, null);
+  expect(getProgress(db).dismissed).toBe(true);
+  expect(shouldAutoOpen(db)).toBe(false);
+  saveProgress(db, { dismiss: false }, null);
+  expect(shouldAutoOpen(db)).toBe(true);
+  saveProgress(db, { dismiss: true }, null);
+  const s = createSpace(db, { name: "Notes", kind: "general", goal: "g" });
+  expect(shouldAutoOpen(db)).toBe(false);
+  expect(getProgress(db).dismissed).toBe(false);
+  db.query("DELETE FROM spaces WHERE id = ?").run(s.id);
+  expect(shouldAutoOpen(db)).toBe(true);
 });
 
 test("it opens by itself only with no spaces and setup not done", () => {
@@ -123,7 +149,7 @@ const noop = () => {};
 async function view(over: Partial<Report> = {}, step = "agents" as (typeof STEPS)[number]) {
   const report = { ...(await doctor(null)), ...over };
   const html = renderToStaticMarkup(
-    <StartView report={report} progress={{ step, skipped: [], done: false }} draft={{ name: "", projectsRoot: "" }} message={null} onDraft={noop} onGo={noop} onSkip={noop} onRecheck={noop} onSetupInvesting={noop} onSaveProfile={noop} onFinish={noop} />,
+    <StartView report={report} progress={{ step, skipped: [], done: false, dismissed: false }} draft={{ name: "", projectsRoot: "" }} message={null} onDraft={noop} onGo={noop} onSkip={noop} onRecheck={noop} onSetupInvesting={noop} onSaveProfile={noop} onFinish={noop} onDismiss={noop} />,
   );
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 }
@@ -134,8 +160,9 @@ test("the screen shows each step's states, and Next into Done is disabled while 
   expect(agents).toContain("Claude");
   expect(agents).toContain("Required");
   expect(agents).toContain("Check again");
-  expect(agents).not.toContain("Skip");
-  expect(await view({}, "tools")).toContain("Skip");
+  expect(agents).not.toMatch(/Skip(?! for now)/);
+  expect(await view({}, "tools")).toMatch(/Skip(?! for now)/);
+  expect(agents).toContain("Skip for now");
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "does-not-exist");
   const blocked = await view({}, "profile");
   expect(blocked).toContain("Save");

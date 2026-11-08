@@ -9,6 +9,11 @@ if (process.argv[2] === "--version") {
   process.exit(0);
 }
 if (process.argv[2] === "auth" && process.argv[3] === "status") {
+  // A check that fails outright (a timeout, a rate-limit message) prints no status at all.
+  if (process.env.FAKE_CLAUDE_AUTH === "error") {
+    console.error("Request timed out");
+    process.exit(1);
+  }
   const signedOut = process.env.FAKE_CLAUDE_AUTH === "signed-out";
   console.log(JSON.stringify({ loggedIn: !signedOut, email: "someone@example.com" }));
   process.exit(signedOut ? 1 : 0);

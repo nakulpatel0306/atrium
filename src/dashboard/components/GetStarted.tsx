@@ -54,6 +54,7 @@ type ViewProps = {
   onSetupInvesting(): void;
   onSaveProfile(): void;
   onFinish(): void;
+  onDismiss(): void;
 };
 
 // One step at a time. Everything it shows comes from the same checks as `atrium doctor`.
@@ -184,6 +185,11 @@ export function StartView(p: ViewProps) {
             Back
           </button>
         )}
+        {step !== "done" && (
+          <button className="btn link" onClick={p.onDismiss}>
+            Skip for now
+          </button>
+        )}
         {canSkip(step) && (
           <button className="btn link" onClick={() => p.onSkip(step)}>
             Skip
@@ -217,7 +223,8 @@ export function GetStarted() {
     setDraft((d) => (d.projectsRoot ? d : { name: res.report.profile.name ?? res.report.profile.suggestedName ?? "", projectsRoot: res.report.profile.projectsRoot }));
     setBusy(false);
   }, []);
-  useEffect(() => void load(), [load]);
+  // Opening Get started again (from Settings or by hand) lifts an earlier "Skip for now".
+  useEffect(() => void load().then(() => put("/api/start", { dismiss: false })), [load]);
 
   if (!data) return <div className="wrap"><p className="brief">Checking your Mac…</p></div>;
 
@@ -246,9 +253,12 @@ export function GetStarted() {
         await load();
       }}
       onSaveProfile={async () => {
-        const res = await put("/api/profile", draft);
+        const res = await put("/api/profile", { name: draft.name, projectsRoot: draft.projectsRoot });
         setMessage(res.ok ? "Saved." : res.error);
         await load();
+      }}
+      onDismiss={async () => {
+        if (await save({ dismiss: true })) navigate("/");
       }}
       onFinish={async () => {
         if (await save({ done: true })) navigate("/");

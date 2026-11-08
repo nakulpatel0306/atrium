@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { doctor } from "../engine/doctor";
-import { HOME_CURRENCY, setProjectsRoot, setUserName, storedName, suggestedName } from "../engine/profile";
+import { resolve } from "node:path";
+import { checkProjectsRoot, cleanUserName, expandHome, HOME_CURRENCY, NAME_KEY, setProjectsRoot, storedName, suggestedName } from "../engine/profile";
+import { setSetting } from "../engine/settings";
 import { config } from "../engine/config";
 import { tildePath } from "../engine/folders";
 import { getProgress, saveProgress, shouldAutoOpen } from "../engine/start";
@@ -23,8 +25,13 @@ export async function startRoute(db: Database, req: Request, url: URL): Promise<
     if (req.method === "GET") return json(profileOf(db));
     if (req.method === "PUT") {
       const b = await readBody(req);
-      if (b.name !== undefined) check(() => setUserName(db, String(b.name)));
-      if (b.projectsRoot !== undefined) check(() => setProjectsRoot(db, String(b.projectsRoot)));
+      // Both are checked before either is written, so a bad folder doesn't leave a half-saved profile.
+      const name = b.name !== undefined ? check(() => cleanUserName(String(b.name))) : null;
+      // Sending back the folder already in use isn't a choice; it must not pin a default.
+      const same = b.projectsRoot !== undefined && resolve(expandHome(String(b.projectsRoot).trim())) === config().projectsRoot;
+      const root = b.projectsRoot !== undefined && !same ? check(() => checkProjectsRoot(String(b.projectsRoot))) : null;
+      if (name !== null) setSetting(db, NAME_KEY, name);
+      if (root !== null) setProjectsRoot(db, root);
       return json(profileOf(db));
     }
     return null;

@@ -56,7 +56,8 @@ async function claudeSignedIn(bin: string): Promise<boolean | null> {
     const flag = (JSON.parse(text) as { loggedIn?: unknown }).loggedIn;
     return typeof flag === "boolean" ? flag : null;
   } catch {
-    return proc.exitCode === 0 ? null : false;
+    // Output that isn't the JSON status is a failed check (timeout, rate limit), not a sign-out.
+    return null;
   }
 }
 
@@ -72,7 +73,7 @@ async function agentCheck(spec: AgentSpec): Promise<Check> {
   if (tooOld) return { ...base, state: "too_old", version: v, message: `${spec.label} ${v ?? "(version unknown)"} is older than ${base.minimum}. Update it.` };
   const signedIn = spec.id === "claude" ? await claudeSignedIn(spec.bin) : (await spec.adapter.probe?.(AbortSignal.timeout(PROBE_MS)))?.loggedIn ?? null;
   if (signedIn === false) return { ...base, state: "signed_out", version: v, message: `${spec.label} is installed but not signed in.` };
-  if (signedIn === null) return { ...base, state: "unknown", version: v, message: `${spec.label} is installed. Atrium couldn't confirm it's signed in.` };
+  if (signedIn === null) return { ...base, state: "unknown", version: v, message: `Couldn't check whether ${spec.label} is signed in. Try again.` };
   return { ...base, state: "ready", version: v, message: `${spec.label} is installed and signed in.` };
 }
 

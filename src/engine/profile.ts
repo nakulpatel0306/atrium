@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { Database as Sqlite } from "bun:sqlite";
+import { accessSync, constants, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { config, setChosenProjectsRoot } from "./config";
 import { getSetting, setSetting } from "./settings";
 
@@ -23,18 +24,26 @@ export function macFullName(): string | null {
   return macName;
 }
 
+// Account names a Mac gets by default; none of them is how anyone wants to be greeted.
+const GENERIC_NAMES = new Set(["admin", "administrator", "root", "user", "guest", "mac"]);
 const firstWord = (full: string | null | undefined): string | null => full?.trim().split(/\s+/)[0] || null;
+const realFirstName = (full: string | null | undefined): string | null => {
+  const w = firstWord(full);
+  return w && !GENERIC_NAMES.has(w.toLowerCase()) ? w : null;
+};
 
-export const suggestedName = (): string | null => firstWord(macFullName());
+export const suggestedName = (): string | null => realFirstName(macFullName());
 // The name set in Settings, else the Mac account's first name, else none.
 export const userName = (db: Database): string | null => firstWord(getSetting(db, NAME_KEY)) ?? suggestedName();
 export const storedName = (db: Database): string | null => getSetting(db, NAME_KEY) || null;
 
-export function setUserName(db: Database, raw: string): void {
+export function cleanUserName(raw: string): string {
   const name = raw.replace(/[\p{Cc}\p{Cf}]/gu, "").trim();
   if (name.length > 40) throw new Error("Keep your name under 40 characters.");
-  setSetting(db, NAME_KEY, name);
+  return name;
 }
+
+export const setUserName = (db: Database, raw: string): void => setSetting(db, NAME_KEY, cleanUserName(raw));
 
 // Where the setting is read back into config(); called when a database opens and when the setting changes.
 export function applyProjectsRoot(db: Database): void {
@@ -45,15 +54,52 @@ export function expandHome(p: string): string {
   return p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
 }
 
+// Checks a folder without creating it: inside the home folder, and either a folder Atrium can write to or one it can create.
+export function checkProjectsRoot(raw: string): string {
+  const typed = expandHome(raw.trim());
+  if (!raw.trim() || !isAbsolute(typed)) throw new Error("Give a folder path, like ~/Projects.");
+  const path = resolve(typed);
+  const home = process.env.ATRIUM_USER_HOME ?? homedir();
+  if (path === home || !path.startsWith(home + sep)) throw new Error("Pick a folder inside your home folder, like ~/Projects.");
+  let probe = path;
+  while (!existsSync(probe)) probe = dirname(probe);
+  if (!statSync(probe).isDirectory()) throw new Error("That path is a file, not a folder.");
+  try {
+    accessSync(probe, constants.W_OK);
+  } catch {
+    throw new Error("Atrium can't write to that folder. Pick one you own, like ~/Projects.");
+  }
+  return path;
+}
+
 export function setProjectsRoot(db: Database, raw: string): string {
-  const path = resolve(expandHome(raw.trim()));
-  if (!raw.trim() || !isAbsolute(expandHome(raw.trim()))) throw new Error("Give a folder path, like ~/Projects.");
-  if (path === sep) throw new Error("Pick a folder inside your home folder, not the whole disk.");
-  if (existsSync(path) && !statSync(path).isDirectory()) throw new Error("That path is a file, not a folder.");
+  const path = checkProjectsRoot(raw);
   setSetting(db, PROJECTS_KEY, path);
   applyProjectsRoot(db);
   return path;
 }
+
+// For commands that run without opening the database (atrium doctor): the saved folder, read-only, if there is one.
+export function applyProjectsRootFromFile(dbPath: string): void {
+  if (!existsSync(dbPath)) return;
+  let db: Sqlite | null = null;
+  try {
+    db = new Sqlite(dbPath, { readonly: true });
+    applyProjectsRoot(db);
+  } catch {
+    // A database that can't be read leaves the default in place.
+  } finally {
+    db?.close();
+  }
+}
+
+const hasCheckout = (folder: string): boolean => {
+  try {
+    return readdirSync(folder, { withFileTypes: true }).some((e) => e.isDirectory() && existsSync(join(folder, e.name, ".git")));
+  } catch {
+    return false;
+  }
+};
 
 // Creates the projects folder the first time something needs it, and says so.
 export function ensureProjectsRoot(): string {
@@ -65,14 +111,14 @@ export function ensureProjectsRoot(): string {
   return root;
 }
 
-// One-time, additive: an install whose spaces already live under the old default folder keeps using it, by
-// writing that folder into the setting. Installs that already chose a folder, or set the environment variable,
+// One-time, additive: an install whose spaces already live under the old default folder, or whose old folder
+// already holds git checkouts, keeps using it, by writing that folder into the setting. Installs that already chose a folder, or set the environment variable,
 // are left alone.
 export function migrateProjectsRoot(db: Database, legacy: string): boolean {
   if (getSetting(db, PROJECTS_KEY) || process.env.ATRIUM_PROJECTS_ROOT || !existsSync(legacy)) return false;
   const rows = db.query("SELECT repo_path FROM spaces WHERE repo_path IS NOT NULL").all() as { repo_path: string }[];
   const inside = rows.some((r) => r.repo_path === legacy || r.repo_path.startsWith(legacy + sep));
-  if (!inside) return false;
+  if (!inside && !hasCheckout(legacy)) return false;
   setSetting(db, PROJECTS_KEY, legacy);
   return true;
 }

@@ -24,11 +24,13 @@ export function listImports(db: Database, spaceId: string): ImportRow[] {
     .all(spaceId) as ImportRow[];
 }
 
-// The accounts an import can move to: the ones the user added and any other they have rows in.
+// The accounts an import can move to: the ones the user added and any other they have imported.
 export function knownAccounts(db: Database, spaceId: string): string[] {
   const stored = (db.query("SELECT DISTINCT account FROM money_transactions WHERE space_id = ? AND source = 'bank' ORDER BY account").all(spaceId) as { account: string }[]).map((r) => r.account);
   const added = (db.query("SELECT name FROM money_accounts WHERE space_id = ? ORDER BY name").all(spaceId) as { name: string }[]).map((r) => r.name);
-  return [...new Set([...added, ...stored])].filter((a) => a !== OTHER_ACCOUNT);
+  // Accounts of imports that were logged but whose rows are gone still count as the user's.
+  const imported = (db.query("SELECT DISTINCT account FROM money_imports WHERE space_id = ? ORDER BY account").all(spaceId) as { account: string }[]).map((r) => r.account);
+  return [...new Set([...added, ...stored, ...imported])].filter((a) => a !== OTHER_ACCOUNT);
 }
 
 export const moneyBusy = (db: Database, spaceId: string): boolean => listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money");

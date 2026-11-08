@@ -106,7 +106,7 @@ test("a savings statement covers its whole month, quiet first week and all", () 
 // ---- Duplicates across layouts ----
 
 test("normalised descriptions ignore case, spacing, quotes and trailing codes", () => {
-  expect(normalDescription(' "Summit Fitness   fitness" ')).toBe("SUMMIT FITNESS FITNESS");
+  expect(normalDescription(' "Summit   fitness" ')).toBe("SUMMIT FITNESS");
   expect(normalDescription("SEND E-TFR ***zb1")).toBe("SEND E-TFR");
   expect(normalDescription("ROGERS ******1234")).toBe("ROGERS");
   expect(normalDescription("ROGERS ··1234")).toBe("ROGERS");

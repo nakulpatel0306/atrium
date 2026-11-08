@@ -9,7 +9,8 @@ import { openDb } from "../../src/engine/db";
 import { addAccount, accountChoices } from "../../src/engine/money/accounts";
 import { importMoney, previewMoney } from "../../src/engine/money/import";
 import { listHoldings } from "../../src/engine/markets/holdings";
-import { applyProjectsRoot, migrateProjectsRoot, PROJECTS_KEY, setProjectsRoot, setUserName } from "../../src/engine/profile";
+import { knownAccounts } from "../../src/engine/money/imports";
+import { applyProjectsRoot, migrateProjectsRoot, PROJECTS_KEY, setProjectsRoot, setUserName, suggestedName } from "../../src/engine/profile";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, listSpaces } from "../../src/engine/spaces";
 import { tempHome } from "../helpers";
@@ -42,6 +43,7 @@ test("a fresh engine on an empty home has no spaces, holdings, accounts or names
 
 test("the projects folder defaults to ~/Developer or ~/Projects, and a Settings value or the environment overrides it", () => {
   expect(config().projectsRoot).toMatch(/\/(Developer|Projects)$/);
+  process.env.ATRIUM_USER_HOME = home.home;
   const chosen = join(home.home, "code");
   expect(setProjectsRoot(db, chosen)).toBe(chosen);
   expect(config().projectsRoot).toBe(chosen);
@@ -49,6 +51,12 @@ test("the projects folder defaults to ~/Developer or ~/Projects, and a Settings 
   expect(config().projectsRoot).toBe(join(home.home, "env"));
   delete process.env.ATRIUM_PROJECTS_ROOT;
   expect(() => setProjectsRoot(db, "relative/dir")).toThrow("Give a folder path");
+  expect(() => setProjectsRoot(db, "/etc/projects")).toThrow("Pick a folder inside your home folder");
+  expect(() => setProjectsRoot(db, home.home)).toThrow("Pick a folder inside your home folder");
+  const locked = join(home.home, "locked");
+  mkdirSync(locked, { mode: 0o500 });
+  expect(() => setProjectsRoot(db, join(locked, "sub"))).toThrow("can't write to that folder");
+  delete process.env.ATRIUM_USER_HOME;
 });
 
 // A copy of a database shaped like a long-time install: spaces already inside the old default folder.
@@ -76,6 +84,35 @@ test("the old default folder is kept once, additively, only when spaces already 
   } finally {
     rmSync(legacy, { recursive: true, force: true });
   }
+});
+
+test("the old folder is also kept when it holds a git checkout, even with no space pointing into it", () => {
+  const legacy = mkdtempSync(join(tmpdir(), "atrium-legacy-"));
+  try {
+    mkdirSync(join(legacy, "notes-only"));
+    expect(migrateProjectsRoot(db, legacy)).toBe(false);
+    mkdirSync(join(legacy, "app", ".git"), { recursive: true });
+    expect(migrateProjectsRoot(db, legacy)).toBe(true);
+    expect(getSetting(db, PROJECTS_KEY)).toBe(legacy);
+  } finally {
+    rmSync(legacy, { recursive: true, force: true });
+  }
+});
+
+test("generic Mac account names give no name, any case", () => {
+  for (const n of ["Admin", "administrator", "ROOT", "User Account", "Guest", "mac Mini"]) {
+    process.env.ATRIUM_MAC_NAME = n;
+    expect(suggestedName()).toBeNull();
+  }
+  process.env.ATRIUM_MAC_NAME = "Priya Patel";
+  expect(suggestedName()).toBe("Priya");
+  process.env.ATRIUM_MAC_NAME = "";
+});
+
+test("moving an import can target an account that only an import record names", () => {
+  const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g", private: true });
+  db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at) VALUES ('mi_x', ?, 'Old card', 'd', 'd', 0, 1)").run(space.id);
+  expect(knownAccounts(db, space.id)).toEqual(["Old card"]);
 });
 
 test("accounts an existing install already imported still appear in the picker", () => {

@@ -26,7 +26,8 @@ const okEmail = (e: string) => /^git@(?:ssh\.)?github\.com$/i.test(e) || /@(?:[A
 // Lines of a file against the generic patterns plus any denylisted terms.
 export function scanText(file: string, text: string, denylist: string[] = []): Hit[] {
   const hits: Hit[] = [];
-  const terms = denylist.map((t) => t.toLowerCase());
+  // Whole words only: "jordan" matches "Jordan" and "jordan," but not "MARSH". Terms with spaces or commas work as written.
+  const terms = denylist.map((t) => new RegExp(`(?<![\\w])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w])`, "i"));
   text.split("\n").forEach((raw, i) => {
     const add = (kind: string) => hits.push({ file, line: i + 1, kind, text: raw.trim().slice(0, 120) });
     if (HOME_PATH.test(raw)) add("home folder path");
@@ -34,8 +35,7 @@ export function scanText(file: string, text: string, denylist: string[] = []): H
     // 555 is the reserved fiction range, as an area code (+1 555 010 0134) or an exchange (416 555 0134).
     for (const m of raw.matchAll(PHONE)) if (m[1] !== "555" && m[2] !== "555") add("phone number");
     if (TOKEN.test(raw) || BEARER.test(raw)) add("secret-looking token");
-    const lower = raw.toLowerCase();
-    if (terms.some((t) => lower.includes(t))) add("denylisted term");
+    if (terms.some((t) => t.test(raw))) add("denylisted term");
   });
   return hits;
 }
