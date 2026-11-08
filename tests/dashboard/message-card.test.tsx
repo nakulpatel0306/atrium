@@ -18,7 +18,7 @@ const approval = (): State["approvals"][number] => ({
 });
 const action = (over: Partial<State["messageActions"][number]> = {}): State["messageActions"][number] => ({
   id: "msa_1", approvalId: "apr_msg", spaceId: ids.jobHunt, taskId: null, toName: "Dana", handle: "+15550100134", handleSource: "contacts",
-  candidates: null, service: "iMessage", text: "you free sat?", lastError: null, contactsReady: true, ...over,
+  candidates: null, service: "iMessage", text: "you free sat?", group: null, lastError: null, contactsReady: true, ...over,
 });
 
 test("the card shows who, how, the exact words and what Send does", () => {
@@ -74,7 +74,7 @@ test("Needs you routes a text to its card", () => {
 test("sent history", () => {
   const base: MessageAction = {
     id: "m", approvalId: "a", spaceId: "s", taskId: null, toName: "Dana", handle: "+15550100134", handleSource: "you", candidates: null,
-    service: "iMessage", text: "hi", status: "sent", error: null, sentAt: Date.now() - 60_000, createdAt: 1, updatedAt: Date.now(),
+    service: "iMessage", text: "hi", group: null, status: "sent", error: null, sentAt: Date.now() - 60_000, createdAt: 1, updatedAt: Date.now(),
   };
   expect(sentLine(base)).toBe("Sent to Dana · 1m ago");
   expect(sentLine({ ...base, status: "failed", error: "Messages didn't answer." })).toBe("Didn't send · Messages didn't answer.");

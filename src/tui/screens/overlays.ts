@@ -4,7 +4,7 @@ import { AGENT_IDS, agentName } from "../../dashboard/agents";
 import { type SpaceDeletePreview, spaceDeleteLines } from "../../dashboard/deletion";
 import { bytes, clock, tokens } from "../../dashboard/format";
 import { AGENT_ROLES, agentStatus, runOutcome } from "../../dashboard/summary";
-import { displayHandle } from "../../engine/messaging/rules";
+import { displayHandle, memberNames, recipientOf } from "../../engine/messaging/rules";
 import type { State } from "../../engine/state";
 import { type Block, box, type Hit, keyRow, type Line, rowsOf, splice } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
@@ -23,12 +23,14 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
   const no = (label = "Not now") => ({ key: "n", label, input: "n" });
   if (c.purpose === "send") {
     const m = state.messageActions.find((x) => x.id === c.targetId);
-    const to = m?.handle ? `${m.toName} (${displayHandle(m.handle)})` : (m?.toName ?? "them");
+    const chat = m?.group?.chat;
+    const to = chat ? `${recipientOf(m!)} (${chat.participants.length} people)` : m?.handle ? `${m.toName} (${displayHandle(m.handle)})` : m ? recipientOf(m) : "them";
     const text = c.text ?? m?.text ?? "";
     return {
-      title: "Send a text",
+      title: m?.group ? "Send a group text" : "Send a text",
       lines: [
         ...wrap(`Send this to ${to}?`, cols),
+        ...(m?.group ? wrap(memberNames(m.group).join(", "), cols, { color: "dim" }) : []),
         [{ text: `Via ${m?.service ?? "iMessage"}${c.text !== undefined && c.text !== m?.text ? " · your edit" : ""}`, color: "faint" }],
         [],
         ...text.split("\n").flatMap((l) => wrap(l, cols, { bold: true })),

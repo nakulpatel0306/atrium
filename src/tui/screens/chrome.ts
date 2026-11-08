@@ -1,5 +1,6 @@
 // What every tab shares: the top bar with the tabs, the Ask box, and the key strip.
 import { agentName } from "../../dashboard/agents";
+import { recipientOf } from "../../engine/messaging/rules";
 import type { State } from "../../engine/state";
 import { type Block, box, edgeWith, fit, type Hit, keycap, type Line, lineWidth } from "../canvas";
 import { cursorParts } from "../edit";
@@ -81,7 +82,7 @@ export function askLabels(ui: Ui, view: View, ctx: KeyContext): { title: string;
       return { title: "Import a CSV · path to the file", placeholder: "~/Downloads/accountactivity.csv, or drag the file in." };
     case "edit": {
       const m = view.state.messageActions.find((x) => x.approvalId === target);
-      return { title: `Edit the text to ${m?.toName ?? "them"}`, placeholder: "The words that get sent." };
+      return { title: `Edit the text to ${m ? recipientOf(m) : "them"}`, placeholder: "The words that get sent." };
     }
     case "space":
       return { title: "New space · describe it", placeholder: 'Like "keep my job search organized" or "start a new project called…"' };

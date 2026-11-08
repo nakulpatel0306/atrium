@@ -7,7 +7,7 @@ import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import { money } from "../engine/markets/labels";
-import { displayHandle } from "../engine/messaging/rules";
+import { displayHandle, hasTarget, memberNames, recipientOf } from "../engine/messaging/rules";
 import { outcomeText } from "../engine/outcome";
 import { fileSize, plural } from "../engine/text";
 import type { MarketsGlance } from "./client";
@@ -148,6 +148,21 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
 function messageLines(m: State["messageActions"][number]): DetailLine[] {
   const lines: DetailLine[] = [];
   if (m.lastError) lines.push(blank, plain(`Last try failed: ${m.lastError}`, { color: color.bad }));
+  if (m.group) {
+    const people = memberNames(m.group);
+    lines.push(
+      blank,
+      [{ text: "To      ", color: color.muted }, { text: recipientOf(m), bold: true }, { text: m.group.chat ? "  group chat" : "  group chat needed", color: m.group.chat ? undefined : color.warn }],
+      [{ text: "People  ", color: color.muted }, { text: people.length ? people.join(", ") : "not known until you find the chat" }],
+      [{ text: "Via     ", color: color.muted }, { text: m.service }],
+      blank,
+      ...block(m.text),
+      blank,
+      muted("Sends to the existing group chat from Messages on this Mac. Atrium can't confirm delivery."),
+      muted(hasTarget(m) ? "a send · r don't send" : "Find the group chat on the dashboard, then a sends it here · r don't send"),
+    );
+    return lines;
+  }
   lines.push(
     blank,
     [{ text: "To   ", color: color.muted }, { text: m.toName, bold: true }, { text: m.handle ? `  ${displayHandle(m.handle)}` : "  number needed", color: m.handle ? undefined : color.warn }],

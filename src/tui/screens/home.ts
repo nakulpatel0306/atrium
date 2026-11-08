@@ -5,7 +5,7 @@ import { duration, relative } from "../../dashboard/format";
 import { liveStatus } from "../../dashboard/summary";
 import type { GlanceView } from "../../engine/markets/views";
 import type { MoneySummary } from "../../engine/money/summary";
-import { displayHandle } from "../../engine/messaging/rules";
+import { displayHandle, hasTarget, memberNames, recipientOf } from "../../engine/messaging/rules";
 import { outcomeText } from "../../engine/outcome";
 import { bar, type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
 import { wrapStyled } from "../detail";
@@ -57,6 +57,33 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
   }
   for (const a of view.approvals) {
     const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
+    if (text?.group) {
+      const g = text.group;
+      const quote = wrapStyled([{ text: `"${oneLine(text.text)}"`, italic: true }], inner).slice(0, 2);
+      const people = memberNames(g);
+      cards.push({
+        id: a.id,
+        glyph: GLYPH.text,
+        tone: "accent",
+        title: `Group text to ${recipientOf(text)}`,
+        meta: [
+          { text: "to ", color: "faint" },
+          { text: recipientOf(text), color: "dim" },
+          dot,
+          g.chat ? { text: `group chat · ${g.chat.participants.length} people`, color: "faint" } : { text: `${GLYPH.notdone} group chat needed`, color: "warn" },
+          dot,
+          { text: `${text.service} · drafted ${relative(a.createdAt, now)}`, color: "faint" },
+        ],
+        body: [
+          ...quote,
+          ...wrapStyled([{ text: people.length ? `People: ${people.join(", ")}` : "People: not known until you find the chat", color: "dim" }], inner).slice(0, 2),
+          ...(text.lastError ? [[{ text: `${GLYPH.bad} Last try failed: ${text.lastError}`, color: "bad" as const }]] : []),
+          ...(g.chat ? [] : [[{ text: "Find the group chat on the dashboard, then send it here.", color: "dim" as const }]]),
+        ],
+        keys: [...(hasTarget(text) ? [{ key: "s", label: "Send", input: "s", hot: true }] : []), { key: "e", label: "Edit", input: "e" }, { key: "x", label: "Skip", input: "x" }],
+      });
+      continue;
+    }
     if (text) {
       const quote = wrapStyled([{ text: `"${oneLine(text.text)}"`, italic: true }], inner).slice(0, 2);
       cards.push({
