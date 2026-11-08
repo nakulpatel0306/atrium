@@ -11,6 +11,8 @@ guard args.count == 3 else {
 var svg = try String(contentsOfFile: args[1], encoding: .utf8)
 svg = svg.replacingOccurrences(of: "<style>[\\s\\S]*?</style>", with: "", options: .regularExpression)
 svg = svg.replacingOccurrences(of: "fill=\"currentColor\"", with: "fill=\"#e6e6ea\"")
+// The center square is the mark's one spot of the accent, as in the dashboard and on the site.
+svg = svg.replacingOccurrences(of: "<rect x=\"8.75\"", with: "<rect fill=\"#7c7cf5\" x=\"8.75\"")
 guard let mark = NSImage(data: Data(svg.utf8)) else {
   FileHandle.standardError.write("Couldn't read \(args[1]) as an SVG.\n".data(using: .utf8)!)
   exit(1)
