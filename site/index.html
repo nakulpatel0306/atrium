@@ -96,7 +96,7 @@ nav ul a:hover { color: var(--text); }
 .window img { display: block; width: 100%; height: auto; }
 /* Scroll reveals: visible by default, animated only where the browser ties them to scrolling. */
 @supports (animation-timeline: view()) {
-  .reveal { animation: up linear both; animation-timeline: view(); animation-range: entry 5% cover 28%; }
+  html:not(.m) .reveal { animation: up linear both; animation-timeline: view(); animation-range: entry 5% cover 28%; }
   @keyframes up { from { opacity: 0; transform: translateY(40px); } }
 }
 
@@ -527,6 +527,21 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 }
 
 
+/* What's coming */
+.soon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.soon { position: relative; overflow: hidden; border: 1px solid var(--line2); border-radius: 18px; padding: 26px 24px 24px; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--raised)), var(--raised) 60%); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.soon::before { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--accent-hi) 10%, transparent) 50%, transparent 70%); transform: translateX(-100%); animation: sheen 6s ease-in-out infinite; pointer-events: none; }
+.soon:nth-child(2)::before { animation-delay: 1.5s; } .soon:nth-child(3)::before { animation-delay: 3s; } .soon:nth-child(4)::before { animation-delay: 4.5s; }
+@keyframes sheen { 0%, 60% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.soon .st { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 4px 10px; }
+.soon .st i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-hi); animation: pulse 2s infinite; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-hi) 60%, transparent); }
+.soon .st.later { color: var(--dim); border-color: var(--line2); } .soon .st.later i { background: var(--faint); animation: none; }
+.soon h3 { font-size: 22px; }
+.soon p { color: var(--dim); font-size: 15px; }
+.soon .peek { margin-top: 6px; border: 1px dashed var(--line2); border-radius: 10px; padding: 10px 12px; font: 12.5px/1.6 var(--mono); color: var(--faint); background: color-mix(in srgb, var(--bg) 60%, transparent); overflow-x: auto; }
+.soon .peek b { color: var(--text); font-weight: 600; } .soon .peek .a { color: var(--green); } .soon .peek .r { color: #eb5757; } .soon .peek .ac { color: var(--accent-hi); }
+@media (max-width: 760px) { .soon-grid { grid-template-columns: 1fr; } }
+
 /* The Keeper: the logo's center square with a face. Eyes on the hero mark, and a small companion in the corner. */
 .hero-eyes { animation: eyesIn .6s 1.3s both; transition: transform .25s ease-out; }
 .hero-eyes .he { transform-box: fill-box; transform-origin: center; animation: blink 5s 2.5s infinite; }
@@ -558,6 +573,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 .keeper[data-k="needs"] .kp .eyes { transform: translate(-5px, -2px); }
 .keeper[data-k="needs"] .kp .badge { opacity: 1; }
 .keeper[data-k="happy"] .kp .core { transform-origin: 50% 50%; animation: kSpin 1s cubic-bezier(.3,.7,.3,1) 1; }
+html.m .keeper[data-k="happy"] .kp .core { animation: none; }
+html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 .keeper[data-k="happy"] .kp .eye { opacity: 0; }
 .keeper[data-k="happy"] .kp .lid { opacity: 1; }
 .keeper[data-k="sleep"] .kp .core { animation: kBreathe 4.5s ease-in-out infinite; }
@@ -590,6 +607,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
       <li><a href="#how">How it works</a></li>
       <li><a href="#uses">Who it's for</a></li>
       <li><a href="#private">Privacy</a></li>
+      <li><a href="#soon">What's next</a></li>
       <li><a href="notes.html">Notes</a></li>
     </ul>
     <a class="btn small" href="https://github.com/nakulpatel0306/atrium">GitHub</a>
@@ -831,6 +849,42 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
       <div><span class="k2">Fenced in</span><h3>Agents can't wander</h3><p>Each agent works inside a locked box with only its own space's folder. It can't open your passwords, use your other apps, or change Atrium.</p></div>
       <div><span class="k2">You decide</span><h3>Nothing happens without a yes</h3><p>Agents only make drafts. A text is sent, a repo is created, or a change is kept only after you press the button. If an agent couldn't finish, it tells you.</p></div>
       <div><span class="k2">Masked</span><h3>Card numbers stay hidden</h3><p class="mask">4520 <s>····</s> <s>····</s> 1234 → <s>··</s>1234</p><p>When you import a bank file, card and account numbers are cut down to the last four digits before anything is saved.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="soon" style="padding-top: 0">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="eyebrow">What's coming</span>
+      <h2>Atrium isn't finished. Here's what I'm building next.</h2>
+      <p class="lede">Same rules as everything else: it runs on your Mac, and nothing happens without your yes.</p>
+    </div>
+    <div class="soon-grid">
+      <article class="soon reveal">
+        <span class="st"><i></i>Next up</span>
+        <h3>A visual workspace for code</h3>
+        <p>Watch an agent's changes appear as a live diff while it works, steer it mid-run with a note, and open a pull request from the result in one click.</p>
+        <div class="peek"><b>src/checkout.ts</b> &nbsp;<span class="a">+12</span> <span class="r">−3</span><br><span class="ac">you</span> → "keep the old retry, just add the clock"<br><span class="ac">Codex</span> ↻ adjusting…</div>
+      </article>
+      <article class="soon reveal">
+        <span class="st"><i></i>In the works</span>
+        <h3>Calendar and email</h3>
+        <p>Spaces that can read your calendar and inbox, find a time that works, and draft the reply or the invite. Every send and every event still waits for you.</p>
+        <div class="peek"><b>Sat 9:00</b> Hike · Rattlesnake Point<br><span class="ac">draft</span> invite to Sam, Priya · <b>waiting for your yes</b></div>
+      </article>
+      <article class="soon reveal">
+        <span class="st later"><i></i>Later</span>
+        <h3>Talk to it</h3>
+        <p>Say what you want out loud and hear what came back, hands free. The same draft-and-wait flow, just spoken.</p>
+        <div class="peek"><span class="ac">“</span>What needs me today?<span class="ac">”</span><br>Two things: a resume to check and a text to send.</div>
+      </article>
+      <article class="soon reveal">
+        <span class="st later"><i></i>Later</span>
+        <h3>The Keeper, everywhere</h3>
+        <p>The little face in the logo moves into the app, the Dock and the terminal, so you can tell at a glance whether an agent is working or something needs you.</p>
+        <div class="peek"><span class="ac">[•‿•]</span> working · Fix the flaky test<br><span class="ac">[•o•]</span> needs you · 1 ready</div>
+      </article>
     </div>
   </div>
 </section>
@@ -1649,12 +1703,14 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
     const eyes = document.getElementById("hero-eyes"), mark = document.querySelector(".mark-big");
     if (eyes && mark && !reduced) addEventListener("pointermove", (e) => {
       const r = mark.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), d = Math.hypot(dx, dy) || 1;
-      eyes.style.transform = `translate(${(dx / d) * 0.5}px, ${(dy / d) * 0.4}px)`;
+      const ex = (dx / d) * 0.5, ey = (dy / d) * 0.4;
+      if (window.atriumMotion) window.atriumMotion.eyes(eyes, ex, ey); else eyes.style.transform = `translate(${ex}px, ${ey}px)`;
     }, { passive: true });
     const ge = document.querySelector(".ghost-eyes"), ghost = document.querySelector(".ghost");
     if (ge && !reduced) addEventListener("pointermove", (e) => {
       const r = ghost.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), d = Math.hypot(dx, dy) || 1;
-      ge.style.transform = `translate(${(dx / d) * 5}px, ${(dy / d) * 4}px)`;
+      const gx = (dx / d) * 5, gy = (dy / d) * 4;
+      if (window.atriumMotion) window.atriumMotion.eyes(ge, gx, gy); else ge.style.transform = `translate(${gx}px, ${gy}px)`;
     }, { passive: true });
     const k = document.getElementById("keeper"), say = document.getElementById("keeper-say");
     let hidden = false;
@@ -1671,7 +1727,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
     };
     const TIPS = ["Psst. Press Approve on something in the demo.", "Try typing \u201chelp me plan a trip to Lisbon\u201d in the demo.", "I get sleepy if you stop scrolling.", "Every Atrium has one of me in the logo."];
     let tip = 0, sayTimer, moodTimer, sleepTimer, last = "", shown = false;
-    const mood = (m, ms) => { k.dataset.k = m; clearTimeout(moodTimer); if (ms) moodTimer = setTimeout(() => (k.dataset.k = "idle"), ms); };
+    const mood = (m, ms) => { k.dataset.k = m; if (m === "happy") dispatchEvent(new Event("keeper:happy")); clearTimeout(moodTimer); if (ms) moodTimer = setTimeout(() => (k.dataset.k = "idle"), ms); };
     const talk = (text, ms = 4200) => { if (!text) return; say.textContent = text; say.classList.add("on"); clearTimeout(sayTimer); sayTimer = setTimeout(() => say.classList.remove("on"), ms); };
     const awake = () => { if (k.dataset.k === "sleep") mood("idle"); clearTimeout(sleepTimer); sleepTimer = setTimeout(() => { if (shown) { mood("sleep"); say.classList.remove("on"); } }, 25000); };
     ["pointermove", "scroll", "keydown"].forEach((ev) => addEventListener(ev, awake, { passive: true }));
@@ -1701,4 +1757,35 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
     document.getElementById("keeper-x").addEventListener("click", hide);
   })();
 })();
+</script>
+
+<script type="module">
+  import { animate, scroll, inView } from "https://cdn.jsdelivr.net/npm/motion@11.13.5/+esm";
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.documentElement.classList.add("m");
+    const soft = { type: "spring", bounce: 0.35, visualDuration: 0.35 };
+    window.atriumMotion = { eyes: (el, x, y) => animate(el, { x, y }, soft) };
+    // Sections spring in as they arrive. Anything already on screen stays put.
+    document.querySelectorAll(".reveal").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.top < innerHeight && r.bottom > 0) return;
+      el.style.opacity = "0"; el.style.transform = "translateY(32px)";
+      inView(el, () => { animate(el, { opacity: 1, y: [32, 0] }, { type: "spring", bounce: 0.25, visualDuration: 0.6 }); }, { amount: 0.15 });
+    });
+    // The corner Keeper pops in with a little overshoot, and its happy moment is a sprung spin.
+    const k = document.getElementById("keeper"), kb = document.getElementById("keeper-btn");
+    if (k && kb) {
+      new MutationObserver(() => { if (k.classList.contains("on")) animate(kb, { scale: [0.4, 1], rotate: [-25, 0] }, { type: "spring", bounce: 0.5, visualDuration: 0.5 }); }).observe(k, { attributeFilter: ["class"] });
+      addEventListener("keeper:happy", async () => {
+        await animate(kb, { y: -42, rotate: 200, scale: 1.08 }, { duration: 0.28, ease: "easeOut" });
+        await animate(kb, { y: 0, rotate: 360, scale: 1 }, { type: "spring", bounce: 0.55, visualDuration: 0.5 });
+        animate(kb, { rotate: 0 }, { duration: 0 });
+      });
+    }
+    // The footer silhouette rises as you reach the bottom of the page.
+    const ghost = document.querySelector(".ghost"), end = document.querySelector(".end");
+    if (ghost && end) scroll(animate(ghost, { x: ["-50%", "-50%"], y: ["95%", "46%"], opacity: [0, 0.09] }, { ease: "linear" }), { target: end, offset: ["start end", "end end"] });
+    // The How it works steps slide a touch as each one lights up.
+    document.querySelectorAll("#steps li").forEach((li) => new MutationObserver(() => { if (li.classList.contains("on")) animate(li, { x: [8, 0] }, { type: "spring", bounce: 0.4, visualDuration: 0.4 }); }).observe(li, { attributeFilter: ["class"] }));
+  }
 </script>
