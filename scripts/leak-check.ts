@@ -9,7 +9,8 @@ import { resolve } from "node:path";
 export type Hit = { file: string; line: number; kind: string; text: string };
 
 // Plans and records stay private and are left out of the public copy, so they aren't scanned.
-const SKIPPED = [/^docs\/plans\//];
+// This script's own test is skipped too: it holds deliberate bad examples.
+const SKIPPED = [/^docs\/plans\//, /^tests\/engine\/leak-check\.test\.ts$/];
 const BINARY = /\.(png|jpe?g|gif|ico|icns|xlsx|woff2?|pdf|lock)$/i;
 
 // /Users/me/ and the like are obvious placeholders; any other name is somebody's home folder.
