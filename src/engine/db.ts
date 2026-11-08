@@ -134,24 +134,7 @@ CREATE TABLE IF NOT EXISTS repo_actions (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS message_actions (
-  id TEXT PRIMARY KEY,
-  approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id),
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  task_id TEXT REFERENCES tasks(id),
-  to_name TEXT NOT NULL,
-  handle TEXT,
-  handle_source TEXT CHECK (handle_source IS NULL OR handle_source IN ('contacts','you','agent')),
-  candidates TEXT,
-  service TEXT NOT NULL DEFAULT 'iMessage' CHECK (service IN ('iMessage','SMS')),
-  text TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','rejected')),
-  error TEXT,
-  sent_at INTEGER,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  CHECK (status NOT IN ('sending','sent') OR handle IS NOT NULL)
-);
+${MESSAGE_ACTIONS_DDL("IF NOT EXISTS message_actions")};
 CREATE TABLE IF NOT EXISTS run_files (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id),
@@ -215,6 +198,8 @@ function migrate(db: Database): boolean {
   rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL);
   // Sending a text joined the kinds only Nakul decides.
   rebuildIfMissing(db, "approvals", "'send_message'", APPROVALS_DDL);
+  // Group texts: a row can send to a chat id instead of a handle, and a group can be split into one text per person.
+  rebuildIfMissing(db, "message_actions", "chat_id", MESSAGE_ACTIONS_DDL);
   // The GitHub repo ("owner/name") a repo space comes from, so a missing local copy can be cloned.
   if (!has("spaces", "github")) db.exec("ALTER TABLE spaces ADD COLUMN github TEXT");
   // The first commit a create run pushed, so a retry can tell its own commit from someone else's.
@@ -362,6 +347,34 @@ const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
   review_by TEXT,
   github TEXT,
   folder TEXT
+)`;
+
+// A text Atrium drafted. A person text sends to `handle`; a group text sends to `chat_id`, the existing Messages
+// chat Nakul's own Find picked. `participants` holds names and masked handles, for display only.
+const MESSAGE_ACTIONS_DDL = (name: string) => `CREATE TABLE ${name} (
+  id TEXT PRIMARY KEY,
+  approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id),
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  task_id TEXT REFERENCES tasks(id),
+  to_name TEXT NOT NULL,
+  handle TEXT,
+  handle_source TEXT CHECK (handle_source IS NULL OR handle_source IN ('contacts','you','agent')),
+  candidates TEXT,
+  service TEXT NOT NULL DEFAULT 'iMessage' CHECK (service IN ('iMessage','SMS')),
+  text TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','rejected','split')),
+  error TEXT,
+  sent_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'person' CHECK (kind IN ('person','group')),
+  group_name TEXT,
+  people TEXT,
+  chat_id TEXT,
+  chat_name TEXT,
+  participants TEXT,
+  CHECK (status NOT IN ('sending','sent') OR (kind = 'person' AND handle IS NOT NULL) OR (kind = 'group' AND chat_id IS NOT NULL)),
+  CHECK (status != 'split' OR kind = 'group')
 )`;
 
 const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (

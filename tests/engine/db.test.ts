@@ -455,3 +455,43 @@ test("tasks gain outcome columns", () => {
   db.close();
   t.cleanup();
 });
+
+test("message_actions rebuild adds group texts and keeps every row", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  openDb(path).close();
+  // The table as Plan 11 left it (390038b), before group texts.
+  const old = new Database(path);
+  old.exec("PRAGMA foreign_keys = OFF");
+  old.exec(`DROP TABLE message_actions;
+  CREATE TABLE message_actions (
+    id TEXT PRIMARY KEY, approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id), space_id TEXT NOT NULL REFERENCES spaces(id),
+    task_id TEXT REFERENCES tasks(id), to_name TEXT NOT NULL, handle TEXT,
+    handle_source TEXT CHECK (handle_source IS NULL OR handle_source IN ('contacts','you','agent')), candidates TEXT,
+    service TEXT NOT NULL DEFAULT 'iMessage' CHECK (service IN ('iMessage','SMS')), text TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','rejected')), error TEXT, sent_at INTEGER,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, CHECK (status NOT IN ('sending','sent') OR handle IS NOT NULL));
+  INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_1', 'S', 'general', 'x', 1, 1);
+  INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_1', 'spc_1', 'question', 'Send?', 'send_message', 1);
+  INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_2', 'spc_1', 'question', 'Send?', 'send_message', 1);
+  INSERT INTO message_actions (id, approval_id, space_id, to_name, handle, text, status, created_at, updated_at) VALUES ('msa_old', 'apr_1', 'spc_1', 'Dana', '+15550100134', 'hi', 'sent', 1, 1);`);
+  old.close();
+  const db = openDb(path);
+  expect(db.query("SELECT id, kind, handle, status, chat_id FROM message_actions").get()).toEqual({ id: "msa_old", kind: "person", handle: "+15550100134", status: "sent", chat_id: null });
+  const insert = (status: string, chat: string | null, kind = "group") =>
+    db
+      .query("INSERT INTO message_actions (id, approval_id, space_id, to_name, text, status, kind, chat_id, created_at, updated_at) VALUES (?, 'apr_2', 'spc_1', 'Hike', 'hi', ?, ?, ?, 1, 1)")
+      .run(`msa_${status}_${kind}`, status, kind, chat);
+  expect(() => insert("sending", null)).toThrow();
+  expect(() => insert("sending", "iMessage;+;chat1", "person")).toThrow();
+  expect(() => insert("split", null, "person")).toThrow();
+  insert("sending", "iMessage;+;chat1");
+  const sql = (d: Database) => (d.query("SELECT sql FROM sqlite_master WHERE name = 'message_actions'").get() as { sql: string }).sql;
+  const before = sql(db);
+  db.close();
+  const again = openDb(path);
+  expect(sql(again)).toBe(before);
+  expect((again.query("SELECT COUNT(*) AS n FROM message_actions").get() as { n: number }).n).toBe(2);
+  again.close();
+  t.cleanup();
+});

@@ -248,10 +248,14 @@ export function resolveApproval(
   return a;
 }
 
+// The note a group text's approval closes with when Nakul sends it as one text per person instead.
+export const SEPARATELY_NOTE = "Sending one text to each person instead.";
+
 // Accepting a result the agent said it didn't finish is recorded as exactly that.
 function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
   if (a.alwaysAsk === "send_message") {
     const what = a.title.replace(/^Send a /, "").replace(/\?$/, "");
+    if (decision === "reject" && a.note === SEPARATELY_NOTE) return `Chose to send separately: ${what}`;
     return decision === "approve" ? `Pressed Send: ${what}` : `Chose not to send: ${what}`;
   }
   if (decision === "reject") return `Rejected: ${a.title}`;

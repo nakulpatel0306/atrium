@@ -13,9 +13,10 @@ import { draftProject, type RepoAction } from "./repos/store";
 import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
-import { nameProblem, textProblem } from "./messaging/rules";
+import { type GroupAsk, groupAskOf } from "./messaging/block";
+import { nameProblem, peopleLine, textProblem } from "./messaging/rules";
 import { messagesSpace } from "./messaging/space";
-import { draftMessage, type MessageAction } from "./messaging/store";
+import { draftGroupMessage, draftMessage, type MessageAction } from "./messaging/store";
 
 export type SpacePlan = {
   name: string;
@@ -34,7 +35,8 @@ export type SetupResult =
   | { message: MessageAction; approval: Approval }
   | { space: Space; tasks: Task[]; messaging: true };
 
-export type MessageRequest = { kind: "message"; to: string; text: string | null; about: string };
+// `to` is who the card names: the person, or for a group text the group's name (or its people).
+export type MessageRequest = { kind: "message"; to: string; group: GroupAsk | null; text: string | null; about: string };
 
 export class BadPlan extends Error {
   constructor(message: string) {
@@ -67,7 +69,7 @@ Rules:
 - Give at most ${MAX_TASKS} starter tasks, with small, concrete titles. Use weight "heavy" for work that edits code or takes a long time and "light" for quick reads and summaries.`;
 
 const MESSAGE_RULE =
-  '- If the user wants to text or message someone, reply instead {"kind":"message","to": "<who, as they said it>", "text"?: "<only if they gave the exact words>", "about"?: "<what the message is for, one line>"}. Never make a task that sends something.';
+  '- If the user wants to text or message someone, reply instead {"kind":"message","to": "<who, as they said it>", "text"?: "<only if they gave the exact words>", "about"?: "<what the message is for, one line>"}. For a group chat, use "group": "<the chat\'s name, as they said it>" and/or "people": ["<name>", …] instead of "to". Never make a task that sends something.';
 
 const systemPrompt = (db: Database) => [SYSTEM_PROMPT, ...capabilityLines(db, "setup"), MESSAGE_RULE].join("\n");
 
@@ -197,24 +199,36 @@ const oneLine = (v: unknown, max: number) =>
 // A message request is reduced to who, the exact words if the user gave them, and what it's for. Nothing else in
 // the reply (a handle, an "approved" flag, a service) is read: those are Nakul's to fill in on the card.
 function parseMessageRequest(obj: Record<string, unknown>): MessageRequest {
+  const text = typeof obj.text === "string" && !textProblem(obj.text) ? obj.text.trim() : null;
+  const group = groupAskOf(obj, false);
+  if (group === "bad") throw new BadPlan("A group text needs the group's name or its people, each in one short line.");
+  if (group) return { kind: "message", to: group.name ?? peopleLine(group.people), group, text, about: oneLine(obj.about, 500) };
   const to = typeof obj.to === "string" ? obj.to.trim() : "";
   if (nameProblem(to)) throw new BadPlan("A message needs who it's for, in one short line.");
-  const text = typeof obj.text === "string" && !textProblem(obj.text) ? obj.text.trim() : null;
-  return { kind: "message", to, text, about: oneLine(obj.about, 500) };
+  return { kind: "message", to, group: null, text, about: oneLine(obj.about, 500) };
+}
+
+// The block a drafting task ends with, spelled for whom this text is for.
+function blockFor(req: MessageRequest): string {
+  if (!req.group) return `{"to": "${req.to}", "text": "<the text>"}`;
+  return JSON.stringify({ ...(req.group.name ? { group: req.group.name } : {}), ...(req.group.people.length ? { people: req.group.people } : {}), text: "<the text>" });
 }
 
 function setupMessage(db: Database, req: MessageRequest): SetupResult {
   const space = messagesSpace(db);
   if (req.text) {
-    const { action, approval } = draftMessage(db, { spaceId: space.id, toName: req.to, text: req.text });
+    const { action, approval } = req.group
+      ? draftGroupMessage(db, { spaceId: space.id, name: req.group.name, people: req.group.people, text: req.text })
+      : draftMessage(db, { spaceId: space.id, toName: req.to, text: req.text });
     return { message: action, approval };
   }
   const detail = [
     ...(req.about ? [`What it's for: ${req.about}`] : []),
-    `Write the text Nakul would send to ${req.to}: short, warm and in his voice. You can't send it, and nobody needs you to.`,
-    `End your reply with a fenced block tagged atrium-message holding {"to": "${req.to}", "text": "<the text>"}, then the OUTCOME line. Atrium shows it to Nakul and sends it only when he presses Send.`,
+    `Write the text Nakul would send to ${req.group ? `the group chat ${req.to}` : req.to}: short, warm and in his voice. You can't send it, and nobody needs you to.`,
+    `End your reply with a fenced block tagged atrium-message holding ${blockFor(req)}, then the OUTCOME line. Atrium shows it to Nakul and sends it only when he presses Send.`,
   ].join("\n\n");
-  const task = createTask(db, { spaceId: space.id, title: `Draft a text to ${req.to}`, detail, weight: "light", allowOnBattery: true, purpose: "message" });
+  const title = req.group ? `Draft a group text to ${req.to}` : `Draft a text to ${req.to}`;
+  const task = createTask(db, { spaceId: space.id, title, detail, weight: "light", allowOnBattery: true, purpose: "message" });
   return { space, tasks: [task], messaging: true };
 }
 

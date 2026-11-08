@@ -2113,6 +2113,24 @@ describe("message blocks", () => {
     expect(argv.slice(argv.indexOf("--") + 1)).toEqual(["Dana"]);
   });
 
+  test("a group block becomes a group draft with no chat, and nothing reads Messages", async () => {
+    const log = join(home.home, "osa.log");
+    process.env.FAKE_OSASCRIPT_LOG = log;
+    cleanups.push(() => delete process.env.FAKE_OSASCRIPT_LOG);
+    setSetting(db, "messaging.contactsReady", "true");
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Draft a group text to Hike crew", purpose: "message" });
+    const reply = "Draft.\n\n```atrium-message\n" + JSON.stringify({ group: "Hike crew", people: ["Sam", "Priya"], text: "lock in sat?", chatId: "iMessage;+;x" }) + "\n```\nOUTCOME: done";
+    start({ adapter: fakeAdapter(() => ok(reply)).adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(getTask(db, t.id)).toMatchObject({ outcome: "partial", outcomeReason: "Drafted a text to Hike crew. It sends only when you press Send." });
+    expect(pendingMessageActions(db)[0]).toMatchObject({ taskId: t.id, toName: "Hike crew", text: "lock in sat?", group: { name: "Hike crew", people: ["Sam", "Priya"], chat: null } });
+    expect(listPending(db)[0]).toMatchObject({ title: "Send a text to Hike crew?", alwaysAsk: "send_message" });
+    expect(listActivity(db, { spaceId: s.id }).map((r) => r.message)).toContain("Drafted a group text to Hike crew: Draft a group text to Hike crew");
+    await Bun.sleep(50);
+    expect(existsSync(log)).toBe(false);
+  });
+
   test("a message task's agent-supplied number is ignored", async () => {
     const s = generalSpace();
     const a = createTask(db, { spaceId: s.id, title: "Draft one", purpose: "message" });

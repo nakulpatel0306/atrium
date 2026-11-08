@@ -52,3 +52,55 @@ export const LOOKUP_SCRIPT: readonly string[] = [
   "return res",
   "end run",
 ];
+
+// argv: chat id, text. Sends to an existing chat, never makes one. Prints ATRIUM_SENT once Messages has accepted the
+// send, ATRIUM_NO_CHAT when no chat has that id, or ATRIUM_NO_ACCOUNT when the chat's account is off.
+export const SEND_CHAT_SCRIPT: readonly string[] = [
+  "on run argv",
+  "set chatId to item 1 of argv",
+  "set body to item 2 of argv",
+  'tell application "Messages"',
+  "try",
+  "set target to chat id chatId",
+  "set acct to account of target",
+  "on error",
+  'return "ATRIUM_NO_CHAT"',
+  "end try",
+  'if not (enabled of acct) then return "ATRIUM_NO_ACCOUNT"',
+  "send body to target",
+  "end tell",
+  'return "ATRIUM_SENT"',
+  "end run",
+];
+
+// No argv. Prints one record per group chat (more than one other person): never a message, only who's in it.
+// Records are split by character id 30, fields by 31: chat id, chat name, service, members. Members are split by 29,
+// and each member's handle and name by 28.
+export const CHATS_SCRIPT: readonly string[] = [
+  "on run argv",
+  "set rs to character id 30",
+  "set us to character id 31",
+  "set gs to character id 29",
+  "set fs to character id 28",
+  "set recs to {}",
+  'tell application "Messages"',
+  "repeat with c in (every chat)",
+  "set ps to participants of c",
+  "if (count of ps) > 1 then",
+  "set members to {}",
+  "repeat with p in ps",
+  "set end of members to ((handle of p) as text) & fs & ((name of p) as text)",
+  "end repeat",
+  "set AppleScript's text item delimiters to gs",
+  "set mt to members as text",
+  'set AppleScript\'s text item delimiters to ""',
+  "set end of recs to ((id of c) as text) & us & ((name of c) as text) & us & ((service type of (account of c)) as text) & us & mt",
+  "end if",
+  "end repeat",
+  "end tell",
+  "set AppleScript's text item delimiters to rs",
+  "set res to recs as text",
+  'set AppleScript\'s text item delimiters to ""',
+  "return res",
+  "end run",
+];
