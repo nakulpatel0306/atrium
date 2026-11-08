@@ -1759,9 +1759,11 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 })();
 </script>
 
+<!-- Motion 11.13.5 (MIT), a copy kept in this site so no third-party script runs here. -->
+<script src="vendor/motion-11.13.5.js"></script>
 <script type="module">
-  import { animate, scroll, inView } from "https://cdn.jsdelivr.net/npm/motion@11.13.5/+esm";
-  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  const { animate, scroll, inView } = window.Motion || {};
+  if (animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
     document.documentElement.classList.add("m");
     const soft = { type: "spring", bounce: 0.35, visualDuration: 0.35 };
     window.atriumMotion = { eyes: (el, x, y) => animate(el, { x, y }, soft) };
