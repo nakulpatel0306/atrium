@@ -75,8 +75,16 @@ aside {
   width: 20px;
   height: 20px;
   flex: none;
+  position: relative;
   background: currentColor;
   mask: url("./assets/logo-mark.svg") center / contain no-repeat;
+}
+/* The mark's center square, the one spot of brand color; it sits inside the mask, so the mark's shape stays one file. */
+.logo::after {
+  content: "";
+  position: absolute;
+  inset: 36.46%;
+  background: var(--accent);
 }
 .logo.big {
   width: 40px;
@@ -107,6 +115,9 @@ svg.lucide {
 .nav.on {
   background: var(--raised);
   color: var(--text);
+}
+.nav.on svg.lucide {
+  color: var(--accent);
 }
 .nav .label {
   overflow: hidden;
@@ -1001,7 +1012,10 @@ h2 {
   z-index: 3;
 }
 .cmd:focus-within {
-  border-color: #44444e;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+}
+.cmd form > svg.lucide:first-child:not(.spinner) {
+  color: var(--accent);
 }
 .cmd form {
   padding: 12px 14px;
