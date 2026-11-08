@@ -181,6 +181,10 @@ nav ul a:hover { color: var(--text); }
   background-size: 44px 44px; background-position: center top;
   mask-image: radial-gradient(ellipse 55% 60% at 50% 55%, #000 5%, transparent 70%); -webkit-mask-image: radial-gradient(ellipse 55% 60% at 50% 55%, #000 5%, transparent 70%); }
 .end .head { margin-inline: auto; align-items: center; }
+.end { padding-bottom: clamp(220px, 30vw, 340px); }
+.ghost { position: absolute; left: 50%; bottom: 0; width: min(560px, 92vw); transform: translate(-50%, 46%); opacity: .09; z-index: -1; pointer-events: none; }
+.ghost-eyes { transition: transform .4s ease-out; }
+.ghost .ge { transform-box: fill-box; transform-origin: center; animation: blink 6s 1s infinite; }
 .install { max-width: 560px; margin: 0 auto; text-align: left; border: 1px solid var(--line2); border-radius: 12px; background: var(--panel); overflow: hidden; }
 .install .top { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); font: 12px var(--mono); color: var(--faint); }
 .install pre { margin: 0; padding: 18px; font: 14px/1.8 var(--mono); overflow-x: auto; }
@@ -541,7 +545,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 .kp .core { transform-box: fill-box; transform-origin: 50% 100%; }
 .kp .eyes { transform-box: fill-box; transition: transform .3s ease; }
 .kp .eye { transform-box: fill-box; transform-origin: center; }
-.kp .lid, .kp .dots, .kp .badge, .kp .check, .kp .zz { opacity: 0; transition: opacity .25s; }
+.kp .lid, .kp .dots, .kp .badge, .kp .zz { opacity: 0; transition: opacity .25s; }
 .keeper[data-k="idle"] .kp .core { animation: kBreathe 3.2s ease-in-out infinite; }
 .keeper[data-k="idle"] .kp .eye { animation: blink 4.5s infinite; }
 .keeper[data-k="working"] .kp .eyes { transform: translate(-2px, 4px); }
@@ -553,9 +557,9 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 .keeper[data-k="needs"] .kp .core { animation: kLean 2.4s ease-in-out infinite; }
 .keeper[data-k="needs"] .kp .eyes { transform: translate(-5px, -2px); }
 .keeper[data-k="needs"] .kp .badge { opacity: 1; }
-.keeper[data-k="happy"] .kp .core { animation: kHop 1.1s cubic-bezier(.3,.7,.3,1) 2; }
+.keeper[data-k="happy"] .kp .core { transform-origin: 50% 50%; animation: kSpin 1s cubic-bezier(.3,.7,.3,1) 1; }
 .keeper[data-k="happy"] .kp .eye { opacity: 0; }
-.keeper[data-k="happy"] .kp .lid, .keeper[data-k="happy"] .kp .check { opacity: 1; }
+.keeper[data-k="happy"] .kp .lid { opacity: 1; }
 .keeper[data-k="sleep"] .kp .core { animation: kBreathe 4.5s ease-in-out infinite; }
 .keeper[data-k="sleep"] .kp .eye { opacity: 0; }
 .keeper[data-k="sleep"] .kp .lid { opacity: 1; transform: translateY(3px) scaleY(-1); transform-box: fill-box; transform-origin: center; }
@@ -564,6 +568,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 @keyframes kNod { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-5deg) translateY(1px); } }
 @keyframes kDot { 0%, 100% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(-4px); opacity: 1; } }
 @keyframes kLean { 0%, 100% { transform: translate(-20px, -8px) rotate(-10deg); } 50% { transform: translate(-24px, -11px) rotate(-13deg); } }
+@keyframes kSpin { 0% { transform: none; } 15% { transform: scale(1.12, .86); } 55% { transform: translateY(-44px) rotate(360deg) scale(1.05); } 85% { transform: rotate(360deg) scale(1.06, .94); } 100% { transform: rotate(360deg); } }
 @keyframes kHop { 0%, 100% { transform: none; } 20% { transform: scale(1.1, .88); } 50% { transform: translateY(-48px) scale(.94, 1.08); } 80% { transform: scale(1.06, .94); } }
 @keyframes kZz { 0% { transform: translate(0, 0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(8px, -18px); opacity: 0; } }
 @media (max-width: 600px) { .keeper .say { max-width: 180px; font-size: 13px; } .keeper .k-btn, .keeper svg { width: 52px; height: 52px; } }
@@ -832,6 +837,14 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 
 <section class="end">
   <div class="grid"></div>
+  <svg class="ghost" viewBox="0 0 200 200" aria-hidden="true">
+    <defs><clipPath id="gf"><rect x="20" y="20" width="160" height="160" rx="38"/></clipPath><linearGradient id="gfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset=".85" stop-color="#fff" stop-opacity="0"/></linearGradient><mask id="gmask"><rect width="200" height="200" fill="url(#gfade)"/></mask></defs>
+    <g mask="url(#gmask)">
+      <g clip-path="url(#gf)" fill="#e6e6ea"><path d="M20 20h160l-46 46H66z" opacity=".6"/><path d="M180 20v160l-46-46V66z" opacity=".4"/><path d="M180 180H20l46-46h68z" opacity=".22"/><path d="M20 180V20l46 46v68z" opacity=".78"/></g>
+      <rect x="74" y="74" width="52" height="52" rx="10" fill="#7c7cf5"/>
+      <g class="ghost-eyes"><rect class="ge" x="86" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/><rect class="ge" x="106" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/></g>
+    </g>
+  </svg>
   <div class="wrap">
     <div class="head reveal">
       <span class="eyebrow">Open source</span>
@@ -861,7 +874,6 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
       <g class="core"><rect x="74" y="74" width="52" height="52" rx="10" fill="#7c7cf5"/><g class="eyes"><rect class="eye" x="86" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/><rect class="eye" x="106" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/><path class="lid" d="M85 99 q5 -6 10 0 M105 99 q5 -6 10 0" stroke="#0b0b0d" stroke-width="3.5" fill="none" stroke-linecap="round"/></g></g>
       <g class="dots" fill="#a5a5ff"><circle cx="18" cy="58" r="6"/><circle cx="2" cy="48" r="6"/><circle cx="-14" cy="38" r="6"/></g>
       <circle class="badge" cx="34" cy="34" r="13" fill="#f2c94c" stroke="#0b0b0d" stroke-width="4"/>
-      <g class="check"><circle cx="40" cy="40" r="16" fill="#4cb782"/><path d="M33 40l5 5 9-10" stroke="#0b0b0d" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
       <text class="zz" x="150" y="50" font-family="JetBrains Mono, monospace" font-weight="600" font-size="30" fill="#a5a5ff">z</text>
     </svg>
   </button>
@@ -1638,6 +1650,11 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
     if (eyes && mark && !reduced) addEventListener("pointermove", (e) => {
       const r = mark.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), d = Math.hypot(dx, dy) || 1;
       eyes.style.transform = `translate(${(dx / d) * 0.5}px, ${(dy / d) * 0.4}px)`;
+    }, { passive: true });
+    const ge = document.querySelector(".ghost-eyes"), ghost = document.querySelector(".ghost");
+    if (ge && !reduced) addEventListener("pointermove", (e) => {
+      const r = ghost.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), d = Math.hypot(dx, dy) || 1;
+      ge.style.transform = `translate(${(dx / d) * 5}px, ${(dy / d) * 4}px)`;
     }, { passive: true });
     const k = document.getElementById("keeper"), say = document.getElementById("keeper-say");
     let hidden = false;
