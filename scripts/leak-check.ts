@@ -26,7 +26,7 @@ const okEmail = (e: string) => /^git@(?:ssh\.)?github\.com$/i.test(e) || /@(?:[A
 // Lines of a file against the generic patterns plus any denylisted terms.
 export function scanText(file: string, text: string, denylist: string[] = []): Hit[] {
   const hits: Hit[] = [];
-  // Whole words only: "jordan" matches "Jordan" and "jordan," but not "MARSH". Terms with spaces or commas work as written.
+  // Whole words only: "ann" matches "Ann" and "ann," but not "Annex". Terms with spaces or commas work as written.
   const terms = denylist.map((t) => new RegExp(`(?<![\\w])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w])`, "i"));
   text.split("\n").forEach((raw, i) => {
     const add = (kind: string) => hits.push({ file, line: i + 1, kind, text: raw.trim().slice(0, 120) });
