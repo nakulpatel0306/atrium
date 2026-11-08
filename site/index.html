@@ -564,19 +564,14 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .kp .core { transform-box: fill-box; transform-origin: 50% 100%; }
 .kp .eyes { transform-box: fill-box; transition: transform .3s ease; }
 .kp .eye { transform-box: fill-box; transform-origin: center; }
-.kp .lid, .kp .dots, .kp .badge, .kp .zz { opacity: 0; transition: opacity .25s; }
+.kp .lid { opacity: 0; transition: opacity .25s; }
 .keeper[data-k="idle"] .kp .core { animation: kBreathe 3.2s ease-in-out infinite; }
 .keeper[data-k="idle"] .kp .eye { animation: blink 4.5s infinite; }
 .keeper[data-k="working"] .kp .eyes { transform: translate(-2px, 4px); }
 .keeper[data-k="working"] .kp .core { animation: kNod 1.4s ease-in-out infinite; }
-.keeper[data-k="working"] .kp .dots { opacity: 1; }
-.keeper[data-k="working"] .kp .dots circle { animation: kDot 1.2s ease-in-out infinite; }
-.keeper[data-k="working"] .kp .dots circle:nth-child(2) { animation-delay: .15s; }
-.keeper[data-k="working"] .kp .dots circle:nth-child(3) { animation-delay: .3s; }
 .keeper[data-k="needs"] .kp .core { transform-origin: 50% 50%; animation: kWiggle .5s ease-in-out 2, kGlow 1.2s ease-in-out 2; }
 .keeper[data-k="needs"] .kp .eyes { transform: translate(-5px, -2px); }
 .keeper[data-k="needs"] .kp .eye { animation: blink 1.1s .5s 2; }
-.keeper[data-k="needs"] .kp .badge { opacity: 1; }
 .keeper[data-k="happy"] .kp .core { transform-origin: 50% 100%; animation: kBounce .75s ease-out 1, kGlow 1s ease-in-out 1; }
 html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 .keeper[data-k="happy"] .kp .eye { opacity: 0; }
@@ -584,7 +579,6 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 .keeper[data-k="sleep"] .kp .core { animation: kBreathe 4.5s ease-in-out infinite; }
 .keeper[data-k="sleep"] .kp .eye { opacity: 0; }
 .keeper[data-k="sleep"] .kp .lid { opacity: 1; transform: translateY(3px) scaleY(-1); transform-box: fill-box; transform-origin: center; }
-.keeper[data-k="sleep"] .kp .zz { opacity: 1; animation: kZz 2.4s ease-in-out infinite; }
 @keyframes kBreathe { 50% { transform: scale(1.05, .96); } }
 @keyframes kNod { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-5deg) translateY(1px); } }
 @keyframes kDot { 0%, 100% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(-4px); opacity: 1; } }
@@ -933,9 +927,6 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       <defs><clipPath id="kf"><rect x="20" y="20" width="160" height="160" rx="38"/></clipPath></defs>
       <g clip-path="url(#kf)"><rect x="20" y="20" width="160" height="160" fill="#141417"/><path d="M20 20h160l-46 46H66z" fill="#e6e6ea" opacity=".6"/><path d="M180 20v160l-46-46V66z" fill="#e6e6ea" opacity=".4"/><path d="M180 180H20l46-46h68z" fill="#e6e6ea" opacity=".22"/><path d="M20 180V20l46 46v68z" fill="#e6e6ea" opacity=".78"/><rect x="66" y="66" width="68" height="68" fill="#0b0b0d"/></g>
       <g class="core"><rect x="74" y="74" width="52" height="52" rx="10" fill="#7c7cf5"/><g class="eyes"><rect class="eye" x="86" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/><rect class="eye" x="106" y="92" width="8" height="12" rx="4" fill="#0b0b0d"/><path class="lid" d="M85 99 q5 -6 10 0 M105 99 q5 -6 10 0" stroke="#0b0b0d" stroke-width="3.5" fill="none" stroke-linecap="round"/></g></g>
-      <g class="dots" fill="#a5a5ff"><circle cx="18" cy="58" r="6"/><circle cx="2" cy="48" r="6"/><circle cx="-14" cy="38" r="6"/></g>
-      <circle class="badge" cx="34" cy="34" r="13" fill="#f2c94c" stroke="#0b0b0d" stroke-width="4"/>
-      <text class="zz" x="150" y="50" font-family="JetBrains Mono, monospace" font-weight="600" font-size="30" fill="#a5a5ff">z</text>
     </svg>
   </button>
   <button class="x" id="keeper-x" type="button" aria-label="Hide the Keeper">×</button></span>
