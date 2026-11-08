@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { config } from "./engine/config";
+import { dataLocations, formatData } from "./engine/data-report";
+import { doctor, formatDoctor } from "./engine/doctor";
 import type { State } from "./engine/state";
 import { buildApp } from "./mac/build";
 import { APP_ID, xml } from "./mac/plists";
@@ -14,7 +16,7 @@ const root = resolve(import.meta.dir, "..");
 const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup]";
+const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup|doctor|data]";
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
@@ -164,7 +166,7 @@ function appUninstall(): number {
   return 0;
 }
 
-// Asks the running engine to set up the Investing space; it's idempotent, so running it twice is harmless.
+// Asks the running engine to set up an empty Investing space; it's idempotent, so running it twice is harmless.
 async function investingSetup(): Promise<number> {
   let res: Response;
   try {
@@ -173,8 +175,8 @@ async function investingSetup(): Promise<number> {
     return fail(`Atrium isn't running at ${url()}. Start it with: atrium start`);
   }
   if (!res.ok) return fail(`Atrium couldn't set up the Investing space (HTTP ${res.status}).`);
-  const r = (await res.json()) as { added: number };
-  console.log(r.added > 0 ? `Investing space ready: ${r.added} tickers added.` : "Investing space already set up.");
+  const r = (await res.json()) as { created: boolean };
+  console.log(r.created ? "Investing space ready. It's empty: import your holdings or add tickers in the dashboard." : "Investing space already set up.");
   return 0;
 }
 
@@ -207,6 +209,14 @@ export async function main(cmd: string | undefined): Promise<number> {
       return uninstall();
     case "investing":
       return process.argv[3] === "setup" ? investingSetup() : fail(USAGE);
+    case "doctor": {
+      const report = await doctor(null);
+      console.log(formatDoctor(report));
+      return report.agents[0]!.state === "ready" || report.agents[0]!.state === "unknown" ? 0 : 1;
+    }
+    case "data":
+      console.log(formatData(dataLocations()));
+      return 0;
     case "app":
       if (process.argv[3] === "install") return appInstall();
       if (process.argv[3] === "uninstall") return appUninstall();

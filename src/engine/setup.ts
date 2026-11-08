@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import { realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { AgentAdapter } from "./agents/types";
 import { config } from "./config";
+import { tildePath } from "./folders";
+import { ensureProjectsRoot, expandHome } from "./profile";
 import type { Approval } from "./approvals";
 import { git } from "./git";
 import { GhProblem, ghViewRepo } from "./repos/gh";
@@ -56,22 +57,22 @@ const PALETTE = ["#7c7cf5", "#4cb782", "#4ea7fc", "#f2c94c", "#b07cf5", "#eb5757
 const MAX_TASKS = 8;
 const USER_FIXABLE = new Set(["not_installed", "not_logged_in", "rate_limited"]);
 
-const SYSTEM_PROMPT = `You set up a new "space" in a personal task dashboard from the user's plain description.
+const systemBody = (projects: string) => `You set up a new "space" in a personal task dashboard from the user's plain description.
 Reply with a single JSON object and nothing else, shaped like:
 {"name": string (1-40 chars), "kind": "repo" | "general" | "markets", "goal": string, "repoPath"?: string, "private": boolean, "tasks": [{"title": string, "detail"?: string, "weight": "heavy" | "light"}]}
 Rules:
 - Return JSON only: no prose, no code fences.
 - Set "private" to true for email, client, and personal work.
-- If the description matches an existing project, look under ~/dev-workspace/projects for the repo, then use kind "repo" and set repoPath to its absolute path. Otherwise use kind "general" and omit repoPath.
+- If the description matches an existing project, look under ${projects} for the repo, then use kind "repo" and set repoPath to its absolute path. Otherwise use kind "general" and omit repoPath.
 - Use kind "markets" for watching stocks, a portfolio, or paper trading; markets spaces are private.
 - If the user wants to start or create a new project or repo, reply instead {"kind":"new_project","name": string (a short repo name using letters, numbers, "-", "." or "_"),"description": string (one line),"visibility":"private"|"public","template":"bun-ts"|"empty"}. Use "private" unless the user says public, and "bun-ts" unless the user asks for an empty repo.
-- If the user names a GitHub repo ("owner/name") with no folder for it under ~/dev-workspace/projects, use kind "repo", set "github" to "owner/name" and omit repoPath.
+- If the user names a GitHub repo ("owner/name") with no folder for it under ${projects}, use kind "repo", set "github" to "owner/name" and omit repoPath.
 - Give at most ${MAX_TASKS} starter tasks, with small, concrete titles. Use weight "heavy" for work that edits code or takes a long time and "light" for quick reads and summaries.`;
 
 const MESSAGE_RULE =
   '- If the user wants to text or message someone, reply instead {"kind":"message","to": "<who, as they said it>", "text"?: "<only if they gave the exact words>", "about"?: "<what the message is for, one line>"}. For a group chat, use "group": "<the chat\'s name, as they said it>" and/or "people": ["<name>", …] instead of "to". Never make a task that sends something.';
 
-const systemPrompt = (db: Database) => [SYSTEM_PROMPT, ...capabilityLines(db, "setup"), MESSAGE_RULE].join("\n");
+const systemPrompt = (db: Database, projectsRoot: string) => [systemBody(tildePath(projectsRoot)), ...capabilityLines(db, "setup"), MESSAGE_RULE].join("\n");
 
 // Agents wrap JSON in prose or fences, so scan for the first balanced object instead of parsing the whole text.
 function firstJsonObject(text: string): string | null {
@@ -90,8 +91,6 @@ function firstJsonObject(text: string): string | null {
   }
   return null;
 }
-
-const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
 
 const defaultProjectsRoot = () => config().projectsRoot;
 
@@ -224,15 +223,15 @@ function setupMessage(db: Database, req: MessageRequest): SetupResult {
   }
   const detail = [
     ...(req.about ? [`What it's for: ${req.about}`] : []),
-    `Write the text Nakul would send to ${req.group ? `the group chat ${req.to}` : req.to}: short, warm and in his voice. You can't send it, and nobody needs you to.`,
-    `End your reply with a fenced block tagged atrium-message holding ${blockFor(req)}, then the OUTCOME line. Atrium shows it to Nakul and sends it only when he presses Send.`,
+    `Write the text the user would send to ${req.group ? `the group chat ${req.to}` : req.to}: short, warm and in their voice. You can't send it, and nobody needs you to.`,
+    `End your reply with a fenced block tagged atrium-message holding ${blockFor(req)}, then the OUTCOME line. Atrium shows it to the user and sends it only when they press Send.`,
   ].join("\n\n");
   const title = req.group ? `Draft a group text to ${req.to}` : `Draft a text to ${req.to}`;
   const task = createTask(db, { spaceId: space.id, title, detail, weight: "light", allowOnBattery: true, purpose: "message" });
   return { space, tasks: [task], messaging: true };
 }
 
-// A folder under the projects root that's already a checkout of this repo is Nakul's: it's used, never recorded
+// A folder under the projects root that's already a checkout of this repo is the user's: it's used, never recorded
 // as Atrium's to remove.
 async function existingCheckout(slug: string, projectsRoot: string): Promise<string | undefined> {
   const dir = join(projectsRoot, validateGithubSlug(slug).name);
@@ -250,14 +249,15 @@ export async function setupSpace(
   db: Database,
   adapter: AgentAdapter,
   description: string,
-  cwd = join(homedir(), "dev-workspace"),
+  cwd?: string,
   projectsRoot = defaultProjectsRoot(),
 ): Promise<SetupResult> {
   try {
+    cwd ??= ensureProjectsRoot();
     const result = await adapter.run({
       prompt: description,
       cwd,
-      systemPrompt: systemPrompt(db),
+      systemPrompt: systemPrompt(db, projectsRoot),
       allowedTools: ["Read", "Glob"],
       mode: "work",
       onChunk: () => {},

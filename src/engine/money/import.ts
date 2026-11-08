@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { bus } from "../events";
 import { newId } from "../ids";
 import { parseCsv } from "../markets/csv";
-import { ACCOUNTS, detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_CODES, type Bank } from "./banks";
+import { detectBank, OTHER_ACCOUNT, WS_INTEREST_CODES, WS_TRANSFER_CODES, type Bank } from "./banks";
 import { merchantOf } from "./categories";
 import { monthEnd } from "./coverage";
 import { reflowMoney } from "./flows";
@@ -272,11 +272,11 @@ export const isMasked = (s: string): boolean => maskNumbers(s) === s;
 const TYPE_CODE = /^[A-Z_ ]{1,20}$/;
 const MAX_ACCOUNT = 40;
 
-// An account name Nakul picked or typed: one of his known accounts as is, anything else cleaned and masked.
-function cleanAccount(raw: string | undefined): string | null {
+// An account name the user picked or typed, cleaned and masked.
+export function cleanAccount(raw: string | undefined): string | null {
   const t = (raw ?? "").trim();
   if (!t) return null;
-  if ((ACCOUNTS as readonly string[]).includes(t) || t === OTHER_ACCOUNT) return t;
+  if (t === OTHER_ACCOUNT) return t;
   return maskNumbers(safeText(t)).slice(0, MAX_ACCOUNT) || null;
 }
 

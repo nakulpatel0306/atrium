@@ -51,28 +51,28 @@ const MAX_LIMIT_RETRIES = 3;
 const TEMP_SWEEP_AGE_MS = 86_400_000;
 
 const REPO_SYSTEM_PROMPT = [
-  "You are working for Nakul through Atrium.",
+  "You are working for the user through Atrium.",
   "Work only on the current git branch. Do not switch, create, or delete branches.",
   "Leave your changes uncommitted; Atrium commits them for you.",
   "Never push or merge.",
   "Never read, print, or edit .env files, keys, or tokens.",
-  "Finish with a 2–4 sentence summary of what changed and anything Nakul should check.",
+  "Finish with a 2–4 sentence summary of what changed and anything the user should check.",
 ].join("\n");
 
 // Away from a repo there is no git: instructions about branches send agents looking for one.
 function generalSystemPrompt(scratch: boolean): string {
   return [
-    "You are working for Nakul through Atrium.",
+    "You are working for the user through Atrium.",
     "Work in the current folder.",
     ...(scratch ? ["This folder is temporary. Atrium keeps a copy of the files you leave in it with this run's results."] : []),
     "Never read, print, or edit .env files, keys, or tokens.",
-    "Finish with a 2–4 sentence summary of what you did and anything Nakul should check.",
+    "Finish with a 2–4 sentence summary of what you did and anything the user should check.",
   ].join("\n");
 }
 
 // The diff is in a review's prompt, so the reviewer reads and changes nothing on disk.
 const REVIEW_SYSTEM_PROMPT = [
-  "You are reviewing another agent's work for Nakul through Atrium.",
+  "You are reviewing another agent's work for the user through Atrium.",
   "Everything you need is in the prompt. Don't create or change any files.",
   "Never read, print, or edit .env files, keys, or tokens.",
 ].join("\n");

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { DateOrder, MoneyField, MoneyMap, MoneyPreview, Signs } from "../../../engine/money/import";
-import { accountLabel } from "../../../engine/money/banks";
+import { ACCOUNT_KINDS, accountLabel } from "../../../engine/money/banks";
 import { post } from "../../api";
 import { investPath } from "../../simple";
 
 type Preview = MoneyPreview & { total: number; choices: string[] };
+const ADD = "__add__";
 const FIELDS: { id: MoneyField; label: string }[] = [
   { id: "date", label: "Date" },
   { id: "description", label: "Description" },
@@ -23,6 +24,8 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
   const [line, setLine] = useState<{ ok: boolean; text: string } | null>(null);
   // A file from a bank Atrium knows keeps its column choices out of the way until asked for.
   const [columns, setColumns] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState({ name: "", kind: "chequing", institution: "" });
   const base = `${investPath(spaceId)}/money`;
 
   const look = async (text: string, next = opts) => {
@@ -38,6 +41,13 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
     const text = await file.text();
     setCsv(text);
     await look(text, {});
+  };
+  const addAccount = async () => {
+    const res = await post<{ name: string }>(`${base}/accounts`, draft);
+    if (!res.ok) return setLine({ ok: false, text: res.error });
+    setAdding(false);
+    setDraft({ name: "", kind: "chequing", institution: "" });
+    await look(csv, { ...opts, account: res.data.name });
   };
   const save = async () => {
     const res = await post<{ added: number; duplicates: number }>(`${base}/import`, { csv, ...opts });
@@ -55,7 +65,7 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
           Choose a CSV file
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => void load(e.target.files?.[0])} />
         </label>
-        <span className="faint">TD, Amex and Wealthsimple chequing and savings are recognised. Most other bank and card exports work too.</span>
+        <span className="faint">TD, Amex and Wealthsimple chequing and savings are recognised. Most other bank and card exports work too, and you can add your own accounts.</span>
         <button className="btn link" onClick={onClose}>
           Close
         </button>
@@ -71,14 +81,34 @@ export function MoneyImport({ spaceId, onClose }: { spaceId: string; onClose: ()
           {preview.account !== null && (
             <label className="money-account">
               Account
-              <select value={preview.account} onChange={(e) => void look(csv, { ...opts, account: e.target.value })}>
+              <select
+                value={adding ? ADD : preview.account}
+                onChange={(e) => (e.target.value === ADD ? setAdding(true) : (setAdding(false), void look(csv, { ...opts, account: e.target.value })))}
+              >
                 {preview.choices.map((c) => (
                   <option key={c} value={c}>
                     {accountLabel(c)}
                   </option>
                 ))}
+                <option value={ADD}>Add an account…</option>
               </select>
             </label>
+          )}
+          {adding && (
+            <div className="money-account-add">
+              <input placeholder="Name, like Everyday chequing" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
+                {ACCOUNT_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+              <input placeholder="Institution (optional)" value={draft.institution} onChange={(e) => setDraft({ ...draft, institution: e.target.value })} />
+              <button className="btn" onClick={() => void addAccount()}>
+                Add account
+              </button>
+            </div>
           )}
           {[...preview.guessed, ...preview.warnings].map((w) => (
             <p key={w} className="hint">

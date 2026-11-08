@@ -1,11 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { listTasks } from "../tasks";
-import { ACCOUNTS, OTHER_ACCOUNT } from "./banks";
+import { OTHER_ACCOUNT } from "./banks";
 import { reflowMoney } from "./flows";
 import { fingerprintOf, normalDescription, twinCounter, type MoneyRow } from "./import";
 
-// Each import Nakul did, with the rows it added, so a wrong one can be undone or moved to the right account.
+// Each import the user did, with the rows it added, so a wrong one can be undone or moved to the right account.
 export type ImportRow = { id: string; account: string; from: string; to: string; rows: number; importedAt: number };
 
 export const GONE = "That import isn't here anymore. Refresh the page.";
@@ -24,10 +24,11 @@ export function listImports(db: Database, spaceId: string): ImportRow[] {
     .all(spaceId) as ImportRow[];
 }
 
-// The accounts an import can move to: his named ones, and any other he has rows in.
+// The accounts an import can move to: the ones the user added and any other they have rows in.
 export function knownAccounts(db: Database, spaceId: string): string[] {
   const stored = (db.query("SELECT DISTINCT account FROM money_transactions WHERE space_id = ? AND source = 'bank' ORDER BY account").all(spaceId) as { account: string }[]).map((r) => r.account);
-  return [...new Set([...ACCOUNTS, ...stored])].filter((a) => a !== OTHER_ACCOUNT);
+  const added = (db.query("SELECT name FROM money_accounts WHERE space_id = ? ORDER BY name").all(spaceId) as { name: string }[]).map((r) => r.name);
+  return [...new Set([...added, ...stored])].filter((a) => a !== OTHER_ACCOUNT);
 }
 
 export const moneyBusy = (db: Database, spaceId: string): boolean => listTasks(db, { spaceId, status: ["queued", "running"] }).some((t) => t.purpose === "money");
@@ -55,7 +56,7 @@ export function undoImport(db: Database, id: string): { removed: number } {
   return { removed };
 }
 
-// Moves an import's rows to another of his accounts. Fingerprints are rebuilt for it, and a row that the account
+// Moves an import's rows to another of their accounts. Fingerprints are rebuilt for it, and a row that the account
 // already holds from another import is dropped; identical rows within the import all stay.
 export function changeImportAccount(db: Database, id: string, account: string): { moved: number; dropped: number } {
   const imp = logged(db, id);

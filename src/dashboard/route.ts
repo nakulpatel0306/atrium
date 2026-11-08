@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; money: boolean };
+export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; money: boolean };
 export type SpaceTab = "tasks" | "files";
 
 const listeners = new Set<() => void>();
@@ -30,6 +30,7 @@ export function parseRoute(path: string): Route {
   if (pathname === "/agents") return { name: "agents" };
   if (pathname === "/rules") return { name: "rules" };
   if (pathname === "/settings") return { name: "settings" };
+  if (pathname === "/start") return { name: "start" };
   const m = pathname.match(/^\/space\/([^/]+)$/);
   if (!m) return { name: "home" };
   try {

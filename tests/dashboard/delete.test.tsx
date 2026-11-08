@@ -39,8 +39,8 @@ test("the confirm lists what goes and what stays, plainly", () => {
     "Your repo at ~/dev/app stays exactly as it is, including any atrium/ branches. Delete those yourself if you don't need them.",
     "Nothing on GitHub changes.",
   ]);
-  const clone = spaceDeleteLines(preview({ kind: "repo", folder: null, texts: { sent: 0, drafts: 0 }, repo: { path: "~/dev-workspace/projects/app", atriumClone: true } }));
-  expect(clone.stays[0]).toBe("The copy Atrium cloned at ~/dev-workspace/projects/app is removed only if everything in it is on GitHub. Otherwise Atrium keeps it and says why.");
+  const clone = spaceDeleteLines(preview({ kind: "repo", folder: null, texts: { sent: 0, drafts: 0 }, repo: { path: "~/Projects/app", atriumClone: true } }));
+  expect(clone.stays[0]).toBe("The copy Atrium cloned at ~/Projects/app is removed only if everything in it is on GitHub. Otherwise Atrium keeps it and says why.");
   expect(spaceDeleteLines(preview({ investing: 30 })).goes).toContain("Its holdings, watchlists, alerts and other investing data");
 });
 

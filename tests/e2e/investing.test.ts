@@ -29,7 +29,7 @@ import { metaJob } from "../../src/engine/markets/meta";
 import { lookThroughFor } from "../../src/engine/markets/portfolio";
 import { demoProvider } from "../../src/engine/markets/providers/demo";
 import { digestJob, latestWriteups } from "../../src/engine/markets/research";
-import { seedInvesting } from "../../src/engine/markets/seed";
+import { seedDemoInvesting } from "../fixtures/markets/demo-tickers";
 import { listWatchlist } from "../../src/engine/markets/watchlist";
 import { briefingMarketsLine } from "../../src/dashboard/markets";
 import { startServer } from "../../src/server/server";
@@ -130,8 +130,8 @@ afterAll(() => {
   home.cleanup();
 });
 
-test("1. the 13 tickers, then a Wealthsimple import with CAD book values and owned ideas", async () => {
-  spaceId = seedInvesting(db).spaceId;
+test("1. the demo tickers, then a Wealthsimple import with CAD book values and owned ideas", async () => {
+  spaceId = seedDemoInvesting(db).spaceId;
   // Plan 7's tools are Advanced-only since Plan 10; this walkthrough exercises them.
   setAdvanced(db, spaceId, true);
   expect(listWatchlist(db, spaceId)).toHaveLength(14);

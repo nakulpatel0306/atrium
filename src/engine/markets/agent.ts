@@ -80,7 +80,7 @@ const BLOCK_HELP = [
   ' "strategies":[{"name":"Momentum","rules":"…","symbols":["AAPL"],"cadence":"open","maxPositionValue":2000,"maxTradesPerDay":3}]}',
   "```",
   'Backtest templates: {"kind":"sma_cross","fast":n,"slow":n}, {"kind":"rsi_revert","period":14,"buyBelow":30,"sellAbove":70}, {"kind":"buy_hold"}. Ranges: 1M, 3M, 6M, 1Y. Cadence: open (9:45 AM ET), hourly, close (3:45 PM ET).',
-  `Limits per run: at most ${LIMITS.orders} orders, ${LIMITS.flags} flags, ${LIMITS.backtests} backtests and ${LIMITS.strategies} strategy. Orders are ignored unless this task runs an approved paper strategy. A strategy you propose waits for Nakul's approval.`,
+  `Limits per run: at most ${LIMITS.orders} orders, ${LIMITS.flags} flags, ${LIMITS.backtests} backtests and ${LIMITS.strategies} strategy. Orders are ignored unless this task runs an approved paper strategy. A strategy you propose waits for the user's approval.`,
 ];
 
 export function createMarketsHooks(db: Database, deps: { data: MarketData; now?: () => number }): MarketsHooks {
@@ -112,13 +112,13 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
       const when = usSession(at).open ? "today" : `on ${dayLabel(lastCompletedSession(at).date)}`;
       out.push(
         isAdvanced(db, space.id)
-          ? `Write a short digest for Nakul: what moved in his portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed.`
-          : `Write at most 4 short sentences for Nakul: what moved in his portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed. No headings.`,
+          ? `Write a short digest for the user: what moved in their portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed.`
+          : `Write at most 4 short sentences for the user: what moved in their portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed. No headings.`,
       );
     }
     if (task.purpose === "money") {
       out.push(...moneyFacts(db, space.id, at));
-      if (task.detail.trim()) out.push(`Nakul asks: ${task.detail.trim()}`);
+      if (task.detail.trim()) out.push(`The user asks: ${task.detail.trim()}`);
       out.push(
         "Answer in at most 250 words of plain, everyday markdown, using only these facts and the portfolio above. Say plainly when they don't cover the question. Don't recommend specific investments.",
       );
@@ -127,7 +127,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
       out.push(...subjectFacts(task.subject, at, true, space.id).slice(0, -1));
       const held = positionLine(space.id, task.subject, at);
       if (held) out.push(held);
-      if (task.detail.trim()) out.push(`Nakul asks: ${task.detail.trim()}`);
+      if (task.detail.trim()) out.push(`The user asks: ${task.detail.trim()}`);
       out.push("Answer in at most 200 words of plain markdown: what the company or fund does, what moved it lately and why, and what to watch next. Don't recommend buying or selling.");
     }
     if (task.purpose === "thesis_draft" || task.purpose === "thesis_check") out.push(...subjectFacts(task.subject, at, task.purpose === "thesis_check", space.id));
@@ -150,7 +150,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
     const row = portfolioView(db, data, spaceId, at).holdings.find((h) => h.key === key);
     const worth = row?.valueCad != null && row.price ? `, worth ${money(row.valueCad, "CAD")} (${row.price.source})` : "";
     const gain = row?.gainCad != null ? `, gain ${row.gainCad >= 0 ? "+" : ""}${money(row.gainCad, "CAD")} since purchase` : "";
-    return `Nakul holds ${qty} in ${accounts}${worth}${gain}.`;
+    return `The user holds ${qty} in ${accounts}${worth}${gain}.`;
   }
 
   // Public facts about one instrument, with their sources; Nakul's own thesis and notes only for a check.
@@ -164,16 +164,16 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
       out.push(`- P/E ${fmt(m.pe)}, 52-week range ${fmt(m.low52)}–${fmt(m.high52)}, dividend yield ${m.divYield === null ? "n/a" : `${fmt(m.divYield)}%`}${metrics}.`);
     }
     const earnings = upcomingEarnings(db, [key], etDate(at), 60)[0];
-    if (earnings) out.push(`- Next earnings ${earnings.date}${earnings.hour ? ` (${earnings.hour})` : ""}, EPS estimate ${fmt(earnings.epsEstimate)} (${earnings.source === "you" ? "entered by Nakul" : "Finnhub"}).`);
+    if (earnings) out.push(`- Next earnings ${earnings.date}${earnings.hour ? ` (${earnings.hour})` : ""}, EPS estimate ${fmt(earnings.epsEstimate)} (${earnings.source === "you" ? "entered by the user" : "Finnhub"}).`);
     const divs = db.query("SELECT ex_date, amount FROM market_dividends WHERE key = ? ORDER BY ex_date DESC LIMIT 4").all(key) as { ex_date: string; amount: number }[];
     if (divs.length) out.push(`- Dividends (Tiingo): ${divs.map((d) => `${d.ex_date} ${fmt(d.amount, 4)}`).join(", ")}.`);
     const news = recentNews(db, [key], 0, 10);
     if (news.length) out.push("- Latest headlines:", ...news.map((n) => `  - ${n.headline} (${n.source}, ${etDate(n.at)})`));
     if (withNotes && spaceId) {
       const n = getNotes(db, spaceId, key);
-      out.push(`Nakul's thesis: ${n.thesis || "(none)"}`, `Nakul's notes: ${n.notes || "(none)"}`);
+      out.push(`The user's thesis: ${n.thesis || "(none)"}`, `The user's notes: ${n.notes || "(none)"}`);
     }
-    out.push("Write plain prose for Nakul. Do not recommend buying or selling.");
+    out.push("Write plain prose for the user. Do not recommend buying or selling.");
     return out;
   }
 

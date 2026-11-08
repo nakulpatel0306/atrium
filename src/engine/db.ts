@@ -1,6 +1,9 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { config } from "./config";
+import { applyProjectsRoot, migrateProjectsRoot } from "./profile";
 import { migrateWatchlists } from "./markets/lists";
 import { MARKETS_SCHEMA } from "./markets/schema";
 import { remaskMoney } from "./money/remask";
@@ -182,6 +185,9 @@ export function openDb(path?: string): Database {
     db.exec("VACUUM");
     db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   }
+  // Installs from before the projects folder was a setting kept their projects under this folder.
+  migrateProjectsRoot(db, join(homedir(), "dev-workspace", "projects"));
+  applyProjectsRoot(db);
   return db;
 }
 

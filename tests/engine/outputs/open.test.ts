@@ -118,7 +118,7 @@ test("Add to Calendar drops alarms that could run, mail or fetch something", asy
     "END:VALARM",
     "BEGIN:VALARM",
     "ACTION:PROCEDURE",
-    "ATTACH:file:///Users/n/evil.sh",
+    "ATTACH:file:///Users/me/evil.sh",
     "TRIGGER:-PT5M",
     "END:VALARM",
     "BEGIN:VALARM",

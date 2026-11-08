@@ -3,7 +3,7 @@ import { getSpace } from "../engine/spaces";
 import { listRules, setRules, type Rule } from "../engine/money/categories";
 import { importMoney, previewMoney, type DateOrder, type MoneyMap, type Signs } from "../engine/money/import";
 import { moneySummary, moneyView, requestExplain, requestMoneyAsk, STARTERS } from "../engine/money/summary";
-import { ACCOUNTS, OTHER_ACCOUNT } from "../engine/money/banks";
+import { accountChoices, addAccount } from "../engine/money/accounts";
 import { checkBudgets, listBudgets, setBudget } from "../engine/money/budgets";
 import { dismissNudge } from "../engine/money/nudges";
 import { importReminder } from "../engine/money/reminder";
@@ -18,7 +18,7 @@ const TOO_BIG = "That file is over 2 MB; export a shorter date range.";
 // The JSON around a 2 MB file (escaped quotes and newlines) can be larger than the file itself.
 const BODY_LIMIT = { bytes: 2 * MAX_CSV_BYTES + 64 * 1024, message: TOO_BIG };
 const PREVIEW_ROWS = 20;
-const OWNED = /^\/api\/investing\/([^/]+)\/money(\/(?:preview|import|rules|ask|explain|transfer|budgets|nudges\/[^/]+\/dismiss))?$/;
+const OWNED = /^\/api\/investing\/([^/]+)\/money(\/(?:preview|import|accounts|rules|ask|explain|transfer|budgets|nudges\/[^/]+\/dismiss))?$/;
 const IMPORT = /^\/api\/money\/imports\/([^/]+)(\/account)?$/;
 
 function check<T>(fn: () => T): T {
@@ -54,7 +54,7 @@ async function importRoute(db: Database, req: Request, id: string, account: bool
   return json(check(() => changeImportAccount(db, id, typeof b.account === "string" ? b.account : "")));
 }
 
-// The Money view: Nakul's own bank, card and Wealthsimple files, read and summarised on this Mac. Nothing here
+// The Money view: the user's own bank, card and Wealthsimple files, read and summarised on this Mac. Nothing here
 // touches the network; only an ask sends compact facts to Claude.
 export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url: URL): Promise<Response | null> {
   const owned = url.pathname.match(OWNED);
@@ -75,7 +75,7 @@ export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url
     }
     if (req.method === "POST" && rest === "/preview") {
       const p = previewOf(await readBody(req, BODY_LIMIT));
-      return json({ ...p, rows: p.rows.slice(0, PREVIEW_ROWS).map(({ legacy: _legacy, ...r }) => r), total: p.rows.length, choices: [...ACCOUNTS, OTHER_ACCOUNT] });
+      return json({ ...p, rows: p.rows.slice(0, PREVIEW_ROWS).map(({ legacy: _legacy, ...r }) => r), total: p.rows.length, choices: accountChoices(db, spaceId, p.account) });
     }
     if (req.method === "POST" && rest === "/import") {
       const p = previewOf(await readBody(req, BODY_LIMIT));
@@ -85,6 +85,10 @@ export async function moneyRoute(db: Database, m: MarketsDeps, req: Request, url
       importReminder(db, spaceId, now);
       checkBudgets(db, spaceId, now);
       return json({ ...done, skipped: p.skipped.length });
+    }
+    if (req.method === "POST" && rest === "/accounts") {
+      const b = await readBody(req);
+      return json({ name: check(() => addAccount(db, spaceId, { name: String(b.name ?? ""), kind: String(b.kind ?? ""), institution: typeof b.institution === "string" ? b.institution : "" })) });
     }
     if (req.method === "GET" && rest === "/rules") return json(listRules(db, spaceId));
     if (req.method === "PUT" && rest === "/rules") {

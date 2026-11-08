@@ -10,12 +10,15 @@ export function tempHome(): { home: string; cleanup(): void } {
   // Tests never launch real apps.
   process.env.ATRIUM_OPEN_BIN ??= join(import.meta.dir, "fixtures", "fake-open.ts");
   // Tests never script Messages or Contacts.
+  // The greeting and own-transfer name never come from the Mac account that happens to run the tests.
+  process.env.ATRIUM_MAC_NAME = "";
   process.env.ATRIUM_OSASCRIPT_BIN ??= join(import.meta.dir, "fixtures", "fake-osascript.ts");
   return {
     home,
     cleanup: () => {
       delete process.env.ATRIUM_HOME;
       delete process.env.ATRIUM_FILES_HOME;
+      delete process.env.ATRIUM_MAC_NAME;
       rmSync(home, { recursive: true, force: true });
     },
   };
@@ -32,7 +35,7 @@ export function tempRepo(): { path: string; cleanup(): void } {
   git("init", "-b", "main");
   // Local config so engine commits in fixtures neither sign with the developer's key nor depend on their identity.
   git("config", "user.name", "Atrium Test");
-  git("config", "user.email", "test@atrium.local");
+  git("config", "user.email", "test@example.com");
   git("config", "commit.gpgsign", "false");
   git("add", "-A");
   git("commit", "-m", "init");

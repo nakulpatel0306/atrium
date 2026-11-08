@@ -123,9 +123,19 @@ test("an oversized body is refused before it's parsed, with or without a Content
 
 test("preview names the bank and the account; the account can be picked", async () => {
   const p = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv") })).json();
-  expect(p).toMatchObject({ bank: { id: "td", confidence: "medium" }, account: "TD credit card", choices: ["TD chequing", "TD credit card", "Amex", "Wealthsimple chequing", "Wealthsimple savings", "Imported"] });
+  expect(p).toMatchObject({ bank: { id: "td", confidence: "medium" }, account: "TD credit card", choices: ["TD credit card", "Imported"] });
   const picked = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv"), account: "TD chequing" })).json();
   expect(picked.accounts).toEqual(["TD chequing"]);
+});
+
+test("Add an account makes it a choice, and bad input is a plain 400", async () => {
+  const made = await (await call("POST", money("/accounts"), { name: "Everyday", kind: "chequing", institution: "Example Bank" })).json();
+  expect(made).toEqual({ name: "Everyday" });
+  const p = await (await call("POST", money("/preview"), { csv: csv("td-credit.csv") })).json();
+  expect(p.choices).toEqual(["Everyday", "TD credit card", "Imported"]);
+  const bad = await call("POST", money("/accounts"), { name: "Everyday", kind: "savings account" });
+  expect(bad.status).toBe(400);
+  expect((await bad.json()).error).toBe("Pick chequing, savings or credit card.");
 });
 
 test("the view carries the recap, subscriptions, TFSA room and budgets; transfers, budgets and Explain have routes", async () => {
@@ -199,7 +209,7 @@ test("an import can be moved to the right account, dropping what it doubled, the
     ["TD chequing", 28],
   ]);
   expect(v.busy).toBe(false);
-  expect(v.importAccounts).toEqual(["TD chequing", "TD credit card", "Amex", "Wealthsimple chequing", "Wealthsimple savings"]);
+  expect(v.importAccounts).toEqual(["TD chequing"]);
   const id = v.imports[0].id;
   const imp = (rest = "") => `/api/money/imports/${id}${rest}`;
 

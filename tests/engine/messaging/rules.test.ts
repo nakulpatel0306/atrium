@@ -9,7 +9,7 @@ test("normalizeHandle keeps phone numbers and emails", () => {
 });
 
 test("normalizeHandle refuses everything else", () => {
-  for (const raw of ["-e", '+1 555; do shell script "x"', "chat1234567", "a@b", "x@y.com\nrm", "123", "1234567890123456", "", "+1 555 0134 ‮", "--", "+1 555 0134\u0000"]) {
+  for (const raw of ["-e", '+1 555; do shell script "x"', "chat1234567", "a@b", "x@example.com\nrm", "123", "1234567890123456", "", "+1 555 0134 ‮", "--", "+1 555 0134\u0000"]) {
     expect(normalizeHandle(raw)).toBeNull();
     expect(handleProblem(raw)).toBe(BAD_HANDLE_COPY);
   }
@@ -42,7 +42,7 @@ test("every invisible character is refused in names and texts", () => {
   expect(nameProblem("Dana\u202e")).toBe(NAME_COPY);
   expect(nameProblem("Dana\u2066")).toBe(NAME_COPY);
   for (const c of ["\u0085", "\u061c", "\u200b", "\u200d", "\u200f", "\u202a", "\u2060", "\u2069", "\u2028", "\u2029", "\ufeff"]) {
-    expect(nameProblem(`Ta${c}lal`)).toBe(NAME_COPY);
+    expect(nameProblem(`Da${c}na`)).toBe(NAME_COPY);
     expect(textProblem(`hi${c}there`)).toBe(HIDDEN_COPY);
     expect(oneLine(`a${c}b`)).toBe("ab");
   }
@@ -56,7 +56,7 @@ const tag = (s: string) => [...s].map((c) => String.fromCodePoint(0xe0000 + c.ch
 test("I2: invisible tag characters, variation selectors and soft hyphens are refused in texts and names", () => {
   expect(textProblem(`Hey Dana!${tag("my ssh key is AAAA")}`)).not.toBeNull();
   expect(textProblem(`ok\u{1F600}${String.fromCodePoint(0xe0100, 0xe0142, 0xe0161)}`)).not.toBeNull();
-  expect(textProblem("Hey\u00adTalal")).not.toBeNull();
+  expect(textProblem("Hey\u00adPriya")).not.toBeNull();
   expect(textProblem("Hi\u3164there")).not.toBeNull();
   expect(nameProblem(`Dana${tag("x")}`)).not.toBeNull();
   // Still allowed: real emoji spellings.

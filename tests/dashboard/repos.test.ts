@@ -15,8 +15,8 @@ test("draftErrors uses the engine's own wording, and is quiet for a good draft",
 });
 
 test("the folder follows the name, shown from home", () => {
-  expect(folderFor("/Users/nakul/dev-workspace/projects/demo", "other")).toBe("/Users/nakul/dev-workspace/projects/other");
-  expect(tildeShown("/Users/nakul/dev-workspace/projects/demo")).toBe("~/dev-workspace/projects/demo");
+  expect(folderFor("/Users/me/Projects/demo", "other")).toBe("/Users/me/Projects/other");
+  expect(tildeShown("/Users/me/Projects/demo")).toBe("~/Projects/demo");
   expect(tildeShown("/private/tmp/x")).toBe("/private/tmp/x");
 });
 
@@ -27,18 +27,18 @@ test("draftSummary reads like the Needs you row", () => {
 });
 
 test("removalSize reads the size from the removal's detail", () => {
-  expect(removalSize("~/dev-workspace/projects/demo · 12.4 MB. Everything is committed and on GitHub")).toBe("12.4 MB");
+  expect(removalSize("~/Projects/demo · 12.4 MB. Everything is committed and on GitHub")).toBe("12.4 MB");
   expect(removalSize("no size here")).toBeNull();
 });
 
 test("storageRow says who made a folder and whether it can go", () => {
   const now = Date.now();
   const base: Row = {
-    spaceId: "spc_1", spaceName: "demo", path: "/Users/nakul/dev-workspace/projects/demo", github: "fakeuser/demo", createdBy: "atrium",
+    spaceId: "spc_1", spaceName: "demo", path: "/Users/me/Projects/demo", github: "fakeuser/demo", createdBy: "atrium",
     cloneId: "cln_1", bytes: 3 * 1024 * 1024, lastUsedAt: now - 2 * 86_400_000, removable: { ok: true }, pendingApprovalId: null,
   };
   expect(storageRow(base, now)).toEqual({
-    name: "demo", path: "~/dev-workspace/projects/demo", size: "3.0 MB", owner: "Made by Atrium", lastUsed: "2d ago",
+    name: "demo", path: "~/Projects/demo", size: "3.0 MB", owner: "Made by Atrium", lastUsed: "2d ago",
     status: "Can be removed", reasons: [], canAsk: true,
   });
   const refused = storageRow({ ...base, removable: { ok: false, reasons: ["There are uncommitted changes.", "There are stashed changes."] } }, now);

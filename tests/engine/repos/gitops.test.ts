@@ -51,7 +51,7 @@ test("initialCommit makes one plain commit as the configured identity", async ()
   expect(git(dir, "rev-parse", "HEAD").out.trim()).toBe(sha);
   expect(git(dir, "rev-list", "--count", "HEAD").out.trim()).toBe("1");
   expect(git(dir, "log", "-1", "--format=%B").out).toBe("Initial commit\n\n");
-  expect(git(dir, "log", "-1", "--format=%ae").out.trim()).toBe("test@atrium.local");
+  expect(git(dir, "log", "-1", "--format=%ae").out.trim()).toBe("test@example.com");
   expect(git(dir, "branch", "--show-current").out.trim()).toBe("main");
   const body = git(dir, "log", "-1", "--format=%B").out;
   const trailers = Bun.spawnSync(["git", "interpret-trailers", "--parse"], { stdin: Buffer.from(body), env: process.env }).stdout.toString();

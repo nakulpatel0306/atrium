@@ -26,6 +26,7 @@ import { embedResponse } from "./embed";
 import { investingRoute } from "./investing";
 import { simpleRoute } from "./investing-simple";
 import { moneyRoute } from "./money";
+import { startRoute } from "./start";
 import { marketsRoute, type MarketsDeps } from "./markets";
 import type { Repos } from "../engine/repos";
 import { BadDraft } from "../engine/repos/names";
@@ -400,6 +401,8 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
 
     const files = await filesRoute(db, req, url);
     if (files) return files;
+    const start = await startRoute(db, req, url);
+    if (start) return start;
 
     if (deps.markets) {
       const res =
@@ -434,7 +437,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index },
+    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index, "/start": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";

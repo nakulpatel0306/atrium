@@ -28,12 +28,12 @@ test("drops raw HTML and scripts", () => {
 });
 
 test("filters URLs", () => {
-  const out = html("[a](javascript:alert(1)) [b](file:///etc/passwd) [c](grocery-list.md) [d](https://example.com) [e](mailto:me@x.com)");
+  const out = html("[a](javascript:alert(1)) [b](file:///etc/passwd) [c](grocery-list.md) [d](https://example.com) [e](mailto:me@example.com)");
   expect(out).not.toContain("javascript:");
   expect(out).not.toContain("file:");
   expect(out).not.toContain('href="grocery-list.md"');
   expect(out).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">d</a>');
-  expect(out).toContain('href="mailto:me@x.com"');
+  expect(out).toContain('href="mailto:me@example.com"');
   expect(out).toContain("<span>a</span>");
   expect(safeUrl("HTTPS://x.com")).toBe("HTTPS://x.com");
   expect(safeUrl("//evil.com")).toBe("");

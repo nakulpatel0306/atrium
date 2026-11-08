@@ -24,7 +24,7 @@ import { createKeychain } from "../../src/engine/markets/keychain";
 import { listItems, listLists } from "../../src/engine/markets/lists";
 import { metaJob } from "../../src/engine/markets/meta";
 import { digestJob } from "../../src/engine/markets/research";
-import { addMetaOnce, seedInvesting } from "../../src/engine/markets/seed";
+import { seedDemoInvesting } from "../fixtures/markets/demo-tickers";
 import { enqueueDueStrategies } from "../../src/engine/markets/strategies";
 import { startServer } from "../../src/server/server";
 import { fakeTimers } from "../engine/markets/fakes";
@@ -120,7 +120,7 @@ beforeAll(async () => {
   feed = createFeed({ db, data, now, timers, jobs: recorded, onQuotes: (q) => evaluateQuotes(db, q, clock), strategyActive: () => false });
   server = startServer({ db, runner: { kick: () => void kicks++ }, setup: async () => { throw new Error("no"); }, port: 0, markets: { data, feed, keychain, kick: () => void kicks++, now, fetch: stub, jobs } });
   base = `http://127.0.0.1:${server.port}`;
-  spaceId = seedInvesting(db).spaceId;
+  spaceId = seedDemoInvesting(db).spaceId;
   addHolding(db, spaceId, { account: "TFSA", symbol: "AMZN", exchange: "US", name: "Amazon", quantity: 10, bookValue: 1500, currency: "USD" });
 });
 
@@ -134,7 +134,7 @@ afterAll(() => {
   expect(tradingView).toEqual([]);
 });
 
-test("1. an old single watchlist becomes Holdings with META added once", () => {
+test("1. an old single watchlist becomes Holdings", () => {
   const dir = mkdtempSync(join(tmpdir(), "atrium-old-"));
   try {
     const path = join(dir, "atrium.db");
@@ -151,15 +151,13 @@ test("1. an old single watchlist becomes Holdings with META added once", () => {
     });
     old.close();
     const first = openDb(path);
-    expect(addMetaOnce(first)).toBe("added");
     const lists = listLists(first, "spc_inv");
     expect(lists.map((l) => l.name)).toEqual(["Holdings"]);
-    expect(listItems(first, lists[0]!.id).map((i) => i.key)).toEqual([...keys, "META"]);
+    expect(listItems(first, lists[0]!.id).map((i) => i.key)).toEqual(keys);
     first.close();
     const second = openDb(path);
-    expect(addMetaOnce(second)).toBe("done_before");
     expect(listLists(second, "spc_inv").map((l) => l.id)).toEqual(lists.map((l) => l.id));
-    expect(listItems(second, lists[0]!.id)).toHaveLength(14);
+    expect(listItems(second, lists[0]!.id)).toHaveLength(13);
     second.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -224,7 +222,7 @@ test("6. Ask Claude about AMZN queues a Claude task whose answer is kept and lis
   expect(task).toMatchObject({ agent: "claude", purpose: "ask", subject: "AMZN", detail: "Why up today?" });
   const hooks = createMarketsHooks(db, { data, now: () => clock });
   const context = await hooks.context(task, getSpace(db, spaceId)!, "claude");
-  expect(context).toContain("Nakul asks: Why up today?");
+  expect(context).toContain("The user asks: Why up today?");
   db.query("UPDATE tasks SET status = 'done' WHERE id = ?").run(task.id);
   expect(await hooks.settle(task, getSpace(db, spaceId)!, "claude", "AWS carried the quarter.")).toMatchObject({ done: true, activity: "Answer saved" });
   const view = await (await get(`/api/investing/${spaceId}/symbol/AMZN`)).json();

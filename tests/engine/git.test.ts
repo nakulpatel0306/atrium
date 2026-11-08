@@ -25,7 +25,7 @@ function tempDir() {
 
 function git(path: string, ...args: string[]) {
   const r = Bun.spawnSync(
-    ["git", "-c", "user.name=Atrium Test", "-c", "user.email=test@atrium.local", "-c", "commit.gpgsign=false", ...args],
+    ["git", "-c", "user.name=Atrium Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", ...args],
     { cwd: path },
   );
   if (r.exitCode !== 0) throw new Error(r.stderr.toString());

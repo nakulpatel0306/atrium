@@ -23,7 +23,7 @@ import { healthFor, lookThroughFor, positionsFor } from "../engine/markets/portf
 import { redact } from "../engine/markets/redact";
 import { getNotes, latestWriteups, requestThesisDraft, saveNotes } from "../engine/markets/research";
 import { screenRows } from "../engine/markets/screener";
-import { seedInvesting } from "../engine/markets/seed";
+import { setupInvesting } from "../engine/markets/setup";
 import { quoteSourced } from "../engine/markets/sourced";
 import { addEntry, incomeTtm, listEntries, removeEntry, roomStatus, setRoom, tfsaOf, ttmDividends, withholdingNote } from "../engine/markets/tfsa";
 import { listWatchlist } from "../engine/markets/watchlist";
@@ -96,7 +96,7 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
     if (b.on !== undefined) setSetting(db, "markets.edgar", b.on ? "on" : "off");
     return json(edgarStatus(db, now));
   }
-  if (hit("POST", /^\/setup$/)) return json(seedInvesting(db));
+  if (hit("POST", /^\/setup$/)) return json(setupInvesting(db));
   if (hit("GET", /^\/tfsa$/)) {
     const year = Number(url.searchParams.get("year") ?? etDate(now).slice(0, 4));
     if (!Number.isInteger(year)) throw new HttpError(400, "Pick a year like 2026.");

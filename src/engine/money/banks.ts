@@ -1,15 +1,13 @@
 // Which bank a CSV came from, from its shape alone. These layouts are the documented or well-known ones, not
-// checked against Nakul's own downloads (see docs/plans/2026-11-06-plan-14-money.md), so each says how sure it is
-// and the manual column mapping stays as the fallback.
+// checked against real downloads, so each says how sure it is and the manual column mapping stays as the fallback.
+// A recognised format only suggests an account name; the user's accounts are the ones they have imported or added.
 export type BankId = "td" | "amex" | "ws-cash" | "ws-chequing" | "ws-activity" | "generic";
 export type Confidence = "high" | "medium" | "low";
 export type Bank = { id: BankId; label: string; confidence: Confidence; account: string | null };
 
-// The accounts Nakul has, for the picker on files that don't name their account.
-export const ACCOUNTS = ["TD chequing", "TD credit card", "Amex", "Wealthsimple chequing", "Wealthsimple savings"] as const;
 export const OTHER_ACCOUNT = "Imported";
-export const isKnownAccount = (a: string) => (ACCOUNTS as readonly string[]).includes(a);
-// How the catch-all account reads anywhere Nakul sees it.
+export const ACCOUNT_KINDS = ["chequing", "savings", "credit card"] as const;
+// How the catch-all account reads anywhere the user sees it.
 export const accountLabel = (a: string) => (a === OTHER_ACCOUNT ? "Unknown account" : a);
 
 const lower = (row: string[]) => row.map((h) => h.trim().toLowerCase());

@@ -4,6 +4,7 @@ import { createApproval, resolveApproval } from "../../src/engine/approvals";
 import { briefing, markSeen } from "../../src/engine/briefing";
 import { createRegistry } from "../../src/engine/agents/registry";
 import { openDb } from "../../src/engine/db";
+import { setUserName } from "../../src/engine/profile";
 import { setSetting } from "../../src/engine/settings";
 import { createSpace } from "../../src/engine/spaces";
 import { snapshot } from "../../src/engine/state";
@@ -77,10 +78,16 @@ test("runs that all ended without finishing are described, not a bare period", (
 
 test("greeting follows time of day", () => {
   const at = (h: number) => new Date(2026, 10, 4, h, 0).getTime();
-  expect(briefing(db, at(9)).greeting).toBe("Good morning, Nakul.");
-  expect(briefing(db, at(12)).greeting).toBe("Good afternoon, Nakul.");
-  expect(briefing(db, at(17)).greeting).toBe("Good afternoon, Nakul.");
-  expect(briefing(db, at(18)).greeting).toBe("Good evening, Nakul.");
+  expect(briefing(db, at(9)).greeting).toBe("Good morning.");
+  setUserName(db, "Sam Rivera");
+  expect(briefing(db, at(9)).greeting).toBe("Good morning, Sam.");
+  expect(briefing(db, at(12)).greeting).toBe("Good afternoon, Sam.");
+  expect(briefing(db, at(17)).greeting).toBe("Good afternoon, Sam.");
+  expect(briefing(db, at(18)).greeting).toBe("Good evening, Sam.");
+  setUserName(db, "");
+  process.env.ATRIUM_MAC_NAME = "Priya Patel";
+  expect(briefing(db, at(9)).greeting).toBe("Good morning, Priya.");
+  process.env.ATRIUM_MAC_NAME = "";
 });
 
 test("snapshot defaults and settings-derived power, usage", () => {

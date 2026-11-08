@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { macFullName } from "../profile";
 import { getSetting, setSetting } from "../settings";
 
 // What a bank or card row is beyond its amount, decided from its account, its description and which of Nakul's
@@ -85,17 +86,9 @@ export function flowsFor(rows: Row[], owner: () => string | null): Map<string, F
   return out;
 }
 
-// The name his own e-transfers go to: his own setting, else the Mac user's full name.
+// The name the user's own e-transfers go to: their own setting, else the Mac user's full name.
 const OWNER_KEY = "money.ownerName";
-let macName: string | null | undefined;
-function macUserName(): string | null {
-  if (macName === undefined) {
-    const r = Bun.spawnSync(["id", "-F"], { stdout: "pipe", stderr: "pipe" });
-    macName = r.exitCode === 0 ? r.stdout.toString().trim() || null : null;
-  }
-  return macName;
-}
-export const ownerName = (db: Database): string | null => getSetting(db, OWNER_KEY) || macUserName();
+export const ownerName = (db: Database): string | null => getSetting(db, OWNER_KEY) || macFullName();
 export function setOwnerName(db: Database, name: string): void {
   setSetting(db, OWNER_KEY, name.trim());
   reflowMoney(db);

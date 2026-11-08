@@ -85,6 +85,9 @@ export function Home({ state, briefing, onNewSpace }: Props) {
           <Logo className="big" />
           <h1>{briefing.greeting}</h1>
           <p>Nothing here yet. Describe your first space below.</p>
+          <button className="btn" onClick={() => navigate("/start")}>
+            Get started
+          </button>
           <ArrowDown className="arrow" />
         </div>
       </div>

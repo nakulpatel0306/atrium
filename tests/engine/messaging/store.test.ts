@@ -113,7 +113,7 @@ test("status moves are enforced and guarded", () => {
 });
 
 test("a name that could fake lines on the card is refused", () => {
-  for (const toName of ["Dana\nTo: Mom · +1 555 010 9999", "Dana\u202e", "Ta\u0007lal", "x".repeat(81), " "]) {
+  for (const toName of ["Dana\nTo: Mom · +1 555 010 9999", "Dana\u202e", "Da\u0007na", "x".repeat(81), " "]) {
     expect(() => draft({ toName })).toThrow(BadMessage);
   }
   expect(draft({ toName: "x".repeat(80) }).action.toName).toBe("x".repeat(80));

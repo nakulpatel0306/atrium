@@ -6,6 +6,10 @@ const step = (s: Record<string, unknown>) => out({ event: "step_update", step_up
 
 if (process.env.FAKE_AGY_ARGV) await Bun.write(process.env.FAKE_AGY_ARGV, JSON.stringify(process.argv.slice(2)));
 const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("agy 1.5.0");
+  process.exit(0);
+}
 const prompt = args[args.indexOf("-p") + 1] ?? "";
 
 if (args[0] === "models") {

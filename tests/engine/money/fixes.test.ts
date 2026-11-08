@@ -1,5 +1,6 @@
 // Fixes from Nakul's first real imports: TD's second layout, Wealthsimple chequing and savings statements,
 // duplicates across layouts, and undoing or relabelling an import. Fixtures mirror the layouts with fake data only.
+import { addAccount } from "../../../src/engine/money/accounts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { readdirSync, readFileSync } from "node:fs";
@@ -185,6 +186,7 @@ test("change account relabels an import's rows and drops the ones that are now d
 test("change account keeps one file's identical charges", () => {
   importMoney(db, spaceId, previewMoney(csv("amex-repeats.csv"), { account: "Imported" }));
   const [imp] = listImports(db, spaceId);
+  addAccount(db, spaceId, { name: "Amex", kind: "credit card", institution: "Amex" });
   expect(changeImportAccount(db, imp!.id, "Amex")).toEqual({ moved: 4, dropped: 0 });
   expect(count("Amex")).toBe(4);
 });

@@ -9,6 +9,7 @@ import { ArchivedSpaces } from "./ArchivedSpaces";
 import { DataBudget } from "./DataBudget";
 import { Freshness } from "./markets/Freshness";
 import { MessagingSettings } from "./MessagingSettings";
+import { Profile } from "./Profile";
 import { Storage } from "./Storage";
 
 const PROVIDERS: { id: DataStatus["usProvider"]; label: string; covers: string }[] = [
@@ -155,6 +156,8 @@ export function Settings() {
     <div className="wrap">
       <h1>Settings</h1>
       <p className="brief">Archived spaces, market prices, texts and storage. Keys stay in your Mac's Keychain; agents only ever see prices.</p>
+      <h2>You</h2>
+      <Profile />
       <ArchivedSpaces />
       <h2>Market data</h2>
       {!s ? (

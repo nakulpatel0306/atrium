@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
@@ -200,11 +200,19 @@ test("a failure while writing tasks rolls back the space", async () => {
   expect(listSpaces(db, { includeArchived: true })).toHaveLength(0);
 });
 
-test("default cwd is ~/dev-workspace", async () => {
+test("default cwd is the projects folder, created on first use", async () => {
   const seen: AgentRunInput[] = [];
   const plan = JSON.stringify({ name: "S", kind: "general", goal: "g", private: true, tasks: [] });
-  await setupSpace(db, fake(ok(plan), seen), "x");
-  expect(seen[0]!.cwd).toBe(join(homedir(), "dev-workspace"));
+  const projects = join(home.home, "Projects");
+  process.env.ATRIUM_PROJECTS_ROOT = projects;
+  try {
+    await setupSpace(db, fake(ok(plan), seen), "x");
+  } finally {
+    delete process.env.ATRIUM_PROJECTS_ROOT;
+  }
+  expect(seen[0]!.cwd).toBe(projects);
+  expect(existsSync(projects)).toBe(true);
+  expect(seen[0]!.systemPrompt).toContain(projects.replace(homedir(), "~"));
 });
 
 test("markets plans are accepted", async () => {

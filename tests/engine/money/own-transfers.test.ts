@@ -142,10 +142,12 @@ test("re-evaluation stays idempotent with pairs, runs on open, and follows his m
   expect(row("2026-10-12", "Wealthsimple chequing")).toMatchObject({ flow: null, category: "E-transfers" });
 });
 
-test("his name defaults to the Mac user's full name", () => {
+test("their name defaults to the Mac user's full name", () => {
   db.query("DELETE FROM settings WHERE key = 'money.ownerName'").run();
-  const mac = Bun.spawnSync(["id", "-F"]).stdout.toString().trim();
-  expect(ownerName(db)).toBe(mac || null);
+  expect(ownerName(db)).toBeNull();
+  process.env.ATRIUM_MAC_NAME = "Sam Rivera";
+  expect(ownerName(db)).toBe("Sam Rivera");
+  process.env.ATRIUM_MAC_NAME = "";
 });
 
 test("TD's SEND E-TFR is in the Transfers category, and one sent to a friend is still spending", () => {
