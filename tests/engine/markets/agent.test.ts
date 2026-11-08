@@ -144,7 +144,7 @@ test("a thesis draft gets the subject's facts and the no-advice line", async () 
   saveNotes(db, space.id, "NOW", { thesis: "Secret thesis", notes: "Secret notes" });
   const draft = createTask(db, { spaceId: space.id, title: "Draft a thesis for NOW", agent: "claude", purpose: "thesis_draft", subject: "NOW" });
   const text = await hooks().context(draft, space, "claude");
-  expect(text).toContain("Write plain prose for Nakul. Do not recommend buying or selling.");
+  expect(text).toContain("Write plain prose for the user. Do not recommend buying or selling.");
   expect(text).toContain("About NOW:");
   expect(text).not.toContain("Secret thesis");
   const check = createTask(db, { spaceId: space.id, title: "Thesis check before NOW earnings on 2026-11-06", agent: "claude", purpose: "thesis_check", subject: "NOW" });
@@ -174,7 +174,7 @@ test("with the market closed, moves are dated by their session, not called today
   const text = await closed.context(digest, space, "claude");
   expect(text).toContain("AAPL $101.00 +1.00% on Fri, Nov 6");
   expect(text).not.toMatch(/AAPL[^\n]*today/);
-  expect(text).toContain("what moved in his portfolio on Fri, Nov 6 and why");
+  expect(text).toContain("what moved in their portfolio on Fri, Nov 6 and why");
   // During a session it is still "today".
   saveQuotes(db, [{ key: "AAPL", price: 101, prevClose: 100, at: NOW - 60_000, source: "demo", freshness: "demo" }]);
   expect(await hooks().context(digest, space, "claude")).toMatch(/AAPL \$[\d.]+ [+−-][\d.]+% today/);
@@ -189,9 +189,9 @@ test("ask context has facts, notes, the position line and the question", async (
   const task = createTask(db, { spaceId: space.id, title: "Ask Claude about AMZN", detail: "Why up today?", agent: "claude", purpose: "ask", subject: "AMZN" });
   const text = await hooks().context(task, space, "claude");
   expect(text).toContain("About AMZN:");
-  expect(text).toContain("Nakul's notes: Cloud margins matter.");
-  expect(text).toMatch(/Nakul holds 10 in TFSA, worth CA\$[\d,]+\.\d\d \(.+\), gain [+−]CA\$[\d,]+\.\d\d since purchase\./);
-  expect(text).toContain("Nakul asks: Why up today?");
+  expect(text).toContain("The user's notes: Cloud margins matter.");
+  expect(text).toMatch(/The user holds 10 in TFSA, worth CA\$[\d,]+\.\d\d \(.+\), gain [+−]CA\$[\d,]+\.\d\d since purchase\./);
+  expect(text).toContain("The user asks: Why up today?");
   expect(text).toContain("Answer in at most 200 words of plain markdown: what the company or fund does, what moved it lately and why, and what to watch next. Don't recommend buying or selling.");
 });
 
@@ -199,7 +199,7 @@ test("a non-Claude agent never gets the position line", async () => {
   addHolding(db, space.id, { account: "TFSA", symbol: "AMZN", exchange: "US", name: "Amazon", quantity: 17, bookValue: 1500, currency: "USD" });
   const task = createTask(db, { spaceId: space.id, title: "Ask Claude about AMZN", detail: "", agent: "claude", purpose: "ask", subject: "AMZN" });
   const codex = await hooks().context(task, space, "codex");
-  expect(codex).not.toContain("Nakul holds");
+  expect(codex).not.toContain("The user holds");
   expect(codex).not.toContain("× 17");
   expect(codex).not.toContain("TFSA");
 });
@@ -218,10 +218,10 @@ test("ask settles into a kept writeup ending with Analysis, not advice.", async 
 test("the digest asks for 4 sentences while Advanced is off", async () => {
   const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", purpose: "digest" });
   const off = await hooks().context(task, space, "claude");
-  expect(off).toContain("Write at most 4 short sentences for Nakul: what moved in his portfolio today and why, from these prices and headlines. Say which numbers are delayed. No headings.");
+  expect(off).toContain("Write at most 4 short sentences for the user: what moved in their portfolio today and why, from these prices and headlines. Say which numbers are delayed. No headings.");
   const { setAdvanced } = await import("../../../src/engine/markets/advanced");
   setAdvanced(db, space.id, true);
-  expect(await hooks().context(task, space, "claude")).toContain("Write a short digest for Nakul: what moved in his portfolio today and why");
+  expect(await hooks().context(task, space, "claude")).toContain("Write a short digest for the user: what moved in their portfolio today and why");
 });
 
 test("news fetched for a Claude task is kept for the daily note and asks", async () => {
@@ -243,7 +243,7 @@ test("a money question gets the money facts and plain-language instructions, for
   const task = createTask(db, { spaceId: space.id, title: "Ask Claude about my money", detail: "Any subscriptions I forgot about?", agent: "claude", purpose: "money" });
   const claude = await hooks().context(task, space, "claude");
   expect(claude).toContain("Recurring charges:");
-  expect(claude).toContain("Nakul asks: Any subscriptions I forgot about?");
+  expect(claude).toContain("The user asks: Any subscriptions I forgot about?");
   expect(claude).toContain("Answer in at most 250 words of plain, everyday markdown");
   const codex = await hooks().context(task, space, "codex");
   expect(codex).not.toContain("Recurring charges");

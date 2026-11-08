@@ -47,7 +47,7 @@ export function validateDescription(text: string): string {
 export function validateGithubSlug(slug: string): { owner: string; name: string } {
   const [owner, name, ...rest] = slug.split("/");
   if (rest.length > 0 || !owner || !name || !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner)) {
-    throw new BadDraft(`"${slug}" isn't a GitHub repo. Use owner/name, like nakulpatel0306/atrium.`);
+    throw new BadDraft(`"${slug}" isn't a GitHub repo. Use owner/name, like octocat/hello-world.`);
   }
   return { owner, name: validateRepoName(name) };
 }

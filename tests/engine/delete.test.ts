@@ -83,6 +83,7 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   db.query("INSERT INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, kind, fingerprint, imported_at) VALUES (?, ?, 'bank', 'a', 'd', 'x', 'm', 1, 'spend', ?, ?)").run(newId("mt"), space.id, newId("fp"), now);
   db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at) VALUES (?, ?, 'a', 'd', 'd', 1, ?)").run(newId("mi"), space.id, now);
   db.query("INSERT INTO money_budgets (space_id, category, monthly_limit, updated_at) VALUES (?, 'Dining', 100, ?)").run(space.id, now);
+  db.query("INSERT INTO money_accounts (space_id, name, kind, institution, created_at) VALUES (?, 'Everyday', 'chequing', '', ?)").run(space.id, now);
   db.query("INSERT INTO money_nudges (id, space_id, kind, key, title, body, created_at) VALUES (?, ?, 'import', 'k', 't', 'b', ?)").run(newId("mn"), space.id, now);
   ensureSpaceFolder(db, space);
   writeFileSync(join(space.folder!, "list.md"), "eggs");

@@ -78,7 +78,7 @@ test("the query is the name exactly, as one argument", async () => {
 test("a separator inside contact data only loses that record", () => {
   const RS = "\u001e";
   const US = "\u001f";
-  const out = [`p1${US}Ta${RS}lal${US}phone${US}Mobile${US}+15550100134`, `p2${US}Dana B${US}phone${US}Mobile${US}+15550109999`].join(RS);
+  const out = [`p1${US}Da${RS}na${US}phone${US}Mobile${US}+15550100134`, `p2${US}Dana B${US}phone${US}Mobile${US}+15550109999`].join(RS);
   expect(parseContacts(`${out}\n`).map((c) => c.personId)).toEqual(["p2"]);
   expect(parseContacts(`p3${US}X${US}phone${US}Mobile${US}chat1234567`)).toEqual([]);
 });

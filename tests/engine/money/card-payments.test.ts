@@ -230,10 +230,10 @@ test("the recap and Explain my month name spent, money in, refunds and money mov
   expect(facts).toContain("Spent CA$371.49; money in CA$4,363.21; left over CA$3,991.72.");
   expect(facts).toContain("Money in is pay, e-transfers received and interest.");
   expect(facts).toContain("Refunds of CA$100.00 on 1 charge were taken off spending.");
-  expect(facts).toContain("Moved between Nakul's own accounts (card payments and transfers): CA$1,465.00, not counted as spending or money in.");
+  expect(facts).toContain("Moved between the user's own accounts (card payments and transfers): CA$1,465.00, not counted as spending or money in.");
   for (const f of facts) expect(isMasked(f)).toBe(true);
   const month = moneyFacts(db, spaceId, NOW).find((l) => l.startsWith("- October 2026"))!;
   expect(month).toContain("money in CA$4,363.21");
   expect(month).toContain("refunds CA$100.00");
-  expect(month).toContain("moved between his accounts CA$1,465.00");
+  expect(month).toContain("moved between their accounts CA$1,465.00");
 });

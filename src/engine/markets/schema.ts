@@ -256,6 +256,14 @@ CREATE TABLE IF NOT EXISTS money_imports (
   period_start TEXT,
   period_end TEXT
 );
+CREATE TABLE IF NOT EXISTS money_accounts (
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  institution TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (space_id, name)
+);
 CREATE TABLE IF NOT EXISTS money_budgets (
   space_id TEXT NOT NULL REFERENCES spaces(id),
   category TEXT NOT NULL,

@@ -204,8 +204,8 @@ test("the EDGAR cross-check stays off until a contact email is saved, and can be
   boot();
   expect((await (await get("/api/investing/budget")).json()).edgar).toMatchObject({ on: false, contact: null, note: "Off · add a contact email to turn it on" });
   expect((await call("PUT", "/api/investing/edgar", { contact: "nope" })).status).toBe(400);
-  expect((await call("PUT", "/api/investing/edgar", { contact: "nakul@example.com" })).status).toBe(200);
-  expect((await (await get("/api/investing/budget")).json()).edgar).toMatchObject({ on: true, contact: "nakul@example.com", note: null });
+  expect((await call("PUT", "/api/investing/edgar", { contact: "you@example.com" })).status).toBe(200);
+  expect((await (await get("/api/investing/budget")).json()).edgar).toMatchObject({ on: true, contact: "you@example.com", note: null });
   expect((await call("PUT", "/api/investing/edgar", { on: false })).status).toBe(200);
   expect((await (await get("/api/investing/budget")).json()).edgar.on).toBe(false);
   expect((await call("PUT", "/api/investing/edgar", { on: "yes" })).status).toBe(400);
@@ -214,9 +214,9 @@ test("the EDGAR cross-check stays off until a contact email is saved, and can be
 test("setup creates the Investing space once", async () => {
   boot();
   const a = await (await call("POST", "/api/investing/setup")).json();
-  expect(a).toMatchObject({ created: true, added: 14 });
+  expect(a).toMatchObject({ created: true });
   const b = await (await call("POST", "/api/investing/setup")).json();
-  expect(b).toEqual({ spaceId: a.spaceId, created: false, added: 0 });
+  expect(b).toEqual({ spaceId: a.spaceId, created: false });
 });
 
 test("a NEO-listed CDR isn't treated as a US listing for withholding", async () => {

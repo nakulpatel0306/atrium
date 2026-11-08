@@ -83,11 +83,11 @@ test("marks the briefing seen once, and keeps the briefing it opened with", asyn
   const app = openApp(client);
   await app.frame((f) => f.includes("1 Home"));
   await new Promise((r) => setTimeout(r, 20));
-  client.push(makeState({ briefing: { greeting: "Good night, Nakul.", summary: "Later.", markets: null } }));
+  client.push(makeState({ briefing: { greeting: "Good night, Sam.", summary: "Later.", markets: null } }));
   client.push(makeState());
   await new Promise((r) => setTimeout(r, 20));
   expect(client.calls.filter((c) => c.method === "POST" && c.path === "/api/seen")).toHaveLength(1);
-  expect(app.lastFrame()).toContain("Good evening, Nakul.");
+  expect(app.lastFrame()).toContain("Good evening, Sam.");
 });
 
 test("empty states read plainly", async () => {

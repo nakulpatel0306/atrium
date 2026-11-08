@@ -13,7 +13,7 @@ const row = (path: string, over: Partial<OutputFile> = {}): OutputFile => ({
   root: "space",
   ref: null,
   path,
-  absPath: `/Users/n/Atrium/weekly-planning/${path}`,
+  absPath: `/Users/me/Atrium/weekly-planning/${path}`,
   change: "created",
   size: 2662,
   insertions: null,
@@ -128,7 +128,7 @@ const space = (over: Partial<Space> = {}): Space => ({
   status: "active",
   reviewBy: null,
   github: null,
-  folder: "/Users/n/Atrium/weekly-planning",
+  folder: "/Users/me/Atrium/weekly-planning",
   createdAt: 0,
   updatedAt: 0,
   ...over,
@@ -137,7 +137,7 @@ const file = (path: string, over: Partial<SpaceFile> = {}): SpaceFile => ({
   root: "space",
   ref: null,
   path,
-  absPath: `/Users/n/Atrium/weekly-planning/${path}`,
+  absPath: `/Users/me/Atrium/weekly-planning/${path}`,
   size: 2662,
   at: Date.now() - 120_000,
   kind: "markdown",
@@ -147,7 +147,7 @@ const file = (path: string, over: Partial<SpaceFile> = {}): SpaceFile => ({
 
 test("FilesList credits the task that made each file", () => {
   const files: SpaceFiles = {
-    folder: "/Users/n/Atrium/weekly-planning",
+    folder: "/Users/me/Atrium/weekly-planning",
     shown: "~/Atrium/weekly-planning",
     truncated: false,
     files: [file("grocery-list.md"), file("mine.txt", { madeBy: null, kind: "text" }), file("runs/run_1/notes.md")],

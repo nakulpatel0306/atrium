@@ -19,7 +19,7 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier" |
 | Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |
-| Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that Atrium can't unsend a text and never touches Nakul's repo or GitHub |
+| Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that Atrium can't unsend a text and never touches your repo or GitHub |
 | Views | `src/dashboard/components/DeleteTask.tsx` | Delete task…, what goes with it | yes | New in Plan 13 |
 | Views | `src/dashboard/components/StopTask.tsx` | Stop…, the two-step confirm, Keep running | yes | New in Plan 15 |
 | Views | `src/dashboard/components/Toast.tsx` | toast text, Undo, Dismiss | yes | New in Plan 13: Archived / Restored / Deleted lines |
@@ -265,7 +265,7 @@ this page is the record of the reading pass.
 | --- | --- | --- |
 | space | A place for one kind of work: a repo, a general folder, or Investing. | project (except a new GitHub project), workspace |
 | task | One thing an agent does in a space. | job, ticket |
-| Needs you | The list of things waiting on Nakul. Always capitalised this way. | inbox, approvals |
+| Needs you | The list of things waiting on you. Always capitalised this way. | inbox, approvals |
 | review | Looking at finished work and approving it or sending it back; also a second agent's check. | approval request |
 | Claude, Codex, Gemini, Auto | The agents, by name. | Claude Code (except the CLI program), the model |
 | Claude Code | Only the CLI program: installing, logging in, updating, its sandbox. | |

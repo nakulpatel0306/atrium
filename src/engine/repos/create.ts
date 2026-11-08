@@ -3,6 +3,7 @@ import { mkdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { getApproval, isOwnYes } from "../approvals";
 import { config } from "../config";
+import { ensureProjectsRoot } from "../profile";
 import { bus, logActivity } from "../events";
 import { git } from "../git";
 import { createSpace } from "../spaces";
@@ -35,7 +36,7 @@ export async function createProject(db: Database, actionId: string, deps: { kick
     const owner = await ghLogin(gh);
     const state = url ? await remoteState(`${url}.git`, action.pushedSha) : "empty";
     if (state === "theirs") throw new Error(`${url} already has commits Atrium didn't make, so it won't push over them. Pick a new name.`);
-    mkdirSync(config().projectsRoot, { recursive: true });
+    ensureProjectsRoot();
     staging = stagingPath(actionId);
     if (state === "ours") {
       // An earlier run pushed the first commit and stopped after: pick that repo up as it is, nothing to push.

@@ -30,7 +30,7 @@ test("a long name or hidden text is refused", () => {
 });
 
 test("control characters are stripped from the name", () => {
-  expect(parseMessageBlock(fence(JSON.stringify({ to: "Ta\nlal‮", text: "hi" })))?.to).toBe("Dana");
+  expect(parseMessageBlock(fence(JSON.stringify({ to: "Da\nna‮", text: "hi" })))?.to).toBe("Dana");
 });
 
 test("a group block names the chat, the people, or both, and its to is ignored", () => {

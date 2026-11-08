@@ -1,12 +1,13 @@
 import type { Database } from "bun:sqlite";
 import { marketsBriefing, type MarketsBriefing } from "./markets/briefing";
 import { plural } from "./text";
+import { userName } from "./profile";
 import { getSetting, setSetting } from "./settings";
 
-function greetingFor(now: number): string {
+function greetingFor(now: number, name: string | null): string {
   const hour = new Date(now).getHours();
   const part = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
-  return `Good ${part}, Nakul.`;
+  return `Good ${part}${name ? `, ${name}` : ""}.`;
 }
 
 export function briefing(db: Database, now: number): { greeting: string; summary: string; markets: MarketsBriefing | null } {
@@ -38,7 +39,7 @@ export function briefing(db: Database, now: number): { greeting: string; summary
   const couldnt = db.query("SELECT COUNT(*) AS n FROM tasks WHERE outcome = 'couldnt' AND updated_at > ?").get(lastSeen) as { n: number };
   if (couldnt.n > 0) summary += ` ${couldnt.n} couldn't be done; open ${couldnt.n === 1 ? "it" : "them"} to see why.`;
 
-  return { greeting: greetingFor(now), summary, markets: marketsBriefing(db, now) };
+  return { greeting: greetingFor(now, userName(db)), summary, markets: marketsBriefing(db, now) };
 }
 
 export function markSeen(db: Database, now: number): void {

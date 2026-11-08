@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { activeOnly, post, type State, useEngineState, useOnline } from "./api";
 import { Agents } from "./components/Agents";
 import { CommandBar } from "./components/CommandBar";
+import { GetStarted } from "./components/GetStarted";
 import { Home } from "./components/Home";
 import { Logo } from "./components/Logo";
 import { Rules } from "./components/Rules";
@@ -32,6 +33,18 @@ function App() {
     seen.current = true;
     void post("/api/seen");
   }, [state]);
+
+  // A fresh engine that hasn't finished Get started opens it once; after that it's only reachable from Settings.
+  const asked = useRef(false);
+  const fresh = state !== null && state.spaces.length === 0;
+  useEffect(() => {
+    if (!fresh || asked.current || route.name !== "home") return;
+    asked.current = true;
+    void fetch("/api/start")
+      .then((r) => r.json() as Promise<{ autoOpen: boolean }>)
+      .then((r) => r.autoOpen && navigate("/start"))
+      .catch(() => {});
+  }, [fresh, route.name]);
 
   // Keeps relative times ("3m ago") current while nothing else changes.
   useEffect(() => {
@@ -97,7 +110,7 @@ function App() {
               </button>
               <ChevronRight className="sep" />
               <b>
-                {route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : route.name === "settings" ? "Settings" : (space?.name ?? "Unknown space")}
+                {route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : route.name === "settings" ? "Settings" : route.name === "start" ? "Get started" : (space?.name ?? "Unknown space")}
               </b>
             </>
           )}
@@ -112,6 +125,8 @@ function App() {
           <Rules state={state} />
         ) : route.name === "settings" ? (
           <Settings />
+        ) : route.name === "start" ? (
+          <GetStarted />
         ) : (
           <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} symbol={route.symbol} money={route.money} />
         )}

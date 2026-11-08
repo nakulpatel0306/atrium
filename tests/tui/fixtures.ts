@@ -79,7 +79,7 @@ export const task = (over: Partial<Task>): Task => ({
 export function makeState(over: Partial<State> = {}): State {
   return {
     spaces: [
-      space({ id: ids.atrium, name: "atrium", kind: "repo", goal: "Ship the terminal app", repoPath: "/Users/n/dev/atrium", reviewBy: "codex" }),
+      space({ id: ids.atrium, name: "atrium", kind: "repo", goal: "Ship the terminal app", repoPath: "/Users/me/Projects/atrium", reviewBy: "codex" }),
       space({ id: ids.jobHunt, name: "job hunt", goal: "Find a new role" }),
     ],
     archived: [],
@@ -105,7 +105,7 @@ export function makeState(over: Partial<State> = {}): State {
       { id: "act_3", spaceId: null, taskId: null, actor: "atrium", message: "Overnight mode off", createdAt: now - 90 * min },
     ],
     activityFiles: {},
-    briefing: { greeting: "Good evening, Nakul.", summary: "2 tasks finished across 1 space.", markets: null },
+    briefing: { greeting: "Good evening, Sam.", summary: "2 tasks finished across 1 space.", markets: null },
     power: { source: "ac", overnight: false, keepAwake: false },
     waits: {
       [ids.queued]: { taskId: ids.queued, agent: "claude", kind: "reserve", reason: "Saving Claude's window until 9:00 PM.", until: now + 60 * min },

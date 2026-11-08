@@ -25,7 +25,6 @@ import { createJobs } from "./engine/markets/jobs";
 import { createKeychain } from "./engine/markets/keychain";
 import { metaJob } from "./engine/markets/meta";
 import { redact } from "./engine/markets/redact";
-import { addMetaOnBoot, seedOnBoot } from "./engine/markets/seed";
 import { digestJob } from "./engine/markets/research";
 import { anyStrategyActive, enqueueDueStrategies, handleStrategyDecision } from "./engine/markets/strategies";
 import { createRepos } from "./engine/repos";
@@ -35,7 +34,6 @@ import { recoverRepoActions } from "./engine/repos/create";
 import { createMessaging } from "./engine/messaging";
 import { moneyDaily } from "./engine/money/reminder";
 import { recoverMessageActions } from "./engine/messaging/send";
-import { fixTalal } from "./engine/fixes/dana-2026-11-05";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
@@ -49,9 +47,6 @@ installCrashGuard({ marker: crashMarker });
 const url = `http://${config().host}:${config().port}`;
 const db = openDb();
 noteRestart(db, crashMarker);
-// Nakul's 13 tickers go into an Investing space the first time the real engine starts (never with ATRIUM_HOME).
-seedOnBoot(db);
-addMetaOnBoot(db);
 const adapters = { claude: claudeAdapter(), codex: codexAdapter(), gemini: geminiAdapter() };
 // Market time: the real clock, or the demo clock ATRIUM_MARKET_NOW shifts while the provider is Demo.
 const marketClock = () => marketNow(getSetting(db, "markets.provider") ?? "finnhub");
@@ -133,7 +128,6 @@ recoverRemovals(db);
 // Files a delete queued but didn't get to remove before the engine stopped; their rows are already gone.
 void finishPendingDeletes(db).catch((e) => console.error("Couldn't finish removing deleted files:", e));
 recoverMessageActions(db);
-fixTalal(db);
 runner.start();
 repos.daily(Date.now());
 void feed.start();

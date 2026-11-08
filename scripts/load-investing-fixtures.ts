@@ -19,7 +19,7 @@ import { parseInstrumentKey } from "../src/engine/markets/instrument";
 import { metaFromFunds } from "../src/engine/markets/meta";
 import { demoProvider } from "../src/engine/markets/providers/demo";
 import { saveNotes, saveWriteup } from "../src/engine/markets/research";
-import { INVESTING_TICKERS, seedInvesting } from "../src/engine/markets/seed";
+import { DEMO_TICKERS, seedDemoInvesting } from "../tests/fixtures/markets/demo-tickers";
 
 if (!process.env.ATRIUM_HOME) throw new Error("Set ATRIUM_HOME to a temp dir; this script never touches the real data.");
 const DIR = resolve(import.meta.dir, "../tests/fixtures/markets/investing");
@@ -29,10 +29,10 @@ const now = Date.parse(process.env.ATRIUM_MARKET_NOW ?? "2026-11-04T15:00:00-05:
 const db = openDb();
 setSetting(db, "markets.provider", "demo");
 
-const TICKERS: [string, string][] = INVESTING_TICKERS.map((t) => [t.key, t.name]);
-const space = { id: seedInvesting(db).spaceId };
+const TICKERS: [string, string][] = DEMO_TICKERS.map((t) => [t.key, t.name]);
+const space = { id: seedDemoInvesting(db).spaceId };
 
-// Made-up positions (demo data), shaped like a TFSA with these 14 holdings: [market value, book value], listing currency.
+// Made-up positions (demo data), shaped like a TFSA with the demo tickers: [market value, book value], listing currency.
 const SIZE: Record<string, [number, number]> = {
   "ATZ.TO": [2600, 2400], NOW: [2500, 2300], TSLA: [1800, 1500], AMZN: [2000, 1700], MARS: [900, 900], DRAM: [1000, 800], SPY: [4600, 4100],
   "VFV.TO": [4700, 4200], QQQ: [3200, 2900], QBTS: [700, 1100], SOFI: [1300, 1200], RKLB: [1900, 1400], "XEQT.TO": [5200, 4500], META: [2500, 2200],

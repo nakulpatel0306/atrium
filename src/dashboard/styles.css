@@ -4728,3 +4728,9 @@ code {
 .money-unknown .btn.link {
   font-weight: 600;
 }
+
+.start { max-width: 640px; }
+.start-nav { display: flex; gap: 8px; align-items: center; margin-top: 20px; }
+.start-nav .primary { margin-left: auto; }
+.start-summary { margin: 0 0 12px; padding-left: 18px; }
+.money-account-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }

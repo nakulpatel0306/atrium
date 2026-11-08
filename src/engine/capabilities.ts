@@ -17,15 +17,15 @@ export const CANT_LINE =
   "Can't: browse the web or look anything up online; read email, calendars or chats; send email; make calls or payments; open or control apps.";
 // Only a task Atrium made for drafting a text is told about the block; any other task's block is ignored.
 const MESSAGE_TASK_MESSAGES =
-  'Messages: you can\'t send texts yourself. To have Atrium send one, end your reply with a fenced block tagged atrium-message holding {"to": "<name, phone or email>", "text": "<exact text>"}, then the OUTCOME line. For a group chat, hold {"group": "<chat name>", "people": ["<name>", …], "text": "<exact text>"} instead (either "group" or "people" may be left out). Atrium shows it to Nakul and sends it only when he presses Send.';
+  'Messages: you can\'t send texts yourself. To have Atrium send one, end your reply with a fenced block tagged atrium-message holding {"to": "<name, phone or email>", "text": "<exact text>"}, then the OUTCOME line. For a group chat, hold {"group": "<chat name>", "people": ["<name>", …], "text": "<exact text>"} instead (either "group" or "people" may be left out). Atrium shows it to the user and sends it only when they press Send.';
 const TASK_MESSAGES =
-  "Messages: you can't send texts, and Atrium won't send one from this task. If the task needs a text sent, say so in your summary; Nakul can ask Atrium to text them.";
+  "Messages: you can't send texts, and Atrium won't send one from this task. If the task needs a text sent, say so in your summary; the user can ask Atrium to text them.";
 const SETUP_MESSAGES = 'Messages: for a request to text or message someone, reply with {"kind":"message", …} (see the rules below), not a space of tasks.';
 
 const STATE_LINE: Record<MessagingState, string | null> = {
-  untested: "The first send asks macOS for permission to control Messages, so Nakul must be at his Mac.",
+  untested: "The first send asks macOS for permission to control Messages, so the user must be at their Mac.",
   ready: null,
-  needs_automation: "Sending is blocked until Nakul allows Automation for Messages in System Settings.",
+  needs_automation: "Sending is blocked until the user allows Automation for Messages in System Settings.",
   signed_out: "Sending is blocked until Messages is signed in to iMessage.",
 };
 

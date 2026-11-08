@@ -167,11 +167,11 @@ export function coverText(cover: MonthCover): string | null {
 // The recap as facts for Claude to rephrase: merchant names and Atrium's numbers only, card numbers masked. Dates
 // are written "Oct 26", not 2026-10-26, so two dates side by side never read as one long number to the masker.
 export function recapFacts(r: Recap): string[] {
-  const out = [`Recap facts for ${monthYear(r.month)}, all worked out by Atrium from files Nakul imported on this Mac (CAD):`];
+  const out = [`Recap facts for ${monthYear(r.month)}, all worked out by Atrium from files the user imported on this Mac (CAD):`];
   out.push(`Spent ${cad(r.spent)}; money in ${cad(r.income)}; ${r.net >= 0 ? `left over ${cad(r.net)}` : `spent ${cad(r.net)} more than came in`}.`);
   if (r.income) out.push("Money in is pay, e-transfers received and interest.");
   if (r.refunds.count) out.push(`Refunds of ${cad(r.refunds.total)} on ${r.refunds.count === 1 ? "1 charge" : `${r.refunds.count} charges`} were taken off spending.`);
-  if (r.moved.count) out.push(`Moved between Nakul's own accounts (card payments and transfers): ${cad(r.moved.total)}, not counted as spending or money in.`);
+  if (r.moved.count) out.push(`Moved between the user's own accounts (card payments and transfers): ${cad(r.moved.total)}, not counted as spending or money in.`);
   if (r.before && r.previous) out.push(`${monthYear(r.previous)}: spent ${cad(r.before.spent)}; money in ${cad(r.before.income)}.`);
   if (r.changes.length) out.push(`Biggest category changes: ${r.changes.map((c) => `${c.category} ${c.delta > 0 ? "up" : "down"} ${cad(c.delta)} (${cad(c.before)} to ${cad(c.now)})`).join("; ")}.`);
   if (r.notable.length) out.push(`Notable charges: ${r.notable.map((n) => `${maskNumbers(n.merchant)} ${cad(n.amount)} on ${dayText(n.date)} (${n.why.replace(/\.$/, "")})`).join("; ")}.`);

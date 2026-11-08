@@ -16,10 +16,18 @@ if (argv[0] === "auth" && argv[1] === "git-credential") {
   process.stdout.write("username=fakeuser\npassword=fake\n");
   process.exit(0);
 }
+if (argv[0] === "--version") {
+  console.log("gh version 2.85.0 (2026-01-14)");
+  process.exit(0);
+}
 if (mode === "hang") await Bun.sleep(120_000);
 if (mode === "logged_out") fail("To get started with GitHub CLI, please run:  gh auth login", 4);
 if (mode === "offline") fail("error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com");
 
+if (argv[0] === "auth" && argv[1] === "status") {
+  console.log("Logged in to github.com account fakeuser");
+  process.exit(0);
+}
 if (argv[0] === "api" && argv[1] === "user") {
   console.log("fakeuser");
   process.exit(0);

@@ -1,5 +1,19 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+// The projects folder chosen in Settings, copied here from the database when it opens or changes so config() can
+// stay synchronous. The ATRIUM_PROJECTS_ROOT environment variable still wins.
+let chosenProjectsRoot: string | null = null;
+export function setChosenProjectsRoot(path: string | null): void {
+  chosenProjectsRoot = path;
+}
+
+// ~/Developer if the user already has one, else ~/Projects. Nothing is created until the folder is first used.
+export function defaultProjectsRoot(): string {
+  const developer = join(homedir(), "Developer");
+  return existsSync(developer) ? developer : join(homedir(), "Projects");
+}
 
 export function config() {
   const home = process.env.ATRIUM_HOME ?? join(homedir(), "Library", "Application Support", "Atrium");
@@ -26,7 +40,7 @@ export function config() {
     // macOS's AppleScript runner; only src/engine/messaging/osascript.ts runs it. Tests and dev engines use a fake.
     osascriptBin: process.env.ATRIUM_OSASCRIPT_BIN ?? "/usr/bin/osascript",
     // Where new projects and on-demand clones go.
-    projectsRoot: process.env.ATRIUM_PROJECTS_ROOT ?? join(homedir(), "dev-workspace", "projects"),
+    projectsRoot: process.env.ATRIUM_PROJECTS_ROOT ?? chosenProjectsRoot ?? defaultProjectsRoot(),
     marketNow: process.env.ATRIUM_MARKET_NOW ?? null,
     transcriptCapBytes: 209715200 as const,
     transcriptFileCapBytes: 5242880 as const,

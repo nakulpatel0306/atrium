@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config";
+import { ensureProjectsRoot } from "../profile";
 import { logActivity } from "../events";
 import { git } from "../git";
 import { getSpace, setSpaceRepo, type Space } from "../spaces";
@@ -24,8 +25,7 @@ export function createCloner(db: Database, kick: () => void): { request(space: S
   }
 
   async function run(space: Space, slug: string, name: string, dest: string) {
-    const root = config().projectsRoot;
-    mkdirSync(root, { recursive: true });
+    const root = ensureProjectsRoot();
     try {
       // Not recursive: claiming the folder is how this run knows it made it, and so may delete it on failure.
       mkdirSync(dest);

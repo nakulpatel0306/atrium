@@ -254,7 +254,7 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
   const v = moneyView(db, spaceId, now);
   const bank = counted(txs(db, spaceId, "bank"));
   const rules = listRules(db, spaceId);
-  const out = ["Money facts (from files Nakul imported on this Mac; amounts in CAD unless marked US$):"];
+  const out = ["Money facts (from files the user imported on this Mac; amounts in CAD unless marked US$):"];
   if (!v.counts.wealthsimple) out.push("No Wealthsimple activity imported.");
   for (const y of v.ws.slice(0, 3)) {
     out.push(
@@ -266,7 +266,7 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
   const logged = listEntries(db, year);
   if (room.roomJan1 != null || logged.length) {
     const put = logged.filter((e) => e.kind === "contribution").reduce((s, e) => s + e.amount, 0);
-    out.push(`TFSA ${year} (Nakul's own entries): room on Jan 1 ${room.roomJan1 != null ? cad(room.roomJan1) : "not set"}, contributions logged ${cad(put)}.`);
+    out.push(`TFSA ${year} (the user's own entries): room on Jan 1 ${room.roomJan1 != null ? cad(room.roomJan1) : "not set"}, contributions logged ${cad(put)}.`);
   }
   const n = v.counts.bank;
   if (!n) out.push("No bank or card transactions imported.");
@@ -278,7 +278,7 @@ export function moneyFacts(db: Database, spaceId: string, now: number): string[]
       const moved = movedIn(all, m);
       const top = s.spending.slice(0, 5).map((c) => `${c.category} ${cad(c.amount)}`).join(", ");
       const refunds = s.refunds.count ? `; refunds ${cad(s.refunds.total)}` : "";
-      const between = moved.count ? `; moved between his accounts ${cad(moved.total)}` : "";
+      const between = moved.count ? `; moved between their accounts ${cad(moved.total)}` : "";
       out.push(`- ${monthYear(m)}: spent ${cad(s.spent)}${top ? ` (${top})` : ""}; money in ${cad(s.income)}${refunds}${between}.`);
     }
     const recent = bank.filter((t) => t.amount < 0 && days(t.date, v.range!.to) <= 90);
@@ -326,6 +326,6 @@ export function explainContext(db: Database, task: Pick<Task, "spaceId" | "subje
   if (!r) return ["There's no recap for that month anymore. Say so in one sentence."];
   return [
     ...recapFacts(r),
-    "Rephrase these facts for Nakul in at most 120 words of plain, calm prose: where his money went this month compared with last month. Use only the numbers above, exactly as written; don't add, total or estimate any others. If the month is incomplete, say so first. No headings, no advice.",
+    "Rephrase these facts for the user in at most 120 words of plain, calm prose: where their money went this month compared with last month. Use only the numbers above, exactly as written; don't add, total or estimate any others. If the month is incomplete, say so first. No headings, no advice.",
   ];
 }

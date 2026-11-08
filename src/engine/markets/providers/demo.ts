@@ -75,7 +75,7 @@ function intraday(key: string, lastClose: number, opensAt: number, at: number): 
   return round(lastClose * (1 + 0.012 * Math.sin(minutes / 37 + seedOf(key))));
 }
 
-// What demo search can find: Nakul's holdings and a few well-known names.
+// What demo search can find: a few well-known names.
 const DEMO_CATALOG: { key: string; name: string; type: string }[] = [
   { key: "AAPL", name: "Apple Inc", type: "Common Stock" },
   { key: "AMZN", name: "Amazon.com Inc", type: "Common Stock" },

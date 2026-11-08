@@ -2,6 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openArgs, renderPlist, statusLine } from "../src/cli";
+import { openDb } from "../src/engine/db";
+import { setSetting } from "../src/engine/settings";
 import { trimLog } from "../src/engine/logfile";
 import type { State } from "../src/engine/state";
 import { tempHome } from "./helpers";
@@ -14,18 +16,18 @@ afterEach(() => {
 
 test("renderPlist includes absolute paths, RunAtLoad, and log path", () => {
   const plist = renderPlist({
-    bunPath: "/Users/x/.bun/bin/bun",
-    mainPath: "/Users/x/atrium/src/main.ts",
-    logPath: "/Users/x/Library/Application Support/Atrium/engine.log",
-    workingDir: "/Users/x/atrium",
-    pathEnv: "/Users/x/.local/bin:/usr/bin",
+    bunPath: "/Users/me/.bun/bin/bun",
+    mainPath: "/Users/me/atrium/src/main.ts",
+    logPath: "/Users/me/Library/Application Support/Atrium/engine.log",
+    workingDir: "/Users/me/atrium",
+    pathEnv: "/Users/me/.local/bin:/usr/bin",
   });
-  expect(plist).toContain("<string>/Users/x/.bun/bin/bun</string>");
-  expect(plist).toContain("<string>/Users/x/atrium/src/main.ts</string>");
+  expect(plist).toContain("<string>/Users/me/.bun/bin/bun</string>");
+  expect(plist).toContain("<string>/Users/me/atrium/src/main.ts</string>");
   expect(plist).toContain("<key>RunAtLoad</key>\n  <true/>");
   expect(plist).toContain("<key>SuccessfulExit</key>\n    <false/>");
-  expect(plist).toContain("<string>/Users/x/Library/Application Support/Atrium/engine.log</string>");
-  expect(plist).toContain("<string>/Users/x/.local/bin:/usr/bin</string>");
+  expect(plist).toContain("<string>/Users/me/Library/Application Support/Atrium/engine.log</string>");
+  expect(plist).toContain("<string>/Users/me/.local/bin:/usr/bin</string>");
   expect(plist).not.toContain("{{");
 });
 
@@ -53,7 +55,7 @@ test("trimLog keeps only the last bytes of an oversized log", () => {
 });
 
 test("openArgs picks the app, passes a dev port, and falls back to the browser", () => {
-  const appPath = "/Users/x/Applications/Atrium.app";
+  const appPath = "/Users/me/Applications/Atrium.app";
   const url = "http://127.0.0.1:7420";
   expect(openArgs({ appInstalled: true, appRunning: false, appPath, port: 7420, url })).toEqual(["open", appPath]);
   expect(openArgs({ appInstalled: true, appRunning: false, appPath, port: 7431, url })).toEqual(["open", "--env", "ATRIUM_PORT=7431", appPath]);
@@ -62,7 +64,7 @@ test("openArgs picks the app, passes a dev port, and falls back to the browser",
 
 // open --env only reaches a fresh launch; a running copy would just come forward still pointing at its old port.
 test("openArgs refuses a dev port while Atrium is already running", () => {
-  const appPath = "/Users/x/Applications/Atrium.app";
+  const appPath = "/Users/me/Applications/Atrium.app";
   expect(openArgs({ appInstalled: true, appRunning: true, appPath, port: 7431, url: "http://127.0.0.1:7431" })).toEqual({
     error: "Quit Atrium first to open it on port 7431.",
   });
@@ -79,7 +81,7 @@ test("usage lists tui", async () => {
   } finally {
     console.error = err;
   }
-  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup]"]);
+  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup|doctor|data]"]);
 });
 
 test("investing setup asks the running engine once and says what happened", async () => {
@@ -117,5 +119,29 @@ test("investing setup asks the running engine once and says what happened", asyn
     { method: "POST", path: "/api/investing/setup", origin: `http://127.0.0.1:${live}` },
     { method: "POST", path: "/api/investing/setup", origin: `http://127.0.0.1:${live}` },
   ]);
-  expect(out).toEqual(["Investing space ready: 13 tickers added.", "Investing space already set up."]);
+  expect(out).toEqual(["Investing space ready. It's empty: import your holdings or add tickers in the dashboard.", "Investing space already set up."]);
+});
+
+test("atrium doctor and atrium data run from the command line", () => {
+  const h = tempHome();
+  cleanup = h.cleanup;
+  const home = () => h.home;
+  const run = (...args: string[]) =>
+    Bun.spawnSync(["bun", join(import.meta.dir, "..", "src", "cli.ts"), ...args], {
+      env: { ...process.env, ATRIUM_CLAUDE_BIN: join(import.meta.dir, "fixtures", "fake-claude.ts"), ATRIUM_CODEX_BIN: "/nonexistent/codex", ATRIUM_GEMINI_BIN: "/nonexistent/agy", ATRIUM_GH_BIN: "/nonexistent/gh", ATRIUM_HOME: home(), ATRIUM_FILES_HOME: join(home(), "files") },
+    });
+  const doctor = run("doctor");
+  expect(doctor.exitCode).toBe(0);
+  const text = doctor.stdout.toString();
+  expect(text).toContain("ok       Claude 2.1.318 (required)");
+  expect(text).toContain("missing  Codex (optional)");
+  expect(text).toContain("npm install -g @openai/codex");
+  // The saved projects folder is read from the database without opening it for writing.
+  const db = openDb();
+  setSetting(db, "projects.root", "/Users/me/Elsewhere");
+  db.close();
+  expect(run("doctor").stdout.toString()).toContain("Projects folder: /Users/me/Elsewhere");
+  const data = run("data");
+  expect(data.exitCode).toBe(0);
+  expect(data.stdout.toString()).toContain(join(home(), "atrium.db"));
 });

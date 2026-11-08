@@ -44,7 +44,7 @@ const claudeMd = (d: { name: string; description: string }, bun: boolean) =>
     "## Constraints",
     "",
     ...(bun ? ["- bun is the only runtime and package manager."] : []),
-    "- Commits use Nakul's configured git identity (SSH-signed). Commit messages carry no AI attribution: no co-author trailers and no generated-by footers.",
+    "- Commits use the user's configured git identity (SSH-signed). Commit messages carry no AI attribution: no co-author trailers and no generated-by footers.",
     "",
   ].join("\n");
 
