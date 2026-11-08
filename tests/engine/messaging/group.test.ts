@@ -137,6 +137,13 @@ describe("lookup", () => {
     expect(chats().find((c) => c.id === "SMS;+;chat-family")!.service).toBe("SMS");
   });
 
+  test("a group everyone else has left is left out, not counted as a chat Atrium couldn't read", () => {
+    const out = [listing(), rec("iMessage;+;chat-left", "Old trip", [["+15550100111", "Ann"]]), ["iMessage;+;chat-empty", "Empty", "iMessage", ""].join(C(31))].join(C(30));
+    const parsed = parseChats(out);
+    expect(parsed.skipped).toBe(0);
+    expect(parsed.chats.map((c) => c.id)).toEqual(CHATS.map((c) => c[0] as string));
+  });
+
   test("M1: an id or handle in the wrong shape, or an id seen twice, drops the chat", () => {
     const people: [string, string][] = [["+15550100111", "Ann"], ["+15550100112", "Bo"]];
     const out = [

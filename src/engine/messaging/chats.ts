@@ -44,6 +44,7 @@ export function parseChats(out: string): { chats: GroupChat[]; skipped: number }
       continue;
     }
     const chat = f.length === 4 ? chatOf(f as [string, string, string, string]) : null;
+    if (chat === "not-a-group") continue;
     if (chat) chats.push(chat);
     else skipped++;
   }
@@ -53,11 +54,13 @@ export function parseChats(out: string): { chats: GroupChat[]; skipped: number }
   return { chats: unique, skipped: skipped + chats.length - unique.length };
 }
 
-function chatOf([rawId, rawName, svc, members]: [string, string, string, string]): GroupChat | null {
+// A group everyone else has left reads fine but can't take a group text: it's left out, not counted as unreadable.
+function chatOf([rawId, rawName, svc, members]: [string, string, string, string]): GroupChat | "not-a-group" | null {
   const id = plain(rawId);
   if (!CHAT_ID.test(id)) return null;
-  const parts = members.split(GS).map((m) => m.split(FS));
-  if (parts.length < 2 || parts.some((p) => p.length !== 2)) return null;
+  const parts = members ? members.split(GS).map((m) => m.split(FS)) : [];
+  if (parts.some((p) => p.length !== 2)) return null;
+  if (parts.length < 2) return "not-a-group";
   const handles = parts.map((p) => normalizeHandle(plain(p[0]!)));
   if (handles.some((h) => !h)) return null;
   return {
