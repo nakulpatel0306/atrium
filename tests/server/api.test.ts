@@ -254,7 +254,7 @@ test("a second server on the same port fails instead of sharing it", () => {
 });
 
 test("dashboard routes serve html", async () => {
-  for (const p of ["/", "/space/spc_1", "/agents"]) {
+  for (const p of ["/", "/space/spc_1", "/agents", "/needs-you", "/activity"]) {
     const res = await fetch(base + p);
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("<title>Atrium</title>");

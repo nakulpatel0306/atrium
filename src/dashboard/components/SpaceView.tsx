@@ -6,14 +6,16 @@ import { absolute, duration, relative, tokens } from "../format";
 import { navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
-import { setArchived } from "../spaces";
-import { Activity, TaskHistory } from "./Activity";
+import { kindLabel, setArchived } from "../spaces";
+import { Activity, TaskHistory, taskGroups } from "./Activity";
+import { ReviewActions } from "./Decision";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
 import { AgentPicker } from "./AgentPicker";
 import { FilesTab } from "./FilesTab";
 import { Markdown } from "./Markdown";
+import { SpaceNeeds } from "./NeedsYou";
 import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
 import { OutcomeBanner } from "./OutcomeBanner";
@@ -130,7 +132,7 @@ function Header({ space }: { space: Space }) {
       <div className="title-row">
         <span className="sd" style={{ background: space.color }} />
         <h1>{space.name}</h1>
-        <span className="tag">{space.kind}</span>
+        {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
         {space.repoPath && (
           <span className="tag mono path" title={space.repoPath}>
             {space.repoPath}
@@ -150,7 +152,7 @@ function Header({ space }: { space: Space }) {
               Private
             </button>
             <span className="hint">
-              {space.kind === "markets" ? "Markets spaces stay private: your holdings only go to Claude." : "Private spaces only use Claude"}
+              {space.kind === "markets" ? "Investing spaces stay private: your holdings only go to Claude." : "Private spaces only use Claude"}
             </span>
           </div>
           {confirmArchive ? (
@@ -267,6 +269,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
   const space = state.spaces.find((s) => s.id === task.spaceId);
   // A finished task the agent said it couldn't or only partly do is labelled that way, never plain done.
   const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
+  const review = task.status === "review" ? state.approvals.find((a) => a.taskId === task.id && a.kind === "review") : undefined;
 
   const act = async (fn: () => ReturnType<typeof post>) => {
     setBusy(true);
@@ -281,44 +284,32 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
 
   return (
     <div className="entry" id={`task-${task.id}`}>
-      <div className={`item task${task.status === "done" ? " done" : ""}`} onClick={onToggle} aria-expanded={open}>
-        <StatusIcon status={task.status} outcome={task.outcome} />
-        <KindBadge kind={task.kind} />
-        <span className="t" title={shownTitle(task)}>
-          {shownTitle(task)}
-        </span>
-        {wait ? (
-          <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
-            waiting
+      {/* The summary is the row's one button; its actions sit beside it, so no control is nested in another. */}
+      <div className={`item task${task.status === "done" ? " done" : ""}`}>
+        <button className="task-open" aria-expanded={open} onClick={onToggle}>
+          <StatusIcon status={task.status} outcome={task.outcome} />
+          <KindBadge kind={task.kind} />
+          <span className="t" title={shownTitle(task)}>
+            {shownTitle(task)}
           </span>
-        ) : (
-          <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
-            {notDone ?? STATUS_TEXT[task.status]}
-            {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
-          </span>
-        )}
+          {wait ? (
+            <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
+              waiting
+            </span>
+          ) : (
+            <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
+              {notDone ?? STATUS_TEXT[task.status]}
+              {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
+            </span>
+          )}
+        </button>
         {stuck && (
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              void retry();
-            }}
-          >
+          <button className="btn" disabled={busy} onClick={() => void retry()}>
             Retry
           </button>
         )}
         {wait?.kind === "reserve" && (
-          <button
-            className="btn"
-            disabled={busy}
-            title="Start this task now, using Claude's reserved window"
-            onClick={(e) => {
-              e.stopPropagation();
-              void runNow();
-            }}
-          >
+          <button className="btn" disabled={busy} title="Start this task now, using Claude's reserved window" onClick={() => void runNow()}>
             <Play />
             Run now
           </button>
@@ -335,6 +326,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
           )}
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
+          {review && <ReviewActions approval={review} outcome={task.outcome} />}
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">
@@ -363,13 +355,14 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
             <span title={absolute(task.createdAt)}>Added {relative(task.createdAt)}</span>
             <span title={absolute(task.updatedAt)}>Updated {relative(task.updatedAt)}</span>
             {task.branch && <span className="mono">Branch {task.branch}</span>}
-            <span>{task.weight === "heavy" ? "Heavy · runs when plugged in" : "Light · runs anytime"}</span>
+            <span>{task.weight === "heavy" ? "Runs when your Mac is plugged in" : "Runs anytime"}</span>
             {task.ignoreReserve && <span>Runs during Claude's reserve</span>}
           </div>
           {task.kind === "work" && <Thread taskId={task.id} />}
           <TaskHistory task={task} state={state} />
+          {/* Only the newest runs reach the dashboard, so an older task can have history but no listed runs. */}
           {runs.length === 0 ? (
-            <p className="runs-empty">No runs yet.</p>
+            task.status === "queued" && taskGroups(task, state).length === 0 && <p className="runs-empty">No runs yet.</p>
           ) : (
             <ul className="runs">
               {runs.map((r) => (
@@ -510,6 +503,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
   return (
     <div className="wrap">
       <Header key={space.id} space={space} />
+      <SpaceNeeds state={state} spaceId={space.id} />
       {space.kind === "markets" && <InvestPanel key={money ? "money" : "invest"} spaceId={space.id} symbol={symbol} initial={money ? "money" : undefined} />}
       <div className="cols">
         <div>

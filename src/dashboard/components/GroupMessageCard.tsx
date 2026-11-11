@@ -3,6 +3,8 @@ import { useState } from "react";
 import { askLine, groupTitle, MAX_TEXT, peopleLine, separatePlan, textLength, textProblem } from "../../engine/messaging/rules";
 import type { GroupChat } from "../../engine/messaging/store";
 import { post, type State } from "../api";
+import { FoldedText } from "./MessageCard";
+import { cancelSend, pendingSendOf, startSend, usePendingSend, useSendError } from "../pending-send";
 
 type Approval = State["approvals"][number];
 type Action = State["messageActions"][number];
@@ -13,13 +15,18 @@ export const chatMembers = (c: GroupChat) => c.participants.map((p) => p.name ??
 
 // A group text waiting to go. It sends only to an existing chat that Nakul's own Find picked, exactly the words shown,
 // and only on his Send. With no chat, it can become one text per person, each still waiting for its own Send.
-export function GroupMessageCard({ approval, action, spaceName = "Messages", firstSend = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean }) {
+export function GroupMessageCard({ approval, action, spaceName = "Messages", firstSend = false, folded = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean; folded?: boolean }) {
+  const [held] = useState(() => pendingSendOf(action.id));
+  const pending = usePendingSend(action.id);
+  const locked = pending !== null;
+  const sendError = useSendError(action.id);
+  const [open, setOpen] = useState(!folded || !!action.lastError || !!held);
   const group = action.group!;
-  const [text, setText] = useState(action.text);
+  const [text, setText] = useState(held?.body.text ?? action.text);
   const [chats, setChats] = useState<GroupChat[]>([]);
   const [found, setFound] = useState<string | null>(null);
   const [findError, setFindError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"send" | "decline" | "find" | "pick" | "apart" | null>(null);
+  const [busy, setBusy] = useState<"decline" | "find" | "pick" | "apart" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const chat = group.chat;
@@ -27,7 +34,7 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
   const apartPlan = separatePlan(group);
   const canApart = apartPlan.people.length > 0;
   const textIssue = textProblem(text);
-  const canSend = !busy && !textIssue && !!chat;
+  const canSend = !busy && !locked && !textIssue && !!chat;
 
   const act = async (kind: NonNullable<typeof busy>, path: string, body: unknown, onError = setError) => {
     setBusy(kind);
@@ -38,7 +45,11 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
     if (!res.ok) onError(res.error);
     return res.ok;
   };
-  const send = () => canSend && void act("send", `/api/message-actions/${action.id}/send`, { text, chatId: chat?.id });
+  const send = () => {
+    if (!canSend || !chat) return;
+    setError(null);
+    startSend(action.id, title, { text, chatId: chat.id });
+  };
   const decline = () => void act("decline", `/api/approvals/${approval.id}`, { decision: "reject" });
   const apart = () => !textIssue && void act("apart", `/api/message-actions/${action.id}/separately`, { text });
   const pick = (chatId: string) => void act("pick", `/api/message-actions/${action.id}/chat`, { chatId }, setFindError);
@@ -64,6 +75,8 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
     </button>
   );
 
+  if (!open) return <FoldedText icon={Users} spaceName={spaceName} to={title} text={text} onOpen={() => setOpen(true)} />;
+
   return (
     <div className="entry msg-entry">
       <div className="item">
@@ -73,21 +86,17 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           Send a text to {title}?<span>{text.split("\n")[0]}</span>
         </span>
         <div className="acts">
-          <button className="btn" disabled={busy !== null} onClick={decline}>
+          {folded && (
+            <button className="btn" data-act="open" aria-expanded onClick={() => setOpen(false)}>
+              Hide
+            </button>
+          )}
+          <button className="btn" disabled={busy !== null || locked} onClick={decline}>
             Don't send
-          </button>
-          <button className="btn p" disabled={!canSend} onClick={send}>
-            {busy === "send" ? "Sending…" : "Send"}
           </button>
         </div>
       </div>
-      <form
-        className="detail msg-card"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-      >
+      <div className="detail msg-card">
         {action.lastError && <p className="err last-try">Last try failed: {action.lastError}</p>}
         {needsPane(action.lastError) && settingsButton}
         <p className="msg-to">
@@ -133,12 +142,12 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           )}
         </div>
         <div className="msg-handle">
-          <button className="btn" type="button" disabled={busy !== null} onClick={() => void find()}>
+          <button className="btn" type="button" disabled={busy !== null || locked} onClick={() => void find()}>
             <Search />
             {busy === "find" ? "Looking…" : chat ? "Find a different group chat" : "Find group chat"}
           </button>
           {canApart && (
-            <button className="btn" type="button" disabled={busy !== null || !!textIssue} onClick={apart}>
+            <button className="btn" type="button" disabled={busy !== null || locked || !!textIssue} onClick={apart}>
               <Split />
               {busy === "apart" ? "Splitting…" : "Send separately"}
             </button>
@@ -159,7 +168,7 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
             <legend>Which group chat?</legend>
             {chats.map((c) => (
               <label key={c.id} className="inline chat-pick">
-                <input type="radio" name={`chat-${action.id}`} checked={chat?.id === c.id} disabled={busy !== null} onChange={() => pick(c.id)} />
+                <input type="radio" name={`chat-${action.id}`} checked={chat?.id === c.id} disabled={busy !== null || locked} onChange={() => pick(c.id)} />
                 <span>
                   <span className="chat-name">{c.name ?? "Unnamed group"}</span>
                   <span className="chat-members">{chatMembers(c)}</span>
@@ -177,10 +186,30 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
               {textLength(text)}/{MAX_TEXT}
             </span>
           </span>
-          <textarea className="mk-input" value={text} rows={Math.min(8, Math.max(3, text.split("\n").length + 1))} onChange={(e) => setText(e.target.value)} />
+          <textarea
+            className="mk-input"
+            value={text}
+            readOnly={locked}
+            rows={Math.min(8, Math.max(3, text.split("\n").length + 1))}
+            onChange={(e) => setText(e.target.value)}
+          />
           {textIssue && <span className="err">{textIssue}</span>}
         </label>
         <div className="msg-foot">
+          {pending ? (
+            <>
+              <span className="sending">Sending…</span>
+              {!pending.sending && (
+                <button className="btn" onClick={() => cancelSend(action.id)}>
+                  Undo
+                </button>
+              )}
+            </>
+          ) : (
+            <button className="btn p" disabled={!canSend} onClick={send}>
+              Send
+            </button>
+          )}
           <span className="via">
             <span className="lbl">Via</span>
             <span>{action.service}</span>
@@ -188,10 +217,9 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           <p className="faint">Sends to the existing group chat from Messages on this Mac. Atrium can't confirm delivery.</p>
         </div>
         {firstSend && <p className="hint">The first send asks macOS whether Atrium may control Messages. Click OK, and it sends.</p>}
-        <button type="submit" hidden />
-      </form>
-      {error && <div className="row-err err">{error}</div>}
-      {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
+      </div>
+      {(error ?? sendError) && <div className="row-err err">{error ?? sendError}</div>}
+      {needsPane(error ?? sendError) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
     </div>
   );
 }

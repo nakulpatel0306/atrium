@@ -85,6 +85,14 @@ export const priceText = (n: number, ccy: "CAD" | "USD") => `${ccy === "USD" ? "
 export const cadText = (n: number, digits = 2) => `${n < 0 ? "−" : ""}CA$${fmt(n, digits)}`;
 export const signedCadText = (n: number, digits = 2) => `${n < 0 ? "−" : "+"}CA$${fmt(n, digits)}`;
 export const signedPct = (n: number, digits = 1) => `${n < 0 ? "−" : "+"}${fmt(n, digits)}%`;
+// The daily note as the page shows it: the page carries "Analysis, not advice." once already, and an agent's bare
+// sign-off ("All done.") isn't a note about what moved.
+const SIGN_OFF = /^(all done|done|finished|complete|completed|ok|okay)[.!]?$/i;
+export function movedNote(body: string): string | null {
+  const text = body.replace(/(\s*Analysis, not advice\.?)+\s*$/i, "").trim();
+  return text && !SIGN_OFF.test(text) ? text : null;
+}
+
 export const toneOf = (n: number | null) => (n === null || Math.abs(n) < 0.005 ? "flat" : n > 0 ? "up" : "down");
 
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
