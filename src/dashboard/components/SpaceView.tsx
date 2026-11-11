@@ -1,12 +1,13 @@
 import { CornerDownRight, Lock, Play, SearchCheck, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
+import { activateOnKey } from "../activate";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
-import { setArchived } from "../spaces";
+import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ReviewActions } from "./Decision";
 import { DeleteSpace } from "./DeleteSpace";
@@ -131,7 +132,7 @@ function Header({ space }: { space: Space }) {
       <div className="title-row">
         <span className="sd" style={{ background: space.color }} />
         <h1>{space.name}</h1>
-        <span className="tag">{space.kind}</span>
+        {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
         {space.repoPath && (
           <span className="tag mono path" title={space.repoPath}>
             {space.repoPath}
@@ -151,7 +152,7 @@ function Header({ space }: { space: Space }) {
               Private
             </button>
             <span className="hint">
-              {space.kind === "markets" ? "Markets spaces stay private: your holdings only go to Claude." : "Private spaces only use Claude"}
+              {space.kind === "markets" ? "Investing spaces stay private: your holdings only go to Claude." : "Private spaces only use Claude"}
             </span>
           </div>
           {confirmArchive ? (
@@ -281,7 +282,14 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
 
   return (
     <div className="entry" id={`task-${task.id}`}>
-      <div className={`item task${task.status === "done" ? " done" : ""}`} onClick={onToggle} aria-expanded={open}>
+      <div
+        className={`item task${task.status === "done" ? " done" : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={(e) => activateOnKey(e, onToggle)}
+      >
         <StatusIcon status={task.status} outcome={task.outcome} />
         <KindBadge kind={task.kind} />
         <span className="t" title={shownTitle(task)}>
@@ -360,7 +368,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
             <span title={absolute(task.createdAt)}>Added {relative(task.createdAt)}</span>
             <span title={absolute(task.updatedAt)}>Updated {relative(task.updatedAt)}</span>
             {task.branch && <span className="mono">Branch {task.branch}</span>}
-            <span>{task.weight === "heavy" ? "Heavy · runs when plugged in" : "Light · runs anytime"}</span>
+            <span>{task.weight === "heavy" ? "Runs when your Mac is plugged in" : "Runs anytime"}</span>
             {task.ignoreReserve && <span>Runs during Claude's reserve</span>}
           </div>
           {task.kind === "work" && <Thread taskId={task.id} />}

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { activateOnKey } from "../../src/dashboard/activate";
 import { SpaceNeeds } from "../../src/dashboard/components/NeedsYou";
 import { SpaceView } from "../../src/dashboard/components/SpaceView";
+import { kindLabel } from "../../src/dashboard/spaces";
 import { ids, makeState } from "../tui/fixtures";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -37,4 +39,40 @@ test("a task whose runs are older than the dashboard keeps doesn't claim it neve
   };
   expect(detail(ids.review)).not.toContain("No runs yet.");
   expect(detail(ids.queued)).toContain("No runs yet.");
+});
+
+test("task rows open from the keyboard like buttons", () => {
+  const s = makeState();
+  const space = s.spaces.find((x) => x.id === ids.atrium)!;
+  const html = renderToStaticMarkup(<SpaceView state={s} space={space} focusTask={null} />);
+  const rows = html.match(/<div class="item task[^"]*"[^>]*>/g)!;
+  expect(rows.length).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row).toContain('role="button"');
+    expect(row).toContain('tabindex="0"');
+    expect(row).toContain('aria-expanded="false"');
+  }
+  let opened = 0;
+  let prevented = 0;
+  const row = {};
+  const press = (key: string, target: unknown = row) => activateOnKey({ key, target, currentTarget: row, preventDefault: () => prevented++ }, () => opened++);
+  press("Enter");
+  press(" ");
+  press("a");
+  expect(opened).toBe(2);
+  expect(prevented).toBe(2);
+  // Enter on the Retry button inside the row is the button's, not the row's.
+  press("Enter", {});
+  expect(opened).toBe(2);
+});
+
+test("the space header names its kind in plain words and the task meta says when it runs", () => {
+  const s = makeState();
+  const space = s.spaces.find((x) => x.id === ids.atrium)!;
+  const t = text(renderToStaticMarkup(<SpaceView state={s} space={{ ...space, kind: "markets" }} focusTask={ids.review} />));
+  expect(t).toContain("Investing");
+  expect(t).not.toMatch(/\bmarkets\b/);
+  expect(t).toContain("Runs when your Mac is plugged in");
+  expect(kindLabel("general")).toBeNull();
+  expect(kindLabel("markets")).toBe("Investing");
 });
