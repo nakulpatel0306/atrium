@@ -12,10 +12,10 @@ const GH_ENV = {
   GIT_TERMINAL_PROMPT: "0",
 };
 
-export async function runGh(args: string[], opts: { timeoutMs?: number } = {}): Promise<GhResult> {
+export async function runGh(args: string[], opts: { timeoutMs?: number; cwd?: string } = {}): Promise<GhResult> {
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn([config().ghBin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...GH_ENV } });
+    proc = Bun.spawn([config().ghBin, ...args], { cwd: opts.cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...GH_ENV } });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return { code: 127, out: "", err: "", timedOut: false };
     throw e;
@@ -123,6 +123,28 @@ export async function ghViewRepo(slug: string, opts: { timeoutMs?: number } = {}
     // Falls through to the plain error below.
   }
   throw new GhProblem("other", "gh's answer about that repo couldn't be read. Update gh with `brew upgrade gh`, then try again.", res.out.slice(0, 120));
+}
+
+// Opens a pull request from an already-pushed branch. The repo is named outright (the remote read before the agent
+// ran), never worked out from the folder's current remotes. A PR that already exists for the branch counts as the
+// answer: gh names it in its error.
+export async function ghPrCreate(
+  pr: { repoDir: string; repo: string; head: string; base: string; title: string; body: string },
+  opts: { timeoutMs?: number } = {},
+): Promise<{ url: string; existed: boolean }> {
+  validateGithubSlug(pr.repo);
+  // `--flag=value` so a title starting with "-" is never read as an option.
+  const args = ["pr", "create", `--repo=${pr.repo}`, `--head=${pr.head}`, `--base=${pr.base}`, `--title=${pr.title}`, `--body=${pr.body}`];
+  const res = await runGh(args, { ...opts, cwd: pr.repoDir });
+  const pull = new RegExp(`https://github\\.com/${pr.repo.replace(/[.]/g, "\\.")}/pull/\\d+`, "i");
+  if (res.code !== 0 || res.timedOut) {
+    const existing = /already exists/i.test(res.err) ? pull.exec(res.err) : null;
+    if (existing) return { url: existing[0], existed: true };
+    throw ghProblem(res, { slug: pr.repo });
+  }
+  const url = pull.exec(res.out);
+  if (!url) throw new GhProblem("other", "gh didn't say where the pull request is. Check the repo's pull requests on GitHub.", res.out.slice(0, 120));
+  return { url: url[0], existed: false };
 }
 
 // git runs a "!helper" through a shell, so the gh path is only used when it has nothing a shell would interpret.

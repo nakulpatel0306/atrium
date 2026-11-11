@@ -52,4 +52,15 @@ if (argv[0] === "repo" && argv[1] === "view") {
   console.log(JSON.stringify({ nameWithOwner: slug, isPrivate: true, url: `https://github.com/${slug}` }));
   process.exit(0);
 }
+// `--repo=owner/name --head=b --base=main …`; the head must already be pushed to the bare repo, as on GitHub.
+if (argv[0] === "pr" && argv[1] === "create") {
+  const flag = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? "";
+  const [repo, head, base] = [flag("repo"), flag("head"), flag("base")];
+  if (mode === "pr_denied") fail(`GraphQL: fakeuser does not have the correct permissions to execute \`CreatePullRequest\` (createPullRequest)`);
+  if (mode === "pr_exists") fail(`a pull request for branch "${head}" into branch "${base}" already exists:\nhttps://github.com/${repo}/pull/7`);
+  const pushed = Bun.spawnSync(["git", "--git-dir", join(remotes, `${repo}.git`), "rev-parse", "--verify", "--quiet", `refs/heads/${head}`]);
+  if (pushed.exitCode !== 0) fail(`pull request create failed: GraphQL: Head sha can't be blank, No commits between ${base} and ${head} (createPullRequest)`);
+  console.log(`https://github.com/${repo}/pull/1`);
+  process.exit(0);
+}
 fail(`fake gh: unknown command ${argv.join(" ")}`);

@@ -257,10 +257,12 @@ export async function pushBranch(
   branch: string,
   url: string | null,
   timeoutMs = 60_000,
+  // Extra git options, such as gh's credential helper.
+  flags: string[] = [],
 ): Promise<{ pushed: boolean; reason?: string }> {
   if (isProtected(branch)) return { pushed: false, reason: "Refusing to push main" };
   if (!url) return { pushed: false, reason: "No remote configured" };
-  const res = await git(path, ["push", url, `refs/heads/${branch}:refs/heads/${branch}`], timeoutMs);
+  const res = await git(path, [...flags, "push", url, `refs/heads/${branch}:refs/heads/${branch}`], timeoutMs);
   if (res.timedOut) return { pushed: false, reason: "The push timed out." };
   if (res.code !== 0) return { pushed: false, reason: res.err.trim() };
   return { pushed: true };

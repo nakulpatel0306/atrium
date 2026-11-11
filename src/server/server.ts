@@ -31,6 +31,7 @@ import { startRoute } from "./start";
 import { marketsRoute, type MarketsDeps } from "./markets";
 import type { Repos } from "../engine/repos";
 import { BadDraft } from "../engine/repos/names";
+import { openPullRequest, PrFailed, prInfo } from "../engine/repos/pr";
 import { PushRefused } from "../engine/repos/push";
 import { reposRoute } from "./repos";
 import type { Messaging } from "../engine/messaging";
@@ -291,6 +292,24 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
 
+    const prInfoM = hit("GET", /^\/api\/tasks\/([^/]+)\/pr$/);
+    if (prInfoM) {
+      if (!getTask(db, prInfoM[1]!)) throw new HttpError(404, "No such task.");
+      return json(await prInfo(db, prInfoM[1]!));
+    }
+
+    // Nakul's click on "Push and open PR" is his yes; 409 when the task can't open one or GitHub turns the push
+    // down, 502 when gh fails.
+    const prM = hit("POST", /^\/api\/tasks\/([^/]+)\/pr$/);
+    if (prM) {
+      if (!getTask(db, prM[1]!)) throw new HttpError(404, "No such task.");
+      const b = await readBody(req);
+      const title = str(b.title, "title").trim();
+      if (typeof b.body !== "string") throw new HttpError(400, "body is required.");
+      if (title.length > 256) throw new HttpError(400, "Keep the title to 256 characters or fewer.");
+      return json(await openPullRequest(db, prM[1]!, { title, body: b.body }));
+    }
+
     const diffM = hit("GET", /^\/api\/tasks\/([^/]+)\/diff$/);
     if (diffM) return json(await taskChanges(db, diffM[1]!));
 
@@ -487,6 +506,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
         if (e instanceof BadDraft) return fail(400, e.message);
         if (e instanceof PushRefused) return fail(409, e.message);
         if (e instanceof ChangesRefused) return fail(e.status, e.message);
+        if (e instanceof PrFailed) return fail(502, e.message);
         if (e instanceof SetupFailed) {
           // The user sees the plain message; the log keeps what actually went wrong.
           console.error("Setup failed:", e.cause instanceof Error ? e.cause.message : e.message);

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../../src/engine/db";
 import type { DiffResult } from "../../src/engine/diff-parse";
@@ -11,6 +12,7 @@ import { createSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskStatus } from "../../src/engine/tasks";
 import { startServer, type WsData } from "../../src/server/server";
 import { tempHome, tempRepo } from "../helpers";
+import { fakeGitHub, seedRemote } from "../repos-helpers";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
@@ -169,4 +171,44 @@ test("steer: an empty or overlong note is a 400; unknown and non-repo tasks are 
   setTaskStatus(db, other.id, "running");
   expect((await post(`/api/tasks/${other.id}/steer`, { note: "x" })).status).toBe(404);
   expect((await post(`/api/tasks/${task.id}/steer`, { note: "x" }, {})).status).toBe(403);
+});
+
+test("pr: GET says where it would go; POST pushes and answers with the link; failures map to 409 and 502", async () => {
+  const gh = fakeGitHub();
+  cleanups.push(gh.cleanup);
+  seedRemote(gh, "app");
+  const parent = mkdtempSync(join(tmpdir(), "atrium-clone-"));
+  cleanups.push(() => rmSync(parent, { recursive: true, force: true }));
+  Bun.spawnSync(["git", "clone", "-q", "https://github.com/fakeuser/app", "app"], { cwd: parent, env: process.env });
+  const path = join(parent, "app");
+  const space = createSpace(db, { name: "App", kind: "repo", goal: "g", repoPath: path });
+  const task = createTask(db, { spaceId: space.id, title: "Add a footer" });
+  git(path, "checkout", "-q", "-b", `atrium/${task.id}`);
+  writeFileSync(join(path, "footer.html"), "<footer></footer>\n");
+  git(path, "add", "-A");
+  git(path, "commit", "-q", "-m", "work");
+  git(path, "checkout", "-q", "main");
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, remote_url) VALUES ('run_pr', ?, 'claude', 1, '/tmp/none', 'main', 'https://github.com/fakeuser/app')").run(task.id);
+  setTaskStatus(db, task.id, "running", { branch: `atrium/${task.id}` });
+
+  // Still running: not eligible yet.
+  expect(((await (await fetch(`${base}/api/tasks/${task.id}/pr`)).json()) as { eligible: boolean }).eligible).toBe(false);
+  expect((await post(`/api/tasks/${task.id}/pr`, { title: "t", body: "b" })).status).toBe(409);
+  setTaskStatus(db, task.id, "review");
+  expect(await (await fetch(`${base}/api/tasks/${task.id}/pr`)).json()).toMatchObject({ eligible: true, branch: `atrium/${task.id}`, base: "main", repo: "fakeuser/app", title: "Add a footer" });
+
+  expect((await post(`/api/tasks/${task.id}/pr`, { title: " ", body: "b" })).status).toBe(400);
+  expect((await post("/api/tasks/tsk_nope/pr", { title: "t", body: "b" })).status).toBe(404);
+  expect((await post(`/api/tasks/${task.id}/pr`, { title: "t", body: "b" }, {})).status).toBe(403);
+
+  gh.env("logged_out");
+  const out = await post(`/api/tasks/${task.id}/pr`, { title: "Add a footer", body: "Opened from Atrium." });
+  expect(out.status).toBe(502);
+  expect(await errorOf(out)).toBe("gh is signed out of GitHub. Run `gh auth login` in a terminal, then try again.");
+
+  gh.env("ok");
+  const res = await post(`/api/tasks/${task.id}/pr`, { title: "Add a footer", body: "Opened from Atrium." });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
+  expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/1");
 });
