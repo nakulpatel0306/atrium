@@ -3,6 +3,7 @@ import { ranAgent } from "../agents";
 import type { State } from "../api";
 import { briefingMarketsLine } from "../markets";
 import { navigate } from "../route";
+import { kindLabel } from "../spaces";
 import { emptyHome, liveStatus, spaceStatus } from "../summary";
 import { Activity } from "./Activity";
 import { Avatar } from "./Avatar";
@@ -42,7 +43,7 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
         </span>
         <span className="tags">
           {space.private && <span className="tag private">Private</span>}
-          <span className="tag">{space.kind}</span>
+          {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
         </span>
       </div>
       <div className={`s${s.tone ? ` ${s.tone}` : ""}`} title={s.text}>

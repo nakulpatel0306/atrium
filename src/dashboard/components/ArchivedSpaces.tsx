@@ -2,7 +2,7 @@ import { RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type State, useEngineState } from "../api";
 import { absolute, relative } from "../format";
-import { setArchived } from "../spaces";
+import { kindLabel, setArchived } from "../spaces";
 import { DeleteSpace } from "./DeleteSpace";
 
 type Space = State["spaces"][number];
@@ -24,7 +24,7 @@ function Row({ space, onDelete }: { space: Space; onDelete(): void }) {
           <b>{space.name}</b>
           <span>{space.goal}</span>
         </span>
-        <span className="tag">{space.kind}</span>
+        {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
         <span className="faint" title={absolute(space.updatedAt)}>
           Archived {relative(space.updatedAt)}
         </span>

@@ -137,8 +137,12 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
         <p className="msg-to">
           <span className="lbl">To</span>
           <b>{action.toName}</b>
-          <span className="sep">·</span>
-          {shown ? <span className="mono">{shown}</span> : <span className="need">number needed</span>}
+          {!shown && (
+            <>
+              <span className="sep">·</span>
+              <span className="need">number needed</span>
+            </>
+          )}
           {source && (
             <>
               <span className="sep">·</span>

@@ -25,7 +25,10 @@ test("the card shows who, how, the exact words and what Send does", () => {
   const html = renderToStaticMarkup(<MessageCard approval={approval()} action={action()} />);
   const t = text(html);
   expect(t).toContain("Send a text to Dana?");
-  expect(t).toMatch(/To Dana · \+1 555 010 0134 · from Contacts/);
+  // The number shows once, in the field that edits it.
+  expect(t).toContain("To Dana · from Contacts");
+  expect(html.split("+1 555 010 0134").length - 1).toBe(1);
+  expect(html).toContain('value="+1 555 010 0134"');
   expect(html).toContain(">you free sat?</textarea>");
   expect(t).toContain("13/2000");
   expect(t).toContain("iMessage");
