@@ -1,4 +1,4 @@
-import { MessageSquare, Search, Settings2 } from "lucide-react";
+import { type LucideIcon, MessageSquare, Search, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Candidate } from "../../engine/messaging/store";
 import { displayHandle, handleProblem, MAX_TEXT, textLength, textProblem } from "../../engine/messaging/rules";
@@ -14,6 +14,12 @@ const SOURCE: Record<string, string> = { contacts: "from Contacts", you: "typed 
 
 export const candidateLine = (c: Candidate) => [c.name, c.label, displayHandle(c.handle)].filter(Boolean).join(" · ");
 
+// A text's first line, short enough that the closing quote still shows on a folded row.
+export const snippet = (text: string, max = 40) => {
+  const line = text.split("\n")[0]!.trim();
+  return `‘${line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line}’`;
+};
+
 // Enter in the number field runs the lookup. The card has no form, so no key press can reach Send.
 export function onNumberKey(e: { key: string; preventDefault: () => void }, lookup: () => void): void {
   if (e.key !== "Enter") return;
@@ -23,7 +29,9 @@ export function onNumberKey(e: { key: string; preventDefault: () => void }, look
 
 // A text waiting to go. What Nakul sees here is exactly what Messages gets: his edits and his Send land together,
 // and nothing else can send it.
-export function MessageCard({ approval, action, spaceName = "Messages", firstSend = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean }) {
+// Folded, as in a list, it's one line until Review opens it; a failed try opens on its own so the reason shows.
+export function MessageCard({ approval, action, spaceName = "Messages", firstSend = false, folded = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean; folded?: boolean }) {
+  const [open, setOpen] = useState(!folded || !!action.lastError);
   const [text, setText] = useState(action.text);
   const [handle, setHandle] = useState(action.handle ? displayHandle(action.handle) : "");
   const [service, setService] = useState(action.service);
@@ -101,6 +109,8 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
     </button>
   );
 
+  if (!open) return <FoldedText icon={MessageSquare} spaceName={spaceName} to={action.toName} text={text} onOpen={() => setOpen(true)} />;
+
   return (
     <div className="entry msg-entry">
       <div className="item">
@@ -111,6 +121,11 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
           <span>{text.split("\n")[0]}</span>
         </span>
         <div className="acts">
+          {folded && (
+            <button className="btn" data-act="open" aria-expanded onClick={() => setOpen(false)}>
+              Hide
+            </button>
+          )}
           <button className="btn" disabled={busy !== null} onClick={() => void decline()}>
             Don't send
           </button>
@@ -214,6 +229,27 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
       </div>
       {error && <div className="row-err err">{error}</div>}
       {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
+    </div>
+  );
+}
+
+// One line for a text in a list: who it's to and how it starts. Review opens the full card, where Send is.
+export function FoldedText({ icon: Icon, spaceName, to, text, onOpen }: { icon: LucideIcon; spaceName: string; to: string; text: string; onOpen: () => void }) {
+  return (
+    <div className="entry msg-entry">
+      <div className="item folded">
+        <Icon className="msg-ico" />
+        <span className="who">{spaceName}</span>
+        <span className="t" title={`Text to ${to}`}>
+          Text to {to}
+          <span>{snippet(text)}</span>
+        </span>
+        <div className="acts">
+          <button className="btn" data-act="open" aria-expanded={false} onClick={onOpen}>
+            Review
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

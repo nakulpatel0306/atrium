@@ -62,13 +62,23 @@ test("a redraft leads with the last failure and offers System Settings", () => {
   expect(t).toContain("Open System Settings");
 });
 
-test("Needs you routes a text to its card", () => {
+test("Needs you folds a text to one line until Review opens its card", () => {
   const s = makeState();
   s.approvals.unshift(approval());
-  s.messageActions = [action()];
-  const t = text(renderToStaticMarkup(<NeedsYou state={s} />));
-  expect(t).toContain("Sends from Messages on this Mac.");
-  expect(t).toContain("The first send asks macOS whether Atrium may control Messages.");
+  s.messageActions = [action({ text: "See you at 7 by the north entrance, bring the tickets" })];
+  const html = renderToStaticMarkup(<NeedsYou state={s} />);
+  expect(text(html)).toContain("Text to Dana ‘See you at 7 by the north entrance, bri…’ Review");
+  expect(html).not.toContain("<textarea");
+  // Opened, it's the full card with the first-send note.
+  const open = text(renderToStaticMarkup(<MessageCard approval={approval()} action={action()} firstSend />));
+  expect(open).toContain("Sends from Messages on this Mac.");
+  expect(open).toContain("The first send asks macOS whether Atrium may control Messages.");
+});
+
+test("a folded text whose last try failed opens on its own", () => {
+  const html = renderToStaticMarkup(<MessageCard approval={approval()} action={action({ lastError: "Messages didn't answer." })} folded />);
+  expect(text(html)).toContain("Last try failed:");
+  expect(text(html)).toContain("Hide");
 });
 
 test("sent history", () => {

@@ -437,7 +437,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index, "/start": index },
+    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index, "/start": index, "/needs-you": index, "/activity": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";

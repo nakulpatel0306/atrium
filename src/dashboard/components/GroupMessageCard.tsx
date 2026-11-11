@@ -3,6 +3,7 @@ import { useState } from "react";
 import { askLine, groupTitle, MAX_TEXT, peopleLine, separatePlan, textLength, textProblem } from "../../engine/messaging/rules";
 import type { GroupChat } from "../../engine/messaging/store";
 import { post, type State } from "../api";
+import { FoldedText } from "./MessageCard";
 import { announce } from "../live";
 import { sendWithUndo } from "../pending-send";
 
@@ -15,7 +16,8 @@ export const chatMembers = (c: GroupChat) => c.participants.map((p) => p.name ??
 
 // A group text waiting to go. It sends only to an existing chat that Nakul's own Find picked, exactly the words shown,
 // and only on his Send. With no chat, it can become one text per person, each still waiting for its own Send.
-export function GroupMessageCard({ approval, action, spaceName = "Messages", firstSend = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean }) {
+export function GroupMessageCard({ approval, action, spaceName = "Messages", firstSend = false, folded = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean; folded?: boolean }) {
+  const [open, setOpen] = useState(!folded || !!action.lastError);
   const group = action.group!;
   const [text, setText] = useState(action.text);
   const [chats, setChats] = useState<GroupChat[]>([]);
@@ -82,6 +84,8 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
     </button>
   );
 
+  if (!open) return <FoldedText icon={Users} spaceName={spaceName} to={title} text={text} onOpen={() => setOpen(true)} />;
+
   return (
     <div className="entry msg-entry">
       <div className="item">
@@ -91,6 +95,11 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           Send a text to {title}?<span>{text.split("\n")[0]}</span>
         </span>
         <div className="acts">
+          {folded && (
+            <button className="btn" data-act="open" aria-expanded onClick={() => setOpen(false)}>
+              Hide
+            </button>
+          )}
           <button className="btn" disabled={busy !== null} onClick={decline}>
             Don't send
           </button>

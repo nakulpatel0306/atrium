@@ -88,7 +88,7 @@ test("Needs you routes a group text to the group card and a person text to the p
   s.approvals.unshift(approval());
   s.messageActions = [action({ name: "Hike crew", people: [], chat: HIKE })];
   const t = text(renderToStaticMarkup(<NeedsYou state={s} />));
-  expect(t).toContain("Sends to the existing group chat");
+  expect(t).toContain("Text to Hike crew ‘lock in saturday?’ Review");
   expect(t).not.toContain("Phone number or email");
 });
 

@@ -11,10 +11,9 @@ type Props = {
   archived: number;
   route: Route;
   onNewSpace: () => void;
-  onJump: (section: "needs" | "activity") => void;
 };
 
-export function Sidebar({ state, archived, route, onNewSpace, onJump }: Props) {
+export function Sidebar({ state, archived, route, onNewSpace }: Props) {
   // Suggestions wait for an answer just like approvals do.
   const waiting = [...state.approvals, ...state.proposals];
   const pending = waiting.length;
@@ -36,12 +35,12 @@ export function Sidebar({ state, archived, route, onNewSpace, onJump }: Props) {
         <House />
         Home
       </button>
-      <button className="nav" onClick={() => onJump("needs")}>
+      <button className={`nav${route.name === "needs" ? " on" : ""}`} onClick={() => navigate("/needs-you")}>
         <Inbox />
         Needs you
         {pending > 0 && <span className="ct hot">{pending}</span>}
       </button>
-      <button className="nav" onClick={() => onJump("activity")}>
+      <button className={`nav${route.name === "activity" ? " on" : ""}`} onClick={() => navigate("/activity")}>
         <Activity />
         Activity
       </button>

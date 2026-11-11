@@ -7,6 +7,8 @@ import { CommandBar } from "./components/CommandBar";
 import { GetStarted } from "./components/GetStarted";
 import { Home } from "./components/Home";
 import { LiveRegion } from "./components/LiveRegion";
+import { NeedsPage } from "./components/NeedsPage";
+import { Activity } from "./components/Activity";
 import { Logo } from "./components/Logo";
 import { Rules } from "./components/Rules";
 import { Settings } from "./components/Settings";
@@ -24,7 +26,6 @@ function App() {
   const briefing = useRef<State["briefing"] | null>(null);
   const seen = useRef(false);
   const [setupRequest, setSetupRequest] = useState(0);
-  const [jump, setJump] = useState<"needs" | "activity" | null>(null);
   const [, setTick] = useState(0);
 
   if (state && !briefing.current) briefing.current = state.briefing;
@@ -57,12 +58,6 @@ function App() {
     main.current?.scrollTo(0, 0);
   }, [route.name, route.name === "space" ? route.id : ""]);
 
-  useEffect(() => {
-    if (!jump || route.name !== "home") return;
-    document.getElementById(jump)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setJump(null);
-  }, [jump, route.name]);
-
   const space = route.name === "space" ? state?.spaces.find((s) => s.id === route.id) : undefined;
   const newSpace = () => setSetupRequest((n) => n + 1);
   const offline = !online && (
@@ -92,10 +87,6 @@ function App() {
         archived={state.archived?.length ?? 0}
         route={route}
         onNewSpace={newSpace}
-        onJump={(section) => {
-          navigate("/");
-          setJump(section);
-        }}
       />
       <main ref={main}>
         <div className="top">
@@ -111,7 +102,7 @@ function App() {
               </button>
               <ChevronRight className="sep" />
               <b>
-                {route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : route.name === "settings" ? "Settings" : route.name === "start" ? "Get started" : (space?.name ?? "Unknown space")}
+                {route.name === "needs" ? "Needs you" : route.name === "activity" ? "Activity" : route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : route.name === "settings" ? "Settings" : route.name === "start" ? "Get started" : (space?.name ?? "Unknown space")}
               </b>
             </>
           )}
@@ -120,6 +111,12 @@ function App() {
         </div>
         {route.name === "home" ? (
           <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
+        ) : route.name === "needs" ? (
+          <NeedsPage state={activeOnly(state)} />
+        ) : route.name === "activity" ? (
+          <div className="wrap">
+            <Activity state={activeOnly(state)} page />
+          </div>
         ) : route.name === "agents" ? (
           <Agents state={state} />
         ) : route.name === "rules" ? (

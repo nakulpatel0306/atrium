@@ -1,5 +1,5 @@
 import { CalendarClock, Inbox, SearchCheck, Wrench } from "lucide-react";
-import { useState } from "react";
+import { type Ref, useState } from "react";
 import { post, type State, useMessages } from "../api";
 import { absolute, relative } from "../format";
 import { navigate } from "../route";
@@ -156,7 +156,7 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
         if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
         const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
         const Card = text?.group ? GroupMessageCard : MessageCard;
-        if (text) return <Card key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} />;
+        if (text) return <Card key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} folded />;
         return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
       })}
     </>
@@ -183,20 +183,29 @@ export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }
   );
 }
 
-export function NeedsYou({ state }: { state: State }) {
-  const count = state.approvals.length + state.proposals.length;
+export const needsCount = (state: State) => state.approvals.length + state.proposals.length;
+
+// The whole list, on Home and on the Needs you page.
+export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {
   const nudges = state.nudges ?? [];
+  return (
+    <div className="list needs-list" ref={listRef}>
+      {nudges.map((n) => (
+        <NudgeRow key={n.id} nudge={n} />
+      ))}
+      {needsCount(state) === 0 ? nudges.length === 0 && <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
+    </div>
+  );
+}
+
+export function NeedsYou({ state }: { state: State }) {
+  const count = needsCount(state);
   return (
     <>
       <h2 id="needs">
         <Inbox />
         Needs you{count > 0 && ` · ${count}`}</h2>
-      <div className="list needs-list">
-        {nudges.map((n) => (
-          <NudgeRow key={n.id} nudge={n} />
-        ))}
-        {count === 0 ? nudges.length === 0 && <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
-      </div>
+      <NeedsList state={state} />
     </>
   );
 }
