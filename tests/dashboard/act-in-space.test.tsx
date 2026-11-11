@@ -41,17 +41,18 @@ test("a task whose runs are older than the dashboard keeps doesn't claim it neve
   expect(detail(ids.queued)).toContain("No runs yet.");
 });
 
-test("task rows open from the keyboard like buttons", () => {
+test("a task row's summary is a real button, with its actions beside it rather than inside", () => {
   const s = makeState();
   const space = s.spaces.find((x) => x.id === ids.atrium)!;
-  const html = renderToStaticMarkup(<SpaceView state={s} space={space} focusTask={null} />);
-  const rows = html.match(/<div class="item task[^"]*"[^>]*>/g)!;
-  expect(rows.length).toBeGreaterThan(0);
-  for (const row of rows) {
-    expect(row).toContain('role="button"');
-    expect(row).toContain('tabindex="0"');
-    expect(row).toContain('aria-expanded="false"');
-  }
+  const html = renderToStaticMarkup(<SpaceView state={s} space={space} focusTask={ids.review} />);
+  const opens = [...html.matchAll(/<button class="task-open" aria-expanded="(true|false)">(.*?)<\/button>/g)];
+  expect(opens.length).toBe(s.tasks.filter((t) => t.spaceId === ids.atrium).length);
+  expect(opens.map((m) => m[1])).toContain("true");
+  for (const m of opens) expect(m[2]).not.toContain("<button");
+  expect(html).not.toMatch(/class="item task[^"]*" role="button"/);
+});
+
+test("rule and agent rows open on Enter or Space, but not on a press meant for a control inside", () => {
   let opened = 0;
   let prevented = 0;
   const row = {};
@@ -61,7 +62,6 @@ test("task rows open from the keyboard like buttons", () => {
   press("a");
   expect(opened).toBe(2);
   expect(prevented).toBe(2);
-  // Enter on the Retry button inside the row is the button's, not the row's.
   press("Enter", {});
   expect(opened).toBe(2);
 });

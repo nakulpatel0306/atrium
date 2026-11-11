@@ -1,7 +1,6 @@
 import { CornerDownRight, Lock, Play, SearchCheck, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
-import { activateOnKey } from "../activate";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { navigate, type SpaceTab } from "../route";
@@ -282,51 +281,32 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
 
   return (
     <div className="entry" id={`task-${task.id}`}>
-      <div
-        className={`item task${task.status === "done" ? " done" : ""}`}
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onClick={onToggle}
-        onKeyDown={(e) => activateOnKey(e, onToggle)}
-      >
-        <StatusIcon status={task.status} outcome={task.outcome} />
-        <KindBadge kind={task.kind} />
-        <span className="t" title={shownTitle(task)}>
-          {shownTitle(task)}
-        </span>
-        {wait ? (
-          <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
-            waiting
+      {/* The summary is the row's one button; its actions sit beside it, so no control is nested in another. */}
+      <div className={`item task${task.status === "done" ? " done" : ""}`}>
+        <button className="task-open" aria-expanded={open} onClick={onToggle}>
+          <StatusIcon status={task.status} outcome={task.outcome} />
+          <KindBadge kind={task.kind} />
+          <span className="t" title={shownTitle(task)}>
+            {shownTitle(task)}
           </span>
-        ) : (
-          <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
-            {notDone ?? STATUS_TEXT[task.status]}
-            {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
-          </span>
-        )}
+          {wait ? (
+            <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
+              waiting
+            </span>
+          ) : (
+            <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
+              {notDone ?? STATUS_TEXT[task.status]}
+              {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
+            </span>
+          )}
+        </button>
         {stuck && (
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              void retry();
-            }}
-          >
+          <button className="btn" disabled={busy} onClick={() => void retry()}>
             Retry
           </button>
         )}
         {wait?.kind === "reserve" && (
-          <button
-            className="btn"
-            disabled={busy}
-            title="Start this task now, using Claude's reserved window"
-            onClick={(e) => {
-              e.stopPropagation();
-              void runNow();
-            }}
-          >
+          <button className="btn" disabled={busy} title="Start this task now, using Claude's reserved window" onClick={() => void runNow()}>
             <Play />
             Run now
           </button>
