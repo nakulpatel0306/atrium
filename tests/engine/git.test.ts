@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchDiff, branchFiles, branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch, showBlob, workingDiff } from "../../src/engine/git";
+import { branchDiff, branchFiles, branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch, showBlob, untrackedFile, workingDiff } from "../../src/engine/git";
 import { fingerprintOf } from "../../src/engine/autonomy/kinds";
 import { PLAIN_DOCS, tempRepo } from "../helpers";
 
@@ -638,6 +638,46 @@ describe("changes", () => {
     ]);
     expect(d.totals).toEqual({ files: 2, additions: 2, deletions: 1 });
   });
+
+  test("no filter driver the agent planted runs while its changes are read", async () => {
+    const path = workRepo();
+    const marker = join(tempDir(), "ran");
+    // Defined in the repo's own config, selected from the worktree's .gitattributes and from info/attributes.
+    git(path, "config", "filter.evil.clean", `touch ${marker}; cat`);
+    git(path, "config", "filter.evil.process", `touch ${marker}`);
+    writeFileSync(join(path, ".gitattributes"), "* filter=evil\n");
+    writeFileSync(join(path, ".git", "info", "attributes"), "* filter=evil\n");
+    writeFileSync(join(path, "app.ts"), "const a = 1;\nconst b = 3;\n");
+    const d = await workingDiff(path, "main");
+    expect(d.files.find((f) => f.path === "app.ts")).toMatchObject({ additions: 1, deletions: 1 });
+    expect(existsSync(marker)).toBe(false);
+    // The same read without Atrium's guards would have run it, so the check above means something.
+    Bun.spawnSync(["git", "diff", "main"], { cwd: path });
+    expect(existsSync(marker)).toBe(true);
+  });
+
+  test("an untracked file is read only when it's a regular file inside the repo", async () => {
+    const path = workRepo();
+    const outside = tempDir();
+    writeFileSync(join(outside, "secret.txt"), "do not show\n");
+    // A folder in the repo that's a link to somewhere else: nothing through it is read.
+    symlinkSync(outside, join(path, "linked"));
+    expect(untrackedFile(path, "linked/secret.txt", 1024)).toBeNull();
+    // A file that's a link shows its target as text, as git would commit it.
+    symlinkSync(join(outside, "secret.txt"), join(path, "file-link.txt"));
+    expect(untrackedFile(path, "file-link.txt", 1024)!.file.hunks[0]!.lines[0]!.text).toBe(join(outside, "secret.txt"));
+    const d = await workingDiff(path, "main");
+    expect(JSON.stringify(d)).not.toContain("do not show");
+  });
+
+  test("a FIFO in the repo doesn't hang the read", async () => {
+    const path = workRepo();
+    const made = Bun.spawnSync(["mkfifo", join(path, "pipe")]);
+    expect(made.exitCode).toBe(0);
+    expect(untrackedFile(path, "pipe", 1024)).toBeNull();
+    const d = await workingDiff(path, "main");
+    expect(d.files.map((f) => f.path)).not.toContain("pipe");
+  }, 5000);
 
   test("no changes is an empty result", async () => {
     const path = workRepo();

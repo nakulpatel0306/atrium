@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf } from "./diff-parse";
 import { isEnvPath } from "./envpath";
 
@@ -540,16 +540,34 @@ export async function moveLateCommit(path: string, taskId: string, decided: stri
 
 const CHANGES_CAP = 200 * 1024;
 const ENV_EXCLUDES = ["--", ".", ":(exclude,glob,icase)**/.env*", ":(exclude,glob,icase)**/*.env"];
-// No external diff programs or textconv filters, and attributes only from the empty tree, so nothing the agent
-// planted in the repo runs while the engine reads its changes.
+// No external diff programs or textconv filters, attributes only from the empty tree, and every configured filter
+// driver blanked, so nothing the agent planted in the repo runs while the engine reads its changes. Reading a
+// working tree runs clean filters, and info/attributes is the one attribute source --attr-source doesn't replace.
 async function diffFlags(path: string): Promise<string[]> {
   const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
   if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
   return [
-    "-c", "core.quotePath=false", ...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`,
+    "-c", "core.quotePath=false", ...STAGE_FLAGS, ...(await blankFilters(path)), `--attr-source=${empty.out.trim()}`,
     // Fixed prefixes: a user's diff.mnemonicPrefix or diff.noPrefix would change what the parser reads.
     "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/",
   ];
+}
+
+// `-c filter.<name>.clean=` for every filter any config level defines: an empty command runs nothing.
+async function blankFilters(path: string): Promise<string[]> {
+  // NUL-separated so a value containing newlines can't pass for several config entries.
+  const res = await git(path, ["config", "--null", "--get-regexp", "^filter\\."]);
+  // Exit 1 just means no filter is configured.
+  if (res.code > 1) throw new Error(`Couldn't read git config: ${res.err.trim()}`);
+  const names = new Set<string>();
+  for (const record of res.out.split("\0").filter(Boolean)) {
+    const key = record.split("\n")[0]!;
+    const dot = key.lastIndexOf(".");
+    // `-c` splits at the first "=", so a name holding one couldn't be blanked.
+    if (dot <= "filter.".length || key.includes("=")) throw new Error("Refusing to read changes: this repo's git config has a filter Atrium can't switch off.");
+    names.add(key.slice("filter.".length, dot));
+  }
+  return [...names].flatMap((n) => ["-c", `filter.${n}.clean=`, "-c", `filter.${n}.smudge=`, "-c", `filter.${n}.process=`, "-c", `filter.${n}.required=false`]);
 }
 
 // .env files are left out by pathspec, and again by header, as in reviewDiff (that covers both sides of a rename).
@@ -576,7 +594,7 @@ export async function workingDiff(path: string, start: string): Promise<DiffResu
   const files = [...tracked.files];
   // A nested repo shows as "dir/"; its contents are its own repo's business.
   for (const rel of list.out.split("\0").filter((p) => p && !p.endsWith("/") && !isEnvPath(p)).sort()) {
-    const found = untrackedFile(join(path, rel), rel, Math.max(budget, 0));
+    const found = untrackedFile(path, rel, Math.max(budget, 0));
     if (!found) continue;
     const { file, cut } = found;
     if (cut) truncated = true;
@@ -586,28 +604,48 @@ export async function workingDiff(path: string, start: string): Promise<DiffResu
   return { files, totals: totalsOf(files), truncated };
 }
 
-// `cut` says the file was shortened to fit what's left of the 200 KB, rather than at its own 2,000 lines.
-function untrackedFile(abs: string, rel: string, budget: number): { file: DiffFile; cut: boolean } | null {
+// `cut` says the file was shortened to fit what's left of the 200 KB, rather than at its own 2,000 lines. The file is
+// opened without following a symlink and without blocking (a FIFO would otherwise hang the engine), checked on the
+// open descriptor, and only when its folder still resolves inside the repo.
+export function untrackedFile(root: string, rel: string, budget: number): { file: DiffFile; cut: boolean } | null {
   const file: DiffFile = { path: rel, status: "added", additions: 0, deletions: 0, binary: false, truncated: false, hunks: [] };
-  let st: ReturnType<typeof lstatSync>;
+  const abs = join(root, rel);
   try {
-    st = lstatSync(abs);
+    const top = realpathSync(root);
+    const dir = realpathSync(dirname(abs));
+    if (dir !== top && !dir.startsWith(`${top}/`)) return null;
   } catch {
     // Deleted between the listing and the read.
     return null;
   }
-  // git shows a symlink as one line holding its target, which is what it would commit.
-  if (st.isSymbolicLink()) {
-    file.additions = 1;
-    file.hunks = [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add", text: readlinkSync(abs), newNo: 1 }] }];
-    return { file, cut: false };
-  }
-  if (!st.isFile()) return null;
-  const want = Math.min(st.size, budget);
-  const bytes = Buffer.alloc(want);
-  const fd = openSync(abs, "r");
+  let fd: number;
   try {
-    readSync(fd, bytes, 0, want, 0);
+    fd = openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (e) {
+    // git shows a symlink as one line holding its target, which is what it would commit; nothing behind it is read.
+    if ((e as NodeJS.ErrnoException).code !== "ELOOP") return null;
+    try {
+      file.additions = 1;
+      file.hunks = [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add", text: readlinkSync(abs), newNo: 1 }] }];
+      return { file, cut: false };
+    } catch {
+      return null;
+    }
+  }
+  let bytes: Buffer;
+  let size: number;
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) return null;
+    size = st.size;
+    bytes = Buffer.alloc(Math.min(size, budget));
+    let read = 0;
+    while (read < bytes.length) {
+      const n = readSync(fd, bytes, read, bytes.length - read, read);
+      if (n === 0) break;
+      read += n;
+    }
+    bytes = bytes.subarray(0, read);
   } finally {
     closeSync(fd);
   }
@@ -615,10 +653,9 @@ function untrackedFile(abs: string, rel: string, budget: number): { file: DiffFi
     file.binary = true;
     return { file, cut: false };
   }
-  const cut = want < st.size;
+  const cut = bytes.length < size;
   if (cut) file.truncated = true;
-  const text = bytes.toString();
-  const lines = text.split("\n");
+  const lines = bytes.toString().split("\n");
   if (lines.at(-1) === "") lines.pop();
   file.additions = lines.length;
   if (lines.length > MAX_FILE_LINES) file.truncated = true;
