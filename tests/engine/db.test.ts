@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { config } from "../../src/engine/config";
 import { openDb } from "../../src/engine/db";
+import { getTask } from "../../src/engine/tasks";
 import { tempHome } from "../helpers";
 
 test("openDb creates all tables", () => {
@@ -493,5 +494,29 @@ test("message_actions rebuild adds group texts and keeps every row", () => {
   expect(sql(again)).toBe(before);
   expect((again.query("SELECT COUNT(*) AS n FROM message_actions").get() as { n: number }).n).toBe(2);
   again.close();
+  t.cleanup();
+});
+
+test("an older database gains runs.remote_url and tasks.pr_url, and its rows read as before", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const old = new Database(path);
+  old.exec(`CREATE TABLE tasks (
+    id TEXT PRIMARY KEY, space_id TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued', blocked_reason TEXT, agent TEXT NOT NULL, weight TEXT NOT NULL,
+    allow_on_battery INTEGER NOT NULL DEFAULT 0, branch TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE runs (
+    id TEXT PRIMARY KEY, task_id TEXT NOT NULL, agent TEXT NOT NULL, started_at INTEGER NOT NULL,
+    ended_at INTEGER, exit_code INTEGER, input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0, transcript_path TEXT NOT NULL, start_ref TEXT, git_fingerprint TEXT);
+  INSERT INTO tasks (id, space_id, title, status, agent, weight, branch, created_at, updated_at)
+    VALUES ('tsk_old', 'spc', 'Old work', 'done', 'claude', 'heavy', 'atrium/tsk_old', 1, 1);
+  INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref) VALUES ('run_old', 'tsk_old', 'claude', 1, '/tmp/x', 'main')`);
+  old.close();
+  const db = openDb(path);
+  expect(db.query("SELECT remote_url FROM runs WHERE id = 'run_old'").get()).toEqual({ remote_url: null });
+  expect(getTask(db, "tsk_old")).toMatchObject({ title: "Old work", status: "done", branch: "atrium/tsk_old", prUrl: null });
+  db.close();
+  openDb(path).close();
   t.cleanup();
 });

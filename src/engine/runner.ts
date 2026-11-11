@@ -21,6 +21,7 @@ import {
   headRef,
   moveLateCommit,
   prepareBranch,
+  remoteUrl,
   repoReady,
   returnToBranch,
   reviewDiff,
@@ -127,7 +128,7 @@ type Settled = Awaited<ReturnType<MarketsHooks["settle"]>>;
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
 
 // The repo as found at task start, so it can be put back after the run.
-type RepoRun = { path: string; start: string; branch: string; fingerprint: string };
+type RepoRun = { path: string; start: string; branch: string; fingerprint: string; remote: string | null };
 
 export function createRunner(deps: {
   db: Database;
@@ -372,8 +373,10 @@ export function createRunner(deps: {
         // Branching from a leftover agent branch would stack unreviewed work.
         else if (start.startsWith("atrium/")) return block(task, `The repo is on ${start}, an Atrium branch. Switch back to your own branch, then retry.`);
         const fingerprint = last?.fingerprint ?? (await gitSettingsFingerprint(path));
+        // Read with the fingerprint, before the agent can touch the repo's config.
+        const remote = last ? last.remote : await remoteUrl(path);
         const branch = await prepareBranch(path, branchTaskId(task), { existing: task.kind === "fix" });
-        repo = { path, start, fingerprint, branch };
+        repo = { path, start, fingerprint, branch, remote };
         deps.repos?.touch(path);
       } catch (e) {
         return block(task, (e as Error).message);
@@ -404,8 +407,8 @@ export function createRunner(deps: {
       const runId = newId("run");
       const transcript = openTranscript(runId);
       db.query(
-        "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(runId, task.id, agent, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null);
+        "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint, remote_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(runId, task.id, agent, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null, repo?.remote ?? null);
       started = { cwd, runId, transcript };
     } catch (e) {
       if (scratch && cwd) rmSync(cwd, { recursive: true, force: true });
@@ -953,14 +956,14 @@ const leftoversReason = (branch: string, path: string, start: string | null) =>
 const tamperedReason = (path: string) =>
   `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches. Check them, then retry.`;
 
-// The last repo run of a task: where it started and the git settings it started with (null for older rows).
-function lastRepoRun(db: Database, taskId: string): { start: string; fingerprint: string | null } | null {
+// The last repo run of a task: where it started, the git settings it started with and its remote (null for older rows).
+export function lastRepoRun(db: Database, taskId: string): { start: string; fingerprint: string | null; remote: string | null } | null {
   const row = db
     .query(
-      "SELECT start_ref, git_fingerprint FROM runs WHERE task_id = ? AND start_ref IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1",
+      "SELECT start_ref, git_fingerprint, remote_url FROM runs WHERE task_id = ? AND start_ref IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1",
     )
-    .get(taskId) as { start_ref: string; git_fingerprint: string | null } | null;
-  return row ? { start: row.start_ref, fingerprint: row.git_fingerprint } : null;
+    .get(taskId) as { start_ref: string; git_fingerprint: string | null; remote_url: string | null } | null;
+  return row ? { start: row.start_ref, fingerprint: row.git_fingerprint, remote: row.remote_url } : null;
 }
 
 // A missing baseline counts as changed: without it there's no telling what the agent did.

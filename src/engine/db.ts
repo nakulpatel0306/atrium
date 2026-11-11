@@ -262,6 +262,10 @@ function migrate(db: Database): boolean {
   if (!has("spaces", "folder_ino")) db.exec("ALTER TABLE spaces ADD COLUMN folder_ino INTEGER");
   // The task an activity line is about, so the feed can fold one task's routine lines together.
   if (!has("activity", "task_id")) db.exec("ALTER TABLE activity ADD COLUMN task_id TEXT REFERENCES tasks(id)");
+  // The repo's remote as read before the agent ran, so a pull request never pushes where the agent pointed it.
+  if (!has("runs", "remote_url")) db.exec("ALTER TABLE runs ADD COLUMN remote_url TEXT");
+  // The pull request opened from a task's branch, once there is one.
+  if (!has("tasks", "pr_url")) db.exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS activity_space ON activity(space_id, created_at)");
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
