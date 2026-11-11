@@ -22,6 +22,7 @@ import { outcomeLabel } from "../../engine/outcome";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
+import { RepoWork } from "./RepoWork";
 import { WhatItMade } from "./WhatItMade";
 import { AdviceTag } from "./markets/AdviceTag";
 import { InvestPanel } from "./invest/InvestPanel";
@@ -251,9 +252,11 @@ type TaskRowProps = {
   open: boolean;
   onToggle: () => void;
   onTranscript: (run: Run) => void;
+  // Open on its Changes, from a "See changes" link.
+  showChanges?: boolean;
 };
 
-function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
+function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stuck = task.status === "blocked" || task.status === "failed";
@@ -343,7 +346,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
             <h4>You asked</h4>
             <Markdown text={task.detail || task.title} />
           </section>
-          {space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />}
+          {space?.kind === "repo" ? (
+            <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} />
+          ) : (
+            space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />
+          )}
           <div className="meta">
             <span className="agent-meta">
               Agent
@@ -444,6 +451,8 @@ type Props = {
   symbol?: string | null;
   // Open a markets space on its Money tab, from `?tab=money`.
   money?: boolean;
+  // Open the focused task on its Changes, from `&view=changes`.
+  changes?: boolean;
 };
 
 // The Files count comes from the same listing the tab shows, so it's read whichever tab is open.
@@ -462,7 +471,7 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
   );
 }
 
-export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null, money = false }: Props) {
+export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null, money = false, changes = false }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
   const [, setTick] = useState(0);
@@ -520,6 +529,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
                   open={expanded.has(t.id)}
                   onToggle={() => toggle(t.id)}
                   onTranscript={(run) => setTranscript({ run, title: t.title })}
+                  showChanges={changes && t.id === focusTask}
                 />
               ))
             )}

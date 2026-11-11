@@ -75,6 +75,11 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
         )}
         {space?.kind === "markets" && <AdviceTag />}
         <div className="acts">
+          {approval.taskId && space?.kind === "repo" && approval.kind === "review" && (
+            <button className="btn link" onClick={() => navigate(`/space/${space.id}?task=${approval.taskId}&view=changes`)}>
+              See changes
+            </button>
+          )}
           <button className="btn" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? "Hide" : "View"}
           </button>

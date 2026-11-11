@@ -4734,3 +4734,288 @@ code {
 .start-nav .primary { margin-left: auto; }
 .start-summary { margin: 0 0 12px; padding-left: 18px; }
 .money-account-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+
+/* A repo task's changes, its steer note and its pull request. */
+.work-tabs {
+  margin: 12px 0 8px;
+}
+.changes-section .err {
+  margin-bottom: 6px;
+}
+.chg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+.chg-head b {
+  font-weight: 600;
+}
+.chg-live {
+  color: var(--dim);
+  font-size: 12px;
+}
+.chg-live::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+}
+.chg-empty,
+.chg-note {
+  color: var(--dim);
+}
+.chg-note {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.chg-body {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.chg-list {
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.chg-list li + li {
+  border-top: 1px solid var(--line);
+}
+.chg-list button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.chg-list button:hover {
+  background: var(--hover);
+}
+.chg-list .chg-path {
+  flex: 1 1 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.chg-count {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.chg-add {
+  color: var(--green);
+}
+.chg-del {
+  color: var(--red);
+}
+.chg-diff {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chg-file {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+  scroll-margin-top: 8px;
+}
+.chg-file-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+}
+.chg-file-head[aria-expanded="false"] {
+  border-bottom: 0;
+}
+.chg-file-head svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--dim);
+}
+.chg-file-head .chg-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.chg-lines {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chg-lines td {
+  padding: 0 8px;
+  white-space: pre;
+  vertical-align: top;
+}
+.chg-no {
+  min-width: 36px;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+.chg-text {
+  width: 100%;
+}
+.chg-sign {
+  display: inline-block;
+  width: 14px;
+  color: var(--faint);
+  user-select: none;
+}
+.chg-add td {
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+.chg-del td {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.chg-hunk td {
+  padding: 3px 8px;
+  color: var(--dim);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+@media (max-width: 900px) {
+  .chg-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chg-list {
+    position: static;
+    max-height: 200px;
+  }
+}
+
+.steer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.steer input {
+  flex: 1 1 240px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+.steer input:focus {
+  border-color: var(--accent);
+}
+.steer .err {
+  flex-basis: 100%;
+}
+.steer-wait {
+  margin: 10px 0 4px;
+  color: var(--dim);
+}
+
+.pr {
+  margin-top: 12px;
+}
+.pr-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.pr-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+}
+.pr-facts dt {
+  color: var(--dim);
+}
+.pr-facts dd {
+  overflow-wrap: anywhere;
+}
+.pr-confirm label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.pr-confirm input,
+.pr-confirm textarea {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  outline: none;
+  resize: vertical;
+}
+.pr-confirm input:focus,
+.pr-confirm textarea:focus {
+  border-color: var(--accent);
+}
+.pr-confirm .hint {
+  color: var(--dim);
+  font-size: 12px;
+}
+.pr-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.pr-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--dim);
+}
+.pr-done svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.pr-done > svg.lucide {
+  color: var(--accent);
+}
+.pr-done a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
