@@ -197,21 +197,23 @@ test("pr: GET says where it would go; POST pushes and answers with the link; fai
 
   // Still running: not eligible yet.
   expect(((await (await fetch(`${base}/api/tasks/${task.id}/pr`)).json()) as { eligible: boolean }).eligible).toBe(false);
-  expect((await post(`/api/tasks/${task.id}/pr`, { title: "t", body: "b" })).status).toBe(409);
+  expect((await post(`/api/tasks/${task.id}/pr`, { title: "t", body: "b", sha: "0000000" })).status).toBe(409);
   setTaskStatus(db, task.id, "review");
   expect(await (await fetch(`${base}/api/tasks/${task.id}/pr`)).json()).toMatchObject({ eligible: true, branch: `atrium/${task.id}`, base: "main", repo: "fakeuser/app", title: "Add a footer" });
 
   expect((await post(`/api/tasks/${task.id}/pr`, { title: " ", body: "b" })).status).toBe(400);
   expect((await post("/api/tasks/tsk_nope/pr", { title: "t", body: "b" })).status).toBe(404);
   expect((await post(`/api/tasks/${task.id}/pr`, { title: "t", body: "b" }, {})).status).toBe(403);
+  expect((await post(`/api/tasks/${task.id}/pr`, { title: "t", body: "b" })).status).toBe(400);
+  const { sha } = (await (await fetch(`${base}/api/tasks/${task.id}/pr`)).json()) as { sha: string };
 
   gh.env("logged_out");
-  const out = await post(`/api/tasks/${task.id}/pr`, { title: "Add a footer", body: "Opened from Atrium." });
+  const out = await post(`/api/tasks/${task.id}/pr`, { title: "Add a footer", body: "Opened from Atrium.", sha });
   expect(out.status).toBe(502);
   expect(await errorOf(out)).toBe("gh is signed out of GitHub. Run `gh auth login` in a terminal, then try again.");
 
   gh.env("ok");
-  const res = await post(`/api/tasks/${task.id}/pr`, { title: "Add a footer", body: "Opened from Atrium." });
+  const res = await post(`/api/tasks/${task.id}/pr`, { title: "Add a footer", body: "Opened from Atrium.", sha });
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
   expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/1");

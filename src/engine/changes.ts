@@ -31,6 +31,11 @@ bus.on((e) => {
 
 export async function taskChanges(db: Database, taskId: string): Promise<DiffResult> {
   const task = getTask(db, taskId);
+  // Only running tasks are kept, so a finished task's entries go the first time it's read after its run.
+  if (task?.status !== "running") {
+    edits.delete(taskId);
+    recent.delete(taskId);
+  }
   const key = `${task?.status}:${task?.updatedAt}:${edits.get(taskId) ?? 0}`;
   const kept = recent.get(taskId);
   // Only a running task's read is costly enough to keep; a finished one is a quick diff of two commits.

@@ -312,7 +312,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       const title = str(b.title, "title").trim();
       if (typeof b.body !== "string") throw new HttpError(400, "body is required.");
       if (title.length > 256) throw new HttpError(400, "Keep the title to 256 characters or fewer.");
-      const sha = opt(b.sha, isString, "sha");
+      const sha = str(b.sha, "sha");
       return json(await openPullRequest(db, prM[1]!, { title, body: b.body, sha }));
     }
 

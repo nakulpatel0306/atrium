@@ -7,7 +7,13 @@ import { createApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { gitSettingsFingerprint } from "../../../src/engine/git";
 import { listActivity } from "../../../src/engine/events";
-import { githubSlug, openPullRequest, PrFailed, prInfo } from "../../../src/engine/repos/pr";
+import { githubSlug, openPullRequest, PrFailed, prInfo, prTarget } from "../../../src/engine/repos/pr";
+
+// The commit the confirm step would show; every open names it, as the dashboard does.
+const shaFor = async (db: Parameters<typeof prTarget>[0], taskId: string) => {
+  const t = await prTarget(db, taskId);
+  return "sha" in t ? t.sha : "0000000";
+};
 import { PushRefused } from "../../../src/engine/repos/push";
 import { createSpace } from "../../../src/engine/spaces";
 import { createTask, getTask, setTaskStatus, type Task } from "../../../src/engine/tasks";
@@ -110,7 +116,7 @@ test("Push and open PR pushes the branch to the remote read before the run and o
   const cwdLog = join(gh.base, "cwd.log");
   process.env.FAKE_GH_CWD_LOG = cwdLog;
   cleanups.push(() => delete process.env.FAKE_GH_CWD_LOG);
-  expect(await openPullRequest(db, task.id, { title: "Add a footer", body: "Opened from Atrium." })).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
+  expect(await openPullRequest(db, task.id, { title: "Add a footer", body: "Opened from Atrium.", sha: await shaFor(db, task.id) })).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
   expect(git(join(gh.remotes, "fakeuser", "app.git"), "rev-parse", branch)).toBe(git(path, "rev-parse", branch));
   // gh ran in a folder of its own, never the repo.
   expect(readFileSync(cwdLog, "utf8")).not.toContain(path);
@@ -125,7 +131,7 @@ test("Push and open PR pushes the branch to the remote read before the run and o
 test("a PR that already exists for the branch is stored and counts as success", async () => {
   const { task } = await finishedTask({ status: "done" });
   gh.env("pr_exists");
-  expect(await openPullRequest(db, task.id, { title: "t", body: "b" })).toEqual({ url: "https://github.com/fakeuser/app/pull/7" });
+  expect(await openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) })).toEqual({ url: "https://github.com/fakeuser/app/pull/7" });
   expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/7");
 });
 
@@ -139,13 +145,13 @@ function refuse(message: string) {
 test("a push GitHub turns down is refused in plain words, and no PR is opened", async () => {
   const { task } = await finishedTask();
   refuse("ERROR: Permission to fakeuser/app.git denied to fakeuser.");
-  const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
+  const err = await openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) }).catch((e) => e);
   expect(err).toBeInstanceOf(PushRefused);
   expect(err.message).toBe("Your GitHub account can't push to fakeuser/app. Check that you have write access, then try again.");
   expect(gh.argv().some((a) => a[0] === "pr")).toBe(false);
   expect(getTask(db, task.id)!.prUrl).toBeNull();
   refuse("error: GH006: Protected branch update failed for refs/heads/x.");
-  const again = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
+  const again = await openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) }).catch((e) => e);
   expect(again).toBeInstanceOf(PushRefused);
   expect(again.message).toBe("GitHub turned the push down because of a branch rule on fakeuser/app. Check the repo's branch rules, then try again.");
 });
@@ -153,7 +159,7 @@ test("a push GitHub turns down is refused in plain words, and no PR is opened", 
 test("gh signed out fails with what to do next", async () => {
   const { task } = await finishedTask();
   gh.env("logged_out");
-  const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
+  const err = await openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) }).catch((e) => e);
   expect(err).toBeInstanceOf(PrFailed);
   expect(err.message).toBe("gh is signed out of GitHub. Run `gh auth login` in a terminal, then try again.");
   expect(getTask(db, task.id)!.prUrl).toBeNull();
@@ -162,14 +168,14 @@ test("gh signed out fails with what to do next", async () => {
 test("no permission to open a PR fails in plain words", async () => {
   const { task } = await finishedTask();
   gh.env("pr_denied");
-  const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
+  const err = await openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) }).catch((e) => e);
   expect(err).toBeInstanceOf(PrFailed);
   expect(err.message).toBe("Your GitHub account can't open pull requests on fakeuser/app. Check your access, then try again.");
 });
 
 test("a task that isn't finished, or has no GitHub remote, is refused before anything is pushed", async () => {
   const { task } = await finishedTask({ remote: "https://gitlab.example.com/fakeuser/app.git" });
-  await expect(openPullRequest(db, task.id, { title: "t", body: "b" })).rejects.toBeInstanceOf(PushRefused);
+  await expect(openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) })).rejects.toBeInstanceOf(PushRefused);
   expect(pushApprovals()).toEqual([]);
   expect(gh.argv()).toEqual([]);
 });
@@ -183,7 +189,7 @@ test("repo config written after the run can't redirect the push: it lands only o
   git(path, "config", "protocol.ext.allow", "always");
   // As if the settings had changed in a way the fingerprint missed: the push must not read them anyway.
   db.query("UPDATE runs SET git_fingerprint = ? WHERE task_id = ?").run(await gitSettingsFingerprint(path), task.id);
-  expect(await openPullRequest(db, task.id, { title: "t", body: "b" })).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
+  expect(await openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) })).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
   expect(git(join(gh.remotes, "fakeuser", "app.git"), "rev-parse", branch)).toBe(git(path, "rev-parse", branch));
   expect(Bun.spawnSync(["git", "--git-dir", elsewhere, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).exitCode).not.toBe(0);
   expect(existsSync(marker)).toBe(false);
@@ -192,7 +198,7 @@ test("repo config written after the run can't redirect the push: it lands only o
 test("repo settings that changed since the run stop the push in plain words", async () => {
   const { path, task } = await finishedTask();
   git(path, "config", "url.https://example.com/.pushInsteadOf", REMOTE);
-  const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
+  const err = await openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) }).catch((e) => e);
   expect(err).toBeInstanceOf(PushRefused);
   expect(err.message).toBe("This repo's git settings changed since the task ran, so Atrium won't push from it. Check them in the repo, then push yourself.");
   expect(gh.argv()).toEqual([]);
@@ -217,7 +223,7 @@ test("the approved commit is what goes out, named in the approval, and a stale c
 
 test("a double submit records one yes and pushes once", async () => {
   const { task } = await finishedTask();
-  const [a, b] = await Promise.allSettled([openPullRequest(db, task.id, { title: "t", body: "b" }), openPullRequest(db, task.id, { title: "t", body: "b" })]);
+  const [a, b] = await Promise.allSettled([openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) }), openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) })]);
   expect([a.status, b.status].sort()).toEqual(["fulfilled", "rejected"]);
   const rejected = (a.status === "rejected" ? a : b) as PromiseRejectedResult;
   expect(rejected.reason.message).toBe("Already opening a pull request for this task.");

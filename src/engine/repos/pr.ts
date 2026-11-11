@@ -106,7 +106,7 @@ const opening = new Set<string>();
 export async function openPullRequest(
   db: Database,
   taskId: string,
-  input: { title: string; body: string; sha?: string },
+  input: { title: string; body: string; sha: string },
   opts: { timeoutMs?: number } = {},
 ): Promise<{ url: string }> {
   if (opening.has(taskId)) throw new PushRefused("Already opening a pull request for this task.");
@@ -118,10 +118,10 @@ export async function openPullRequest(
   }
 }
 
-async function open(db: Database, taskId: string, input: { title: string; body: string; sha?: string }, opts: { timeoutMs?: number }): Promise<{ url: string }> {
+async function open(db: Database, taskId: string, input: { title: string; body: string; sha: string }, opts: { timeoutMs?: number }): Promise<{ url: string }> {
   const t = await prTarget(db, taskId);
   if ("reason" in t) throw new PushRefused(t.reason);
-  if (input.sha !== undefined && input.sha !== t.sha) throw new PushRefused("The branch has changed since you looked. Check the commit shown, then try again.");
+  if (input.sha !== t.sha) throw new PushRefused("The branch has changed since you looked. Check the commit shown, then try again.");
   // The push itself never reads the repo's config, but settings the agent changed are a reason to stop anyway.
   if (!t.fingerprint || (await gitSettingsFingerprint(t.repoDir).catch(() => null)) !== t.fingerprint) {
     throw new PushRefused("This repo's git settings changed since the task ran, so Atrium won't push from it. Check them in the repo, then push yourself.");
