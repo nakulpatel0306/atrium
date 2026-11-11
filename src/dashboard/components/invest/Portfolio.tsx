@@ -1,9 +1,8 @@
 import { Upload } from "lucide-react";
 import { useState } from "react";
 import { fxLabel } from "../../../engine/markets/sourced";
-import { cadText, openSymbol, signedCadText, signedPct, toneOf, type PortfolioView } from "../../simple";
+import { cadText, movedNote, openSymbol, signedCadText, signedPct, toneOf, type PortfolioView } from "../../simple";
 import { Markdown } from "../Markdown";
-import { AdviceTag } from "../markets/AdviceTag";
 import { ImportDialog } from "../markets/ImportDialog";
 import { SourceTag } from "../markets/SourceTag";
 import { PriceRow } from "./PriceRow";
@@ -25,6 +24,7 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
       </section>
     );
   }
+  const note = view.note && movedNote(view.note.body);
   return (
     <section className="inv-portfolio">
       <header className="inv-hero">
@@ -49,11 +49,10 @@ export function Portfolio({ spaceId, view }: { spaceId: string; view: PortfolioV
         )}
         {view.left && <span className="inv-left">{view.left}</span>}
       </header>
-      {view.note && (
+      {note && (
         <article className="inv-note">
           <h3>What moved</h3>
-          <Markdown text={view.note.body} />
-          <AdviceTag />
+          <Markdown text={note} />
         </article>
       )}
       <div className="inv-list">

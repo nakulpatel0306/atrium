@@ -7,7 +7,7 @@ import { navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { setArchived } from "../spaces";
-import { Activity, TaskHistory } from "./Activity";
+import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ReviewActions } from "./Decision";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
@@ -365,8 +365,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
           </div>
           {task.kind === "work" && <Thread taskId={task.id} />}
           <TaskHistory task={task} state={state} />
+          {/* Only the newest runs reach the dashboard, so an older task can have history but no listed runs. */}
           {runs.length === 0 ? (
-            <p className="runs-empty">No runs yet.</p>
+            task.status === "queued" && taskGroups(task, state).length === 0 && <p className="runs-empty">No runs yet.</p>
           ) : (
             <ul className="runs">
               {runs.map((r) => (

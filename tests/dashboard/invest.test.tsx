@@ -29,7 +29,7 @@ import { openDb } from "../../src/engine/db";
 import { createAlert, listAlerts } from "../../src/engine/markets/alerts";
 import { saveWriteup } from "../../src/engine/markets/research";
 import { portfolioView } from "../../src/engine/markets/views";
-import { sparkPath } from "../../src/dashboard/simple";
+import { movedNote, sparkPath } from "../../src/dashboard/simple";
 import { Portfolio } from "../../src/dashboard/components/invest/Portfolio";
 import { Earnings } from "../../src/dashboard/components/invest/Earnings";
 import { AlertsSimple } from "../../src/dashboard/components/invest/AlertsSimple";
@@ -72,12 +72,21 @@ test("Portfolio: total, today, rows with sparklines, no note without a digest", 
   clean(html);
 });
 
-test("Portfolio: the daily note renders markdown with the advice tag", () => {
-  saveWriteup(db, { spaceId: fx.spaceId, kind: "digest", key: null, forDate: "2026-11-04", body: "**Up** on news", taskId: null });
+test("Portfolio: the daily note renders markdown; the advice line is the panel's, shown once", () => {
+  saveWriteup(db, { spaceId: fx.spaceId, kind: "digest", key: null, forDate: "2026-11-04", body: "**Up** on news\n\nAnalysis, not advice.", taskId: null });
   const html = renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={portfolioView(db, viewData(), fx.spaceId, NOW)} />);
   expect(html).toContain("What moved");
   expect(html).toContain("<strong>Up</strong>");
-  expect(html).toContain("Analysis, not advice");
+  expect(html).not.toContain("Analysis, not advice");
+  db.query("DELETE FROM market_writeups").run();
+});
+
+test("Portfolio: an agent's bare sign-off isn't shown as What moved", () => {
+  expect(movedNote("All done.\n\nAnalysis, not advice.")).toBeNull();
+  expect(movedNote("Analysis, not advice.")).toBeNull();
+  expect(movedNote("Shopify fell 4% on guidance.\n\nAnalysis, not advice.\n\nAnalysis, not advice.")).toBe("Shopify fell 4% on guidance.");
+  saveWriteup(db, { spaceId: fx.spaceId, kind: "digest", key: null, forDate: "2026-11-04", body: "All done.\n\nAnalysis, not advice.", taskId: null });
+  expect(renderToStaticMarkup(<Portfolio spaceId={fx.spaceId} view={portfolioView(db, viewData(), fx.spaceId, NOW)} />)).not.toContain("What moved");
   db.query("DELETE FROM market_writeups").run();
 });
 

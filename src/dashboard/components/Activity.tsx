@@ -95,12 +95,16 @@ export function Activity({ state, spaceId, page = false }: { state: State; space
   );
 }
 
-// One task's lines, folded the same way, for its detail.
-export function TaskHistory({ task, state }: { task: Task; state: State }) {
-  const groups = groupActivity(
+// One task's lines, folded the same way as the feed.
+export const taskGroups = (task: Task, state: State) =>
+  groupActivity(
     state.activity.filter((r) => r.spaceId === task.spaceId),
     contextOf(state),
   ).filter((g) => g.taskId === task.id || (g.taskId === null && g.title === task.title));
+
+// One task's lines, for its detail.
+export function TaskHistory({ task, state }: { task: Task; state: State }) {
+  const groups = taskGroups(task, state);
   if (groups.length === 0) return null;
   return (
     <section className="history">

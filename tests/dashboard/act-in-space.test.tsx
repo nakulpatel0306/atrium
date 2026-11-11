@@ -24,3 +24,17 @@ test("a task in review offers Approve and Send back in its own detail", () => {
   expect(text(detail)).toContain("Waiting for your review");
   expect(detail).toContain('data-act="approve"');
 });
+
+test("a task whose runs are older than the dashboard keeps doesn't claim it never ran", () => {
+  const s = makeState();
+  const space = s.spaces.find((x) => x.id === ids.atrium)!;
+  s.runs = [];
+  s.activity.unshift({ id: "act_old", spaceId: ids.atrium, taskId: ids.review, actor: "claude", message: "Ready for review: Fix login redirect", createdAt: Date.now() - 60_000 });
+  const detail = (focus: string) => {
+    const html = renderToStaticMarkup(<SpaceView state={s} space={space} focusTask={focus} />);
+    const from = html.indexOf(`id="task-${focus}"`);
+    return html.slice(from, html.indexOf('id="task-', from + 1) >>> 0);
+  };
+  expect(detail(ids.review)).not.toContain("No runs yet.");
+  expect(detail(ids.queued)).toContain("No runs yet.");
+});
