@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { createDiffNotifier, isFileEdit } from "../../src/engine/diff-watch";
 
-test("only Claude's file-editing tool lines count as edits", () => {
-  for (const line of ["→ Edit src/a.ts", "→ Write notes.md", "→ MultiEdit src/b.ts", "→ NotebookEdit nb.ipynb"]) expect(isFileEdit(line)).toBe(true);
-  for (const line of ["→ Read src/a.ts", "→ Bash bun test", "Edit the file", "→ Editor x"]) expect(isFileEdit(line)).toBe(false);
+test("Claude's file-editing tool lines and Bash lines count as edits; reads don't", () => {
+  for (const line of ["→ Edit src/a.ts", "→ Write notes.md", "→ MultiEdit src/b.ts", "→ NotebookEdit nb.ipynb", "→ Bash bun x prettier -w ."]) expect(isFileEdit(line)).toBe(true);
+  for (const line of ["→ Read src/a.ts", "→ Grep footer", "Edit the file", "→ Editor x", "→ Bashful"]) expect(isFileEdit(line)).toBe(false);
 });
 
 test("at most one event per window per task, and the last edit is never dropped", async () => {

@@ -18,13 +18,13 @@ let home: ReturnType<typeof tempHome>;
 let db: Database;
 let server: Server<WsData>;
 let base: string;
-let steer: { calls: [string, string][]; outcome: SteerOutcome };
+let steer: { calls: [string, string][]; outcome: SteerOutcome; pending: boolean };
 const cleanups: Array<() => void> = [];
 
 beforeEach(() => {
   home = tempHome();
   db = openDb();
-  steer = { calls: [], outcome: "steered" };
+  steer = { calls: [], outcome: "steered", pending: false };
   server = startServer({
     db,
     runner: {
@@ -32,8 +32,10 @@ beforeEach(() => {
       steerTask: async (id, note) => {
         steer.calls.push([id, note]);
         if (steer.outcome === "steered") setTaskStatus(db, id, "queued");
+        if (steer.outcome === "blocked") setTaskStatus(db, id, "blocked", { blockedReason: "Refusing to commit: this repo uses git filters (e.g. LFS). Commit these changes yourself." });
         return steer.outcome;
       },
+      steerPending: () => steer.pending,
     },
     setup: async () => {
       throw new Error("setup not stubbed");
@@ -213,4 +215,18 @@ test("pr: GET says where it would go; POST pushes and answers with the link; fai
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
   expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/1");
+});
+
+test("steer: a note already on its way is 409; a restart that got blocked says why", async () => {
+  const { task } = repoTask();
+  steer.pending = true;
+  const again = await post(`/api/tasks/${task.id}/steer`, { note: "x" });
+  expect(again.status).toBe(409);
+  expect(await errorOf(again)).toBe("Already restarting with your note.");
+  steer.pending = false;
+  setTaskStatus(db, task.id, "running");
+  steer.outcome = "blocked";
+  const res = await post(`/api/tasks/${task.id}/steer`, { note: "x" });
+  expect(res.status).toBe(409);
+  expect(await errorOf(res)).toBe("It couldn't start again with your note: Refusing to commit: this repo uses git filters (e.g. LFS). Commit these changes yourself.");
 });

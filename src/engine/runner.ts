@@ -153,6 +153,7 @@ export function createRunner(deps: {
   kick(): void;
   stopTask(taskId: string): Promise<StopOutcome>;
   steerTask(taskId: string, note: string): Promise<SteerOutcome>;
+  steerPending(taskId: string): boolean;
   outputSeq(runId: string): number | null;
   registry: Registry;
 } {
@@ -333,6 +334,8 @@ export function createRunner(deps: {
 
   // `saved` is the branch Atrium committed the agent's unfinished edits to, if it did.
   function block(task: Task, reason: string, saved: string | null = null) {
+    // A steered task that can't start again mustn't carry its note's marker into some later run.
+    steerMarkers.delete(task.id);
     const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
     setTaskStatus(db, task.id, "blocked", { blockedReason: full });
     logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`, { taskId: task.id });
@@ -733,7 +736,11 @@ export function createRunner(deps: {
 
   // Stop and continue: the run ends the way a stop ends it (edits committed to the branch, repo put back), then
   // the task goes straight back in the queue. The same for every agent, since none takes input mid-run.
+  // A note already on its way: the run is winding down for it, or it's queued to start again with it.
+  const steerPending = (taskId: string) => steerRequested.has(taskId) || steerMarkers.has(taskId);
+
   async function steerTask(taskId: string, note: string): Promise<SteerOutcome> {
+    if (steerPending(taskId)) return "pending";
     const run = [...active.values()].find((r) => r.taskId === taskId);
     if (!run) return "not-running";
     steeredBySteer.delete(taskId);
@@ -746,8 +753,11 @@ export function createRunner(deps: {
     ]);
     clearTimeout(timer);
     if (!settled) return "timeout";
-    // Not steered means it finished, or was stopped, before the note could take effect.
-    return steeredBySteer.has(taskId) ? "steered" : "not-running";
+    if (steeredBySteer.has(taskId)) return "steered";
+    // Saving its edits or putting the repo back failed, so it can't start again; the task says why.
+    if (getTask(db, taskId)?.status === "blocked" && !stoppedByStop.has(taskId)) return "blocked";
+    // Otherwise it finished, or was stopped, before the note could take effect.
+    return "not-running";
   }
 
   // Aborting kills the agent's process group (see runAgentProcess, which escalates to SIGKILL); execute then saves
@@ -940,6 +950,7 @@ export function createRunner(deps: {
     kick,
     stopTask,
     steerTask,
+    steerPending,
     outputSeq: (runId) => runSeq.get(runId) ?? null,
     registry,
   };
@@ -959,7 +970,7 @@ function readyLine(task: Task, o: ParsedOutcome): string {
 }
 
 export type StopOutcome = "stopped" | "finished" | "timeout" | "not-running";
-export type SteerOutcome = "steered" | "not-running" | "timeout";
+export type SteerOutcome = "steered" | "not-running" | "timeout" | "pending" | "blocked";
 
 export const STEER_NOTE_MAX = 2000;
 

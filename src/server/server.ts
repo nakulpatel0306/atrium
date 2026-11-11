@@ -44,6 +44,7 @@ type Deps = {
     kick(): void;
     stopTask?(taskId: string): Promise<StopOutcome>;
     steerTask?(taskId: string, note: string): Promise<SteerOutcome>;
+    steerPending?(taskId: string): boolean;
     outputSeq?(runId: string): number | null;
     registry?: Registry;
   };
@@ -286,8 +287,12 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       if (typeof b.note !== "string" || !b.note.trim()) throw new HttpError(400, "Write a note for the agent first.");
       const note = b.note.trim();
       if (note.length > STEER_NOTE_MAX) throw new HttpError(400, `Keep the note to ${STEER_NOTE_MAX.toLocaleString("en-US")} characters or fewer.`);
+      const pending = "Already restarting with your note.";
+      if (runner.steerPending?.(id)) throw new HttpError(409, pending);
       if (task.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to steer.");
       const outcome = (await runner.steerTask?.(id, note)) ?? "not-running";
+      if (outcome === "pending") throw new HttpError(409, pending);
+      if (outcome === "blocked") throw new HttpError(409, `It couldn't start again with your note: ${getTask(db, id)?.blockedReason ?? "it was blocked."}`);
       if (outcome === "not-running") throw new HttpError(409, "It finished or stopped before your note arrived, so nothing was restarted.");
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }

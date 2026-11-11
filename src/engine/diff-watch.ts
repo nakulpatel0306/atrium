@@ -1,6 +1,7 @@
 // Tells the dashboard a running repo task's changes moved, so the Changes view refetches. At most one event per
 // window per task; an edit inside the window is sent when it closes, so the last one is never lost.
-const FILE_EDIT = /^→ (Edit|Write|MultiEdit|NotebookEdit)\b/;
+// Claude's file-editing tools, and Bash, which can change files too (a formatter, a codegen step).
+const FILE_EDIT = /^→ (Edit|Write|MultiEdit|NotebookEdit|Bash)\b/;
 
 export const isFileEdit = (chunk: string) => FILE_EDIT.test(chunk);
 

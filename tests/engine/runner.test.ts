@@ -2278,6 +2278,66 @@ describe("steer", () => {
   });
 });
 
+describe("steer edge cases", () => {
+  test("a second note while the first is on its way is refused as pending", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    let finish!: () => void;
+    const gate = new Promise<void>((res) => (finish = res));
+    const r = start({
+      adapter: fakeAdapter(async (input) => {
+        await untilAborted(input);
+        await gate;
+        return { status: "error", kind: "failed", message: "Stopped" };
+      }).adapter,
+      stopTimeoutMs: 30,
+    });
+    await waitFor(() => status(t.id) === "running");
+    expect(await r.steerTask(t.id, "first")).toBe("timeout");
+    expect(r.steerPending(t.id)).toBe(true);
+    expect(await r.steerTask(t.id, "second")).toBe("pending");
+    finish();
+    await waitFor(() => listActivity(db).some((a) => a.message === "You steered: first"));
+    expect(listActivity(db).some((a) => a.message === "You steered: second")).toBe(false);
+  });
+
+  test("a steered task whose next start is blocked drops its note's marker", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    const real = gitOps.repoReady;
+    let calls = 0;
+    const spy = spyOn(gitOps, "repoReady").mockImplementation(async (p: string) => (++calls === 1 ? real(p) : { ok: false as const, reason: "The folder moved." }));
+    cleanups.push(() => spy.mockRestore());
+    const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+    await waitFor(() => status(t.id) === "running");
+    expect(await r.steerTask(t.id, "use tabs")).toBe("steered");
+    await waitFor(() => status(t.id) === "blocked");
+    expect(r.steerPending(t.id)).toBe(false);
+  });
+
+  test("a steered run that can't save its edits ends blocked, and the steer says so", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    const spy = spyOn(gitOps, "commitAll").mockImplementation(async () => {
+      throw new Error("Refusing to commit: this repo uses git filters (e.g. LFS). Commit these changes yourself.");
+    });
+    cleanups.push(() => spy.mockRestore());
+    const r = start({
+      adapter: fakeAdapter(async (input) => {
+        writeFileSync(join(input.cwd, "half.txt"), "half\n");
+        return untilAborted(input);
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "running");
+    expect(await r.steerTask(t.id, "use tabs")).toBe("blocked");
+    expect(getTask(db, t.id)!.blockedReason).toContain("Refusing to commit");
+    expect(r.steerPending(t.id)).toBe(false);
+  });
+});
+
 describe("live changes", () => {
   test("a Claude file edit in a repo run tells the dashboard, throttled per task", async () => {
     const path = repo();
