@@ -5019,3 +5019,22 @@ code {
   gap: 4px;
   color: var(--text);
 }
+.chg-unchecked {
+  margin-top: 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.chg-unchecked summary {
+  cursor: pointer;
+}
+.chg-unchecked ul {
+  list-style: none;
+  margin-top: 4px;
+  padding-left: 14px;
+}
+.chg-unchecked .mono {
+  color: var(--text);
+}
+.chg-note-inline {
+  color: var(--faint);
+}

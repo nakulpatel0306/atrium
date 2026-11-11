@@ -173,3 +173,10 @@ test("Cancel backs out of the confirm without sending; an error keeps the form o
   s = prReducer(prReducer(s, { type: "sending" }), { type: "failed", error: "gh is signed out of GitHub. Run `gh auth login` in a terminal, then try again." });
   expect(s).toMatchObject({ asking: true, busy: false, error: "gh is signed out of GitHub. Run `gh auth login` in a terminal, then try again." });
 });
+
+test("large files Atrium couldn't check sit in their own folded group, never dropped", () => {
+  const html = renderToStaticMarkup(<ChangesList diff={{ ...DIFF, unchecked: [{ path: "assets/video.mov", note: "Too large to check" }] }} live={null} />);
+  expect(html).toContain("<details");
+  expect(html).not.toContain("<details open");
+  expect(text(html)).toContain("Large files not checked · 1 assets/video.mov Too large to check");
+});

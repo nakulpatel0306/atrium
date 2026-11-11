@@ -107,6 +107,19 @@ export function ChangesList({ diff, live }: { diff: DiffResult; live: string | n
           </div>
         </div>
       )}
+      {diff.unchecked && diff.unchecked.length > 0 && (
+        // Folded: these are probably unchanged, but Atrium couldn't read them to be sure.
+        <details className="chg-unchecked">
+          <summary>Large files not checked · {diff.unchecked.length}</summary>
+          <ul>
+            {diff.unchecked.map((u) => (
+              <li key={u.path}>
+                <span className="mono">{u.path}</span> <span className="chg-note-inline">{u.note}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {diff.truncated && <p className="chg-note">Some changes were left out to keep this view under 200 KB. Open the branch in your editor to see all of them.</p>}
     </div>
   );
