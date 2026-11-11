@@ -8,6 +8,7 @@ import { correctBranchHead, createApproval, getApproval } from "./approvals";
 import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
 import { applyRule } from "./autonomy/rules";
+import { createDiffNotifier, isFileEdit } from "./diff-watch";
 import { bus, logActivity } from "./events";
 import { ensureSpaceFolder, spaceFolder, tildePath } from "./folders";
 import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from "./outputs/snapshot";
@@ -144,7 +145,17 @@ export function createRunner(deps: {
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
   // Money's once-a-day check (the monthly import reminder and budget heads-ups), from the same minute timer.
   money?: { daily(now: number): void };
-}): { start(): void; stop(): Promise<void>; kick(): void; stopTask(taskId: string): Promise<StopOutcome>; outputSeq(runId: string): number | null; registry: Registry } {
+  // Test seam for the Changes view's live refresh: the throttle window and the timer for agents that don't report edits.
+  diffWatch?: { windowMs?: number; pollMs?: number };
+}): {
+  start(): void;
+  stop(): Promise<void>;
+  kick(): void;
+  stopTask(taskId: string): Promise<StopOutcome>;
+  steerTask(taskId: string, note: string): Promise<SteerOutcome>;
+  outputSeq(runId: string): number | null;
+  registry: Registry;
+} {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
   const maxConcurrent = deps.maxConcurrent ?? 1;
@@ -154,10 +165,16 @@ export function createRunner(deps: {
   // ones whose run did end that way, so stopTask can say so.
   const stopRequested = new Set<string>();
   const stoppedByStop = new Set<string>();
+  // The same for a steer: the note Nakul sent, by task, and the tasks whose run did end that way. A steered task's
+  // next run opens its transcript with the note (steerMarkers).
+  const steerRequested = new Map<string, string>();
+  const steeredBySteer = new Set<string>();
+  const steerMarkers = new Map<string, string>();
   // Lines each live run has written to its transcript (and sent), for the transcript route's X-Atrium-Output-Seq.
   const runSeq = new Map<string, number>();
   // Consecutive usage-limit outcomes per task, so a misread limit can't requeue a task forever.
   const limitHits = new Map<string, number>();
+  const diffs = createDiffNotifier((taskId) => bus.emit({ type: "diff-changed", taskId }), deps.diffWatch);
   let running = false;
   let scheduled = false;
   let busy = false;
@@ -456,6 +473,25 @@ export function createRunner(deps: {
       }
     }
     const markets = space.kind === "markets" && task.kind === "work" ? deps.markets : undefined;
+    const unwatch = repo ? diffs.watch(task.id, adapter.id !== "claude") : null;
+    const line = (raw: string) => {
+      // A money run's transcript and live view are masked like everything else it touches.
+      const chunk = task.purpose === "money" ? maskNumbers(raw) : raw;
+      try {
+        transcript.append(`${chunk}\n`);
+      } catch {
+        // A disk error here would reject the run while the agent keeps working; the live view still gets it.
+      }
+      const seq = (runSeq.get(runId) ?? 0) + 1;
+      runSeq.set(runId, seq);
+      bus.emit({ type: "run-output", runId, taskId: task.id, chunk, seq });
+      if (repo && isFileEdit(chunk)) diffs.edited(task.id);
+    };
+    const steered = steerMarkers.get(task.id);
+    if (steered !== undefined) {
+      steerMarkers.delete(task.id);
+      line(`— You steered: ${steered} —`);
+    }
     let result: AgentRunResult;
     try {
       const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
@@ -474,18 +510,7 @@ export function createRunner(deps: {
         privateData: isPrivate(space),
         mode: task.kind === "review" || task.purpose ? "review" : "work",
         signal: r.signal,
-        onChunk(raw) {
-          // A money run's transcript and live view are masked like everything else it touches.
-          const chunk = task.purpose === "money" ? maskNumbers(raw) : raw;
-          try {
-            transcript.append(`${chunk}\n`);
-          } catch {
-            // A disk error here would reject the run while the agent keeps working; the live view still gets it.
-          }
-          const seq = (runSeq.get(runId) ?? 0) + 1;
-          runSeq.set(runId, seq);
-          bus.emit({ type: "run-output", runId, taskId: task.id, chunk, seq });
-        },
+        onChunk: line,
       });
     } catch (e) {
       result =
@@ -493,9 +518,12 @@ export function createRunner(deps: {
           ? { status: "error", kind: "failed", message: MoneyGuard.text }
           : { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
     }
+    unwatch?.();
     // Whether the run was cut short. An abort that lands after the agent answered (a stop during the commit step)
     // mustn't relabel what the agent actually said, a failure or a usage limit included.
     const cutShort = r.signal.aborted;
+    // A steer keeps the edits on the task's own branch, where the next run carries on from them.
+    const steering = cutShort && result.status !== "ok" && steerRequested.has(task.id) && !stopRequested.has(task.id);
 
     // Claude's answer to a money question is masked before anything saves it: the task, the review, the write-up.
     if (task.purpose === "money") result = result.status === "ok" ? { ...result, summary: maskNumbers(result.summary) } : { ...result, message: maskNumbers(result.message) };
@@ -525,10 +553,10 @@ export function createRunner(deps: {
       // Before settleRepo switches branches, so the repo always goes back clean. Skipped when git settings
       // changed: staging can run filter drivers from config the agent planted, and settleRepo reports the tampering.
       if (repo && (await settingsUnchanged(repo.path, repo.fingerprint))) {
-        const message = stopped ? `WIP (stopped): ${task.title}` : task.title;
+        const message = steering ? `WIP (steered): ${task.title}` : stopped ? `WIP (stopped): ${task.title}` : task.title;
         let on = repo.branch;
         try {
-          if (task.kind === "fix" && (late || stopped)) {
+          if (task.kind === "fix" && (late || (stopped && !steering))) {
             const side = await branchOffDirty(repo.path, task.id);
             if (side) on = side;
             if (side && (await commitAll(repo.path, message, repo.fingerprint)).committed) {
@@ -596,6 +624,8 @@ export function createRunner(deps: {
         block(task, (commitError ?? leftRepo)!);
       } else if (result.status !== "ok" && cutShort && stopRequested.has(task.id)) {
         stoppedByYou(task, saved);
+      } else if (steering) {
+        steeredByYou(task, steerRequested.get(task.id)!);
       } else if (result.status !== "ok" && cutShort) {
         setTaskStatus(db, task.id, "queued");
         logActivity(db, space.id, "atrium", `The engine stopped, so ${task.title} is back in the queue.${saved ? ` Its unfinished edits are saved on ${saved}.` : ""}`, { taskId: task.id });
@@ -674,6 +704,7 @@ export function createRunner(deps: {
       }
     } finally {
       stopRequested.delete(task.id);
+      steerRequested.delete(task.id);
       runSeq.delete(runId);
       enforceTranscriptCap();
     }
@@ -687,6 +718,36 @@ export function createRunner(deps: {
     logActivity(db, task.spaceId, "you", `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
     if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: "You stopped the review." });
     if (task.kind === "fix") fixFailed(db, task, "You stopped the fix.", saved);
+  }
+
+  // Back in the queue with the note added to what he asked, so the next run's prompt carries it. The task keeps
+  // its branch, and the next run checks it out again.
+  function steeredByYou(task: Task, note: string) {
+    appendTaskDetail(db, task.id, `\n\n${steerBlock(note)}`);
+    setTaskStatus(db, task.id, "queued");
+    steeredBySteer.add(task.id);
+    const flat = note.replace(/\s+/g, " ");
+    steerMarkers.set(task.id, flat);
+    logActivity(db, task.spaceId, "you", `You steered: ${flat.length > 80 ? `${flat.slice(0, 79)}…` : flat}`, { taskId: task.id });
+  }
+
+  // Stop and continue: the run ends the way a stop ends it (edits committed to the branch, repo put back), then
+  // the task goes straight back in the queue. The same for every agent, since none takes input mid-run.
+  async function steerTask(taskId: string, note: string): Promise<SteerOutcome> {
+    const run = [...active.values()].find((r) => r.taskId === taskId);
+    if (!run) return "not-running";
+    steeredBySteer.delete(taskId);
+    steerRequested.set(taskId, note);
+    run.controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      run.done.then(() => true),
+      new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), deps.stopTimeoutMs ?? STOP_TIMEOUT_MS))),
+    ]);
+    clearTimeout(timer);
+    if (!settled) return "timeout";
+    // Not steered means it finished, or was stopped, before the note could take effect.
+    return steeredBySteer.has(taskId) ? "steered" : "not-running";
   }
 
   // Aborting kills the agent's process group (see runAgentProcess, which escalates to SIGKILL); execute then saves
@@ -878,6 +939,7 @@ export function createRunner(deps: {
     },
     kick,
     stopTask,
+    steerTask,
     outputSeq: (runId) => runSeq.get(runId) ?? null,
     registry,
   };
@@ -897,6 +959,12 @@ function readyLine(task: Task, o: ParsedOutcome): string {
 }
 
 export type StopOutcome = "stopped" | "finished" | "timeout" | "not-running";
+export type SteerOutcome = "steered" | "not-running" | "timeout";
+
+export const STEER_NOTE_MAX = 2000;
+
+export const steerBlock = (note: string) =>
+  `Note from you while this was running: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`;
 
 class MoneyGuard extends Error {
   static text = "Atrium stopped this before sending anything: the money facts weren't fully masked or the agent wasn't Claude. Try again, and check the engine log if it keeps happening.";

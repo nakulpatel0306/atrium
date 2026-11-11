@@ -2208,3 +2208,121 @@ describe("final review", () => {
     expect(getTask(db, t.id)!.outcome).toBe("done");
   });
 });
+
+describe("steer", () => {
+  test("a steered Claude run stops, keeps its edits on the branch and starts again with the note", async () => {
+    const path = repo();
+    git(path, "checkout", "-b", "feature");
+    git(path, "remote", "add", "origin", "https://github.com/fakeuser/app.git");
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Add a footer" });
+    const dir = mkdtempSync(join(tmpdir(), "atrium-steer-"));
+    process.env.FAKE_CLAUDE_MODE = "slow";
+    cleanups.push(() => {
+      delete process.env.FAKE_CLAUDE_MODE;
+      delete process.env.FAKE_CLAUDE_STDIN;
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const r = start({ adapter: claudeAdapter(join(import.meta.dir, "../fixtures/fake-claude.ts")) });
+    await waitFor(() => status(t.id) === "running" && git(path, "branch", "--show-current") === `atrium/${t.id}`, 10000);
+    // What the agent had written so far.
+    writeFileSync(join(path, "footer.html"), "<footer>half</footer>\n");
+    // The next run answers at once and keeps a copy of its prompt.
+    process.env.FAKE_CLAUDE_MODE = "ok";
+    process.env.FAKE_CLAUDE_STDIN = join(dir, "stdin.txt");
+    const note = "Use the brand colour for the footer links";
+    expect(await r.steerTask(t.id, note)).toBe("steered");
+    expect(git(path, "log", "-1", "--format=%s", `atrium/${t.id}`)).toBe("WIP (steered): Add a footer");
+    expect(git(path, "show", `atrium/${t.id}:footer.html`)).toBe("<footer>half</footer>");
+    expect(listActivity(db).map((a) => a.message)).toContain(`You steered: ${note}`);
+
+    await waitFor(() => status(t.id) === "review", 15000);
+    const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");
+    expect(prompt).toContain(`Note from you while this was running: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`);
+    const runs = db.query("SELECT transcript_path, start_ref, remote_url FROM runs WHERE task_id = ? ORDER BY started_at, rowid").all(t.id) as {
+      transcript_path: string;
+      start_ref: string;
+      remote_url: string;
+    }[];
+    expect(runs).toHaveLength(2);
+    // Both runs started from the user's branch and read the remote before the agent ran.
+    expect(runs.map((x) => [x.start_ref, x.remote_url])).toEqual([
+      ["feature", "https://github.com/fakeuser/app.git"],
+      ["feature", "https://github.com/fakeuser/app.git"],
+    ]);
+    expect(readFileSync(runs[1]!.transcript_path, "utf8").split("\n")[0]).toBe(`— You steered: ${note} —`);
+    // Same branch, edits still there, repo back where it was.
+    expect(getTask(db, t.id)!.branch).toBe(`atrium/${t.id}`);
+    expect(git(path, "show", `atrium/${t.id}:footer.html`)).toBe("<footer>half</footer>");
+    expect(git(path, "branch", "--show-current")).toBe("feature");
+  }, 30000);
+
+  test("steering a task that isn't running says so", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Not started" });
+    const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter, power: async () => "battery" });
+    setTaskStatus(db, t.id, "blocked", { blockedReason: "x" });
+    expect(await r.steerTask(t.id, "change it")).toBe("not-running");
+  });
+
+  test("a stop that lands with a steer wins: the task ends stopped, not requeued", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+    await waitFor(() => status(t.id) === "running");
+    const [stopped, steered] = await Promise.all([r.stopTask(t.id), r.steerTask(t.id, "never mind")]);
+    expect(stopped).toBe("stopped");
+    expect(steered).toBe("not-running");
+    expect(status(t.id)).toBe("blocked");
+  });
+});
+
+describe("live changes", () => {
+  test("a Claude file edit in a repo run tells the dashboard, throttled per task", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Edit things" });
+    const seen: number[] = [];
+    const off = bus.on((e) => e.type === "diff-changed" && e.taskId === t.id && seen.push(Date.now()));
+    cleanups.push(off);
+    runner = createRunner({
+      db,
+      adapters: {
+        claude: fakeAdapter(async (input) => {
+          input.onChunk("→ Read README.md");
+          for (let i = 0; i < 5; i++) input.onChunk(`→ Edit src/file${i}.ts`);
+          await Bun.sleep(150);
+          input.onChunk("→ Write notes.md");
+          return ok();
+        }).adapter,
+      },
+      power: async () => "ac",
+      keepAwake: fakeKeepAwake(),
+      diffWatch: { windowMs: 100 },
+    });
+    runner.start();
+    await waitFor(() => status(t.id) === "review");
+    // The first edit at once, the burst behind it once the window closed, then the later write.
+    expect(seen).toHaveLength(3);
+    expect(seen[1]! - seen[0]!).toBeGreaterThanOrEqual(90);
+  });
+
+  test("an agent that doesn't report edits is checked on a timer only while its repo run lasts", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Codex work" });
+    let n = 0;
+    const off = bus.on((e) => e.type === "diff-changed" && n++);
+    cleanups.push(off);
+    // Registered where the task resolves, but with Codex's id, which is what decides how edits are noticed.
+    const codex: AgentAdapter = { id: "codex", label: "Codex", run: async () => (await Bun.sleep(130), ok()) };
+    runner = createRunner({ db, adapters: { claude: codex }, power: async () => "ac", keepAwake: fakeKeepAwake(), diffWatch: { windowMs: 10, pollMs: 40 } });
+    runner.start();
+    await waitFor(() => status(t.id) === "review");
+    expect(n).toBeGreaterThanOrEqual(2);
+    const after = n;
+    await Bun.sleep(120);
+    expect(n).toBe(after);
+  });
+});

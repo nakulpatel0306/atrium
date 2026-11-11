@@ -3,12 +3,13 @@ import type { Server, ServerWebSocket } from "bun";
 import { existsSync, readFileSync } from "node:fs";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
-import type { StopOutcome } from "../engine/runner";
+import { STEER_NOTE_MAX, type SteerOutcome, type StopOutcome } from "../engine/runner";
 import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
 import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
 import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
 import { markSeen } from "../engine/briefing";
 import { config } from "../engine/config";
+import { ChangesRefused, taskChanges } from "../engine/changes";
 import { bus } from "../engine/events";
 import type { setupSpace } from "../engine/setup";
 import { SetupFailed } from "../engine/setup";
@@ -38,7 +39,13 @@ import { mergeRestoredMessages, messagesMergeWait } from "../engine/messaging/sp
 
 type Deps = {
   db: Database;
-  runner: { kick(): void; stopTask?(taskId: string): Promise<StopOutcome>; outputSeq?(runId: string): number | null; registry?: Registry };
+  runner: {
+    kick(): void;
+    stopTask?(taskId: string): Promise<StopOutcome>;
+    steerTask?(taskId: string, note: string): Promise<SteerOutcome>;
+    outputSeq?(runId: string): number | null;
+    registry?: Registry;
+  };
   setup: (text: string) => ReturnType<typeof setupSpace>;
   port?: number;
   // How many dashboard tabs are visible; the market feed only streams while someone is looking.
@@ -267,6 +274,26 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
 
+    // Stop and continue with Nakul's note: 200 once the task is back in the queue with it; 202 while the agent is still
+    // winding down (it requeues when it exits); 409 when there's no run to steer.
+    const steerM = hit("POST", /^\/api\/tasks\/([^/]+)\/steer$/);
+    if (steerM) {
+      const id = steerM[1]!;
+      const task = getTask(db, id);
+      if (!task || getSpace(db, task.spaceId)?.kind !== "repo") throw new HttpError(404, "No such task in a repo space.");
+      const b = await readBody(req);
+      if (typeof b.note !== "string" || !b.note.trim()) throw new HttpError(400, "Write a note for the agent first.");
+      const note = b.note.trim();
+      if (note.length > STEER_NOTE_MAX) throw new HttpError(400, `Keep the note to ${STEER_NOTE_MAX.toLocaleString("en-US")} characters or fewer.`);
+      if (task.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to steer.");
+      const outcome = (await runner.steerTask?.(id, note)) ?? "not-running";
+      if (outcome === "not-running") throw new HttpError(409, "It finished or stopped before your note arrived, so nothing was restarted.");
+      return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
+    }
+
+    const diffM = hit("GET", /^\/api\/tasks\/([^/]+)\/diff$/);
+    if (diffM) return json(await taskChanges(db, diffM[1]!));
+
     const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
     if (msgM) {
       if (!getTask(db, msgM[1]!)) throw new HttpError(404, "No such task.");
@@ -459,6 +486,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
         if (e instanceof RuleRefused) return fail(409, e.message);
         if (e instanceof BadDraft) return fail(400, e.message);
         if (e instanceof PushRefused) return fail(409, e.message);
+        if (e instanceof ChangesRefused) return fail(e.status, e.message);
         if (e instanceof SetupFailed) {
           // The user sees the plain message; the log keeps what actually went wrong.
           console.error("Setup failed:", e.cause instanceof Error ? e.cause.message : e.message);
