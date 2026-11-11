@@ -1071,6 +1071,143 @@ h2 {
 .cmd .msg.err {
   color: var(--red);
 }
+/* Files attached in the bar: chips above the input, and the page-wide drop target. */
+:root.has-attachments {
+  --cmd-clear: 140px;
+}
+.cmd .attach {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+.cmd .attach:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.cmd .attach[aria-disabled="true"],
+.cmd .attach:disabled {
+  color: var(--faint);
+  opacity: 0.5;
+  cursor: default;
+}
+.cmd .attach[aria-disabled="true"]:hover {
+  background: none;
+}
+.cmd .attach svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+.att-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 0;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.att-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 32px;
+  padding: 0 2px 0 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--panel);
+}
+.att-thumb {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--bg);
+}
+.att-thumb.icon {
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+}
+.att-thumb.icon svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.att-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.att-size {
+  flex: none;
+  font-size: 11px;
+  color: var(--faint);
+}
+.att-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+.att-x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.att-x svg.lucide {
+  width: 13px;
+  height: 13px;
+}
+.drop-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  pointer-events: none;
+  animation: veil-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.drop-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 26px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 60%, var(--line-strong));
+  border-radius: 12px;
+  background: var(--raised);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+  color: var(--text);
+}
+.drop-card svg.lucide {
+  color: var(--accent);
+}
+@keyframes veil-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-veil {
+    animation: none;
+  }
+}
 .spinner {
   color: var(--accent);
   animation: spin 0.8s linear infinite;
@@ -2781,6 +2918,37 @@ code {
 }
 .detail .md {
   font-size: 13px;
+}
+.att-list ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.att-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+  height: 40px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  cursor: pointer;
+  text-align: left;
+}
+.att-file:hover,
+.att-file[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  background: var(--hover);
+}
+.att-file .att-thumb {
+  width: 32px;
+  height: 32px;
+}
+.att-list .preview {
+  margin-top: 8px;
 }
 .detail .md pre {
   max-height: none;

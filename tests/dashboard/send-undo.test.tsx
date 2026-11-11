@@ -1,4 +1,4 @@
-import { closeDom } from "./dom";
+import { closeDom, openDom } from "./dom";
 import { afterAll, afterEach, beforeEach, expect, jest, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -47,6 +47,7 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
+openDom();
 afterAll(() => closeDom());
 
 function render(node: ReactNode): HTMLElement {

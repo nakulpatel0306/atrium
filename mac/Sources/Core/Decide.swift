@@ -145,6 +145,11 @@ func popupDecision(_ url: URL, port: Int, userClick: Bool, fromDashboard: Bool) 
   return .openExternally
 }
 
+// What the file picker offers: CSVs for imports, and the kinds of file the ask bar attaches (the dashboard's
+// ALLOWED_EXT in src/engine/attachment-rules.ts; a test keeps the two lists the same). WebKit doesn't pass the
+// input's accept list on, so this is the union, and the dashboard checks each file again.
+let pickerExtensions = ["png", "jpg", "jpeg", "heic", "gif", "webp", "pdf", "txt", "md", "csv", "json", "xlsx", "docx"]
+
 func isDashboardOrigin(scheme: String, host: String, port: Int, enginePort: Int) -> Bool {
   scheme == "http" && (host == "127.0.0.1" || host == "localhost") && port == enginePort
 }

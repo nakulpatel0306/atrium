@@ -275,6 +275,10 @@ let atLaunch = newNotes(previous: nil, next: launch, now: Date(timeIntervalSince
 check(atLaunch.map(\.id) == ["mnd_3"], "notes: a reminder made in the last day is announced at launch; budget nudges aren't")
 check(newNotes(previous: nil, next: launch, now: Date(timeIntervalSince1970: 1_000_000_000 + 2 * 86400)).isEmpty, "notes: an older reminder only seeds")
 
+// picker
+check(pickerExtensions.contains("csv") && pickerExtensions.contains("png"), "picker: imports and attachments both offered")
+check(!pickerExtensions.contains { ["env", "html", "svg", "app", "command", "sh"].contains($0) }, "picker: nothing that runs code or holds secrets")
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)
 

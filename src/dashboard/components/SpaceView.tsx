@@ -26,6 +26,8 @@ import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
 import { RepoWork } from "./RepoWork";
 import { WhatItMade } from "./WhatItMade";
+import { TaskAttachments } from "./TaskAttachments";
+import { withoutBlock } from "../../engine/attachment-rules";
 import { AdviceTag } from "./markets/AdviceTag";
 import { InvestPanel } from "./invest/InvestPanel";
 
@@ -270,6 +272,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
   // A finished task the agent said it couldn't or only partly do is labelled that way, never plain done.
   const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
   const review = task.status === "review" ? state.approvals.find((a) => a.taskId === task.id && a.kind === "review") : undefined;
+  const attached = state.attachments.filter((a) => a.taskId === task.id);
 
   const act = async (fn: () => ReturnType<typeof post>) => {
     setBusy(true);
@@ -336,8 +339,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
           )}
           <section className="asked">
             <h4>You asked</h4>
-            <Markdown text={task.detail || task.title} />
+            <Markdown text={(attached.length ? withoutBlock(task.detail) : task.detail) || task.title} />
           </section>
+          <TaskAttachments attachments={attached} />
           {space?.kind === "repo" ? (
             <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} />
           ) : (
