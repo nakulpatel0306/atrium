@@ -44,8 +44,14 @@ button {
   color: inherit;
 }
 :focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Rows sit inside lists that clip their overflow, so their ring is drawn inside the edge. */
+.item:focus-visible,
+.needs-list > :focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .sr-only {
   position: absolute;
@@ -258,6 +264,8 @@ svg.lucide {
 
 /* main */
 main {
+  /* Layout follows the room main actually has, which the sidebar and the Mac app's window both change. */
+  container: main / inline-size;
   overflow-y: auto;
   position: relative;
   /* So a row scrolled into view (a focused task, an opened preview) stops above the command bar. */
@@ -4790,8 +4798,117 @@ code {
 .page-title {
   margin-bottom: 16px;
 }
-/* The row the keys act on. */
-.needs-list > :focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+
+/* A narrow window: the sidebar keeps its icons, with names in tooltips and for screen readers. */
+@media (max-width: 999px) {
+  .app {
+    grid-template-columns: 52px 1fr;
+  }
+  aside {
+    padding: 12px 6px;
+    overflow-x: hidden;
+  }
+  aside .label,
+  .sec > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .ws {
+    justify-content: center;
+    padding: 6px 0 14px;
+  }
+  .nav,
+  .foot .nav {
+    position: relative;
+    justify-content: center;
+    padding: 8px 0;
+    margin: 0;
+  }
+  .nav .sd {
+    width: 10px;
+    height: 10px;
+  }
+  .nav .ct {
+    position: absolute;
+    top: 1px;
+    right: 3px;
+    font-size: 10px;
+    line-height: 14px;
+  }
+  .nav .ct.hot {
+    padding: 0 4px;
+  }
+  .sec {
+    justify-content: center;
+    padding: 14px 0 4px;
+  }
+  .foot {
+    padding: 10px 0 2px;
+    align-items: center;
+  }
+  .foot .row,
+  .foot .hint,
+  .window-mini {
+    display: none;
+  }
+  .toggle {
+    justify-content: center;
+  }
+  .toggle svg.lucide {
+    display: none;
+  }
+  .toast {
+    left: calc(50% + 26px);
+    max-width: min(560px, calc(100vw - 92px));
+  }
+  .cmd {
+    left: calc(52px + (100vw - 52px) / 2);
+    width: min(680px, calc(100vw - 92px));
+  }
+}
+
+@container main (max-width: 960px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live {
+    position: static;
+  }
+  /* The answers drop under the title, so the title keeps the row's full width. */
+  .needs-list .item {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .needs-list .item .acts {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@container main (max-width: 560px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A setting that can't be changed yet, shown as plain text beside the fields. */
+.fixed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.fixed-field b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  padding: 4px 0;
 }
