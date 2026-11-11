@@ -5,6 +5,8 @@ import { join } from "node:path";
 
 const argv = process.argv.slice(2);
 if (process.env.FAKE_GH_LOG) appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(argv)}\n`);
+// Where each call ran, for tests that check gh never runs inside the user's repo.
+if (process.env.FAKE_GH_CWD_LOG) appendFileSync(process.env.FAKE_GH_CWD_LOG, `${process.cwd()}\n`);
 const mode = process.env.FAKE_GH_MODE ?? "ok";
 const remotes = process.env.FAKE_GH_REMOTES ?? "";
 const fail = (msg: string, code = 1): never => {

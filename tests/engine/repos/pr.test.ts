@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
+import { gitSettingsFingerprint } from "../../../src/engine/git";
 import { listActivity } from "../../../src/engine/events";
 import { githubSlug, openPullRequest, PrFailed, prInfo } from "../../../src/engine/repos/pr";
 import { PushRefused } from "../../../src/engine/repos/push";
@@ -40,7 +41,7 @@ const git = (cwd: string, ...args: string[]) => {
 const REMOTE = "https://github.com/fakeuser/app";
 
 // A local clone of fakeuser/app with a finished task's commit on atrium/<id>, as a review leaves it.
-function finishedTask(opts: { remote?: string | null; start?: string; status?: Task["status"] } = {}) {
+async function finishedTask(opts: { remote?: string | null; start?: string; status?: Task["status"] } = {}) {
   seedRemote(gh, "app");
   const parent = mkdtempSync(join(tmpdir(), "atrium-clone-"));
   cleanups.push(() => rmSync(parent, { recursive: true, force: true }));
@@ -54,10 +55,12 @@ function finishedTask(opts: { remote?: string | null; start?: string; status?: T
   git(path, "add", "-A");
   git(path, "commit", "-q", "-m", "Add a footer");
   git(path, "checkout", "-q", "main");
-  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, remote_url) VALUES ('run_1', ?, 'claude', 1, '/tmp/none', ?, ?)").run(
+  const fingerprint = await gitSettingsFingerprint(path);
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, remote_url, git_fingerprint) VALUES ('run_1', ?, 'claude', 1, '/tmp/none', ?, ?, ?)").run(
     task.id,
     opts.start ?? "main",
     opts.remote === undefined ? REMOTE : opts.remote,
+    fingerprint,
   );
   setTaskStatus(db, task.id, "running", { branch });
   setTaskStatus(db, task.id, opts.status ?? "review");
@@ -77,12 +80,13 @@ test("githubSlug reads the GitHub remote forms and nothing else", () => {
   expect(githubSlug("/tmp/local.git")).toBeNull();
 });
 
-test("prInfo offers the branch, target, repo and default title and body", async () => {
-  const { task, branch } = finishedTask();
+test("prInfo offers the branch, commit, target, repo and default title and body", async () => {
+  const { path, task, branch } = await finishedTask();
   expect(await prInfo(db, task.id)).toEqual({
     eligible: true,
     url: null,
     branch,
+    sha: git(path, "rev-parse", branch),
     base: "main",
     repo: "fakeuser/app",
     title: "Add a footer",
@@ -91,7 +95,7 @@ test("prInfo offers the branch, target, repo and default title and body", async 
 });
 
 test("prInfo says why a task can't open one", async () => {
-  const noRemote = finishedTask({ remote: null });
+  const noRemote = await finishedTask({ remote: null });
   expect(await prInfo(db, noRemote.task.id)).toMatchObject({ eligible: false, reason: "This repo had no GitHub remote when the task ran, so there's nowhere to open a pull request." });
   db.query("UPDATE runs SET remote_url = ? WHERE task_id = ?").run(REMOTE, noRemote.task.id);
   git(noRemote.path, "branch", "-D", noRemote.branch);
@@ -102,11 +106,14 @@ test("prInfo says why a task can't open one", async () => {
 });
 
 test("Push and open PR pushes the branch to the remote read before the run and opens the PR", async () => {
-  const { path, task, branch } = finishedTask();
-  // The agent pointing origin somewhere else afterwards changes nothing.
-  git(path, "remote", "set-url", "origin", "https://github.com/someoneelse/app");
+  const { path, task, branch } = await finishedTask();
+  const cwdLog = join(gh.base, "cwd.log");
+  process.env.FAKE_GH_CWD_LOG = cwdLog;
+  cleanups.push(() => delete process.env.FAKE_GH_CWD_LOG);
   expect(await openPullRequest(db, task.id, { title: "Add a footer", body: "Opened from Atrium." })).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
   expect(git(join(gh.remotes, "fakeuser", "app.git"), "rev-parse", branch)).toBe(git(path, "rev-parse", branch));
+  // gh ran in a folder of its own, never the repo.
+  expect(readFileSync(cwdLog, "utf8")).not.toContain(path);
   expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/1");
   expect(listActivity(db).map((a) => a.message)).toContain("Opened pull request https://github.com/fakeuser/app/pull/1");
   // The yes is on record as Nakul's own, for a push only he can decide.
@@ -116,7 +123,7 @@ test("Push and open PR pushes the branch to the remote read before the run and o
 });
 
 test("a PR that already exists for the branch is stored and counts as success", async () => {
-  const { task } = finishedTask({ status: "done" });
+  const { task } = await finishedTask({ status: "done" });
   gh.env("pr_exists");
   expect(await openPullRequest(db, task.id, { title: "t", body: "b" })).toEqual({ url: "https://github.com/fakeuser/app/pull/7" });
   expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/7");
@@ -130,7 +137,7 @@ function refuse(message: string) {
 }
 
 test("a push GitHub turns down is refused in plain words, and no PR is opened", async () => {
-  const { task } = finishedTask();
+  const { task } = await finishedTask();
   refuse("ERROR: Permission to fakeuser/app.git denied to fakeuser.");
   const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
   expect(err).toBeInstanceOf(PushRefused);
@@ -144,7 +151,7 @@ test("a push GitHub turns down is refused in plain words, and no PR is opened", 
 });
 
 test("gh signed out fails with what to do next", async () => {
-  const { task } = finishedTask();
+  const { task } = await finishedTask();
   gh.env("logged_out");
   const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
   expect(err).toBeInstanceOf(PrFailed);
@@ -153,7 +160,7 @@ test("gh signed out fails with what to do next", async () => {
 });
 
 test("no permission to open a PR fails in plain words", async () => {
-  const { task } = finishedTask();
+  const { task } = await finishedTask();
   gh.env("pr_denied");
   const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
   expect(err).toBeInstanceOf(PrFailed);
@@ -161,8 +168,58 @@ test("no permission to open a PR fails in plain words", async () => {
 });
 
 test("a task that isn't finished, or has no GitHub remote, is refused before anything is pushed", async () => {
-  const { task } = finishedTask({ remote: "https://gitlab.example.com/fakeuser/app.git" });
+  const { task } = await finishedTask({ remote: "https://gitlab.example.com/fakeuser/app.git" });
   await expect(openPullRequest(db, task.id, { title: "t", body: "b" })).rejects.toBeInstanceOf(PushRefused);
   expect(pushApprovals()).toEqual([]);
   expect(gh.argv()).toEqual([]);
+});
+
+test("repo config written after the run can't redirect the push: it lands only on the remote read before", async () => {
+  const { path, task, branch } = await finishedTask();
+  const elsewhere = seedRemote(gh, "elsewhere");
+  const marker = join(gh.base, "askpass-ran");
+  git(path, "config", `url.file://${elsewhere}.pushInsteadOf`, REMOTE);
+  git(path, "config", "core.askPass", `/bin/sh -c 'touch ${marker}'`);
+  git(path, "config", "protocol.ext.allow", "always");
+  // As if the settings had changed in a way the fingerprint missed: the push must not read them anyway.
+  db.query("UPDATE runs SET git_fingerprint = ? WHERE task_id = ?").run(await gitSettingsFingerprint(path), task.id);
+  expect(await openPullRequest(db, task.id, { title: "t", body: "b" })).toEqual({ url: "https://github.com/fakeuser/app/pull/1" });
+  expect(git(join(gh.remotes, "fakeuser", "app.git"), "rev-parse", branch)).toBe(git(path, "rev-parse", branch));
+  expect(Bun.spawnSync(["git", "--git-dir", elsewhere, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).exitCode).not.toBe(0);
+  expect(existsSync(marker)).toBe(false);
+});
+
+test("repo settings that changed since the run stop the push in plain words", async () => {
+  const { path, task } = await finishedTask();
+  git(path, "config", "url.https://example.com/.pushInsteadOf", REMOTE);
+  const err = await openPullRequest(db, task.id, { title: "t", body: "b" }).catch((e) => e);
+  expect(err).toBeInstanceOf(PushRefused);
+  expect(err.message).toBe("This repo's git settings changed since the task ran, so Atrium won't push from it. Check them in the repo, then push yourself.");
+  expect(gh.argv()).toEqual([]);
+});
+
+test("the approved commit is what goes out, named in the approval, and a stale confirm is refused", async () => {
+  const { path, task, branch } = await finishedTask();
+  const approved = git(path, "rev-parse", branch);
+  // A later commit on the branch isn't what Nakul approved.
+  db.query("UPDATE approvals SET status = 'approved', branch_head = ?, resolved_at = 2 WHERE task_id = ? AND kind = 'review'").run(approved, task.id);
+  git(path, "checkout", "-q", branch);
+  writeFileSync(join(path, "later.txt"), "later\n");
+  git(path, "add", "-A");
+  git(path, "commit", "-q", "-m", "later");
+  git(path, "checkout", "-q", "main");
+  expect(await prInfo(db, task.id)).toMatchObject({ sha: approved });
+  await expect(openPullRequest(db, task.id, { title: "t", body: "b", sha: git(path, "rev-parse", branch) })).rejects.toThrow("The branch has changed since you looked.");
+  await openPullRequest(db, task.id, { title: "t", body: "b", sha: approved });
+  expect(git(join(gh.remotes, "fakeuser", "app.git"), "rev-parse", branch)).toBe(approved);
+  expect((db.query("SELECT detail FROM approvals WHERE always_ask = 'push'").get() as { detail: string }).detail).toBe(`Commit ${approved.slice(0, 7)}, pull request into main: t`);
+});
+
+test("a double submit records one yes and pushes once", async () => {
+  const { task } = await finishedTask();
+  const [a, b] = await Promise.allSettled([openPullRequest(db, task.id, { title: "t", body: "b" }), openPullRequest(db, task.id, { title: "t", body: "b" })]);
+  expect([a.status, b.status].sort()).toEqual(["fulfilled", "rejected"]);
+  const rejected = (a.status === "rejected" ? a : b) as PromiseRejectedResult;
+  expect(rejected.reason.message).toBe("Already opening a pull request for this task.");
+  expect(pushApprovals()).toHaveLength(1);
 });

@@ -135,7 +135,7 @@ test("a steer that answered while the old run was still winding down waits for i
 });
 
 test("Open pull request shows the confirm step, submits the edited title, then shows the link", async () => {
-  const info = { eligible: true as const, url: null, branch: "atrium/tsk_run", base: "main", repo: "fakeuser/app", title: "Add the status bar", body: "Added it.\n\nOpened from Atrium." };
+  const info = { eligible: true as const, url: null, branch: "atrium/tsk_run", sha: "abc1234def5678abc1234def5678abc1234def56", base: "main", repo: "fakeuser/app", title: "Add the status bar", body: "Added it.\n\nOpened from Atrium." };
   let state: PrState = PR_START;
   const sent: [string, unknown][] = [];
   const view = () =>
@@ -147,19 +147,19 @@ test("Open pull request shows the confirm step, submits the edited title, then s
       onEdit: (e) => (state = prReducer(state, { type: "edit", ...e })),
       onSubmit: () => {
         state = prReducer(state, { type: "sending" });
-        void requestPr("tsk_run", state.title, state.body, async (path, body) => (sent.push([path, body]), { ok: true, data: { url: "https://github.com/fakeuser/app/pull/1" } })).then(
+        void requestPr("tsk_run", { title: state.title, body: state.body, sha: info.sha }, async (path, body) => (sent.push([path, body]), { ok: true, data: { url: "https://github.com/fakeuser/app/pull/1" } })).then(
           (res) => (state = prReducer(state, res.ok ? { type: "done", url: res.data.url } : { type: "failed", error: res.error })),
         );
       },
     });
   button(view(), "Open pull request").props.onClick();
   const confirm = text(renderToStaticMarkup(view()));
-  expect(confirm).toContain("Branch atrium/tsk_run Into main Repo fakeuser/app");
+  expect(confirm).toContain("Branch atrium/tsk_run at abc1234 Into main Repo fakeuser/app");
   expect(confirm).toContain("Push and open PR");
   find(view(), (el) => el.type === "input").props.onChange({ target: { value: "Add a status bar" } });
   submit(view());
   await Bun.sleep(1);
-  expect(sent).toEqual([["/api/tasks/tsk_run/pr", { title: "Add a status bar", body: "Added it.\n\nOpened from Atrium." }]]);
+  expect(sent).toEqual([["/api/tasks/tsk_run/pr", { title: "Add a status bar", body: "Added it.\n\nOpened from Atrium.", sha: info.sha }]]);
   expect(state.url).toBe("https://github.com/fakeuser/app/pull/1");
   const link = renderToStaticMarkup(<PrLink url={state.url!} />);
   expect(text(link)).toBe("Pull request opened · View on GitHub");

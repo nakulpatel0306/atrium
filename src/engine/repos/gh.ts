@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { config } from "../config";
 import { type ProjectDraft, validateGithubSlug } from "./names";
 
@@ -126,16 +129,22 @@ export async function ghViewRepo(slug: string, opts: { timeoutMs?: number } = {}
 }
 
 // Opens a pull request from an already-pushed branch. The repo is named outright (the remote read before the agent
-// ran), never worked out from the folder's current remotes. A PR that already exists for the branch counts as the
-// answer: gh names it in its error.
+// ran), and gh runs in an empty folder, so nothing in the user's repo folder (its remotes, its config) is read. A PR
+// that already exists for the branch counts as the answer: gh names it in its error.
 export async function ghPrCreate(
-  pr: { repoDir: string; repo: string; head: string; base: string; title: string; body: string },
+  pr: { repo: string; head: string; base: string; title: string; body: string },
   opts: { timeoutMs?: number } = {},
 ): Promise<{ url: string; existed: boolean }> {
   validateGithubSlug(pr.repo);
   // `--flag=value` so a title starting with "-" is never read as an option.
   const args = ["pr", "create", `--repo=${pr.repo}`, `--head=${pr.head}`, `--base=${pr.base}`, `--title=${pr.title}`, `--body=${pr.body}`];
-  const res = await runGh(args, { ...opts, cwd: pr.repoDir });
+  const cwd = mkdtempSync(join(tmpdir(), "atrium-gh-"));
+  let res: GhResult;
+  try {
+    res = await runGh(args, { ...opts, cwd });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
   const pull = new RegExp(`https://github\\.com/${pr.repo.replace(/[.]/g, "\\.")}/pull/\\d+`, "i");
   if (res.code !== 0 || res.timedOut) {
     const existing = /already exists/i.test(res.err) ? pull.exec(res.err) : null;

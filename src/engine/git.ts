@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf } from "./diff-parse";
@@ -269,6 +269,38 @@ export async function pushBranch(
   if (res.timedOut) return { pushed: false, reason: "The push timed out." };
   if (res.code !== 0) return { pushed: false, reason: res.err.trim() };
   return { pushed: true };
+}
+
+// Pushes one approved commit from a throwaway bare repo that borrows the repo's objects, so nothing in the repo's own
+// config (insteadOf rewrites, include files, askpass, proxies, protocol settings the agent could have written) is
+// read during the push. Only https and ssh transports are allowed, and no askpass program runs.
+export async function pushApprovedSha(
+  path: string,
+  sha: string,
+  branch: string,
+  url: string,
+  opts: { flags?: string[]; timeoutMs?: number } = {},
+): Promise<{ pushed: boolean; reason?: string }> {
+  if (isProtected(branch)) return { pushed: false, reason: "Refusing to push main" };
+  const objects = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]);
+  if (objects.code !== 0) return { pushed: false, reason: `Couldn't read git dir: ${objects.err.trim()}` };
+  const dir = mkdtempSync(join(tmpdir(), "atrium-push-"));
+  try {
+    const bare = join(dir, "push.git");
+    const init = await git(dir, ["init", "-q", "--bare", bare]);
+    if (init.code !== 0) return { pushed: false, reason: `Couldn't prepare the push: ${init.err.trim()}` };
+    writeFileSync(join(bare, "objects", "info", "alternates"), `${objects.out.trim()}\n`);
+    const isolated = ["--git-dir", bare];
+    const ref = await git(dir, [...isolated, "update-ref", `refs/heads/${branch}`, sha]);
+    if (ref.code !== 0) return { pushed: false, reason: `Couldn't prepare the push: ${ref.err.trim()}` };
+    const transport = ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "core.askPass="];
+    const res = await git(dir, [...isolated, ...transport, ...(opts.flags ?? []), "push", url, `${sha}:refs/heads/${branch}`], opts.timeoutMs ?? 60_000);
+    if (res.timedOut) return { pushed: false, reason: "The push timed out." };
+    if (res.code !== 0) return { pushed: false, reason: res.err.trim() };
+    return { pushed: true };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // Plain checkout (never --force); a dirty tree is reported rather than carried along.

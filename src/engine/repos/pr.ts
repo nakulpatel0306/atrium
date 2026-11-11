@@ -1,18 +1,18 @@
 import type { Database } from "bun:sqlite";
 import { createApproval, getApproval, isOwnYes, resolveApproval } from "../approvals";
 import { logActivity } from "../events";
-import { branchSha, pushBranch } from "../git";
+import { branchSha, gitSettingsFingerprint, pushApprovedSha } from "../git";
 import { lastRepoRun } from "../runner";
 import { getSpace } from "../spaces";
 import { getTask } from "../tasks";
 import { ghCredentialFlags, GhProblem, ghPrCreate } from "./gh";
 import { PushRefused } from "./push";
 
-// Where a task's pull request would go. Everything comes from what was recorded before the agent ran: the remote
-// and the branch the work started from.
-export type PrTarget = { taskId: string; repoDir: string; branch: string; base: string; repo: string; remote: string };
+// Where a task's pull request would go. Everything comes from what was recorded before the agent ran (the remote,
+// the branch the work started from, the repo's git settings) or when Nakul decided (`sha`, the commit he approved).
+export type PrTarget = { taskId: string; repoDir: string; branch: string; sha: string; base: string; repo: string; remote: string; fingerprint: string | null };
 export type PrInfo =
-  | ({ eligible: true; url: string | null; title: string; body: string } & Omit<PrTarget, "taskId" | "repoDir" | "remote">)
+  | ({ eligible: true; url: string | null; title: string; body: string } & Omit<PrTarget, "taskId" | "repoDir" | "remote" | "fingerprint">)
   | { eligible: false; url: string | null; reason: string };
 
 export class PrFailed extends Error {
@@ -37,11 +37,16 @@ export async function prTarget(db: Database, taskId: string): Promise<PrTarget |
   if (task.status !== "review" && task.status !== "done") return { reason: "A pull request can be opened once the task is ready for review or done." };
   const run = lastRepoRun(db, task.id);
   if (!task.branch || !run) return { reason: "This task has no branch to open a pull request from." };
-  if (!(await branchSha(space.repoPath, task.branch))) return { reason: `The branch ${task.branch} isn't in the repo anymore.` };
+  const head = await branchSha(space.repoPath, task.branch);
+  if (!head) return { reason: `The branch ${task.branch} isn't in the repo anymore.` };
+  // A decided review recorded the commit Nakul approved; that is what goes out, even if the branch moved since.
+  const approved = db
+    .query("SELECT branch_head FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'approved' AND branch_head IS NOT NULL ORDER BY resolved_at DESC, rowid DESC LIMIT 1")
+    .get(task.id) as { branch_head: string } | null;
   const repo = run.remote ? githubSlug(run.remote) : null;
   if (!run.remote || !repo) return { reason: "This repo had no GitHub remote when the task ran, so there's nowhere to open a pull request." };
   if (SHA.test(run.start)) return { reason: "The work started from a commit rather than a branch, so there's no branch to merge it into." };
-  return { taskId, repoDir: space.repoPath, branch: task.branch, base: run.start, repo, remote: run.remote };
+  return { taskId, repoDir: space.repoPath, branch: task.branch, sha: approved?.branch_head ?? head, base: run.start, repo, remote: run.remote, fingerprint: run.fingerprint };
 }
 
 // The newest review's text without Atrium's own "push it when you're ready" line, which a PR has made moot.
@@ -61,7 +66,7 @@ export async function prInfo(db: Database, taskId: string): Promise<PrInfo> {
   const url = getTask(db, taskId)?.prUrl ?? null;
   const t = await prTarget(db, taskId);
   if ("reason" in t) return { eligible: false, url, reason: t.reason };
-  return { eligible: true, url, branch: t.branch, base: t.base, repo: t.repo, title: getTask(db, taskId)!.title, body: defaultBody(db, taskId) };
+  return { eligible: true, url, branch: t.branch, sha: t.sha, base: t.base, repo: t.repo, title: getTask(db, taskId)!.title, body: defaultBody(db, taskId) };
 }
 
 // What git said when the remote turned the push down, in words Nakul can act on; null when it wasn't a refusal.
@@ -92,19 +97,44 @@ function ghFailed(e: GhProblem, t: PrTarget): PrFailed {
   return new PrFailed("GitHub didn't open the pull request, and Atrium couldn't tell why. Run `gh auth status` in a terminal to check gh still works, then try again.");
 }
 
+// One open at a time per task, so a double click can't record two yeses or push twice.
+const opening = new Set<string>();
+
 // Nakul's click on "Push and open PR" is the yes. It's recorded as an always-ask push approval he decided himself, so
-// the audit trail shows it, and re-read before anything leaves the Mac.
-export async function openPullRequest(db: Database, taskId: string, input: { title: string; body: string }, opts: { timeoutMs?: number } = {}): Promise<{ url: string }> {
+// the audit trail shows it, and re-read before anything leaves the Mac. `sha` is the commit his confirm step showed;
+// if the commit that would go out is a different one, nothing is pushed.
+export async function openPullRequest(
+  db: Database,
+  taskId: string,
+  input: { title: string; body: string; sha?: string },
+  opts: { timeoutMs?: number } = {},
+): Promise<{ url: string }> {
+  if (opening.has(taskId)) throw new PushRefused("Already opening a pull request for this task.");
+  opening.add(taskId);
+  try {
+    return await open(db, taskId, input, opts);
+  } finally {
+    opening.delete(taskId);
+  }
+}
+
+async function open(db: Database, taskId: string, input: { title: string; body: string; sha?: string }, opts: { timeoutMs?: number }): Promise<{ url: string }> {
   const t = await prTarget(db, taskId);
   if ("reason" in t) throw new PushRefused(t.reason);
+  if (input.sha !== undefined && input.sha !== t.sha) throw new PushRefused("The branch has changed since you looked. Check the commit shown, then try again.");
+  // The push itself never reads the repo's config, but settings the agent changed are a reason to stop anyway.
+  if (!t.fingerprint || (await gitSettingsFingerprint(t.repoDir).catch(() => null)) !== t.fingerprint) {
+    throw new PushRefused("This repo's git settings changed since the task ran, so Atrium won't push from it. Check them in the repo, then push yourself.");
+  }
   const task = getTask(db, taskId)!;
+  const short = t.sha.slice(0, 7);
   const approval = db.transaction(() => {
     const a = createApproval(db, {
       spaceId: task.spaceId,
       taskId,
       kind: "question",
       title: `Push ${t.branch} to ${t.repo} and open a pull request?`,
-      detail: `Pull request into ${t.base}: ${input.title}`,
+      detail: `Commit ${short}, pull request into ${t.base}: ${input.title}`,
       alwaysAsk: "push",
     });
     return resolveApproval(db, a.id, "approve");
@@ -119,7 +149,7 @@ export async function openPullRequest(db: Database, taskId: string, input: { tit
     if (e instanceof GhProblem) throw ghFailed(e, t);
     throw e;
   }
-  const pushed = await pushBranch(t.repoDir, t.branch, t.remote, opts.timeoutMs ?? 60_000, flags);
+  const pushed = await pushApprovedSha(t.repoDir, t.sha, t.branch, t.remote, { flags, timeoutMs: opts.timeoutMs });
   if (!pushed.pushed) {
     const reason = pushed.reason ?? "";
     const refused = refusal(reason, t);
@@ -132,7 +162,7 @@ export async function openPullRequest(db: Database, taskId: string, input: { tit
 
   let pr: { url: string; existed: boolean };
   try {
-    pr = await ghPrCreate({ repoDir: t.repoDir, repo: t.repo, head: t.branch, base: t.base, title: input.title, body: input.body }, opts);
+    pr = await ghPrCreate({ repo: t.repo, head: t.branch, base: t.base, title: input.title, body: input.body }, opts);
   } catch (e) {
     if (e instanceof GhProblem) throw ghFailed(e, t);
     throw e;

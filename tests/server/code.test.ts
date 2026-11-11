@@ -188,7 +188,9 @@ test("pr: GET says where it would go; POST pushes and answers with the link; fai
   git(path, "add", "-A");
   git(path, "commit", "-q", "-m", "work");
   git(path, "checkout", "-q", "main");
-  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, remote_url) VALUES ('run_pr', ?, 'claude', 1, '/tmp/none', 'main', 'https://github.com/fakeuser/app')").run(task.id);
+  db.query(
+    "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, remote_url, git_fingerprint) VALUES ('run_pr', ?, 'claude', 1, '/tmp/none', 'main', 'https://github.com/fakeuser/app', ?)",
+  ).run(task.id, await gitSettingsFingerprint(path));
   setTaskStatus(db, task.id, "running", { branch: `atrium/${task.id}` });
 
   // Still running: not eligible yet.

@@ -34,8 +34,12 @@ export function prReducer(s: PrState, e: PrEvent): PrState {
   }
 }
 
-export const requestPr = (taskId: string, title: string, body: string, send: (path: string, body: unknown) => Promise<PostResult<{ url: string }>> = (p, b) => post<{ url: string }>(p, b)) =>
-  send(`/api/tasks/${encodeURIComponent(taskId)}/pr`, { title, body });
+// `sha` is the commit the confirm step showed, so what's pushed is exactly what was on screen.
+export const requestPr = (
+  taskId: string,
+  pr: { title: string; body: string; sha: string },
+  send: (path: string, body: unknown) => Promise<PostResult<{ url: string }>> = (p, b) => post<{ url: string }>(p, b),
+) => send(`/api/tasks/${encodeURIComponent(taskId)}/pr`, pr);
 
 // An external link: the Mac app hands target=_blank links off the dashboard to the default browser.
 export function PrLink({ url }: { url: string }) {
@@ -75,7 +79,9 @@ export function PrForm({ info, state, onAsk, onCancel, onEdit, onSubmit }: ViewP
     >
       <dl className="pr-facts">
         <dt>Branch</dt>
-        <dd className="mono">{info.branch}</dd>
+        <dd className="mono">
+          {info.branch} at {info.sha.slice(0, 7)}
+        </dd>
         <dt>Into</dt>
         <dd className="mono">{info.base}</dd>
         <dt>Repo</dt>
@@ -115,7 +121,7 @@ export function PullRequest({ task }: { task: Task }) {
   if (!info?.eligible) return null;
   const submit = async () => {
     dispatch({ type: "sending" });
-    const res = await requestPr(task.id, state.title.trim(), state.body);
+    const res = await requestPr(task.id, { title: state.title.trim(), body: state.body, sha: info.sha });
     dispatch(res.ok ? { type: "done", url: res.data.url } : { type: "failed", error: res.error });
   };
   return (
