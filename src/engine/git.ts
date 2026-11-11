@@ -574,9 +574,10 @@ export async function branchDiff(path: string, base: string, branch: string): Pr
 // What a running agent has changed so far, against `start`: every file git knows (committed on the branch, or
 // staged) as it is on disk now, plus new files it hasn't added (they're shown as additions). Every file is read by
 // Atrium itself, never through a symlink, and git only ever compares trees.
-export async function workingDiff(path: string, start: string): Promise<DiffResult> {
+// `hashBudget` is a test seam for the most bytes read in one look.
+export async function workingDiff(path: string, start: string, opts: { hashBudget?: number } = {}): Promise<DiffResult> {
   const flags = await diffFlags(path);
-  const snap = await withWorktreeTree(path, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
+  const snap = await withWorktreeTree(path, opts.hashBudget ?? HASH_TOTAL, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
   const changes = parseCapped(snap.value);
   const files = [...changes.files];
   // A file Atrium couldn't read, or that's too large and a different size, is listed as changed with a note.
@@ -647,7 +648,8 @@ function readFd(fd: number, length: number, onChunk: (b: Buffer) => void): void 
 
 type Hashed =
   | { kind: "file"; id: string; mode: string; bytes: Buffer }
-  | { kind: "unread"; size: number }
+  | { kind: "large"; size: number }
+  | { kind: "budget" }
   | { kind: "gone" }
   | { kind: "unreadable" };
 
@@ -665,7 +667,8 @@ function hashRepoFile(root: string, rel: string, format: "sha1" | "sha256", budg
     const st = fstatSync(fd);
     // A folder or FIFO where a file was is, as far as the file goes, gone.
     if (!st.isFile()) return { kind: "gone" };
-    if (st.size > HASH_CAP || st.size > budget.left) return { kind: "unread", size: st.size };
+    if (st.size > HASH_CAP) return { kind: "large", size: st.size };
+    if (st.size > budget.left) return { kind: "budget" };
     budget.left -= st.size;
     const chunks: Buffer[] = [];
     readFd(fd, st.size, (b) => chunks.push(Buffer.from(b)));
@@ -691,12 +694,13 @@ type Snapshot<T> = {
 const TOO_LARGE = "Too large to show. Open the file in your editor to see what changed.";
 const UNREADABLE = "Atrium couldn't read this file, so it may have changed.";
 const TOO_LARGE_TO_CHECK = "Too large to check";
+const PAST_BUDGET = "Not checked: too much to scan";
 
 // The working tree as a git tree, built without git ever reading it: Atrium reads each file git knows (on HEAD or
 // staged) itself, hashes it as is, and writes only the changed ones as blobs, into a temporary object folder (the
 // repo's own objects are an alternate, so nothing is added to the repo) and a temporary index. `use` gets the tree
 // and the environment that can see it.
-async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
+async function withWorktreeTree<T>(path: string, hashBudget: number, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
   const format = (await git(path, ["rev-parse", "--show-object-format"])).out.trim() === "sha256" ? "sha256" : "sha1";
   const objects = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]);
   if (objects.code !== 0) throw new Error(`Couldn't read git dir: ${objects.err.trim()}`);
@@ -720,16 +724,21 @@ async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record
   const updates: { mode: string; id: string | null; path: string; bytes: Buffer | null }[] = [];
   const unknown: Snapshot<T>["unknown"] = [];
   const unchecked: Snapshot<T>["unchecked"] = [];
-  const budget = { left: HASH_TOTAL };
+  const budget = { left: hashBudget };
   for (const [rel, entry] of known) {
     const f = hashRepoFile(path, rel, format, budget);
     if (f.kind === "unreadable") {
       unknown.push({ path: rel, note: UNREADABLE, added: entry === null });
       continue;
     }
-    // Unread: a different size from HEAD's is certainly a change; the same size can't be told apart, so it's listed
-    // on its own as not checked.
-    if (f.kind === "unread") {
+    // Past the budget, a file can't be vouched for, so it's listed as changed.
+    if (f.kind === "budget") {
+      unknown.push({ path: rel, note: PAST_BUDGET, added: entry === null });
+      continue;
+    }
+    // Over the cap: a different size from HEAD's is certainly a change; the same size can't be told apart, so it's
+    // listed on its own as not checked.
+    if (f.kind === "large") {
       if (entry && entry.size === f.size) unchecked.push({ path: rel, note: TOO_LARGE_TO_CHECK });
       else unknown.push({ path: rel, note: TOO_LARGE, added: entry === null });
       continue;

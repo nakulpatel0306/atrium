@@ -714,16 +714,19 @@ describe("changes", () => {
     ]);
   });
 
-  test("past 50 MB read in one look, the rest are still listed", async () => {
+  test("past the read budget, the rest are listed as changed with their own note", async () => {
     const path = workRepo();
-    // Binary (a NUL up front), so the listing stays small and only the reading is under test.
-    for (let i = 0; i < 6; i++) writeFileSync(join(path, `part${i}.bin`), Buffer.alloc(9 * 1024 * 1024, i + 1).fill(0, 0, 1));
+    for (let i = 0; i < 4; i++) writeFileSync(join(path, `part${i}.txt`), `${"x".repeat(40)}\n`);
     git(path, "add", "-A");
-    const d = await workingDiff(path, "main");
-    const parts = d.files.filter((f) => f.path.startsWith("part"));
-    expect(parts).toHaveLength(6);
-    expect(parts.every((f) => f.status === "added")).toBe(true);
-    expect(parts.filter((f) => f.note === "Too large to show. Open the file in your editor to see what changed.")).toHaveLength(1);
+    git(path, "commit", "-q", "-m", "parts");
+    // app.ts, old.txt and README.md are read too, so a budget of 100 bytes runs out partway through the parts.
+    const d = await workingDiff(path, "HEAD", { hashBudget: 100 });
+    const skipped = d.files.filter((f) => f.note === "Not checked: too much to scan");
+    expect(skipped.length).toBeGreaterThan(0);
+    expect(skipped.every((f) => f.status === "modified" && f.truncated)).toBe(true);
+    expect(d.unchecked).toBeUndefined();
+    // With room to read them all, nothing changed.
+    expect((await workingDiff(path, "HEAD")).files).toEqual([]);
   });
 
   test("assume-unchanged and skip-worktree flags don't hide a change", async () => {
