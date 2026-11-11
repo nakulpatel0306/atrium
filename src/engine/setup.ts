@@ -13,6 +13,7 @@ import { BadDraft, type ProjectDraft, sameGithubRepo, slugifyName, validateDescr
 import { draftProject, type RepoAction } from "./repos/store";
 import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
+import { AttachRefused } from "./attachments";
 import { capabilityLines } from "./capabilities";
 import { type GroupAsk, groupAskOf } from "./messaging/block";
 import { nameProblem, peopleLine, textProblem } from "./messaging/rules";
@@ -306,7 +307,8 @@ export async function setupSpace(
       return { space, tasks: onCreate ? onCreate(space, tasks) : tasks };
     })();
   } catch (e) {
-    if (e instanceof SetupFailed) throw e;
+    // A refused file has its own reason and fix; hiding it behind "try again" would send Nakul round the slow setup for nothing.
+    if (e instanceof SetupFailed || e instanceof AttachRefused) throw e;
     throw new SetupFailed("Couldn't set that up. Try describing it again.", e);
   }
 }
