@@ -520,3 +520,18 @@ test("an older database gains runs.remote_url and tasks.pr_url, and its rows rea
   openDb(path).close();
   t.cleanup();
 });
+
+test("an older database without attachments gains the table, and its tasks read as before", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const first = openDb(path);
+  first.exec("INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_old', 'Old', 'general', '#fff', 1, 1)");
+  first.exec("INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('tsk_old', 'spc_old', 'Kept', 'auto', 'light', 1, 1)");
+  first.exec("DROP TABLE attachments");
+  first.close();
+  const db = openDb(path);
+  expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attachments'").get()).toEqual({ name: "attachments" });
+  expect(getTask(db, "tsk_old")?.title).toBe("Kept");
+  db.close();
+  t.cleanup();
+});

@@ -90,6 +90,7 @@ export function makeState(over: Partial<State> = {}): State {
       task({ id: ids.queued, title: "Add tests", status: "queued", agent: "auto", createdAt: now - 20 * min }),
       task({ id: ids.blocked, spaceId: ids.jobHunt, title: "Summarize postings", status: "blocked", blockedReason: "No postings found", createdAt: now - 15 * min }),
     ],
+    attachments: [],
     runs: [
       { id: ids.liveRun, taskId: ids.running, agent: "claude", startedAt: now - 4 * min, endedAt: null, exitCode: null, inputTokens: 0, outputTokens: 0 },
       { id: ids.reviewRun, taskId: ids.review, agent: "claude", startedAt: now - 48 * min, endedAt: now - 44 * min, exitCode: 0, inputTokens: 1200, outputTokens: 300 },

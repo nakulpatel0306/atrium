@@ -23,6 +23,9 @@ import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
 import { filesRoute } from "./files";
+import { attachmentsRoute } from "./attachments";
+import { AttachRefused, checkAttachments, claimAttachments, withAttachments } from "../engine/attachments";
+import { DEFAULT_PROMPT } from "../engine/attachment-rules";
 import { embedResponse } from "./embed";
 import { investingRoute } from "./investing";
 import { simpleRoute } from "./investing-simple";
@@ -196,19 +199,22 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     if (hit("POST", /^\/api\/tasks$/)) {
       const b = await readBody(req);
       const spaceId = str(b.spaceId, "spaceId");
-      if (!getSpace(db, spaceId)) throw new HttpError(404, "No such space.");
+      const space = getSpace(db, spaceId);
+      if (!space) throw new HttpError(404, "No such space.");
       const weight = b.weight;
       if (weight !== undefined && weight !== "heavy" && weight !== "light") {
         throw new HttpError(400, "weight must be heavy or light.");
       }
-      const task = createTask(db, {
-        spaceId,
-        title: str(b.title, "title"),
-        detail: opt(b.detail, isString, "detail"),
-        weight,
-        allowOnBattery: opt(b.allowOnBattery, isBool, "allowOnBattery"),
-        agent: agentField(b.agent),
-      });
+      const title = str(b.title, "title");
+      const detail = opt(b.detail, isString, "detail");
+      const agent = agentField(b.agent);
+      const allowOnBattery = opt(b.allowOnBattery, isBool, "allowOnBattery");
+      const task = db.transaction(() => {
+        const files = checkAttachments(db, space, b.attachments);
+        const t = createTask(db, { spaceId, title, detail: withAttachments(detail ?? "", files), weight, allowOnBattery, agent });
+        claimAttachments(db, t.id, files);
+        return t;
+      })();
       runner.kick();
       return json(task);
     }
@@ -398,17 +404,24 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
 
     if (hit("POST", /^\/api\/command$/)) {
       const b = await readBody(req);
-      const text = str(b.text, "text");
-      if (b.spaceId === undefined) return json(await deps.setup(text));
+      if (b.spaceId === undefined) return json(await deps.setup(str(b.text, "text")));
       const space = getSpace(db, str(b.spaceId, "spaceId"));
       if (!space) throw new HttpError(404, "No such space.");
-      const task = createTask(db, {
-        spaceId: space.id,
-        title: text.split("\n")[0]!.slice(0, 80),
-        detail: text,
-        weight: space.kind === "repo" ? "heavy" : "light",
-        agent: agentField(b.agent),
-      });
+      const agent = agentField(b.agent);
+      const task = db.transaction(() => {
+        const files = checkAttachments(db, space, b.attachments);
+        // Files alone are a request too: the agent is asked to look at them.
+        const text = files.length && (typeof b.text !== "string" || !b.text.trim()) ? DEFAULT_PROMPT : str(b.text, "text");
+        const t = createTask(db, {
+          spaceId: space.id,
+          title: text.split("\n")[0]!.slice(0, 80),
+          detail: withAttachments(text, files),
+          weight: space.kind === "repo" ? "heavy" : "light",
+          agent,
+        });
+        claimAttachments(db, t.id, files);
+        return t;
+      })();
       runner.kick();
       return json({ task });
     }
@@ -453,6 +466,8 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
 
     const files = await filesRoute(db, req, url);
     if (files) return files;
+    const attached = await attachmentsRoute(db, req, url);
+    if (attached) return attached;
     const start = await startRoute(db, req, url);
     if (start) return start;
 
@@ -505,6 +520,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       } catch (e) {
         if (e instanceof HttpError) return fail(e.status, e.message);
         if (e instanceof FileRefused) return fail(e.status, e.message);
+        if (e instanceof AttachRefused) return fail(e.status, e.message);
         if (e instanceof DeleteRefused) return fail(e.status, e.message);
         if (e instanceof AlreadyResolved) return fail(409, "Already handled");
         if (e instanceof InvalidTransition) return fail(409, e.message);

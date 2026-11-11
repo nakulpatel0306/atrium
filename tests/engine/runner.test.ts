@@ -28,6 +28,7 @@ import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
 import { spaceFolder } from "../../src/engine/folders";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
+import { claimAttachments, storeAttachments, withAttachments } from "../../src/engine/attachments";
 import { tempHome, tempRepo } from "../helpers";
 import { readdirSync } from "node:fs";
 import { config } from "../../src/engine/config";
@@ -646,6 +647,26 @@ test("files a scratch run leaves are kept with the run, and the approval says wh
   expect(listPending(db)[0]!.detail).toContain(
     `Files it left are kept in ${kept}. Left out 1 item that was a link or changed while being copied.`,
   );
+});
+
+test("a scratch run gets the task's attached files where its detail says, and they aren't kept as its work", async () => {
+  const s = createSpace(db, { name: "Flat Costs", kind: "general", goal: "", private: false });
+  const [a] = storeAttachments(db, s, [{ name: "receipt.png", bytes: new Uint8Array([1, 2, 3]) }]);
+  const t = createTask(db, { spaceId: s.id, title: "Split it", detail: withAttachments("Split it", [a!]), agent: "codex" });
+  claimAttachments(db, t.id, [a!]);
+  let seen: number[] = [];
+  const codex = fakeAdapter((input) => {
+    seen = [...readFileSync(join(input.cwd, "Attachments", "receipt.png"))];
+    writeFileSync(join(input.cwd, "split.md"), "- 3 ways\n");
+    return ok("Split.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  expect(seen).toEqual([1, 2, 3]);
+  expect(codex.calls[0]!.prompt).toContain("- Attachments/receipt.png");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  const kept = join(spaceFolder(getSpace(db, s.id)!), "runs", run.id);
+  expect(readdirSync(kept)).toEqual(["split.md"]);
 });
 
 test("launch re-checks the agent and holds a task the space no longer allows", async () => {

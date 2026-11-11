@@ -155,6 +155,18 @@ CREATE TABLE IF NOT EXISTS run_files (
 );
 CREATE INDEX IF NOT EXISTS run_files_task ON run_files(task_id, created_at);
 CREATE INDEX IF NOT EXISTS run_files_space ON run_files(space_id, created_at);
+-- Files Nakul attached in the ask bar, stored in the space folder. task_id is set when a task claims them.
+CREATE TABLE IF NOT EXISTS attachments (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  task_id TEXT REFERENCES tasks(id),
+  path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS attachments_task ON attachments(task_id);
 CREATE TABLE IF NOT EXISTS rule_events (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
