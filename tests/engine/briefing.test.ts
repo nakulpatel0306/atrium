@@ -301,7 +301,19 @@ test("the briefing says how many couldn't be done", () => {
   logActivity(db, a.id, "claude", "Finished: two", { taskId: two.id });
   setTaskOutcome(db, one.id, "couldnt", "no number.");
   setTaskOutcome(db, two.id, "done", null);
-  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 2 finished. 1 couldn't be done; open it to see why.");
-  setTaskOutcome(db, two.id, "couldnt", "no file.");
-  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 2 finished. 2 couldn't be done; open them to see why.");
+  // A "couldn't" isn't finished work: it's named on its own.
+  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 1 finished. 1 couldn't be done; open it to see why.");
+  const three = createTask(db, { spaceId: a.id, title: "three" });
+  logActivity(db, a.id, "claude", "Couldn't do: three. No file.", { taskId: three.id });
+  setTaskOutcome(db, three.id, "couldnt", "no file.");
+  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 1 finished. 2 couldn't be done; open them to see why.");
+});
+
+test("only couldn't-do results since the last visit don't read as nothing ran", () => {
+  const now = Date.now();
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  const one = createTask(db, { spaceId: a.id, title: "one" });
+  logActivity(db, a.id, "claude", "Couldn't do: one. No number.", { taskId: one.id });
+  setTaskOutcome(db, one.id, "couldnt", "no number.");
+  expect(briefing(db, now + 1).summary).toBe("1 couldn't be done; open it to see why.");
 });
