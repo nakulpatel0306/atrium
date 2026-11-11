@@ -34,8 +34,7 @@ export async function taskChanges(db: Database, taskId: string): Promise<DiffRes
     if (!run.fingerprint || (await gitSettingsFingerprint(path).catch(() => null)) !== run.fingerprint) {
       throw new ChangesRefused(409, "The agent changed this repo's git settings, so Atrium won't read its changes. Atrium checks them when the run ends.");
     }
-    const started = db.query("SELECT started_at FROM runs WHERE task_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1").get(task.id) as { started_at: number } | null;
-    return workingDiff(path, base, { since: started?.started_at });
+    return workingDiff(path, base);
   }
   if (!(await branchSha(path, task.branch))) {
     throw new ChangesRefused(404, `The branch ${task.branch} isn't in the repo anymore, so there are no changes to show.`);

@@ -574,18 +574,15 @@ export async function branchDiff(path: string, base: string, branch: string): Pr
 // What a running agent has changed so far, against `start`: every file git knows (committed on the branch, or
 // staged) as it is on disk now, plus new files it hasn't added (they're shown as additions). Every file is read by
 // Atrium itself, never through a symlink, and git only ever compares trees.
-// `since` is when the run started: a file whose inode hasn't changed since (ctime, which touching a file can't set
-// back) is still what HEAD holds, since the tree was clean then, and isn't read at all.
-export async function workingDiff(path: string, start: string, opts: { since?: number } = {}): Promise<DiffResult> {
+export async function workingDiff(path: string, start: string): Promise<DiffResult> {
   const flags = await diffFlags(path);
-  const snap = await withWorktreeTree(path, opts.since, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
+  const snap = await withWorktreeTree(path, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
   const changes = parseCapped(snap.value);
   const files = [...changes.files];
-  // A file Atrium couldn't read or hash in full is listed as changed with a note, never left to look unchanged.
+  // A file Atrium couldn't read, or that's too large and a different size, is listed as changed with a note.
   for (const u of snap.unknown) {
-    const shown = files.find((f) => f.path === u.path);
-    if (shown) Object.assign(shown, { truncated: true, note: u.note, hunks: [] });
-    else if (!isEnvPath(u.path)) files.push({ path: u.path, status: "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: u.note });
+    if (isEnvPath(u.path)) continue;
+    files.push({ path: u.path, status: u.added ? "added" : "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: u.note });
   }
   const list = await git(path, ["-c", "core.quotePath=false", ...STAGE_FLAGS, "ls-files", "-z", "--others", "--exclude-standard"]);
   if (list.code !== 0) throw new Error(`Couldn't list new files: ${list.err.trim()}`);
@@ -601,15 +598,14 @@ export async function workingDiff(path: string, start: string, opts: { since?: n
     budget -= file.hunks[0]?.lines.reduce((k, l) => k + l.text.length + 1, 0) ?? 0;
     files.push(file);
   }
-  return { files, totals: totalsOf(files), truncated };
+  const unchecked = snap.unchecked.filter((u) => !isEnvPath(u.path));
+  return { files, totals: totalsOf(files), truncated, ...(unchecked.length ? { unchecked } : {}) };
 }
 
-// A file bigger than this is never read: it's listed as changed, without its lines, unless it's plainly untouched.
+// A file bigger than this is never read, and no more than HASH_TOTAL is read in all for one look at the changes. A
+// file left unread is never taken as unchanged: see withWorktreeTree.
 const HASH_CAP = 10 * 1024 * 1024;
-// And no more than this is read in all for one look at the changes; files past it are listed as changed.
 const HASH_TOTAL = 50 * 1024 * 1024;
-// Blob ids of files Atrium already hashed, by absolute path, keyed on what fstat says about them.
-const blobCache = new Map<string, { stat: string; id: string }>();
 
 type Opened = { kind: "fd"; fd: number } | { kind: "link"; target: string } | { kind: "gone" } | { kind: "unreadable" };
 
@@ -650,23 +646,14 @@ function readFd(fd: number, length: number, onChunk: (b: Buffer) => void): void 
 }
 
 type Hashed =
-  | { kind: "file"; id: string; mode: string; bytes: Buffer | null }
-  | { kind: "same" }
-  | { kind: "large" }
-  | { kind: "budget" }
+  | { kind: "file"; id: string; mode: string; bytes: Buffer }
+  | { kind: "unread"; size: number }
   | { kind: "gone" }
   | { kind: "unreadable" };
 
-// A file's blob id as git would store it with no filters. Only fstat is consulted before deciding to read: a file
-// `untouched` says is unchanged isn't read, nor is one over the cap or past what's left of `budget`. Its bytes come
-// back only when they were read just now.
-function hashRepoFile(
-  root: string,
-  rel: string,
-  format: "sha1" | "sha256",
-  budget: { left: number },
-  untouched: (st: { ctimeMs: number; size: number }, mode: string) => boolean,
-): Hashed {
+// A file's blob id as git would store it with no filters, worked out from the bytes on disk every time, whatever the
+// index's flags or the file's times say. One over the cap, or past what's left of `budget`, isn't read.
+function hashRepoFile(root: string, rel: string, format: "sha1" | "sha256", budget: { left: number }): Hashed {
   const opened = openRepoFile(root, rel);
   if (opened.kind === "link") {
     const bytes = Buffer.from(opened.target);
@@ -678,23 +665,15 @@ function hashRepoFile(
     const st = fstatSync(fd);
     // A folder or FIFO where a file was is, as far as the file goes, gone.
     if (!st.isFile()) return { kind: "gone" };
-    const mode = (st.mode & 0o111) !== 0 ? "100755" : "100644";
-    if (untouched(st, mode)) return { kind: "same" };
-    const abs = join(root, rel);
-    const stat = `${format}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
-    const cached = blobCache.get(abs);
-    if (cached?.stat === stat) return { kind: "file", id: cached.id, mode, bytes: null };
-    if (st.size > HASH_CAP) return { kind: "large" };
-    if (st.size > budget.left) return { kind: "budget" };
+    if (st.size > HASH_CAP || st.size > budget.left) return { kind: "unread", size: st.size };
     budget.left -= st.size;
     const chunks: Buffer[] = [];
     readFd(fd, st.size, (b) => chunks.push(Buffer.from(b)));
     const bytes = Buffer.concat(chunks);
     // It changed size while being read; whatever it is now, it isn't what was hashed.
     if (bytes.length !== st.size) return { kind: "unreadable" };
-    const id = createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
-    blobCache.set(abs, { stat, id });
-    return { kind: "file", id, mode, bytes };
+    const mode = (st.mode & 0o111) !== 0 ? "100755" : "100644";
+    return { kind: "file", id: createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex"), mode, bytes };
   } catch {
     return { kind: "unreadable" };
   } finally {
@@ -702,17 +681,22 @@ function hashRepoFile(
   }
 }
 
-type Snapshot<T> = { value: T; paths: Set<string>; unknown: { path: string; note: string }[] };
+type Snapshot<T> = {
+  value: T;
+  paths: Set<string>;
+  unknown: { path: string; note: string; added: boolean }[];
+  unchecked: { path: string; note: string }[];
+};
 
 const TOO_LARGE = "Too large to show. Open the file in your editor to see what changed.";
 const UNREADABLE = "Atrium couldn't read this file, so it may have changed.";
-const PAST_BUDGET = "Atrium stopped reading after 50 MB of changed files, so this one may have changed.";
+const TOO_LARGE_TO_CHECK = "Too large to check";
 
 // The working tree as a git tree, built without git ever reading it: Atrium reads each file git knows (on HEAD or
 // staged) itself, hashes it as is, and writes only the changed ones as blobs, into a temporary object folder (the
 // repo's own objects are an alternate, so nothing is added to the repo) and a temporary index. `use` gets the tree
 // and the environment that can see it.
-async function withWorktreeTree<T>(path: string, since: number | undefined, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
+async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
   const format = (await git(path, ["rev-parse", "--show-object-format"])).out.trim() === "sha256" ? "sha256" : "sha1";
   const objects = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]);
   if (objects.code !== 0) throw new Error(`Couldn't read git dir: ${objects.err.trim()}`);
@@ -735,14 +719,19 @@ async function withWorktreeTree<T>(path: string, since: number | undefined, use:
 
   const updates: { mode: string; id: string | null; path: string; bytes: Buffer | null }[] = [];
   const unknown: Snapshot<T>["unknown"] = [];
+  const unchecked: Snapshot<T>["unchecked"] = [];
   const budget = { left: HASH_TOTAL };
   for (const [rel, entry] of known) {
-    const untouched = (st: { ctimeMs: number; size: number }, mode: string) =>
-      since !== undefined && entry !== null && st.ctimeMs < since && st.size === entry.size && mode === entry.mode;
-    const f = hashRepoFile(path, rel, format, budget, untouched);
-    if (f.kind === "same") continue;
-    if (f.kind === "unreadable" || f.kind === "large" || f.kind === "budget") {
-      unknown.push({ path: rel, note: f.kind === "large" ? TOO_LARGE : f.kind === "budget" ? PAST_BUDGET : UNREADABLE });
+    const f = hashRepoFile(path, rel, format, budget);
+    if (f.kind === "unreadable") {
+      unknown.push({ path: rel, note: UNREADABLE, added: entry === null });
+      continue;
+    }
+    // Unread: a different size from HEAD's is certainly a change; the same size can't be told apart, so it's listed
+    // on its own as not checked.
+    if (f.kind === "unread") {
+      if (entry && entry.size === f.size) unchecked.push({ path: rel, note: TOO_LARGE_TO_CHECK });
+      else unknown.push({ path: rel, note: TOO_LARGE, added: entry === null });
       continue;
     }
     if (f.kind === "gone") {
@@ -753,7 +742,7 @@ async function withWorktreeTree<T>(path: string, since: number | undefined, use:
     updates.push({ mode: f.mode, id: f.id, path: rel, bytes: f.bytes });
   }
   const paths = new Set(known.keys());
-  if (updates.length === 0) return { value: await use("HEAD^{tree}", {}), paths, unknown };
+  if (updates.length === 0) return { value: await use("HEAD^{tree}", {}), paths, unknown, unchecked };
 
   const dir = mkdtempSync(join(tmpdir(), "atrium-diff-"));
   try {
@@ -766,22 +755,8 @@ async function withWorktreeTree<T>(path: string, since: number | undefined, use:
         lines.push(`0 ${zeros}\t${u.path}`);
         continue;
       }
-      // A hash from the cache has no bytes in hand. Read again, the file must still be what was hashed.
-      let bytes = u.bytes;
-      if (!bytes) {
-        const opened = openRepoFile(path, u.path);
-        const chunks: Buffer[] = [];
-        if (opened.kind === "fd") {
-          try {
-            readFd(opened.fd, HASH_CAP, (b) => chunks.push(Buffer.from(b)));
-          } finally {
-            closeSync(opened.fd);
-          }
-        } else if (opened.kind === "link") chunks.push(Buffer.from(opened.target));
-        bytes = Buffer.concat(chunks);
-      }
       // --no-filters: stored exactly as read, and from stdin, so git never opens the file itself.
-      const w = await git(path, ["hash-object", "-w", "--no-filters", "--stdin"], undefined, { env, stdin: bytes });
+      const w = await git(path, ["hash-object", "-w", "--no-filters", "--stdin"], undefined, { env, stdin: u.bytes! });
       if (w.code !== 0) throw new Error(`Couldn't read the changed files: ${w.err.trim()}`);
       lines.push(`${u.mode} ${w.out.trim()}\t${u.path}`);
     }
@@ -791,7 +766,7 @@ async function withWorktreeTree<T>(path: string, since: number | undefined, use:
     if (info.code !== 0) throw new Error(`Couldn't list the changed files: ${info.err.trim()}`);
     const tree = await git(path, ["write-tree"], undefined, { env });
     if (tree.code !== 0) throw new Error(`Couldn't read the changed files: ${tree.err.trim()}`);
-    return { value: await use(tree.out.trim(), env), paths, unknown };
+    return { value: await use(tree.out.trim(), env), paths, unknown, unchecked };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

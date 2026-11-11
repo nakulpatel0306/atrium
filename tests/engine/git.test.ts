@@ -692,34 +692,51 @@ describe("changes", () => {
     ]);
   });
 
-  test("a file over the cap is never read: listed as changed unless untouched since the run started", async () => {
+  test("a file over the cap is never read: a new size is a change, the same size is listed as not checked", async () => {
     const path = workRepo();
     const big = Buffer.alloc(11 * 1024 * 1024, "a");
     writeFileSync(join(path, "big.txt"), big);
     git(path, "add", "big.txt");
     git(path, "commit", "-q", "-m", "big");
-    const listed = [{ path: "big.txt", status: "modified" as const, additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: "Too large to show. Open the file in your editor to see what changed." }];
-    await Bun.sleep(20);
-    const since = Date.now();
-    // Untouched since the run began: not read, and not listed.
-    expect((await workingDiff(path, "HEAD", { since })).files).toEqual([]);
-    // Without knowing when the run began, Atrium can't tell, so it says it may have changed.
-    expect((await workingDiff(path, "HEAD")).files).toEqual(listed);
-    // Changed since: listed without its lines, which are never read.
+    const unchecked = [{ path: "big.txt", note: "Too large to check" }];
+    let d = await workingDiff(path, "HEAD");
+    expect(d.files).toEqual([]);
+    expect(d.unchecked).toEqual(unchecked);
+    // Same size, different bytes: Atrium can't tell, and says so rather than calling it unchanged.
     big[0] = 98;
     writeFileSync(join(path, "big.txt"), big);
-    expect((await workingDiff(path, "HEAD", { since })).files).toEqual(listed);
+    expect((await workingDiff(path, "HEAD")).unchecked).toEqual(unchecked);
+    appendFileSync(join(path, "big.txt"), "more\n");
+    d = await workingDiff(path, "HEAD");
+    expect(d.unchecked).toBeUndefined();
+    expect(d.files).toEqual([
+      { path: "big.txt", status: "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: "Too large to show. Open the file in your editor to see what changed." },
+    ]);
   });
 
-  test("past 50 MB read in one look, the rest are listed as maybe changed", async () => {
+  test("past 50 MB read in one look, the rest are still listed", async () => {
     const path = workRepo();
     // Binary (a NUL up front), so the listing stays small and only the reading is under test.
     for (let i = 0; i < 6; i++) writeFileSync(join(path, `part${i}.bin`), Buffer.alloc(9 * 1024 * 1024, i + 1).fill(0, 0, 1));
     git(path, "add", "-A");
     const d = await workingDiff(path, "main");
-    const noted = d.files.filter((f) => f.note === "Atrium stopped reading after 50 MB of changed files, so this one may have changed.");
-    expect(noted).toHaveLength(1);
-    expect(d.files.filter((f) => f.path.startsWith("part"))).toHaveLength(6);
+    const parts = d.files.filter((f) => f.path.startsWith("part"));
+    expect(parts).toHaveLength(6);
+    expect(parts.every((f) => f.status === "added")).toBe(true);
+    expect(parts.filter((f) => f.note === "Too large to show. Open the file in your editor to see what changed.")).toHaveLength(1);
+  });
+
+  test("assume-unchanged and skip-worktree flags don't hide a change", async () => {
+    const path = workRepo();
+    git(path, "update-index", "--assume-unchanged", "app.ts");
+    git(path, "update-index", "--skip-worktree", "old.txt");
+    writeFileSync(join(path, "app.ts"), "const a = 1;\nconst b = 9;\n");
+    writeFileSync(join(path, "old.txt"), "changed\n");
+    const d = await workingDiff(path, "main");
+    expect(d.files.map((f) => [f.path, f.status])).toEqual([
+      ["app.ts", "modified"],
+      ["old.txt", "modified"],
+    ]);
   });
 
   test("a file Atrium can't read is listed as maybe changed, never as unchanged", async () => {

@@ -13,7 +13,13 @@ export type DiffFile = {
   // Why the lines aren't shown, when Atrium couldn't read the file or it's too large; the file still counts as changed.
   note?: string;
 };
-export type DiffResult = { files: DiffFile[]; totals: { files: number; additions: number; deletions: number }; truncated: boolean };
+export type DiffResult = {
+  files: DiffFile[];
+  totals: { files: number; additions: number; deletions: number };
+  truncated: boolean;
+  // Files too large to read whose size matches what's committed, so Atrium can't tell whether they changed.
+  unchecked?: { path: string; note: string }[];
+};
 
 export const MAX_FILE_LINES = 2000;
 
