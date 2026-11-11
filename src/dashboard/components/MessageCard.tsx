@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import type { Candidate } from "../../engine/messaging/store";
 import { displayHandle, handleProblem, MAX_TEXT, textLength, textProblem } from "../../engine/messaging/rules";
 import { post, type State } from "../api";
-import { announce } from "../live";
-import { sendWithUndo } from "../pending-send";
+import { cancelSend, clearSendError, pendingSendOf, startSend, usePendingSend, useSendError } from "../pending-send";
 
 type Approval = State["approvals"][number];
 type Action = State["messageActions"][number];
@@ -31,26 +30,32 @@ export function onNumberKey(e: { key: string; preventDefault: () => void }, look
 // and nothing else can send it.
 // Folded, as in a list, it's one line until Review opens it; a failed try opens on its own so the reason shows.
 export function MessageCard({ approval, action, spaceName = "Messages", firstSend = false, folded = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean; folded?: boolean }) {
-  const [open, setOpen] = useState(!folded || !!action.lastError);
-  const [text, setText] = useState(action.text);
-  const [handle, setHandle] = useState(action.handle ? displayHandle(action.handle) : "");
-  const [service, setService] = useState(action.service);
+  // A card that remounts mid-send starts from what's being sent, not the draft.
+  const [held] = useState(() => pendingSendOf(action.id));
+  const pending = usePendingSend(action.id);
+  const locked = pending !== null;
+  const sendError = useSendError(action.id);
+  const [open, setOpen] = useState(!folded || !!action.lastError || !!held);
+  const [text, setText] = useState(held?.body.text ?? action.text);
+  const [handle, setHandle] = useState(held?.body.handle ?? (action.handle ? displayHandle(action.handle) : ""));
+  const [service, setService] = useState((held?.body.service as Action["service"] | undefined) ?? action.service);
   const [candidates, setCandidates] = useState<Candidate[]>(action.candidates ?? []);
   const [found, setFound] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"send" | "decline" | "lookup" | null>(null);
+  const [busy, setBusy] = useState<"decline" | "lookup" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Until Nakul types in the number field, a lookup the engine finishes later (or one from another app) fills it in.
   const [touched, setTouched] = useState(false);
+  // Never while a send waits: the number on screen is the number being sent.
   useEffect(() => {
-    if (touched) return;
+    if (touched || locked) return;
     if (action.handle) setHandle(displayHandle(action.handle));
     if (action.candidates) setCandidates(action.candidates);
-  }, [action.handle, action.candidates, touched]);
+  }, [action.handle, action.candidates, touched, locked]);
 
   const textIssue = textProblem(text);
   const handleIssue = handle.trim() ? handleProblem(handle) : null;
-  const canSend = !busy && !textIssue && handle.trim() !== "" && !handleIssue;
+  const canSend = !busy && !locked && !textIssue && handle.trim() !== "" && !handleIssue;
   const shown = handle.trim() && !handleIssue ? handle.trim() : null;
   const stored = action.handle && shown === displayHandle(action.handle);
   // A number from Contacts names the card it came from, so a match on the wrong person shows.
@@ -58,24 +63,11 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
   const fromContacts = match ? `from Contacts · ${[match.name, match.label].filter(Boolean).join(", ")}` : SOURCE.contacts;
   const source = match || (stored && action.handleSource === "contacts") ? fromContacts : stored ? SOURCE[action.handleSource ?? ""] : shown ? SOURCE.you : null;
 
+  // The words and number are fixed at the press; the card is read-only until the send goes or is undone.
   const send = () => {
     if (!canSend) return;
-    setBusy("send");
     setError(null);
-    // The words and number are fixed at the press; the card is read-only until the send goes or is undone.
-    const body = { text, handle, service };
-    sendWithUndo(
-      action.toName,
-      async () => {
-        const res = await post(`/api/message-actions/${action.id}/send`, body);
-        // On success the card leaves with the next state push; the space's history shows the send.
-        if (res.ok) return announce(`Sent to ${action.toName}.`);
-        setError(res.error);
-        setBusy(null);
-        announce(`Didn't send to ${action.toName}. ${res.error}`);
-      },
-      () => setBusy(null),
-    );
+    startSend(action.id, action.toName, { text, handle, service });
   };
   const decline = async () => {
     setBusy("decline");
@@ -126,7 +118,7 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
               Hide
             </button>
           )}
-          <button className="btn" disabled={busy !== null} onClick={() => void decline()}>
+          <button className="btn" disabled={busy !== null || locked} onClick={() => void decline()}>
             Don't send
           </button>
         </div>
@@ -158,15 +150,16 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
             autoComplete="off"
             placeholder="Phone number or email"
             aria-label="Phone number or email"
-            readOnly={busy === "send"}
-            onKeyDown={(e) => onNumberKey(e, () => busy === null && void lookup())}
+            readOnly={locked}
+            onKeyDown={(e) => onNumberKey(e, () => busy === null && !locked && void lookup())}
             onChange={(e) => {
               setHandle(e.target.value);
               setTouched(true);
               setError(null);
+              clearSendError(action.id);
             }}
           />
-          <button className="btn" type="button" disabled={busy !== null} onClick={() => void lookup()}>
+          <button className="btn" type="button" disabled={busy !== null || locked} onClick={() => void lookup()}>
             <Search />
             {busy === "lookup" ? "Looking…" : `Look up "${action.toName}" in Contacts`}
           </button>
@@ -185,6 +178,7 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
                   type="radio"
                   name={`to-${action.id}`}
                   checked={shown === displayHandle(c.handle)}
+                  disabled={locked}
                   onChange={() => {
                     setHandle(displayHandle(c.handle));
                     setTouched(true);
@@ -207,21 +201,32 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
           <textarea
             className="mk-input"
             value={text}
-            readOnly={busy === "send"}
+            readOnly={locked}
             rows={Math.min(8, Math.max(3, text.split("\n").length + 1))}
             onChange={(e) => setText(e.target.value)}
           />
           {textIssue && <span className="err">{textIssue}</span>}
         </label>
         <div className="msg-foot">
-          <button className="btn p" disabled={!canSend} onClick={send}>
-            {busy === "send" ? "Sending…" : "Send"}
-          </button>
+          {pending ? (
+            <>
+              <span className="sending">Sending…</span>
+              {!pending.sending && (
+                <button className="btn" onClick={() => cancelSend(action.id)}>
+                  Undo
+                </button>
+              )}
+            </>
+          ) : (
+            <button className="btn p" disabled={!canSend} onClick={send}>
+              Send
+            </button>
+          )}
           <span className="via">
             <span className="lbl">Via</span>
             <span className="seg" role="group" aria-label="Send as">
               {(["iMessage", "SMS"] as const).map((v) => (
-                <button key={v} type="button" aria-pressed={service === v} onClick={() => setService(v)}>
+                <button key={v} type="button" aria-pressed={service === v} disabled={locked} onClick={() => setService(v)}>
                   {v}
                 </button>
               ))}
@@ -231,8 +236,8 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
         </div>
         {firstSend && <p className="hint">The first send asks macOS whether Atrium may control Messages. Click OK, and it sends.</p>}
       </div>
-      {error && <div className="row-err err">{error}</div>}
-      {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
+      {(error ?? sendError) && <div className="row-err err">{error ?? sendError}</div>}
+      {needsPane(error ?? sendError) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
     </div>
   );
 }

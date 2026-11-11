@@ -13,15 +13,13 @@ const notify = () => {
   for (const fn of [...listeners]) fn();
 };
 
-export function showToast(text: string, undo?: Toast["undo"], ms = TOAST_MS): void {
+export function showToast(text: string, undo?: Toast["undo"]): void {
   if (timer) clearTimeout(timer);
   current = { id: next++, text, undo };
   const id = current.id;
-  timer = setTimeout(() => current?.id === id && dismissToast(), ms);
+  timer = setTimeout(() => current?.id === id && dismissToast(), TOAST_MS);
   notify();
 }
-
-export const currentToast = (): Toast | null => current;
 
 export function dismissToast(): void {
   if (timer) clearTimeout(timer);
@@ -36,7 +34,7 @@ export function useToast(): Toast | null {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
-    currentToast,
-    currentToast,
+    () => current,
+    () => current,
   );
 }

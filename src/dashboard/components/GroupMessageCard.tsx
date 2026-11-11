@@ -4,8 +4,7 @@ import { askLine, groupTitle, MAX_TEXT, peopleLine, separatePlan, textLength, te
 import type { GroupChat } from "../../engine/messaging/store";
 import { post, type State } from "../api";
 import { FoldedText } from "./MessageCard";
-import { announce } from "../live";
-import { sendWithUndo } from "../pending-send";
+import { cancelSend, pendingSendOf, startSend, usePendingSend, useSendError } from "../pending-send";
 
 type Approval = State["approvals"][number];
 type Action = State["messageActions"][number];
@@ -17,13 +16,17 @@ export const chatMembers = (c: GroupChat) => c.participants.map((p) => p.name ??
 // A group text waiting to go. It sends only to an existing chat that Nakul's own Find picked, exactly the words shown,
 // and only on his Send. With no chat, it can become one text per person, each still waiting for its own Send.
 export function GroupMessageCard({ approval, action, spaceName = "Messages", firstSend = false, folded = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean; folded?: boolean }) {
-  const [open, setOpen] = useState(!folded || !!action.lastError);
+  const [held] = useState(() => pendingSendOf(action.id));
+  const pending = usePendingSend(action.id);
+  const locked = pending !== null;
+  const sendError = useSendError(action.id);
+  const [open, setOpen] = useState(!folded || !!action.lastError || !!held);
   const group = action.group!;
-  const [text, setText] = useState(action.text);
+  const [text, setText] = useState(held?.body.text ?? action.text);
   const [chats, setChats] = useState<GroupChat[]>([]);
   const [found, setFound] = useState<string | null>(null);
   const [findError, setFindError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"send" | "decline" | "find" | "pick" | "apart" | null>(null);
+  const [busy, setBusy] = useState<"decline" | "find" | "pick" | "apart" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const chat = group.chat;
@@ -31,7 +34,7 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
   const apartPlan = separatePlan(group);
   const canApart = apartPlan.people.length > 0;
   const textIssue = textProblem(text);
-  const canSend = !busy && !textIssue && !!chat;
+  const canSend = !busy && !locked && !textIssue && !!chat;
 
   const act = async (kind: NonNullable<typeof busy>, path: string, body: unknown, onError = setError) => {
     setBusy(kind);
@@ -44,20 +47,8 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
   };
   const send = () => {
     if (!canSend || !chat) return;
-    setBusy("send");
     setError(null);
-    const body = { text, chatId: chat.id };
-    sendWithUndo(
-      title,
-      async () => {
-        const res = await post(`/api/message-actions/${action.id}/send`, body);
-        if (res.ok) return announce(`Sent to ${title}.`);
-        setError(res.error);
-        setBusy(null);
-        announce(`Didn't send to ${title}. ${res.error}`);
-      },
-      () => setBusy(null),
-    );
+    startSend(action.id, title, { text, chatId: chat.id });
   };
   const decline = () => void act("decline", `/api/approvals/${approval.id}`, { decision: "reject" });
   const apart = () => !textIssue && void act("apart", `/api/message-actions/${action.id}/separately`, { text });
@@ -100,7 +91,7 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
               Hide
             </button>
           )}
-          <button className="btn" disabled={busy !== null} onClick={decline}>
+          <button className="btn" disabled={busy !== null || locked} onClick={decline}>
             Don't send
           </button>
         </div>
@@ -151,12 +142,12 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           )}
         </div>
         <div className="msg-handle">
-          <button className="btn" type="button" disabled={busy !== null} onClick={() => void find()}>
+          <button className="btn" type="button" disabled={busy !== null || locked} onClick={() => void find()}>
             <Search />
             {busy === "find" ? "Looking…" : chat ? "Find a different group chat" : "Find group chat"}
           </button>
           {canApart && (
-            <button className="btn" type="button" disabled={busy !== null || !!textIssue} onClick={apart}>
+            <button className="btn" type="button" disabled={busy !== null || locked || !!textIssue} onClick={apart}>
               <Split />
               {busy === "apart" ? "Splitting…" : "Send separately"}
             </button>
@@ -177,7 +168,7 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
             <legend>Which group chat?</legend>
             {chats.map((c) => (
               <label key={c.id} className="inline chat-pick">
-                <input type="radio" name={`chat-${action.id}`} checked={chat?.id === c.id} disabled={busy !== null} onChange={() => pick(c.id)} />
+                <input type="radio" name={`chat-${action.id}`} checked={chat?.id === c.id} disabled={busy !== null || locked} onChange={() => pick(c.id)} />
                 <span>
                   <span className="chat-name">{c.name ?? "Unnamed group"}</span>
                   <span className="chat-members">{chatMembers(c)}</span>
@@ -198,16 +189,27 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           <textarea
             className="mk-input"
             value={text}
-            readOnly={busy === "send"}
+            readOnly={locked}
             rows={Math.min(8, Math.max(3, text.split("\n").length + 1))}
             onChange={(e) => setText(e.target.value)}
           />
           {textIssue && <span className="err">{textIssue}</span>}
         </label>
         <div className="msg-foot">
-          <button className="btn p" disabled={!canSend} onClick={send}>
-            {busy === "send" ? "Sending…" : "Send"}
-          </button>
+          {pending ? (
+            <>
+              <span className="sending">Sending…</span>
+              {!pending.sending && (
+                <button className="btn" onClick={() => cancelSend(action.id)}>
+                  Undo
+                </button>
+              )}
+            </>
+          ) : (
+            <button className="btn p" disabled={!canSend} onClick={send}>
+              Send
+            </button>
+          )}
           <span className="via">
             <span className="lbl">Via</span>
             <span>{action.service}</span>
@@ -216,8 +218,8 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
         </div>
         {firstSend && <p className="hint">The first send asks macOS whether Atrium may control Messages. Click OK, and it sends.</p>}
       </div>
-      {error && <div className="row-err err">{error}</div>}
-      {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
+      {(error ?? sendError) && <div className="row-err err">{error ?? sendError}</div>}
+      {needsPane(error ?? sendError) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
     </div>
   );
 }
