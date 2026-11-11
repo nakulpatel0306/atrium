@@ -52,7 +52,7 @@ export function NeedsPage({ state }: { state: State }) {
     <div className="wrap">
       <div className="page-head">
         <h1>Needs you{count > 0 && ` · ${count}`}</h1>
-        <p className="keys-hint" title="j and k move, Enter opens, a approves a review, s sends it back, Esc closes">
+        <p className="keys-hint" title="j and k move, Enter opens, a approves a review, s opens the send-back note, Esc closes">
           Keys: <kbd>j</kbd> <kbd>k</kbd> <kbd>a</kbd> <kbd>s</kbd>
         </p>
       </div>
