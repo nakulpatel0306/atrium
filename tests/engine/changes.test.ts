@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { taskChanges } from "../../src/engine/changes";
 import { openDb } from "../../src/engine/db";
+import { bus } from "../../src/engine/events";
 import * as gitOps from "../../src/engine/git";
 import { createSpace } from "../../src/engine/spaces";
 import { createTask, setTaskStatus } from "../../src/engine/tasks";
@@ -57,4 +58,32 @@ test("a filter the agent plants after the settings check never runs while its ch
   // Reading again, with the filter already in place, runs nothing either.
   await taskChanges(db, task.id);
   expect(existsSync(marker)).toBe(false);
+});
+
+test("reads don't pile up: callers asking at once share one read, and a change event starts a fresh one", async () => {
+  const r = tempRepo();
+  cleanups.push(r.cleanup);
+  const space = createSpace(db, { name: "App", kind: "repo", goal: "g", repoPath: r.path });
+  const task = createTask(db, { spaceId: space.id, title: "Edit" });
+  git(r.path, "checkout", "-q", "-b", `atrium/${task.id}`);
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint) VALUES ('run_1', ?, 'claude', 1, '/tmp/none', 'main', ?)").run(
+    task.id,
+    await gitOps.gitSettingsFingerprint(r.path),
+  );
+  setTaskStatus(db, task.id, "running", { branch: `atrium/${task.id}` });
+  writeFileSync(join(r.path, "README.md"), "# fixture\nedited\n");
+  const reads = spyOn(gitOps, "workingDiff");
+  cleanups.push(() => reads.mockRestore());
+  const [a, b, c] = await Promise.all([taskChanges(db, task.id), taskChanges(db, task.id), taskChanges(db, task.id)]);
+  expect(reads).toHaveBeenCalledTimes(1);
+  expect(a).toBe(b);
+  expect(b).toBe(c);
+  // Asked again straight away about the same state: the answer is reused.
+  await taskChanges(db, task.id);
+  expect(reads).toHaveBeenCalledTimes(1);
+  writeFileSync(join(r.path, "README.md"), "# fixture\nedited again\n");
+  bus.emit({ type: "diff-changed", taskId: task.id });
+  const after = await taskChanges(db, task.id);
+  expect(reads).toHaveBeenCalledTimes(2);
+  expect(after.files[0]!.hunks[0]!.lines.some((l) => l.text === "edited again")).toBe(true);
 });

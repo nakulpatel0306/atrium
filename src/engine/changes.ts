@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { totalsOf, type DiffResult } from "./diff-parse";
+import { bus } from "./events";
 import { branchDiff, branchSha, gitSettingsFingerprint, headRef, workingDiff } from "./git";
 import { lastRepoRun } from "./runner";
 import { getSpace } from "./spaces";
@@ -17,9 +18,44 @@ export class ChangesRefused extends Error {
 
 const NONE: DiffResult = { files: [], totals: totalsOf([]), truncated: false };
 
+// A running task's read hashes up to 50 MB, so reads never pile up: one at a time per task, with callers asking
+// about the same state sharing it, and the answer kept briefly for the next caller. The state is the task row plus the count of
+// diff-changed events seen for it.
+const CACHE_MS = 1000;
+const edits = new Map<string, number>();
+const reading = new Map<string, { key: string; result: Promise<DiffResult> }>();
+const recent = new Map<string, { key: string; at: number; result: DiffResult }>();
+bus.on((e) => {
+  if (e.type === "diff-changed") edits.set(e.taskId, (edits.get(e.taskId) ?? 0) + 1);
+});
+
+export async function taskChanges(db: Database, taskId: string): Promise<DiffResult> {
+  const task = getTask(db, taskId);
+  const key = `${task?.status}:${task?.updatedAt}:${edits.get(taskId) ?? 0}`;
+  const kept = recent.get(taskId);
+  // Only a running task's read is costly enough to keep; a finished one is a quick diff of two commits.
+  if (task?.status === "running" && kept && kept.key === key && Date.now() - kept.at < CACHE_MS) return kept.result;
+  const current = reading.get(taskId);
+  if (current?.key === key) return current.result;
+  // A read of an older state finishes first; then this one starts, unless another caller already started it.
+  if (current) {
+    await current.result.catch(() => {});
+    return taskChanges(db, taskId);
+  }
+  const result = readChanges(db, taskId);
+  reading.set(taskId, { key, result });
+  try {
+    const value = await result;
+    recent.set(taskId, { key, at: Date.now(), result: value });
+    return value;
+  } finally {
+    if (reading.get(taskId)?.result === result) reading.delete(taskId);
+  }
+}
+
 // A repo task's changes for the Changes view. While it runs they're read from the working tree, since the agent
 // leaves its edits uncommitted until the run ends; once it's done they're the branch's commits.
-export async function taskChanges(db: Database, taskId: string): Promise<DiffResult> {
+async function readChanges(db: Database, taskId: string): Promise<DiffResult> {
   const task = getTask(db, taskId);
   const space = task ? getSpace(db, task.spaceId) : null;
   if (!task || space?.kind !== "repo" || !space.repoPath) throw new ChangesRefused(404, "Only tasks in a repo space have changes to show.");

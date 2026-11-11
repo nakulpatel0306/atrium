@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DiffFile, DiffResult } from "../../engine/diff-parse";
 import { type State, useDiffVersion } from "../api";
 import { middle } from "./WhatItMade";
@@ -131,21 +131,44 @@ export function ChangesView({ task, agent }: { task: Task; agent: string }) {
   const version = useDiffVersion(task.id);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // One read at a time: a change that arrives mid-read asks for exactly one more once it lands.
+  const reads = useRef({ busy: false, again: false, live: true });
+
   useEffect(() => {
-    let live = true;
-    fetch(`/api/tasks/${encodeURIComponent(task.id)}/diff`)
-      .then(async (res) => {
+    const r = reads.current;
+    r.live = true;
+    return () => {
+      r.live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const r = reads.current;
+    const read = async () => {
+      if (r.busy) {
+        r.again = true;
+        return;
+      }
+      r.busy = true;
+      try {
+        const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/diff`);
         const body = (await res.json().catch(() => null)) as (DiffResult & { error?: string }) | null;
-        if (!live) return;
+        if (!r.live) return;
         if (res.ok && body) {
           setDiff(body);
           setError(null);
         } else setError(body?.error ?? `Atrium couldn't read the changes (error ${res.status}). Try again in a moment.`);
-      })
-      .catch(() => live && setError("Can't reach the Atrium engine. Check that it's running, then try again."));
-    return () => {
-      live = false;
+      } catch {
+        if (r.live) setError("Can't reach the Atrium engine. Check that it's running, then try again.");
+      } finally {
+        r.busy = false;
+        if (r.again && r.live) {
+          r.again = false;
+          void read();
+        }
+      }
     };
+    void read();
   }, [task.id, task.status, task.updatedAt, version]);
 
   return (

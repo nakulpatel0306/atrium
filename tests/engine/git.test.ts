@@ -662,10 +662,10 @@ describe("changes", () => {
     writeFileSync(join(outside, "secret.txt"), "do not show\n");
     // A folder in the repo that's a link to somewhere else: nothing through it is read.
     symlinkSync(outside, join(path, "linked"));
-    expect(untrackedFile(path, "linked/secret.txt", 1024)).toBeNull();
+    expect(await untrackedFile(path, "linked/secret.txt", 1024)).toBeNull();
     // A file that's a link shows its target as text, as git would commit it.
     symlinkSync(join(outside, "secret.txt"), join(path, "file-link.txt"));
-    expect(untrackedFile(path, "file-link.txt", 1024)!.file.hunks[0]!.lines[0]!.text).toBe(join(outside, "secret.txt"));
+    expect((await untrackedFile(path, "file-link.txt", 1024))!.file.hunks[0]!.lines[0]!.text).toBe(join(outside, "secret.txt"));
     const d = await workingDiff(path, "main");
     expect(JSON.stringify(d)).not.toContain("do not show");
   });
@@ -674,7 +674,7 @@ describe("changes", () => {
     const path = workRepo();
     const made = Bun.spawnSync(["mkfifo", join(path, "pipe")]);
     expect(made.exitCode).toBe(0);
-    expect(untrackedFile(path, "pipe", 1024)).toBeNull();
+    expect(await untrackedFile(path, "pipe", 1024)).toBeNull();
     const d = await workingDiff(path, "main");
     expect(d.files.map((f) => f.path)).not.toContain("pipe");
   }, 5000);
