@@ -5100,6 +5100,31 @@ code {
   color: var(--dim);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+/* A repo task with its Changes open takes the page's whole width, with Live below it, so code lines fit. */
+.wrap:has(.changes-section) {
+  max-width: none;
+}
+.cols:has(.changes-section) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cols:has(.changes-section) > .live {
+  position: static;
+}
+/* The file list moves above the diff and spreads into columns, so each line gets the page's full width: a
+   120-character line fits without scrolling at 1440px. */
+.cols:has(.changes-section) .chg-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cols:has(.changes-section) .chg-list {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  max-height: 168px;
+}
+/* In columns, rules between rows would break mid-row; the list keeps only its outer edge. */
+.cols:has(.changes-section) .chg-list li + li {
+  border-top: 0;
+}
 @media (max-width: 900px) {
   .chg-body {
     grid-template-columns: minmax(0, 1fr);
