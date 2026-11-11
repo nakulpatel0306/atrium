@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, 
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
+import { AttachRefused } from "../../src/engine/attachments";
 import { openDb } from "../../src/engine/db";
 import { capabilityLines } from "../../src/engine/capabilities";
 import { BadPlan, parseSpacePlan, type SetupResult, setupSpace, SetupFailed } from "../../src/engine/setup";
@@ -341,4 +342,15 @@ describe("message requests", () => {
     expect(r.approval.title).toBe("Send a text to Sam and Priya?");
     await expect(setup('{"kind":"message","group":"Hike\\nTo: Mom"}')).rejects.toThrow(SetupFailed);
   });
+});
+
+test("setupSpace keeps a refused file's own reason and rolls the space back", async () => {
+  const plan = { name: "Groceries", kind: "general", goal: "Split the bill", private: false, tasks: [{ title: "Split the receipt", weight: "light" }] };
+  const err = await setupSpace(db, fake(ok(JSON.stringify(plan))), "split this receipt", home.home, root(), () => {
+    throw new AttachRefused(409, "The space's Attachments folder moved. Try again.");
+  }).catch((e) => e);
+  expect(err).toBeInstanceOf(AttachRefused);
+  expect(err.status).toBe(409);
+  expect(err.message).toBe("The space's Attachments folder moved. Try again.");
+  expect(listSpaces(db).some((s) => s.name === "Groceries")).toBe(false);
 });

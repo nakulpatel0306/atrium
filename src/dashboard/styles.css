@@ -44,8 +44,22 @@ button {
   color: inherit;
 }
 :focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Rows sit inside lists that clip their overflow, so their ring is drawn inside the edge. */
+.item:focus-visible,
+.needs-list > :focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .app {
   display: grid;
@@ -250,6 +264,8 @@ svg.lucide {
 
 /* main */
 main {
+  /* Layout follows the room main actually has, which the sidebar and the Mac app's window both change. */
+  container: main / inline-size;
   overflow-y: auto;
   position: relative;
   /* So a row scrolled into view (a focused task, an opened preview) stops above the command bar. */
@@ -1055,6 +1071,143 @@ h2 {
 .cmd .msg.err {
   color: var(--red);
 }
+/* Files attached in the bar: chips above the input, and the page-wide drop target. */
+:root.has-attachments {
+  --cmd-clear: 140px;
+}
+.cmd .attach {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+.cmd .attach:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.cmd .attach[aria-disabled="true"],
+.cmd .attach:disabled {
+  color: var(--faint);
+  opacity: 0.5;
+  cursor: default;
+}
+.cmd .attach[aria-disabled="true"]:hover {
+  background: none;
+}
+.cmd .attach svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+.att-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 0;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.att-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 32px;
+  padding: 0 2px 0 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--panel);
+}
+.att-thumb {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--bg);
+}
+.att-thumb.icon {
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+}
+.att-thumb.icon svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.att-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.att-size {
+  flex: none;
+  font-size: 11px;
+  color: var(--faint);
+}
+.att-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+.att-x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.att-x svg.lucide {
+  width: 13px;
+  height: 13px;
+}
+.drop-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  pointer-events: none;
+  animation: veil-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.drop-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 26px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 60%, var(--line-strong));
+  border-radius: 12px;
+  background: var(--raised);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+  color: var(--text);
+}
+.drop-card svg.lucide {
+  color: var(--accent);
+}
+@keyframes veil-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-veil {
+    animation: none;
+  }
+}
 .spinner {
   color: var(--accent);
   animation: spin 0.8s linear infinite;
@@ -1158,7 +1311,19 @@ h2 {
   position: sticky;
   top: 44px;
 }
-.item.task {
+.task-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 .item.task.done .t {
@@ -2753,6 +2918,37 @@ code {
 }
 .detail .md {
   font-size: 13px;
+}
+.att-list ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.att-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+  height: 40px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  cursor: pointer;
+  text-align: left;
+}
+.att-file:hover,
+.att-file[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  background: var(--hover);
+}
+.att-file .att-thumb {
+  width: 32px;
+  height: 32px;
+}
+.att-list .preview {
+  margin-top: 8px;
 }
 .detail .md pre {
   max-height: none;
@@ -4734,3 +4930,529 @@ code {
 .start-nav .primary { margin-left: auto; }
 .start-summary { margin: 0 0 12px; padding-left: 18px; }
 .money-account-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+
+/* A repo task's changes, its steer note and its pull request. */
+.work-tabs {
+  margin: 12px 0 8px;
+}
+.changes-section .err {
+  margin-bottom: 6px;
+}
+.chg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+.chg-head b {
+  font-weight: 600;
+}
+.chg-live {
+  color: var(--dim);
+  font-size: 12px;
+}
+.chg-live::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+}
+.chg-empty,
+.chg-note {
+  color: var(--dim);
+}
+.chg-note {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.chg-body {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.chg-list {
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.chg-list li + li {
+  border-top: 1px solid var(--line);
+}
+.chg-list button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.chg-list button:hover {
+  background: var(--hover);
+}
+.chg-list .chg-path {
+  flex: 1 1 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.chg-count {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.chg-add {
+  color: var(--green);
+}
+.chg-del {
+  color: var(--red);
+}
+.chg-diff {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chg-file {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+  scroll-margin-top: 8px;
+}
+.chg-file-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+}
+.chg-file-head[aria-expanded="false"] {
+  border-bottom: 0;
+}
+.chg-file-head svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--dim);
+}
+.chg-file-head .chg-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.chg-lines {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chg-lines td {
+  padding: 0 8px;
+  white-space: pre;
+  vertical-align: top;
+}
+.chg-no {
+  min-width: 36px;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+.chg-text {
+  width: 100%;
+}
+.chg-sign {
+  display: inline-block;
+  width: 14px;
+  color: var(--faint);
+  user-select: none;
+}
+.chg-add td {
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+.chg-del td {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.chg-hunk td {
+  padding: 3px 8px;
+  color: var(--dim);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+/* A repo task with its Changes open takes the page's whole width, with Live below it, so code lines fit. */
+.wrap:has(.changes-section) {
+  max-width: none;
+}
+.cols:has(.changes-section) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cols:has(.changes-section) > .live {
+  position: static;
+}
+/* The file list moves above the diff and spreads into columns, so each line gets the page's full width: a
+   120-character line fits without scrolling at 1440px. */
+.cols:has(.changes-section) .chg-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cols:has(.changes-section) .chg-list {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  max-height: 168px;
+}
+/* In columns, rules between rows would break mid-row; the list keeps only its outer edge. */
+.cols:has(.changes-section) .chg-list li + li {
+  border-top: 0;
+}
+@media (max-width: 900px) {
+  .chg-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chg-list {
+    position: static;
+    max-height: 200px;
+  }
+}
+
+.steer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.steer input {
+  flex: 1 1 240px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+.steer input:focus {
+  border-color: var(--accent);
+}
+.steer .err {
+  flex-basis: 100%;
+}
+.steer-wait {
+  margin: 10px 0 4px;
+  color: var(--dim);
+}
+
+.pr {
+  margin-top: 12px;
+}
+.pr-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.pr-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+}
+.pr-facts dt {
+  color: var(--dim);
+}
+.pr-facts dd {
+  overflow-wrap: anywhere;
+}
+.pr-confirm label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.pr-confirm input,
+.pr-confirm textarea {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  outline: none;
+  resize: vertical;
+}
+.pr-confirm input:focus,
+.pr-confirm textarea:focus {
+  border-color: var(--accent);
+}
+.pr-confirm .hint {
+  color: var(--dim);
+  font-size: 12px;
+}
+.pr-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.pr-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--dim);
+}
+.pr-done svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.pr-done > svg.lucide {
+  color: var(--accent);
+}
+.pr-done a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+.chg-unchecked {
+  margin-top: 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.chg-unchecked summary {
+  cursor: pointer;
+}
+.chg-unchecked ul {
+  list-style: none;
+  margin-top: 4px;
+  padding-left: 14px;
+}
+.chg-unchecked .mono {
+  color: var(--text);
+}
+.chg-note-inline {
+  color: var(--faint);
+/* a task in review, decided from its detail */
+.review-acts {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.review-acts .acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.review-acts .acts .faint {
+  margin-right: auto;
+  color: var(--dim);
+}
+.review-acts .note {
+  background: none;
+  padding: 0 10px 10px;
+}
+.review-acts .err {
+  padding: 0 10px 10px;
+}
+
+/* Needs you and Activity pages */
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.keys-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+  cursor: help;
+}
+.keys-hint kbd {
+  font: inherit;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.page-title {
+  margin-bottom: 16px;
+}
+
+/* A narrow window: the sidebar keeps its icons, with names in tooltips and for screen readers. */
+@media (max-width: 999px) {
+  .app {
+    grid-template-columns: 52px 1fr;
+  }
+  aside {
+    padding: 12px 6px;
+    overflow-x: hidden;
+  }
+  aside .label,
+  .sec > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .ws {
+    justify-content: center;
+    padding: 6px 0 14px;
+  }
+  .nav,
+  .foot .nav {
+    position: relative;
+    justify-content: center;
+    padding: 8px 0;
+    margin: 0;
+  }
+  .nav .sd {
+    width: 10px;
+    height: 10px;
+  }
+  .nav .ct {
+    position: absolute;
+    top: 1px;
+    right: 3px;
+    font-size: 10px;
+    line-height: 14px;
+  }
+  .nav .ct.hot {
+    padding: 0 4px;
+  }
+  .sec {
+    justify-content: center;
+    padding: 14px 0 4px;
+  }
+  .foot {
+    padding: 10px 0 2px;
+    align-items: center;
+  }
+  .foot .row,
+  .foot .hint,
+  .window-mini {
+    display: none;
+  }
+  .toggle {
+    justify-content: center;
+  }
+  .toggle svg.lucide {
+    display: none;
+  }
+  .toast {
+    left: calc(50% + 26px);
+    max-width: min(560px, calc(100vw - 92px));
+  }
+  .cmd {
+    left: calc(52px + (100vw - 52px) / 2);
+    width: min(680px, calc(100vw - 92px));
+  }
+}
+
+@container main (max-width: 960px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live {
+    position: static;
+  }
+  /* The answers drop under the title, so the title keeps the row's full width. */
+  .needs-list .item {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .needs-list .item .acts {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@container main (max-width: 560px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A setting that can't be changed yet, shown as plain text beside the fields. */
+.fixed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.fixed-field b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  padding: 4px 0;
+}
+
+/* Texts waiting out their Send window: top right, clear of the toast and the command bar. */
+.send-tray {
+  position: fixed;
+  top: 56px;
+  right: 20px;
+  z-index: 16;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(320px, calc(100vw - 92px));
+}
+.send-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+.send-row svg {
+  width: 14px;
+  height: 14px;
+  color: var(--green);
+}
+.send-row .t {
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.msg-foot .sending {
+  color: var(--green);
+  font-size: 12px;
+}

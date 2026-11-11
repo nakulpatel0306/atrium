@@ -28,3 +28,11 @@ test.skipIf(!canBuild)(
   },
   120_000,
 );
+
+test("the Mac file picker offers exactly what the ask bar attaches", async () => {
+  const { ALLOWED_EXT } = await import("../../src/engine/attachment-rules");
+  const source = await Bun.file(join(root, "mac/Sources/Core/Decide.swift")).text();
+  const list = source.match(/let pickerExtensions = \[([^\]]*)\]/)?.[1] ?? "";
+  const swiftList = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+  expect(swiftList).toEqual([...ALLOWED_EXT].sort());
+});

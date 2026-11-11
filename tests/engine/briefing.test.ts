@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { createApproval, resolveApproval } from "../../src/engine/approvals";
 import { briefing, markSeen } from "../../src/engine/briefing";
+import { logActivity } from "../../src/engine/events";
 import { createRegistry } from "../../src/engine/agents/registry";
 import { openDb } from "../../src/engine/db";
 import { setUserName } from "../../src/engine/profile";
@@ -36,24 +37,41 @@ test("no runs since last seen says nothing ran", () => {
   expect(briefing(db, Date.now()).summary).toBe("Nothing ran since you were last here.");
 });
 
-test("counts finished runs and spaces", () => {
+// What Activity shows as finished: the runner's "Finished:" and "Ready for review:" lines.
+function finish(spaceId: string, title: string, line = "Finished") {
+  const t = createTask(db, { spaceId, title });
+  logActivity(db, spaceId, "claude", `${line}: ${title}`, { taskId: t.id });
+  return t;
+}
+
+test("counts the tasks Activity shows finished, and the spaces they're in", () => {
   const now = Date.now();
   const a = createSpace(db, { name: "A", kind: "general", goal: "" });
   const b = createSpace(db, { name: "B", kind: "general", goal: "" });
-  seedRun(createTask(db, { spaceId: a.id, title: "one" }).id, now - 1000);
-  seedRun(createTask(db, { spaceId: b.id, title: "two" }).id, now - 500);
+  finish(a.id, "one");
+  finish(b.id, "two", "Ready for review");
   createApproval(db, { spaceId: a.id, kind: "question", title: "q", detail: "" });
-  expect(briefing(db, now).summary).toBe("2 tasks finished across 2 spaces.");
+  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 2 finished across 2 spaces.");
 });
 
-test("singular and plural wording, runs before lastSeen ignored", () => {
+test("one space reads without the space count; a task finishing twice counts once", () => {
   const now = Date.now();
   const a = createSpace(db, { name: "A", kind: "general", goal: "" });
-  const t = createTask(db, { spaceId: a.id, title: "one" });
-  seedRun(t.id, now - 5000);
-  seedRun(t.id, now - 1000);
-  markSeen(db, now - 2000);
-  expect(briefing(db, now).summary).toBe("1 task finished across 1 space.");
+  const t = finish(a.id, "one");
+  logActivity(db, a.id, "claude", "Finished: one", { taskId: t.id });
+  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 1 finished.");
+});
+
+test("after a visit, today's finished work is still named instead of a bare nothing", () => {
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  finish(a.id, "one");
+  finish(a.id, "two");
+  const later = Date.now() + 1000;
+  markSeen(db, later - 1);
+  const d = new Date(later);
+  // Right after midnight, earlier lines aren't today's, so the plain line is right.
+  const expected = d.getHours() === 0 && d.getMinutes() === 0 ? "Nothing ran since you were last here." : "Nothing new since you were last here. Today: 2 finished.";
+  expect(briefing(db, later).summary).toBe(expected);
 });
 
 // Live status (needs you, blocked, waiting for power) is composed in the UI so it never goes stale.
@@ -180,13 +198,13 @@ test("briefing counts rule approvals", () => {
   markSeen(db, now - 60_000);
   for (const title of ["one", "two", "three"]) {
     const t = createTask(db, { spaceId: a.id, title });
-    seedRun(t.id, now - 1000);
+    logActivity(db, a.id, "claude", `Ready for review: ${title}`, { taskId: t.id });
     setTaskStatus(db, t.id, "running");
     setTaskStatus(db, t.id, "review");
     const ap = createApproval(db, { spaceId: a.id, taskId: t.id, kind: "review", title, detail: "" });
     resolveApproval(db, ap.id, "approve", undefined, title === "three" ? undefined : { id: "rul_b", label: "docs" });
   }
-  expect(briefing(db, now).summary).toBe("3 tasks finished across 1 space. 2 results approved by your rules.");
+  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 3 finished. 2 results approved by your rules.");
 });
 
 test("one rule approval reads in the singular, and older ones are left out", () => {
@@ -279,11 +297,23 @@ test("the briefing says how many couldn't be done", () => {
   const a = createSpace(db, { name: "A", kind: "general", goal: "" });
   const one = createTask(db, { spaceId: a.id, title: "one" });
   const two = createTask(db, { spaceId: a.id, title: "two" });
-  seedRun(one.id, now - 1000);
-  seedRun(two.id, now - 500);
+  logActivity(db, a.id, "claude", "Couldn't do: one. No number.", { taskId: one.id });
+  logActivity(db, a.id, "claude", "Finished: two", { taskId: two.id });
   setTaskOutcome(db, one.id, "couldnt", "no number.");
   setTaskOutcome(db, two.id, "done", null);
-  expect(briefing(db, now).summary).toBe("2 tasks finished across 1 space. 1 couldn't be done; open it to see why.");
-  setTaskOutcome(db, two.id, "couldnt", "no file.");
-  expect(briefing(db, now).summary).toBe("2 tasks finished across 1 space. 2 couldn't be done; open them to see why.");
+  // A "couldn't" isn't finished work: it's named on its own.
+  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 1 finished. 1 couldn't be done; open it to see why.");
+  const three = createTask(db, { spaceId: a.id, title: "three" });
+  logActivity(db, a.id, "claude", "Couldn't do: three. No file.", { taskId: three.id });
+  setTaskOutcome(db, three.id, "couldnt", "no file.");
+  expect(briefing(db, now + 1).summary).toBe("Since you were last here: 1 finished. 2 couldn't be done; open them to see why.");
+});
+
+test("only couldn't-do results since the last visit don't read as nothing ran", () => {
+  const now = Date.now();
+  const a = createSpace(db, { name: "A", kind: "general", goal: "" });
+  const one = createTask(db, { spaceId: a.id, title: "one" });
+  logActivity(db, a.id, "claude", "Couldn't do: one. No number.", { taskId: one.id });
+  setTaskOutcome(db, one.id, "couldnt", "no number.");
+  expect(briefing(db, now + 1).summary).toBe("1 couldn't be done; open it to see why.");
 });

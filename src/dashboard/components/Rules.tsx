@@ -1,6 +1,7 @@
 import { ChevronRight, Lock } from "lucide-react";
 import { useState } from "react";
 import { plural } from "../../engine/text";
+import { activateOnKey } from "../activate";
 import { post, type RuleDetail, type State, useRule } from "../api";
 import { absolute, relative } from "../format";
 import { navigate } from "../route";
@@ -162,7 +163,7 @@ function RuleRow({ rule, space }: { rule: Rule; space: Space | undefined }) {
   const active = rule.state === "active";
   return (
     <div className="entry">
-      <div className="item rule" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <div className="item rule" role="button" tabIndex={0} aria-expanded={open} onClick={() => setOpen(!open)} onKeyDown={(e) => activateOnKey(e, () => setOpen(!open))}>
         <ChevronRight className={`chev${open ? " open" : ""}`} />
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
         <span className="who">{space?.name ?? "Archived space"}</span>

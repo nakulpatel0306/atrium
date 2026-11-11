@@ -108,7 +108,7 @@ try {
   server = startServer({
     db,
     runner,
-    setup: (text) => setupSpace(db, claudeAdapter(), text),
+    setup: (text, onCreate) => setupSpace(db, claudeAdapter(), text, undefined, undefined, onCreate),
     onViewers: (n) => void feed.setViewers(n),
     markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs, catchUp },
     repos,

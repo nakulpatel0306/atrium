@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { AGENT_IDS, agentName } from "../agents";
+import { activateOnKey } from "../activate";
 import { post, type State } from "../api";
 import { absolute, clock, duration, tokens } from "../format";
 import { navigate } from "../route";
@@ -114,7 +115,7 @@ function AgentRow({ id, info, state, open, onToggle }: { id: string; info: Info;
   const runs = state.runs.filter((r) => r.agent === id).slice(0, RECENT_RUNS);
   return (
     <div className="entry">
-      <div className="item agent" onClick={onToggle} aria-expanded={open}>
+      <div className="item agent" role="button" tabIndex={0} aria-expanded={open} onClick={onToggle} onKeyDown={(e) => activateOnKey(e, onToggle)}>
         <ChevronRight className={`chev${open ? " open" : ""}`} />
         <Avatar agent={id} live={state.runs.some((r) => r.agent === id && r.endedAt === null)} />
         <span className="name">{agentName(id)}</span>

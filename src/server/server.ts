@@ -3,15 +3,16 @@ import type { Server, ServerWebSocket } from "bun";
 import { existsSync, readFileSync } from "node:fs";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
-import type { StopOutcome } from "../engine/runner";
+import { STEER_NOTE_MAX, type SteerOutcome, type StopOutcome } from "../engine/runner";
 import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
 import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
 import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
 import { markSeen } from "../engine/briefing";
 import { config } from "../engine/config";
+import { ChangesRefused, taskChanges } from "../engine/changes";
 import { bus } from "../engine/events";
 import type { setupSpace } from "../engine/setup";
-import { SetupFailed } from "../engine/setup";
+import { type OnCreate, SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
 import { createSpace, getSpace, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
@@ -22,6 +23,9 @@ import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
 import { filesRoute } from "./files";
+import { attachedView, attachmentsRoute, isMultipart, MAX_BODY_BYTES, readUploads } from "./attachments";
+import { type Attachment, AttachRefused, attachToTask, checkAttachments, checkUploads, claimAttachments, storeAttachments, withAttachments } from "../engine/attachments";
+import { DEFAULT_PROMPT } from "../engine/attachment-rules";
 import { embedResponse } from "./embed";
 import { investingRoute } from "./investing";
 import { simpleRoute } from "./investing-simple";
@@ -30,6 +34,7 @@ import { startRoute } from "./start";
 import { marketsRoute, type MarketsDeps } from "./markets";
 import type { Repos } from "../engine/repos";
 import { BadDraft } from "../engine/repos/names";
+import { openPullRequest, PrFailed, prInfo } from "../engine/repos/pr";
 import { PushRefused } from "../engine/repos/push";
 import { reposRoute } from "./repos";
 import type { Messaging } from "../engine/messaging";
@@ -38,8 +43,15 @@ import { mergeRestoredMessages, messagesMergeWait } from "../engine/messaging/sp
 
 type Deps = {
   db: Database;
-  runner: { kick(): void; stopTask?(taskId: string): Promise<StopOutcome>; outputSeq?(runId: string): number | null; registry?: Registry };
-  setup: (text: string) => ReturnType<typeof setupSpace>;
+  runner: {
+    kick(): void;
+    stopTask?(taskId: string): Promise<StopOutcome>;
+    steerTask?(taskId: string, note: string): Promise<SteerOutcome>;
+    steerPending?(taskId: string): boolean;
+    outputSeq?(runId: string): number | null;
+    registry?: Registry;
+  };
+  setup: (text: string, onCreate?: OnCreate) => ReturnType<typeof setupSpace>;
   port?: number;
   // How many dashboard tabs are visible; the market feed only streams while someone is looking.
   onViewers?: (n: number) => void;
@@ -187,19 +199,22 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     if (hit("POST", /^\/api\/tasks$/)) {
       const b = await readBody(req);
       const spaceId = str(b.spaceId, "spaceId");
-      if (!getSpace(db, spaceId)) throw new HttpError(404, "No such space.");
+      const space = getSpace(db, spaceId);
+      if (!space) throw new HttpError(404, "No such space.");
       const weight = b.weight;
       if (weight !== undefined && weight !== "heavy" && weight !== "light") {
         throw new HttpError(400, "weight must be heavy or light.");
       }
-      const task = createTask(db, {
-        spaceId,
-        title: str(b.title, "title"),
-        detail: opt(b.detail, isString, "detail"),
-        weight,
-        allowOnBattery: opt(b.allowOnBattery, isBool, "allowOnBattery"),
-        agent: agentField(b.agent),
-      });
+      const title = str(b.title, "title");
+      const detail = opt(b.detail, isString, "detail");
+      const agent = agentField(b.agent);
+      const allowOnBattery = opt(b.allowOnBattery, isBool, "allowOnBattery");
+      const task = db.transaction(() => {
+        const files = checkAttachments(db, space, b.attachments);
+        const t = createTask(db, { spaceId, title, detail: withAttachments(detail ?? "", files), weight, allowOnBattery, agent });
+        claimAttachments(db, t.id, files);
+        return t;
+      })();
       runner.kick();
       return json(task);
     }
@@ -266,6 +281,49 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       if (outcome === "finished") throw new HttpError(409, "It finished before it could be stopped, so its result stands.");
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
+
+    // Stop and continue with Nakul's note: 200 once the task is back in the queue with it; 202 while the agent is still
+    // winding down (it requeues when it exits); 409 when there's no run to steer.
+    const steerM = hit("POST", /^\/api\/tasks\/([^/]+)\/steer$/);
+    if (steerM) {
+      const id = steerM[1]!;
+      const task = getTask(db, id);
+      if (!task || getSpace(db, task.spaceId)?.kind !== "repo") throw new HttpError(404, "No such task in a repo space.");
+      const b = await readBody(req);
+      if (typeof b.note !== "string" || !b.note.trim()) throw new HttpError(400, "Write a note for the agent first.");
+      const note = b.note.trim();
+      if (note.length > STEER_NOTE_MAX) throw new HttpError(400, `Keep the note to ${STEER_NOTE_MAX.toLocaleString("en-US")} characters or fewer.`);
+      const pending = "Already restarting with your note.";
+      if (runner.steerPending?.(id)) throw new HttpError(409, pending);
+      if (task.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to steer.");
+      const outcome = (await runner.steerTask?.(id, note)) ?? "not-running";
+      if (outcome === "pending") throw new HttpError(409, pending);
+      if (outcome === "blocked") throw new HttpError(409, `It couldn't start again with your note: ${getTask(db, id)?.blockedReason ?? "it was blocked."}`);
+      if (outcome === "not-running") throw new HttpError(409, "It finished or stopped before your note arrived, so nothing was restarted.");
+      return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
+    }
+
+    const prInfoM = hit("GET", /^\/api\/tasks\/([^/]+)\/pr$/);
+    if (prInfoM) {
+      if (!getTask(db, prInfoM[1]!)) throw new HttpError(404, "No such task.");
+      return json(await prInfo(db, prInfoM[1]!));
+    }
+
+    // Nakul's click on "Push and open PR" is his yes; 409 when the task can't open one or GitHub turns the push
+    // down, 502 when gh fails.
+    const prM = hit("POST", /^\/api\/tasks\/([^/]+)\/pr$/);
+    if (prM) {
+      if (!getTask(db, prM[1]!)) throw new HttpError(404, "No such task.");
+      const b = await readBody(req);
+      const title = str(b.title, "title").trim();
+      if (typeof b.body !== "string") throw new HttpError(400, "body is required.");
+      if (title.length > 256) throw new HttpError(400, "Keep the title to 256 characters or fewer.");
+      const sha = str(b.sha, "sha");
+      return json(await openPullRequest(db, prM[1]!, { title, body: b.body, sha }));
+    }
+
+    const diffM = hit("GET", /^\/api\/tasks\/([^/]+)\/diff$/);
+    if (diffM) return json(await taskChanges(db, diffM[1]!));
 
     const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
     if (msgM) {
@@ -345,18 +403,40 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     }
 
     if (hit("POST", /^\/api\/command$/)) {
+      // Files sent with a description for a new space go to its first task, in the same step that makes it, so the
+      // task can't start without them. They come up front because there's no space yet to upload them to.
+      if (isMultipart(req)) {
+        const { fields, files } = await readUploads(req);
+        const text = str(fields.text, "text");
+        checkUploads(files);
+        let attached: Attachment[] = [];
+        const result = await deps.setup(text, (space, tasks) => {
+          if (space.kind === "repo" || !tasks[0]) return tasks;
+          attached = storeAttachments(db, space, files);
+          attachToTask(db, tasks[0].id, attached);
+          return [getTask(db, tasks[0].id)!, ...tasks.slice(1)];
+        });
+        return json({ ...result, attached: attachedView(attached) });
+      }
       const b = await readBody(req);
-      const text = str(b.text, "text");
-      if (b.spaceId === undefined) return json(await deps.setup(text));
+      if (b.spaceId === undefined) return json(await deps.setup(str(b.text, "text")));
       const space = getSpace(db, str(b.spaceId, "spaceId"));
       if (!space) throw new HttpError(404, "No such space.");
-      const task = createTask(db, {
-        spaceId: space.id,
-        title: text.split("\n")[0]!.slice(0, 80),
-        detail: text,
-        weight: space.kind === "repo" ? "heavy" : "light",
-        agent: agentField(b.agent),
-      });
+      const agent = agentField(b.agent);
+      const task = db.transaction(() => {
+        const files = checkAttachments(db, space, b.attachments);
+        // Files alone are a request too: the agent is asked to look at them.
+        const text = files.length && (typeof b.text !== "string" || !b.text.trim()) ? DEFAULT_PROMPT : str(b.text, "text");
+        const t = createTask(db, {
+          spaceId: space.id,
+          title: text.split("\n")[0]!.slice(0, 80),
+          detail: withAttachments(text, files),
+          weight: space.kind === "repo" ? "heavy" : "light",
+          agent,
+        });
+        claimAttachments(db, t.id, files);
+        return t;
+      })();
       runner.kick();
       return json({ task });
     }
@@ -401,6 +481,8 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
 
     const files = await filesRoute(db, req, url);
     if (files) return files;
+    const attached = await attachmentsRoute(db, req, url);
+    if (attached) return attached;
     const start = await startRoute(db, req, url);
     if (start) return start;
 
@@ -437,7 +519,9 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
-    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index, "/start": index },
+    // The biggest thing anyone sends is a full set of attachments.
+    maxRequestBodySize: MAX_BODY_BYTES,
+    routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index, "/start": index, "/needs-you": index, "/activity": index },
     async fetch(req, srv) {
       const url = new URL(req.url);
       const needsOrigin = req.method !== "GET" || url.pathname === "/ws";
@@ -453,12 +537,15 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       } catch (e) {
         if (e instanceof HttpError) return fail(e.status, e.message);
         if (e instanceof FileRefused) return fail(e.status, e.message);
+        if (e instanceof AttachRefused) return fail(e.status, e.message);
         if (e instanceof DeleteRefused) return fail(e.status, e.message);
         if (e instanceof AlreadyResolved) return fail(409, "Already handled");
         if (e instanceof InvalidTransition) return fail(409, e.message);
         if (e instanceof RuleRefused) return fail(409, e.message);
         if (e instanceof BadDraft) return fail(400, e.message);
         if (e instanceof PushRefused) return fail(409, e.message);
+        if (e instanceof ChangesRefused) return fail(e.status, e.message);
+        if (e instanceof PrFailed) return fail(502, e.message);
         if (e instanceof SetupFailed) {
           // The user sees the plain message; the log keeps what actually went wrong.
           console.error("Setup failed:", e.cause instanceof Error ? e.cause.message : e.message);

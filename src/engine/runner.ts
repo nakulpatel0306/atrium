@@ -8,8 +8,10 @@ import { correctBranchHead, createApproval, getApproval } from "./approvals";
 import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
 import { applyRule } from "./autonomy/rules";
+import { createDiffNotifier, isFileEdit } from "./diff-watch";
 import { bus, logActivity } from "./events";
 import { ensureSpaceFolder, spaceFolder, tildePath } from "./folders";
+import { type Copy, copyAttachments } from "./attachments";
 import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from "./outputs/snapshot";
 import { madeLine, recordRunFiles } from "./outputs/store";
 import {
@@ -21,6 +23,7 @@ import {
   headRef,
   moveLateCommit,
   prepareBranch,
+  remoteUrl,
   repoReady,
   returnToBranch,
   reviewDiff,
@@ -127,7 +130,7 @@ type Settled = Awaited<ReturnType<MarketsHooks["settle"]>>;
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
 
 // The repo as found at task start, so it can be put back after the run.
-type RepoRun = { path: string; start: string; branch: string; fingerprint: string };
+type RepoRun = { path: string; start: string; branch: string; fingerprint: string; remote: string | null };
 
 export function createRunner(deps: {
   db: Database;
@@ -143,7 +146,18 @@ export function createRunner(deps: {
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
   // Money's once-a-day check (the monthly import reminder and budget heads-ups), from the same minute timer.
   money?: { daily(now: number): void };
-}): { start(): void; stop(): Promise<void>; kick(): void; stopTask(taskId: string): Promise<StopOutcome>; outputSeq(runId: string): number | null; registry: Registry } {
+  // Test seam for the Changes view's live refresh: the throttle window and the timer for agents that don't report edits.
+  diffWatch?: { windowMs?: number; pollMs?: number };
+}): {
+  start(): void;
+  stop(): Promise<void>;
+  kick(): void;
+  stopTask(taskId: string): Promise<StopOutcome>;
+  steerTask(taskId: string, note: string): Promise<SteerOutcome>;
+  steerPending(taskId: string): boolean;
+  outputSeq(runId: string): number | null;
+  registry: Registry;
+} {
   const { db, adapters, keepAwake } = deps;
   const registry = deps.registry ?? createRegistry(db, adapters);
   const maxConcurrent = deps.maxConcurrent ?? 1;
@@ -153,10 +167,16 @@ export function createRunner(deps: {
   // ones whose run did end that way, so stopTask can say so.
   const stopRequested = new Set<string>();
   const stoppedByStop = new Set<string>();
+  // The same for a steer: the note Nakul sent, by task, and the tasks whose run did end that way. A steered task's
+  // next run opens its transcript with the note (steerMarkers).
+  const steerRequested = new Map<string, string>();
+  const steeredBySteer = new Set<string>();
+  const steerMarkers = new Map<string, string>();
   // Lines each live run has written to its transcript (and sent), for the transcript route's X-Atrium-Output-Seq.
   const runSeq = new Map<string, number>();
   // Consecutive usage-limit outcomes per task, so a misread limit can't requeue a task forever.
   const limitHits = new Map<string, number>();
+  const diffs = createDiffNotifier((taskId) => bus.emit({ type: "diff-changed", taskId }), deps.diffWatch);
   let running = false;
   let scheduled = false;
   let busy = false;
@@ -315,6 +335,8 @@ export function createRunner(deps: {
 
   // `saved` is the branch Atrium committed the agent's unfinished edits to, if it did.
   function block(task: Task, reason: string, saved: string | null = null) {
+    // A steered task that can't start again mustn't carry its note's marker into some later run.
+    steerMarkers.delete(task.id);
     const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
     setTaskStatus(db, task.id, "blocked", { blockedReason: full });
     logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`, { taskId: task.id });
@@ -372,8 +394,10 @@ export function createRunner(deps: {
         // Branching from a leftover agent branch would stack unreviewed work.
         else if (start.startsWith("atrium/")) return block(task, `The repo is on ${start}, an Atrium branch. Switch back to your own branch, then retry.`);
         const fingerprint = last?.fingerprint ?? (await gitSettingsFingerprint(path));
+        // Read with the fingerprint, before the agent can touch the repo's config.
+        const remote = last ? last.remote : await remoteUrl(path);
         const branch = await prepareBranch(path, branchTaskId(task), { existing: task.kind === "fix" });
-        repo = { path, start, fingerprint, branch };
+        repo = { path, start, fingerprint, branch, remote };
         deps.repos?.touch(path);
       } catch (e) {
         return block(task, (e as Error).message);
@@ -397,16 +421,18 @@ export function createRunner(deps: {
     // its own instead of the space folder, where earlier runs' files collect.
     // A money question runs in an empty folder too, with no tools: the masked facts in its prompt are all it sees.
     const scratch = !repo && (agent !== "claude" || task.purpose === "money");
-    let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript> };
+    let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript>; copied: Copy[] };
     let cwd: string | null = null;
     try {
       cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : ensureSpaceFolder(db, space);
+      // An empty folder doesn't have the files Nakul attached, so they're copied in where the task says they are.
+      const copied = scratch && task.purpose !== "money" ? copyAttachments(db, task.id, spaceFolder(space), cwd) : [];
       const runId = newId("run");
       const transcript = openTranscript(runId);
       db.query(
-        "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(runId, task.id, agent, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null);
-      started = { cwd, runId, transcript };
+        "INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref, git_fingerprint, remote_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(runId, task.id, agent, Date.now(), transcript.path, repo?.start ?? null, repo?.fingerprint ?? null, repo?.remote ?? null);
+      started = { cwd, runId, transcript, copied };
     } catch (e) {
       if (scratch && cwd) rmSync(cwd, { recursive: true, force: true });
       // Blocking takes the task out of the queue, so a broken disk can't retry it every tick.
@@ -437,6 +463,7 @@ export function createRunner(deps: {
     cwd: string;
     runId: string;
     transcript: ReturnType<typeof openTranscript>;
+    copied: Copy[];
   }) {
     const { task, space, adapter, repo, runId, transcript } = r;
     // A Claude run away from a repo works in the space folder itself, where its files stay; this is how a rule
@@ -453,6 +480,25 @@ export function createRunner(deps: {
       }
     }
     const markets = space.kind === "markets" && task.kind === "work" ? deps.markets : undefined;
+    const unwatch = repo ? diffs.watch(task.id, adapter.id !== "claude") : null;
+    const line = (raw: string) => {
+      // A money run's transcript and live view are masked like everything else it touches.
+      const chunk = task.purpose === "money" ? maskNumbers(raw) : raw;
+      try {
+        transcript.append(`${chunk}\n`);
+      } catch {
+        // A disk error here would reject the run while the agent keeps working; the live view still gets it.
+      }
+      const seq = (runSeq.get(runId) ?? 0) + 1;
+      runSeq.set(runId, seq);
+      bus.emit({ type: "run-output", runId, taskId: task.id, chunk, seq });
+      if (repo && isFileEdit(chunk)) diffs.edited(task.id);
+    };
+    const steered = steerMarkers.get(task.id);
+    if (steered !== undefined) {
+      steerMarkers.delete(task.id);
+      line(`— You steered: ${steered} —`);
+    }
     let result: AgentRunResult;
     try {
       const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
@@ -471,18 +517,7 @@ export function createRunner(deps: {
         privateData: isPrivate(space),
         mode: task.kind === "review" || task.purpose ? "review" : "work",
         signal: r.signal,
-        onChunk(raw) {
-          // A money run's transcript and live view are masked like everything else it touches.
-          const chunk = task.purpose === "money" ? maskNumbers(raw) : raw;
-          try {
-            transcript.append(`${chunk}\n`);
-          } catch {
-            // A disk error here would reject the run while the agent keeps working; the live view still gets it.
-          }
-          const seq = (runSeq.get(runId) ?? 0) + 1;
-          runSeq.set(runId, seq);
-          bus.emit({ type: "run-output", runId, taskId: task.id, chunk, seq });
-        },
+        onChunk: line,
       });
     } catch (e) {
       result =
@@ -490,9 +525,12 @@ export function createRunner(deps: {
           ? { status: "error", kind: "failed", message: MoneyGuard.text }
           : { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
     }
+    unwatch?.();
     // Whether the run was cut short. An abort that lands after the agent answered (a stop during the commit step)
     // mustn't relabel what the agent actually said, a failure or a usage limit included.
     const cutShort = r.signal.aborted;
+    // A steer keeps the edits on the task's own branch, where the next run carries on from them.
+    const steering = cutShort && result.status !== "ok" && steerRequested.has(task.id) && !stopRequested.has(task.id);
 
     // Claude's answer to a money question is masked before anything saves it: the task, the review, the write-up.
     if (task.purpose === "money") result = result.status === "ok" ? { ...result, summary: maskNumbers(result.summary) } : { ...result, message: maskNumbers(result.message) };
@@ -522,10 +560,10 @@ export function createRunner(deps: {
       // Before settleRepo switches branches, so the repo always goes back clean. Skipped when git settings
       // changed: staging can run filter drivers from config the agent planted, and settleRepo reports the tampering.
       if (repo && (await settingsUnchanged(repo.path, repo.fingerprint))) {
-        const message = stopped ? `WIP (stopped): ${task.title}` : task.title;
+        const message = steering ? `WIP (steered): ${task.title}` : stopped ? `WIP (stopped): ${task.title}` : task.title;
         let on = repo.branch;
         try {
-          if (task.kind === "fix" && (late || stopped)) {
+          if (task.kind === "fix" && (late || (stopped && !steering))) {
             const side = await branchOffDirty(repo.path, task.id);
             if (side) on = side;
             if (side && (await commitAll(repo.path, message, repo.fingerprint)).committed) {
@@ -559,7 +597,8 @@ export function createRunner(deps: {
     } finally {
       if (repo) leftRepo = await settleRepo(repo);
       if (r.scratch) {
-        kept = await keepScratchFiles(space, runId, r.cwd);
+        // The attachments are already in the space folder; keeping their copies would list them as the run's work.
+        kept = await keepScratchFiles(space, runId, r.cwd, r.copied);
         rmSync(r.cwd, { recursive: true, force: true });
       }
     }
@@ -593,6 +632,8 @@ export function createRunner(deps: {
         block(task, (commitError ?? leftRepo)!);
       } else if (result.status !== "ok" && cutShort && stopRequested.has(task.id)) {
         stoppedByYou(task, saved);
+      } else if (steering) {
+        steeredByYou(task, steerRequested.get(task.id)!);
       } else if (result.status !== "ok" && cutShort) {
         setTaskStatus(db, task.id, "queued");
         logActivity(db, space.id, "atrium", `The engine stopped, so ${task.title} is back in the queue.${saved ? ` Its unfinished edits are saved on ${saved}.` : ""}`, { taskId: task.id });
@@ -671,6 +712,7 @@ export function createRunner(deps: {
       }
     } finally {
       stopRequested.delete(task.id);
+      steerRequested.delete(task.id);
       runSeq.delete(runId);
       enforceTranscriptCap();
     }
@@ -684,6 +726,43 @@ export function createRunner(deps: {
     logActivity(db, task.spaceId, "you", `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
     if (task.kind === "review") afterReview(db, task, { status: "error", kind: "failed", message: "You stopped the review." });
     if (task.kind === "fix") fixFailed(db, task, "You stopped the fix.", saved);
+  }
+
+  // Back in the queue with the note added to what he asked, so the next run's prompt carries it. The task keeps
+  // its branch, and the next run checks it out again.
+  function steeredByYou(task: Task, note: string) {
+    appendTaskDetail(db, task.id, `\n\n${steerBlock(note)}`);
+    setTaskStatus(db, task.id, "queued");
+    steeredBySteer.add(task.id);
+    const flat = note.replace(/\s+/g, " ");
+    steerMarkers.set(task.id, flat);
+    logActivity(db, task.spaceId, "you", `You steered: ${flat.length > 80 ? `${flat.slice(0, 79)}…` : flat}`, { taskId: task.id });
+  }
+
+  // Stop and continue: the run ends the way a stop ends it (edits committed to the branch, repo put back), then
+  // the task goes straight back in the queue. The same for every agent, since none takes input mid-run.
+  // A note already on its way: the run is winding down for it, or it's queued to start again with it.
+  const steerPending = (taskId: string) => steerRequested.has(taskId) || steerMarkers.has(taskId);
+
+  async function steerTask(taskId: string, note: string): Promise<SteerOutcome> {
+    if (steerPending(taskId)) return "pending";
+    const run = [...active.values()].find((r) => r.taskId === taskId);
+    if (!run) return "not-running";
+    steeredBySteer.delete(taskId);
+    steerRequested.set(taskId, note);
+    run.controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      run.done.then(() => true),
+      new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), deps.stopTimeoutMs ?? STOP_TIMEOUT_MS))),
+    ]);
+    clearTimeout(timer);
+    if (!settled) return "timeout";
+    if (steeredBySteer.has(taskId)) return "steered";
+    // Saving its edits or putting the repo back failed, so it can't start again; the task says why.
+    if (getTask(db, taskId)?.status === "blocked" && !stoppedByStop.has(taskId)) return "blocked";
+    // Otherwise it finished, or was stopped, before the note could take effect.
+    return "not-running";
   }
 
   // Aborting kills the agent's process group (see runAgentProcess, which escalates to SIGKILL); execute then saves
@@ -786,10 +865,10 @@ export function createRunner(deps: {
 
   // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
   // A copy that fails must not lose the run's outcome; the approval says the files couldn't be kept.
-  async function keepScratchFiles(space: Space, runId: string, cwd: string): Promise<Kept | null> {
+  async function keepScratchFiles(space: Space, runId: string, cwd: string, skip: Copy[]): Promise<Kept | null> {
     const dir = join(ensureSpaceFolder(db, space), "runs", runId);
     try {
-      const res = await keepScratch(cwd, dir);
+      const res = await keepScratch(cwd, dir, { skip });
       return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;
     } catch (e) {
       logActivity(db, space.id, "atrium", `Couldn't keep the files from a run's temporary folder: ${(e as Error).message}`);
@@ -875,6 +954,8 @@ export function createRunner(deps: {
     },
     kick,
     stopTask,
+    steerTask,
+    steerPending,
     outputSeq: (runId) => runSeq.get(runId) ?? null,
     registry,
   };
@@ -894,6 +975,12 @@ function readyLine(task: Task, o: ParsedOutcome): string {
 }
 
 export type StopOutcome = "stopped" | "finished" | "timeout" | "not-running";
+export type SteerOutcome = "steered" | "not-running" | "timeout" | "pending" | "blocked";
+
+export const STEER_NOTE_MAX = 2000;
+
+export const steerBlock = (note: string) =>
+  `Note from you while this was running: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`;
 
 class MoneyGuard extends Error {
   static text = "Atrium stopped this before sending anything: the money facts weren't fully masked or the agent wasn't Claude. Try again, and check the engine log if it keeps happening.";
@@ -953,14 +1040,14 @@ const leftoversReason = (branch: string, path: string, start: string | null) =>
 const tamperedReason = (path: string) =>
   `The agent changed git settings in ${path} (config, hooks, or attributes). Atrium stopped before switching branches. Check them, then retry.`;
 
-// The last repo run of a task: where it started and the git settings it started with (null for older rows).
-function lastRepoRun(db: Database, taskId: string): { start: string; fingerprint: string | null } | null {
+// The last repo run of a task: where it started, the git settings it started with and its remote (null for older rows).
+export function lastRepoRun(db: Database, taskId: string): { start: string; fingerprint: string | null; remote: string | null } | null {
   const row = db
     .query(
-      "SELECT start_ref, git_fingerprint FROM runs WHERE task_id = ? AND start_ref IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1",
+      "SELECT start_ref, git_fingerprint, remote_url FROM runs WHERE task_id = ? AND start_ref IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1",
     )
-    .get(taskId) as { start_ref: string; git_fingerprint: string | null } | null;
-  return row ? { start: row.start_ref, fingerprint: row.git_fingerprint } : null;
+    .get(taskId) as { start_ref: string; git_fingerprint: string | null; remote_url: string | null } | null;
+  return row ? { start: row.start_ref, fingerprint: row.git_fingerprint, remote: row.remote_url } : null;
 }
 
 // A missing baseline counts as changed: without it there's no telling what the agent did.

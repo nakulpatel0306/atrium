@@ -30,7 +30,7 @@ export function fakeGitHub(mode = "ok"): FakeGitHub {
   mkdirSync(projects);
   writeFileSync(
     gitconfig,
-    `[user]\n\tname = Atrium Test\n\temail = test@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n[url "file://${remotes}/"]\n\tinsteadOf = https://github.com/\n`,
+    `[user]\n\tname = Atrium Test\n\temail = test@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n[protocol "file"]\n\tallow = always\n[url "file://${remotes}/"]\n\tinsteadOf = https://github.com/\n`,
   );
   const env = (m = mode) => {
     process.env.ATRIUM_GH_BIN = FAKE_GH;

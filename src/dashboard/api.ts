@@ -14,7 +14,8 @@ export { activeOnly } from "./summary";
 type EngineMessage =
   | { type: "changed" }
   | { type: "run-output"; runId: string; taskId: string; chunk: string }
-  | { type: "quotes"; quotes: Quote[] };
+  | { type: "quotes"; quotes: Quote[] }
+  | { type: "diff-changed"; taskId: string };
 
 // Live output is only for watching; the full record is the transcript, so keep just the tail.
 const OUTPUT_TAIL = 200_000;
@@ -25,6 +26,8 @@ let started = false;
 let fetching = false;
 let refetch = false;
 const outputs = new Map<string, string>();
+// Bumped on each diff-changed event, so a task's Changes view reads them again.
+const diffVersions = new Map<string, number>();
 const seeded = new Set<string>();
 const listeners = new Set<() => void>();
 const quoteListeners = new Set<(quotes: Quote[]) => void>();
@@ -80,6 +83,9 @@ function connect(): void {
       // Chunks are whole lines without their newline, the same as the transcript stores them.
       outputs.set(msg.runId, `${outputs.get(msg.runId) ?? ""}${msg.chunk}\n`.slice(-OUTPUT_TAIL));
       notify();
+    } else if (msg.type === "diff-changed") {
+      diffVersions.set(msg.taskId, (diffVersions.get(msg.taskId) ?? 0) + 1);
+      notify();
     } else if (msg.type === "quotes") {
       // Prices tick often; listeners patch what they show instead of refetching the whole state.
       for (const fn of [...quoteListeners]) fn(msg.quotes);
@@ -132,6 +138,10 @@ export function useRunOutput(runId: string): string {
     if (!seeded.has(runId)) void seedOutput(runId);
   }, [runId]);
   return useSyncExternalStore(subscribe, () => outputs.get(runId) ?? "", () => outputs.get(runId) ?? "");
+}
+
+export function useDiffVersion(taskId: string): number {
+  return useSyncExternalStore(subscribe, () => diffVersions.get(taskId) ?? 0, () => 0);
 }
 
 // Reads data that isn't part of the pushed state, again whenever `version` changes.

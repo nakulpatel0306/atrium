@@ -76,13 +76,14 @@ function Feed({ groups, names, showTitle }: { groups: ActivityGroup[]; names?: M
 const contextOf = (state: State) => ({ tasks: state.tasks, files: state.activityFiles });
 
 // With a spaceId, shows only that space's lines and drops the space name each line would repeat.
-export function Activity({ state, spaceId }: { state: State; spaceId?: string }) {
+// As its own page (`page`), the title is the page's heading rather than a section's.
+export function Activity({ state, spaceId, page = false }: { state: State; spaceId?: string; page?: boolean }) {
   const names = new Map([...state.spaces, ...(state.archived ?? [])].map((s) => [s.id, s.name]));
   const rows = spaceId ? state.activity.filter((r) => r.spaceId === spaceId) : state.activity;
   const groups = groupActivity(rows, contextOf(state));
   return (
     <>
-      <h2 id="activity">Activity</h2>
+      {page ? <h1 className="page-title">Activity</h1> : <h2 id="activity">Activity</h2>}
       <div className="list feed">
         {groups.length === 0 ? (
           <div className="empty-row">No activity yet. Agent runs and your decisions will show up here.</div>
@@ -94,12 +95,16 @@ export function Activity({ state, spaceId }: { state: State; spaceId?: string })
   );
 }
 
-// One task's lines, folded the same way, for its detail.
-export function TaskHistory({ task, state }: { task: Task; state: State }) {
-  const groups = groupActivity(
+// One task's lines, folded the same way as the feed.
+export const taskGroups = (task: Task, state: State) =>
+  groupActivity(
     state.activity.filter((r) => r.spaceId === task.spaceId),
     contextOf(state),
   ).filter((g) => g.taskId === task.id || (g.taskId === null && g.title === task.title));
+
+// One task's lines, for its detail.
+export function TaskHistory({ task, state }: { task: Task; state: State }) {
+  const groups = taskGroups(task, state);
   if (groups.length === 0) return null;
   return (
     <section className="history">

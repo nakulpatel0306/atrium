@@ -130,7 +130,7 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
   }
 
   // <input type="file"> does nothing in a WKWebView without this. Only the dashboard's own page may open the picker
-  // (the chart frame never can), and it only offers CSVs, the one kind of file the dashboard imports.
+  // (the chart frame never can), and it only offers the kinds of file the dashboard imports or attaches.
   func webView(
     _ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo,
     completionHandler: @escaping ([URL]?) -> Void
@@ -144,7 +144,7 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = parameters.allowsMultipleSelection
-    panel.allowedContentTypes = [.commaSeparatedText]
+    panel.allowedContentTypes = pickerExtensions.compactMap { UTType(filenameExtension: $0) }
     guard let window = webView.window else {
       completionHandler(panel.runModal() == .OK ? panel.urls : nil)
       return

@@ -29,9 +29,9 @@ export const HANDLED = {
     "tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions",
     "message_actions", "run_files", "rule_events", "market_lists", "market_watchlist", "market_holdings", "market_alerts",
     "paper_accounts", "paper_fills", "market_strategies", "research_notes", "market_writeups", "market_ideas", "money_transactions",
-    "money_imports", "money_budgets", "money_nudges", "money_accounts",
+    "money_imports", "money_budgets", "money_nudges", "money_accounts", "attachments",
   ],
-  task: ["tasks", "runs", "approvals", "activity", "messages", "message_actions", "run_files", "paper_fills", "market_writeups"],
+  task: ["tasks", "runs", "approvals", "activity", "messages", "message_actions", "run_files", "paper_fills", "market_writeups", "attachments"],
   run: ["run_files"],
 } as const;
 
@@ -125,6 +125,8 @@ function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] 
     db.query(`UPDATE approvals SET task_id = NULL WHERE task_id IN (${t})${a ? ` AND id NOT IN (${a})` : ""}`).run(...tasks, ...approvals);
     db.query(`UPDATE paper_fills SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`UPDATE market_writeups SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
+    // Attached files are Nakul's own and stay in the space folder; only the link to the task goes.
+    db.query(`UPDATE attachments SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM run_files WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM messages WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM activity WHERE task_id IN (${t})`).run(...tasks);
@@ -248,6 +250,7 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     db.query("DELETE FROM autonomy_rules WHERE space_id = ?").run(id);
     db.query("DELETE FROM autonomy_proposals WHERE space_id = ?").run(id);
     db.query("DELETE FROM run_files WHERE space_id = ?").run(id);
+    db.query("DELETE FROM attachments WHERE space_id = ?").run(id);
     db.query("DELETE FROM messages WHERE space_id = ?").run(id);
     db.query("DELETE FROM activity WHERE space_id = ?").run(id);
     for (const table of SPACE_DATA) db.query(`DELETE FROM ${table} WHERE space_id = ?`).run(id);

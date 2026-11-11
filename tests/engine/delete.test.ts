@@ -58,6 +58,7 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   db.query("UPDATE tasks SET approval_id = ? WHERE id = ?").run(approval.id, review);
   logActivity(db, space.id, "claude", `Started: ${name} work`, { taskId: task });
   db.query("INSERT INTO messages (id, space_id, task_id, from_agent, to_agent, body, created_at) VALUES (?, ?, ?, 'claude', 'codex', 'hi', 0)").run(newId("msg"), space.id, task);
+  db.query("INSERT INTO attachments (id, space_id, task_id, path, name, size, type, created_at) VALUES (?, ?, ?, 'Attachments/r.png', 'r.png', 1, 'image/png', 0)").run(newId("att"), space.id, task);
   const now = Date.now();
   const proposal = newId("prp");
   db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, created_at) VALUES (?, ?, 'fp', '[]', ?)").run(proposal, space.id, now);

@@ -47,10 +47,11 @@ export function Profile() {
           Projects folder
           <input value={root} onChange={(e) => setRoot(e.target.value)} />
         </label>
-        <label>
-          Home currency
-          <input value={p.homeCurrency} readOnly />
-        </label>
+        {/* Fixed for now, so it reads as a fact rather than a field. */}
+        <div className="fixed-field">
+          <span>Home currency</span>
+          <b>{p.homeCurrency}</b>
+        </div>
         <button className="btn" type="submit">
           Save
         </button>

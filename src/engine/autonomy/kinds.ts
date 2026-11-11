@@ -43,7 +43,8 @@ type Kind =
 
 const AGENTS = new Set(["claude", "codex", "gemini"]);
 
-const SECRET =
+// Credential and key file names; the ask bar refuses to attach them too.
+export const SECRET =
   /(^|\/)(id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|[^/]*\.(pem|key|p12|pfx|jks|keystore)|\.npmrc|\.netrc|\.pypirc|credentials(\.json)?|secrets?\.(json|ya?ml|toml))$/i;
 const DEPLOY =
   /(^|\/)(\.github\/workflows\/|\.gitlab-ci\.ya?ml$|vercel\.json$|netlify\.toml$|fly\.toml$|wrangler\.toml$|render\.ya?ml$|procfile$|dockerfile[^/]*$|docker-compose[^/]*$)/i;

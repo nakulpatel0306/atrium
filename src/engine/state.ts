@@ -16,6 +16,7 @@ import { type Candidate, type Group, type HandleSource, pendingMessageActions, t
 import { type MessagingState, messagingState } from "./capabilities";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
+import { type Attachment, claimedAttachments } from "./attachments";
 
 export type RunSummary = {
   id: string;
@@ -45,6 +46,8 @@ export type State = {
   // Archived spaces, most recently archived first, for the list that restores or deletes them.
   archived: Space[];
   tasks: Task[];
+  // Files each task was sent with, by task.
+  attachments: Attachment[];
   runs: RunSummary[];
   approvals: Approval[];
   // Pending "stop asking about this?" suggestions; every rule, newest first; kinds Nakul said never to suggest.
@@ -194,6 +197,7 @@ export function snapshot(db: Database, registry?: Registry): State {
       .filter((s) => s.status === "archived")
       .sort((a, b) => b.updatedAt - a.updatedAt),
     tasks: listTasks(db),
+    attachments: claimedAttachments(db),
     // rowid breaks ties between runs started in the same millisecond
     runs: db
       .query(

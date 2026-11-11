@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; money: boolean };
+export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; money: boolean; changes: boolean };
 export type SpaceTab = "tasks" | "files";
 
 const listeners = new Set<() => void>();
@@ -27,6 +27,8 @@ export function usePath(): string {
 
 export function parseRoute(path: string): Route {
   const [pathname = "", search = ""] = path.split("?");
+  if (pathname === "/needs-you") return { name: "needs" };
+  if (pathname === "/activity") return { name: "activity" };
   if (pathname === "/agents") return { name: "agents" };
   if (pathname === "/rules") return { name: "rules" };
   if (pathname === "/settings") return { name: "settings" };
@@ -36,7 +38,16 @@ export function parseRoute(path: string): Route {
   try {
     const q = new URLSearchParams(search);
     // `?tab=money` opens an investing space on its Money tab, from a money reminder or heads-up.
-    return { name: "space", id: decodeURIComponent(m[1]!), task: q.get("task"), tab: q.get("tab") === "files" ? "files" : "tasks", symbol: q.get("symbol"), money: q.get("tab") === "money" };
+    // `&view=changes` opens the task on its Changes, from Needs you's "See changes".
+    return {
+      name: "space",
+      id: decodeURIComponent(m[1]!),
+      task: q.get("task"),
+      tab: q.get("tab") === "files" ? "files" : "tasks",
+      symbol: q.get("symbol"),
+      money: q.get("tab") === "money",
+      changes: q.get("view") === "changes",
+    };
   } catch {
     // A hand-typed URL with a stray "%" shouldn't crash the page.
     return { name: "home" };

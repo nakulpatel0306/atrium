@@ -23,8 +23,8 @@ test("ghBin is read only by config, the gh wrapper and the agent sandbox", () =>
 });
 
 // approvals.ts names "push" only as an always-ask kind.
-test('the literal "push" appears only in the two push paths and the always-ask list', () => {
-  expect(containing('"push"')).toEqual(["engine/approvals.ts", "engine/git.ts", "engine/repos/push.ts"]);
+test('the literal "push" appears only in the push paths (a new repo\'s main, a pull request) and the always-ask list', () => {
+  expect(containing('"push"')).toEqual(["engine/approvals.ts", "engine/git.ts", "engine/repos/pr.ts", "engine/repos/push.ts"]);
 });
 
 test("credential.helper appears only in the gh wrapper", () => {

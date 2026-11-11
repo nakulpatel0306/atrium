@@ -32,6 +32,8 @@ export type Task = {
   // or while the task hasn't finished.
   outcome: Outcome | null;
   outcomeReason: string | null;
+  // The pull request opened from this task's branch; null until one is.
+  prUrl: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -56,6 +58,7 @@ type TaskRow = {
   branch: string | null;
   outcome: Outcome | null;
   outcome_reason: string | null;
+  pr_url: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -98,6 +101,7 @@ const toTask = (r: TaskRow): Task => ({
   branch: r.branch,
   outcome: r.outcome ?? null,
   outcomeReason: r.outcome_reason ?? null,
+  prUrl: r.pr_url ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });

@@ -1,8 +1,9 @@
-import { MessageSquare, Search, Settings2 } from "lucide-react";
+import { type LucideIcon, MessageSquare, Search, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Candidate } from "../../engine/messaging/store";
 import { displayHandle, handleProblem, MAX_TEXT, textLength, textProblem } from "../../engine/messaging/rules";
 import { post, type State } from "../api";
+import { cancelSend, clearSendError, pendingSendOf, startSend, usePendingSend, useSendError } from "../pending-send";
 
 type Approval = State["approvals"][number];
 type Action = State["messageActions"][number];
@@ -12,28 +13,49 @@ const SOURCE: Record<string, string> = { contacts: "from Contacts", you: "typed 
 
 export const candidateLine = (c: Candidate) => [c.name, c.label, displayHandle(c.handle)].filter(Boolean).join(" · ");
 
+// A text's first line, short enough that the closing quote still shows on a folded row.
+export const snippet = (text: string, max = 40) => {
+  const line = text.split("\n")[0]!.trim();
+  return `‘${line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line}’`;
+};
+
+// Enter in the number field runs the lookup. The card has no form, so no key press can reach Send.
+export function onNumberKey(e: { key: string; preventDefault: () => void }, lookup: () => void): void {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  lookup();
+}
+
 // A text waiting to go. What Nakul sees here is exactly what Messages gets: his edits and his Send land together,
 // and nothing else can send it.
-export function MessageCard({ approval, action, spaceName = "Messages", firstSend = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean }) {
-  const [text, setText] = useState(action.text);
-  const [handle, setHandle] = useState(action.handle ? displayHandle(action.handle) : "");
-  const [service, setService] = useState(action.service);
+// Folded, as in a list, it's one line until Review opens it; a failed try opens on its own so the reason shows.
+export function MessageCard({ approval, action, spaceName = "Messages", firstSend = false, folded = false }: { approval: Approval; action: Action; spaceName?: string; firstSend?: boolean; folded?: boolean }) {
+  // A card that remounts mid-send starts from what's being sent, not the draft.
+  const [held] = useState(() => pendingSendOf(action.id));
+  const pending = usePendingSend(action.id);
+  const locked = pending !== null;
+  const sendError = useSendError(action.id);
+  const [open, setOpen] = useState(!folded || !!action.lastError || !!held);
+  const [text, setText] = useState(held?.body.text ?? action.text);
+  const [handle, setHandle] = useState(held?.body.handle ?? (action.handle ? displayHandle(action.handle) : ""));
+  const [service, setService] = useState((held?.body.service as Action["service"] | undefined) ?? action.service);
   const [candidates, setCandidates] = useState<Candidate[]>(action.candidates ?? []);
   const [found, setFound] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"send" | "decline" | "lookup" | null>(null);
+  const [busy, setBusy] = useState<"decline" | "lookup" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Until Nakul types in the number field, a lookup the engine finishes later (or one from another app) fills it in.
   const [touched, setTouched] = useState(false);
+  // Never while a send waits: the number on screen is the number being sent.
   useEffect(() => {
-    if (touched) return;
+    if (touched || locked) return;
     if (action.handle) setHandle(displayHandle(action.handle));
     if (action.candidates) setCandidates(action.candidates);
-  }, [action.handle, action.candidates, touched]);
+  }, [action.handle, action.candidates, touched, locked]);
 
   const textIssue = textProblem(text);
   const handleIssue = handle.trim() ? handleProblem(handle) : null;
-  const canSend = !busy && !textIssue && handle.trim() !== "" && !handleIssue;
+  const canSend = !busy && !locked && !textIssue && handle.trim() !== "" && !handleIssue;
   const shown = handle.trim() && !handleIssue ? handle.trim() : null;
   const stored = action.handle && shown === displayHandle(action.handle);
   // A number from Contacts names the card it came from, so a match on the wrong person shows.
@@ -41,16 +63,11 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
   const fromContacts = match ? `from Contacts · ${[match.name, match.label].filter(Boolean).join(", ")}` : SOURCE.contacts;
   const source = match || (stored && action.handleSource === "contacts") ? fromContacts : stored ? SOURCE[action.handleSource ?? ""] : shown ? SOURCE.you : null;
 
-  const send = async () => {
+  // The words and number are fixed at the press; the card is read-only until the send goes or is undone.
+  const send = () => {
     if (!canSend) return;
-    setBusy("send");
     setError(null);
-    const res = await post(`/api/message-actions/${action.id}/send`, { text, handle, service });
-    // On success the card leaves with the next state push; the space's history shows the send.
-    if (!res.ok) {
-      setError(res.error);
-      setBusy(null);
-    }
+    startSend(action.id, action.toName, { text, handle, service });
   };
   const decline = async () => {
     setBusy("decline");
@@ -84,6 +101,8 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
     </button>
   );
 
+  if (!open) return <FoldedText icon={MessageSquare} spaceName={spaceName} to={action.toName} text={text} onOpen={() => setOpen(true)} />;
+
   return (
     <div className="entry msg-entry">
       <div className="item">
@@ -94,28 +113,28 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
           <span>{text.split("\n")[0]}</span>
         </span>
         <div className="acts">
-          <button className="btn" disabled={busy !== null} onClick={() => void decline()}>
+          {folded && (
+            <button className="btn" data-act="open" aria-expanded onClick={() => setOpen(false)}>
+              Hide
+            </button>
+          )}
+          <button className="btn" disabled={busy !== null || locked} onClick={() => void decline()}>
             Don't send
-          </button>
-          <button className="btn p" disabled={!canSend} onClick={() => void send()}>
-            {busy === "send" ? "Sending…" : "Send"}
           </button>
         </div>
       </div>
-      <form
-        className="detail msg-card"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
+      <div className="detail msg-card">
         {action.lastError && <p className="err last-try">Last try failed: {action.lastError}</p>}
         {needsPane(action.lastError) && settingsButton}
         <p className="msg-to">
           <span className="lbl">To</span>
           <b>{action.toName}</b>
-          <span className="sep">·</span>
-          {shown ? <span className="mono">{shown}</span> : <span className="need">number needed</span>}
+          {!shown && (
+            <>
+              <span className="sep">·</span>
+              <span className="need">number needed</span>
+            </>
+          )}
           {source && (
             <>
               <span className="sep">·</span>
@@ -131,13 +150,16 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
             autoComplete="off"
             placeholder="Phone number or email"
             aria-label="Phone number or email"
+            readOnly={locked}
+            onKeyDown={(e) => onNumberKey(e, () => busy === null && !locked && void lookup())}
             onChange={(e) => {
               setHandle(e.target.value);
               setTouched(true);
               setError(null);
+              clearSendError(action.id);
             }}
           />
-          <button className="btn" type="button" disabled={busy !== null} onClick={() => void lookup()}>
+          <button className="btn" type="button" disabled={busy !== null || locked} onClick={() => void lookup()}>
             <Search />
             {busy === "lookup" ? "Looking…" : `Look up "${action.toName}" in Contacts`}
           </button>
@@ -156,6 +178,7 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
                   type="radio"
                   name={`to-${action.id}`}
                   checked={shown === displayHandle(c.handle)}
+                  disabled={locked}
                   onChange={() => {
                     setHandle(displayHandle(c.handle));
                     setTouched(true);
@@ -175,15 +198,35 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
               {textLength(text)}/{MAX_TEXT}
             </span>
           </span>
-          <textarea className="mk-input" value={text} rows={Math.min(8, Math.max(3, text.split("\n").length + 1))} onChange={(e) => setText(e.target.value)} />
+          <textarea
+            className="mk-input"
+            value={text}
+            readOnly={locked}
+            rows={Math.min(8, Math.max(3, text.split("\n").length + 1))}
+            onChange={(e) => setText(e.target.value)}
+          />
           {textIssue && <span className="err">{textIssue}</span>}
         </label>
         <div className="msg-foot">
+          {pending ? (
+            <>
+              <span className="sending">Sending…</span>
+              {!pending.sending && (
+                <button className="btn" onClick={() => cancelSend(action.id)}>
+                  Undo
+                </button>
+              )}
+            </>
+          ) : (
+            <button className="btn p" disabled={!canSend} onClick={send}>
+              Send
+            </button>
+          )}
           <span className="via">
             <span className="lbl">Via</span>
             <span className="seg" role="group" aria-label="Send as">
               {(["iMessage", "SMS"] as const).map((v) => (
-                <button key={v} type="button" aria-pressed={service === v} onClick={() => setService(v)}>
+                <button key={v} type="button" aria-pressed={service === v} disabled={locked} onClick={() => setService(v)}>
                   {v}
                 </button>
               ))}
@@ -192,10 +235,30 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
           <p className="faint">Sends from Messages on this Mac. Atrium can't confirm delivery.</p>
         </div>
         {firstSend && <p className="hint">The first send asks macOS whether Atrium may control Messages. Click OK, and it sends.</p>}
-        <button type="submit" hidden />
-      </form>
-      {error && <div className="row-err err">{error}</div>}
-      {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
+      </div>
+      {(error ?? sendError) && <div className="row-err err">{error ?? sendError}</div>}
+      {needsPane(error ?? sendError) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
+    </div>
+  );
+}
+
+// One line for a text in a list: who it's to and how it starts. Review opens the full card, where Send is.
+export function FoldedText({ icon: Icon, spaceName, to, text, onOpen }: { icon: LucideIcon; spaceName: string; to: string; text: string; onOpen: () => void }) {
+  return (
+    <div className="entry msg-entry">
+      <div className="item folded">
+        <Icon className="msg-ico" />
+        <span className="who">{spaceName}</span>
+        <span className="t" title={`Text to ${to}`}>
+          Text to {to}
+          <span>{snippet(text)}</span>
+        </span>
+        <div className="acts">
+          <button className="btn" data-act="open" aria-expanded={false} onClick={onOpen}>
+            Review
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

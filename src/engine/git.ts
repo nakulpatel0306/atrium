@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { constants, existsSync, promises as fsp, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf } from "./diff-parse";
 import { isEnvPath } from "./envpath";
 
 const PROTECTED = new Set(["main", "master"]);
@@ -12,13 +15,15 @@ export async function git(
   path: string,
   args: string[],
   timeoutMs?: number,
+  opts: { env?: Record<string, string>; stdin?: Uint8Array | string } = {},
 ): Promise<{ code: number; out: string; err: string; timedOut: boolean }> {
   const proc = Bun.spawn(["git", ...SAFE, ...args], {
     cwd: path,
+    stdin: opts.stdin === undefined ? "ignore" : typeof opts.stdin === "string" ? Buffer.from(opts.stdin) : opts.stdin,
     stdout: "pipe",
     stderr: "pipe",
     // The engine has no terminal; a credential prompt would hang the run instead of failing it.
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...opts.env },
     timeout: timeoutMs,
   });
   const out = new Response(proc.stdout).text();
@@ -256,13 +261,47 @@ export async function pushBranch(
   branch: string,
   url: string | null,
   timeoutMs = 60_000,
+  // Extra git options, such as gh's credential helper.
+  flags: string[] = [],
 ): Promise<{ pushed: boolean; reason?: string }> {
   if (isProtected(branch)) return { pushed: false, reason: "Refusing to push main" };
   if (!url) return { pushed: false, reason: "No remote configured" };
-  const res = await git(path, ["push", url, `refs/heads/${branch}:refs/heads/${branch}`], timeoutMs);
+  const res = await git(path, [...flags, "push", url, `refs/heads/${branch}:refs/heads/${branch}`], timeoutMs);
   if (res.timedOut) return { pushed: false, reason: "The push timed out." };
   if (res.code !== 0) return { pushed: false, reason: res.err.trim() };
   return { pushed: true };
+}
+
+// Pushes one approved commit from a throwaway bare repo that borrows the repo's objects, so nothing in the repo's own
+// config (insteadOf rewrites, include files, askpass, proxies, protocol settings the agent could have written) is
+// read during the push. Only https and ssh transports are allowed, and no askpass program runs.
+export async function pushApprovedSha(
+  path: string,
+  sha: string,
+  branch: string,
+  url: string,
+  opts: { flags?: string[]; timeoutMs?: number } = {},
+): Promise<{ pushed: boolean; reason?: string }> {
+  if (isProtected(branch)) return { pushed: false, reason: "Refusing to push main" };
+  const objects = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]);
+  if (objects.code !== 0) return { pushed: false, reason: `Couldn't read git dir: ${objects.err.trim()}` };
+  const dir = mkdtempSync(join(tmpdir(), "atrium-push-"));
+  try {
+    const bare = join(dir, "push.git");
+    const init = await git(dir, ["init", "-q", "--bare", bare]);
+    if (init.code !== 0) return { pushed: false, reason: `Couldn't prepare the push: ${init.err.trim()}` };
+    writeFileSync(join(bare, "objects", "info", "alternates"), `${objects.out.trim()}\n`);
+    const isolated = ["--git-dir", bare];
+    const ref = await git(dir, [...isolated, "update-ref", `refs/heads/${branch}`, sha]);
+    if (ref.code !== 0) return { pushed: false, reason: `Couldn't prepare the push: ${ref.err.trim()}` };
+    const transport = ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "core.askPass="];
+    const res = await git(dir, [...isolated, ...transport, ...(opts.flags ?? []), "push", url, `${sha}:refs/heads/${branch}`], opts.timeoutMs ?? 60_000);
+    if (res.timedOut) return { pushed: false, reason: "The push timed out." };
+    if (res.code !== 0) return { pushed: false, reason: res.err.trim() };
+    return { pushed: true };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // Plain checkout (never --force); a dirty tree is reported rather than carried along.
@@ -419,8 +458,8 @@ export async function showBlob(path: string, ref: string, file: string, capBytes
 const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
 
 // For output that can be huge (a diff of a 3 MB line): stops reading at `cap` bytes and says so.
-async function gitCapped(path: string, args: string[], cap: number): Promise<{ out: string; truncated: boolean }> {
-  const proc = Bun.spawn(["git", ...SAFE, ...args], { cwd: path, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+async function gitCapped(path: string, args: string[], cap: number, env: Record<string, string> = {}): Promise<{ out: string; truncated: boolean }> {
+  const proc = Bun.spawn(["git", ...SAFE, ...args], { cwd: path, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env } });
   const err = new Response(proc.stderr).text();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -535,4 +574,286 @@ export async function moveLateCommit(path: string, taskId: string, decided: stri
   const back = await git(path, ["update-ref", `refs/heads/${decided}`, pre, post]);
   if (back.code !== 0) throw new Error(`Couldn't move ${decided} back to the commit you decided on: ${back.err.trim()}`);
   return branch;
+}
+
+const CHANGES_CAP = 200 * 1024;
+const ENV_EXCLUDES = ["--", ".", ":(exclude,glob,icase)**/.env*", ":(exclude,glob,icase)**/*.env"];
+// Only ever between two trees: git reads no working tree, so no clean filter, whatever the repo's config or
+// attributes say, has anything to run on. No external diff programs or textconv filters either, and attributes come
+// from the empty tree.
+async function diffFlags(path: string): Promise<string[]> {
+  const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
+  if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
+  return [
+    "-c", "core.quotePath=false", ...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`,
+    // Fixed prefixes: a user's diff.mnemonicPrefix or diff.noPrefix would change what the parser reads.
+    "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/",
+  ];
+}
+
+// .env files are left out by pathspec, and again by header, as in reviewDiff (that covers both sides of a rename).
+function parseCapped(res: { out: string; truncated: boolean }): DiffResult {
+  const kept = res.out.split(/^(?=diff --git )/m).filter((s) => s.startsWith("diff --git ") && !touchesEnv(s.split("\n").slice(0, 4).join(" ")));
+  const files = parseDiff(kept.join(""));
+  if (res.truncated && files.length) files[files.length - 1]!.truncated = true;
+  return { files, totals: totalsOf(files), truncated: res.truncated };
+}
+
+// A finished task's changes, from its branch's commits against where the work started.
+export async function branchDiff(path: string, base: string, branch: string): Promise<DiffResult> {
+  return parseCapped(await gitCapped(path, [...(await diffFlags(path)), `${base}...${branch}`, ...ENV_EXCLUDES], CHANGES_CAP));
+}
+
+// What a running agent has changed so far, against `start`: every file git knows (committed on the branch, or
+// staged) as it is on disk now, plus new files it hasn't added (they're shown as additions). Every file is read by
+// Atrium itself, never through a symlink, and git only ever compares trees.
+// `hashBudget` is a test seam for the most bytes read in one look.
+export async function workingDiff(path: string, start: string, opts: { hashBudget?: number } = {}): Promise<DiffResult> {
+  const flags = await diffFlags(path);
+  const snap = await withWorktreeTree(path, opts.hashBudget ?? HASH_TOTAL, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
+  const changes = parseCapped(snap.value);
+  const files = [...changes.files];
+  // A file Atrium couldn't read, or that's too large and a different size, is listed as changed with a note.
+  for (const u of snap.unknown) {
+    if (isEnvPath(u.path)) continue;
+    files.push({ path: u.path, status: u.added ? "added" : "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: u.note });
+  }
+  const list = await git(path, ["-c", "core.quotePath=false", ...STAGE_FLAGS, "ls-files", "-z", "--others", "--exclude-standard"]);
+  if (list.code !== 0) throw new Error(`Couldn't list new files: ${list.err.trim()}`);
+  let budget = CHANGES_CAP - files.reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.reduce((k, l) => k + l.text.length + 1, 0), 0), 0);
+  let truncated = changes.truncated;
+  // A nested repo shows as "dir/"; its contents are its own repo's business. A file taken out of the index but still
+  // on the branch is already in the snapshot.
+  const top = await fsp.realpath(path);
+  for (const rel of list.out.split("\0").filter((p) => p && !p.endsWith("/") && !isEnvPath(p) && !snap.paths.has(p)).sort()) {
+    const found = await untrackedFile(path, rel, Math.max(budget, 0), top);
+    if (!found) continue;
+    const { file, cut } = found;
+    if (cut) truncated = true;
+    budget -= file.hunks[0]?.lines.reduce((k, l) => k + l.text.length + 1, 0) ?? 0;
+    files.push(file);
+  }
+  const unchecked = snap.unchecked.filter((u) => !isEnvPath(u.path));
+  return { files, totals: totalsOf(files), truncated, ...(unchecked.length ? { unchecked } : {}) };
+}
+
+// A file bigger than this is never read, and no more than HASH_TOTAL is read in all for one look at the changes. A
+// file left unread is never taken as unchanged: see withWorktreeTree.
+const HASH_CAP = 10 * 1024 * 1024;
+const HASH_TOTAL = 50 * 1024 * 1024;
+
+type Opened = { kind: "fd"; fh: FileHandle } | { kind: "link"; target: string } | { kind: "gone" } | { kind: "unreadable" };
+
+// One path in the repo, opened without following a symlink or blocking on a FIFO, and only while its folder still
+// resolves inside the repo (`top`, the repo's own real path). Async throughout, so a big repo never stalls the engine.
+async function openRepoFile(top: string, root: string, rel: string): Promise<Opened> {
+  const abs = join(root, rel);
+  try {
+    const dir = await fsp.realpath(dirname(abs));
+    if (dir !== top && !dir.startsWith(`${top}/`)) return { kind: "gone" };
+  } catch {
+    return { kind: "gone" };
+  }
+  try {
+    return { kind: "fd", fh: await fsp.open(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK) };
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return { kind: "gone" };
+    if (code !== "ELOOP") return { kind: "unreadable" };
+    try {
+      return { kind: "link", target: await fsp.readlink(abs) };
+    } catch {
+      return { kind: "gone" };
+    }
+  }
+}
+
+async function readFh(fh: FileHandle, length: number): Promise<Buffer> {
+  const out = Buffer.alloc(length);
+  let pos = 0;
+  while (pos < length) {
+    const { bytesRead } = await fh.read(out, pos, length - pos, pos);
+    if (bytesRead === 0) break;
+    pos += bytesRead;
+  }
+  return out.subarray(0, pos);
+}
+
+type Hashed =
+  | { kind: "file"; id: string; mode: string; bytes: Buffer }
+  | { kind: "large"; size: number }
+  | { kind: "budget" }
+  | { kind: "gone" }
+  | { kind: "unreadable" };
+
+const blobId = (format: "sha1" | "sha256", bytes: Buffer) => createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+
+// A file's blob id as git would store it with no filters, worked out from the bytes on disk every time, whatever the
+// index's flags or the file's times say. One over the cap, or past what's left of `budget`, isn't read.
+async function hashRepoFile(top: string, root: string, rel: string, format: "sha1" | "sha256", budget: { left: number }): Promise<Hashed> {
+  const opened = await openRepoFile(top, root, rel);
+  if (opened.kind === "link") {
+    const bytes = Buffer.from(opened.target);
+    return { kind: "file", id: blobId(format, bytes), mode: "120000", bytes };
+  }
+  if (opened.kind !== "fd") return opened;
+  const { fh } = opened;
+  try {
+    const st = await fh.stat();
+    // A folder or FIFO where a file was is, as far as the file goes, gone.
+    if (!st.isFile()) return { kind: "gone" };
+    if (st.size > HASH_CAP) return { kind: "large", size: st.size };
+    if (st.size > budget.left) return { kind: "budget" };
+    budget.left -= st.size;
+    const bytes = await readFh(fh, st.size);
+    // It changed size while being read; whatever it is now, it isn't what was hashed.
+    if (bytes.length !== st.size) return { kind: "unreadable" };
+    return { kind: "file", id: blobId(format, bytes), mode: (st.mode & 0o111) !== 0 ? "100755" : "100644", bytes };
+  } catch {
+    return { kind: "unreadable" };
+  } finally {
+    await fh.close();
+  }
+}
+
+type Snapshot<T> = {
+  value: T;
+  paths: Set<string>;
+  unknown: { path: string; note: string; added: boolean }[];
+  unchecked: { path: string; note: string }[];
+};
+
+const TOO_LARGE = "Too large to show. Open the file in your editor to see what changed.";
+const UNREADABLE = "Atrium couldn't read this file, so it may have changed.";
+const TOO_LARGE_TO_CHECK = "Too large to check";
+const PAST_BUDGET = "Not checked: too much to scan";
+
+// The working tree as a git tree, built without git ever reading it: Atrium reads each file git knows (on HEAD or
+// staged) itself, hashes it as is, and writes only the changed ones as blobs, into a temporary object folder (the
+// repo's own objects are an alternate, so nothing is added to the repo) and a temporary index. `use` gets the tree
+// and the environment that can see it.
+async function withWorktreeTree<T>(path: string, hashBudget: number, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
+  const format = (await git(path, ["rev-parse", "--show-object-format"])).out.trim() === "sha256" ? "sha256" : "sha1";
+  const objects = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]);
+  if (objects.code !== 0) throw new Error(`Couldn't read git dir: ${objects.err.trim()}`);
+  const head = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-l", "-z", "--full-tree", "HEAD"]);
+  if (head.code !== 0) throw new Error(`Couldn't list files at HEAD: ${head.err.trim()}`);
+  const staged = await git(path, ["-c", "core.quotePath=false", "ls-files", "-s", "-z"]);
+  if (staged.code !== 0) throw new Error(`Couldn't list staged files: ${staged.err.trim()}`);
+  // Path → HEAD's entry (null when only the index has it). Gitlinks are other repos' business.
+  const known = new Map<string, { mode: string; id: string; size: number } | null>();
+  for (const record of head.out.split("\0").filter(Boolean)) {
+    const tab = record.indexOf("\t");
+    const [mode, type, id, size] = record.slice(0, tab).split(/ +/) as [string, string, string, string];
+    if (type === "blob") known.set(record.slice(tab + 1), { mode, id, size: Number(size) });
+  }
+  for (const record of staged.out.split("\0").filter(Boolean)) {
+    const tab = record.indexOf("\t");
+    const rel = record.slice(tab + 1);
+    if (!record.startsWith("160000 ") && !known.has(rel)) known.set(rel, null);
+  }
+
+  const updates: { mode: string; id: string | null; path: string; bytes: Buffer | null }[] = [];
+  const unknown: Snapshot<T>["unknown"] = [];
+  const unchecked: Snapshot<T>["unchecked"] = [];
+  const budget = { left: hashBudget };
+  const top = await fsp.realpath(path);
+  for (const [rel, entry] of known) {
+    const f = await hashRepoFile(top, path, rel, format, budget);
+    if (f.kind === "unreadable") {
+      unknown.push({ path: rel, note: UNREADABLE, added: entry === null });
+      continue;
+    }
+    // Past the budget, a file can't be vouched for, so it's listed as changed.
+    if (f.kind === "budget") {
+      unknown.push({ path: rel, note: PAST_BUDGET, added: entry === null });
+      continue;
+    }
+    // Over the cap: a different size from HEAD's is certainly a change; the same size can't be told apart, so it's
+    // listed on its own as not checked.
+    if (f.kind === "large") {
+      if (entry && entry.size === f.size) unchecked.push({ path: rel, note: TOO_LARGE_TO_CHECK });
+      else unknown.push({ path: rel, note: TOO_LARGE, added: entry === null });
+      continue;
+    }
+    if (f.kind === "gone") {
+      if (entry) updates.push({ mode: entry.mode, id: null, path: rel, bytes: null });
+      continue;
+    }
+    if (entry && entry.id === f.id && entry.mode === f.mode) continue;
+    updates.push({ mode: f.mode, id: f.id, path: rel, bytes: f.bytes });
+  }
+  const paths = new Set(known.keys());
+  if (updates.length === 0) return { value: await use("HEAD^{tree}", {}), paths, unknown, unchecked };
+
+  const dir = mkdtempSync(join(tmpdir(), "atrium-diff-"));
+  try {
+    mkdirSync(join(dir, "objects"));
+    const env = { GIT_OBJECT_DIRECTORY: join(dir, "objects"), GIT_ALTERNATE_OBJECT_DIRECTORIES: objects.out.trim(), GIT_INDEX_FILE: join(dir, "index") };
+    const zeros = "0".repeat(format === "sha256" ? 64 : 40);
+    // The bytes Atrium read go into files of its own, and one git call stores them all. --no-filters keeps them
+    // exactly as read; git only ever opens these copies, never the repo's files.
+    const written = updates.filter((u) => u.id !== null);
+    await fsp.mkdir(join(dir, "blobs"));
+    const copies = await Promise.all(written.map(async (u, i) => (await fsp.writeFile(join(dir, "blobs", String(i)), u.bytes!), join(dir, "blobs", String(i)))));
+    const ids = written.length
+      ? await git(path, ["hash-object", "-w", "--no-filters", "--stdin-paths"], undefined, { env, stdin: copies.map((c) => `${c}\n`).join("") })
+      : null;
+    if (ids && ids.code !== 0) throw new Error(`Couldn't read the changed files: ${ids.err.trim()}`);
+    const stored = ids?.out.trim().split("\n") ?? [];
+    if (stored.length !== written.length) throw new Error("Couldn't read the changed files: git stored a different number of them.");
+    const lines = [
+      ...updates.filter((u) => u.id === null).map((u) => `0 ${zeros}\t${u.path}`),
+      ...written.map((u, i) => `${u.mode} ${stored[i]}\t${u.path}`),
+    ];
+    const read = await git(path, ["read-tree", "HEAD"], undefined, { env });
+    if (read.code !== 0) throw new Error(`Couldn't read HEAD: ${read.err.trim()}`);
+    const info = await git(path, ["update-index", "-z", "--index-info"], undefined, { env, stdin: lines.map((l) => `${l}\0`).join("") });
+    if (info.code !== 0) throw new Error(`Couldn't list the changed files: ${info.err.trim()}`);
+    const tree = await git(path, ["write-tree"], undefined, { env });
+    if (tree.code !== 0) throw new Error(`Couldn't read the changed files: ${tree.err.trim()}`);
+    return { value: await use(tree.out.trim(), env), paths, unknown, unchecked };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// `cut` says the file was shortened to fit what's left of the 200 KB, rather than at its own 2,000 lines. `top` is
+// the repo's real path, when the caller already has it.
+export async function untrackedFile(root: string, rel: string, budget: number, top?: string): Promise<{ file: DiffFile; cut: boolean } | null> {
+  const file: DiffFile = { path: rel, status: "added", additions: 0, deletions: 0, binary: false, truncated: false, hunks: [] };
+  const opened = await openRepoFile(top ?? (await fsp.realpath(root)), root, rel);
+  if (opened.kind === "gone") return null;
+  if (opened.kind === "unreadable") return { file: { ...file, truncated: true, note: UNREADABLE }, cut: false };
+  // git shows a symlink as one line holding its target, which is what it would commit; nothing behind it is read.
+  if (opened.kind === "link") {
+    file.additions = 1;
+    file.hunks = [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add", text: opened.target, newNo: 1 }] }];
+    return { file, cut: false };
+  }
+  let bytes: Buffer;
+  let size: number;
+  try {
+    const st = await opened.fh.stat();
+    if (!st.isFile()) return null;
+    size = st.size;
+    bytes = await readFh(opened.fh, Math.min(size, budget));
+  } finally {
+    await opened.fh.close();
+  }
+  if (bytes.subarray(0, 8000).includes(0)) {
+    file.binary = true;
+    return { file, cut: false };
+  }
+  const cut = bytes.length < size;
+  if (cut) file.truncated = true;
+  const lines = bytes.toString().split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  file.additions = lines.length;
+  if (lines.length > MAX_FILE_LINES) file.truncated = true;
+  const shown = lines.slice(0, MAX_FILE_LINES);
+  if (shown.length) {
+    file.hunks = [{ header: `@@ -0,0 +1,${lines.length} @@`, lines: shown.map((t, i) => ({ kind: "add" as const, text: t, newNo: i + 1 })) }];
+  }
+  return { file, cut };
 }

@@ -28,6 +28,7 @@ import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
 import { spaceFolder } from "../../src/engine/folders";
 import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
+import { claimAttachments, storeAttachments, withAttachments } from "../../src/engine/attachments";
 import { tempHome, tempRepo } from "../helpers";
 import { readdirSync } from "node:fs";
 import { config } from "../../src/engine/config";
@@ -646,6 +647,64 @@ test("files a scratch run leaves are kept with the run, and the approval says wh
   expect(listPending(db)[0]!.detail).toContain(
     `Files it left are kept in ${kept}. Left out 1 item that was a link or changed while being copied.`,
   );
+});
+
+test("a scratch run gets the task's attached files where its detail says, and they aren't kept as its work", async () => {
+  const s = createSpace(db, { name: "Flat Costs", kind: "general", goal: "", private: false });
+  const [a] = storeAttachments(db, s, [{ name: "receipt.png", bytes: new Uint8Array([1, 2, 3]) }]);
+  const t = createTask(db, { spaceId: s.id, title: "Split it", detail: withAttachments("Split it", [a!]), agent: "codex" });
+  claimAttachments(db, t.id, [a!]);
+  let seen: number[] = [];
+  const codex = fakeAdapter((input) => {
+    seen = [...readFileSync(join(input.cwd, "Attachments", "receipt.png"))];
+    writeFileSync(join(input.cwd, "split.md"), "- 3 ways\n");
+    return ok("Split.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  expect(seen).toEqual([1, 2, 3]);
+  expect(codex.calls[0]!.prompt).toContain("- Attachments/receipt.png");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  const kept = join(spaceFolder(getSpace(db, s.id)!), "runs", run.id);
+  expect(readdirSync(kept)).toEqual(["split.md"]);
+});
+
+test("an agent that swaps Attachments for a link to an outside folder never gets a file there deleted", async () => {
+  const s = createSpace(db, { name: "Flat Costs", kind: "general", goal: "", private: false });
+  const [a] = storeAttachments(db, s, [{ name: "receipt.png", bytes: new Uint8Array([1, 2, 3]) }]);
+  const t = createTask(db, { spaceId: s.id, title: "Split it", detail: withAttachments("Split it", [a!]), agent: "codex" });
+  claimAttachments(db, t.id, [a!]);
+  const outside = mkdtempSync(join(tmpdir(), "atrium-outside-"));
+  cleanups.push(() => rmSync(outside, { recursive: true, force: true }));
+  // Same name, same bytes: exactly what a path-based cleanup would have mistaken for its own copy.
+  mkdirSync(join(outside, "Attachments"));
+  writeFileSync(join(outside, "Attachments", "receipt.png"), new Uint8Array([1, 2, 3]));
+  const codex = fakeAdapter((input) => {
+    rmSync(join(input.cwd, "Attachments"), { recursive: true });
+    symlinkSync(join(outside, "Attachments"), join(input.cwd, "Attachments"));
+    writeFileSync(join(input.cwd, "notes.md"), "edited\n");
+    return ok("Done.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  expect([...readFileSync(join(outside, "Attachments", "receipt.png"))]).toEqual([1, 2, 3]);
+  expect(readFileSync(join(spaceFolder(getSpace(db, s.id)!), "Attachments", "receipt.png"))).toEqual(Buffer.from([1, 2, 3]));
+});
+
+test("an attached file the agent changed is kept with its work", async () => {
+  const s = createSpace(db, { name: "Flat Costs", kind: "general", goal: "", private: false });
+  const [a] = storeAttachments(db, s, [{ name: "list.csv", bytes: new TextEncoder().encode("a,b\n") }]);
+  const t = createTask(db, { spaceId: s.id, title: "Total it", detail: withAttachments("Total it", [a!]), agent: "codex" });
+  claimAttachments(db, t.id, [a!]);
+  const codex = fakeAdapter((input) => {
+    writeFileSync(join(input.cwd, "Attachments", "list.csv"), "a,b,total\n");
+    return ok("Added totals.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  const kept = join(spaceFolder(getSpace(db, s.id)!), "runs", run.id);
+  expect(readFileSync(join(kept, "Attachments", "list.csv"), "utf8")).toBe("a,b,total\n");
 });
 
 test("launch re-checks the agent and holds a task the space no longer allows", async () => {
@@ -2206,5 +2265,183 @@ describe("final review", () => {
     start({ adapter: writesDoc().adapter });
     await waitFor(() => status(t.id) === "review");
     expect(getTask(db, t.id)!.outcome).toBe("done");
+  });
+});
+
+describe("steer", () => {
+  test("a steered Claude run stops, keeps its edits on the branch and starts again with the note", async () => {
+    const path = repo();
+    git(path, "checkout", "-b", "feature");
+    git(path, "remote", "add", "origin", "https://github.com/fakeuser/app.git");
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Add a footer" });
+    const dir = mkdtempSync(join(tmpdir(), "atrium-steer-"));
+    process.env.FAKE_CLAUDE_MODE = "slow";
+    cleanups.push(() => {
+      delete process.env.FAKE_CLAUDE_MODE;
+      delete process.env.FAKE_CLAUDE_STDIN;
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const r = start({ adapter: claudeAdapter(join(import.meta.dir, "../fixtures/fake-claude.ts")) });
+    await waitFor(() => status(t.id) === "running" && git(path, "branch", "--show-current") === `atrium/${t.id}`, 10000);
+    // What the agent had written so far.
+    writeFileSync(join(path, "footer.html"), "<footer>half</footer>\n");
+    // The next run answers at once and keeps a copy of its prompt.
+    process.env.FAKE_CLAUDE_MODE = "ok";
+    process.env.FAKE_CLAUDE_STDIN = join(dir, "stdin.txt");
+    const note = "Use the brand colour for the footer links";
+    expect(await r.steerTask(t.id, note)).toBe("steered");
+    expect(git(path, "log", "-1", "--format=%s", `atrium/${t.id}`)).toBe("WIP (steered): Add a footer");
+    expect(git(path, "show", `atrium/${t.id}:footer.html`)).toBe("<footer>half</footer>");
+    expect(listActivity(db).map((a) => a.message)).toContain(`You steered: ${note}`);
+
+    await waitFor(() => status(t.id) === "review", 15000);
+    const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");
+    expect(prompt).toContain(`Note from you while this was running: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`);
+    const runs = db.query("SELECT transcript_path, start_ref, remote_url FROM runs WHERE task_id = ? ORDER BY started_at, rowid").all(t.id) as {
+      transcript_path: string;
+      start_ref: string;
+      remote_url: string;
+    }[];
+    expect(runs).toHaveLength(2);
+    // Both runs started from the user's branch and read the remote before the agent ran.
+    expect(runs.map((x) => [x.start_ref, x.remote_url])).toEqual([
+      ["feature", "https://github.com/fakeuser/app.git"],
+      ["feature", "https://github.com/fakeuser/app.git"],
+    ]);
+    expect(readFileSync(runs[1]!.transcript_path, "utf8").split("\n")[0]).toBe(`— You steered: ${note} —`);
+    // Same branch, edits still there, repo back where it was.
+    expect(getTask(db, t.id)!.branch).toBe(`atrium/${t.id}`);
+    expect(git(path, "show", `atrium/${t.id}:footer.html`)).toBe("<footer>half</footer>");
+    expect(git(path, "branch", "--show-current")).toBe("feature");
+  }, 30000);
+
+  test("steering a task that isn't running says so", async () => {
+    const s = generalSpace();
+    const t = createTask(db, { spaceId: s.id, title: "Not started" });
+    const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter, power: async () => "battery" });
+    setTaskStatus(db, t.id, "blocked", { blockedReason: "x" });
+    expect(await r.steerTask(t.id, "change it")).toBe("not-running");
+  });
+
+  test("a stop that lands with a steer wins: the task ends stopped, not requeued", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+    await waitFor(() => status(t.id) === "running");
+    const [stopped, steered] = await Promise.all([r.stopTask(t.id), r.steerTask(t.id, "never mind")]);
+    expect(stopped).toBe("stopped");
+    expect(steered).toBe("not-running");
+    expect(status(t.id)).toBe("blocked");
+  });
+});
+
+describe("steer edge cases", () => {
+  test("a second note while the first is on its way is refused as pending", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    let finish!: () => void;
+    const gate = new Promise<void>((res) => (finish = res));
+    const r = start({
+      adapter: fakeAdapter(async (input) => {
+        await untilAborted(input);
+        await gate;
+        return { status: "error", kind: "failed", message: "Stopped" };
+      }).adapter,
+      stopTimeoutMs: 30,
+    });
+    await waitFor(() => status(t.id) === "running");
+    expect(await r.steerTask(t.id, "first")).toBe("timeout");
+    expect(r.steerPending(t.id)).toBe(true);
+    expect(await r.steerTask(t.id, "second")).toBe("pending");
+    finish();
+    await waitFor(() => listActivity(db).some((a) => a.message === "You steered: first"));
+    expect(listActivity(db).some((a) => a.message === "You steered: second")).toBe(false);
+  });
+
+  test("a steered task whose next start is blocked drops its note's marker", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    const real = gitOps.repoReady;
+    let calls = 0;
+    const spy = spyOn(gitOps, "repoReady").mockImplementation(async (p: string) => (++calls === 1 ? real(p) : { ok: false as const, reason: "The folder moved." }));
+    cleanups.push(() => spy.mockRestore());
+    const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
+    await waitFor(() => status(t.id) === "running");
+    expect(await r.steerTask(t.id, "use tabs")).toBe("steered");
+    await waitFor(() => status(t.id) === "blocked");
+    expect(r.steerPending(t.id)).toBe(false);
+  });
+
+  test("a steered run that can't save its edits ends blocked, and the steer says so", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Long job" });
+    const spy = spyOn(gitOps, "commitAll").mockImplementation(async () => {
+      throw new Error("Refusing to commit: this repo uses git filters (e.g. LFS). Commit these changes yourself.");
+    });
+    cleanups.push(() => spy.mockRestore());
+    const r = start({
+      adapter: fakeAdapter(async (input) => {
+        writeFileSync(join(input.cwd, "half.txt"), "half\n");
+        return untilAborted(input);
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "running");
+    expect(await r.steerTask(t.id, "use tabs")).toBe("blocked");
+    expect(getTask(db, t.id)!.blockedReason).toContain("Refusing to commit");
+    expect(r.steerPending(t.id)).toBe(false);
+  });
+});
+
+describe("live changes", () => {
+  test("a Claude file edit in a repo run tells the dashboard, throttled per task", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Edit things" });
+    const seen: number[] = [];
+    const off = bus.on((e) => e.type === "diff-changed" && e.taskId === t.id && seen.push(Date.now()));
+    cleanups.push(off);
+    runner = createRunner({
+      db,
+      adapters: {
+        claude: fakeAdapter(async (input) => {
+          input.onChunk("→ Read README.md");
+          for (let i = 0; i < 5; i++) input.onChunk(`→ Edit src/file${i}.ts`);
+          await Bun.sleep(150);
+          input.onChunk("→ Write notes.md");
+          return ok();
+        }).adapter,
+      },
+      power: async () => "ac",
+      keepAwake: fakeKeepAwake(),
+      diffWatch: { windowMs: 100 },
+    });
+    runner.start();
+    await waitFor(() => status(t.id) === "review");
+    // The first edit at once, the burst behind it once the window closed, then the later write.
+    expect(seen).toHaveLength(3);
+    expect(seen[1]! - seen[0]!).toBeGreaterThanOrEqual(90);
+  });
+
+  test("an agent that doesn't report edits is checked on a timer only while its repo run lasts", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Codex work" });
+    let n = 0;
+    const off = bus.on((e) => e.type === "diff-changed" && n++);
+    cleanups.push(off);
+    // Registered where the task resolves, but with Codex's id, which is what decides how edits are noticed.
+    const codex: AgentAdapter = { id: "codex", label: "Codex", run: async () => (await Bun.sleep(130), ok()) };
+    runner = createRunner({ db, adapters: { claude: codex }, power: async () => "ac", keepAwake: fakeKeepAwake(), diffWatch: { windowMs: 10, pollMs: 40 } });
+    runner.start();
+    await waitFor(() => status(t.id) === "review");
+    expect(n).toBeGreaterThanOrEqual(2);
+    const after = n;
+    await Bun.sleep(120);
+    expect(n).toBe(after);
   });
 });

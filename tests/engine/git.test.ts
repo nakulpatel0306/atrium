@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchFiles, branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch, showBlob } from "../../src/engine/git";
+import { branchDiff, branchFiles, branchOffDirty, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, returnToBranch, showBlob, untrackedFile, workingDiff } from "../../src/engine/git";
 import { fingerprintOf } from "../../src/engine/autonomy/kinds";
 import { PLAIN_DOCS, tempRepo } from "../helpers";
 
@@ -556,5 +556,202 @@ describe("branch files", () => {
     expect(await showBlob(path, "atrium/t1", "new.md", 2)).toEqual({ size: 6, bytes: null });
     await expect(showBlob(path, "atrium/t1", ".env.local", 1024)).rejects.toThrow("Atrium never shows .env files.");
     await expect(branchFiles(path, "main", "atrium/nope")).rejects.toThrow("Couldn't list the files on atrium/nope:");
+  });
+});
+
+describe("changes", () => {
+  function workRepo() {
+    const path = repo();
+    writeFileSync(join(path, "old.txt"), "old\n");
+    writeFileSync(join(path, "app.ts"), "const a = 1;\nconst b = 2;\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "base");
+    git(path, "checkout", "-b", "atrium/t1");
+    return path;
+  }
+
+  test("workingDiff shows modified, untracked, deleted and binary files, and leaves .env out", async () => {
+    const path = workRepo();
+    writeFileSync(join(path, "app.ts"), "const a = 1;\nconst b = 3;\n");
+    writeFileSync(join(path, "notes.md"), "first\nsecond\n");
+    rmSync(join(path, "old.txt"));
+    writeFileSync(join(path, "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 0]));
+    writeFileSync(join(path, ".env.local"), "TOKEN=made-up\n");
+    mkdirSync(join(path, "conf"));
+    writeFileSync(join(path, "conf", "prod.env"), "X=1\n");
+    const d = await workingDiff(path, "main");
+    const byPath = Object.fromEntries(d.files.map((f) => [f.path, f]));
+    expect(Object.keys(byPath).sort()).toEqual(["app.ts", "logo.png", "notes.md", "old.txt"]);
+    expect(byPath["app.ts"]).toMatchObject({ status: "modified", additions: 1, deletions: 1, binary: false });
+    expect(byPath["old.txt"]).toMatchObject({ status: "deleted", additions: 0, deletions: 1 });
+    expect(byPath["notes.md"]).toMatchObject({ status: "added", additions: 2, deletions: 0 });
+    expect(byPath["notes.md"]!.hunks[0]!.lines).toEqual([
+      { kind: "add", text: "first", newNo: 1 },
+      { kind: "add", text: "second", newNo: 2 },
+    ]);
+    expect(byPath["logo.png"]).toMatchObject({ status: "added", binary: true, hunks: [] });
+    expect(d.totals).toEqual({ files: 4, additions: 3, deletions: 2 });
+    expect(d.truncated).toBe(false);
+    expect(JSON.stringify(d)).not.toContain("made-up");
+  });
+
+  test("an untracked symlink shows its target, never what it points at", async () => {
+    const path = workRepo();
+    const outside = tempDir();
+    writeFileSync(join(outside, "secret.txt"), "do not show\n");
+    symlinkSync(join(outside, "secret.txt"), join(path, "link.txt"));
+    const d = await workingDiff(path, "main");
+    const link = d.files.find((f) => f.path === "link.txt")!;
+    expect(link.hunks[0]!.lines[0]!.text).toBe(join(outside, "secret.txt"));
+    expect(JSON.stringify(d)).not.toContain("do not show");
+  });
+
+  test("a file over 2,000 lines is cut with a flag, and the whole result stops at 200 KB", async () => {
+    const path = workRepo();
+    writeFileSync(join(path, "long.txt"), Array.from({ length: 2500 }, (_, i) => `line ${i}`).join("\n") + "\n");
+    let d = await workingDiff(path, "main");
+    const long = d.files.find((f) => f.path === "long.txt")!;
+    expect(long.truncated).toBe(true);
+    expect(long.additions).toBe(2500);
+    expect(long.hunks[0]!.lines).toHaveLength(2000);
+    expect(d.truncated).toBe(false);
+
+    writeFileSync(join(path, "app.ts"), "x".repeat(300 * 1024) + "\n");
+    d = await workingDiff(path, "main");
+    expect(d.truncated).toBe(true);
+    expect(d.files.find((f) => f.path === "app.ts")!.truncated).toBe(true);
+  });
+
+  test("branchDiff reads a finished branch's commits while the repo is back on main", async () => {
+    const path = workRepo();
+    writeFileSync(join(path, "app.ts"), "const a = 1;\nconst b = 3;\n");
+    writeFileSync(join(path, "added.md"), "new\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "work");
+    git(path, "checkout", "main");
+    // An uncommitted change on main isn't the task's.
+    writeFileSync(join(path, "README.md"), "# changed on main\n");
+    const d = await branchDiff(path, "main", "atrium/t1");
+    expect(d.files.map((f) => [f.path, f.status])).toEqual([
+      ["added.md", "added"],
+      ["app.ts", "modified"],
+    ]);
+    expect(d.totals).toEqual({ files: 2, additions: 2, deletions: 1 });
+  });
+
+  test("no filter driver the agent planted runs while its changes are read", async () => {
+    const path = workRepo();
+    const marker = join(tempDir(), "ran");
+    // Defined in the repo's own config, selected from the worktree's .gitattributes and from info/attributes.
+    git(path, "config", "filter.evil.clean", `touch ${marker}; cat`);
+    git(path, "config", "filter.evil.process", `touch ${marker}`);
+    writeFileSync(join(path, ".gitattributes"), "* filter=evil\n");
+    writeFileSync(join(path, ".git", "info", "attributes"), "* filter=evil\n");
+    writeFileSync(join(path, "app.ts"), "const a = 1;\nconst b = 3;\n");
+    const d = await workingDiff(path, "main");
+    expect(d.files.find((f) => f.path === "app.ts")).toMatchObject({ additions: 1, deletions: 1 });
+    expect(existsSync(marker)).toBe(false);
+    // The same read without Atrium's guards would have run it, so the check above means something.
+    Bun.spawnSync(["git", "diff", "main"], { cwd: path });
+    expect(existsSync(marker)).toBe(true);
+  });
+
+  test("an untracked file is read only when it's a regular file inside the repo", async () => {
+    const path = workRepo();
+    const outside = tempDir();
+    writeFileSync(join(outside, "secret.txt"), "do not show\n");
+    // A folder in the repo that's a link to somewhere else: nothing through it is read.
+    symlinkSync(outside, join(path, "linked"));
+    expect(await untrackedFile(path, "linked/secret.txt", 1024)).toBeNull();
+    // A file that's a link shows its target as text, as git would commit it.
+    symlinkSync(join(outside, "secret.txt"), join(path, "file-link.txt"));
+    expect((await untrackedFile(path, "file-link.txt", 1024))!.file.hunks[0]!.lines[0]!.text).toBe(join(outside, "secret.txt"));
+    const d = await workingDiff(path, "main");
+    expect(JSON.stringify(d)).not.toContain("do not show");
+  });
+
+  test("a FIFO in the repo doesn't hang the read", async () => {
+    const path = workRepo();
+    const made = Bun.spawnSync(["mkfifo", join(path, "pipe")]);
+    expect(made.exitCode).toBe(0);
+    expect(await untrackedFile(path, "pipe", 1024)).toBeNull();
+    const d = await workingDiff(path, "main");
+    expect(d.files.map((f) => f.path)).not.toContain("pipe");
+  }, 5000);
+
+  test("staged files count: a staged-only new file is added, a file taken out of the index isn't listed twice", async () => {
+    const path = workRepo();
+    writeFileSync(join(path, "staged.md"), "staged\n");
+    git(path, "add", "staged.md");
+    git(path, "rm", "-q", "--cached", "app.ts");
+    git(path, "rm", "-q", "old.txt");
+    const d = await workingDiff(path, "main");
+    expect(d.files.map((f) => [f.path, f.status]).sort()).toEqual([
+      ["old.txt", "deleted"],
+      ["staged.md", "added"],
+    ]);
+  });
+
+  test("a file over the cap is never read: a new size is a change, the same size is listed as not checked", async () => {
+    const path = workRepo();
+    const big = Buffer.alloc(11 * 1024 * 1024, "a");
+    writeFileSync(join(path, "big.txt"), big);
+    git(path, "add", "big.txt");
+    git(path, "commit", "-q", "-m", "big");
+    const unchecked = [{ path: "big.txt", note: "Too large to check" }];
+    let d = await workingDiff(path, "HEAD");
+    expect(d.files).toEqual([]);
+    expect(d.unchecked).toEqual(unchecked);
+    // Same size, different bytes: Atrium can't tell, and says so rather than calling it unchanged.
+    big[0] = 98;
+    writeFileSync(join(path, "big.txt"), big);
+    expect((await workingDiff(path, "HEAD")).unchecked).toEqual(unchecked);
+    appendFileSync(join(path, "big.txt"), "more\n");
+    d = await workingDiff(path, "HEAD");
+    expect(d.unchecked).toBeUndefined();
+    expect(d.files).toEqual([
+      { path: "big.txt", status: "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: "Too large to show. Open the file in your editor to see what changed." },
+    ]);
+  });
+
+  test("past the read budget, the rest are listed as changed with their own note", async () => {
+    const path = workRepo();
+    for (let i = 0; i < 4; i++) writeFileSync(join(path, `part${i}.txt`), `${"x".repeat(40)}\n`);
+    git(path, "add", "-A");
+    git(path, "commit", "-q", "-m", "parts");
+    // app.ts, old.txt and README.md are read too, so a budget of 100 bytes runs out partway through the parts.
+    const d = await workingDiff(path, "HEAD", { hashBudget: 100 });
+    const skipped = d.files.filter((f) => f.note === "Not checked: too much to scan");
+    expect(skipped.length).toBeGreaterThan(0);
+    expect(skipped.every((f) => f.status === "modified" && f.truncated)).toBe(true);
+    expect(d.unchecked).toBeUndefined();
+    // With room to read them all, nothing changed.
+    expect((await workingDiff(path, "HEAD")).files).toEqual([]);
+  });
+
+  test("assume-unchanged and skip-worktree flags don't hide a change", async () => {
+    const path = workRepo();
+    git(path, "update-index", "--assume-unchanged", "app.ts");
+    git(path, "update-index", "--skip-worktree", "old.txt");
+    writeFileSync(join(path, "app.ts"), "const a = 1;\nconst b = 9;\n");
+    writeFileSync(join(path, "old.txt"), "changed\n");
+    const d = await workingDiff(path, "main");
+    expect(d.files.map((f) => [f.path, f.status])).toEqual([
+      ["app.ts", "modified"],
+      ["old.txt", "modified"],
+    ]);
+  });
+
+  test("a file Atrium can't read is listed as maybe changed, never as unchanged", async () => {
+    const path = workRepo();
+    chmodSync(join(path, "app.ts"), 0o000);
+    cleanups.push(() => chmodSync(join(path, "app.ts"), 0o644));
+    const d = await workingDiff(path, "main");
+    expect(d.files.find((f) => f.path === "app.ts")).toMatchObject({ status: "modified", truncated: true, note: "Atrium couldn't read this file, so it may have changed." });
+  });
+
+  test("no changes is an empty result", async () => {
+    const path = workRepo();
+    expect(await workingDiff(path, "main")).toEqual({ files: [], totals: { files: 0, additions: 0, deletions: 0 }, truncated: false });
   });
 });
