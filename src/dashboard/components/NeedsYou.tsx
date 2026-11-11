@@ -6,7 +6,8 @@ import { navigate } from "../route";
 import { reviewLine, reviewTarget, summaryLine } from "../summary";
 import { GroupMessageCard } from "./GroupMessageCard";
 import { MessageCard } from "./MessageCard";
-import { approveLabel, OutcomeBanner } from "./OutcomeBanner";
+import { DecideButtons, SendBackNote, useDecision } from "./Decision";
+import { OutcomeBanner } from "./OutcomeBanner";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -22,10 +23,8 @@ const useReview = (approval: Approval, state: State) =>
 
 function Row({ approval, space, state }: { approval: Approval; space: Space | undefined; state: State }) {
   const [open, setOpen] = useState(false);
-  const [sendingBack, setSendingBack] = useState(false);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const d = useDecision(approval);
+  const { busy, setBusy, error, setError, decide } = d;
   const review = useReview(approval, state);
   const alert = approval.kind === "alert";
   // An agent's flag isn't one of Nakul's alerts, so there's nothing to turn off.
@@ -44,20 +43,6 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
   const task = approval.kind === "review" && approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
 
-  const decide = async (decision: "approve" | "reject") => {
-    setBusy(true);
-    setError(null);
-    const res = await post(`/api/approvals/${approval.id}`, {
-      decision,
-      ...(decision === "reject" && note.trim() ? { note: note.trim() } : {}),
-    });
-    // On success the row disappears with the next state refresh.
-    if (!res.ok) {
-      setError(res.error);
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="entry">
       <div className="item">
@@ -75,7 +60,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
         )}
         {space?.kind === "markets" && <AdviceTag />}
         <div className="acts">
-          <button className="btn" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <button className="btn" data-act="open" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? "Hide" : "View"}
           </button>
           {alert ? (
@@ -90,14 +75,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
               </button>
             </>
           ) : (
-            <>
-              <button className="btn" disabled={busy} onClick={() => setSendingBack(!sendingBack)}>
-                Send back
-              </button>
-              <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
-                {approveLabel(outcome)}
-              </button>
-            </>
+            <DecideButtons d={d} outcome={outcome} />
           )}
         </div>
       </div>
@@ -130,29 +108,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           </div>
         </div>
       )}
-      {sendingBack && !alert && (
-        <form
-          className="note"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void decide("reject");
-          }}
-        >
-          <input
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && setSendingBack(false)}
-            placeholder="What should change? (a short note for the agent)"
-          />
-          <button className="btn" type="button" onClick={() => setSendingBack(false)}>
-            Cancel
-          </button>
-          <button className="btn p" type="submit" disabled={busy}>
-            Send back
-          </button>
-        </form>
-      )}
+      {!alert && <SendBackNote d={d} />}
       {error && <div className="row-err err">{error}</div>}
     </div>
   );
@@ -185,8 +141,49 @@ function NudgeRow({ nudge }: { nudge: Nudge }) {
   );
 }
 
-export function NeedsYou({ state }: { state: State }) {
+// Every row waiting on Nakul, each with its own kind of answer. A space shows its share of the same rows.
+function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
+  const mine = <T extends { spaceId: string | null }>(xs: T[]) => (spaceId ? xs.filter((x) => x.spaceId === spaceId) : xs);
+  return (
+    <>
+      {mine(state.proposals).map((p) => (
+        <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
+      ))}
+      {mine(state.approvals).map((a) => {
+        const action = state.repoActions.find((r) => r.approvalId === a.id);
+        if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
+        if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
+        const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
+        const Card = text?.group ? GroupMessageCard : MessageCard;
+        if (text) return <Card key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} />;
+        return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
+      })}
+    </>
+  );
+}
+
+export const waitingIn = (state: State, spaceId: string) =>
+  state.approvals.filter((a) => a.spaceId === spaceId).length + state.proposals.filter((p) => p.spaceId === spaceId).length;
+
+// At the top of a space: what's waiting on Nakul there, answered right where the work is.
+export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
+  const count = waitingIn(state, spaceId);
+  if (count === 0) return null;
+  return (
+    <>
+      <h2>
+        <Inbox />
+        Waiting for you · {count}
+      </h2>
+      <div className="list needs-list">
+        <Items state={state} spaceId={spaceId} />
+      </div>
+    </>
+  );
+}
+
+export function NeedsYou({ state }: { state: State }) {
   const count = state.approvals.length + state.proposals.length;
   const nudges = state.nudges ?? [];
   return (
@@ -194,28 +191,11 @@ export function NeedsYou({ state }: { state: State }) {
       <h2 id="needs">
         <Inbox />
         Needs you{count > 0 && ` · ${count}`}</h2>
-      <div className="list">
+      <div className="list needs-list">
         {nudges.map((n) => (
           <NudgeRow key={n.id} nudge={n} />
         ))}
-        {count === 0 ? (
-          nudges.length === 0 && <div className="empty-row">You're all caught up.</div>
-        ) : (
-          <>
-            {state.proposals.map((p) => (
-              <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
-            ))}
-            {state.approvals.map((a) => {
-              const action = state.repoActions.find((r) => r.approvalId === a.id);
-              if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
-              if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
-              const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
-              const Card = text?.group ? GroupMessageCard : MessageCard;
-              if (text) return <Card key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} />;
-              return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
-            })}
-          </>
-        )}
+        {count === 0 ? nudges.length === 0 && <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
       </div>
     </>
   );

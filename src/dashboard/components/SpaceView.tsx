@@ -8,12 +8,14 @@ import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { setArchived } from "../spaces";
 import { Activity, TaskHistory } from "./Activity";
+import { ReviewActions } from "./Decision";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
 import { AgentPicker } from "./AgentPicker";
 import { FilesTab } from "./FilesTab";
 import { Markdown } from "./Markdown";
+import { SpaceNeeds } from "./NeedsYou";
 import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
 import { OutcomeBanner } from "./OutcomeBanner";
@@ -264,6 +266,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
   const space = state.spaces.find((s) => s.id === task.spaceId);
   // A finished task the agent said it couldn't or only partly do is labelled that way, never plain done.
   const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
+  const review = task.status === "review" ? state.approvals.find((a) => a.taskId === task.id && a.kind === "review") : undefined;
 
   const act = async (fn: () => ReturnType<typeof post>) => {
     setBusy(true);
@@ -332,6 +335,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript }: TaskRowProps) {
           )}
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
+          {review && <ReviewActions approval={review} outcome={task.outcome} />}
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">
@@ -501,6 +505,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
   return (
     <div className="wrap">
       <Header key={space.id} space={space} />
+      <SpaceNeeds state={state} spaceId={space.id} />
       {space.kind === "markets" && <InvestPanel key={money ? "money" : "invest"} spaceId={space.id} symbol={symbol} initial={money ? "money" : undefined} />}
       <div className="cols">
         <div>
