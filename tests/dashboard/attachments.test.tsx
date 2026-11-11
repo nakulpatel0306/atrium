@@ -20,6 +20,16 @@ beforeEach(() => {
   calls = [];
   nextId = 0;
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (url === "/api/command" && init?.body instanceof FormData) {
+      const form = init.body;
+      const files = form.getAll("file") as File[];
+      calls.push({ url, body: { text: form.get("text"), files: files.map((f) => f.name) } });
+      return Response.json({
+        space: { id: "spc_new", name: "Groceries" },
+        tasks: [{ id: "tsk_first", title: "Split the receipt" }],
+        attached: files.map((f) => ({ id: `att_${++nextId}`, name: f.name, size: f.size, type: f.type })),
+      });
+    }
     if (url.endsWith("/attachments")) {
       const files = (init!.body as FormData).getAll("file") as File[];
       calls.push({ url, body: files.map((f) => f.name) });
@@ -112,7 +122,7 @@ test("a pasted screenshot gets a dated name; a refused file is named and not add
   expect(chips(el)).toHaveLength(1);
   expect(el.querySelector(".msg.err")!.textContent).toContain("setup.sh isn't a type Atrium can attach");
   drop([new File(["KEY=1"], ".env")]);
-  expect(el.querySelector(".msg.err")!.textContent).toContain("looks like a secrets file");
+  expect(el.querySelector(".msg.err")!.textContent).toContain("looks like a secrets");
 });
 
 test("pastedName keeps a real file name and dates a stand-in", () => {
@@ -209,4 +219,44 @@ test("a task's attached files show as a list with thumbnails for images", () => 
   expect(items.map((i) => i.querySelector(".att-name")!.textContent)).toEqual(["receipt.png", "lease.pdf"]);
   expect(items[0]!.querySelector("img")!.getAttribute("src")).toBe("/api/spaces/spc_1/file/raw?path=Attachments%2Freceipt.png");
   expect(items[1]!.querySelector("img")).toBeNull();
+});
+
+test("a drop with some refused files attaches the good ones and names the rest", () => {
+  const el = render(general());
+  drop([png("receipt.png"), new File(["{}"], "credentials.json"), new File(["x"], "run.sh"), png("menu.png")]);
+  expect(chips(el)).toEqual(["receipt.png", "menu.png"]);
+  const msg = el.querySelector(".msg.err")!.textContent!;
+  expect(msg).toContain("credentials.json looks like a secrets or key file");
+  expect(msg).toContain("run.sh isn't a type Atrium can attach");
+  expect(said(el)).toBe("Attached 2 files. 2 files not attached.");
+});
+
+test("each chip is named for screen readers with its size", () => {
+  const el = render(general());
+  drop([png("receipt.png")]);
+  expect(el.querySelector(".att-chip")!.getAttribute("aria-label")).toBe("receipt.png, 4 B");
+});
+
+test("the taller-bar class goes when the files do, and when the bar goes", () => {
+  const el = render(general());
+  drop([png("receipt.png")]);
+  expect(document.documentElement.classList.contains("has-attachments")).toBe(true);
+  act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Remove receipt.png"]')!.click());
+  expect(document.documentElement.classList.contains("has-attachments")).toBe(false);
+  drop([png("receipt.png")]);
+  act(() => root!.unmount());
+  root = null;
+  expect(document.documentElement.classList.contains("has-attachments")).toBe(false);
+});
+
+test("on Home, files go with the description to the new space's first task, and the chips clear", async () => {
+  const el = render(null);
+  drop([png("receipt.png")]);
+  const input = el.querySelector<HTMLInputElement>('input[aria-label="Describe a new space"]')!;
+  const key = Object.keys(input).find((k) => k.startsWith("__reactProps$"))!;
+  act(() => (input as unknown as Record<string, { onChange: (e: { target: { value: string } }) => void }>)[key]!.onChange({ target: { value: "Split groceries" } }));
+  await send(el);
+  expect(calls).toEqual([{ url: "/api/command", body: { text: "Split groceries", files: ["receipt.png"] } }]);
+  expect(chips(el)).toEqual([]);
+  expect(el.querySelector(".msg")!.textContent).toBe('Groceries is ready. Its first task, "Split the receipt", has your file.');
 });

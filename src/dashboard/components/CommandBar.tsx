@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ACCEPT, REPO_REFUSED } from "../../engine/attachment-rules";
 import { type AgentChoice, agentName } from "../agents";
 import { post, type State } from "../api";
-import { checkFiles, draggingFiles, filesOf, pastedName, renamed, uploadAttachments } from "../attachments";
+import { draggingFiles, filesOf, pastedName, renamed, setupWithFiles, sortFiles, uploadAttachments } from "../attachments";
 import { announce } from "../live";
 import { navigate } from "../route";
 import { AgentPicker } from "./AgentPicker";
@@ -75,17 +75,22 @@ export function CommandBar({ space, setupRequest }: Props) {
 
   // Chips make the bar taller, so pages leave more room at the bottom while there are any.
   useEffect(() => {
-    document.documentElement.classList.toggle("has-attachments", files.length > 0);
-  }, [files.length]);
+    const on = files.length > 0;
+    document.documentElement.classList.toggle("has-attachments", on);
+    return () => {
+      if (on) document.documentElement.classList.remove("has-attachments");
+    };
+  }, [files.length > 0]);
 
   const attach = (incoming: File[]) => {
     if (!incoming.length || busy) return;
     if (repo) return setMessage({ kind: "error", text: REPO_REFUSED });
-    const why = checkFiles(incoming, files);
-    if (why) return setMessage({ kind: "error", text: why });
-    setFiles((prev) => [...prev, ...incoming]);
-    setMessage(null);
-    announce(incoming.length === 1 ? `Attached ${incoming[0]!.name}` : `Attached ${plural(incoming.length, "file")}`);
+    // The good files go in even when some are refused; the refused ones are named.
+    const { ok, refused } = sortFiles(incoming, files);
+    if (ok.length) setFiles((prev) => [...prev, ...ok]);
+    setMessage(refused.length ? { kind: "error", text: refused.join(" ") } : null);
+    const added = ok.length === 0 ? "" : ok.length === 1 ? `Attached ${ok[0]!.name}` : `Attached ${plural(ok.length, "file")}`;
+    announce([added, refused.length ? `${plural(refused.length, "file")} not attached.` : ""].filter(Boolean).join(". "));
   };
   const attachRef = useRef(attach);
   attachRef.current = attach;
@@ -173,9 +178,15 @@ export function CommandBar({ space, setupRequest }: Props) {
         return;
       }
       setMessage({ kind: "busy", text: "Setting up your space. This usually takes under a minute." });
-      const res = await post<SetupReply>("/api/command", { text: value });
+      // Files go along with the description, and the engine gives them to the new space's first task.
+      const res = files.length ? await setupWithFiles<SetupReply>(value, files) : await post<SetupReply & { attached?: undefined }>("/api/command", { text: value });
       if (!res.ok) return setMessage({ kind: "error", text: res.error });
       setText("");
+      const attached = res.data.attached?.length ?? 0;
+      if (attached) {
+        setFiles([]);
+        uploaded.current.clear();
+      }
       // A new project is only a draft until Nakul approves it in Needs you, which lives on Home.
       if ("draft" in res.data) {
         setMessage({ kind: "info", text: `Drafted "${res.data.draft.draft?.name}". Check it in Needs you and approve to create the repo.` });
@@ -197,9 +208,12 @@ export function CommandBar({ space, setupRequest }: Props) {
         navigate(`/space/${res.data.space.id}`);
         return;
       }
-      // The new space is where the files can go now; they stay attached for the next send.
-      if (files.length) {
-        setMessage({ kind: "info", text: `${res.data.space.name} is ready. Your files are still attached: send to have it look at them, or add a note first.` });
+      if (attached) {
+        setMessage({ kind: "info", text: `${res.data.space.name} is ready. Its first task, "${res.data.tasks[0]?.title}", has your ${attached === 1 ? "file" : `${attached} files`}.` });
+        keepMessage.current = true;
+      } else if (files.length) {
+        // A repo space can't take them; they stay attached so nothing is lost.
+        setMessage({ kind: "info", text: `${res.data.space.name} is ready. ${REPO_REFUSED} Your files are still attached.` });
         keepMessage.current = true;
       } else setMessage(null);
       navigate(`/space/${res.data.space.id}`);

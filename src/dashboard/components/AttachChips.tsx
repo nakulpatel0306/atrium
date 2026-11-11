@@ -28,7 +28,7 @@ export function AttachChips({ files, onRemove, disabled }: { files: File[]; onRe
   return (
     <ul className="att-chips" aria-label="Attached files">
       {files.map((f, i) => (
-        <li key={`${f.name}-${f.size}-${f.lastModified}-${i}`} className="att-chip">
+        <li key={`${f.name}-${f.size}-${f.lastModified}-${i}`} className="att-chip" aria-label={`${f.name}, ${fileSize(f.size)}`}>
           <Thumb file={f} />
           <span className="att-name" title={f.name}>
             {f.name}
