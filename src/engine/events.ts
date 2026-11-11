@@ -6,7 +6,9 @@ export type EngineEvent =
   | { type: "changed" }
   // seq counts a run's lines from 1, so a reader that loaded the transcript can tell which lines it already has.
   | { type: "run-output"; runId: string; taskId: string; chunk: string; seq?: number }
-  | { type: "quotes"; quotes: Quote[] };
+  | { type: "quotes"; quotes: Quote[] }
+  // A running repo task's files changed; the dashboard reads its changes again. Throttled per task (diff-watch.ts).
+  | { type: "diff-changed"; taskId: string };
 
 const listeners = new Set<(e: EngineEvent) => void>();
 
