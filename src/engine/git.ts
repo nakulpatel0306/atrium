@@ -574,9 +574,11 @@ export async function branchDiff(path: string, base: string, branch: string): Pr
 // What a running agent has changed so far, against `start`: every file git knows (committed on the branch, or
 // staged) as it is on disk now, plus new files it hasn't added (they're shown as additions). Every file is read by
 // Atrium itself, never through a symlink, and git only ever compares trees.
-export async function workingDiff(path: string, start: string): Promise<DiffResult> {
+// `since` is when the run started: a file whose inode hasn't changed since (ctime, which touching a file can't set
+// back) is still what HEAD holds, since the tree was clean then, and isn't read at all.
+export async function workingDiff(path: string, start: string, opts: { since?: number } = {}): Promise<DiffResult> {
   const flags = await diffFlags(path);
-  const snap = await withWorktreeTree(path, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
+  const snap = await withWorktreeTree(path, opts.since, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
   const changes = parseCapped(snap.value);
   const files = [...changes.files];
   // A file Atrium couldn't read or hash in full is listed as changed with a note, never left to look unchanged.
@@ -602,8 +604,10 @@ export async function workingDiff(path: string, start: string): Promise<DiffResu
   return { files, totals: totalsOf(files), truncated };
 }
 
-// A changed file bigger than this is listed without its lines, and never copied into a blob.
-const SHOW_CAP = 10 * 1024 * 1024;
+// A file bigger than this is never read: it's listed as changed, without its lines, unless it's plainly untouched.
+const HASH_CAP = 10 * 1024 * 1024;
+// And no more than this is read in all for one look at the changes; files past it are listed as changed.
+const HASH_TOTAL = 50 * 1024 * 1024;
 // Blob ids of files Atrium already hashed, by absolute path, keyed on what fstat says about them.
 const blobCache = new Map<string, { stat: string; id: string }>();
 
@@ -646,18 +650,27 @@ function readFd(fd: number, length: number, onChunk: (b: Buffer) => void): void 
 }
 
 type Hashed =
-  | { kind: "file"; id: string; mode: string; size: number; bytes: Buffer | null }
+  | { kind: "file"; id: string; mode: string; bytes: Buffer | null }
+  | { kind: "same" }
+  | { kind: "large" }
+  | { kind: "budget" }
   | { kind: "gone" }
   | { kind: "unreadable" };
 
-// A file's blob id as git would store it with no filters, read in chunks so a big file costs no memory. Its bytes
-// come back only when it's small enough to show and not already known.
-function hashRepoFile(root: string, rel: string, format: "sha1" | "sha256"): Hashed {
+// A file's blob id as git would store it with no filters. Only fstat is consulted before deciding to read: a file
+// `untouched` says is unchanged isn't read, nor is one over the cap or past what's left of `budget`. Its bytes come
+// back only when they were read just now.
+function hashRepoFile(
+  root: string,
+  rel: string,
+  format: "sha1" | "sha256",
+  budget: { left: number },
+  untouched: (st: { ctimeMs: number; size: number }, mode: string) => boolean,
+): Hashed {
   const opened = openRepoFile(root, rel);
-  const blobId = (bytes: Buffer) => createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
   if (opened.kind === "link") {
     const bytes = Buffer.from(opened.target);
-    return { kind: "file", id: blobId(bytes), mode: "120000", size: bytes.length, bytes };
+    return { kind: "file", id: createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex"), mode: "120000", bytes };
   }
   if (opened.kind !== "fd") return opened;
   const { fd } = opened;
@@ -666,24 +679,22 @@ function hashRepoFile(root: string, rel: string, format: "sha1" | "sha256"): Has
     // A folder or FIFO where a file was is, as far as the file goes, gone.
     if (!st.isFile()) return { kind: "gone" };
     const mode = (st.mode & 0o111) !== 0 ? "100755" : "100644";
+    if (untouched(st, mode)) return { kind: "same" };
     const abs = join(root, rel);
     const stat = `${format}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
     const cached = blobCache.get(abs);
-    if (cached?.stat === stat) return { kind: "file", id: cached.id, mode, size: st.size, bytes: null };
-    const keep = st.size <= SHOW_CAP;
+    if (cached?.stat === stat) return { kind: "file", id: cached.id, mode, bytes: null };
+    if (st.size > HASH_CAP) return { kind: "large" };
+    if (st.size > budget.left) return { kind: "budget" };
+    budget.left -= st.size;
     const chunks: Buffer[] = [];
-    const hash = createHash(format).update(`blob ${st.size}\0`);
-    let read = 0;
-    readFd(fd, st.size, (b) => {
-      hash.update(b);
-      read += b.length;
-      if (keep) chunks.push(Buffer.from(b));
-    });
+    readFd(fd, st.size, (b) => chunks.push(Buffer.from(b)));
+    const bytes = Buffer.concat(chunks);
     // It changed size while being read; whatever it is now, it isn't what was hashed.
-    if (read !== st.size) return { kind: "unreadable" };
-    const id = hash.digest("hex");
+    if (bytes.length !== st.size) return { kind: "unreadable" };
+    const id = createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
     blobCache.set(abs, { stat, id });
-    return { kind: "file", id, mode, size: st.size, bytes: keep ? Buffer.concat(chunks) : null };
+    return { kind: "file", id, mode, bytes };
   } catch {
     return { kind: "unreadable" };
   } finally {
@@ -695,25 +706,26 @@ type Snapshot<T> = { value: T; paths: Set<string>; unknown: { path: string; note
 
 const TOO_LARGE = "Too large to show. Open the file in your editor to see what changed.";
 const UNREADABLE = "Atrium couldn't read this file, so it may have changed.";
+const PAST_BUDGET = "Atrium stopped reading after 50 MB of changed files, so this one may have changed.";
 
 // The working tree as a git tree, built without git ever reading it: Atrium reads each file git knows (on HEAD or
 // staged) itself, hashes it as is, and writes only the changed ones as blobs, into a temporary object folder (the
 // repo's own objects are an alternate, so nothing is added to the repo) and a temporary index. `use` gets the tree
 // and the environment that can see it.
-async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
+async function withWorktreeTree<T>(path: string, since: number | undefined, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
   const format = (await git(path, ["rev-parse", "--show-object-format"])).out.trim() === "sha256" ? "sha256" : "sha1";
   const objects = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]);
   if (objects.code !== 0) throw new Error(`Couldn't read git dir: ${objects.err.trim()}`);
-  const head = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]);
+  const head = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-l", "-z", "--full-tree", "HEAD"]);
   if (head.code !== 0) throw new Error(`Couldn't list files at HEAD: ${head.err.trim()}`);
   const staged = await git(path, ["-c", "core.quotePath=false", "ls-files", "-s", "-z"]);
   if (staged.code !== 0) throw new Error(`Couldn't list staged files: ${staged.err.trim()}`);
   // Path → HEAD's entry (null when only the index has it). Gitlinks are other repos' business.
-  const known = new Map<string, { mode: string; id: string } | null>();
+  const known = new Map<string, { mode: string; id: string; size: number } | null>();
   for (const record of head.out.split("\0").filter(Boolean)) {
     const tab = record.indexOf("\t");
-    const [mode, type, id] = record.slice(0, tab).split(" ") as [string, string, string];
-    if (type === "blob") known.set(record.slice(tab + 1), { mode, id });
+    const [mode, type, id, size] = record.slice(0, tab).split(/ +/) as [string, string, string, string];
+    if (type === "blob") known.set(record.slice(tab + 1), { mode, id, size: Number(size) });
   }
   for (const record of staged.out.split("\0").filter(Boolean)) {
     const tab = record.indexOf("\t");
@@ -723,10 +735,14 @@ async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record
 
   const updates: { mode: string; id: string | null; path: string; bytes: Buffer | null }[] = [];
   const unknown: Snapshot<T>["unknown"] = [];
+  const budget = { left: HASH_TOTAL };
   for (const [rel, entry] of known) {
-    const f = hashRepoFile(path, rel, format);
-    if (f.kind === "unreadable") {
-      unknown.push({ path: rel, note: UNREADABLE });
+    const untouched = (st: { ctimeMs: number; size: number }, mode: string) =>
+      since !== undefined && entry !== null && st.ctimeMs < since && st.size === entry.size && mode === entry.mode;
+    const f = hashRepoFile(path, rel, format, budget, untouched);
+    if (f.kind === "same") continue;
+    if (f.kind === "unreadable" || f.kind === "large" || f.kind === "budget") {
+      unknown.push({ path: rel, note: f.kind === "large" ? TOO_LARGE : f.kind === "budget" ? PAST_BUDGET : UNREADABLE });
       continue;
     }
     if (f.kind === "gone") {
@@ -734,10 +750,6 @@ async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record
       continue;
     }
     if (entry && entry.id === f.id && entry.mode === f.mode) continue;
-    if (f.size > SHOW_CAP) {
-      unknown.push({ path: rel, note: TOO_LARGE });
-      continue;
-    }
     updates.push({ mode: f.mode, id: f.id, path: rel, bytes: f.bytes });
   }
   const paths = new Set(known.keys());
@@ -761,7 +773,7 @@ async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record
         const chunks: Buffer[] = [];
         if (opened.kind === "fd") {
           try {
-            readFd(opened.fd, SHOW_CAP + 1, (b) => chunks.push(Buffer.from(b)));
+            readFd(opened.fd, HASH_CAP, (b) => chunks.push(Buffer.from(b)));
           } finally {
             closeSync(opened.fd);
           }

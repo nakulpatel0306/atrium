@@ -692,19 +692,34 @@ describe("changes", () => {
     ]);
   });
 
-  test("a changed file too large to show is listed as changed with a note; an unchanged one isn't listed", async () => {
+  test("a file over the cap is never read: listed as changed unless untouched since the run started", async () => {
     const path = workRepo();
     const big = Buffer.alloc(11 * 1024 * 1024, "a");
     writeFileSync(join(path, "big.txt"), big);
     git(path, "add", "big.txt");
     git(path, "commit", "-q", "-m", "big");
-    expect((await workingDiff(path, "HEAD")).files).toEqual([]);
+    const listed = [{ path: "big.txt", status: "modified" as const, additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: "Too large to show. Open the file in your editor to see what changed." }];
+    await Bun.sleep(20);
+    const since = Date.now();
+    // Untouched since the run began: not read, and not listed.
+    expect((await workingDiff(path, "HEAD", { since })).files).toEqual([]);
+    // Without knowing when the run began, Atrium can't tell, so it says it may have changed.
+    expect((await workingDiff(path, "HEAD")).files).toEqual(listed);
+    // Changed since: listed without its lines, which are never read.
     big[0] = 98;
     writeFileSync(join(path, "big.txt"), big);
-    const d = await workingDiff(path, "HEAD");
-    expect(d.files).toEqual([
-      { path: "big.txt", status: "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: "Too large to show. Open the file in your editor to see what changed." },
-    ]);
+    expect((await workingDiff(path, "HEAD", { since })).files).toEqual(listed);
+  });
+
+  test("past 50 MB read in one look, the rest are listed as maybe changed", async () => {
+    const path = workRepo();
+    // Binary (a NUL up front), so the listing stays small and only the reading is under test.
+    for (let i = 0; i < 6; i++) writeFileSync(join(path, `part${i}.bin`), Buffer.alloc(9 * 1024 * 1024, i + 1).fill(0, 0, 1));
+    git(path, "add", "-A");
+    const d = await workingDiff(path, "main");
+    const noted = d.files.filter((f) => f.note === "Atrium stopped reading after 50 MB of changed files, so this one may have changed.");
+    expect(noted).toHaveLength(1);
+    expect(d.files.filter((f) => f.path.startsWith("part"))).toHaveLength(6);
   });
 
   test("a file Atrium can't read is listed as maybe changed, never as unchanged", async () => {
