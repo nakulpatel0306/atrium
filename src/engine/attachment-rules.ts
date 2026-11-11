@@ -1,4 +1,5 @@
 // What a task may carry as attached files: shared by the engine and the dashboard, so it imports only pure rules.
+import { SECRET } from "./autonomy/kinds";
 import { isEnvPath } from "./envpath";
 
 export const MAX_FILES = 10;
@@ -44,11 +45,15 @@ export function cleanName(raw: string): string {
   return name;
 }
 
-// Why a file can't be attached, in words that name it; null when it can. Checks the name as given, so ".env.png"
-// is refused rather than cleaned into "env.png".
+const isSecretName = (name: string) => isEnvPath(name) || SECRET.test(name);
+
+// Why a file can't be attached, in words that name it; null when it can. The secrets check runs on the name as
+// given (with only invisible characters taken out, so they can't hide ".env") and again on the cleaned name, so
+// ".env.png" is refused rather than cleaned into "env.png".
 export function refusal(name: string, size: number): string | null {
   const shown = cleanName(name);
-  if (isEnvPath(name.split(/[\\/]/).pop() ?? "")) return `${shown} looks like a secrets file, so Atrium won't attach it.`;
+  const given = (name.split(/[\\/]/).pop() ?? "").normalize("NFC").replace(HIDDEN_CHARS, "");
+  if (isSecretName(given) || isSecretName(shown)) return `${shown} looks like a secrets or key file, so Atrium won't attach it.`;
   if (!ALLOWED_EXT.has(extOf(shown))) return `${shown} isn't a type Atrium can attach. Use images, PDFs, text, Markdown, CSV, JSON, Excel or Word files.`;
   if (size > MAX_FILE_BYTES) return `${shown} is over 25 MB, so Atrium won't attach it.`;
   return null;

@@ -2,12 +2,13 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../../src/engine/db";
 import { spaceFolder } from "../../src/engine/folders";
 import { createSpace, type Space } from "../../src/engine/spaces";
-import { getTask } from "../../src/engine/tasks";
+import { createTask, getTask } from "../../src/engine/tasks";
 import { startServer, type WsData } from "../../src/server/server";
 import { tempHome } from "../helpers";
 
@@ -16,12 +17,25 @@ let db: Database;
 let server: Server<WsData>;
 let base: string;
 let kicks = 0;
+let setupKind: "general" | "repo" = "general";
 
 beforeEach(() => {
   home = tempHome();
   db = openDb();
   kicks = 0;
-  server = startServer({ db, runner: { kick: () => void kicks++ }, setup: async () => { throw new Error("no"); }, port: 0 });
+  setupKind = "general";
+  // Stands in for setupSpace: makes the space and starter tasks in one transaction and calls the hook inside it.
+  server = startServer({
+    db,
+    runner: { kick: () => void kicks++ },
+    setup: async (_text, onCreate) =>
+      db.transaction(() => {
+        const space = createSpace(db, { name: setupKind === "repo" ? "Code" : "Flat Costs", kind: setupKind, goal: "", ...(setupKind === "repo" && { repoPath: home.home }) });
+        const tasks = [createTask(db, { spaceId: space.id, title: "Split the receipt" }), createTask(db, { spaceId: space.id, title: "Set a reminder" })];
+        return { space, tasks: onCreate ? onCreate(space, tasks) : tasks };
+      })(),
+    port: 0,
+  });
   base = `http://127.0.0.1:${server.port}`;
 });
 afterEach(() => {
@@ -116,7 +130,9 @@ test("type, size and count limits are refused with the file named", async () => 
   expect(((await big.json()) as { error: string }).error).toBe("scan.pdf is over 25 MB, so Atrium won't attach it.");
   const many = await upload(s, Array.from({ length: 11 }, (_, i) => file(`p${i}.png`)));
   expect(many.status).toBe(413);
-  const total = await upload(s, Array.from({ length: 5 }, (_, i) => file(`p${i}.pdf`, new Uint8Array(21 * 1024 * 1024))));
+  // Just over 100 MB of files, still inside the engine's request cap.
+  const quarter = new Uint8Array(25 * 1024 * 1024);
+  const total = await upload(s, [file("a.pdf", quarter), file("b.pdf", quarter), file("c.pdf", quarter), file("d.pdf", quarter), file("e.pdf", new Uint8Array(512 * 1024))]);
   expect(total.status).toBe(413);
   expect(((await total.json()) as { error: string }).error).toContain("more than 100 MB");
   expect(existsSync(join(spaceFolder(s), "Attachments")) ? stored(s) : []).toEqual([]);
@@ -126,10 +142,13 @@ test("names are cleaned: no folders, no hidden or secrets files, nothing invisib
   const s = general();
   const env = await upload(s, [file(".env", "KEY=1")]);
   expect(env.status).toBe(400);
-  expect(((await env.json()) as { error: string }).error).toContain("looks like a secrets file");
+  expect(((await env.json()) as { error: string }).error).toContain("looks like a secrets");
   expect((await upload(s, [file(".env.png")])).status).toBe(400);
   expect((await upload(s, [file("prod.env")])).status).toBe(400);
   expect((await upload(s, [file("id_rsa")])).status).toBe(400);
+  expect((await upload(s, [file("credentials.json", "{}")])).status).toBe(400);
+  expect((await upload(s, [file("secrets.json", "{}")])).status).toBe(400);
+  expect((await upload(s, [file(".e\u200bnv")])).status).toBe(400);
 
   const long = `${"a".repeat(200)}.png`;
   const res = await upload(s, [file("../../x.png"), file(".hidden.png"), file(long), file("re‮gnp.png"), file("Café ü.png"), file("a\u0007b.png")]);
@@ -212,4 +231,61 @@ test("an upload that isn't multipart, or names no space, is refused", async () =
   expect(json.status).toBe(415);
   expect((await upload("spc_nope00", [file("receipt.png")])).status).toBe(404);
   expect((await upload(s, [])).status).toBe(400);
+});
+
+test("an upload must say how big it is, and a body past the engine's cap is cut off", async () => {
+  const s = general();
+  // Sent by hand, chunked, so nothing on the way fills in a Content-Length.
+  const boundary = "atrium-test-boundary";
+  const part = `--${boundary}\r\ncontent-disposition: form-data; name="file"; filename="receipt.png"\r\ncontent-type: image/png\r\n\r\nxyz\r\n--${boundary}--\r\n`;
+  const raw = [
+    `POST /api/spaces/${s.id}/attachments HTTP/1.1`, `host: 127.0.0.1:${server.port}`, `origin: ${base}`,
+    `content-type: multipart/form-data; boundary=${boundary}`, "transfer-encoding: chunked", "connection: close", "", "",
+  ].join("\r\n") + `${part.length.toString(16)}\r\n${part}\r\n0\r\n\r\n`;
+  const reply = await new Promise<string>((resolve, reject) => {
+    let got = "";
+    const sock = connect(server.port as number, "127.0.0.1", () => sock.write(raw));
+    sock.on("data", (d) => (got += d.toString()));
+    sock.on("end", () => resolve(got));
+    sock.on("error", reject);
+  });
+  const res = { status: Number(reply.split(" ")[1]) };
+  expect(res.status).toBe(411);
+  const huge = await upload(s, [file("a.pdf", new Uint8Array(102 * 1024 * 1024))]);
+  expect(huge.status).toBe(413);
+  expect(existsSync(join(spaceFolder(s), "Attachments")) ? stored(s) : []).toEqual([]);
+});
+
+test("files sent with a new space's description go to its first task, in the same step", async () => {
+  const form = new FormData();
+  form.append("text", "Split groceries with my roommates");
+  form.append("file", file("receipt.png"), "receipt.png");
+  const res = await fetch(`${base}/api/command`, { method: "POST", headers: { origin: base }, body: form });
+  expect(res.status).toBe(200);
+  const out = (await res.json()) as { space: Space; tasks: { id: string; detail: string }[]; attached: { name: string }[] };
+  expect(out.attached.map((a) => a.name)).toEqual(["receipt.png"]);
+  expect(out.tasks[0]!.detail).toBe("Attached files (in this space's folder):\n- Attachments/receipt.png");
+  expect(out.tasks[1]!.detail).toBe("");
+  expect(db.query("SELECT task_id FROM attachments").all()).toEqual([{ task_id: out.tasks[0]!.id }]);
+  // No extra "Look at the attached files." task.
+  expect(db.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 2 });
+  expect(stored(out.space)).toEqual(["receipt.png"]);
+});
+
+test("a new space's files are checked before it's made, and a repo space doesn't take them", async () => {
+  const bad = new FormData();
+  bad.append("text", "Keep my keys");
+  bad.append("file", file("credentials.json", "{}"), "credentials.json");
+  const refused = await fetch(`${base}/api/command`, { method: "POST", headers: { origin: base }, body: bad });
+  expect(refused.status).toBe(400);
+  expect(db.query("SELECT COUNT(*) AS n FROM spaces").get()).toEqual({ n: 0 });
+
+  setupKind = "repo";
+  const form = new FormData();
+  form.append("text", "Work on my code");
+  form.append("file", file("receipt.png"), "receipt.png");
+  const res = await fetch(`${base}/api/command`, { method: "POST", headers: { origin: base }, body: form });
+  const out = (await res.json()) as { attached: unknown[] };
+  expect(out.attached).toEqual([]);
+  expect(db.query("SELECT COUNT(*) AS n FROM attachments").get()).toEqual({ n: 0 });
 });

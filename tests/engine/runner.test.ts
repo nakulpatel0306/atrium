@@ -669,6 +669,44 @@ test("a scratch run gets the task's attached files where its detail says, and th
   expect(readdirSync(kept)).toEqual(["split.md"]);
 });
 
+test("an agent that swaps Attachments for a link to an outside folder never gets a file there deleted", async () => {
+  const s = createSpace(db, { name: "Flat Costs", kind: "general", goal: "", private: false });
+  const [a] = storeAttachments(db, s, [{ name: "receipt.png", bytes: new Uint8Array([1, 2, 3]) }]);
+  const t = createTask(db, { spaceId: s.id, title: "Split it", detail: withAttachments("Split it", [a!]), agent: "codex" });
+  claimAttachments(db, t.id, [a!]);
+  const outside = mkdtempSync(join(tmpdir(), "atrium-outside-"));
+  cleanups.push(() => rmSync(outside, { recursive: true, force: true }));
+  // Same name, same bytes: exactly what a path-based cleanup would have mistaken for its own copy.
+  mkdirSync(join(outside, "Attachments"));
+  writeFileSync(join(outside, "Attachments", "receipt.png"), new Uint8Array([1, 2, 3]));
+  const codex = fakeAdapter((input) => {
+    rmSync(join(input.cwd, "Attachments"), { recursive: true });
+    symlinkSync(join(outside, "Attachments"), join(input.cwd, "Attachments"));
+    writeFileSync(join(input.cwd, "notes.md"), "edited\n");
+    return ok("Done.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  expect([...readFileSync(join(outside, "Attachments", "receipt.png"))]).toEqual([1, 2, 3]);
+  expect(readFileSync(join(spaceFolder(getSpace(db, s.id)!), "Attachments", "receipt.png"))).toEqual(Buffer.from([1, 2, 3]));
+});
+
+test("an attached file the agent changed is kept with its work", async () => {
+  const s = createSpace(db, { name: "Flat Costs", kind: "general", goal: "", private: false });
+  const [a] = storeAttachments(db, s, [{ name: "list.csv", bytes: new TextEncoder().encode("a,b\n") }]);
+  const t = createTask(db, { spaceId: s.id, title: "Total it", detail: withAttachments("Total it", [a!]), agent: "codex" });
+  claimAttachments(db, t.id, [a!]);
+  const codex = fakeAdapter((input) => {
+    writeFileSync(join(input.cwd, "Attachments", "list.csv"), "a,b,total\n");
+    return ok("Added totals.");
+  });
+  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
+  await waitFor(() => status(t.id) === "review");
+  const run = db.query("SELECT id FROM runs WHERE task_id = ?").get(t.id) as { id: string };
+  const kept = join(spaceFolder(getSpace(db, s.id)!), "runs", run.id);
+  expect(readFileSync(join(kept, "Attachments", "list.csv"), "utf8")).toBe("a,b,total\n");
+});
+
 test("launch re-checks the agent and holds a task the space no longer allows", async () => {
   const path = repo();
   const s = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: path, private: false });

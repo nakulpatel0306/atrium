@@ -39,6 +39,10 @@ export type SetupResult =
 // `to` is who the card names: the person, or for a group text the group's name (or its people).
 export type MessageRequest = { kind: "message"; to: string; group: GroupAsk | null; text: string | null; about: string };
 
+// Runs inside the transaction that makes a new space and its starter tasks, before anything can start them; returns
+// the tasks as they now stand. The ask bar uses it to hand its attached files to the first task.
+export type OnCreate = (space: Space, tasks: Task[]) => Task[];
+
 export class BadPlan extends Error {
   constructor(message: string) {
     super(message);
@@ -251,6 +255,7 @@ export async function setupSpace(
   description: string,
   cwd?: string,
   projectsRoot = defaultProjectsRoot(),
+  onCreate?: OnCreate,
 ): Promise<SetupResult> {
   try {
     cwd ??= ensureProjectsRoot();
@@ -298,7 +303,7 @@ export async function setupSpace(
         github: plan.github,
       });
       const tasks = plan.tasks.map((t) => createTask(db, { spaceId: space.id, ...t }));
-      return { space, tasks };
+      return { space, tasks: onCreate ? onCreate(space, tasks) : tasks };
     })();
   } catch (e) {
     if (e instanceof SetupFailed) throw e;

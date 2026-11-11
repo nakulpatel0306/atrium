@@ -11,7 +11,7 @@ import { applyRule } from "./autonomy/rules";
 import { createDiffNotifier, isFileEdit } from "./diff-watch";
 import { bus, logActivity } from "./events";
 import { ensureSpaceFolder, spaceFolder, tildePath } from "./folders";
-import { type Copies, copyAttachments, removeCopies } from "./attachments";
+import { type Copy, copyAttachments } from "./attachments";
 import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from "./outputs/snapshot";
 import { madeLine, recordRunFiles } from "./outputs/store";
 import {
@@ -47,9 +47,6 @@ import { autoLookup } from "./messaging/contacts";
 import { peopleLine } from "./messaging/rules";
 import { draftGroupMessage, draftMessage } from "./messaging/store";
 import { enforceTranscriptCap, openTranscript } from "./storage";
-
-// A run that works anywhere but a scratch folder has nothing copied in.
-const NO_COPIES: Copies = { dir: null, names: [] };
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -424,12 +421,12 @@ export function createRunner(deps: {
     // its own instead of the space folder, where earlier runs' files collect.
     // A money question runs in an empty folder too, with no tools: the masked facts in its prompt are all it sees.
     const scratch = !repo && (agent !== "claude" || task.purpose === "money");
-    let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript>; copied: Copies };
+    let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript>; copied: Copy[] };
     let cwd: string | null = null;
     try {
       cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : ensureSpaceFolder(db, space);
       // An empty folder doesn't have the files Nakul attached, so they're copied in where the task says they are.
-      const copied = scratch && task.purpose !== "money" ? copyAttachments(db, task.id, spaceFolder(space), cwd) : NO_COPIES;
+      const copied = scratch && task.purpose !== "money" ? copyAttachments(db, task.id, spaceFolder(space), cwd) : [];
       const runId = newId("run");
       const transcript = openTranscript(runId);
       db.query(
@@ -466,7 +463,7 @@ export function createRunner(deps: {
     cwd: string;
     runId: string;
     transcript: ReturnType<typeof openTranscript>;
-    copied: Copies;
+    copied: Copy[];
   }) {
     const { task, space, adapter, repo, runId, transcript } = r;
     // A Claude run away from a repo works in the space folder itself, where its files stay; this is how a rule
@@ -600,9 +597,8 @@ export function createRunner(deps: {
     } finally {
       if (repo) leftRepo = await settleRepo(repo);
       if (r.scratch) {
-        // The copies are already in the space folder; keeping them again would list them as the run's work.
-        removeCopies(r.copied);
-        kept = await keepScratchFiles(space, runId, r.cwd);
+        // The attachments are already in the space folder; keeping their copies would list them as the run's work.
+        kept = await keepScratchFiles(space, runId, r.cwd, r.copied);
         rmSync(r.cwd, { recursive: true, force: true });
       }
     }
@@ -869,10 +865,10 @@ export function createRunner(deps: {
 
   // Called once the adapter has returned, by which point runAgentProcess has killed the agent's process group.
   // A copy that fails must not lose the run's outcome; the approval says the files couldn't be kept.
-  async function keepScratchFiles(space: Space, runId: string, cwd: string): Promise<Kept | null> {
+  async function keepScratchFiles(space: Space, runId: string, cwd: string, skip: Copy[]): Promise<Kept | null> {
     const dir = join(ensureSpaceFolder(db, space), "runs", runId);
     try {
-      const res = await keepScratch(cwd, dir);
+      const res = await keepScratch(cwd, dir, { skip });
       return res.files > 0 || res.skipped > 0 ? { ...res, dir } : null;
     } catch (e) {
       logActivity(db, space.id, "atrium", `Couldn't keep the files from a run's temporary folder: ${(e as Error).message}`);

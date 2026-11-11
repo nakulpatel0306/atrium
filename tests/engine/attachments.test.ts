@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attachedBlock, batchRefusal, cleanName, refusal, withoutBlock } from "../../src/engine/attachment-rules";
-import { claimAttachments, copyAttachments, removeCopies, storeAttachments, taskAttachments } from "../../src/engine/attachments";
+import { claimAttachments, copyAttachments, hashOf, storeAttachments } from "../../src/engine/attachments";
 import { openDb } from "../../src/engine/db";
 import { deleteTask } from "../../src/engine/delete";
 import { spaceFolder } from "../../src/engine/folders";
@@ -55,10 +55,16 @@ test("names keep only the file's own name, without hidden or invisible parts", (
 });
 
 test("secrets files and other types are refused by name; a full batch is refused as a whole", () => {
-  expect(refusal(".env", 3)).toContain("looks like a secrets file");
-  expect(refusal("prod.env", 3)).toContain("looks like a secrets file");
-  expect(refusal(".ENV.local.png", 3)).toContain("looks like a secrets file");
-  expect(refusal("deploy.pem", 3)).toContain("isn't a type Atrium can attach");
+  expect(refusal(".env", 3)).toContain("looks like a secrets");
+  expect(refusal("prod.env", 3)).toContain("looks like a secrets");
+  expect(refusal(".ENV.local.png", 3)).toContain("looks like a secrets");
+  expect(refusal("credentials.json", 3)).toContain("looks like a secrets or key file");
+  expect(refusal("secrets.json", 3)).toContain("looks like a secrets or key file");
+  expect(refusal("SECRET.JSON", 3)).toContain("looks like a secrets or key file");
+  // Invisible characters can't hide a secrets name.
+  expect(refusal(".e\u200bnv", 3)).toContain("looks like a secrets");
+  expect(refusal("credentials\u202e.json", 3)).toContain("looks like a secrets or key file");
+  expect(refusal("deploy.pem", 3)).toContain("looks like a secrets or key file");
   expect(refusal("index.html", 3)).toContain("isn't a type Atrium can attach");
   expect(refusal("receipt.PNG", 3)).toBeNull();
   expect(batchRefusal([{ name: "a.png", size: 1 }], Array.from({ length: 10 }, () => ({ size: 1 })))).toBe("A task can carry at most 10 files.");
@@ -86,38 +92,27 @@ test("deleting a task keeps its attached files and lets go of the link", async (
   expect(db.query("SELECT task_id FROM attachments").all()).toEqual([{ task_id: null }]);
 });
 
-test("copies land at the paths the detail names, and only those copies are removed again", () => {
+test("copies land at the paths the detail names, with what's needed to tell them apart from the agent's work", () => {
   const { s, t } = attachedTask(["receipt.png", "list.csv"]);
   const dest = tmp("atrium-scratch-");
   const copied = copyAttachments(db, t.id, spaceFolder(s), dest);
-  expect(copied.names).toEqual(["receipt.png", "list.csv"]);
+  expect(copied.map((c) => [c.path, c.size])).toEqual([
+    ["Attachments/receipt.png", 19],
+    ["Attachments/list.csv", 16],
+  ]);
+  expect(copied[0]!.hash).toBe(hashOf(bytes("data of receipt.png")));
   expect(readFileSync(join(dest, "Attachments", "receipt.png"), "utf8")).toBe("data of receipt.png");
-  writeFileSync(join(dest, "Attachments", "agent-notes.md"), "mine");
-  removeCopies(copied);
-  expect(readdirSync(join(dest, "Attachments"))).toEqual(["agent-notes.md"]);
 });
 
-test("Attachments swapped for a link to an outside folder: nothing outside is deleted or written", () => {
+test("Attachments swapped for a link to an outside folder: nothing is written there", () => {
   const { s, t } = attachedTask(["receipt.png"]);
   const outside = tmp("atrium-outside-");
   writeFileSync(join(outside, "receipt.png"), "keep me");
-
-  // At copy time: the copy is skipped, and the outside folder is untouched.
   const dest = tmp("atrium-scratch-");
   symlinkSync(outside, join(dest, "Attachments"));
-  expect(copyAttachments(db, t.id, spaceFolder(s), dest)).toEqual({ dir: null, names: [] });
+  expect(copyAttachments(db, t.id, spaceFolder(s), dest)).toEqual([]);
   expect(readdirSync(outside)).toEqual(["receipt.png"]);
   expect(readFileSync(join(outside, "receipt.png"), "utf8")).toBe("keep me");
-
-  // After the run: an agent swapped the folder it was given for a link; removing the copies deletes nothing there.
-  const dest2 = tmp("atrium-scratch-");
-  const copied = copyAttachments(db, t.id, spaceFolder(s), dest2);
-  expect(copied.names).toEqual(["receipt.png"]);
-  rmSync(join(dest2, "Attachments"), { recursive: true });
-  symlinkSync(outside, join(dest2, "Attachments"));
-  removeCopies(copied);
-  expect(readFileSync(join(outside, "receipt.png"), "utf8")).toBe("keep me");
-  expect(lstatSync(join(dest2, "Attachments")).isSymbolicLink()).toBe(true);
 
   // At upload time: the space's own Attachments swapped for a link is refused.
   rmSync(join(spaceFolder(s), "Attachments"), { recursive: true });
@@ -126,39 +121,26 @@ test("Attachments swapped for a link to an outside folder: nothing outside is de
   expect(readdirSync(outside)).toEqual(["receipt.png"]);
 });
 
-test("a parent folder swapped for a link is caught too", () => {
-  const { s, t } = attachedTask(["receipt.png"]);
-  const outside = tmp("atrium-outside-");
-  mkdirSync(join(outside, "Attachments"));
-  writeFileSync(join(outside, "Attachments", "receipt.png"), "keep me");
-  const dest = join(tmp("atrium-parent-"), "run");
-  mkdirSync(dest);
-  const copied = copyAttachments(db, t.id, spaceFolder(s), dest);
-  expect(copied.names).toEqual(["receipt.png"]);
-  // The run folder itself now leads outside, where a plain Attachments folder holds a file of the same name.
-  rmSync(dest, { recursive: true });
-  symlinkSync(outside, dest);
-  removeCopies(copied);
-  expect(readFileSync(join(outside, "Attachments", "receipt.png"), "utf8")).toBe("keep me");
-});
-
-test("a link in place of an attached file isn't followed, on the way in or out", () => {
-  const { s, t, list } = attachedTask(["receipt.png"]);
+test("a link, a second hard link, or a file grown past the limit isn't copied in", () => {
+  const { s, t, list } = attachedTask(["receipt.png", "menu.png", "scan.pdf"]);
   const outside = tmp("atrium-outside-");
   writeFileSync(join(outside, "secret.png"), "not yours");
-  // The space's copy replaced by a link to somewhere else: it isn't read.
-  const src = join(spaceFolder(s), list[0]!.path);
-  rmSync(src);
-  symlinkSync(join(outside, "secret.png"), src);
+  const src = (i: number) => join(spaceFolder(s), list[i]!.path);
+  rmSync(src(0));
+  symlinkSync(join(outside, "secret.png"), src(0));
+  linkSync(src(1), join(outside, "menu-again.png"));
+  writeFileSync(src(2), new Uint8Array(25 * 1024 * 1024 + 1));
   const dest = tmp("atrium-scratch-");
-  const none = copyAttachments(db, t.id, spaceFolder(s), dest);
-  expect(none.names).toEqual([]);
-  expect(existsSync(join(dest, "Attachments", "receipt.png"))).toBe(false);
+  expect(copyAttachments(db, t.id, spaceFolder(s), dest)).toEqual([]);
+  expect(readdirSync(join(dest, "Attachments"))).toEqual([]);
+});
 
-  // A link the agent put where a copy was: removing copies leaves the link and its target alone.
-  symlinkSync(join(outside, "secret.png"), join(dest, "Attachments", "receipt.png"));
-  removeCopies({ dir: none.dir, names: ["receipt.png"] });
-  expect(lstatSync(join(dest, "Attachments", "receipt.png")).isSymbolicLink()).toBe(true);
-  expect(readFileSync(join(outside, "secret.png"), "utf8")).toBe("not yours");
-  expect(taskAttachments(db, t.id)).toHaveLength(1);
+test("a batch that fails part way leaves no files and no rows behind", () => {
+  const s = createSpace(db, { name: "Flat Costs", kind: "general", goal: "" });
+  mkdirSync(join(spaceFolder(s), "Attachments"), { recursive: true });
+  writeFileSync(join(spaceFolder(s), "Attachments", "mine.png"), "mine");
+  db.exec("DROP TABLE attachments");
+  expect(() => storeAttachments(db, s, [{ name: "a.png", bytes: bytes("1") }, { name: "mine.png", bytes: bytes("2") }])).toThrow();
+  expect(readdirSync(join(spaceFolder(s), "Attachments"))).toEqual(["mine.png"]);
+  expect(readFileSync(join(spaceFolder(s), "Attachments", "mine.png"), "utf8")).toBe("mine");
 });

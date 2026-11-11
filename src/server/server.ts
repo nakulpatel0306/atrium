@@ -12,7 +12,7 @@ import { config } from "../engine/config";
 import { ChangesRefused, taskChanges } from "../engine/changes";
 import { bus } from "../engine/events";
 import type { setupSpace } from "../engine/setup";
-import { SetupFailed } from "../engine/setup";
+import { type OnCreate, SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
 import { createSpace, getSpace, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
@@ -23,8 +23,8 @@ import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
 import { filesRoute } from "./files";
-import { attachmentsRoute } from "./attachments";
-import { AttachRefused, checkAttachments, claimAttachments, withAttachments } from "../engine/attachments";
+import { attachedView, attachmentsRoute, isMultipart, MAX_BODY_BYTES, readUploads } from "./attachments";
+import { type Attachment, AttachRefused, attachToTask, checkAttachments, checkUploads, claimAttachments, storeAttachments, withAttachments } from "../engine/attachments";
 import { DEFAULT_PROMPT } from "../engine/attachment-rules";
 import { embedResponse } from "./embed";
 import { investingRoute } from "./investing";
@@ -51,7 +51,7 @@ type Deps = {
     outputSeq?(runId: string): number | null;
     registry?: Registry;
   };
-  setup: (text: string) => ReturnType<typeof setupSpace>;
+  setup: (text: string, onCreate?: OnCreate) => ReturnType<typeof setupSpace>;
   port?: number;
   // How many dashboard tabs are visible; the market feed only streams while someone is looking.
   onViewers?: (n: number) => void;
@@ -403,6 +403,21 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     }
 
     if (hit("POST", /^\/api\/command$/)) {
+      // Files sent with a description for a new space go to its first task, in the same step that makes it, so the
+      // task can't start without them. They come up front because there's no space yet to upload them to.
+      if (isMultipart(req)) {
+        const { fields, files } = await readUploads(req);
+        const text = str(fields.text, "text");
+        checkUploads(files);
+        let attached: Attachment[] = [];
+        const result = await deps.setup(text, (space, tasks) => {
+          if (space.kind === "repo" || !tasks[0]) return tasks;
+          attached = storeAttachments(db, space, files);
+          attachToTask(db, tasks[0].id, attached);
+          return [getTask(db, tasks[0].id)!, ...tasks.slice(1)];
+        });
+        return json({ ...result, attached: attachedView(attached) });
+      }
       const b = await readBody(req);
       if (b.spaceId === undefined) return json(await deps.setup(str(b.text, "text")));
       const space = getSpace(db, str(b.spaceId, "spaceId"));
@@ -504,6 +519,8 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     development: process.env.ATRIUM_DEV === "1",
     // Production mode would otherwise share the port, and the port is what keeps a second engine out.
     reusePort: false,
+    // The biggest thing anyone sends is a full set of attachments.
+    maxRequestBodySize: MAX_BODY_BYTES,
     routes: { "/": index, "/space/*": index, "/agents": index, "/rules": index, "/settings": index, "/start": index, "/needs-you": index, "/activity": index },
     async fetch(req, srv) {
       const url = new URL(req.url);

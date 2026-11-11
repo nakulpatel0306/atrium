@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { closeSync, constants, lstatSync, mkdirSync, openSync, realpathSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, realpathSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ATTACH_DIR, attachedBlock, batchRefusal, cleanName, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, REPO_REFUSED, typeOf } from "./attachment-rules";
 import { ensureSpaceFolder } from "./folders";
@@ -52,9 +52,12 @@ function writeAll(fd: number, bytes: Uint8Array) {
   for (let off = 0; off < bytes.length; ) off += writeSync(fd, bytes, off, bytes.length - off);
 }
 
-// An exclusive create that doesn't follow a link, in a folder checked just before. False when the name is
-// taken (by a file or a planted link alike), so nothing already there is ever overwritten or written through.
-function createIn(dir: string, name: string, bytes: Uint8Array): boolean {
+type Made = { name: string; dev: number; ino: number };
+
+// An exclusive create that doesn't follow a link, in a folder checked just before. Null when the name is taken (by
+// a file or a planted link alike), so nothing already there is ever overwritten or written through. A write that
+// fails part way leaves its partial file where it is: nothing is ever deleted on the strength of a path alone.
+function createIn(dir: string, name: string, bytes: Uint8Array): Made | null {
   const target = join(dir, name);
   if (!stillIn(dir, target)) throw new AttachRefused(409, MOVED);
   let fd: number;
@@ -62,21 +65,35 @@ function createIn(dir: string, name: string, bytes: Uint8Array): boolean {
     fd = openSync(target, EXCL, 0o644);
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
-    if (code === "EEXIST" || code === "ELOOP") return false;
+    if (code === "EEXIST" || code === "ELOOP") return null;
     throw e;
   }
+  let made: Made;
   try {
+    const st = fstatSync(fd);
+    made = { name, dev: st.dev, ino: st.ino };
     writeAll(fd, bytes);
-  } catch (e) {
+  } finally {
     closeSync(fd);
-    if (stillIn(dir, target)) unlinkSync(target);
-    throw e;
   }
-  closeSync(fd);
   // A swap between the check and the create would have sent the file elsewhere; the folder isn't trusted after
   // that, so nothing is deleted through it either.
   if (!stillIn(dir, target)) throw new AttachRefused(409, MOVED);
-  return true;
+  return made;
+}
+
+// Takes back the files a failed batch made: only through the checked folder, and only a file that is still the very
+// one created (same device and inode), so a name an agent reused or a swapped folder is left alone.
+function undoMade(dir: string, made: Made[]) {
+  for (const m of made) {
+    const target = join(dir, m.name);
+    try {
+      const st = lstatSync(target);
+      if (stillIn(dir, target) && st.isFile() && st.dev === m.dev && st.ino === m.ino) unlinkSync(target);
+    } catch {
+      // Already gone, or the folder isn't the checked one anymore: either way, nothing more to take back.
+    }
+  }
 }
 
 const withNumber = (name: string, n: number) => {
@@ -86,37 +103,51 @@ const withNumber = (name: string, n: number) => {
 };
 
 // "receipt.png", then "receipt (2).png" and so on: an existing file is never replaced.
-function writeNew(dir: string, name: string, bytes: Uint8Array): string {
+function writeNew(dir: string, name: string, bytes: Uint8Array): Made {
   for (let n = 1; n <= 1000; n++) {
-    const candidate = withNumber(name, n);
-    if (createIn(dir, candidate, bytes)) return candidate;
+    const made = createIn(dir, withNumber(name, n), bytes);
+    if (made) return made;
   }
   throw new AttachRefused(409, `Atrium couldn't find a free name for ${name} in the Attachments folder. Tidy it up, then try again.`);
 }
 
-// Saves the files into the space's Attachments/ and records them, unclaimed until a task names their ids.
-export function storeAttachments(db: Database, space: Space, files: Upload[]): Attachment[] {
-  if (space.kind === "repo") throw new AttachRefused(409, REPO_REFUSED);
+// Why a batch can't be attached, with a status: too much is 413, anything else 400.
+export function checkUploads(files: Upload[]): void {
   if (files.length === 0) throw new AttachRefused(400, "Choose at least one file to attach.");
   const sizes = files.map((f) => ({ name: f.name, size: f.bytes.length }));
   const refused = batchRefusal(sizes);
-  if (refused) {
-    const tooBig = files.length > MAX_FILES || sizes.some((f) => f.size > MAX_FILE_BYTES) || sizes.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES;
-    throw new AttachRefused(tooBig ? 413 : 400, refused);
-  }
+  if (!refused) return;
+  const tooBig = files.length > MAX_FILES || sizes.some((f) => f.size > MAX_FILE_BYTES) || sizes.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES;
+  throw new AttachRefused(tooBig ? 413 : 400, refused);
+}
+
+// Saves the files into the space's Attachments/ and records them, unclaimed until a task names their ids. All the
+// files are written first and the rows go in together; if anything fails, the files this call made are taken back,
+// so a failed batch leaves nothing behind.
+export function storeAttachments(db: Database, space: Space, files: Upload[]): Attachment[] {
+  if (space.kind === "repo") throw new AttachRefused(409, REPO_REFUSED);
+  checkUploads(files);
   const dir = attachDir(ensureSpaceFolder(db, space));
   if (!dir) throw new AttachRefused(409, MOVED);
   const now = Date.now();
-  const out: Attachment[] = [];
-  for (const f of files) {
-    const stored = writeNew(dir, cleanName(f.name), f.bytes);
-    const a: Attachment = { id: newId("att"), spaceId: space.id, taskId: null, path: `${ATTACH_DIR}/${stored}`, name: stored, size: f.bytes.length, type: typeOf(stored), createdAt: now };
-    db.query("INSERT INTO attachments (id, space_id, task_id, path, name, size, type, created_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)").run(
-      a.id, a.spaceId, a.path, a.name, a.size, a.type, a.createdAt,
-    );
-    out.push(a);
+  const made: Made[] = [];
+  try {
+    for (const f of files) made.push(writeNew(dir, cleanName(f.name), f.bytes));
+    const out = made.map((m, i): Attachment => ({
+      id: newId("att"), spaceId: space.id, taskId: null, path: `${ATTACH_DIR}/${m.name}`, name: m.name, size: files[i]!.bytes.length, type: typeOf(m.name), createdAt: now,
+    }));
+    db.transaction(() => {
+      for (const a of out) {
+        db.query("INSERT INTO attachments (id, space_id, task_id, path, name, size, type, created_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)").run(
+          a.id, a.spaceId, a.path, a.name, a.size, a.type, a.createdAt,
+        );
+      }
+    })();
+    return out;
+  } catch (e) {
+    undoMade(dir, made);
+    throw e;
   }
-  return out;
 }
 
 // The attachments a new task will claim: every id must be this space's and not yet claimed by another task.
@@ -138,6 +169,13 @@ export function claimAttachments(db: Database, taskId: string, list: Attachment[
   for (const a of list) db.query("UPDATE attachments SET task_id = ? WHERE id = ? AND task_id IS NULL").run(taskId, a.id);
 }
 
+// Gives files to a task that already exists (a new space's first starter task): its detail gains the list.
+export function attachToTask(db: Database, taskId: string, list: Attachment[]): void {
+  const row = db.query("SELECT detail FROM tasks WHERE id = ?").get(taskId) as { detail: string };
+  db.query("UPDATE tasks SET detail = ?, updated_at = ? WHERE id = ?").run(withAttachments(row.detail, list), Date.now(), taskId);
+  claimAttachments(db, taskId, list);
+}
+
 export const withAttachments = (detail: string, list: Attachment[]) =>
   list.length ? [detail.trim(), attachedBlock(list.map((a) => a.path))].filter(Boolean).join("\n\n") : detail;
 
@@ -150,53 +188,38 @@ export function claimedAttachments(db: Database): Attachment[] {
 }
 
 // A Codex or Gemini run works in an empty folder of its own, not the space folder, so the task's files are copied
-// in at the same relative paths the task's detail names. Sources are read without passing through a link. What was
-// copied, and the real folder it went into, are returned so exactly those copies can be taken out again later.
-export type Copies = { dir: string | null; names: string[] };
+// in at the same relative paths the task's detail names. Sources are read without passing through a link, and a
+// file that's grown past the limit or has another hard link (it could be a secret's other name) is left out. What was
+// copied is returned by path, size and content hash, so the copies left unchanged aren't kept as the run's work;
+// the scratch folder itself is removed whole when the run ends, so nothing here deletes anything.
+export type Copy = { path: string; size: number; hash: string };
 
-export function copyAttachments(db: Database, taskId: string, spaceDir: string, dest: string): Copies {
+export const hashOf = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+
+export function copyAttachments(db: Database, taskId: string, spaceDir: string, dest: string): Copy[] {
   const list = taskAttachments(db, taskId);
-  if (!list.length) return { dir: null, names: [] };
+  if (!list.length) return [];
   const dir = attachDir(dest);
-  if (!dir) return { dir: null, names: [] };
-  const names: string[] = [];
+  if (!dir) return [];
+  const copied: Copy[] = [];
   for (const a of list) {
     let bytes: Uint8Array;
     try {
       const t = resolveTarget(spaceDir, a.path);
-      bytes = readOpen(t, (fd, st) => readBytes(fd, st.size));
+      bytes = readOpen(t, (fd, st) => {
+        if (st.size > MAX_FILE_BYTES || st.nlink > 1) throw new Error("not copied");
+        return readBytes(fd, st.size);
+      });
     } catch {
-      // A file Nakul moved or deleted since attaching it just isn't there for the agent; the run still goes ahead.
+      // Moved, deleted, grown or hard-linked since it was attached: the agent goes without it.
       continue;
     }
     try {
-      if (createIn(dir, a.name, bytes)) names.push(a.name);
+      if (createIn(dir, a.name, bytes)) copied.push({ path: a.path, size: bytes.length, hash: hashOf(bytes) });
     } catch {
       // The folder stopped being a plain one: no more writes into it.
       break;
     }
   }
-  return { dir, names };
-}
-
-// Only plain files, in the very folder they were copied into, are removed. That folder is named by the real path it
-// had then, so if it or any folder above it has since been swapped for a link, its real path no longer matches and
-// nothing is touched; a link in a file's place is left alone too. Whatever else is there is the agent's work.
-export function removeCopies(copies: Copies): void {
-  const { dir, names } = copies;
-  if (!dir || !names.length) return;
-  for (const name of names) {
-    const target = join(dir, name);
-    try {
-      if (stillIn(dir, target) && lstatSync(target).isFile()) unlinkSync(target);
-    } catch {
-      // Already gone.
-    }
-  }
-  // The folder too, when nothing else is left in it; rmdir never removes one that isn't empty.
-  try {
-    if (plainDir(dir)) rmdirSync(dir);
-  } catch {
-    // The agent left files there; they're kept with its work.
-  }
+  return copied;
 }
