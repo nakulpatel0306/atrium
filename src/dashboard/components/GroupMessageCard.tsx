@@ -3,6 +3,8 @@ import { useState } from "react";
 import { askLine, groupTitle, MAX_TEXT, peopleLine, separatePlan, textLength, textProblem } from "../../engine/messaging/rules";
 import type { GroupChat } from "../../engine/messaging/store";
 import { post, type State } from "../api";
+import { announce } from "../live";
+import { sendWithUndo } from "../pending-send";
 
 type Approval = State["approvals"][number];
 type Action = State["messageActions"][number];
@@ -38,7 +40,23 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
     if (!res.ok) onError(res.error);
     return res.ok;
   };
-  const send = () => canSend && void act("send", `/api/message-actions/${action.id}/send`, { text, chatId: chat?.id });
+  const send = () => {
+    if (!canSend || !chat) return;
+    setBusy("send");
+    setError(null);
+    const body = { text, chatId: chat.id };
+    sendWithUndo(
+      title,
+      async () => {
+        const res = await post(`/api/message-actions/${action.id}/send`, body);
+        if (res.ok) return announce(`Sent to ${title}.`);
+        setError(res.error);
+        setBusy(null);
+        announce(`Didn't send to ${title}. ${res.error}`);
+      },
+      () => setBusy(null),
+    );
+  };
   const decline = () => void act("decline", `/api/approvals/${approval.id}`, { decision: "reject" });
   const apart = () => !textIssue && void act("apart", `/api/message-actions/${action.id}/separately`, { text });
   const pick = (chatId: string) => void act("pick", `/api/message-actions/${action.id}/chat`, { chatId }, setFindError);
@@ -76,18 +94,9 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           <button className="btn" disabled={busy !== null} onClick={decline}>
             Don't send
           </button>
-          <button className="btn p" disabled={!canSend} onClick={send}>
-            {busy === "send" ? "Sending…" : "Send"}
-          </button>
         </div>
       </div>
-      <form
-        className="detail msg-card"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-      >
+      <div className="detail msg-card">
         {action.lastError && <p className="err last-try">Last try failed: {action.lastError}</p>}
         {needsPane(action.lastError) && settingsButton}
         <p className="msg-to">
@@ -177,10 +186,19 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
               {textLength(text)}/{MAX_TEXT}
             </span>
           </span>
-          <textarea className="mk-input" value={text} rows={Math.min(8, Math.max(3, text.split("\n").length + 1))} onChange={(e) => setText(e.target.value)} />
+          <textarea
+            className="mk-input"
+            value={text}
+            readOnly={busy === "send"}
+            rows={Math.min(8, Math.max(3, text.split("\n").length + 1))}
+            onChange={(e) => setText(e.target.value)}
+          />
           {textIssue && <span className="err">{textIssue}</span>}
         </label>
         <div className="msg-foot">
+          <button className="btn p" disabled={!canSend} onClick={send}>
+            {busy === "send" ? "Sending…" : "Send"}
+          </button>
           <span className="via">
             <span className="lbl">Via</span>
             <span>{action.service}</span>
@@ -188,8 +206,7 @@ export function GroupMessageCard({ approval, action, spaceName = "Messages", fir
           <p className="faint">Sends to the existing group chat from Messages on this Mac. Atrium can't confirm delivery.</p>
         </div>
         {firstSend && <p className="hint">The first send asks macOS whether Atrium may control Messages. Click OK, and it sends.</p>}
-        <button type="submit" hidden />
-      </form>
+      </div>
       {error && <div className="row-err err">{error}</div>}
       {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
     </div>

@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import type { Candidate } from "../../engine/messaging/store";
 import { displayHandle, handleProblem, MAX_TEXT, textLength, textProblem } from "../../engine/messaging/rules";
 import { post, type State } from "../api";
+import { announce } from "../live";
+import { sendWithUndo } from "../pending-send";
 
 type Approval = State["approvals"][number];
 type Action = State["messageActions"][number];
@@ -11,6 +13,13 @@ type Lookup = { candidates: Candidate[]; picked: string | null; message: string 
 const SOURCE: Record<string, string> = { contacts: "from Contacts", you: "typed by you" };
 
 export const candidateLine = (c: Candidate) => [c.name, c.label, displayHandle(c.handle)].filter(Boolean).join(" · ");
+
+// Enter in the number field runs the lookup. The card has no form, so no key press can reach Send.
+export function onNumberKey(e: { key: string; preventDefault: () => void }, lookup: () => void): void {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  lookup();
+}
 
 // A text waiting to go. What Nakul sees here is exactly what Messages gets: his edits and his Send land together,
 // and nothing else can send it.
@@ -41,16 +50,24 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
   const fromContacts = match ? `from Contacts · ${[match.name, match.label].filter(Boolean).join(", ")}` : SOURCE.contacts;
   const source = match || (stored && action.handleSource === "contacts") ? fromContacts : stored ? SOURCE[action.handleSource ?? ""] : shown ? SOURCE.you : null;
 
-  const send = async () => {
+  const send = () => {
     if (!canSend) return;
     setBusy("send");
     setError(null);
-    const res = await post(`/api/message-actions/${action.id}/send`, { text, handle, service });
-    // On success the card leaves with the next state push; the space's history shows the send.
-    if (!res.ok) {
-      setError(res.error);
-      setBusy(null);
-    }
+    // The words and number are fixed at the press; the card is read-only until the send goes or is undone.
+    const body = { text, handle, service };
+    sendWithUndo(
+      action.toName,
+      async () => {
+        const res = await post(`/api/message-actions/${action.id}/send`, body);
+        // On success the card leaves with the next state push; the space's history shows the send.
+        if (res.ok) return announce(`Sent to ${action.toName}.`);
+        setError(res.error);
+        setBusy(null);
+        announce(`Didn't send to ${action.toName}. ${res.error}`);
+      },
+      () => setBusy(null),
+    );
   };
   const decline = async () => {
     setBusy("decline");
@@ -97,18 +114,9 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
           <button className="btn" disabled={busy !== null} onClick={() => void decline()}>
             Don't send
           </button>
-          <button className="btn p" disabled={!canSend} onClick={() => void send()}>
-            {busy === "send" ? "Sending…" : "Send"}
-          </button>
         </div>
       </div>
-      <form
-        className="detail msg-card"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
+      <div className="detail msg-card">
         {action.lastError && <p className="err last-try">Last try failed: {action.lastError}</p>}
         {needsPane(action.lastError) && settingsButton}
         <p className="msg-to">
@@ -131,6 +139,8 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
             autoComplete="off"
             placeholder="Phone number or email"
             aria-label="Phone number or email"
+            readOnly={busy === "send"}
+            onKeyDown={(e) => onNumberKey(e, () => busy === null && void lookup())}
             onChange={(e) => {
               setHandle(e.target.value);
               setTouched(true);
@@ -175,10 +185,19 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
               {textLength(text)}/{MAX_TEXT}
             </span>
           </span>
-          <textarea className="mk-input" value={text} rows={Math.min(8, Math.max(3, text.split("\n").length + 1))} onChange={(e) => setText(e.target.value)} />
+          <textarea
+            className="mk-input"
+            value={text}
+            readOnly={busy === "send"}
+            rows={Math.min(8, Math.max(3, text.split("\n").length + 1))}
+            onChange={(e) => setText(e.target.value)}
+          />
           {textIssue && <span className="err">{textIssue}</span>}
         </label>
         <div className="msg-foot">
+          <button className="btn p" disabled={!canSend} onClick={send}>
+            {busy === "send" ? "Sending…" : "Send"}
+          </button>
           <span className="via">
             <span className="lbl">Via</span>
             <span className="seg" role="group" aria-label="Send as">
@@ -192,8 +211,7 @@ export function MessageCard({ approval, action, spaceName = "Messages", firstSen
           <p className="faint">Sends from Messages on this Mac. Atrium can't confirm delivery.</p>
         </div>
         {firstSend && <p className="hint">The first send asks macOS whether Atrium may control Messages. Click OK, and it sends.</p>}
-        <button type="submit" hidden />
-      </form>
+      </div>
       {error && <div className="row-err err">{error}</div>}
       {needsPane(error) && !needsPane(action.lastError) && <div className="row-err">{settingsButton}</div>}
     </div>

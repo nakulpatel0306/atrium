@@ -6,6 +6,7 @@ import { Agents } from "./components/Agents";
 import { CommandBar } from "./components/CommandBar";
 import { GetStarted } from "./components/GetStarted";
 import { Home } from "./components/Home";
+import { LiveRegion } from "./components/LiveRegion";
 import { Logo } from "./components/Logo";
 import { Rules } from "./components/Rules";
 import { Settings } from "./components/Settings";
@@ -132,6 +133,7 @@ function App() {
         )}
         <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} />
         <Toast />
+        <LiveRegion />
       </main>
     </div>
   );
