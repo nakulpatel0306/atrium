@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf } from "./diff-parse";
 import { isEnvPath } from "./envpath";
 
 const PROTECTED = new Set(["main", "master"]);
@@ -535,4 +536,95 @@ export async function moveLateCommit(path: string, taskId: string, decided: stri
   const back = await git(path, ["update-ref", `refs/heads/${decided}`, pre, post]);
   if (back.code !== 0) throw new Error(`Couldn't move ${decided} back to the commit you decided on: ${back.err.trim()}`);
   return branch;
+}
+
+const CHANGES_CAP = 200 * 1024;
+const ENV_EXCLUDES = ["--", ".", ":(exclude,glob,icase)**/.env*", ":(exclude,glob,icase)**/*.env"];
+// No external diff programs or textconv filters, and attributes only from the empty tree, so nothing the agent
+// planted in the repo runs while the engine reads its changes.
+async function diffFlags(path: string): Promise<string[]> {
+  const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
+  if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
+  return [
+    "-c", "core.quotePath=false", ...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`,
+    // Fixed prefixes: a user's diff.mnemonicPrefix or diff.noPrefix would change what the parser reads.
+    "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/",
+  ];
+}
+
+// .env files are left out by pathspec, and again by header, as in reviewDiff (that covers both sides of a rename).
+function parseCapped(res: { out: string; truncated: boolean }): DiffResult {
+  const kept = res.out.split(/^(?=diff --git )/m).filter((s) => s.startsWith("diff --git ") && !touchesEnv(s.split("\n").slice(0, 4).join(" ")));
+  const files = parseDiff(kept.join(""));
+  if (res.truncated && files.length) files[files.length - 1]!.truncated = true;
+  return { files, totals: totalsOf(files), truncated: res.truncated };
+}
+
+// A finished task's changes, from its branch's commits against where the work started.
+export async function branchDiff(path: string, base: string, branch: string): Promise<DiffResult> {
+  return parseCapped(await gitCapped(path, [...(await diffFlags(path)), `${base}...${branch}`, ...ENV_EXCLUDES], CHANGES_CAP));
+}
+
+// What a running agent has changed so far: tracked files against `start`, plus new files it hasn't committed
+// (they're shown as additions). Untracked files are read straight from disk, never through a symlink.
+export async function workingDiff(path: string, start: string): Promise<DiffResult> {
+  const tracked = parseCapped(await gitCapped(path, [...(await diffFlags(path)), start, ...ENV_EXCLUDES], CHANGES_CAP));
+  const list = await git(path, ["-c", "core.quotePath=false", ...STAGE_FLAGS, "ls-files", "-z", "--others", "--exclude-standard"]);
+  if (list.code !== 0) throw new Error(`Couldn't list new files: ${list.err.trim()}`);
+  let budget = CHANGES_CAP - tracked.files.reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.reduce((k, l) => k + l.text.length + 1, 0), 0), 0);
+  let truncated = tracked.truncated;
+  const files = [...tracked.files];
+  // A nested repo shows as "dir/"; its contents are its own repo's business.
+  for (const rel of list.out.split("\0").filter((p) => p && !p.endsWith("/") && !isEnvPath(p)).sort()) {
+    const found = untrackedFile(join(path, rel), rel, Math.max(budget, 0));
+    if (!found) continue;
+    const { file, cut } = found;
+    if (cut) truncated = true;
+    budget -= file.hunks[0]?.lines.reduce((k, l) => k + l.text.length + 1, 0) ?? 0;
+    files.push(file);
+  }
+  return { files, totals: totalsOf(files), truncated };
+}
+
+// `cut` says the file was shortened to fit what's left of the 200 KB, rather than at its own 2,000 lines.
+function untrackedFile(abs: string, rel: string, budget: number): { file: DiffFile; cut: boolean } | null {
+  const file: DiffFile = { path: rel, status: "added", additions: 0, deletions: 0, binary: false, truncated: false, hunks: [] };
+  let st: ReturnType<typeof lstatSync>;
+  try {
+    st = lstatSync(abs);
+  } catch {
+    // Deleted between the listing and the read.
+    return null;
+  }
+  // git shows a symlink as one line holding its target, which is what it would commit.
+  if (st.isSymbolicLink()) {
+    file.additions = 1;
+    file.hunks = [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add", text: readlinkSync(abs), newNo: 1 }] }];
+    return { file, cut: false };
+  }
+  if (!st.isFile()) return null;
+  const want = Math.min(st.size, budget);
+  const bytes = Buffer.alloc(want);
+  const fd = openSync(abs, "r");
+  try {
+    readSync(fd, bytes, 0, want, 0);
+  } finally {
+    closeSync(fd);
+  }
+  if (bytes.subarray(0, 8000).includes(0)) {
+    file.binary = true;
+    return { file, cut: false };
+  }
+  const cut = want < st.size;
+  if (cut) file.truncated = true;
+  const text = bytes.toString();
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  file.additions = lines.length;
+  if (lines.length > MAX_FILE_LINES) file.truncated = true;
+  const shown = lines.slice(0, MAX_FILE_LINES);
+  if (shown.length) {
+    file.hunks = [{ header: `@@ -0,0 +1,${lines.length} @@`, lines: shown.map((t, i) => ({ kind: "add" as const, text: t, newNo: i + 1 })) }];
+  }
+  return { file, cut };
 }
