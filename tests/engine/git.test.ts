@@ -679,6 +679,42 @@ describe("changes", () => {
     expect(d.files.map((f) => f.path)).not.toContain("pipe");
   }, 5000);
 
+  test("staged files count: a staged-only new file is added, a file taken out of the index isn't listed twice", async () => {
+    const path = workRepo();
+    writeFileSync(join(path, "staged.md"), "staged\n");
+    git(path, "add", "staged.md");
+    git(path, "rm", "-q", "--cached", "app.ts");
+    git(path, "rm", "-q", "old.txt");
+    const d = await workingDiff(path, "main");
+    expect(d.files.map((f) => [f.path, f.status]).sort()).toEqual([
+      ["old.txt", "deleted"],
+      ["staged.md", "added"],
+    ]);
+  });
+
+  test("a changed file too large to show is listed as changed with a note; an unchanged one isn't listed", async () => {
+    const path = workRepo();
+    const big = Buffer.alloc(11 * 1024 * 1024, "a");
+    writeFileSync(join(path, "big.txt"), big);
+    git(path, "add", "big.txt");
+    git(path, "commit", "-q", "-m", "big");
+    expect((await workingDiff(path, "HEAD")).files).toEqual([]);
+    big[0] = 98;
+    writeFileSync(join(path, "big.txt"), big);
+    const d = await workingDiff(path, "HEAD");
+    expect(d.files).toEqual([
+      { path: "big.txt", status: "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: "Too large to show. Open the file in your editor to see what changed." },
+    ]);
+  });
+
+  test("a file Atrium can't read is listed as maybe changed, never as unchanged", async () => {
+    const path = workRepo();
+    chmodSync(join(path, "app.ts"), 0o000);
+    cleanups.push(() => chmodSync(join(path, "app.ts"), 0o644));
+    const d = await workingDiff(path, "main");
+    expect(d.files.find((f) => f.path === "app.ts")).toMatchObject({ status: "modified", truncated: true, note: "Atrium couldn't read this file, so it may have changed." });
+  });
+
   test("no changes is an empty result", async () => {
     const path = workRepo();
     expect(await workingDiff(path, "main")).toEqual({ files: [], totals: { files: 0, additions: 0, deletions: 0 }, truncated: false });

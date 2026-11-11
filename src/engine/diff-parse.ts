@@ -10,6 +10,8 @@ export type DiffFile = {
   binary: boolean;
   truncated: boolean;
   hunks: DiffHunk[];
+  // Why the lines aren't shown, when Atrium couldn't read the file or it's too large; the file still counts as changed.
+  note?: string;
 };
 export type DiffResult = { files: DiffFile[]; totals: { files: number; additions: number; deletions: number }; truncated: boolean };
 

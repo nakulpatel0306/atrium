@@ -571,19 +571,27 @@ export async function branchDiff(path: string, base: string, branch: string): Pr
   return parseCapped(await gitCapped(path, [...(await diffFlags(path)), `${base}...${branch}`, ...ENV_EXCLUDES], CHANGES_CAP));
 }
 
-// What a running agent has changed so far: tracked files against `start`, plus new files it hasn't committed
-// (they're shown as additions). Untracked files are read straight from disk, never through a symlink.
+// What a running agent has changed so far, against `start`: every file git knows (committed on the branch, or
+// staged) as it is on disk now, plus new files it hasn't added (they're shown as additions). Every file is read by
+// Atrium itself, never through a symlink, and git only ever compares trees.
 export async function workingDiff(path: string, start: string): Promise<DiffResult> {
   const flags = await diffFlags(path);
-  const tracked = await withWorktreeTree(path, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
-  const changes = parseCapped(tracked);
+  const snap = await withWorktreeTree(path, (tree, env) => gitCapped(path, [...flags, start, tree, ...ENV_EXCLUDES], CHANGES_CAP, env));
+  const changes = parseCapped(snap.value);
+  const files = [...changes.files];
+  // A file Atrium couldn't read or hash in full is listed as changed with a note, never left to look unchanged.
+  for (const u of snap.unknown) {
+    const shown = files.find((f) => f.path === u.path);
+    if (shown) Object.assign(shown, { truncated: true, note: u.note, hunks: [] });
+    else if (!isEnvPath(u.path)) files.push({ path: u.path, status: "modified", additions: 0, deletions: 0, binary: false, truncated: true, hunks: [], note: u.note });
+  }
   const list = await git(path, ["-c", "core.quotePath=false", ...STAGE_FLAGS, "ls-files", "-z", "--others", "--exclude-standard"]);
   if (list.code !== 0) throw new Error(`Couldn't list new files: ${list.err.trim()}`);
-  let budget = CHANGES_CAP - changes.files.reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.reduce((k, l) => k + l.text.length + 1, 0), 0), 0);
+  let budget = CHANGES_CAP - files.reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.reduce((k, l) => k + l.text.length + 1, 0), 0), 0);
   let truncated = changes.truncated;
-  const files = [...changes.files];
-  // A nested repo shows as "dir/"; its contents are its own repo's business.
-  for (const rel of list.out.split("\0").filter((p) => p && !p.endsWith("/") && !isEnvPath(p)).sort()) {
+  // A nested repo shows as "dir/"; its contents are its own repo's business. A file taken out of the index but still
+  // on the branch is already in the snapshot.
+  for (const rel of list.out.split("\0").filter((p) => p && !p.endsWith("/") && !isEnvPath(p) && !snap.paths.has(p)).sort()) {
     const found = untrackedFile(path, rel, Math.max(budget, 0));
     if (!found) continue;
     const { file, cut } = found;
@@ -594,16 +602,16 @@ export async function workingDiff(path: string, start: string): Promise<DiffResu
   return { files, totals: totalsOf(files), truncated };
 }
 
-// Above this a tracked file isn't hashed and counts as unchanged; the view would cut its lines anyway.
-const HASH_CAP = 50 * 1024 * 1024;
-// Blob ids of tracked files Atrium already hashed, by absolute path, keyed on what fstat says about them.
-const blobCache = new Map<string, { stat: string; mode: string; id: string }>();
+// A changed file bigger than this is listed without its lines, and never copied into a blob.
+const SHOW_CAP = 10 * 1024 * 1024;
+// Blob ids of files Atrium already hashed, by absolute path, keyed on what fstat says about them.
+const blobCache = new Map<string, { stat: string; id: string }>();
 
-type RepoFile = { kind: "file"; bytes: Buffer; size: number; exec: boolean; stat: string } | { kind: "link"; target: string } | { kind: "gone" } | { kind: "skip" };
+type Opened = { kind: "fd"; fd: number } | { kind: "link"; target: string } | { kind: "gone" } | { kind: "unreadable" };
 
-// One file in the repo, read without following a symlink or blocking on a FIFO, checked on the open descriptor,
-// and only while its folder still resolves inside the repo. Reads at most `cap` bytes; `size` is the full size.
-function readRepoFile(root: string, rel: string, cap: number, known?: string): RepoFile {
+// One path in the repo, opened without following a symlink or blocking on a FIFO, and only while its folder still
+// resolves inside the repo.
+function openRepoFile(root: string, rel: string): Opened {
   const abs = join(root, rel);
   try {
     const top = realpathSync(root);
@@ -612,75 +620,128 @@ function readRepoFile(root: string, rel: string, cap: number, known?: string): R
   } catch {
     return { kind: "gone" };
   }
-  let fd: number;
   try {
-    fd = openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    return { kind: "fd", fd: openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK) };
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || code === "ENOTDIR") return { kind: "gone" };
-    if (code !== "ELOOP") return { kind: "skip" };
+    if (code !== "ELOOP") return { kind: "unreadable" };
     try {
       return { kind: "link", target: readlinkSync(abs) };
     } catch {
       return { kind: "gone" };
     }
   }
+}
+
+function readFd(fd: number, length: number, onChunk: (b: Buffer) => void): void {
+  const buf = Buffer.alloc(Math.min(length, 1024 * 1024));
+  let pos = 0;
+  while (pos < length) {
+    const n = readSync(fd, buf, 0, Math.min(buf.length, length - pos), pos);
+    if (n === 0) break;
+    onChunk(buf.subarray(0, n));
+    pos += n;
+  }
+}
+
+type Hashed =
+  | { kind: "file"; id: string; mode: string; size: number; bytes: Buffer | null }
+  | { kind: "gone" }
+  | { kind: "unreadable" };
+
+// A file's blob id as git would store it with no filters, read in chunks so a big file costs no memory. Its bytes
+// come back only when it's small enough to show and not already known.
+function hashRepoFile(root: string, rel: string, format: "sha1" | "sha256"): Hashed {
+  const opened = openRepoFile(root, rel);
+  const blobId = (bytes: Buffer) => createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+  if (opened.kind === "link") {
+    const bytes = Buffer.from(opened.target);
+    return { kind: "file", id: blobId(bytes), mode: "120000", size: bytes.length, bytes };
+  }
+  if (opened.kind !== "fd") return opened;
+  const { fd } = opened;
   try {
     const st = fstatSync(fd);
     // A folder or FIFO where a file was is, as far as the file goes, gone.
     if (!st.isFile()) return { kind: "gone" };
-    const exec = (st.mode & 0o111) !== 0;
-    const stat = `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
-    // The caller already knows this exact file; there's nothing to read.
-    if (known === stat) return { kind: "file", bytes: Buffer.alloc(0), size: st.size, exec, stat };
-    const bytes = Buffer.alloc(Math.min(st.size, cap));
+    const mode = (st.mode & 0o111) !== 0 ? "100755" : "100644";
+    const abs = join(root, rel);
+    const stat = `${format}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
+    const cached = blobCache.get(abs);
+    if (cached?.stat === stat) return { kind: "file", id: cached.id, mode, size: st.size, bytes: null };
+    const keep = st.size <= SHOW_CAP;
+    const chunks: Buffer[] = [];
+    const hash = createHash(format).update(`blob ${st.size}\0`);
     let read = 0;
-    while (read < bytes.length) {
-      const n = readSync(fd, bytes, read, bytes.length - read, read);
-      if (n === 0) break;
-      read += n;
-    }
-    return { kind: "file", bytes: bytes.subarray(0, read), size: st.size, exec, stat };
+    readFd(fd, st.size, (b) => {
+      hash.update(b);
+      read += b.length;
+      if (keep) chunks.push(Buffer.from(b));
+    });
+    // It changed size while being read; whatever it is now, it isn't what was hashed.
+    if (read !== st.size) return { kind: "unreadable" };
+    const id = hash.digest("hex");
+    blobCache.set(abs, { stat, id });
+    return { kind: "file", id, mode, size: st.size, bytes: keep ? Buffer.concat(chunks) : null };
+  } catch {
+    return { kind: "unreadable" };
   } finally {
     closeSync(fd);
   }
 }
 
-// The working tree as a git tree, built without git ever reading it: Atrium reads each tracked file itself, hashes
-// it as is, and writes only the changed ones as blobs, into a temporary object folder (the repo's own objects are an
-// alternate, so nothing is added to the repo) and a temporary index. `use` gets the tree and the environment that can see it.
-async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<T> {
+type Snapshot<T> = { value: T; paths: Set<string>; unknown: { path: string; note: string }[] };
+
+const TOO_LARGE = "Too large to show. Open the file in your editor to see what changed.";
+const UNREADABLE = "Atrium couldn't read this file, so it may have changed.";
+
+// The working tree as a git tree, built without git ever reading it: Atrium reads each file git knows (on HEAD or
+// staged) itself, hashes it as is, and writes only the changed ones as blobs, into a temporary object folder (the
+// repo's own objects are an alternate, so nothing is added to the repo) and a temporary index. `use` gets the tree
+// and the environment that can see it.
+async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record<string, string>) => Promise<T>): Promise<Snapshot<T>> {
   const format = (await git(path, ["rev-parse", "--show-object-format"])).out.trim() === "sha256" ? "sha256" : "sha1";
   const objects = await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]);
   if (objects.code !== 0) throw new Error(`Couldn't read git dir: ${objects.err.trim()}`);
   const head = await git(path, ["-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]);
   if (head.code !== 0) throw new Error(`Couldn't list files at HEAD: ${head.err.trim()}`);
-  const updates: { mode: string; id: string | null; path: string; bytes?: Buffer }[] = [];
+  const staged = await git(path, ["-c", "core.quotePath=false", "ls-files", "-s", "-z"]);
+  if (staged.code !== 0) throw new Error(`Couldn't list staged files: ${staged.err.trim()}`);
+  // Path → HEAD's entry (null when only the index has it). Gitlinks are other repos' business.
+  const known = new Map<string, { mode: string; id: string } | null>();
   for (const record of head.out.split("\0").filter(Boolean)) {
     const tab = record.indexOf("\t");
     const [mode, type, id] = record.slice(0, tab).split(" ") as [string, string, string];
+    if (type === "blob") known.set(record.slice(tab + 1), { mode, id });
+  }
+  for (const record of staged.out.split("\0").filter(Boolean)) {
+    const tab = record.indexOf("\t");
     const rel = record.slice(tab + 1);
-    if (type !== "blob") continue;
-    const abs = join(path, rel);
-    const cached = blobCache.get(abs);
-    const f = readRepoFile(path, rel, HASH_CAP, cached?.stat);
-    if (f.kind === "skip") continue;
-    if (f.kind === "gone") {
-      updates.push({ mode, id: null, path: rel });
+    if (!record.startsWith("160000 ") && !known.has(rel)) known.set(rel, null);
+  }
+
+  const updates: { mode: string; id: string | null; path: string; bytes: Buffer | null }[] = [];
+  const unknown: Snapshot<T>["unknown"] = [];
+  for (const [rel, entry] of known) {
+    const f = hashRepoFile(path, rel, format);
+    if (f.kind === "unreadable") {
+      unknown.push({ path: rel, note: UNREADABLE });
       continue;
     }
-    if (f.kind === "file" && f.size > HASH_CAP) continue;
-    const bytes = f.kind === "link" ? Buffer.from(f.target) : f.bytes;
-    const nowMode = f.kind === "link" ? "120000" : f.exec ? "100755" : "100644";
-    let blob: string;
-    if (f.kind === "file" && cached && cached.stat === f.stat) blob = cached.id;
-    else {
-      blob = createHash(format).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
-      if (f.kind === "file") blobCache.set(abs, { stat: f.stat, mode: nowMode, id: blob });
+    if (f.kind === "gone") {
+      if (entry) updates.push({ mode: entry.mode, id: null, path: rel, bytes: null });
+      continue;
     }
-    if (blob !== id || nowMode !== mode) updates.push({ mode: nowMode, id: blob, path: rel, bytes: f.kind === "file" && cached?.stat === f.stat ? undefined : bytes });
+    if (entry && entry.id === f.id && entry.mode === f.mode) continue;
+    if (f.size > SHOW_CAP) {
+      unknown.push({ path: rel, note: TOO_LARGE });
+      continue;
+    }
+    updates.push({ mode: f.mode, id: f.id, path: rel, bytes: f.bytes });
   }
-  if (updates.length === 0) return use("HEAD^{tree}", {});
+  const paths = new Set(known.keys());
+  if (updates.length === 0) return { value: await use("HEAD^{tree}", {}), paths, unknown };
 
   const dir = mkdtempSync(join(tmpdir(), "atrium-diff-"));
   try {
@@ -693,11 +754,20 @@ async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record
         lines.push(`0 ${zeros}\t${u.path}`);
         continue;
       }
-      // A cached hash has no bytes in hand; read them again for the blob.
-      const bytes = u.bytes ?? (() => {
-        const f = readRepoFile(path, u.path, HASH_CAP);
-        return f.kind === "file" ? f.bytes : f.kind === "link" ? Buffer.from(f.target) : Buffer.alloc(0);
-      })();
+      // A hash from the cache has no bytes in hand. Read again, the file must still be what was hashed.
+      let bytes = u.bytes;
+      if (!bytes) {
+        const opened = openRepoFile(path, u.path);
+        const chunks: Buffer[] = [];
+        if (opened.kind === "fd") {
+          try {
+            readFd(opened.fd, SHOW_CAP + 1, (b) => chunks.push(Buffer.from(b)));
+          } finally {
+            closeSync(opened.fd);
+          }
+        } else if (opened.kind === "link") chunks.push(Buffer.from(opened.target));
+        bytes = Buffer.concat(chunks);
+      }
       // --no-filters: stored exactly as read, and from stdin, so git never opens the file itself.
       const w = await git(path, ["hash-object", "-w", "--no-filters", "--stdin"], undefined, { env, stdin: bytes });
       if (w.code !== 0) throw new Error(`Couldn't read the changed files: ${w.err.trim()}`);
@@ -709,7 +779,7 @@ async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record
     if (info.code !== 0) throw new Error(`Couldn't list the changed files: ${info.err.trim()}`);
     const tree = await git(path, ["write-tree"], undefined, { env });
     if (tree.code !== 0) throw new Error(`Couldn't read the changed files: ${tree.err.trim()}`);
-    return await use(tree.out.trim(), env);
+    return { value: await use(tree.out.trim(), env), paths, unknown };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -718,21 +788,33 @@ async function withWorktreeTree<T>(path: string, use: (tree: string, env: Record
 // `cut` says the file was shortened to fit what's left of the 200 KB, rather than at its own 2,000 lines.
 export function untrackedFile(root: string, rel: string, budget: number): { file: DiffFile; cut: boolean } | null {
   const file: DiffFile = { path: rel, status: "added", additions: 0, deletions: 0, binary: false, truncated: false, hunks: [] };
-  const f = readRepoFile(root, rel, budget);
-  if (f.kind === "gone" || f.kind === "skip") return null;
+  const opened = openRepoFile(root, rel);
+  if (opened.kind === "gone") return null;
+  if (opened.kind === "unreadable") return { file: { ...file, truncated: true, note: UNREADABLE }, cut: false };
   // git shows a symlink as one line holding its target, which is what it would commit; nothing behind it is read.
-  if (f.kind === "link") {
+  if (opened.kind === "link") {
     file.additions = 1;
-    file.hunks = [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add", text: f.target, newNo: 1 }] }];
+    file.hunks = [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add", text: opened.target, newNo: 1 }] }];
     return { file, cut: false };
   }
-  if (f.bytes.subarray(0, 8000).includes(0)) {
+  const chunks: Buffer[] = [];
+  let size: number;
+  try {
+    const st = fstatSync(opened.fd);
+    if (!st.isFile()) return null;
+    size = st.size;
+    readFd(opened.fd, Math.min(size, budget), (b) => chunks.push(Buffer.from(b)));
+  } finally {
+    closeSync(opened.fd);
+  }
+  const bytes = Buffer.concat(chunks);
+  if (bytes.subarray(0, 8000).includes(0)) {
     file.binary = true;
     return { file, cut: false };
   }
-  const cut = f.bytes.length < f.size;
+  const cut = bytes.length < size;
   if (cut) file.truncated = true;
-  const lines = f.bytes.toString().split("\n");
+  const lines = bytes.toString().split("\n");
   if (lines.at(-1) === "") lines.pop();
   file.additions = lines.length;
   if (lines.length > MAX_FILE_LINES) file.truncated = true;
