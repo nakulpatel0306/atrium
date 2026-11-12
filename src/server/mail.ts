@@ -9,7 +9,6 @@ import { runPim } from "../engine/mail/pim";
 import { getSetting, setSetting } from "../engine/settings";
 import { inboxSpace, inboxSpaceId } from "../engine/mail/space";
 import {
-  ACCOUNT_COLORS,
   getAccount,
   getThreadView,
   listAccounts,
@@ -24,6 +23,7 @@ import {
 } from "../engine/mail/store";
 import { appleOn, appleProblem, LIMITS, lastSyncedAt, mailSettings, SETTING_KEYS, type MailSettings } from "../engine/mail/sync";
 import { MailProblem } from "../engine/mail/types";
+import { ACCOUNT_COLORS } from "../engine/mail/colors";
 import { KeychainError } from "../engine/markets/keychain";
 import { HttpError, json, readBody } from "./http";
 

@@ -30,6 +30,7 @@ import { TaskAttachments } from "./TaskAttachments";
 import { withoutBlock } from "../../engine/attachment-rules";
 import { AdviceTag } from "./markets/AdviceTag";
 import { InvestPanel } from "./invest/InvestPanel";
+import { InboxPanel } from "./inbox/InboxPanel";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -145,8 +146,8 @@ function Header({ space }: { space: Space }) {
             <button
               className="toggle"
               role="switch"
-              aria-checked={space.private || space.kind === "markets"}
-              disabled={busy || space.kind === "markets"}
+              aria-checked={space.private || space.kind === "markets" || space.kind === "inbox"}
+              disabled={busy || space.kind === "markets" || space.kind === "inbox"}
               onClick={() => void save({ private: !space.private })}
             >
               <span className="switch" />
@@ -154,7 +155,11 @@ function Header({ space }: { space: Space }) {
               Private
             </button>
             <span className="hint">
-              {space.kind === "markets" ? "Investing spaces stay private: your holdings only go to Claude." : "Private spaces only use Claude"}
+              {space.kind === "markets"
+                ? "Investing spaces stay private: your holdings only go to Claude."
+                : space.kind === "inbox"
+                  ? "The Inbox stays private: your mail and calendar only go to Claude."
+                  : "Private spaces only use Claude"}
             </span>
           </div>
           {confirmArchive ? (
@@ -508,6 +513,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
     <div className="wrap">
       <Header key={space.id} space={space} />
       <SpaceNeeds state={state} spaceId={space.id} />
+      {space.kind === "inbox" && <InboxPanel spaceId={space.id} />}
       {space.kind === "markets" && <InvestPanel key={money ? "money" : "invest"} spaceId={space.id} symbol={symbol} initial={money ? "money" : undefined} />}
       <div className="cols">
         <div>

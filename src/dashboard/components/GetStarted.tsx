@@ -3,12 +3,15 @@ import type { Check, Report } from "../../engine/doctor";
 import { claudeBlocks, nextStep, prevStep, STEPS, type Progress, type Step } from "../../engine/start-steps";
 import { post, put } from "../api";
 import { navigate } from "../route";
+import { type MailOverview, useMailOverview } from "../mail";
+import { AppleSource, GoogleConnect } from "./MailSources";
 
 export const STEP_TITLES: Record<Step, string> = {
   welcome: "Welcome",
   agents: "Agents",
   tools: "Optional tools",
   investing: "Investing and money",
+  mail: "Mail and calendar",
   profile: "Your name and projects folder",
   done: "Done",
 };
@@ -43,6 +46,8 @@ export type ProfileDraft = { name: string; projectsRoot: string };
 
 type ViewProps = {
   report: Report;
+  // Mail sources, read separately so a sign-in finishing in the browser shows up here.
+  mail?: MailOverview | null;
   progress: Progress;
   draft: ProfileDraft;
   message: string | null;
@@ -75,7 +80,7 @@ export function StartView(p: ViewProps) {
       {step === "welcome" && (
         <>
           <p>Atrium is a command center on your Mac for the AI agents you already use. You describe the work, agents do it in the background, and anything that leaves your Mac waits for your yes.</p>
-          <p className="hint">Next: check your agents, pick optional tools, then choose your name and projects folder. Everything except Claude can be skipped, and you can come back to this from Settings.</p>
+          <p className="hint">Next: check your agents, pick optional tools, connect mail and calendar if you like, then choose your name and projects folder. Everything except Claude can be skipped, and you can come back to this from Settings.</p>
         </>
       )}
 
@@ -134,6 +139,21 @@ export function StartView(p: ViewProps) {
         </>
       )}
 
+      {step === "mail" && (
+        <>
+          <p>Atrium can read your mail and calendar on this Mac, so you can ask things like "when am I free Thursday?" from one place. Each source is optional and only goes to Claude.</p>
+          {p.mail ? (
+            <>
+              <GoogleConnect overview={p.mail} />
+              <AppleSource what="mail" overview={p.mail} />
+              <AppleSource what="calendar" overview={p.mail} />
+            </>
+          ) : (
+            <p className="hint">Checking your accounts…</p>
+          )}
+        </>
+      )}
+
       {step === "profile" && (
         <form
           className="mk-form"
@@ -167,6 +187,7 @@ export function StartView(p: ViewProps) {
             ))}
             <li>GitHub CLI: {report.github.state === "ready" ? "ready" : "not set up"}</li>
             <li>Investing: {report.investing.spaceId ? "set up" : "skipped"}</li>
+            <li>Mail and calendar: {report.mail.sources.some((m) => m.id !== "helper" && m.ready) ? "connected" : "skipped"}</li>
             <li>Projects folder: {report.profile.projectsRoot}</li>
           </ul>
           {progress.skipped.length > 0 && <p className="hint">Skipped: {progress.skipped.map((s) => STEP_TITLES[s]).join(", ")}. Find them again in Settings → Get started.</p>}
@@ -215,6 +236,7 @@ export function GetStarted() {
   const [draft, setDraft] = useState<ProfileDraft>({ name: "", projectsRoot: "" });
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const mail = useMailOverview();
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -239,6 +261,7 @@ export function GetStarted() {
   return (
     <StartView
       report={data.report}
+      mail={mail}
       progress={data.progress}
       draft={draft}
       message={message}

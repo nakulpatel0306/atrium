@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { getSetting, setSetting } from "../settings";
 import { normalizeAddress, normalizeSubject } from "./addresses";
+import { ACCOUNT_COLORS } from "./colors";
 import type { AttendeeStatus, Person, SourceAttachment, SourceCalendar, SourceEvent, SourceKind, SourceMessage } from "./types";
 
 export type MailAccount = {
@@ -53,8 +54,6 @@ const toAccount = (r: AccountRow): MailAccount => ({
 export const hashId = (prefix: string, ...parts: string[]): string =>
   `${prefix}_${new Bun.CryptoHasher("sha256").update(parts.join("\0")).digest("hex").slice(0, 20)}`;
 
-// Account dots, picked in turn; distinct from each other on both themes.
-export const ACCOUNT_COLORS = ["#5e9fe0", "#d9825b", "#4cb782", "#b07cc6", "#d4b24c", "#5bb8b0", "#d96b8a", "#8c95a6"];
 
 const json = <T>(s: string, fallback: T): T => {
   try {
