@@ -155,7 +155,11 @@ async function view(over: Partial<Report> = {}, step = "agents" as (typeof STEPS
 }
 
 test("the screen shows each step's states, and Next into Done is disabled while Claude is missing", async () => {
-  expect(await view({}, "welcome")).toContain("Step 1 of 6");
+  expect(await view({}, "welcome")).toContain("Step 1 of 7");
+  // Mail and calendar can be skipped; its sources load on their own.
+  const mail = await view({}, "mail");
+  expect(mail).toContain("Mail and calendar");
+  expect(mail).toMatch(/Skip(?! for now)/);
   const agents = await view({}, "agents");
   expect(agents).toContain("Claude");
   expect(agents).toContain("Required");
