@@ -114,7 +114,8 @@ function WeekGrid({ now }: { now: number }) {
                   return (
                     <div
                       key={e.id}
-                      className={`cal-ev${cols > 1 ? " clash" : ""}`}
+                      // A short or narrow block keeps just its title; the time is in its tooltip and the agenda.
+                      className={`cal-ev${cols > 1 ? " clash" : ""}${height < 34 || cols > 2 ? " short" : ""}`}
                       style={{ top, height, left: `${(col / cols) * 100}%`, width: `calc(${100 / cols}% - 2px)`, "--c": e.calendar.color } as React.CSSProperties}
                       title={`${e.title} · ${when(e)} · ${e.calendar.title}`}
                     >

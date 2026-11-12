@@ -5258,6 +5258,7 @@ code {
 }
 .chg-note-inline {
   color: var(--faint);
+}
 /* a task in review, decided from its detail */
 .review-acts {
   margin: 10px 0;
@@ -5908,6 +5909,12 @@ code {
 }
 .cal-ev span {
   color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-ev.short span {
+  display: none;
 }
 .cal-ev.clash {
   border-color: color-mix(in srgb, var(--yellow) 60%, transparent);
