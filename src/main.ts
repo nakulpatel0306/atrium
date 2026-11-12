@@ -32,6 +32,8 @@ import { recoverRemovals } from "./engine/repos/cleanup";
 import { finishPendingDeletes } from "./engine/delete-files";
 import { recoverRepoActions } from "./engine/repos/create";
 import { createMessaging } from "./engine/messaging";
+import { createMail } from "./engine/mail";
+import { createInboxHooks } from "./engine/mail/agent";
 import { moneyDaily } from "./engine/money/reminder";
 import { recoverMessageActions } from "./engine/messaging/send";
 import { getSetting } from "./engine/settings";
@@ -70,6 +72,8 @@ const jobs = createJobs(
 const catchUp = createCatchUp(db, { jobs, now: marketClock });
 const catchUpLogged = (force: boolean) =>
   catchUp.run(force).catch((e) => console.error(`Market catch-up: ${redact(e instanceof Error ? e.message : String(e), data.secrets())}`));
+// Mail and calendar sync only while a client is connected, when Inbox or Calendar opens, or when an Inbox task needs it.
+const mail = createMail({ db });
 // Repo work wakes the runner when a clone lands or a new project's space is ready.
 const repos = createRepos({ db, kick: () => runner.kick() });
 const runner = createRunner({
@@ -80,6 +84,7 @@ const runner = createRunner({
   markets: createMarketsHooks(db, { data, now: marketClock }),
   repos,
   money: { daily: (now) => moneyDaily(db, now) },
+  inbox: createInboxHooks(db, mail.sync),
 });
 const feed = createFeed({
   db,
@@ -113,6 +118,8 @@ try {
     markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs, catchUp },
     repos,
     messaging,
+    mail,
+    onClients: (n) => mail.sync.setClients(n),
   });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
@@ -143,6 +150,7 @@ const shutdown = async () => {
   let code = 0;
   try {
     feed.stop();
+    mail.sync.stop();
     await runner.stop();
     keepAwake.stop();
     // Open dashboard sockets would otherwise keep shutdown waiting forever.
