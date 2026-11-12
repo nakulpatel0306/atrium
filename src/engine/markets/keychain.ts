@@ -31,9 +31,15 @@ const NOT_FOUND = 44;
 const READ_TIMEOUT_MS = 5_000;
 export const KEYCHAIN_LOCKED = "Keychain is locked. Unlock it, then press Test in Settings → Market data.";
 
+// Other features keep their own secrets here under their own label, shape check and locked copy: mail stores
+// sign-in tokens hex-encoded, so they too can't break out of the `security -i` line.
+export type KeychainOpts = { timeoutMs?: number; label?: string; accepts?: (s: string) => boolean; locked?: string };
+
 // stdout and stderr never go into an error: `security` echoes its input, which can hold the secret.
-export function createKeychain(bin = config().securityBin, opts: { timeoutMs?: number } = {}): Keychain {
+export function createKeychain(bin = config().securityBin, opts: KeychainOpts = {}): Keychain {
   const timeoutMs = opts.timeoutMs ?? READ_TIMEOUT_MS;
+  const accepts = opts.accepts ?? isKeyShaped;
+  const label = opts.label ?? "Atrium market data";
   const run = async (args: string[], stdin?: string) => {
     const proc = Bun.spawn([bin, ...args], { stdin: stdin === undefined ? "ignore" : "pipe", stdout: "pipe", stderr: "pipe", env: process.env });
     if (stdin !== undefined && proc.stdin) {
@@ -46,7 +52,7 @@ export function createKeychain(bin = config().securityBin, opts: { timeoutMs?: n
     clearTimeout(timer);
     if (code === "timeout") {
       proc.kill();
-      throw new KeychainError(KEYCHAIN_LOCKED);
+      throw new KeychainError(opts.locked ?? KEYCHAIN_LOCKED);
     }
     return { out: await new Response(proc.stdout).text(), code };
   };
@@ -59,9 +65,9 @@ export function createKeychain(bin = config().securityBin, opts: { timeoutMs?: n
       return r.out.replace(/\n$/, "") || null;
     },
     async set(account, secret) {
-      if (!isKeyShaped(secret)) throw new KeychainError("That doesn't look like a key: keys are letters and numbers only.");
+      if (!accepts(secret)) throw new KeychainError("That doesn't look like a key: keys are letters and numbers only.");
       // Interactive mode reads the command from stdin, so the secret never appears in argv (visible to `ps`).
-      const line = `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${account} -l "Atrium market data" -w ${secret}\n`;
+      const line = `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${account} -l "${label}" -w ${secret}\n`;
       const r = await run(["-i"], line);
       if (r.code !== 0) throw new KeychainError("Couldn't save to your Mac's Keychain. Open Keychain Access to check it isn't locked, then try again.");
     },
