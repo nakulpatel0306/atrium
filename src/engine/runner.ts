@@ -31,6 +31,7 @@ import {
 import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
 import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
+import { INBOX_SYSTEM_LINES, type InboxHooks } from "./mail/agent";
 import { isMasked, maskNumbers } from "./money/import";
 import { remaskTranscript } from "./money/remask";
 import { agentName, plural, sentence } from "./text";
@@ -144,6 +145,8 @@ export function createRunner(deps: {
   markets?: MarketsHooks;
   // Local copies of attached GitHub repos: cloned on demand, marked used, and checked for cleanup once a day.
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
+  // Mail and calendar context for Inbox tasks, built by the engine from cached rows; absent, they get none.
+  inbox?: InboxHooks;
   // Money's once-a-day check (the monthly import reminder and budget heads-ups), from the same minute timer.
   money?: { daily(now: number): void };
   // Test seam for the Changes view's live refresh: the throttle window and the timer for agents that don't report edits.
@@ -420,7 +423,8 @@ export function createRunner(deps: {
     // Codex and Gemini reads aren't sandboxed like Claude's: away from a repo each run gets an empty folder of
     // its own instead of the space folder, where earlier runs' files collect.
     // A money question runs in an empty folder too, with no tools: the masked facts in its prompt are all it sees.
-    const scratch = !repo && (agent !== "claude" || task.purpose === "money");
+    // An Inbox task too: the engine-built mail context is all it reads, and it has no tools to act with.
+    const scratch = !repo && (agent !== "claude" || task.purpose === "money" || space.kind === "inbox");
     let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript>; copied: Copy[] };
     let cwd: string | null = null;
     try {
@@ -480,6 +484,7 @@ export function createRunner(deps: {
       }
     }
     const markets = space.kind === "markets" && task.kind === "work" ? deps.markets : undefined;
+    const inbox = space.kind === "inbox" && task.kind === "work";
     const unwatch = repo ? diffs.watch(task.id, adapter.id !== "claude") : null;
     const line = (raw: string) => {
       // A money run's transcript and live view are masked like everything else it touches.
@@ -501,8 +506,12 @@ export function createRunner(deps: {
     }
     let result: AgentRunResult;
     try {
-      const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
-      const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
+      const context = markets
+        ? `\n\n${await markets.context(task, space, adapter.id)}`
+        : inbox && deps.inbox
+          ? `\n\n${await deps.inbox.context(task, space)}`
+          : "";
+      const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : []), ...(inbox ? INBOX_SYSTEM_LINES : [])];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
       const honest = [...capabilityLines(db, isMessageTask(task) ? "message" : "task"), OUTCOME_INSTRUCTION];
       const prompt = buildPrompt(task, space) + context;
@@ -513,7 +522,7 @@ export function createRunner(deps: {
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
-        allowedTools: task.purpose === "money" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
+        allowedTools: task.purpose === "money" || space.kind === "inbox" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
         privateData: isPrivate(space),
         mode: task.kind === "review" || task.purpose ? "review" : "work",
         signal: r.signal,
