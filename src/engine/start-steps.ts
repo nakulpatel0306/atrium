@@ -1,7 +1,7 @@
 import type { Report } from "./doctor";
 
 // The Get started wizard's order. Only Claude (in "agents") can hold the wizard back from Done.
-export const STEPS = ["welcome", "agents", "tools", "investing", "profile", "done"] as const;
+export const STEPS = ["welcome", "agents", "tools", "investing", "mail", "profile", "done"] as const;
 export type Step = (typeof STEPS)[number];
 export type Progress = { step: Step; skipped: Step[]; done: boolean; dismissed: boolean };
 

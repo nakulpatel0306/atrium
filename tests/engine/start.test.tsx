@@ -75,7 +75,7 @@ test("nothing in the checks opens a credential file or Keychain item", () => {
 });
 
 test("steps run in order, back goes back, and the ends hold", () => {
-  expect(STEPS).toEqual(["welcome", "agents", "tools", "investing", "profile", "done"]);
+  expect(STEPS).toEqual(["welcome", "agents", "tools", "investing", "mail", "profile", "done"]);
   expect(nextStep("welcome")).toBe("agents");
   expect(nextStep("done")).toBe("done");
   expect(prevStep("tools")).toBe("agents");
