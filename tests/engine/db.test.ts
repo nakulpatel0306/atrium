@@ -535,3 +535,29 @@ test("an older database without attachments gains the table, and its tasks read 
   db.close();
   t.cleanup();
 });
+
+test("a database from before mail gains the inbox kind and mail tables, keeping every space column", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  openDb(path).close();
+  // Shape the spaces table the way installs before mail have it: no 'inbox' in its CHECK.
+  const old = new Database(path);
+  const sql = (old.query("SELECT sql FROM sqlite_master WHERE name = 'spaces'").get() as { sql: string }).sql;
+  old.exec("PRAGMA foreign_keys = OFF");
+  old.exec("ALTER TABLE spaces RENAME TO spaces_cur");
+  old.exec(sql.replace("'markets','inbox'", "'markets'"));
+  old.exec("INSERT INTO spaces SELECT * FROM spaces_cur");
+  old.exec("DROP TABLE spaces_cur");
+  for (const table of ["cal_events", "cal_calendars", "mail_bodies", "mail_messages", "mail_threads", "mail_accounts"]) old.exec(`DROP TABLE ${table}`);
+  old.exec("INSERT INTO spaces (id, name, kind, goal, color, private, status, created_at, updated_at, folder, folder_dev, folder_ino) VALUES ('spc_g', 'Notes', 'general', 'g', 'blue', 0, 'active', 1, 2, '/f', 7, 42)");
+  expect(() => old.exec("INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_i', 'Inbox', 'inbox', 'x', 1, 1)")).toThrow();
+  old.close();
+  const db = openDb(path);
+  expect(db.query("SELECT folder, folder_dev, folder_ino FROM spaces WHERE id = 'spc_g'").get()).toEqual({ folder: "/f", folder_dev: 7, folder_ino: 42 });
+  db.exec("INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_i', 'Inbox', 'inbox', 'x', 1, 1)");
+  const names = (db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
+  for (const n of ["mail_accounts", "mail_threads", "mail_messages", "mail_bodies", "cal_calendars", "cal_events"]) expect(names).toContain(n);
+  db.close();
+  openDb(path).close();
+  t.cleanup();
+});
