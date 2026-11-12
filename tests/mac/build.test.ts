@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, toolchainError } from "../../src/mac/build";
@@ -74,9 +74,9 @@ test.skipIf(!canBuild)(
     const pim = join(path, "Contents/MacOS/atrium-pim");
     expect(existsSync(pim)).toBe(true);
     expect(sh(["codesign", "-dv", pim]).err).toContain("Identifier=com.atrium.pim\n");
-    const section = sh(["otool", "-X", "-s", "__TEXT", "__info_plist", pim]).out;
-    const bytes = Buffer.from(section.split("\n").flatMap((l) => l.split(/\s+/).slice(1)).filter((x) => /^[0-9a-f]{2}$/.test(x)).map((x) => parseInt(x, 16)));
-    expect(bytes.toString("utf8")).toContain("NSCalendarsFullAccessUsageDescription");
+    // The embedded plist sits in the binary as plain text; otool confirms it's in its own section.
+    expect(sh(["otool", "-l", pim]).out).toContain("sectname __info_plist");
+    expect(readFileSync(pim).toString("latin1")).toContain("<key>NSCalendarsFullAccessUsageDescription</key>");
     // An unknown command answers in the documented error shape, without touching Mail or Calendar.
     const r = sh([pim, "nonsense"]);
     expect(r.code).toBe(1);
