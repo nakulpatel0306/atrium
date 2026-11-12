@@ -522,7 +522,7 @@ export function createRunner(deps: {
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
-        allowedTools: task.purpose === "money" || space.kind === "inbox" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
+        allowedTools: task.purpose === "money" ? [] : space.kind === "inbox" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
         privateData: isPrivate(space),
         mode: task.kind === "review" || task.purpose ? "review" : "work",
         signal: r.signal,
