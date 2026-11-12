@@ -10,7 +10,7 @@ import { createMailSync, type MailSync } from "./sync";
 export type Mail = { auth: GoogleAuth; sync: MailSync };
 
 // The engine's side of mail and calendar: Google sign-in, both sources, and the sync that reads them.
-export function createMail(deps: { db: Database; keychain?: Keychain; intervalMs?: number }): Mail {
+export function createMail(deps: { db: Database; keychain?: Keychain; intervalMs?: number; now?: () => number }): Mail {
   const { db } = deps;
   let sync: MailSync;
   const auth = createGoogleAuth({
@@ -22,6 +22,6 @@ export function createMail(deps: { db: Database; keychain?: Keychain; intervalMs
       void sync.syncNow();
     },
   });
-  sync = createMailSync({ db, google: googleSource(auth), apple: appleSource(), appleAccounts, intervalMs: deps.intervalMs });
+  sync = createMailSync({ db, google: googleSource(auth), apple: appleSource(), appleAccounts, intervalMs: deps.intervalMs, now: deps.now });
   return { auth, sync };
 }

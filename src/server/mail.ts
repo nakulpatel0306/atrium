@@ -132,7 +132,7 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     const flow = await plain(() => mail.auth.start({ clientId: b.clientId as string, clientSecret: secret }));
     // The sign-in page opens in the user's browser; the link is returned too, in case it didn't.
     const proc = Bun.spawn([config().openBin, flow.url], { stdin: "ignore", stdout: "ignore", stderr: "ignore", env: { ...process.env } });
-    void proc.exited;
+    await proc.exited;
     void flow.done.then((r) => {
       if (!r.ok) setSetting(db, "mail.google.lastError", r.error);
       else setSetting(db, "mail.google.lastError", "");
