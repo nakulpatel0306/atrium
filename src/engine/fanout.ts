@@ -166,7 +166,10 @@ export async function mergeParts(db: Database, parentId: string, space: Space): 
   if (parts.some((p) => lastRepoRun(db, p.id)?.start !== start)) throw new FanoutRefused("The parts started from different branches, so they can't be merged into one. Open their pull requests instead.");
   const base = await git(space.repoPath!, ["rev-parse", "--verify", `${start}^{commit}`]);
   if (base.code !== 0) throw new FanoutRefused(`Couldn't find ${start}, where the parts started.`);
-  const merged = await mergeBranches(space.repoPath!, base.out.trim(), parts.map((p) => ({ branch: p.branch!, message: `Merge part: ${p.title}` })));
+  // A signature that can't be made, or anything else git refuses, is the user's to see, not an engine error.
+  const merged = await mergeBranches(space.repoPath!, base.out.trim(), parts.map((p) => ({ branch: p.branch!, message: `Merge part: ${p.title}` }))).catch((e: Error) => {
+    throw new FanoutRefused(e.message);
+  });
   if ("conflict" in merged) {
     const part = parts.find((p) => p.branch === merged.conflict)!;
     throw new FanoutRefused(`"${part.title}" changes the same lines as a part before it, so Atrium can't merge them on its own. Open their pull requests instead, or merge them yourself.`);
