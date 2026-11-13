@@ -146,6 +146,39 @@ describe("what needs the explicit Send", () => {
     expect(other.reasons.find((r) => r.kind === "many")!.text).toBe("Goes to 12 people");
   });
 
+  test("the approval shows everything that goes out: the quoted reply, or the forwarded message and its attachments", async () => {
+    await connectGoogle();
+    await openLease();
+    const reply = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Thursday works." });
+    expect(reply.approval.detail).toContain("> Thursday works.");
+    expect(reply.approval.detail).toContain("The message you're answering is quoted below it:");
+    expect(reply.approval.detail).toContain("> > Thanks! Can we sign Thursday?");
+    const fwd = draftMail(db, { spaceId: space(), kind: "forward", draftedBy: "claude", threadId: lease().id, to: [{ name: "", address: "robin@example.net" }], body: "FYI" });
+    const d = fwd.approval.detail;
+    expect(d).toContain("The forwarded message goes below it:");
+    expect(d).toContain(`> From: Sam Rivera <${SAM}>`);
+    expect(d).toContain("> Subject: Re: Lease renewal");
+    expect(d).toMatch(/> Date: Mon, Nov 2, 2026/);
+    expect(d).toContain("> Thanks! Can we sign Thursday?");
+    expect(d).toContain("Attachments: lease.pdf");
+  });
+
+  test("forwarding to anyone who wasn't on the thread needs the explicit Send, whoever drafted it", async () => {
+    await connectGoogle();
+    const kit = { name: "Kit Moreno", address: "kit@example.org" };
+    const note = { kind: "outside_thread", text: "Forwards this thread to Kit Moreno, who wasn't on it" };
+    for (const draftedBy of ["you", "claude"] as const) {
+      const { action, approval } = draftMail(db, { spaceId: space(), kind: "forward", draftedBy, threadId: lease().id, to: [kit], body: "" });
+      expect(action.reasons).toContainEqual(note);
+      expect(approval.detail).toContain(`Note: ${note.text}`);
+    }
+    // Someone on the thread gets no such note, and adding Kit by hand later brings it back.
+    const onThread = draftMail(db, { spaceId: space(), kind: "forward", draftedBy: "you", threadId: lease().id, to: [{ name: "", address: "robin@example.net" }], body: "" }).action;
+    expect(onThread.reasons.filter((r) => r.kind === "outside_thread")).toEqual([]);
+    const edited = updateMailDraft(db, onThread.id, { accountId: google().id, to: [{ name: "", address: "robin@example.net" }], cc: [kit], subject: "", body: "" });
+    expect(edited.reasons).toContainEqual(note);
+  });
+
   test("a forward sends the original's attachment along, read from the source that holds it", async () => {
     await connectGoogle();
     await openLease();

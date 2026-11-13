@@ -198,7 +198,7 @@ function knownPerson(db: Database, address: string, now: number): boolean {
 // The spec's "to a certain extent": what makes a draft need a fresh, explicit Send. Each is a note on the card.
 export function explicitReasons(
   db: Database,
-  a: Pick<MailAction, "kind" | "accountId" | "threadAccountId" | "to" | "cc" | "attachments" | "event">,
+  a: Pick<MailAction, "kind" | "accountId" | "threadId" | "threadAccountId" | "to" | "cc" | "attachments" | "event">,
   now = Date.now(),
 ): Reason[] {
   const own = ownAddresses(db);
@@ -208,6 +208,13 @@ export function explicitReasons(
   for (const p of people) {
     if (own.has(normalizeAddress(p.address)) || knownPerson(db, p.address, now)) continue;
     out.push({ kind: "first_time", text: `First time ${event ? "inviting" : "emailing"} ${personLabel(p)}` });
+  }
+  // A forward carries the thread's words to whoever it goes to; anyone who wasn't on that thread is called out, whoever
+  // drafted it.
+  if (a.kind === "forward" && a.threadId) {
+    const row = db.query("SELECT participants FROM mail_threads WHERE id = ?").get(a.threadId) as { participants: string } | null;
+    const onThread = new Set([...own, ...parse<Person[]>(row?.participants ?? "[]", []).map((p) => normalizeAddress(p.address))]);
+    for (const p of people) if (!onThread.has(normalizeAddress(p.address))) out.push({ kind: "outside_thread", text: `Forwards this thread to ${personLabel(p)}, who wasn't on it` });
   }
   if (a.attachments.length) out.push({ kind: "attachments", text: a.attachments.length === 1 ? "Has an attachment" : `Has ${a.attachments.length} attachments` });
   if (!event && a.threadAccountId && a.accountId) {
@@ -248,7 +255,10 @@ export function actionDetail(db: Database, a: MailAction): string {
   if (a.cc.length) lines.push(`Cc: ${peopleText(a.cc)}`);
   lines.push(`Subject: ${a.subject || "(no subject)"}`);
   if (a.attachments.length) lines.push(`Attachments: ${a.attachments.map((x) => x.name).join(", ")}`);
-  lines.push("", ...a.body.split("\n").map((l) => `> ${l}`), "", "On Send, Atrium sends exactly this through the account's own mail source.");
+  lines.push("", ...a.body.split("\n").map((l) => `> ${l}`));
+  // Everything that goes out is shown: the quoted reply or the forwarded message under the user's own words.
+  if (a.quoted) lines.push("", a.kind === "forward" ? "The forwarded message goes below it:" : "The message you're answering is quoted below it:", ...a.quoted.split("\n").map((l) => `> ${l}`));
+  lines.push("", "On Send, Atrium sends exactly this through the account's own mail source.");
   return lines.join("\n");
 }
 
