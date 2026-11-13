@@ -3,6 +3,7 @@ import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboa
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
 import { actorName, attentionText, loopLine, reviewerName, reviewHint, reviewLine, runOutcome, spaceStatus, STAGE_TEXT, STATUS_TEXT } from "../dashboard/summary";
 import { shownStage } from "../engine/loop";
+import { needsYouCount } from "../engine/needs";
 import { type ActivityGroup, type ActivityTone, byDay, groupActivity, leadOf, visibleGroups } from "../engine/activity-groups";
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
@@ -153,7 +154,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
 
 export function approvalDetail(view: View, width = 100): DetailLine[] {
   const approval = view.approval;
-  if (!approval) return [muted(view.approvals.length + view.proposals.length + view.asking.length ? PICK : "Nothing needs you right now.")];
+  if (!approval) return [muted(needsYouCount(view.state) ? PICK : "Nothing needs you right now.")];
   const space = view.state.spaces.find((s) => s.id === approval.spaceId);
   const review = reviewLine(approval, view.state);
   const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");

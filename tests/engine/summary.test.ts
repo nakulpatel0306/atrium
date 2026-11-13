@@ -167,6 +167,9 @@ test("every needs-you counter uses the one definition", async () => {
   suggest(s.id, "prp_1", Date.now());
   const t = createTask(db, { spaceId: s.id, title: "Add totals" });
   setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), stage: "brief", questions: [{ question: "Weekly?", options: [] }] });
+  // An archived space's approvals stay in the database but count nowhere.
+  const old = updateSpace(db, createSpace(db, { name: "old", kind: "general", goal: "g" }).id, { status: "archived" });
+  createApproval(db, { spaceId: old.id, kind: "question", title: "Old question", detail: "" });
   const state = snapshot(db);
   expect(needsYouCount(state)).toBe(3);
   expect(summary(db).needsYou).toBe(3);
