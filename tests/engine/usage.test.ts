@@ -16,7 +16,7 @@ const tokens = (model: string, input: number, output = 0, cacheRead = 0, cacheWr
 
 describe("list prices", () => {
   test("a model is priced by its family's newest matching line, and an alias by the model it stands for", () => {
-    expect(priceOf("claude-opus-5-5")).toEqual({ input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 });
+    expect(priceOf("claude-opus-5-5")).toEqual({ input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5, cacheWrite1h: 8 });
     expect(priceOf("claude-opus-4-8")!.input).toBe(5);
     expect(priceOf("haiku")).toEqual(priceOf("claude-haiku-5-5"));
     expect(priceOf("claude-sonnet-5-5[1m]")!.input).toBe(2);
@@ -39,11 +39,35 @@ describe("list prices", () => {
   });
 });
 
+describe("the CLI's own cost", () => {
+  // The two turns of a real resumed haiku session (Claude Code 2.1.323): its per-model totals as the result message
+  // carried them, each with the CLI's costUSD at list prices and its writes in the one-hour cache.
+  const first = { model: "claude-haiku-5-5", inputTokens: 4, outputTokens: 371, cacheReadTokens: 36607, cacheWriteTokens: 10506, cacheWrite1hTokens: 10506, costUSD: 0.00265317 };
+  const second = { model: "claude-haiku-5-5", inputTokens: 6, outputTokens: 385, cacheReadTokens: 60333, cacheWriteTokens: 10771, cacheWrite1hTokens: 10771, costUSD: 0.00265317 + 0.00029746 };
+
+  test("is used as the estimate when the CLI sends one", () => {
+    expect(costOf(first, "claude-haiku-5-5")).toBe(0.00265317);
+  });
+
+  test("without it, list prices with one-hour cache writes at 2× land on the CLI's own figure", () => {
+    const { costUSD: _, ...tokensOnly } = first;
+    expect(costOf(tokensOnly, "claude-haiku-5-5")).toBeCloseTo(0.00265317, 8);
+    // Priced as five-minute writes, the same turn would come out a third low.
+    expect(costOf({ ...tokensOnly, cacheWrite1hTokens: 0 }, "claude-haiku-5-5")!).toBeLessThan(0.0019);
+  });
+
+  test("a resumed turn's cost is what the CLI's running total grew by", () => {
+    const [turn] = turnModels([second], [first]);
+    expect(turn).toMatchObject({ inputTokens: 2, outputTokens: 14, cacheReadTokens: 23726, cacheWriteTokens: 265, cacheWrite1hTokens: 265 });
+    expect(turn!.costUSD).toBeCloseTo(0.00029746, 9);
+  });
+});
+
 describe("a resumed session's share", () => {
   test("is what each model's running total grew by since the last turn", () => {
     const before = [tokens("claude-sonnet-5-5", 100, 50, 1000, 10)];
     const now = [tokens("claude-sonnet-5-5", 150, 80, 5000, 10), tokens("claude-haiku-5-5", 40, 5)];
-    expect(turnModels(now, before)).toEqual([tokens("claude-sonnet-5-5", 50, 30, 4000, 0), tokens("claude-haiku-5-5", 40, 5)]);
+    expect(turnModels(now, before)).toEqual([{ ...tokens("claude-sonnet-5-5", 50, 30, 4000, 0), cacheWrite1hTokens: 0 }, tokens("claude-haiku-5-5", 40, 5)]);
   });
 
   test("counts from zero when a total went down, rather than going negative", () => {

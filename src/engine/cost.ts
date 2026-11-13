@@ -2,10 +2,11 @@
 // is what the work would cost on the API, not what the user pays. Shared by the engine and the dashboard, so it
 // imports nothing.
 
-// US dollars per million tokens: fresh input, output, cache reads and five-minute cache writes (1.25× input).
-type Price = { input: number; output: number; cacheRead: number; cacheWrite: number };
+// US dollars per million tokens: fresh input, output, cache reads, and cache writes, which cost 1.25× input for the
+// five-minute cache and 2× for the one-hour cache. Claude Code writes to the one-hour cache.
+type Price = { input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h: number };
 
-const price = (input: number, output: number, cacheRead: number): Price => ({ input, output, cacheRead, cacheWrite: input * 1.25 });
+const price = (input: number, output: number, cacheRead: number): Price => ({ input, output, cacheRead, cacheWrite: input * 1.25, cacheWrite1h: input * 2 });
 
 // List prices as of November 2026, by model name. The longest matching prefix wins, so a family's newest model is
 // listed before the line that catches its older ones.
@@ -36,12 +37,16 @@ export function priceOf(model: string | null): Price | null {
   return best?.[1] ?? null;
 }
 
-export type Tokens = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+export type Tokens = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens?: number };
 
-export function costOf(t: Tokens, model: string | null): number | null {
+// The estimate for a model's tokens. The CLI's own figure is used when it sent one; otherwise the list price, with
+// each cache write priced by the cache it went to.
+export function costOf(t: Tokens & { costUSD?: number }, model: string | null): number | null {
+  if (t.costUSD !== undefined) return t.costUSD;
   const p = priceOf(model);
   if (!p) return null;
-  return (t.inputTokens * p.input + t.outputTokens * p.output + t.cacheReadTokens * p.cacheRead + t.cacheWriteTokens * p.cacheWrite) / 1_000_000;
+  const hour = Math.min(t.cacheWrite1hTokens ?? 0, t.cacheWriteTokens);
+  return (t.inputTokens * p.input + t.outputTokens * p.output + t.cacheReadTokens * p.cacheRead + (t.cacheWriteTokens - hour) * p.cacheWrite + hour * p.cacheWrite1h) / 1_000_000;
 }
 
 // A total of tokens and estimated cost. `unpriced` counts the weighted tokens from models with no list price, so the

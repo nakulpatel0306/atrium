@@ -23,12 +23,21 @@ const sum = (rows: ModelTokens[]): Omit<ModelTokens, "model"> =>
 export function turnModels(now: ModelTokens[], before: ModelTokens[] = []): ModelTokens[] {
   const prior = new Map(before.map((m) => [m.model, m]));
   return now
-    .map((m) => {
+    .map((m): ModelTokens => {
       const p = prior.get(m.model);
       const grew = p && m.inputTokens >= p.inputTokens && m.outputTokens >= p.outputTokens && m.cacheReadTokens >= p.cacheReadTokens && m.cacheWriteTokens >= p.cacheWriteTokens;
-      return grew
-        ? { model: m.model, inputTokens: m.inputTokens - p.inputTokens, outputTokens: m.outputTokens - p.outputTokens, cacheReadTokens: m.cacheReadTokens - p.cacheReadTokens, cacheWriteTokens: m.cacheWriteTokens - p.cacheWriteTokens }
-        : m;
+      if (!grew) return m;
+      // The CLI's cost is a running total too; one that didn't grow with the tokens can't be split, so it's priced.
+      const cost = m.costUSD !== undefined && p.costUSD !== undefined && m.costUSD >= p.costUSD ? { costUSD: m.costUSD - p.costUSD } : {};
+      return {
+        model: m.model,
+        inputTokens: m.inputTokens - p.inputTokens,
+        outputTokens: m.outputTokens - p.outputTokens,
+        cacheReadTokens: m.cacheReadTokens - p.cacheReadTokens,
+        cacheWriteTokens: m.cacheWriteTokens - p.cacheWriteTokens,
+        cacheWrite1hTokens: Math.max(0, (m.cacheWrite1hTokens ?? 0) - (p.cacheWrite1hTokens ?? 0)),
+        ...cost,
+      };
     })
     .filter((m) => m.inputTokens + m.outputTokens + m.cacheReadTokens + m.cacheWriteTokens > 0);
 }
@@ -37,7 +46,13 @@ export function turnModels(now: ModelTokens[], before: ModelTokens[] = []): Mode
 // the same session already counted, or the run's own counts under the model it was asked for.
 export function runModels(result: Extract<AgentRunResult, { status: "ok" }>, asked: string | null, before?: ModelTokens[]): ModelTokens[] {
   if (result.models) return turnModels(result.models, before);
-  const own = { inputTokens: result.inputTokens, outputTokens: result.outputTokens, cacheReadTokens: result.cacheReadTokens ?? 0, cacheWriteTokens: result.cacheWriteTokens ?? 0 };
+  const own = {
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    cacheReadTokens: result.cacheReadTokens ?? 0,
+    cacheWriteTokens: result.cacheWriteTokens ?? 0,
+    cacheWrite1hTokens: result.cacheWrite1hTokens ?? 0,
+  };
   return turnModels([{ model: asked ?? "", ...own }]);
 }
 

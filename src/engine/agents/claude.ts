@@ -155,6 +155,8 @@ function modelTotals(raw: unknown): ModelTokens[] | undefined {
     outputTokens: n(u?.outputTokens),
     cacheReadTokens: n(u?.cacheReadInputTokens),
     cacheWriteTokens: n(u?.cacheCreationInputTokens),
+    cacheWrite1hTokens: n(u?.cacheCreationEphemeral1hInputTokens),
+    ...(typeof u?.costUSD === "number" && Number.isFinite(u.costUSD) && u.costUSD >= 0 && { costUSD: u.costUSD }),
   }));
 }
 
@@ -184,7 +186,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       let limitRejected = false;
       let usage: AgentUsage | undefined;
       let contextTokens: number | undefined;
-      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; models?: ModelTokens[] } | undefined;
+      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number; models?: ModelTokens[] } | undefined;
 
       const handle = (line: string) => {
         let msg: any;
@@ -224,6 +226,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
             outputTokens: msg.usage?.output_tokens ?? 0,
             cacheReadTokens: msg.usage?.cache_read_input_tokens ?? 0,
             cacheWriteTokens: msg.usage?.cache_creation_input_tokens ?? 0,
+            cacheWrite1hTokens: msg.usage?.cache_creation?.ephemeral_1h_input_tokens ?? 0,
             models: modelTotals(msg.modelUsage),
           };
         }
@@ -277,6 +280,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           outputTokens: final.outputTokens,
           cacheReadTokens: final.cacheReadTokens,
           cacheWriteTokens: final.cacheWriteTokens,
+          ...(final.cacheWrite1hTokens > 0 && { cacheWrite1hTokens: final.cacheWrite1hTokens }),
           ...(usage && { usage }),
           ...(final.models && { models: final.models }),
           ...(contextTokens !== undefined && { contextTokens }),

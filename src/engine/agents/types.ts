@@ -24,7 +24,17 @@ export interface AgentRunInput {
 
 // One model's tokens. Claude reports them per model, subagents included; see usage.ts for how a resumed session's
 // running totals become one turn's share.
-export type ModelTokens = { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+// `cacheWrite1hTokens` is the part of the cache writes that went to the one-hour cache, priced at twice fresh input
+// rather than 1.25×; `costUSD` is the CLI's own figure at list prices, when it sends one.
+export type ModelTokens = {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cacheWrite1hTokens?: number;
+  costUSD?: number;
+};
 
 // Subscription window usage as the CLI reports it; resetsAt is epoch ms.
 export type WindowUsage = { utilization: number; resetsAt: number };
@@ -39,6 +49,8 @@ export type AgentRunResult =
       outputTokens: number;
       cacheReadTokens?: number;
       cacheWriteTokens?: number;
+      // The part of the cache writes that went to the one-hour cache, when the CLI says.
+      cacheWrite1hTokens?: number;
       usage?: AgentUsage;
       // Per-model totals for the whole session so far, as Claude reports them; absent from CLIs that don't.
       models?: ModelTokens[];

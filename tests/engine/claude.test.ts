@@ -30,9 +30,14 @@ describe("claudeAdapter", () => {
   });
 
   test("per-model totals, subagents included, and the main agent's context come back with the result", async () => {
+    // modelUsage as Claude Code 2.1.323 sends it, extra keys included.
     process.env.FAKE_CLAUDE_MODEL_USAGE = JSON.stringify({
-      "claude-sonnet-5-5": { inputTokens: 120, outputTokens: 45, cacheReadInputTokens: 900, cacheCreationInputTokens: 30 },
-      "claude-haiku-5-5": { inputTokens: 400, outputTokens: 80, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+      "claude-sonnet-5-5": {
+        inputTokens: 120, outputTokens: 45, cacheReadInputTokens: 900, cacheCreationInputTokens: 30, webSearchRequests: 0, costUSD: 0.0046,
+        contextWindow: 1000000, maxOutputTokens: 128000, thinkingTokens: 12, cacheCreationEphemeral5mInputTokens: 0, cacheCreationEphemeral1hInputTokens: 30,
+        canonicalModel: "claude-sonnet-5-5", provider: "firstParty", costBasis: "list",
+      },
+      "claude-haiku-5-5": { inputTokens: 400, outputTokens: 80, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: "free" },
     });
     process.env.FAKE_CLAUDE_CONTEXT = "42000";
     try {
@@ -41,8 +46,9 @@ describe("claudeAdapter", () => {
         status: "ok",
         contextTokens: 42015,
         models: [
-          { model: "claude-sonnet-5-5", inputTokens: 120, outputTokens: 45, cacheReadTokens: 900, cacheWriteTokens: 30 },
-          { model: "claude-haiku-5-5", inputTokens: 400, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          { model: "claude-sonnet-5-5", inputTokens: 120, outputTokens: 45, cacheReadTokens: 900, cacheWriteTokens: 30, cacheWrite1hTokens: 30, costUSD: 0.0046 },
+          // A cost that isn't a number is left out, so the estimate falls back to list prices.
+          { model: "claude-haiku-5-5", inputTokens: 400, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0 },
         ],
       });
     } finally {
