@@ -36,7 +36,7 @@ describe("who a reply goes to", () => {
   test("typed recipients must be addresses; hidden characters in the body are refused", () => {
     expect(parseRecipients("Robin <robin@example.net>, kit@example.org").people).toHaveLength(2);
     expect(parseRecipients("Robin, kit@example.org").problem).toContain("isn't an email address");
-    expect(bodyProblem("Pay ‮txet", "reply")).toBe(BODY_HIDDEN_COPY);
+    expect(bodyProblem("Pay \u202Etxet", "reply")).toBe(BODY_HIDDEN_COPY);
     expect(bodyProblem("", "forward")).toBeNull();
   });
 });
@@ -84,7 +84,7 @@ describe("addresses can't hide characters", () => {
   });
 
   test("a name from a thread loses its invisible characters, so the card reads as what's sent", () => {
-    const m = { from: { name: "Robin‮ Vale", address: "robin@example.net" }, to: [], cc: [] };
+    const m = { from: { name: "Robin\u202E Vale", address: "robin@example.net" }, to: [], cc: [] };
     expect(replyRecipients(own, m, "reply").to).toEqual([{ name: "Robin Vale", address: "robin@example.net" }]);
   });
 });
