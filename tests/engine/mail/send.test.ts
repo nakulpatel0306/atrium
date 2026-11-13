@@ -151,20 +151,20 @@ describe("what needs the explicit Send", () => {
 
   test("titles and notes name the address, so a borrowed name can't pass as the real person", async () => {
     await connectGoogle();
-    const { action, approval } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "claude", threadId: lease().id, to: [{ name: "Robin Vale", address: "robin.vale@attacker.example" }], body: "Looping in." });
-    expect(approval.title).toBe("Send a reply to robin@example.net and Robin Vale <robin.vale@attacker.example>?");
-    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:robin.vale@attacker.example", text: "first time emailing Robin Vale <robin.vale@attacker.example>" }]);
+    const { action, approval } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "claude", threadId: lease().id, to: [{ name: "Robin Vale", address: "robin.vale@example.net" }], body: "Looping in." });
+    expect(approval.title).toBe("Send a reply to robin@example.net and Robin Vale <robin.vale@example.net>?");
+    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:robin.vale@example.net", text: "first time emailing Robin Vale <robin.vale@example.net>" }]);
   });
 
   test("only people you've written to count as known; being on someone else's email doesn't", async () => {
     await connectGoogle();
     const acct = google();
     // A stranger mails you and Cc's an address of their choosing.
-    ingestMessages(db, acct, [msg({ sourceId: "s1", messageId: "<win@spam.example>", subject: "Win", from: { name: "Promo", address: "promo@spam.example" }, cc: [{ name: "", address: "drop@attacker.example" }], date: NOW - 1000 })]);
+    ingestMessages(db, acct, [msg({ sourceId: "s1", messageId: "<win@example.org>", subject: "Win", from: { name: "Promo", address: "promo@example.org" }, cc: [{ name: "", address: "drop@example.net" }], date: NOW - 1000 })]);
     const reasons = (address: string) =>
       explicitReasons(db, { kind: "new", accountId: acct.id, threadId: null, threadAccountId: null, to: [{ name: "", address, added: true }], cc: [], attachments: [], event: null }, NOW).map((r) => r.kind);
-    expect(reasons("drop@attacker.example")).toEqual(["first_time"]);
-    expect(reasons("promo@spam.example")).toEqual(["first_time"]);
+    expect(reasons("drop@example.net")).toEqual(["first_time"]);
+    expect(reasons("promo@example.org")).toEqual(["first_time"]);
     // Robin got mail from you on the lease thread.
     expect(reasons("robin@example.net")).toEqual([]);
   });
