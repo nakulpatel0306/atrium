@@ -365,7 +365,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
               {task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "{parent.title}"
             </p>
           )}
-          {space?.kind === "repo" && task.kind === "work" && (task.loop || task.brief) && <LoopPanel key={String(showChecks)} task={task} showChecks={showChecks} />}
+          {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
+            <LoopPanel key={String(showChecks)} task={task} repo={space?.kind === "repo"} showChecks={showChecks} />
+          )}
           <section className="asked">
             <h4>You asked</h4>
             <Markdown text={(attached.length ? withoutBlock(task.detail) : task.detail) || task.title} />

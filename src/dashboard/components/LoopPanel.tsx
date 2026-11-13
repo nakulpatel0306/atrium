@@ -148,14 +148,14 @@ function Budget({ task }: { task: Task }) {
 }
 
 // The loop in a task's detail: its stage, the brief it runs from, the checks, each review round and how its
-// findings ended, the budget, and the way on when it's paused.
-export function LoopPanel({ task, showChecks }: { task: Task; showChecks: boolean }) {
+// findings ended, the budget, and the way on when it's paused. Away from a repo there are no stages or checks.
+export function LoopPanel({ task, repo, showChecks }: { task: Task; repo: boolean; showChecks: boolean }) {
   const [checksOpen, setChecksOpen] = useState(showChecks);
   const loop = task.loop;
   const attention = attentionText(loop);
   return (
     <section className="loop">
-      <StageStrip task={task} />
+      {repo && <StageStrip task={task} />}
       {loop?.paused && task.status === "blocked" && <Paused task={task} />}
       {loop?.explanation && (
         <div className="explained">
@@ -175,7 +175,7 @@ export function LoopPanel({ task, showChecks }: { task: Task; showChecks: boolea
           <Markdown text={briefSections(task.brief, null).join("\n\n")} />
         </details>
       )}
-      {loop && !loop.noChanges && loop.checks !== "pending" && (
+      {repo && loop && !loop.noChanges && loop.checks !== "pending" && (
         <div className="checks-line">
           {loop.checks === "none" ? <span>{loop.unverified ?? "Unverified: no checks found. Add a check command in this space's settings or in the brief."}</span> : <span>Checks {loop.checks === "running" ? "running" : loop.checks}</span>}
           <button className="btn link subtle" aria-expanded={checksOpen} onClick={() => setChecksOpen(!checksOpen)}>
