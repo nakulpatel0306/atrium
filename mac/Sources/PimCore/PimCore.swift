@@ -68,10 +68,13 @@ func decodeMessageId(_ s: String) -> (account: String, mailbox: String, id: Stri
   return (parts[0], parts[1], parts[2])
 }
 
-// An attachment name from a message can't name a folder or climb out of the one it's saved into.
+// An attachment name from a message can't name a folder, climb out of the one it's saved into, or hide its real
+// extension behind bidi or other invisible format characters.
 func safeName(_ name: String) -> String {
   let last = name.replacingOccurrences(of: "\\", with: "/").split(separator: "/").last.map(String.init) ?? ""
-  let cleaned = String(last.unicodeScalars.filter { $0.value >= 0x20 && $0 != ":" }).trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+  let cleaned = String(
+    last.unicodeScalars.filter { $0.value >= 0x20 && !(0x7f...0x9f).contains($0.value) && $0 != ":" && $0.properties.generalCategory != .format }
+  ).trimmingCharacters(in: CharacterSet(charactersIn: ". "))
   return cleaned.isEmpty ? "attachment" : String(cleaned.prefix(120))
 }
 

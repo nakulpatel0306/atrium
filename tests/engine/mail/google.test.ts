@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { recordSaved, removeSaved } from "../../../src/engine/mail/files";
 import { openDb } from "../../../src/engine/db";
 import { appleAccounts, appleSource } from "../../../src/engine/mail/apple";
 import { createGoogleAuth, mailKeychain, type GoogleAuth } from "../../../src/engine/mail/google/oauth";
 import { googleSource } from "../../../src/engine/mail/google/source";
-import { getAccount, listAccounts, listEvents, listThreads, threadMessages } from "../../../src/engine/mail/store";
+import { getAccount, listAccounts, listEvents, listThreads, pruneMail, removeAccount, threadMessages } from "../../../src/engine/mail/store";
 import { createMailSync } from "../../../src/engine/mail/sync";
 import { tempHome } from "../../helpers";
 import { approveInBrowser, CLIENT_ID, FAKE_SECURITY, useFakes } from "./fakes";
@@ -150,7 +152,7 @@ describe("Google ingest", () => {
     expect(await s.fetchBodies(ids)).toBeNull();
     const msgs = threadMessages(db, lease.id);
     expect(msgs[0]!.body).toContain("lease renews on Dec 1");
-    expect(msgs[1]!.attachments).toEqual([{ name: "lease.pdf", size: 15 }]);
+    expect(msgs[1]!.attachments).toEqual([{ name: "lease.pdf", size: 15, openable: true }]);
     const deals = threadMessages(db, threads[0]!.id)[0]!;
     await s.fetchBodies([deals.id]);
     expect(threadMessages(db, threads[0]!.id)[0]!.body).toBe("Deals!");
@@ -179,8 +181,45 @@ describe("Google ingest", () => {
     const reply = threadMessages(db, lease.id)[1]!;
     await s.fetchBodies([reply.id]);
     const path = await s.saveAttachment(reply.id, 0);
-    expect(path.startsWith(home.home)).toBe(true);
+    expect(path).toBe(join(home.home, "mail-attachments", lease.account.id, reply.id, "lease.pdf"));
     expect(readFileSync(path, "utf8")).toBe("%PDF-1.4 fake");
+    // Marked as a download, so Gatekeeper checks whatever it holds.
+    expect(Bun.spawnSync(["/usr/bin/xattr", "-p", "com.apple.quarantine", path]).stdout.toString()).toMatch(/^0081;[0-9a-f]+;Atrium;/);
+  });
+
+  test("saved attachments go when their account is disconnected", async () => {
+    await connect();
+    const s = sync();
+    await s.syncNow();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    const reply = threadMessages(db, lease.id)[1]!;
+    await s.fetchBodies([reply.id]);
+    const path = await s.saveAttachment(reply.id, 0);
+    removeAccount(db, lease.account.id);
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(join(home.home, "mail-attachments", lease.account.id))).toBe(false);
+    expect(db.query("SELECT COUNT(*) AS n FROM mail_saved_files").get()).toEqual({ n: 0 });
+  });
+
+  test("saved attachments go when their mail ages out of the window", async () => {
+    await connect();
+    const s = sync();
+    await s.syncNow();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    const reply = threadMessages(db, lease.id)[1]!;
+    await s.fetchBodies([reply.id]);
+    const path = await s.saveAttachment(reply.id, 0);
+    pruneMail(db, NOW + 1);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("a recorded path outside the attachments folder is forgotten but never deleted", async () => {
+    const outside = join(home.home, "keep.txt");
+    writeFileSync(outside, "mine");
+    recordSaved(db, outside, "mac_x", "msg_x");
+    removeSaved(db, { accountId: "mac_x" });
+    expect(readFileSync(outside, "utf8")).toBe("mine");
+    expect(db.query("SELECT COUNT(*) AS n FROM mail_saved_files").get()).toEqual({ n: 0 });
   });
 });
 

@@ -4,7 +4,7 @@ import { post } from "../../api";
 import { absolute, bytes } from "../../format";
 import { type MessageView, personName, splitQuoted, useThread } from "../../mail";
 
-function Attachment({ messageId, index, name, size }: { messageId: string; index: number; name: string; size: number }) {
+function Attachment({ messageId, index, name, size, openable }: { messageId: string; index: number; name: string; size: number; openable: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const open = async (how: "open" | "reveal") => {
@@ -18,9 +18,11 @@ function Attachment({ messageId, index, name, size }: { messageId: string; index
       <Paperclip aria-hidden />
       <span className="mail-att-name">{name}</span>
       <span className="faint">{bytes(size)}</span>
-      <button className="btn" disabled={busy} onClick={() => void open("open")}>
-        Open
-      </button>
+      {openable && (
+        <button className="btn" disabled={busy} onClick={() => void open("open")}>
+          Open
+        </button>
+      )}
       <button className="btn" disabled={busy} onClick={() => void open("reveal")} aria-label={`Show ${name} in Finder`}>
         <FileSearch />
         Show in Finder
@@ -31,7 +33,7 @@ function Attachment({ messageId, index, name, size }: { messageId: string; index
 }
 
 // One message of the chain. Its body is plain text the engine made; quoted history is folded away.
-function Message({ m, last }: { m: MessageView; last: boolean }) {
+function Message({ m, last, loading }: { m: MessageView; last: boolean; loading: boolean }) {
   const [expanded, setExpanded] = useState(last);
   const parts = m.body !== null ? splitQuoted(m.body) : null;
   return (
@@ -60,12 +62,12 @@ function Message({ m, last }: { m: MessageView; last: boolean }) {
               )}
             </div>
           ) : (
-            <p className="mail-body faint">{m.snippet || "Atrium couldn't load this message's text yet."}</p>
+            <p className="mail-body faint">{loading ? "Loading the message…" : m.snippet || "Atrium couldn't load this message's text yet."}</p>
           )}
           {m.attachments.length > 0 && (
             <ul className="mail-atts" aria-label="Attachments">
               {m.attachments.map((a, i) => (
-                <Attachment key={`${a.name}-${i}`} messageId={m.id} index={i} name={a.name} size={a.size} />
+                <Attachment key={`${a.name}-${i}`} messageId={m.id} index={i} name={a.name} size={a.size} openable={a.openable} />
               ))}
             </ul>
           )}
@@ -79,11 +81,20 @@ function Message({ m, last }: { m: MessageView; last: boolean }) {
 export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
   const detail = useThread(id);
   const head = useRef<HTMLHeadingElement>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  // Bodies are fetched once per opening, not on every refresh of the view.
+  useEffect(() => {
+    void post(`/api/mail/threads/${encodeURIComponent(id)}/open`, {});
+  }, [id]);
+  const retry = async () => {
+    const res = await post(`/api/mail/threads/${encodeURIComponent(id)}/open`, { retry: true });
+    setRetryError(res.ok ? null : res.error);
+  };
   useEffect(() => {
     if (detail?.thread.id === id) head.current?.focus();
   }, [detail?.thread.id, id]);
   if (!detail) return <div className="thread-none">Loading the thread…</div>;
-  const { thread, messages, problem } = detail;
+  const { thread, messages, loading, problem } = detail;
   return (
     <div className="thread">
       <button className="btn link thread-back" onClick={onBack}>
@@ -96,9 +107,16 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
       <p className="faint thread-meta">
         <span className="acct-dot" style={{ background: thread.account.color }} aria-hidden /> {thread.account.address} · {messages.length === 1 ? "1 message" : `${messages.length} messages`}
       </p>
-      {problem && <p className="err">{problem}</p>}
+      {(problem || retryError) && !loading && (
+        <p className="err thread-problem" role="alert">
+          {retryError ?? problem}{" "}
+          <button className="btn" onClick={() => void retry()}>
+            Retry
+          </button>
+        </p>
+      )}
       {messages.map((m, i) => (
-        <Message key={m.id} m={m} last={i === messages.length - 1} />
+        <Message key={m.id} m={m} last={i === messages.length - 1} loading={loading && m.body === null} />
       ))}
     </div>
   );

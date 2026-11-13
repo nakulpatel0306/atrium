@@ -3,6 +3,7 @@ import { bus } from "../events";
 import { getSetting, setSetting } from "../settings";
 import { normalizeAddress, normalizeSubject } from "./addresses";
 import { ACCOUNT_COLORS } from "./colors";
+import { canOpen, removeSaved, safeFileName } from "./files";
 import type { AttendeeStatus, Person, SourceAttachment, SourceCalendar, SourceEvent, SourceKind, SourceMessage } from "./types";
 
 export type MailAccount = {
@@ -141,6 +142,7 @@ export function markAccount(db: Database, id: string, status: MailAccount["statu
 
 // Everything cached for one account row: its threads, messages, bodies, and the Google calendars read through it.
 function dropMail(db: Database, accountId: string) {
+  removeSaved(db, { accountId });
   db.query("DELETE FROM mail_bodies WHERE message_id IN (SELECT id FROM mail_messages WHERE account_id = ?)").run(accountId);
   db.query("DELETE FROM mail_messages WHERE account_id = ?").run(accountId);
   db.query("DELETE FROM mail_threads WHERE account_id = ?").run(accountId);
@@ -322,6 +324,8 @@ export const threadVersion = (db: Database, accountId: string, threadKey: string
 
 // Mail older than the sync window leaves the cache with its bodies.
 export function pruneMail(db: Database, before: number): void {
+  const old = (db.query("SELECT id FROM mail_messages WHERE date < ?").all(before) as { id: string }[]).map((r) => r.id);
+  if (old.length) removeSaved(db, { messageIds: old });
   db.transaction(() => {
     db.query("DELETE FROM mail_bodies WHERE message_id IN (SELECT id FROM mail_messages WHERE date < ?)").run(before);
     db.query("DELETE FROM mail_messages WHERE date < ?").run(before);
@@ -409,7 +413,8 @@ export type MessageView = {
   date: number;
   snippet: string;
   unread: boolean;
-  attachments: { name: string; size: number }[];
+  // openable: whether Atrium will open it with a named app; otherwise it's offered in Finder only.
+  attachments: { name: string; size: number; openable: boolean }[];
   body: string | null;
   truncated: boolean;
 };
@@ -429,7 +434,7 @@ export function threadMessages(db: Database, threadId: string): MessageView[] {
     date: r.date,
     snippet: r.snippet,
     unread: r.unread === 1,
-    attachments: json<SourceAttachment[]>(r.attachments, []).map((a) => ({ name: a.name, size: a.size })),
+    attachments: json<SourceAttachment[]>(r.attachments, []).map((a) => ({ name: safeFileName(a.name), size: a.size, openable: canOpen(a.name) })),
     body: r.body,
     truncated: r.truncated === 1,
   }));

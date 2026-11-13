@@ -38,6 +38,8 @@ check(decodeMessageId("not base64!") == nil, "ids: junk is refused")
 check(safeName("../../etc/passwd") == "passwd", "names: no climbing")
 check(safeName("..") == "attachment", "names: dots only")
 check(safeName("a:b\u{0007}.pdf") == "ab.pdf", "names: no colons or control characters")
+check(safeName("invoice\u{202E}fdp.app") == "invoicefdp.app", "names: no bidi override")
+check(safeName("re\u{200B}port\u{2066}.pdf") == "report.pdf", "names: no zero-width or isolate characters")
 
 // output
 check(errorJSON(PimError(kind: "bad_args", message: "x")) == "{\"error\":{\"kind\":\"bad_args\",\"message\":\"x\"}}", "json: error shape")

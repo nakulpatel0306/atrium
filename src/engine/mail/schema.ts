@@ -74,6 +74,15 @@ CREATE TABLE IF NOT EXISTS mail_bodies (
   truncated INTEGER NOT NULL DEFAULT 0,
   cached_at INTEGER NOT NULL
 );
+-- Attachments saved for opening, by path, so removing an account or ageing out its mail removes exactly these files.
+CREATE TABLE IF NOT EXISTS mail_saved_files (
+  path TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  saved_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mail_saved_files_account ON mail_saved_files(account_id);
+CREATE INDEX IF NOT EXISTS mail_saved_files_message ON mail_saved_files(message_id);
 CREATE TABLE IF NOT EXISTS cal_calendars (
   id TEXT PRIMARY KEY,
   source TEXT NOT NULL CHECK (source IN ('google','apple')),
