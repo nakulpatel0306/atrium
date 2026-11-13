@@ -571,7 +571,7 @@ export type EventView = {
   recurring: boolean;
 };
 
-export type CalendarView = { id: string; title: string; color: string; source: SourceKind; enabled: boolean; hidden: string | null };
+export type CalendarView = { id: string; title: string; color: string; source: SourceKind; enabled: boolean; writable: boolean; hidden: string | null };
 
 // Every calendar, with why one isn't shown: its account isn't the preferred source or is hidden, or Google reads it
 // directly.
@@ -586,6 +586,7 @@ export function listCalendars(db: Database): CalendarView[] {
     color: r.color,
     source: r.source,
     enabled: r.enabled === 1,
+    writable: r.writable === 1,
     hidden:
       r.source === "google" && r.preferred !== 1
         ? "Its account reads through Mail.app now."

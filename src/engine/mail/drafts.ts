@@ -351,7 +351,8 @@ function insert(db: Database, f: Fields, now = Date.now()): { action: MailAction
 const REFS_KEPT = 20;
 
 export function draftMail(db: Database, input: MailDraftInput): { action: MailAction; approval: Approval } {
-  const problem = bodyProblem(input.body, input.kind);
+  // A card the user opens starts empty; its words are checked when he presses Send.
+  const problem = input.draftedBy === "you" && !input.body.trim() ? null : bodyProblem(input.body, input.kind);
   if (problem) throw new BadMail(problem);
   const own = ownAddresses(db);
   const claude = input.draftedBy === "claude";

@@ -166,7 +166,7 @@ describe("what needs the explicit Send", () => {
   test("forwarding to anyone who wasn't on the thread needs the explicit Send, whoever drafted it", async () => {
     await connectGoogle();
     const kit = { name: "Kit Moreno", address: "kit@example.org" };
-    const note = { kind: "outside_thread", text: "Forwards this thread to Kit Moreno, who wasn't on it" };
+    const note = { kind: "outside_thread" as const, text: "Forwards this thread to Kit Moreno, who wasn't on it" };
     for (const draftedBy of ["you", "claude"] as const) {
       const { action, approval } = draftMail(db, { spaceId: space(), kind: "forward", draftedBy, threadId: lease().id, to: [kit], body: "" });
       expect(action.reasons).toContainEqual(note);

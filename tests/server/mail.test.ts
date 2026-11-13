@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { onApprovalResolved } from "../../src/engine/approvals";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { existsSync, readFileSync } from "node:fs";
@@ -183,4 +184,65 @@ test("the Google guide is served as plain text and tells the user to publish the
   const text = await r.text();
   expect(text).toContain("Publish app");
   expect(text).toContain("Advanced");
+});
+
+describe("drafts and sends", () => {
+  let unhook: () => void;
+  beforeEach(() => {
+    unhook = onApprovalResolved(mail.actions.onDecision);
+  });
+  afterEach(async () => {
+    unhook();
+    await mail.actions.settle();
+  });
+  const sends = () => fakes.google.writes.filter((w) => w.path.endsWith("/messages/send"));
+  type Draft = { id: string; approvalId: string; to: { name: string; address: string; added: boolean }[]; reasons: { text: string }[]; accountId: string; status: string };
+
+  test("a reply drafted from the thread goes out only from its card's Send, once", async () => {
+    await connectGoogle();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    const r = await send("POST", "/api/mail/drafts", { kind: "reply", threadId: lease.id });
+    expect(r.status).toBe(200);
+    const draft = (await r.json()) as Draft;
+    expect(draft.to.map((p) => p.address)).toEqual(["robin@example.net"]);
+    // Not from the generic approve, and not with an empty body.
+    const generic = await send("POST", `/api/approvals/${draft.approvalId}`, { decision: "approve" });
+    expect(generic.status).toBe(409);
+    const empty = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: " ", seen: [] });
+    expect(await errorOf(empty)).toBe("Write the email first.");
+    const ok = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: "Thursday works.", seen: [] });
+    expect(ok.status).toBe(200);
+    await mail.actions.settle();
+    expect(sends()).toHaveLength(1);
+    const again = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: "Thursday works.", seen: [] });
+    expect(again.status).toBe(409);
+    expect(sends()).toHaveLength(1);
+  });
+
+  test("adding someone new keeps the edit but asks for a fresh Send that has seen the note", async () => {
+    await connectGoogle();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    const draft = (await (await send("POST", "/api/mail/drafts", { kind: "reply", threadId: lease.id })).json()) as Draft;
+    const to = [...draft.to, { name: "Kit Moreno", address: "kit@example.org" }];
+    const first = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: [] });
+    expect(first.status).toBe(409);
+    expect(await errorOf(first)).toBe("Check the card before sending: First time emailing Kit Moreno. Then press Send again.");
+    expect(sends()).toEqual([]);
+    const second = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: ["First time emailing Kit Moreno"] });
+    expect(second.status).toBe(200);
+    await mail.actions.settle();
+    expect(sends()[0]!.raw).toContain("To: robin@example.net, \"Kit Moreno\" <kit@example.org>");
+  });
+
+  test("Save as draft and RSVP are the user's own presses", async () => {
+    await connectGoogle();
+    const draft = (await (await send("POST", "/api/mail/drafts", { kind: "new" })).json()) as Draft;
+    const saved = await send("POST", `/api/mail/actions/${draft.id}/save-draft`, { accountId: draft.accountId, to: [{ name: "", address: "robin@example.net" }], cc: [], subject: "Hello", body: "Draft" });
+    expect(saved.status).toBe(200);
+    expect(fakes.google.writes.map((w) => w.path)).toEqual(["/gmail/v1/users/me/drafts"]);
+    const invite = (await get<{ events: { id: string; title: string }[] }>(`/api/mail/events?from=${NOW - 30 * 86_400_000}&to=${NOW + 30 * 86_400_000}`)).events.find((e) => e.title === "Planning with Kit")!;
+    expect((await send("POST", `/api/mail/events/${invite.id}/rsvp`, { answer: "maybe" })).status).toBe(400);
+    expect((await send("POST", `/api/mail/events/${invite.id}/rsvp`, { answer: "accepted", note: "" })).status).toBe(200);
+    expect(fakes.google.writes.at(-1)).toMatchObject({ method: "PATCH", sendUpdates: "all" });
+  });
 });
