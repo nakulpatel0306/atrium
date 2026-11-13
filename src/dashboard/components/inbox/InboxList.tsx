@@ -1,6 +1,7 @@
 import { PenLine } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { post, useEngineState } from "../../api";
+import { showToast } from "../../toast";
 import { type InboxFilter, type MailOverview, peopleLine, shortWhen, useThreads } from "../../mail";
 import { DraftCard } from "./DraftCard";
 import { startDraft, ThreadView } from "./ThreadView";
@@ -12,7 +13,7 @@ const FILTERS: { id: InboxFilter; label: string }[] = [
 ];
 
 // The unified Inbox: account chips, filters, and the thread list beside the open thread. j/k move, Enter opens,
-// Escape goes back to the list; with a thread open, r replies, a replies to all and f forwards.
+// Escape goes back to the list; with a thread open, r replies, a replies to all, f forwards and e archives (Google).
 export function InboxList({ overview }: { overview: MailOverview }) {
   const [account, setAccount] = useState<string | null>(null);
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -25,6 +26,14 @@ export function InboxList({ overview }: { overview: MailOverview }) {
   const [draftError, setDraftError] = useState<string | null>(null);
   // New emails have no thread, so their cards sit above the list.
   const newDrafts = (state?.mailActions ?? []).filter((m) => m.kind === "new");
+  // e: Gmail archive, with an Undo toast that puts it back. Mail.app accounts archive in Mail.
+  const archive = async (id: string, subject: string) => {
+    const res = await post(`/api/mail/threads/${encodeURIComponent(id)}/archive`, {});
+    if (!res.ok) return setDraftError(res.error);
+    setDraftError(null);
+    setOpen(null);
+    showToast(`Archived "${subject || "(no subject)"}".`, () => post(`/api/mail/threads/${encodeURIComponent(id)}/archive`, { undo: true }));
+  };
   const newEmail = async () => {
     const res = await post("/api/mail/drafts", { kind: "new", accountId: account ?? undefined });
     setDraftError(res.ok ? null : res.error);
@@ -45,7 +54,11 @@ export function InboxList({ overview }: { overview: MailOverview }) {
     };
     if (e.key === "j" || e.key === "ArrowDown") move(cursor + 1);
     else if (e.key === "k" || e.key === "ArrowUp") move(cursor - 1);
-    else if (open && (e.key === "r" || e.key === "a" || e.key === "f")) {
+    else if (open && e.key === "e") {
+      e.preventDefault();
+      const thread = threads.find((t) => t.id === open);
+      if (thread) void archive(thread.id, thread.subject);
+    } else if (open && (e.key === "r" || e.key === "a" || e.key === "f")) {
       e.preventDefault();
       void startDraft(open, e.key === "r" ? "reply" : e.key === "a" ? "reply_all" : "forward", state?.mailActions ?? []).then(setDraftError);
     } else if (e.key === "Escape" && open) {
@@ -136,7 +149,7 @@ export function InboxList({ overview }: { overview: MailOverview }) {
           ) : (
             <div className="thread-none">
               <p>Pick a thread to read it here.</p>
-              <p className="hint">j and k move through the list, Enter opens. In a thread, r replies, a replies to all, f forwards.</p>
+              <p className="hint">j and k move through the list, Enter opens. In a thread, r replies, a replies to all, f forwards, e archives.</p>
             </div>
           )}
         </div>

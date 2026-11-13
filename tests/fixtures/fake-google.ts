@@ -158,7 +158,19 @@ export function startFakeGoogle(data: FakeData): FakeGoogle {
         const raw = Buffer.from(String(body.raw ?? ""), "base64url").toString("utf8");
         record({ raw });
         const id = `sent-${++n}`;
-        return Response.json({ id, threadId: (body.threadId as string | undefined) ?? `st-${n}`, labelIds: ["SENT"] });
+        const threadId = (body.threadId as string | undefined) ?? `st-${n}`;
+        // Gmail files the sent message in its thread, so the next sync reads it back.
+        const head = (name: string) => new RegExp(`^${name}: (.*)$`, "mi").exec(raw.split("\r\n\r\n")[0]!)?.[1] ?? "";
+        const thread = acct.threads.find((t) => t.id === threadId);
+        if (thread) {
+          thread.messages.push({ id, threadId, from: head("From"), to: head("To"), subject: head("Subject"), date: Date.now(), messageId: head("Message-ID"), labels: ["SENT"] });
+          thread.historyId = String(Number(thread.historyId) + 1);
+        }
+        return Response.json({ id, threadId, labelIds: ["SENT"] });
+      }
+      if (/^\/gmail\/v1\/users\/me\/threads\/[^/]+\/modify$/.test(p) && writing) {
+        record();
+        return Response.json({ id: decodeURIComponent(p.split("/")[6]!) });
       }
       if (p === "/gmail/v1/users/me/drafts" && writing) {
         const message = body.message as { raw?: string } | undefined;

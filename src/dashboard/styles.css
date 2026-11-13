@@ -5972,28 +5972,13 @@ code {
 .mail-times .mail-field {
   flex: 1 1 240px;
 }
-.mail-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+.mail-note {
+  padding: 6px 10px;
   border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line));
   border-radius: 6px;
   background: color-mix(in srgb, var(--yellow) 6%, var(--bg));
   font-size: 12px;
   color: var(--text);
-}
-.mail-notes ul {
-  margin: 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.tag.warn {
-  width: fit-content;
-  color: var(--yellow);
-  border-color: color-mix(in srgb, var(--yellow) 35%, var(--line));
 }
 .mail-quoted-out {
   display: flex;

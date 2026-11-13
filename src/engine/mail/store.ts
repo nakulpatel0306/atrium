@@ -145,6 +145,7 @@ function dropMail(db: Database, accountId: string) {
   removeSaved(db, { accountId });
   db.query("DELETE FROM mail_bodies WHERE message_id IN (SELECT id FROM mail_messages WHERE account_id = ?)").run(accountId);
   db.query("DELETE FROM mail_messages WHERE account_id = ?").run(accountId);
+  db.query("DELETE FROM mail_archived WHERE thread_id IN (SELECT id FROM mail_threads WHERE account_id = ?)").run(accountId);
   db.query("DELETE FROM mail_threads WHERE account_id = ?").run(accountId);
   db.query("DELETE FROM cal_events WHERE calendar_id IN (SELECT id FROM cal_calendars WHERE account_id = ?)").run(accountId);
   db.query("DELETE FROM cal_calendars WHERE account_id = ?").run(accountId);
@@ -264,6 +265,8 @@ export function ingestMessages(db: Database, account: { id: string; address: str
         JSON.stringify(m.attachments),
       );
       touched.add(threadId);
+      // New mail from someone else brings an archived thread back, as Gmail does.
+      if (m.from.address !== account.address) db.query("DELETE FROM mail_archived WHERE thread_id = ?").run(threadId);
       added++;
     }
     for (const [threadKey, version] of Object.entries(versions)) {
@@ -275,17 +278,13 @@ export function ingestMessages(db: Database, account: { id: string; address: str
   return added;
 }
 
-// The copy Atrium shows in a thread right after a send stands in until the source's own copy arrives: by the source's
-// id or Message-ID when the source gave one, else (Mail.app makes its own) by the same subject within 15 minutes.
+// The copy Atrium shows in a thread right after a Gmail send stands in until Gmail's own copy arrives, matched by
+// Gmail's message id or the Message-ID Atrium set.
 export const SENT_COPY_PREFIX = "atrium-sent:";
-const SENT_MATCH_MS = 15 * 60_000;
 function dropSentCopies(db: Database, accountId: string, m: SourceMessage) {
-  const rows = db
-    .query("SELECT id, source_id, message_id, subject, date FROM mail_messages WHERE account_id = ? AND msg_key LIKE ?")
-    .all(accountId, `${SENT_COPY_PREFIX}%`) as { id: string; source_id: string; message_id: string | null; subject: string; date: number }[];
+  const rows = db.query("SELECT id, source_id, message_id FROM mail_messages WHERE account_id = ? AND msg_key LIKE ?").all(accountId, `${SENT_COPY_PREFIX}%`) as { id: string; source_id: string; message_id: string | null }[];
   for (const r of rows) {
-    const same = r.source_id === m.sourceId || (!!m.messageId && r.message_id === m.messageId) || (normalizeSubject(r.subject) === normalizeSubject(m.subject) && Math.abs(r.date - m.date) <= SENT_MATCH_MS);
-    if (!same) continue;
+    if (r.source_id !== m.sourceId && !(m.messageId && r.message_id === m.messageId)) continue;
     db.query("DELETE FROM mail_bodies WHERE message_id = ?").run(r.id);
     db.query("DELETE FROM mail_messages WHERE id = ?").run(r.id);
   }
@@ -376,6 +375,7 @@ export function pruneMail(db: Database, before: number): void {
     db.query("DELETE FROM mail_bodies WHERE message_id IN (SELECT id FROM mail_messages WHERE date < ?)").run(before);
     db.query("DELETE FROM mail_messages WHERE date < ?").run(before);
     db.query("DELETE FROM mail_threads WHERE id NOT IN (SELECT DISTINCT thread_id FROM mail_messages)").run();
+    db.query("DELETE FROM mail_archived WHERE thread_id NOT IN (SELECT id FROM mail_threads)").run();
   })();
 }
 
@@ -423,6 +423,14 @@ const toThread = (r: ThreadRow): ThreadView => ({
 const THREAD_SELECT = `SELECT t.*, a.address, a.color, (SELECT COUNT(*) FROM mail_messages m WHERE m.thread_id = t.id) AS count
   FROM mail_threads t JOIN mail_accounts a ON a.id = t.account_id
   WHERE a.preferred = 1 AND a.enabled = 1`;
+const NOT_ARCHIVED = " AND t.id NOT IN (SELECT thread_id FROM mail_archived)";
+
+// A thread archived from Atrium leaves the Inbox list; undoing it, or new mail from someone else, brings it back.
+export function setArchived(db: Database, threadId: string, archived: boolean, at = Date.now()): void {
+  if (archived) db.query("INSERT OR REPLACE INTO mail_archived (thread_id, archived_at) VALUES (?, ?)").run(threadId, at);
+  else db.query("DELETE FROM mail_archived WHERE thread_id = ?").run(threadId);
+  bus.emit({ type: "changed" });
+}
 
 // The unified Inbox, newest first, from active accounts only, so an address read two ways shows once.
 export function listThreads(db: Database, opts: { accountId?: string; filter?: "unread" | "needs_reply"; limit?: number; search?: string } = {}): ThreadView[] {
@@ -439,7 +447,7 @@ export function listThreads(db: Database, opts: { accountId?: string; filter?: "
     const like = `%${opts.search.replace(/[%_]/g, "")}%`;
     args.push(like, like, like);
   }
-  const sql = `${THREAD_SELECT}${where.map((w) => ` AND ${w}`).join("")} ORDER BY t.last_at DESC LIMIT ?`;
+  const sql = `${THREAD_SELECT}${NOT_ARCHIVED}${where.map((w) => ` AND ${w}`).join("")} ORDER BY t.last_at DESC LIMIT ?`;
   return (db.query(sql).all(...args, opts.limit ?? 200) as ThreadRow[]).map(toThread);
 }
 

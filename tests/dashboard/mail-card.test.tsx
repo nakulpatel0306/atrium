@@ -22,7 +22,7 @@ const draft = (over: Partial<Draft> = {}): Draft => ({
     { name: "Robin Vale", address: "robin@example.net", added: false },
     { name: "Kit Moreno", address: "kit@example.org", added: true },
   ],
-  cc: [], attachments: [], event: null, reasons: [{ kind: "first_time", key: "first_time:kit@example.org", text: "First time emailing Kit Moreno <kit@example.org>" }], lastError: null, ...over,
+  cc: [], attachments: [], event: null, reasons: [{ kind: "first_time", key: "first_time:kit@example.org", text: "first time emailing Kit Moreno <kit@example.org>" }], lastError: null, ...over,
 });
 
 let calls: { url: string; body: unknown }[] = [];
@@ -32,7 +32,13 @@ beforeEach(() => {
   calls = [];
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     if (!init?.method || init.method === "GET") {
-      const overview = { accounts: [{ id: "mac_sam", address: "sam@example.com", preferred: true, enabled: true }], calendars: [{ id: "cal_1", title: "Sam", enabled: true, hidden: null, writable: true }] };
+      const overview = {
+        accounts: [
+          { id: "mac_sam", address: "sam@example.com", source: "google", preferred: true, enabled: true },
+          { id: "mac_icloud", address: "sam.rivera@example.org", source: "apple", preferred: true, enabled: true },
+        ],
+        calendars: [{ id: "cal_1", title: "Sam", source: "google", enabled: true, hidden: null, writable: true }],
+      };
       return new Response(JSON.stringify(overview), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
@@ -76,12 +82,10 @@ async function wait(ms: number) {
   });
 }
 
-test("the card shows every person, who Claude added, why it needs your Send, and the quoted text that goes too", () => {
+test("the card shows every person, and one line of what to check: notes and who Claude added, by address", () => {
   const card = render(<MailCard approval={approval("apr_1", "Send a reply to Robin Vale and Kit Moreno?")} action={draft()} />);
-  const text = card.textContent!;
-  expect(text).toContain("Needs your Send");
-  expect(text).toContain("First time emailing Kit Moreno <kit@example.org>");
-  expect(card.querySelector(".mail-notes")!.textContent).toContain("Added by Claude Kit Moreno <kit@example.org>");
+  expect(card.querySelectorAll(".mail-note")).toHaveLength(1);
+  expect(card.querySelector(".mail-note")!.textContent).toBe("Check before sending: first time emailing Kit Moreno <kit@example.org> · added by Claude: Kit Moreno <kit@example.org>");
   expect((card.querySelectorAll("input")[0] as HTMLInputElement).value).toBe("Robin Vale <robin@example.net>, Kit Moreno <kit@example.org>");
   expect(card.querySelector(".mail-quoted-out pre")!.textContent).toContain("> Can we sign Thursday?");
   // A reply keeps the thread's subject.
@@ -127,8 +131,8 @@ test("a forward lists the attachments that go with it", () => {
 test("an invite card names its button for what it does, and goes through the same tray", async () => {
   const start = new Date("2026-11-13T12:00").getTime();
   const event = { calendarId: "cal_1", eventId: null, title: "Lunch with Priya", start, end: start + 3600_000, allDay: false, location: "", attendees: [{ name: "Priya", address: "priya@example.org", added: true }], notify: true };
-  const card = render(<EventCard approval={approval("apr_1", 'Create "Lunch with Priya" and invite Priya?')} action={draft({ kind: "event_create", event, quoted: "", to: [], reasons: [{ kind: "first_time", key: "first_time:priya@example.org", text: "First time inviting Priya <priya@example.org>" }] })} />);
-  expect(card.textContent).toContain("Added by Claude Priya <priya@example.org>");
+  const card = render(<EventCard approval={approval("apr_1", 'Create "Lunch with Priya" and invite Priya?')} action={draft({ kind: "event_create", event, quoted: "", to: [], reasons: [{ kind: "first_time", key: "first_time:priya@example.org", text: "first time inviting Priya <priya@example.org>" }] })} />);
+  expect(card.querySelector(".mail-note")!.textContent).toBe("Check before sending: first time inviting Priya <priya@example.org> · added by Claude: Priya <priya@example.org>");
   click(button(card, "Create and invite"));
   await wait(SEND_DELAY_MS);
   expect(calls[0]).toMatchObject({ url: "/api/mail/actions/mla_1/send", body: { title: "Lunch with Priya", start, end: start + 3600_000, attendees: [{ name: "Priya", address: "priya@example.org" }], seen: ["first_time:priya@example.org"] } });
@@ -161,4 +165,29 @@ test("pressing r again on a thread with your reply open goes to that reply inste
     await startDraft("mth_1", "forward", [draft({ draftedBy: "you" })]);
   });
   expect(calls.map((c) => c.url)).toEqual(["/api/mail/drafts"]);
+});
+
+test("a Mail.app account's card opens the message in Mail instead of sending, with no tray and no Save as draft", async () => {
+  const card = render(<MailCard approval={approval("apr_1", "Send a reply?")} action={draft({ accountId: "mac_icloud" })} />);
+  const tray = render(<SendTray />);
+  await loaded();
+  expect([...card.querySelectorAll(".msg-foot button")].map((b) => b.textContent)).toEqual(["Open in Mail"]);
+  await act(async () => {
+    button(card, "Open in Mail").click();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  });
+  expect(tray.textContent).toBe("");
+  expect(calls.map((c) => c.url)).toEqual(["/api/mail/actions/mla_1/open-in-mail"]);
+});
+
+test("Cmd or Ctrl+Enter in a field presses the card's primary button", async () => {
+  const card = render(<MailCard approval={approval("apr_1", "Send a reply?")} action={draft()} />);
+  const tray = render(<SendTray />);
+  await loaded();
+  act(() => {
+    const field = card.querySelector("textarea")!;
+    field.focus();
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
+  });
+  expect(tray.textContent).toContain("Sending to");
 });

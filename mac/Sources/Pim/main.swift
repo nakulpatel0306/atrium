@@ -5,8 +5,8 @@ import EventKit
 import Foundation
 
 // atrium-pim: the engine's only window into Mail.app (AppleScript, run here with arguments passed as Apple event
-// parameters, never spliced into script text) and Calendar.app (EventKit). It reads, and after the user's own Send
-// it sends, saves drafts and makes calendar changes; write commands take their JSON on stdin. One subcommand per call, one JSON
+// parameters, never spliced into script text) and Calendar.app (EventKit). It reads, opens a filled-in message in
+// Mail for the user to send himself, and adds guest-less events; write commands take their JSON on stdin. One subcommand per call, one JSON
 // document on stdout. The interface is pinned in src/engine/mail/pim.ts; tests use tests/fixtures/fake-pim.ts.
 // Everything it reads is someone else's text and goes to the engine as plain data.
 
@@ -93,49 +93,21 @@ let mailScript = """
     return outPath
   end saveAttachment
 
-  -- Two address lists hold the same addresses (Mail compares text without case).
-  on sameAddresses(got, want)
-    if (count of got) is not (count of want) then return false
-    repeat with x in want
-      if got does not contain (x as text) then return false
-    end repeat
-    repeat with x in got
-      if want does not contain (x as text) then return false
-    end repeat
-    return true
-  end sameAddresses
-
-  -- One email, sent or saved to Drafts. With a reply id it answers that message, so Mail sets In-Reply-To and
-  -- References; its recipients and words are then replaced by exactly the card's. The sender is the account's own
-  -- "Full Name <address>" entry, so Mail can't fall back to another account. Before sending or saving, what Mail
-  -- holds is read back; anything other than exactly the card's sender and people stops it with nothing sent.
-  on composeMessage(acctId, fromAddr, toNames, toAddrs, ccNames, ccAddrs, subj, body, replyBox, replyId, attPaths, doSend)
+  -- One message opened in a visible compose window, filled in, and left for the user to send from Mail. With a reply
+  -- id it answers that message, so Mail sets In-Reply-To and References; its people and words are then the card's.
+  on composeMessage(acctId, fromAddr, toNames, toAddrs, ccNames, ccAddrs, subj, body, replyBox, replyId, attPaths)
     tell application "Mail"
-      set acct to first account whose id is acctId
-      set senderText to ""
-      repeat with addr in (email addresses of acct)
-        if (addr as text) is fromAddr then
-          set fullName to full name of acct as text
-          if fullName is "" then
-            set senderText to addr as text
-          else
-            set senderText to fullName & " <" & (addr as text) & ">"
-          end if
-        end if
-      end repeat
-      if senderText is "" then error "The From address isn't one of this account's addresses." number 6001
       if replyId is not "" then
         set orig to my findMessage(acctId, replyBox, replyId)
-        set m to reply orig opening window false without reply to all
+        set m to reply orig opening window true without reply to all
         delete every to recipient of m
         delete every cc recipient of m
-        delete every bcc recipient of m
         set subject of m to subj
         set content of m to body
       else
-        set m to make new outgoing message with properties {subject:subj, content:body, visible:false}
+        set m to make new outgoing message with properties {subject:subj, content:body, visible:true}
       end if
-      set sender of m to senderText
+      set sender of m to fromAddr
       tell m
         repeat with i from 1 to count of toAddrs
           make new to recipient at end of to recipients with properties {name:(item i of toNames), address:(item i of toAddrs)}
@@ -147,20 +119,7 @@ let mailScript = """
           make new attachment with properties {file name:(POSIX file (p as text))} at after the last paragraph
         end repeat
       end tell
-      set gotTo to address of every to recipient of m
-      set gotCc to address of every cc recipient of m
-      set gotBcc to address of every bcc recipient of m
-      if (sender of m as text) is not senderText or (count of gotBcc) > 0 or not my sameAddresses(gotTo, toAddrs) or not my sameAddresses(gotCc, ccAddrs) then
-        try
-          delete m
-        end try
-        error "Mail didn't hold exactly the card's sender and people." number 6002
-      end if
-      if doSend then
-        send m
-      else
-        save m
-      end if
+      activate
     end tell
     return true
   end composeMessage
@@ -182,8 +141,6 @@ func runHandler(_ name: String, _ args: [NSAppleEventDescriptor]) throws -> NSAp
     let message = error[NSAppleScript.errorMessage] as? String ?? "Mail didn't answer."
     if code == -1743 { throw PimError(kind: "automation_denied", message: message) }
     if code == -600 { throw PimError(kind: "not_running", message: message) }
-    // composeMessage's own refusals: the From isn't the account's, or Mail held other people than the card.
-    if code == 6001 || code == 6002 { throw PimError(kind: "mismatch", message: message) }
     throw PimError(kind: "other", message: message)
   }
   return result
@@ -285,14 +242,15 @@ func stringList(_ values: [String]) -> NSAppleEventDescriptor {
   return list
 }
 
-func mailCompose(send: Bool) throws -> Any {
+// Opens the message for the user to send; never sends.
+func mailCompose() throws -> Any {
   let input = try readInput()
   guard let account = input["account"] as? String, let from = input["from"] as? String, let subject = input["subject"] as? String, let text = input["text"] as? String else {
-    throw PimError(kind: "bad_args", message: "mail.send needs account, from, subject and text.")
+    throw PimError(kind: "bad_args", message: "mail.compose needs account, from, subject and text.")
   }
   let to = peopleLists(input["to"])
   let cc = peopleLists(input["cc"])
-  if to.addresses.isEmpty { throw PimError(kind: "bad_args", message: "mail.send needs at least one to address.") }
+  if to.addresses.isEmpty { throw PimError(kind: "bad_args", message: "mail.compose needs at least one to address.") }
   var replyBox = ""
   var replyId = ""
   if let raw = input["replyTo"] as? String {
@@ -306,26 +264,9 @@ func mailCompose(send: Bool) throws -> Any {
     stringList(to.names), stringList(to.addresses), stringList(cc.names), stringList(cc.addresses),
     NSAppleEventDescriptor(string: subject), NSAppleEventDescriptor(string: text),
     NSAppleEventDescriptor(string: replyBox), NSAppleEventDescriptor(string: replyId),
-    stringList(attachments), NSAppleEventDescriptor(boolean: send),
+    stringList(attachments),
   ])
   return ["ok": true]
-}
-
-// The exact event a write names, or an error. An id with an occurrence date must match that occurrence; it never
-// falls back to the series, which would change a different day. Repeating events are refused outright.
-func findEvent(_ id: String) throws -> EKEvent {
-  let store = eventStore()
-  guard let parts = splitEventId(id) else { throw PimError(kind: "bad_args", message: "That event id isn't one atrium-pim made.") }
-  let found: EKEvent?
-  if let occurrence = parts.occurrence {
-    let around = store.predicateForEvents(withStart: occurrence.addingTimeInterval(-86_400), end: occurrence.addingTimeInterval(86_400), calendars: nil)
-    found = store.events(matching: around).first { $0.eventIdentifier == parts.event && ($0.occurrenceDate ?? $0.startDate) == occurrence }
-  } else {
-    found = store.event(withIdentifier: parts.event)
-  }
-  guard let e = found else { throw PimError(kind: "not_found", message: "That event isn't in Calendar anymore.") }
-  if e.hasRecurrenceRules { throw PimError(kind: "bad_args", message: "atrium-pim doesn't change repeating events.") }
-  return e
 }
 
 func calCreate() throws -> Any {
@@ -344,27 +285,6 @@ func calCreate() throws -> Any {
   if let location = input["location"] as? String, !location.isEmpty { e.location = location }
   try store.save(e, span: .thisEvent, commit: true)
   return ["event": ["id": e.eventIdentifier ?? ""]]
-}
-
-func calUpdate() throws -> Any {
-  try requireCalendar()
-  let input = try readInput()
-  guard let id = input["id"] as? String, let start = (input["start"] as? String).flatMap(isoFormatter.date), let end = (input["end"] as? String).flatMap(isoFormatter.date) else {
-    throw PimError(kind: "bad_args", message: "cal.update needs id, start and end.")
-  }
-  let e = try findEvent(id)
-  e.startDate = start
-  e.endDate = end
-  try eventStore().save(e, span: .thisEvent, commit: true)
-  return ["ok": true]
-}
-
-func calDelete() throws -> Any {
-  try requireCalendar()
-  let input = try readInput()
-  guard let id = input["id"] as? String else { throw PimError(kind: "bad_args", message: "cal.delete needs id.") }
-  try eventStore().remove(try findEvent(id), span: .thisEvent, commit: true)
-  return ["ok": true]
 }
 
 // Whether Atrium may send Apple events to Mail, asking only when `ask` is set. Mail must be running to be asked.
@@ -505,11 +425,8 @@ func run(_ argv: [String]) throws -> Any {
   case "mail.attachment": return try mailAttachment(args)
   case "cal.calendars": return try calCalendars()
   case "cal.events": return try calEvents(args)
-  case "mail.send": return try mailCompose(send: true)
-  case "mail.draft": return try mailCompose(send: false)
+  case "mail.compose": return try mailCompose()
   case "cal.create": return try calCreate()
-  case "cal.update": return try calUpdate()
-  case "cal.delete": return try calDelete()
   default: throw PimError(kind: "bad_args", message: "Unknown command \(args.command).")
   }
 }

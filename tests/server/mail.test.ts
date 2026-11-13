@@ -226,7 +226,7 @@ describe("drafts and sends", () => {
     const to = [...draft.to, { name: "Kit Moreno", address: "kit@example.org" }];
     const first = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: [] });
     expect(first.status).toBe(409);
-    expect(await errorOf(first)).toBe("Check the card before sending: First time emailing Kit Moreno <kit@example.org>. Then press Send again.");
+    expect(await errorOf(first)).toBe("Check the card before sending: first time emailing Kit Moreno <kit@example.org>. Then press Send again.");
     expect(sends()).toEqual([]);
     const second = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: ["first_time:kit@example.org"] });
     expect(second.status).toBe(200);
@@ -253,6 +253,38 @@ describe("drafts and sends", () => {
     expect(detail.invite).toMatchObject({ title: "Planning with Kit", myStatus: "accepted" });
     const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
     expect((await get<{ invite: unknown }>(`/api/mail/threads/${lease.id}`)).invite).toBeNull();
+  });
+
+  test("e archives a Gmail thread and Undo brings it back; new mail on it brings it back too", async () => {
+    await connectGoogle();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    expect((await send("POST", `/api/mail/threads/${lease.id}/archive`, {})).status).toBe(200);
+    expect(fakes.google.writes.at(-1)).toMatchObject({ path: "/gmail/v1/users/me/threads/gt-lease/modify", body: { removeLabelIds: ["INBOX"] } });
+    expect(listThreads(db).map((t) => t.id)).not.toContain(lease.id);
+    expect((await send("POST", `/api/mail/threads/${lease.id}/archive`, { undo: true })).status).toBe(200);
+    expect(fakes.google.writes.at(-1)!.body).toEqual({ addLabelIds: ["INBOX"] });
+    expect(listThreads(db).map((t) => t.id)).toContain(lease.id);
+    await send("POST", `/api/mail/threads/${lease.id}/archive`, {});
+    ingestMessages(db, listAccounts(db)[0]!, [{ sourceId: "gm-9", threadKey: "gt-lease", messageId: "<lease-9@example.net>", inReplyTo: null, references: [], subject: "Re: Lease renewal", from: { name: "Robin Vale", address: "robin@example.net" }, to: [{ name: "", address: SAM }], cc: [], date: NOW, snippet: "", unread: true, labels: ["INBOX"], attachments: [] }]);
+    expect(listThreads(db).map((t) => t.id)).toContain(lease.id);
+  });
+
+  test("a Mail.app account's card opens in Mail and can't be sent from Atrium; its events open in Calendar", async () => {
+    expect((await send("POST", "/api/mail/apple", { what: "mail", on: true })).status).toBe(200);
+    expect((await send("POST", "/api/mail/apple", { what: "calendar", on: true })).status).toBe(200);
+    const trip = listThreads(db).find((t) => t.subject === "Trip plan")!;
+    const draft = (await (await send("POST", "/api/mail/drafts", { kind: "reply", threadId: trip.id })).json()) as Draft;
+    const body = { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: "9 is good.", seen: [] };
+    const refused = await send("POST", `/api/mail/actions/${draft.id}/send`, body);
+    expect(refused.status).toBe(409);
+    expect(await errorOf(refused)).toBe("This account sends from Mail. Press Open in Mail, then send it there.");
+    expect((await send("POST", `/api/mail/threads/${trip.id}/archive`, {})).status).toBe(400);
+    const inMail = await send("POST", `/api/mail/actions/${draft.id}/open-in-mail`, body);
+    expect(inMail.status).toBe(200);
+    expect(((await inMail.json()) as Draft).status).toBe("opened");
+    const dentist = (await get<{ events: { id: string; title: string }[] }>(`/api/mail/events?from=${NOW - 30 * 86_400_000}&to=${NOW + 30 * 86_400_000}`)).events.find((e) => e.title === "Dentist")!;
+    expect((await send("POST", `/api/mail/events/${dentist.id}/open-in-calendar`, {})).status).toBe(200);
+    expect(opened()).toContain("ical://ekevent/ae-2");
   });
 
   test("Save as draft and RSVP are the user's own presses", async () => {

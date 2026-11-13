@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { getApproval, onApprovalResolved, resolveApproval, RULE_NEVER_DECIDES } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { createMail, type Mail } from "../../../src/engine/mail";
-import { draftEvent, draftMail, explicitReasons, getMailAction, type MailAction, pendingMailActions, updateMailDraft } from "../../../src/engine/mail/drafts";
+import { APPLE_EVENT_COPY, draftEvent, draftMail, explicitReasons, getMailAction, type MailAction, pendingMailActions, updateMailDraft } from "../../../src/engine/mail/drafts";
 import { mailKeychain } from "../../../src/engine/mail/google/oauth";
 import { PIM_COPY } from "../../../src/engine/mail/pim";
-import { createMailActions, recoverMailActions, STOPPED_COPY } from "../../../src/engine/mail/send";
+import { createMailActions, NO_RSVP_COPY, OPEN_IN_MAIL_COPY, recoverMailActions, STOPPED_COPY } from "../../../src/engine/mail/send";
 import { googleSource } from "../../../src/engine/mail/google/source";
-import { appleSource, NO_GUESTS_COPY, NO_RSVP_COPY } from "../../../src/engine/mail/apple";
+import { appleSource, NO_GUESTS_COPY } from "../../../src/engine/mail/apple";
 import { inboxSpace } from "../../../src/engine/mail/space";
 import { ingestMessages, listAccounts, listCalendars, listEvents, listThreads, replaceEvents, setPreferred, threadMessages, upsertAccount } from "../../../src/engine/mail/store";
 import { createTask, getTask } from "../../../src/engine/tasks";
@@ -100,6 +100,17 @@ describe("replies", () => {
     expect(getApproval(db, approval.id)!.status).toBe("approved");
   });
 
+  test("the sent copy gives way to Gmail's own on the next sync, so it shows once", async () => {
+    await connectGoogle();
+    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Thursday works." });
+    await pressSend(action);
+    expect(threadMessages(db, lease().id)).toHaveLength(3);
+    await mail.sync.syncNow();
+    const after = threadMessages(db, lease().id);
+    expect(after).toHaveLength(3);
+    expect(after.at(-1)!.sourceId).toMatch(/^sent-/);
+  });
+
   test("reply all keeps everyone on the thread but you; a second Send, or two at once, sends once", async () => {
     await connectGoogle();
     const first = threadMessages(db, lease().id)[0]!;
@@ -121,11 +132,11 @@ describe("replies", () => {
       { name: "", address: "robin@example.net", added: false },
       { name: "Kit Moreno", address: "kit@example.org", added: true },
     ]);
-    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:kit@example.org", text: "First time emailing Kit Moreno <kit@example.org>" }]);
+    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:kit@example.org", text: "first time emailing Kit Moreno <kit@example.org>" }]);
     // The user's edits keep Kit marked; someone the user types isn't.
     const edited = updateMailDraft(db, action.id, { accountId: google().id, to: [...action.to, { name: "", address: "lee@example.org" }], cc: [], subject: "", body: "Looping in Kit and Lee." });
     expect(edited.to.map((p) => [p.address, p.added])).toEqual([["robin@example.net", false], ["kit@example.org", true], ["lee@example.org", false]]);
-    expect(edited.reasons.map((r) => r.text)).toEqual(["First time emailing Kit Moreno <kit@example.org>", "First time emailing lee@example.org"]);
+    expect(edited.reasons.map((r) => r.text)).toEqual(["first time emailing Kit Moreno <kit@example.org>", "first time emailing lee@example.org"]);
   });
 });
 
@@ -142,7 +153,7 @@ describe("what needs the explicit Send", () => {
     await connectGoogle();
     const { action, approval } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "claude", threadId: lease().id, to: [{ name: "Robin Vale", address: "robin.vale@attacker.example" }], body: "Looping in." });
     expect(approval.title).toBe("Send a reply to robin@example.net and Robin Vale <robin.vale@attacker.example>?");
-    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:robin.vale@attacker.example", text: "First time emailing Robin Vale <robin.vale@attacker.example>" }]);
+    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:robin.vale@attacker.example", text: "first time emailing Robin Vale <robin.vale@attacker.example>" }]);
   });
 
   test("only people you've written to count as known; being on someone else's email doesn't", async () => {
@@ -165,7 +176,7 @@ describe("what needs the explicit Send", () => {
     const { action } = draftMail(db, { spaceId: space(), kind: "forward", draftedBy: "you", threadId: lease().id, to: [{ name: "Robin Vale", address: "robin@example.net" }], body: "" });
     expect(action.subject).toBe("Fwd: Re: Lease renewal");
     expect(action.attachments).toEqual([{ name: "lease.pdf", size: 15, index: 0 }]);
-    expect(action.reasons).toEqual([{ kind: "attachments", key: "attachments:1", text: "Has an attachment" }]);
+    expect(action.reasons).toEqual([{ kind: "attachments", key: "attachments:1", text: "1 attachment" }]);
     expect(action.inReplyTo).toBeNull();
 
     const many = Array.from({ length: 11 }, (_, i) => ({ name: "", address: `p${i}@example.org` }));
@@ -173,8 +184,8 @@ describe("what needs the explicit Send", () => {
     const kinds = other.reasons.map((r) => r.kind);
     expect(kinds).toContain("other_account");
     expect(kinds).toContain("many");
-    expect(other.reasons.find((r) => r.kind === "other_account")!.text).toBe(`Sent from sam.rivera@example.org, not ${SAM}, where this thread is`);
-    expect(other.reasons.find((r) => r.kind === "many")!.text).toBe("Goes to 12 people");
+    expect(other.reasons.find((r) => r.kind === "other_account")!.text).toBe(`from sam.rivera@example.org, not ${SAM}`);
+    expect(other.reasons.find((r) => r.kind === "many")!.text).toBe("12 people");
   });
 
   test("the approval shows everything that goes out: the quoted reply, or the forwarded message and its attachments", async () => {
@@ -197,7 +208,7 @@ describe("what needs the explicit Send", () => {
   test("forwarding to anyone who wasn't on the thread needs the explicit Send, whoever drafted it", async () => {
     await connectGoogle();
     const kit = { name: "Kit Moreno", address: "kit@example.org" };
-    const note = { kind: "outside_thread" as const, key: "outside_thread:kit@example.org", text: "Forwards this thread to Kit Moreno <kit@example.org>, who wasn't on it" };
+    const note = { kind: "outside_thread" as const, key: "outside_thread:kit@example.org", text: "forwards to Kit Moreno <kit@example.org>, who wasn't on the thread" };
     for (const draftedBy of ["you", "claude"] as const) {
       const { action, approval } = draftMail(db, { spaceId: space(), kind: "forward", draftedBy, threadId: lease().id, to: [kit], body: "" });
       expect(action.reasons).toContainEqual(note);
@@ -223,8 +234,12 @@ describe("what needs the explicit Send", () => {
   });
 });
 
-describe("crossovers", () => {
-  test("an address read both ways sends through its preferred source only, and follows a switch", async () => {
+describe("crossovers and Mail.app", () => {
+  // The card's Open in Mail: the user's edits, then a filled-in Mail window he sends from himself.
+  const openInMail = (a: MailAction, over: Partial<{ body: string }> = {}) =>
+    mail.actions.openInMail(a.id, { accountId: a.accountId!, to: a.to, cc: a.cc, subject: a.subject, body: over.body ?? a.body });
+
+  test("an address read both ways goes out through its preferred source only, and follows a switch", async () => {
     await connectGoogle();
     mail.sync.appleOnNow("mail");
     await mail.sync.syncNow();
@@ -237,44 +252,51 @@ describe("crossovers", () => {
     expect(sends()).toHaveLength(1);
     expect(fakes.pimWrites()).toEqual([]);
 
-    // Drafted while Google was preferred, sent after the switch: Mail.app sends it, Gmail doesn't.
+    // Drafted while Google was preferred; after the switch Atrium won't send it, and Gmail never sees it.
     const two = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Via Mail." }).action;
     setPreferred(db, listAccounts(db).find((a) => a.address === SAM && a.source === "apple")!.id);
-    expect((await pressSend(two)).status).toBe("sent");
+    expect(await pressSend(two)).toMatchObject({ status: "failed", error: OPEN_IN_MAIL_COPY });
     expect(sends()).toHaveLength(1);
-    const writes = fakes.pimWrites();
-    expect(writes.map((w) => w.cmd)).toEqual(["mail.send"]);
-    expect(writes[0]!.input).toMatchObject({ account: "acct-gmail", from: SAM, to: [{ name: "", address: "robin@example.net" }], subject: "Re: Lease renewal" });
+    expect(fakes.pimWrites()).toEqual([]);
   });
 
-  test("a reply drafted through Google and sent after a switch to Mail.app still threads", async () => {
+  test("Open in Mail fills in a Mail window, threaded on the message it answers, and never sends", async () => {
+    mail.sync.appleOnNow("mail");
+    await mail.sync.syncNow();
+    const trip = listThreads(db).find((t) => t.subject === "Trip plan")!;
+    const first = threadMessages(db, trip.id)[0]!;
+    const { action, approval } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: trip.id, messageId: first.id, body: "" });
+    expect(action.to.map((p) => p.address)).toEqual(["kit@example.org"]);
+    const opened = await openInMail(action, { body: "9 is good." });
+    expect(opened.status).toBe("opened");
+    expect(fakes.pimWrites()).toEqual([{ cmd: "mail.compose", input: expect.objectContaining({ account: "acct-icloud", from: "sam.rivera@example.org", replyTo: "ap-2", text: expect.stringMatching(/^9 is good\./) }) }]);
+    expect(getApproval(db, approval.id)).toMatchObject({ status: "rejected", note: "Opened in Mail for you to send." });
+    // Nothing was sent, so nothing appears in the thread until Mail's own Sent copy syncs.
+    expect(threadMessages(db, trip.id)).toHaveLength(2);
+  });
+
+  test("a reply drafted through Google and opened after a switch to Mail.app still threads", async () => {
     await connectGoogle();
     mail.sync.appleOnNow("mail");
     await mail.sync.syncNow();
     const first = threadMessages(db, lease().id)[0]!;
     const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, messageId: first.id, body: "Via Mail." });
-    setPreferred(db, listAccounts(db).find((a) => a.address === SAM && a.source === "apple")!.id);
+    const apple = listAccounts(db).find((a) => a.address === SAM && a.source === "apple")!;
+    setPreferred(db, apple.id);
     await mail.sync.syncNow();
-    await pressSend(action);
+    await mail.actions.openInMail(action.id, { accountId: apple.id, to: action.to, cc: [], subject: "", body: "Via Mail." });
     expect(fakes.pimWrites()[0]!.input).toMatchObject({ replyTo: "ap-1" });
   });
 
-  test("Mail.app answers the message it replies to, so Mail sets the threading headers", async () => {
+  test("Mail permission off is the plain Automation copy, and the card stays", async () => {
     mail.sync.appleOnNow("mail");
     await mail.sync.syncNow();
     const trip = listThreads(db).find((t) => t.subject === "Trip plan")!;
-    const first = threadMessages(db, trip.id)[0]!;
-    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: trip.id, messageId: first.id, body: "9 is good." });
-    expect(action.to.map((p) => p.address)).toEqual(["kit@example.org"]);
-    await pressSend(action);
-    expect(fakes.pimWrites()[0]!.input).toMatchObject({ replyTo: "ap-2", text: expect.stringMatching(/^9 is good\./) });
-    // Its copy shows in the thread until Mail's own Sent copy arrives, which replaces it.
-    expect(threadMessages(db, trip.id)).toHaveLength(3);
-    const icloud = listAccounts(db).find((a) => a.address === "sam.rivera@example.org")!;
-    ingestMessages(db, icloud, [msg({ sourceId: "ap-9", messageId: "<real@example.org>", inReplyTo: "<trip-1@example.org>", references: ["<trip-1@example.org>"], subject: "Re: Trip plan", from: { name: "Sam", address: "sam.rivera@example.org" }, to: [{ name: "", address: "kit@example.org" }], date: NOW + 1000 })]);
-    const after = threadMessages(db, trip.id);
-    expect(after).toHaveLength(3);
-    expect(after.at(-1)!.messageId).toBe("<real@example.org>");
+    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: trip.id, body: "Hi" });
+    process.env.FAKE_PIM_MODE = "mail_denied";
+    expect(openInMail(action)).rejects.toThrow(PIM_COPY.automation_denied);
+    await mail.actions.settle();
+    expect(pendingMailActions(db).map((a) => a.id)).toEqual([action.id]);
   });
 });
 
@@ -283,8 +305,9 @@ describe("errors", () => {
     await connectGoogle();
     const google = googleSource(mail.auth);
     // Gmail takes it, then the copy for the thread can't be stored.
-    const breaking = { ...google, send: async (acct: Parameters<typeof google.send>[0], m: Parameters<typeof google.send>[1]) => {
-      const r = await google.send(acct, m);
+    const send = google.send!;
+    const breaking = { ...google, send: async (acct: Parameters<typeof send>[0], m: Parameters<typeof send>[1]) => {
+      const r = await send(acct, m);
       db.exec("DROP TABLE mail_bodies");
       return r;
     } };
@@ -354,26 +377,6 @@ describe("errors", () => {
     expect(failed.error).toContain("connect again in Settings");
   });
 
-  test("Mail permission off is the plain Automation copy", async () => {
-    mail.sync.appleOnNow("mail");
-    await mail.sync.syncNow();
-    const trip = listThreads(db).find((t) => t.subject === "Trip plan")!;
-    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: trip.id, body: "Hi" });
-    process.env.FAKE_PIM_MODE = "mail_denied";
-    expect((await pressSend(action)).error).toBe(PIM_COPY.automation_denied);
-  });
-
-  test("Mail.app holding other people than the card stops the send: nothing went out, and the card comes back", async () => {
-    mail.sync.appleOnNow("mail");
-    await mail.sync.syncNow();
-    const trip = listThreads(db).find((t) => t.subject === "Trip plan")!;
-    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: trip.id, body: "Hi" });
-    process.env.FAKE_PIM_MODE = "mismatch";
-    const failed = await pressSend(action);
-    expect(failed).toMatchObject({ status: "failed", error: PIM_COPY.mismatch });
-    expect(pendingMailActions(db)[0]!.error).toBe(PIM_COPY.mismatch);
-  });
-
   test("a send cut off by a restart comes back as a draft that says to check first, and never resends", async () => {
     await connectGoogle();
     const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
@@ -417,7 +420,7 @@ describe("calendar changes", () => {
     const lunch = draftEvent(db, { spaceId: space(), kind: "event_create", draftedBy: "claude", calendarId: cal, title: "Lunch with Priya", start: NOW + 3 * hour, end: NOW + 4 * hour, location: "Cafe", attendees: [{ name: "Priya", address: "priya@example.org" }] });
     expect(lunch.approval.title).toBe('Create "Lunch with Priya" and invite Priya <priya@example.org>?');
     expect(lunch.action.event!.attendees).toEqual([{ name: "Priya", address: "priya@example.org", added: true }]);
-    expect(lunch.action.reasons).toEqual([{ kind: "first_time", key: "first_time:priya@example.org", text: "First time inviting Priya <priya@example.org>" }]);
+    expect(lunch.action.reasons).toEqual([{ kind: "first_time", key: "first_time:priya@example.org", text: "first time inviting Priya <priya@example.org>" }]);
     await pressSend(lunch.action);
     const posts = fakes.google.writes.filter((w) => w.method === "POST" && w.path.includes("/events"));
     expect(posts.map((p) => p.sendUpdates)).toEqual(["none", "all"]);
@@ -447,12 +450,12 @@ describe("calendar changes", () => {
     replaceEvents(db, cal, [{ sourceId: "abc_20261113T150000Z", icalUid: "abc", recurrenceId: "1794582000000", title: "Weekly sync", start: NOW + 86_400_000, end: NOW + 90_000_000, allDay: false, location: "", attendees: [{ name: "Kit", address: "kit@example.org", status: null }], organizer: SAM, myStatus: "accepted", recurrence: "series:abc" }], NOW, NOW + 2 * 86_400_000);
     const weekly = listEvents(db, NOW, NOW + 2 * 86_400_000).find((e) => e.title === "Weekly sync")!;
     for (const kind of ["event_cancel", "event_move"] as const) {
-      expect(() => draftEvent(db, { spaceId: space(), kind, draftedBy: "claude", eventId: weekly.id, start: NOW })).toThrow("repeating event");
+      expect(() => draftEvent(db, { spaceId: space(), kind, draftedBy: "claude", eventId: weekly.id, start: NOW })).toThrow("Change repeating events in Google Calendar.");
     }
     expect(pendingMailActions(db)).toEqual([]);
   });
 
-  test("RSVP answers through Google and tells the organizer; Calendar.app says it can't", async () => {
+  test("RSVP answers through Google and tells the organizer; a Calendar.app invite is answered in Calendar", async () => {
     await connectGoogle();
     const invite = listEvents(db, NOW - 30 * 86_400_000, NOW + 30 * 86_400_000).find((e) => e.title === "Planning with Kit")!;
     await mail.actions.rsvp(invite.id, "declined", "Out that day");
@@ -467,21 +470,12 @@ describe("calendar changes", () => {
     expect(mail.actions.rsvp(dentist.id, "accepted", "")).rejects.toThrow(NO_RSVP_COPY);
   });
 
-  test("moving a Calendar.app event with guests says its server may tell them, and never promises silence", async () => {
-    const data = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
-    data.events["cal-home"].push({ id: "ae-9|2026-11-09T15:00:00Z", icalUid: "dinner@example.org", recurrenceId: null, title: "Dinner", start: new Date(NOW + 86_400_000).toISOString(), end: new Date(NOW + 90_000_000).toISOString(), allDay: false, location: "", attendees: [{ name: "Kit", email: "kit@example.org", status: "accepted" }], organizer: "sam.rivera@example.org", myStatus: "accepted", recurrence: null });
-    writeFileSync(fakes.pimFile, JSON.stringify(data));
+  test("Calendar.app events are changed in Calendar, not from Atrium", async () => {
     mail.sync.appleOnNow("mail");
     mail.sync.appleOnNow("calendar");
     await mail.sync.syncNow();
-    const dinner = listEvents(db, NOW - 30 * 86_400_000, NOW + 30 * 86_400_000).find((e) => e.title === "Dinner")!;
-    const { action, approval } = draftEvent(db, { spaceId: space(), kind: "event_cancel", draftedBy: "you", eventId: dinner.id, notify: true });
-    expect(action.event!.notify).toBe(false);
-    expect(action.reasons).toContainEqual(expect.objectContaining({ kind: "may_notify" }));
-    expect(approval.detail).toContain("Calendar's server may tell its guests");
-    expect(approval.detail).not.toContain("Guests aren't told.");
-    expect((await pressSend(action)).status).toBe("sent");
-    expect(fakes.pimWrites().map((w) => w.cmd)).toEqual(["cal.delete"]);
+    const dentist = listEvents(db, NOW - 30 * 86_400_000, NOW + 30 * 86_400_000).find((e) => e.title === "Dentist")!;
+    for (const kind of ["event_move", "event_cancel"] as const) expect(() => draftEvent(db, { spaceId: space(), kind, draftedBy: "you", eventId: dentist.id, start: NOW })).toThrow(APPLE_EVENT_COPY);
   });
 
   test("a Calendar.app calendar takes events without guests, and says plainly it can't invite", async () => {

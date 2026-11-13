@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { post, useEngineState } from "../../api";
 import { clock } from "../../format";
 import { DraftCard } from "./DraftCard";
+import { OpenInCalendar } from "./OpenInCalendar";
 import { Rsvp } from "./Rsvp";
 import { addDays, agenda, type EventView, type MailOverview, overlaps, placeDay, startOfDay, startOfWeek, useEvents } from "../../mail";
 
@@ -34,9 +35,11 @@ function OwnActions({ e }: { e: EventView }) {
   );
 }
 
+// Google events are moved, cancelled and answered here; Calendar.app events open in Calendar for that.
 function AgendaRow({ e, clash, own }: { e: EventView; clash: boolean; own: Set<string> }) {
-  const invited = e.myStatus !== null && !!e.organizer && !own.has(e.organizer);
-  const mine = (!e.organizer || own.has(e.organizer)) && !e.recurring;
+  const google = e.calendar.source === "google";
+  const invited = google && e.myStatus !== null && !!e.organizer && !own.has(e.organizer);
+  const mine = google && (!e.organizer || own.has(e.organizer)) && !e.recurring;
   return (
     <div className="item cal-row">
       <span className="cal-dot" style={{ background: e.calendar.color }} title={e.calendar.title} aria-hidden />
@@ -59,6 +62,7 @@ function AgendaRow({ e, clash, own }: { e: EventView; clash: boolean; own: Set<s
       {clash && <span className="tag bad">Overlaps</span>}
       {mine && <OwnActions e={e} />}
       {invited && <Rsvp e={e} />}
+      {!google && <OpenInCalendar eventId={e.id} />}
     </div>
   );
 }

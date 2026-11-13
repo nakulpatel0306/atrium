@@ -132,11 +132,3 @@ func peopleLists(_ value: Any?) -> (names: [String], addresses: [String]) {
   }
   return (names, addresses)
 }
-
-// cal.events ids are "<event id>|<occurrence ISO>"; a write names the same id back.
-func splitEventId(_ id: String) -> (event: String, occurrence: Date?)? {
-  guard let bar = id.lastIndex(of: "|") else { return id.isEmpty ? nil : (id, nil) }
-  let event = String(id[..<bar])
-  if event.isEmpty { return nil }
-  return (event, isoFormatter.date(from: String(id[id.index(after: bar)...])))
-}

@@ -13,8 +13,9 @@ CREATE TABLE ${name} (
   space_id TEXT NOT NULL,
   task_id TEXT,
   kind TEXT NOT NULL CHECK (kind IN ('reply','reply_all','forward','new','event_create','event_move','event_cancel')),
-  -- unsure: the source may have sent it (no answer, or one Atrium couldn't read); the user checks before sending again.
-  status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','unsure','rejected','saving','saved')),
+  -- unsure: Gmail may have sent it (no answer, or one Atrium couldn't read); the user checks before sending again.
+  -- opened: a Mail.app account's message, opened in Mail for the user to send himself.
+  status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','unsure','rejected','saving','saved','opened')),
   drafted_by TEXT NOT NULL CHECK (drafted_by IN ('you','claude')),
   -- The From account row; NULL for calendar changes.
   account_id TEXT,
@@ -162,4 +163,9 @@ CREATE INDEX IF NOT EXISTS cal_events_start ON cal_events(start_at);
 CREATE INDEX IF NOT EXISTS cal_events_uid ON cal_events(ical_uid, recurrence_id);
 ${MAIL_ACTIONS_DDL("IF NOT EXISTS mail_actions")};
 CREATE INDEX IF NOT EXISTS mail_actions_thread ON mail_actions(thread_id);
+-- Gmail threads the user archived from Atrium, hidden from the Inbox until new mail arrives on them.
+CREATE TABLE IF NOT EXISTS mail_archived (
+  thread_id TEXT PRIMARY KEY,
+  archived_at INTEGER NOT NULL
+);
 `;

@@ -4,9 +4,8 @@
 //   {"accounts": [...], "messages": {"<account id>": [...]}, "bodies": {"<message id>": {...}},
 //    "calendars": [...], "events": {"<calendar id>": [...]}}
 // in the shapes src/engine/mail/pim.ts documents. FAKE_PIM_MODE: "ok" (default), "mail_denied", "calendar_denied",
-// "hang", "malformed" (answers {} to everything), "mismatch" (mail.send and mail.draft refuse, as the helper does when
-// Mail holds other people than the card). FAKE_PIM_LOG, if set, gets each call's argv as a JSON line.
-// Write commands (mail.send, mail.draft, cal.create, cal.update, cal.delete) read their JSON from stdin, as the helper
+// "hang", "malformed" (answers {} to everything). FAKE_PIM_LOG, if set, gets each call's argv as a JSON line.
+// Write commands (mail.compose, cal.create) read their JSON from stdin, as the helper
 // does, and append {"cmd", "input"} to FAKE_PIM_WRITES.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -36,7 +35,6 @@ const mailCmd = cmd.startsWith("mail.") || (cmd === "allow" && argv[1] === "mail
 const calCmd = cmd.startsWith("cal.") || (cmd === "allow" && argv[1] === "calendar");
 if (mode === "mail_denied" && mailCmd) fail("automation_denied", "Not authorized to send Apple events to Mail. (-1743)");
 if (mode === "calendar_denied" && calCmd) fail("calendar_denied", "Calendar access denied.");
-if (mode === "mismatch" && (cmd === "mail.send" || cmd === "mail.draft")) fail("mismatch", "Mail didn't hold exactly the card's sender and people.");
 
 switch (cmd) {
   case "status":
@@ -78,11 +76,8 @@ switch (cmd) {
   case "cal.events":
     out({ events: data.events?.[flag("--calendar") ?? ""] ?? [] });
     break;
-  case "mail.send":
-  case "mail.draft":
-  case "cal.create":
-  case "cal.update":
-  case "cal.delete": {
+  case "mail.compose":
+  case "cal.create": {
     const input = JSON.parse(await Bun.stdin.text());
     if (process.env.FAKE_PIM_WRITES) appendFileSync(process.env.FAKE_PIM_WRITES, `${JSON.stringify({ cmd, input })}\n`);
     out(cmd === "cal.create" ? { event: { id: `apple-new-${Date.now()}` } } : { ok: true });

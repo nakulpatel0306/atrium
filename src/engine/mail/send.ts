@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { type Approval, getApproval, isOwnYes, resolveApproval, SAVED_DRAFT_NOTE } from "../approvals";
+import { type Approval, getApproval, isOwnYes, OPENED_IN_MAIL_NOTE, resolveApproval, SAVED_DRAFT_NOTE } from "../approvals";
 import { config } from "../config";
 import { logActivity } from "../events";
 import { hasHiddenText } from "../messaging/rules";
@@ -14,6 +14,7 @@ import {
   mailActionForApproval,
   type MailEdit,
   redraftMail,
+  APPLE_EVENT_COPY,
   setMailStatus,
   updateMailDraft,
   writableCalendars,
@@ -22,7 +23,7 @@ import { cacheBody } from "./body";
 import { safeFileName } from "./files";
 import { inboxSpaceId } from "./space";
 import { newMessageId } from "./mime";
-import { addSentCopy, getAccount, listAccounts, type MailAccount } from "./store";
+import { addSentCopy, getAccount, listAccounts, type MailAccount, setArchived } from "./store";
 import type { MailSync } from "./sync";
 import { type AccountRef, MailProblem, type MailSource, type Outgoing, type Rsvp, type Sent, type SourceAttachment } from "./types";
 
@@ -34,6 +35,8 @@ export const STOPPED_COPY = "Atrium stopped while sending this. Check your Sent 
 export const NOT_STARTED_COPY = "Atrium stopped before sending this, so nothing went out. Press Send again when you're ready.";
 export const SAVE_STOPPED_COPY = "Atrium stopped while saving this to your drafts. Check your drafts before saving it again.";
 export const NOTE_COPY = "Keep the note to 500 characters, with no hidden characters.";
+export const OPEN_IN_MAIL_COPY = "This account sends from Mail. Press Open in Mail, then send it there.";
+export const NO_RSVP_COPY = "Answer Calendar.app invitations in Calendar.";
 
 export const UNSURE_COPY = "This may have gone out. Check your Sent mail or calendar before sending it again.";
 export const NOTHING_SENT_COPY = "Something went wrong before it went out, so nothing was sent. Check the card, then press Send again.";
@@ -41,6 +44,12 @@ export const NOTHING_SENT_COPY = "Something went wrong before it went out, so no
 const ref = (a: MailAccount): AccountRef => ({ id: a.id, address: a.address, ref: a.ref });
 // For the engine log: what kind of error, never its message, which can carry a file or attachment name.
 const errorKind = (e: unknown) => (e instanceof Error ? `${e.name}${(e as { code?: unknown }).code ? ` ${String((e as { code?: unknown }).code)}` : ""}` : typeof e);
+
+// A write the source doesn't offer is a plain refusal, made before anything is sent.
+function need<F>(fn: F | undefined): F {
+  if (!fn) throw new BadMail("That account's source can't do this.");
+  return fn;
+}
 
 // An error from the source call itself, after which the message may have gone out.
 class Delivery extends Error {
@@ -117,30 +126,42 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
     return { threadKey: account.source === "google" ? same.thread_key : null, replyTo: account.source === "apple" ? same.source_id : null };
   }
 
-  // Hands the email to the source. Returns once the source has taken it, with what to record afterwards; anything
-  // the source call itself throws comes back wrapped in Delivery, since by then it may have gone out.
-  async function sendEmail(a: MailAction): Promise<{ line: string; record(): void }> {
-    const account = sendingAccount(a.accountId);
-    const source = sourceOf(account.source);
+  // The email exactly as the card holds it, with the threading the sending row can use.
+  function outgoing(a: MailAction, account: MailAccount, files: { name: string; path: string }[]): Outgoing {
     const { threadKey, replyTo } = threading(a, account);
+    return {
+      from: { name: account.name, address: account.address },
+      to: people(a.to),
+      cc: people(a.cc),
+      subject: a.subject,
+      text: a.quoted ? `${a.body}\n\n${a.quoted}` : a.body,
+      messageId: newMessageId(account.address),
+      inReplyTo: a.inReplyTo,
+      references: a.references,
+      threadKey,
+      replyToSourceId: replyTo,
+      attachments: files,
+    };
+  }
+
+  // The Google account an email goes out through: Atrium sends only through Google. A Mail.app account's card opens
+  // the message in Mail instead.
+  function googleAccount(a: MailAction): MailAccount {
+    const account = sendingAccount(a.accountId);
+    if (account.source !== "google") throw new BadMail(OPEN_IN_MAIL_COPY);
+    return account;
+  }
+
+  // Hands the email to Gmail. Returns once Gmail has taken it, with what to record afterwards; anything the call itself
+  // throws comes back wrapped in Delivery, since by then it may have gone out.
+  async function sendEmail(a: MailAction): Promise<{ line: string; record(): void }> {
+    const account = googleAccount(a);
     const { dir, files } = await forwardedFiles(a);
     try {
-      const out: Outgoing = {
-        from: { name: account.name, address: account.address },
-        to: people(a.to),
-        cc: people(a.cc),
-        subject: a.subject,
-        text: a.quoted ? `${a.body}\n\n${a.quoted}` : a.body,
-        messageId: newMessageId(account.address),
-        inReplyTo: a.inReplyTo,
-        references: a.references,
-        threadKey,
-        replyToSourceId: replyTo,
-        attachments: files,
-      };
+      const out = outgoing(a, account, files);
       let sent: Sent;
       try {
-        sent = await source.send(ref(account), out);
+        sent = await need(deps.google.send)(ref(account), out);
       } catch (e) {
         throw new Delivery(e);
       }
@@ -149,7 +170,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
         const copy = addSentCopy(db, account, a.id, {
           sourceId: sent.sourceId ?? `atrium-sent:${a.id}`,
           threadKey: sent.threadKey ?? undefined,
-          messageId: account.source === "google" ? out.messageId : null,
+          messageId: out.messageId,
           inReplyTo: out.inReplyTo,
           references: out.references,
           subject: out.subject,
@@ -177,6 +198,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
     const holder = cal.account_id ? getAccount(db, cal.account_id) : null;
     const account = holder ? ref(holder) : null;
     const source = sourceOf(cal.source);
+    if (a.kind !== "event_create" && cal.source !== "google") throw new BadMail(APPLE_EVENT_COPY);
     const deliver = async (fn: () => Promise<unknown>) => {
       try {
         await fn();
@@ -192,10 +214,10 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
     if (!stored) throw new MailProblem("other", "That event isn't in the calendar anymore. Sync, then try again.");
     const told = e.notify ? " and told its guests" : "";
     if (a.kind === "event_move") {
-      await deliver(() => source.moveEvent(account, cal.source_id, stored.source_id, e.start, e.end, e.notify));
+      await deliver(() => need(source.moveEvent)(account, cal.source_id, stored.source_id, e.start, e.end, e.notify));
       return { line: `Moved "${e.title}"${told}.`, record: () => void db.query("UPDATE cal_events SET start_at = ?, end_at = ? WHERE id = ?").run(e.start, e.end, e.eventId) };
     }
-    await deliver(() => source.cancelEvent(account, cal.source_id, stored.source_id, e.notify));
+    await deliver(() => need(source.cancelEvent)(account, cal.source_id, stored.source_id, e.notify));
     return { line: `Cancelled "${e.title}"${told}.`, record: () => void db.query("DELETE FROM cal_events WHERE id = ?").run(e.eventId) };
   }
 
@@ -276,42 +298,58 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
 
     send,
 
-    // "Save as draft": the user's edits, then the same message into Gmail Drafts or Mail.app's Drafts. Nothing is
-    // sent. The card closes once it's saved; if the source can't save it, it stays a draft with the reason.
+    // "Save as draft": the user's edits, then the same message into Gmail Drafts. Nothing is sent. The card closes once
+    // it's saved; if Gmail can't save it, it stays a draft with the reason.
     saveDraft(id: string, edit: MailEdit): Promise<MailAction> {
       return track(`save:${id}`, async () => {
-        updateMailDraft(db, id, edit);
+        const edited = updateMailDraft(db, id, edit);
+        const account = googleAccount(edited);
         const a = setMailStatus(db, id, "saving");
         try {
-          const account = sendingAccount(a.accountId);
           const { dir, files } = await forwardedFiles(a);
           try {
-            await sourceOf(account.source).saveDraft(ref(account), {
-              from: { name: account.name, address: account.address },
-              to: people(a.to),
-              cc: people(a.cc),
-              subject: a.subject,
-              text: a.quoted ? `${a.body}\n\n${a.quoted}` : a.body,
-              messageId: newMessageId(account.address),
-              inReplyTo: a.inReplyTo,
-              references: a.references,
-              threadKey: account.source === "google" && account.id === a.threadAccountId ? a.gmailThreadId : null,
-              replyToSourceId: null,
-              attachments: files,
-            });
+            await need(deps.google.saveDraft)(ref(account), outgoing(a, account, files));
           } finally {
             if (dir) rmSync(dir, { recursive: true, force: true });
           }
           const saved = setMailStatus(db, id, "saved");
           resolveApproval(db, a.approvalId, "reject", SAVED_DRAFT_NOTE);
-          const where = account.source === "google" ? "Gmail Drafts" : "Mail's Drafts";
-          logActivity(db, a.spaceId, "atrium", `Saved ${what(a)} to ${where}.`, { taskId: a.taskId });
-          finishTask(a.taskId, "couldnt", `Saved to ${where} for you to finish. It isn't sent.`);
+          logActivity(db, a.spaceId, "atrium", `Saved ${what(a)} to Gmail Drafts.`, { taskId: a.taskId });
+          finishTask(a.taskId, "couldnt", "Saved to Gmail Drafts for you to finish. It isn't sent.");
           return saved;
         } catch (e) {
           setMailStatus(db, id, "draft", { error: null });
           throw e instanceof MailProblem || e instanceof BadMail ? e : new MailProblem("other", "Atrium couldn't save it to your drafts. Try again.");
         }
+      });
+    },
+
+    // "Open in Mail", the card's button for a Mail.app account: the message opens filled in, in a visible Mail window,
+    // and the user sends it from there. Atrium never sends through Mail.app, so the card closes as opened, not sent.
+    // The forwarded files stay where Mail can attach them until the engine next starts.
+    openInMail(id: string, edit: MailEdit): Promise<MailAction> {
+      return track(`open:${id}`, async () => {
+        const a = updateMailDraft(db, id, edit);
+        const account = sendingAccount(a.accountId);
+        if (account.source !== "apple") throw new BadMail("This account sends from the card. Press Send.");
+        const { files } = await forwardedFiles(a);
+        await need(deps.apple.compose)(ref(account), outgoing(a, account, files));
+        const opened = setMailStatus(db, id, "opened");
+        resolveApproval(db, a.approvalId, "reject", OPENED_IN_MAIL_NOTE);
+        logActivity(db, a.spaceId, "atrium", `Opened ${what(a)} in Mail for you to send.`, { taskId: a.taskId });
+        finishTask(a.taskId, "couldnt", "Opened in Mail. Send it from there.");
+        return opened;
+      });
+    },
+
+    // Gmail archive, or with `undo` back to the inbox. Atrium hides the thread at once; new mail on it brings it back.
+    archive(threadId: string, undo: boolean): Promise<void> {
+      return track(`archive:${threadId}`, async () => {
+        const t = db.query("SELECT t.thread_key, a.* FROM mail_threads t JOIN mail_accounts a ON a.id = t.account_id WHERE t.id = ?").get(threadId) as { thread_key: string; id: string; address: string; source: string; source_ref: string | null } | null;
+        if (!t) throw new BadMail("That thread isn't in the Inbox anymore.");
+        if (t.source !== "google") throw new BadMail("Archive works for Google accounts. Archive this one in Mail.");
+        await need(deps.google.archive)({ id: t.id, address: t.address, ref: t.source_ref }, t.thread_key, undo);
+        setArchived(db, threadId, !undo, now());
       });
     },
 
@@ -324,7 +362,9 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
           | null;
         if (!e) throw new BadMail("That event isn't in the calendar anymore. Sync, then try again.");
         const holder = e.account_id ? getAccount(db, e.account_id) : null;
-        await sourceOf(e.source).rsvp(holder ? ref(holder) : null, e.cal_source_id, e.source_id, answer, note);
+        const rsvp = sourceOf(e.source).rsvp;
+        if (!rsvp) throw new BadMail(NO_RSVP_COPY);
+        await rsvp(holder ? ref(holder) : null, e.cal_source_id, e.source_id, answer, note);
         db.query("UPDATE cal_events SET my_status = ? WHERE id = ?").run(answer, eventId);
         logActivity(db, inboxSpaceId(db), "you", `Answered "${e.title}": ${ANSWER_WORD[answer]}.`);
       });

@@ -1,7 +1,8 @@
 // The one shape every mail and calendar source is read through. Google (Gmail + Google Calendar, per connected
 // account) and Apple (Mail.app + Calendar.app, through the atrium-pim helper) each implement it; sync.ts never
-// knows which it's talking to. The write half (send, saveDraft, the calendar changes, rsvp) is on this same type, and
-// send.ts reaches it only through the account's preferred source, so an address read two ways sends once.
+// knows which it's talking to. The write half is on this same type, and send.ts reaches it only through the account's
+// preferred source, so an address read two ways sends once. Google sends; Mail.app only opens a filled-in message for
+// the user to send from Mail himself, since nothing Atrium does there could be checked.
 
 export type Person = { name: string; address: string };
 export type SourceKind = "google" | "apple";
@@ -89,14 +90,19 @@ export type MailSource = {
   events(account: AccountRef | null, calendar: SourceCalendar, from: number, to: number): Promise<SourceEvent[]>;
 
   // The write half. Each is called once per user action and never retried on its own: a call that may have reached
-  // the source throws MailProblem "unsure" rather than risk sending twice.
-  send(account: AccountRef, mail: Outgoing): Promise<Sent>;
-  saveDraft(account: AccountRef, mail: Outgoing): Promise<void>;
-  // notify: whether guests hear about it (Google's sendUpdates). Returns the new event's source id.
+  // the source throws MailProblem "unsure" rather than risk sending twice. A source has only the ones it can do.
+  // Google: send, keep drafts, change and answer events, archive.
+  send?(account: AccountRef, mail: Outgoing): Promise<Sent>;
+  saveDraft?(account: AccountRef, mail: Outgoing): Promise<void>;
+  moveEvent?(account: AccountRef | null, calendarId: string, eventId: string, start: number, end: number, notify: boolean): Promise<void>;
+  cancelEvent?(account: AccountRef | null, calendarId: string, eventId: string, notify: boolean): Promise<void>;
+  rsvp?(account: AccountRef | null, calendarId: string, eventId: string, answer: Rsvp, note: string): Promise<void>;
+  // Takes the thread out of the inbox, or with `undo` puts it back.
+  archive?(account: AccountRef, threadKey: string, undo: boolean): Promise<void>;
+  // Mail.app: opens the message in a visible compose window; the user presses Send in Mail.
+  compose?(account: AccountRef, mail: Outgoing): Promise<void>;
+  // Both. notify: whether guests hear about it (Google's sendUpdates). Returns the new event's source id.
   createEvent(account: AccountRef | null, calendarId: string, event: OutgoingEvent, notify: boolean): Promise<{ sourceId: string }>;
-  moveEvent(account: AccountRef | null, calendarId: string, eventId: string, start: number, end: number, notify: boolean): Promise<void>;
-  cancelEvent(account: AccountRef | null, calendarId: string, eventId: string, notify: boolean): Promise<void>;
-  rsvp(account: AccountRef | null, calendarId: string, eventId: string, answer: Rsvp, note: string): Promise<void>;
 };
 
 // A source that couldn't do what was asked, in words for the user. kind lets the caller mark the account

@@ -285,8 +285,9 @@ function migrate(db: Database): boolean {
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
   db.exec(MAIL_SCHEMA);
-  // A draft whose send may have gone out has its own status, so a branch database from before it gains it.
-  rebuildIfMissing(db, "mail_actions", "'unsure'", MAIL_ACTIONS_DDL);
+  // A send that may have gone out, and a message opened in Mail, have their own statuses; a branch database from before
+  // them gains both.
+  rebuildIfMissing(db, "mail_actions", "'opened'", MAIL_ACTIONS_DDL);
   db.exec("CREATE INDEX IF NOT EXISTS mail_actions_thread ON mail_actions(thread_id)");
   migrateWatchlists(db);
   // Ask Claude answers (about a symbol, or about money) are kept as write-ups of their own kinds.

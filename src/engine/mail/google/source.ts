@@ -253,6 +253,10 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
       await call(account, gmail("/drafts"), { method: "POST", body: { message: { raw: raw(m), ...(m.threadKey ? { threadId: m.threadKey } : {}) } } });
     },
 
+    async archive(account, threadKey, undo) {
+      await call(account, gmail(`/threads/${encodeURIComponent(threadKey)}/modify`), { method: "POST", body: undo ? { addLabelIds: ["INBOX"] } : { removeLabelIds: ["INBOX"] } });
+    },
+
     async createEvent(account, calendarId, e, notify) {
       const r = await call<{ id?: string }>(need(account), calEvent(calendarId, undefined, updates(notify)), { method: "POST", body: { summary: e.title, location: e.location || undefined, ...gTimes(e.start, e.end, e.allDay), attendees: e.attendees.map((p) => ({ email: p.address, ...(p.name ? { displayName: p.name } : {}) })) } });
       return { sourceId: r?.id ?? "" };

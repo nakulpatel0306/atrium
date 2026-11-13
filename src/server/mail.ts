@@ -28,6 +28,7 @@ import { MailProblem, type Person } from "../engine/mail/types";
 import { AlreadyResolved, resolveApproval } from "../engine/approvals";
 import { isEvent, type MailKind } from "../engine/mail/compose";
 import { BadMail, draftEvent, draftMail, type EventEdit, getMailAction, type MailEdit, updateEventDraft, updateMailDraft } from "../engine/mail/drafts";
+import { OPEN_IN_MAIL_COPY } from "../engine/mail/send";
 import { ACCOUNT_COLORS } from "../engine/mail/colors";
 import { KeychainError } from "../engine/markets/keychain";
 import { HttpError, json, readBody } from "./http";
@@ -71,6 +72,12 @@ const plain = async <T>(fn: () => Promise<T>): Promise<T> => {
 
 const MAIL_KINDS: MailKind[] = ["reply", "reply_all", "forward", "new"];
 
+// Whether the From on a card is an address whose preferred source is Mail.app, which never sends from Atrium.
+function sendsThroughMail(db: Database, accountId: string | null): boolean {
+  const picked = accountId ? getAccount(db, accountId) : null;
+  return !!picked && listAccounts(db).some((a) => a.address === picked.address && a.preferred && a.source === "apple");
+}
+
 const optString = (v: unknown, field: string): string | null => {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string") throw new HttpError(400, `${field} must be text.`);
@@ -109,6 +116,8 @@ const eventEdit = (b: Record<string, unknown>): EventEdit => ({
 });
 
 const nextHour = (now: number) => Math.ceil(now / 3600_000) * 3600_000;
+
+const run = async (argv: string[]) => (await Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "ignore", env: { ...process.env } }).exited) === 0;
 
 function guardedMail<T>(fn: () => T): T {
   try {
@@ -243,6 +252,8 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     if (!action) throw new HttpError(404, "That draft isn't there anymore.");
     const b = await readBody(req);
     if (!Array.isArray(b.seen) || b.seen.some((x) => typeof x !== "string")) throw new HttpError(400, "seen must list the keys of the notes the card showed.");
+    // Only Google sends from the card; a Mail.app account's card opens the message in Mail instead.
+    if (!isEvent(action.kind) && sendsThroughMail(db, typeof b.accountId === "string" ? b.accountId : action.accountId)) throw new HttpError(409, OPEN_IN_MAIL_COPY);
     const seen = new Set(b.seen as string[]);
     // His edits and his yes land together, so what goes out is what he saw when he pressed Send. A note the card
     // didn't show yet (his edit added someone new) keeps the edit but not the yes: he sees the note, then sends.
@@ -266,6 +277,32 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     const b = await readBody(req);
     const edit = mailEdit(b);
     return json(await plain(() => guardedMailAsync(() => mail.actions.saveDraft(action.id, edit))));
+  }
+
+  const openMailM = hit("POST", /^\/api\/mail\/actions\/([^/]+)\/open-in-mail$/);
+  if (openMailM) {
+    const action = getMailAction(db, openMailM[1]!);
+    if (!action || isEvent(action.kind)) throw new HttpError(404, "That email draft isn't there anymore.");
+    const edit = mailEdit(await readBody(req));
+    return json(await plain(() => guardedMailAsync(() => mail.actions.openInMail(action.id, edit))));
+  }
+
+  const archiveM = hit("POST", /^\/api\/mail\/threads\/([^/]+)\/archive$/);
+  if (archiveM) {
+    const b = await readBody(req);
+    await plain(() => guardedMailAsync(() => mail.actions.archive(archiveM[1]!, b.undo === true)));
+    return json({ ok: true });
+  }
+
+  // A Calendar.app event opens in Calendar, where the user changes or answers it himself.
+  const calOpenM = hit("POST", /^\/api\/mail\/events\/([^/]+)\/open-in-calendar$/);
+  if (calOpenM) {
+    const e = db.query("SELECT e.source_id, c.source FROM cal_events e JOIN cal_calendars c ON c.id = e.calendar_id WHERE e.id = ?").get(calOpenM[1]!) as { source_id: string; source: string } | null;
+    if (!e || e.source !== "apple") throw new HttpError(404, "That Calendar.app event isn't in the calendar anymore.");
+    const id = e.source_id.split("|")[0]!;
+    const opened = await run([config().openBin, `ical://ekevent/${encodeURIComponent(id)}?method=show&options=more`]);
+    if (!opened && !(await run([config().openBin, "-b", "com.apple.iCal"]))) throw new HttpError(502, "Atrium couldn't open Calendar. Open it yourself to find the event.");
+    return json({ ok: true });
   }
 
   const rsvpM = hit("POST", /^\/api\/mail\/events\/([^/]+)\/rsvp$/);

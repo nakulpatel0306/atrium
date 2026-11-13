@@ -45,8 +45,7 @@ export async function appleAccounts(): Promise<SourceAccount[]> {
 }
 
 const WRITE_TIMEOUT_MS = 120_000;
-export const NO_GUESTS_COPY = "Calendar.app doesn't let other apps invite people or tell guests about changes. Pick a Google calendar, or do this in Calendar.";
-export const NO_RSVP_COPY = "Calendar.app doesn't let other apps answer invitations. Answer it in Calendar, or read this account through Google in Settings › Accounts.";
+export const NO_GUESTS_COPY = "Calendar.app doesn't let other apps invite people. Pick a Google calendar, or do this in Calendar.";
 
 // A write command's answer: {"ok": true}, or the shape the caller asked for.
 async function write<T = { ok?: unknown }>(cmd: string, input: unknown, check: (r: T) => boolean = (r) => (r as { ok?: unknown })?.ok === true): Promise<T> {
@@ -118,14 +117,9 @@ export function appleSource(): MailSource {
       return calendars.map((c) => ({ sourceId: c.id, title: c.title, color: c.color, writable: c.writable, accountAddress: c.account }));
     },
 
-    async send(account, m) {
-      await write("mail.send", mailInput(account.ref, m));
-      // Mail.app makes its own Message-ID and doesn't say which; the next sync reads the real copy from Sent.
-      return { sourceId: null, threadKey: null };
-    },
-
-    async saveDraft(account, m) {
-      await write("mail.draft", mailInput(account.ref, m));
+    // A visible compose window, filled in; the user checks it and presses Send in Mail.
+    async compose(account, m) {
+      await write("mail.compose", mailInput(account.ref, m));
     },
 
     async createEvent(_account, calendarId, e) {
@@ -136,20 +130,6 @@ export function appleSource(): MailSource {
         (x) => typeof x?.event?.id === "string",
       );
       return { sourceId: r.event!.id as string };
-    },
-
-    async moveEvent(_account, _calendarId, eventId, start, end, notify) {
-      if (notify) throw new MailProblem("unsupported", NO_GUESTS_COPY);
-      await write("cal.update", { id: eventId, start: new Date(start).toISOString(), end: new Date(end).toISOString() });
-    },
-
-    async cancelEvent(_account, _calendarId, eventId, notify) {
-      if (notify) throw new MailProblem("unsupported", NO_GUESTS_COPY);
-      await write("cal.delete", { id: eventId });
-    },
-
-    async rsvp() {
-      throw new MailProblem("unsupported", NO_RSVP_COPY);
     },
 
     async events(_account, calendar, from, to) {

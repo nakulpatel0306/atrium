@@ -4,7 +4,8 @@ import type { MailKind } from "../../../engine/mail/compose";
 import { post, useEngineState } from "../../api";
 import { announce } from "../../live";
 import { DraftCard } from "./DraftCard";
-import type { MailActionView } from "./MailCard";
+import type { MailActionView } from "./DraftShell";
+import { OpenInCalendar } from "./OpenInCalendar";
 import { Rsvp } from "./Rsvp";
 import { absolute, bytes } from "../../format";
 import { type MessageView, personName, splitQuoted, useThread } from "../../mail";
@@ -156,7 +157,7 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
           <span className="faint">
             Invitation: {invite.title} · {new Date(invite.start).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
           </span>
-          <Rsvp e={invite} />
+          {invite.calendar.source === "google" ? <Rsvp e={invite} /> : <OpenInCalendar eventId={invite.id} />}
         </div>
       )}
       {(problem || retryError) && !loading && (

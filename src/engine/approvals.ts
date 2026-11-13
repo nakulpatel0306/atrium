@@ -252,6 +252,8 @@ export function resolveApproval(
 export const SEPARATELY_NOTE = "Sending one text to each person instead.";
 // The note an email's approval closes with when Nakul saves it to his drafts instead of sending it.
 export const SAVED_DRAFT_NOTE = "Saved to drafts instead of sending.";
+// And when he opens it in Mail.app to send from there.
+export const OPENED_IN_MAIL_NOTE = "Opened in Mail for you to send.";
 
 // Accepting a result the agent said it didn't finish is recorded as exactly that.
 function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
@@ -261,6 +263,7 @@ function decisionLine(db: Database, a: Approval, decision: "approve" | "reject")
     const what = a.title.replace(/^Send an? /, "").replace(/\?$/, "");
     if (decision === "reject" && a.note === SEPARATELY_NOTE) return `Chose to send separately: ${what}`;
     if (decision === "reject" && a.note === SAVED_DRAFT_NOTE) return `Saved to drafts: ${what}`;
+    if (decision === "reject" && a.note === OPENED_IN_MAIL_NOTE) return `Opened in Mail: ${what}`;
     if (!send) return decision === "approve" ? `Approved: ${what}` : `Chose not to: ${what}`;
     return decision === "approve" ? `Pressed Send: ${what}` : `Chose not to send: ${what}`;
   }

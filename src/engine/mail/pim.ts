@@ -35,25 +35,19 @@ import { MailProblem, type MailProblemKind } from "./types";
 //         "organizer": string|null, "myStatus": "accepted"|"declined"|"tentative"|"needs_action"|null, "recurrence": string|null}]}
 //
 // The write commands read one JSON document on stdin, never argv, so no address or word of the email shows in the
-// process list. Each runs once per user action; the engine never retries one on its own.
+// process list. Each runs once per user action; the engine never retries one on its own. Atrium never sends through
+// Mail.app: it can't check what Mail would do, so the user sends from Mail's own window.
 //
-//   atrium-pim mail.send     stdin {"account": string, "from": string, "to": [{"name", "address"}], "cc": [...],
+//   atrium-pim mail.compose  stdin {"account": string, "from": string, "to": [{"name", "address"}], "cc": [...],
 //                                  "subject": string, "text": string, "replyTo": id|null, "attachments": [path]}
-//     → {"ok": true}  Sends through Mail.app from that account. With replyTo (an id from mail.messages) it answers that
-//     message, so Mail sets In-Reply-To and References itself; the recipients are then replaced by exactly these.
-//     The sender is the account's own "Full Name <from>" entry; a from the account doesn't list fails with kind
-//     "mismatch", as does Mail holding any sender or recipient other than these when read back before sending.
-//   atrium-pim mail.draft    stdin as mail.send
-//     → {"ok": true}  Saves the same message to that account's Drafts instead of sending it.
+//     → {"ok": true}  Opens a visible, filled-in message in Mail from that account, and nothing more: the user checks
+//     it and presses Send in Mail. With replyTo (an id from mail.messages) it answers that message, so Mail sets
+//     In-Reply-To and References itself.
 //   atrium-pim cal.create    stdin {"calendar": string, "title": string, "start": ISO, "end": ISO, "allDay": bool, "location": string}
 //     → {"event": {"id": string}}  No guests: EventKit can't invite people for another app.
-//   atrium-pim cal.update    stdin {"id": string, "start": ISO, "end": ISO}
-//     → {"ok": true}  Moves that one occurrence (id as cal.events gives it).
-//   atrium-pim cal.delete    stdin {"id": string}
-//     → {"ok": true}  Removes that one occurrence.
-//   There is no cal.rsvp: EventKit can't answer an invitation for another app. The engine says so instead.
+//   Nothing changes or answers existing Calendar.app events: Atrium opens Calendar for that instead.
 //
-// Failure: a non-zero exit and {"error": {"kind": "automation_denied"|"calendar_denied"|"not_running"|"bad_args"|"not_found"|"mismatch"|"other", "message": string}}.
+// Failure: a non-zero exit and {"error": {"kind": "automation_denied"|"calendar_denied"|"not_running"|"bad_args"|"other", "message": string}}.
 
 export const PIM_COPY = {
   not_installed: "Atrium's Mail and Calendar helper isn't installed. Run atrium app install in Terminal, then try again.",
@@ -65,12 +59,10 @@ export const PIM_COPY = {
   timeout: "Mail or Calendar didn't answer in time. If macOS is asking for permission, answer that dialog, then press Sync.",
   not_running: "Mail isn't open, so Atrium couldn't read it. Open Mail, then press Sync.",
   other: "Mail or Calendar didn't answer, and Atrium couldn't tell why. Check that both open normally, then press Sync.",
-  not_found: "Mail or Calendar couldn't find that message or event anymore. Sync, then try again.",
-  mismatch: "Mail didn't take exactly the sender and people on the card, so nothing was sent. Check that this address is set up as an account in Mail, then try again.",
 } as const;
 
 // A write that timed out may still have gone through.
-export const PIM_UNSURE_COPY = "This may have gone out: Mail or Calendar didn't answer in time. Check Mail's Sent mailbox or Calendar before sending it again.";
+export const PIM_UNSURE_COPY = "Mail or Calendar didn't answer in time, so this may or may not have gone through. Check Mail or Calendar before trying again.";
 
 const KINDS: Record<string, MailProblemKind> = { automation_denied: "automation_denied", calendar_denied: "calendar_denied", not_running: "other" };
 
