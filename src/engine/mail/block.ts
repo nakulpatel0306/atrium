@@ -39,9 +39,11 @@ function peopleOf(v: unknown): Person[] | null {
 // "2026-11-13T12:00" is local time, as the agent was shown; a value with a zone keeps it.
 const timeOf = (v: unknown): number => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? Date.parse(v) : NaN);
 
+// The block must close the answer, as the prompt asks: one echoed from an email with more text after it isn't the
+// agent's own request.
 function lastBlock(text: string, fence: RegExp): { obj: Record<string, unknown>; body: string } | null {
   const last = [...text.matchAll(fence)].at(-1);
-  if (!last) return null;
+  if (!last || text.slice(last.index! + last[0].length).trim()) return null;
   try {
     const obj = JSON.parse(last[1]!) as unknown;
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
