@@ -536,22 +536,19 @@ test("an older database without attachments gains the table, and its tasks read 
   t.cleanup();
 });
 
-test("a drafts table from before the unsure and opened statuses gains them and keeps its rows", () => {
+test("mail messages from before the sent flag and invitation UID gain both and keep their rows", () => {
   const t = tempHome();
   const path = join(t.home, "atrium.db");
   openDb(path).close();
   const old = new Database(path);
-  const sql = (old.query("SELECT sql FROM sqlite_master WHERE name = 'mail_actions'").get() as { sql: string }).sql;
-  old.exec("DROP TABLE mail_actions");
-  old.exec(sql.replace("'failed','unsure',", "'failed',").replace(",'opened'", ""));
-  old.exec("INSERT INTO approvals (id, kind, title, detail, created_at) VALUES ('apr_1', 'question', 'Send an email?', '', 1)");
-  old.exec("INSERT INTO mail_actions (id, approval_id, space_id, kind, status, drafted_by, created_at, updated_at) VALUES ('mla_1', 'apr_1', 'spc_1', 'new', 'draft', 'you', 1, 1)");
-  expect(() => old.exec("UPDATE mail_actions SET status = 'unsure'")).toThrow();
+  old.exec("ALTER TABLE mail_messages DROP COLUMN sent");
+  old.exec("ALTER TABLE mail_messages DROP COLUMN ical_uid");
+  old.exec("INSERT INTO mail_accounts (id, address, source, preferred, color, created_at) VALUES ('mac_1', 'sam@example.com', 'google', 1, '#5e9fe0', 1)");
+  old.exec("INSERT INTO mail_threads (id, account_id, thread_key, last_at) VALUES ('mth_1', 'mac_1', 't', 1)");
+  old.exec("INSERT INTO mail_messages (id, thread_id, account_id, msg_key, source_id, date) VALUES ('msg_1', 'mth_1', 'mac_1', 'k', 's', 1)");
   old.close();
   const db = openDb(path);
-  db.exec("UPDATE mail_actions SET status = 'unsure' WHERE id = 'mla_1'");
-  expect(db.query("SELECT id, status FROM mail_actions").all()).toEqual([{ id: "mla_1", status: "unsure" }]);
-  db.exec("UPDATE mail_actions SET status = 'opened' WHERE id = 'mla_1'");
+  expect(db.query("SELECT id, sent, ical_uid FROM mail_messages").all()).toEqual([{ id: "msg_1", sent: 0, ical_uid: null }]);
   db.close();
   t.cleanup();
 });

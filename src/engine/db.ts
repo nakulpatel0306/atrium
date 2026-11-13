@@ -6,7 +6,7 @@ import { config } from "./config";
 import { applyProjectsRoot, migrateProjectsRoot } from "./profile";
 import { migrateWatchlists } from "./markets/lists";
 import { MARKETS_SCHEMA } from "./markets/schema";
-import { MAIL_ACTIONS_DDL, MAIL_SCHEMA } from "./mail/schema";
+import { MAIL_SCHEMA } from "./mail/schema";
 import { remaskMoney } from "./money/remask";
 import { reflowMoney } from "./money/flows";
 import { ALWAYS_ASK } from "./approvals";
@@ -285,10 +285,9 @@ function migrate(db: Database): boolean {
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
   db.exec(MAIL_SCHEMA);
-  // A send that may have gone out, and a message opened in Mail, have their own statuses; a branch database from before
-  // them gains both.
-  rebuildIfMissing(db, "mail_actions", "'opened'", MAIL_ACTIONS_DDL);
-  db.exec("CREATE INDEX IF NOT EXISTS mail_actions_thread ON mail_actions(thread_id)");
+  // Whether the source filed a message as sent, and the invitation it carries, for installs from before them.
+  if (!has("mail_messages", "sent")) db.exec("ALTER TABLE mail_messages ADD COLUMN sent INTEGER NOT NULL DEFAULT 0");
+  if (!has("mail_messages", "ical_uid")) db.exec("ALTER TABLE mail_messages ADD COLUMN ical_uid TEXT");
   migrateWatchlists(db);
   // Ask Claude answers (about a symbol, or about money) are kept as write-ups of their own kinds.
   rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
