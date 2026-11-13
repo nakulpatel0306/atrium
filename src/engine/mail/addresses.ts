@@ -7,7 +7,7 @@ export const isAddress = (a: string): boolean => /^[^\s@<>",;]+@[^\s@<>",;]+\.[^
 
 // RFC 2047 encoded words ("=?UTF-8?Q?Ren=C3=A9?=", "=?ISO-8859-1?B?…?="), as raw headers from Mail.app carry them.
 // Whitespace between two encoded words is dropped, as the RFC says; a charset the runtime can't decode stays as is.
-export function decodeWords(text: string): string {
+export function decodeWords(text: string, clean: (decoded: string) => string = (d) => d): string {
   return text
     .replace(/(=\?[^?\s]+\?[bBqQ]\?[^?\s]*\?=)\s+(?==\?)/g, "$1")
     .replace(/=\?([^?\s]+)\?([bBqQ])\?([^?\s]*)\?=/g, (whole, charset: string, enc: string, data: string) => {
@@ -16,7 +16,7 @@ export function decodeWords(text: string): string {
           enc.toUpperCase() === "B"
             ? Buffer.from(data, "base64")
             : Buffer.from(data.replace(/_/g, " ").replace(/=([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16))), "latin1");
-        return new TextDecoder(charset.split("*")[0]!).decode(bytes);
+        return clean(new TextDecoder(charset.split("*")[0]!).decode(bytes));
       } catch {
         return whole;
       }
@@ -35,10 +35,22 @@ function parseOne(raw: string): Person | null {
   return isAddress(s) ? { name: "", address: normalizeAddress(s) } : { name: s, address: "" };
 }
 
-// A header's address list, split on commas outside quotes and angle brackets.
+// Split on commas outside quotes and angle brackets.
+// A header's people. The raw header is split and each address read before anything is decoded, and only display
+// names are decoded: an encoded word can't add a person or change an address by decoding to "<…>" or a comma.
 export function parseAddressList(raw: string | null | undefined): Person[] {
-  if (!raw) return [];
-  const header = decodeWords(raw);
+  return splitAddresses(raw).map((p) => ({ ...p, name: displayText(p.name) }));
+}
+
+// A display name with its encoded words decoded, minus any address syntax the decoding itself produced. Quotes and
+// commas the sender wrote in plain text ("Vale, Robin") stay.
+const displayText = (name: string): string =>
+  decodeWords(name, (d) => d.replace(/[<>,"]/g, ""))
+    .replace(/\s+/g, " ")
+    .trim();
+
+function splitAddresses(header: string | null | undefined): Person[] {
+  if (!header) return [];
   const out: Person[] = [];
   let cur = "";
   let quoted = false;
