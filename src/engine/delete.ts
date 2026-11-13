@@ -29,9 +29,9 @@ export const HANDLED = {
     "tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions",
     "message_actions", "run_files", "rule_events", "market_lists", "market_watchlist", "market_holdings", "market_alerts",
     "paper_accounts", "paper_fills", "market_strategies", "research_notes", "market_writeups", "market_ideas", "money_transactions",
-    "money_imports", "money_budgets", "money_nudges", "money_accounts", "attachments",
+    "money_imports", "money_budgets", "money_nudges", "money_accounts", "attachments", "mail_actions",
   ],
-  task: ["tasks", "runs", "approvals", "activity", "messages", "message_actions", "run_files", "paper_fills", "market_writeups", "attachments"],
+  task: ["tasks", "runs", "approvals", "activity", "messages", "message_actions", "run_files", "paper_fills", "market_writeups", "attachments", "mail_actions"],
   run: ["run_files"],
 } as const;
 
@@ -84,6 +84,9 @@ function refusal(db: Database, tasks: string[], spaceId: string | null, guards: 
     if (db.query(`SELECT 1 FROM message_actions WHERE status = 'sending' AND (${where.join(" OR ")})`).get(...params)) {
       return "A text is being sent from here right now. Try again in a minute, once it has gone. Nothing was deleted.";
     }
+    if (db.query(`SELECT 1 FROM mail_actions WHERE status IN ('sending','saving') AND (${where.join(" OR ")})`).get(...params)) {
+      return "An email or calendar change is being sent from here right now. Try again in a minute, once it has gone. Nothing was deleted.";
+    }
   }
   if (spaceId && db.query("SELECT 1 FROM repo_actions WHERE status = 'running' AND space_id = ?").get(spaceId)) {
     return "Atrium is working on this space's repo right now. Try again in a minute. Nothing was deleted.";
@@ -117,11 +120,13 @@ function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] 
   const a = marks(approvals);
   if (approvals.length) {
     db.query(`DELETE FROM message_actions WHERE approval_id IN (${a})`).run(...approvals);
+    db.query(`DELETE FROM mail_actions WHERE approval_id IN (${a})`).run(...approvals);
     db.query(`DELETE FROM repo_actions WHERE approval_id IN (${a})`).run(...approvals);
     db.query(`DELETE FROM rule_events WHERE approval_id IN (${a})`).run(...approvals);
   }
   if (tasks.length) {
     db.query(`UPDATE message_actions SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
+    db.query(`UPDATE mail_actions SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`UPDATE approvals SET task_id = NULL WHERE task_id IN (${t})${a ? ` AND id NOT IN (${a})` : ""}`).run(...tasks, ...approvals);
     db.query(`UPDATE paper_fills SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`UPDATE market_writeups SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
@@ -239,6 +244,7 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     const pin = db.query("SELECT folder_dev AS dev, folder_ino AS ino FROM spaces WHERE id = ?").get(id) as { dev: number | null; ino: number | null };
     const linksBefore = brokenLinks(db);
     db.query("DELETE FROM message_actions WHERE space_id = ?").run(id);
+    db.query("DELETE FROM mail_actions WHERE space_id = ?").run(id);
     // A new project's approval belongs to no space, so it's found through its repo action.
     const repoApprovals = idsOf(db, "SELECT approval_id AS id FROM repo_actions WHERE space_id = ?", id);
     db.query("DELETE FROM repo_actions WHERE space_id = ?").run(id);

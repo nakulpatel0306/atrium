@@ -68,6 +68,8 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   db.query("INSERT INTO rule_events (id, space_id, rule_id, approval_id, event, actor, created_at) VALUES (?, ?, ?, ?, 'applied', 'atrium', ?)").run(newId("rle"), space.id, rule, approval.id, now);
   recordRunFiles(db, { runId: run, taskId: task, spaceId: space.id, root: "space" }, [{ path: "list.md", change: "created", size: 4 }]);
   draftMessage(db, { spaceId: space.id, taskId: task, toName: "Dana", text: "Hey" });
+  const mailApproval = createApproval(db, { spaceId: space.id, taskId: task, kind: "question", title: "Send an email to Dana?", detail: "", alwaysAsk: "send_message" });
+  db.query("INSERT INTO mail_actions (id, approval_id, space_id, task_id, kind, status, drafted_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'new', 'draft', 'claude', ?, ?)").run(newId("mla"), mailApproval.id, space.id, task, now, now);
   const repoApproval = createApproval(db, { spaceId: null, kind: "question", title: "Create repo?", detail: "", alwaysAsk: "create_repo" });
   db.query("INSERT INTO repo_actions (id, kind, status, approval_id, space_id, created_at, updated_at) VALUES (?, 'create', 'done', ?, ?, ?, ?)").run(newId("rpa"), repoApproval.id, space.id, now, now);
   const list = newId("lst");
