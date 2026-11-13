@@ -11,7 +11,6 @@ import { finishPendingDeletes, queueDelete } from "../../src/engine/delete-files
 import { listActivity, logActivity } from "../../src/engine/events";
 import { ensureSpaceFolder } from "../../src/engine/folders";
 import { newId } from "../../src/engine/ids";
-import { draftMessage, setMessageStatus } from "../../src/engine/messaging/store";
 import { recordRunFiles } from "../../src/engine/outputs/store";
 import { createCloner } from "../../src/engine/repos/clones";
 import { listClones } from "../../src/engine/repos/store";
@@ -67,7 +66,6 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   db.query("UPDATE approvals SET rule_id = ? WHERE id = ?").run(rule, approval.id);
   db.query("INSERT INTO rule_events (id, space_id, rule_id, approval_id, event, actor, created_at) VALUES (?, ?, ?, ?, 'applied', 'atrium', ?)").run(newId("rle"), space.id, rule, approval.id, now);
   recordRunFiles(db, { runId: run, taskId: task, spaceId: space.id, root: "space" }, [{ path: "list.md", change: "created", size: 4 }]);
-  draftMessage(db, { spaceId: space.id, taskId: task, toName: "Dana", text: "Hey" });
   const repoApproval = createApproval(db, { spaceId: null, kind: "question", title: "Create repo?", detail: "", alwaysAsk: "create_repo" });
   db.query("INSERT INTO repo_actions (id, kind, status, approval_id, space_id, created_at, updated_at) VALUES (?, 'create', 'done', ?, ?, ?, ?)").run(newId("rpa"), repoApproval.id, space.id, now, now);
   const list = newId("lst");
@@ -101,13 +99,12 @@ test("every table that points at a space, task or run is handled", () => {
 test("deleting a space removes every row about it, its transcripts and its folder, and nothing else", async () => {
   const gone = fullSpace("Text Dana");
   const kept = fullSpace("Groceries");
-  setSetting(db, "messaging.spaceId", gone.space.id);
   const before = Object.fromEntries(tables().map((t) => [t, count(`SELECT COUNT(*) AS n FROM ${t}`)]));
   const spaceTables = HANDLED.space.filter((x) => x !== "repo_clones");
   const keptBefore = spaceTables.map((t) => [t, count(`SELECT COUNT(*) AS n FROM ${t} WHERE space_id = ?`, kept.space.id)]);
 
   const preview = spaceDeletePreview(db, gone.space.id);
-  expect(preview).toMatchObject({ name: "Text Dana", tasks: 2, runs: 1, refusal: null, texts: { sent: 0, drafts: 1 }, repo: null });
+  expect(preview).toMatchObject({ name: "Text Dana", tasks: 2, runs: 1, refusal: null, repo: null });
   expect(preview.folder).toMatchObject({ files: 1, bytes: 4 });
   expect(preview.investing).toBeGreaterThan(5);
 
@@ -125,7 +122,6 @@ test("deleting a space removes every row about it, its transcripts and its folde
   expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
   expect(existsSync(gone.transcript)).toBe(false);
   expect(existsSync(gone.space.folder!)).toBe(false);
-  expect(getSetting(db, "messaging.spaceId")).toBeNull();
   expect(count("SELECT COUNT(*) AS n FROM pending_deletes")).toBe(0);
   // The other space is exactly as it was.
   expect(existsSync(kept.transcript)).toBe(true);
@@ -156,20 +152,6 @@ test("a running task stops the delete and says what to do", async () => {
   expect(err.status).toBe(409);
   expect(getSpace(db, s.space.id)).not.toBeNull();
   expect(count("SELECT COUNT(*) AS n FROM tasks WHERE space_id = ?", s.space.id)).toBe(2);
-});
-
-test("a text being sent stops the delete of the Messages space", async () => {
-  const space = createSpace(db, { name: "Messages", kind: "general", goal: "g" });
-  const { action } = draftMessage(db, { spaceId: space.id, toName: "Dana", text: "Hey", handle: "+15550100134", handleSource: "you" });
-  db.query("UPDATE message_actions SET status = 'sending' WHERE id = ?").run(action.id);
-  const err = await deleteSpace(db, space.id, "Messages").catch((e) => e);
-  expect(err.status).toBe(409);
-  expect(err.message).toBe("A text is being sent from here right now. Try again in a minute, once it has gone. Nothing was deleted.");
-  setMessageStatus(db, action.id, "sent", { sentAt: Date.now() });
-  const preview = spaceDeletePreview(db, space.id);
-  expect(preview.texts).toEqual({ sent: 1, drafts: 0 });
-  await deleteSpace(db, space.id, "Messages");
-  expect(getSpace(db, space.id)).toBeNull();
 });
 
 test("a link inside the folder is removed, never followed", async () => {
@@ -341,14 +323,6 @@ test("deleting a task removes its runs, review, history, transcript and the file
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }
-});
-
-test("a text drafted in Messages for a deleted task stays, unlinked", async () => {
-  const s = fullSpace("Text Dana");
-  const messages = createSpace(db, { name: "Messages", kind: "general", goal: "g" });
-  const { action } = draftMessage(db, { spaceId: messages.id, taskId: s.task, toName: "Dana", text: "Hey again" });
-  await deleteSpace(db, s.space.id, "Text Dana");
-  expect(db.query("SELECT space_id, task_id FROM message_actions WHERE id = ?").get(action.id)).toEqual({ space_id: messages.id, task_id: null });
 });
 
 test("a running task can't be deleted, nor one whose review is running", async () => {

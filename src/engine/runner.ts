@@ -42,10 +42,6 @@ import { getSpace, isPrivate, type Space } from "./spaces";
 import { appendTaskDetail, getTask, listTasks, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
-import { type MessageBlock, parseMessageBlock } from "./messaging/block";
-import { autoLookup } from "./messaging/contacts";
-import { peopleLine } from "./messaging/rules";
-import { draftGroupMessage, draftMessage } from "./messaging/store";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -81,37 +77,12 @@ const REVIEW_SYSTEM_PROMPT = [
 ].join("\n");
 
 // Titles that ask for something only the engine can do. An agent saying "done" to one of these, with nothing for
-// the engine to act on, hasn't done it. A send needs a person after the verb ("Text Dana", "Send the text to
-// Dana", "text dana that I'm late"), and a false match marks a good run "couldn't", so a name only counts when
-// what follows reads like a message: "Email Template Redesign" and "Send me a summary" aren't sends.
-const PERSON = "(?:him|her|them|mom|dad|my (?:mom|dad|mother|father|brother|sister|wife|husband|partner|girlfriend|boyfriend|friend|boss|manager|landlord|roommate|team))";
-const NAME = "[A-Z][\\w'-]*";
-const AFTER_NAME = "(?:$|[,:.!?—-]|\\s+(?:that|saying|about|asking|to|and|a|an|the|back|if|when|re|hi|hey|hello|happy|thanks|thank|good|i|i'm|im|we|we're|you|your|tonight|today|tomorrow)\\b)";
-const AFTER_LOWER = "\\s+(?:that|saying|about|asking|back|re|hi|hey|hello|happy|thanks|thank|i|i'm|im|we|we're|you|tonight|today|tomorrow)\\b";
-export function engineOnlyClaim(title: string): "message" | "repo" | null {
-  const t = title.trim();
-  const verb = /^(send|text|message|imessage|email|e-mail|dm)\s+(?:to\s+)?(.*)$/i.exec(t);
-  if (verb) {
-    const rest = verb[2]!;
-    const strong = !/^(?:send|email|e-mail)$/i.test(verb[1]!);
-    if (/^(?:[A-Z]{2,}|PR|CI)\b/.test(rest)) return null;
-    if (new RegExp(`^${PERSON}\\b`, "i").test(rest)) return "message";
-    if (new RegExp(`^${NAME}${AFTER_NAME}`).test(rest)) return "message";
-    if (strong && new RegExp(`^[a-z][\\w'-]*${AFTER_LOWER}`, "i").test(rest)) return "message";
-    if (new RegExp(`\\bto\\s+(?:${PERSON}|${NAME})\\b`).test(rest)) return "message";
-  }
-  if (new RegExp(`\\b(?:send|text)\\s+(?:${PERSON}|${NAME})\\s+(?:a |the )?(?:text|message|email)\\b`, "i").test(t)) return "message";
-  if (/^(?:let\s+(?!me\b)\S+\s+know|reach\s+out\s+to\s+\S)/i.test(t)) return "message";
-  if (/\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(t)) return "repo";
-  return null;
+// the engine to act on, hasn't done it.
+export function engineOnlyClaim(title: string): "repo" | null {
+  return /\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(title.trim()) ? "repo" : null;
 }
 
-const IGNORED_BLOCK = "The agent suggested sending a text. Atrium doesn't send texts from here; ask Atrium to text them from the command bar if you want that.";
-
-const ENGINE_ONLY: Record<"message" | "repo", string> = {
-  message: "Only Atrium can send messages, and nothing was sent.",
-  repo: "Only Atrium can create repos, after your yes, and none was created.",
-};
+const NO_REPO_MADE = "Only Atrium can create repos, after your yes, and none was created.";
 
 export const REVIEW_TOOLS = ["Read", "Glob", "Grep"];
 export const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
@@ -504,7 +475,7 @@ export function createRunner(deps: {
       const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
       const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
-      const honest = [...capabilityLines(db, isMessageTask(task) ? "message" : "task"), OUTCOME_INSTRUCTION];
+      const honest = [...capabilityLines(), OUTCOME_INSTRUCTION];
       const prompt = buildPrompt(task, space) + context;
       // Money facts go to Claude only, and only masked: a card or account number left in the prompt stops the run.
       if (task.purpose === "money" && (adapter.id !== "claude" || !isMasked(prompt))) throw new MoneyGuard();
@@ -609,10 +580,8 @@ export function createRunner(deps: {
     // What the agent says it did, with its OUTCOME line taken out of the text people read. A review's verdict is
     // its own last line, so reviews are left alone.
     let outcome: ParsedOutcome = { outcome: "unknown", reason: null, body: "" };
-    // A text the agent asked Atrium to send; it becomes a draft that only Nakul's Send can send.
-    let message: MessageBlock | null = null;
     if (result.status === "ok" && task.kind !== "review") {
-      ({ outcome, message } = honestOutcome(task, result.summary));
+      outcome = honestOutcome(task, result.summary);
       result = { ...result, summary: outcome.body };
     }
 
@@ -656,20 +625,6 @@ export function createRunner(deps: {
         setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
         setTaskStatus(db, task.id, "done");
         logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`, { taskId: task.id });
-      } else if (result.status === "ok" && message) {
-        setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
-        setTaskStatus(db, task.id, "review");
-        if (message.group) {
-          // The chat is never the agent's either: Nakul's own Find on the card picks it.
-          const { action } = draftGroupMessage(db, { spaceId: space.id, taskId: task.id, name: message.group.name, people: message.group.people, text: message.text });
-          logActivity(db, space.id, adapter.id, `Drafted a group text to ${action.toName}: ${task.title}`, { taskId: task.id });
-        } else {
-          // The number is never the agent's: Nakul types it or picks it from his own Contacts lookup.
-          const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text });
-          logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`, { taskId: task.id });
-          // It catches its own failures; this only guards the engine if one slips past.
-          autoLookup(db, action.id).catch((e) => console.error(`Contacts lookup failed: ${e instanceof Error ? e.message : String(e)}`));
-        }
       } else if (result.status === "ok") {
         const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
         // Repo runs already count their files in the branch summary.
@@ -785,31 +740,15 @@ export function createRunner(deps: {
     return stoppedByStop.has(taskId) ? "stopped" : "finished";
   }
 
-  // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A
-  // message block satisfies a send only as far as a draft goes: the task is partly done until Nakul presses Send.
-  function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: MessageBlock | null} {
+  // The agent's own word, except that "done" can't stand for a title only the engine could have carried out.
+  function honestOutcome(task: Task, summary: string): ParsedOutcome {
     const parsed = parseOutcome(summary);
-    const block = task.kind === "work" ? parseMessageBlock(parsed.body) : null;
-    if (block && isMessageTask(task)) {
-      const who = block.group ? (block.group.name ?? peopleLine(block.group.people)) : block.to;
-      const reason = `Drafted a text to ${who}. It sends only when you press Send.`;
-      return { outcome: { outcome: "partial", reason, body: block.body }, message: block };
-    }
-    // Anywhere else a block is ignored (an agent reading a repo or a web page could be talked into writing one)
-    // and the result goes to review as usual, with a note saying what the agent asked for.
-    const body = block ? `${parsed.body}\n\n${IGNORED_BLOCK}` : parsed.body;
     const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
-    // A repo task's title is about code ("Send button styling"), never a send Atrium would make.
+    // A repo task's title is about code, never a repo Atrium would create.
     const claim = getSpace(db, task.spaceId)?.kind === "repo" ? null : engineOnlyClaim((parent ?? task).title);
-    // Atrium knows for certain that nothing was sent or created, so this is "couldn't", not "can't tell".
-    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, body, outcome: "couldnt", reason: ENGINE_ONLY[claim] }, message: null };
-    return { outcome: { ...parsed, body }, message: null };
-  }
-
-  // Marked by the engine when it made the task (the setup path), or a task Nakul added in the Messages space;
-  // never anything the agent wrote.
-  function isMessageTask(task: Task): boolean {
-    return task.purpose === "message" || (task.spaceId === getSetting(db, "messaging.spaceId") && getSpace(db, task.spaceId)?.kind === "general");
+    // Atrium knows for certain that nothing was created, so this is "couldn't", not "can't tell".
+    if (parsed.outcome === "done" && claim) return { ...parsed, outcome: "couldnt", reason: NO_REPO_MADE };
+    return parsed;
   }
 
   // Records the files a run created, changed or deleted. A failure is logged and never changes the task's outcome.

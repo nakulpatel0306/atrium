@@ -5,8 +5,7 @@ import type { Outcome } from "./outcome";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
-// "message" marks a task the engine made to draft a text; only such a task may hand back an atrium-message block.
-export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask" | "money" | "message";
+export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask" | "money";
 
 export type Task = {
   id: string;

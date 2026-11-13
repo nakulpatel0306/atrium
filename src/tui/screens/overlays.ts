@@ -4,7 +4,6 @@ import { AGENT_IDS, agentName } from "../../dashboard/agents";
 import { type SpaceDeletePreview, spaceDeleteLines } from "../../dashboard/deletion";
 import { bytes, clock, tokens } from "../../dashboard/format";
 import { AGENT_ROLES, agentStatus, runOutcome } from "../../dashboard/summary";
-import { askLine, displayHandle, memberNames, recipientOf } from "../../engine/messaging/rules";
 import type { State } from "../../engine/state";
 import { type Block, box, type Hit, keyRow, type Line, rowsOf, splice } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
@@ -21,26 +20,6 @@ type Confirm = Extract<Overlay, { kind: "confirm" }>;
 // What each confirm says, as lines, so it's tested without a terminal.
 export function confirmLines(c: Confirm, state: State, cols: number): { title: string; lines: Line[]; keys: { key: string; label: string; input: string; hot?: boolean }[] } {
   const no = (label = "Not now") => ({ key: "n", label, input: "n" });
-  if (c.purpose === "send") {
-    const m = state.messageActions.find((x) => x.id === c.targetId);
-    const chat = m?.group?.chat;
-    const to = chat ? `${recipientOf(m!)} (${chat.participants.length} people)` : m?.handle ? `${m.toName} (${displayHandle(m.handle)})` : m ? recipientOf(m) : "them";
-    const text = c.text ?? m?.text ?? "";
-    return {
-      title: m?.group ? "Send a group text" : "Send a text",
-      lines: [
-        ...wrap(`Send this to ${to}?`, cols),
-        ...(m?.group ? wrap(`In it: ${memberNames(m.group).join(", ")}`, cols) : []),
-        ...(m?.group ? wrap(`You asked for ${askLine(m.group)}.`, cols, { color: "faint" }) : []),
-        [{ text: `Via ${m?.service ?? "iMessage"}${c.text !== undefined && c.text !== m?.text ? " · your edit" : ""}`, color: "faint" }],
-        [],
-        ...text.split("\n").flatMap((l) => wrap(l, cols, { bold: true })),
-        [],
-        ...wrap("Sends from Messages on this Mac. Atrium can't confirm delivery.", cols, { color: "faint" }),
-      ],
-      keys: [{ key: "y", label: "Send", input: "y", hot: true }, no()],
-    };
-  }
   if (c.purpose === "accept") {
     const a = state.approvals.find((x) => x.id === c.targetId);
     const task = a?.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
@@ -87,7 +66,7 @@ function floating(base: Line[], title: string, body: Line[], keys: { key: string
 }
 
 export function confirmOver(base: Line[], c: Confirm, state: State, cols: number, y0: number): Block {
-  const w = Math.min(c.purpose === "send" ? 66 : 58, cols - 4);
+  const w = Math.min(58, cols - 4);
   const { title, lines, keys } = confirmLines(c, state, w - 4);
   return floating(base, title, lines, keys, w, y0);
 }

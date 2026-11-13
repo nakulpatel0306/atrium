@@ -7,7 +7,7 @@ import type { State } from "../../engine/state";
 import type { Click, Hit } from "../canvas";
 import type { EngineClient } from "../client";
 import { type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../detail";
-import { runIntent, sendFollowUp } from "../effects";
+import { runIntent } from "../effects";
 import { useDeletePreview, useEngineRead, useEngineState, useMarketsGlance, useMessages, useOnline, useOutputs, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, type Intent, type KeyContext } from "../keys";
 import type { MouseBus, MouseEvent } from "../mouse";
@@ -66,7 +66,6 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
   // Setting up a space takes a while; a second submit meanwhile would set up a second space.
   const settingUp = useRef(false);
   // A text that's on its way, so the Ask box can say when it went (or didn't).
-  const sending = useRef<{ toName: string; at: number } | null>(null);
   if (state && !briefing.current) briefing.current = state.briefing;
   const [frame, setFrame] = useState(0);
 
@@ -196,7 +195,6 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
       settingUp.current = true;
       flash({ tone: "info", text: SETTING_UP });
     }
-    const started = Date.now();
     const out = await runIntent(client, intent, s);
     if (intent.type === "newSpace") settingUp.current = false;
     // A decided item leaves the list; the next one is picked deliberately, never slid into.
@@ -207,25 +205,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
     }
     if (out.overlay) dispatch({ type: "open", overlay: out.overlay });
     flash({ tone: out.tone, text: out.text });
-    if (intent.type === "send_message" && out.tone === "ok") {
-      sending.current = { toName: intent.toName, at: started };
-      // The send can finish before this request does; then no later push would bring the news.
-      const latest = client.state();
-      const done = latest ? sendFollowUp(latest, sending.current) : null;
-      if (done) {
-        sending.current = null;
-        flash(done);
-      }
-    }
   };
-
-  useEffect(() => {
-    if (!state || !sending.current) return;
-    const next = sendFollowUp(state, sending.current);
-    if (!next) return;
-    sending.current = null;
-    flash(next);
-  }, [state]);
 
   const handle = (input: string, key: Key) => {
     const s = client.state();

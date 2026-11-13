@@ -63,12 +63,12 @@ test("listPending returns newest first", () => {
 });
 
 test("the always-ask list", () => {
-  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "first_contact", "delete", "spend", "secrets", "create_repo", "push", "remove_clone", "send_message"]);
+  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "delete", "spend", "secrets", "create_repo", "push", "remove_clone"]);
 });
 
-test("a rule never decides a send_message approval", () => {
-  const s = createSpace(db, { name: "Messages", kind: "general", goal: "texts" });
-  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+test("a rule never decides an always-ask approval", () => {
+  const s = createSpace(db, { name: "Notes", kind: "general", goal: "notes" });
+  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Delete the old notes?", detail: "", alwaysAsk: "delete" });
   expect(() => resolveApproval(db, a.id, "approve", undefined, { id: "rul_x", label: "x" })).toThrow(RULE_NEVER_DECIDES);
   expect(getApproval(db, a.id)!.status).toBe("pending");
 });

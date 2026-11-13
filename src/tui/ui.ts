@@ -12,7 +12,7 @@ export type Pane = "spaces" | "tasks" | "detail" | "live";
 
 // What the Ask box is for right now. "ask" is the tab's own (new space, new task, money question, symbol ask); the
 // rest are the prompts other keys open in the same box.
-export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter" | "budget" | "import" | "edit";
+export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter" | "budget" | "import";
 export type Ask = { purpose: AskPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null };
 
 export type Overlay =
@@ -25,8 +25,6 @@ export type Overlay =
   | { kind: "confirm"; purpose: "archive"; targetId: string }
   // Deleting a space for good waits for its name, typed in full.
   | { kind: "delete"; spaceId: string; value: string; cursor: number }
-  // Sending a text waits for a y, showing exactly what goes: the draft, or Nakul's edit of it.
-  | { kind: "confirm"; purpose: "send"; targetId: string; text?: string }
   | { kind: "confirm"; purpose: "accept"; targetId: string }
   | { kind: "confirm"; purpose: "stop"; targetId: string }
   // An import waits for a y on what the file holds (account, rows, dates), never its rows.

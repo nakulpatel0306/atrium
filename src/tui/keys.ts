@@ -2,7 +2,6 @@
 import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
-import { hasTarget, recipientOf } from "../engine/messaging/rules";
 import type { ReviewerId } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
@@ -10,8 +9,6 @@ import { type Action, type Ask, type AskPurpose, listPaneOf, type ListPane, type
 
 export type Intent =
   | { type: "approve"; approvalId: string; title: string }
-  // chatId: the group chat the confirm showed, so a chat picked elsewhere after it can't ride on this yes.
-  | { type: "send_message"; actionId: string; toName: string; text?: string; chatId?: string }
   | { type: "reject"; approvalId: string; note: string }
   | { type: "retry"; taskId: string }
   | { type: "runNow"; taskId: string }
@@ -119,7 +116,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
     return keys;
   }
   if (ui.overlay?.kind === "confirm") {
-    const yes = { send: "send", accept: "accept", archive: "archive", stop: "stop it", import: "import" }[ui.overlay.purpose];
+    const yes = { accept: "accept", archive: "archive", stop: "stop it", import: "import" }[ui.overlay.purpose];
     return [k("y", yes), k("n", ui.overlay.purpose === "stop" ? "keep running" : "not now")];
   }
   const overlay = ui.overlay && OVERLAY_KEYS[ui.overlay.kind];
@@ -207,29 +204,19 @@ function stop(u: Ui, view: View): Command {
   return open({ kind: "confirm", purpose: "stop", targetId: task.id });
 }
 
-// Approve: a text opens the send confirm, a result the agent said it didn't finish asks first.
+// Approve: a result the agent said it didn't finish asks first.
 function approve(u: Ui, view: View): Command {
   const approval = approvalOf(u, view);
   if (!approval) return nothingHere(u, view, u.tab === "home" ? "Nothing to approve here." : "Nothing to approve here. Pick a task in review.");
-  // A text goes only after a y on the confirm that shows exactly what's sent, and only once it has a number.
-  if (approval.alwaysAsk === "send_message") return sendText(view, approval.id);
   const outcome = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId)?.outcome : null;
   if (outcome === "couldnt" || outcome === "partial") return open({ kind: "confirm", purpose: "accept", targetId: approval.id });
   return intent({ type: "approve", approvalId: approval.id, title: approval.title });
-}
-
-function sendText(view: View, approvalId: string, edited?: string): Command {
-  const text = view.state.messageActions.find((m) => m.approvalId === approvalId);
-  if (!text) return info("This text is being updated. Try again in a moment.");
-  if (!hasTarget(text)) return info(text.group ? "Find the group chat on the dashboard first." : "Pick who this goes to on the dashboard first.");
-  return open({ kind: "confirm", purpose: "send", targetId: text.id, ...(edited !== undefined ? { text: edited } : {}) });
 }
 
 function sendBack(u: Ui, view: View): Command {
   const approval = approvalOf(u, view);
   if (!approval) return nothingHere(u, view, "Nothing to send back here.");
   if (approval.kind === "alert") return info("Price alerts are dismissed with a; turn one off on the dashboard.");
-  if (approval.alwaysAsk === "send_message") return intent({ type: "reject", approvalId: approval.id, note: "" });
   return ask("reply", approval.id);
 }
 
@@ -250,12 +237,6 @@ function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
   }
   const approval = pinned(u, "needs", view.approval);
   if (!approval) return null;
-  const text = approval.alwaysAsk === "send_message" ? view.state.messageActions.find((m) => m.approvalId === approval.id) : undefined;
-  if (approval.alwaysAsk === "send_message") {
-    if (input === "s") return [sendText(view, approval.id)];
-    if (input === "x") return [intent({ type: "reject", approvalId: approval.id, note: "" })];
-    if (input === "e") return text ? [ask("edit", approval.id, text.text)] : [info("This text is being updated. Try again in a moment.")];
-  }
   if (key.return) {
     // A review opens on its task, where its runs, files and thread are; anything else opens its full text here.
     const task = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId) : undefined;
@@ -447,9 +428,6 @@ function submitAsk(a: Ask, u: Ui, view: View, ctx: KeyContext): Command[] {
     case "goal":
       if (!text) return [info("A goal can't be empty. Describe what this space is for.")];
       return [intent({ type: "goal", spaceId: target, goal: text }), leaveAsk];
-    case "edit":
-      if (!text) return [info("The text can't be empty. Press esc to keep it as it was.")];
-      return [leaveAsk, sendText(view, target, a.value)];
     case "budget": {
       if (!ctx.money) return [leaveAsk, info(NO_INVESTING)];
       const n = Number(text.replace(/[$,\s]|CA\$/gi, ""));
@@ -578,12 +556,6 @@ function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): 
       return [intent({ type: "stop", taskId: overlay.targetId })];
     case "import":
       return [intent({ type: "importCsv", spaceId: overlay.targetId, csv: overlay.csv, account: overlay.account })];
-    case "send": {
-      const text = view.state.messageActions.find((m) => m.id === overlay.targetId);
-      if (!text) return [info("This text was already handled.")];
-      const chat = text.group?.chat ? { chatId: text.group.chat.id } : {};
-      return [intent({ type: "send_message", actionId: text.id, toName: recipientOf(text), ...(overlay.text !== undefined ? { text: overlay.text } : {}), ...chat })];
-    }
     case "accept": {
       const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
       return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];

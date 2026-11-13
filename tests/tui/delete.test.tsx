@@ -60,7 +60,6 @@ test("the delete box shows what goes and what stays", () => {
     runs: 2,
     history: 7,
     folder: { path: "~/Atrium/text-dana", files: 1, bytes: 120, more: false },
-    texts: { sent: 1, drafts: 0 },
     repo: null,
     investing: 0,
     refusal: null,
@@ -69,7 +68,6 @@ test("the delete box shows what goes and what stays", () => {
   const text = lines.map((l) => l.map((s) => s.text).join("")).join("\n");
   expect(title).toBe("Delete Text Dana for good");
   expect(text).toContain("  · 2 tasks, with 2 runs and their transcripts");
-  expect(text.replace(/\n/g, " ")).toContain("Atrium can't unsend a text.");
   expect(text).toContain("Type Text Dana to confirm. This can't be undone.");
   expect(text).toContain("› Text");
 });

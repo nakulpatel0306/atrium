@@ -8,7 +8,6 @@ import { useMarketDataSettings } from "../markets";
 import { ArchivedSpaces } from "./ArchivedSpaces";
 import { DataBudget } from "./DataBudget";
 import { Freshness } from "./markets/Freshness";
-import { MessagingSettings } from "./MessagingSettings";
 import { Profile } from "./Profile";
 import { Storage } from "./Storage";
 
@@ -234,7 +233,6 @@ export function Settings() {
           )}
         </>
       )}
-      <MessagingSettings />
       <Storage />
     </div>
   );

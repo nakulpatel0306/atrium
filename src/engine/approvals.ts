@@ -8,16 +8,16 @@ import { appendTaskDetail, getTask, listTasks, setTaskStatus } from "./tasks";
 export const ALWAYS_ASK = [
   "merge_main",
   "deploy",
-  "first_contact",
   "delete",
   "spend",
   "secrets",
   "create_repo",
   "push",
   "remove_clone",
-  // Every text Atrium sends as Nakul, to anyone, every time.
-  "send_message",
 ] as const;
+// Kinds a removed feature left in an older database. A pending one can't be acted on any more, so it isn't listed.
+const LEGACY_ALWAYS_ASK = "'send_message','first_contact'";
+
 export type AlwaysAsk = (typeof ALWAYS_ASK)[number];
 
 export const RULE_NEVER_DECIDES = "A rule can never decide this. It always waits for you.";
@@ -168,7 +168,7 @@ export function correctBranchHead(db: Database, id: string, from: string, to: st
 export function listPending(db: Database): Approval[] {
   // rowid breaks ties between approvals created in the same millisecond
   const rows = db
-    .query("SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at DESC, rowid DESC")
+    .query(`SELECT * FROM approvals WHERE status = 'pending' AND (always_ask IS NULL OR always_ask NOT IN (${LEGACY_ALWAYS_ASK})) ORDER BY created_at DESC, rowid DESC`)
     .all() as ApprovalRow[];
   return rows.map(toApproval);
 }
@@ -248,18 +248,8 @@ export function resolveApproval(
   return a;
 }
 
-// The note a group text's approval closes with when Nakul sends it as one text per person instead.
-export const SEPARATELY_NOTE = "Sending one text to each person instead.";
-
 // Accepting a result the agent said it didn't finish is recorded as exactly that.
 function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
-  if (a.alwaysAsk === "send_message") {
-    const send = /^Send an? /.test(a.title);
-    const what = a.title.replace(/^Send an? /, "").replace(/\?$/, "");
-    if (decision === "reject" && a.note === SEPARATELY_NOTE) return `Chose to send separately: ${what}`;
-    if (!send) return decision === "approve" ? `Approved: ${what}` : `Chose not to: ${what}`;
-    return decision === "approve" ? `Pressed Send: ${what}` : `Chose not to send: ${what}`;
-  }
   if (decision === "reject") return `Rejected: ${a.title}`;
   const outcome = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
   if (outcome === "couldnt") return `Accepted anyway: ${a.title}. It says it couldn't do this.`;

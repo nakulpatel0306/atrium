@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MessageCard } from "../../src/dashboard/components/MessageCard";
 import { NeedsPage } from "../../src/dashboard/components/NeedsPage";
 import { Sidebar } from "../../src/dashboard/components/Sidebar";
 import { ACT, isTyping, moveFocus, needsKey } from "../../src/dashboard/needs-keys";
@@ -48,20 +47,6 @@ test("focus moves within the list and stops at its ends", () => {
   expect(moveFocus(2, 3, "next")).toBe(2);
   expect(moveFocus(0, 3, "prev")).toBe(0);
   expect(moveFocus(0, 0, "next")).toBe(-1);
-});
-
-test("no key can send a text: a text card has nothing for a or s to press, and Send has no key", () => {
-  const s = makeState();
-  const approval: State["approvals"][number] = { ...s.approvals[0]!, id: "apr_t", taskId: null, kind: "question", title: "Send a text to Priya?", alwaysAsk: "send_message" };
-  const action: State["messageActions"][number] = {
-    id: "msa_t", approvalId: "apr_t", spaceId: ids.jobHunt, taskId: null, toName: "Priya", handle: "+15550100177", handleSource: "you",
-    candidates: null, service: "iMessage", text: "On my way", group: null, lastError: null, contactsReady: true,
-  };
-  for (const html of [renderToStaticMarkup(<MessageCard approval={approval} action={action} folded />), renderToStaticMarkup(<MessageCard approval={approval} action={action} />)]) {
-    expect(html).not.toContain(`data-act="${ACT.approve}"`);
-    expect(html).not.toContain(`data-act="${ACT.sendBack}"`);
-    expect(html).not.toMatch(/data-act="[^"]*"[^>]*>Send</);
-  }
 });
 
 test("the page lists every waiting row with the keys hint", () => {

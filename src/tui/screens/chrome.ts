@@ -1,6 +1,5 @@
 // What every tab shares: the top bar with the tabs, the Ask box, and the key strip.
 import { agentName } from "../../dashboard/agents";
-import { recipientOf } from "../../engine/messaging/rules";
 import type { State } from "../../engine/state";
 import { type Block, box, edgeWith, fit, type Hit, keycap, type Line, lineWidth } from "../canvas";
 import { cursorParts } from "../edit";
@@ -80,10 +79,6 @@ export function askLabels(ui: Ui, view: View, ctx: KeyContext): { title: string;
       return { title: `Budget for ${target} · a month`, placeholder: "An amount like 400, or empty for no budget." };
     case "import":
       return { title: "Import a CSV · path to the file", placeholder: "~/Downloads/accountactivity.csv, or drag the file in." };
-    case "edit": {
-      const m = view.state.messageActions.find((x) => x.approvalId === target);
-      return { title: `Edit the text to ${m ? recipientOf(m) : "them"}`, placeholder: "The words that get sent." };
-    }
     case "space":
       return { title: "New space · describe it", placeholder: 'Like "keep my job search organized" or "start a new project called…"' };
   }
@@ -97,7 +92,7 @@ export function askLabels(ui: Ui, view: View, ctx: KeyContext): { title: string;
     const agent = a ? ` · agent ${agentName(a.agent)}${askAgentCycles(ui, view) ? " (tab)" : ""}` : "";
     return { title: `New task in ${space.name}${agent}`, placeholder: `Give ${space.name} a task…` };
   }
-  return { title: "Ask Atrium", placeholder: 'Describe something new, like "keep my job search organized" or "text mom happy birthday".' };
+  return { title: "Ask Atrium", placeholder: 'Describe something new, like "keep my job search organized" or "start a new project called…".' };
 }
 
 const FLASH = { ok: { glyph: GLYPH.ok, color: "ok" }, bad: { glyph: GLYPH.bad, color: "bad" }, info: { glyph: "•", color: "info" } } as const;

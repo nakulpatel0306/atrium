@@ -37,9 +37,6 @@ import { BadDraft } from "../engine/repos/names";
 import { openPullRequest, PrFailed, prInfo } from "../engine/repos/pr";
 import { PushRefused } from "../engine/repos/push";
 import { reposRoute } from "./repos";
-import type { Messaging } from "../engine/messaging";
-import { messagingRoute } from "./messaging";
-import { mergeRestoredMessages, messagesMergeWait } from "../engine/messaging/space";
 
 type Deps = {
   db: Database;
@@ -57,7 +54,6 @@ type Deps = {
   onViewers?: (n: number) => void;
   markets?: MarketsDeps;
   repos?: Repos;
-  messaging?: Messaging;
 };
 
 
@@ -149,13 +145,6 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       const status = b.status;
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
-      }
-      // A second Messages space never comes back; the restored one's texts join the current one.
-      if (status === "active" && Object.keys(b).length === 1) {
-        const wait = messagesMergeWait(db, id);
-        if (wait) throw new HttpError(409, wait);
-        const merged = mergeRestoredMessages(db, id);
-        if (merged) return json(merged);
       }
       const reviewBy = b.reviewBy;
       if (reviewBy !== undefined && reviewBy !== null && !REVIEWERS.includes(reviewBy as ReviewerId)) {
@@ -340,10 +329,6 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       }
       const current = getApproval(db, id);
       if (!current) throw new HttpError(404, "No such approval.");
-      // A text is sent only from its card, so the yes always covers the exact words and recipient on screen.
-      if (b.decision === "approve" && current.alwaysAsk === "send_message") {
-        throw new HttpError(409, "Press Send on the message card, so Atrium sends exactly what you saw.");
-      }
       const approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"));
       // Nakul's decision stands whatever happens here; a suggestion is only ever extra.
       if (b.decision === "approve") {
@@ -494,10 +479,6 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     }
     if (deps.repos) {
       const res = await reposRoute(db, deps.repos, req, url);
-      if (res) return res;
-    }
-    if (deps.messaging) {
-      const res = await messagingRoute(db, deps.messaging, req, url);
       if (res) return res;
     }
 

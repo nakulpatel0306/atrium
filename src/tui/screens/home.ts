@@ -5,7 +5,6 @@ import { duration, relative } from "../../dashboard/format";
 import { liveStatus } from "../../dashboard/summary";
 import type { GlanceView } from "../../engine/markets/views";
 import type { MoneySummary } from "../../engine/money/summary";
-import { displayHandle, hasTarget, memberNames, recipientOf } from "../../engine/messaging/rules";
 import { outcomeText } from "../../engine/outcome";
 import { bar, type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
 import { wrapStyled } from "../detail";
@@ -51,52 +50,11 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
       tone: "info",
       title: `Stop asking about ${p.label}?`,
       meta: [...owner(p.spaceId), dot, { text: `You approved the last ${p.evidence.length} without changes`, color: "faint" }],
-      body: [[{ text: "Atrium would approve these on its own. It still never merges, pushes or messages anyone new.", color: "dim" }]],
+      body: [[{ text: "Atrium would approve these on its own. It still never merges or pushes.", color: "dim" }]],
       keys: [{ key: "y", label: "Yes", input: "y", hot: true }, { key: "n", label: "Not now", input: "n" }, { key: "N", label: "Never", input: "N" }, open],
     });
   }
   for (const a of view.approvals) {
-    const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
-    if (text?.group) {
-      const g = text.group;
-      const quote = wrapStyled([{ text: `"${oneLine(text.text)}"`, italic: true }], inner).slice(0, 2);
-      const people = memberNames(g);
-      cards.push({
-        id: a.id,
-        glyph: GLYPH.text,
-        tone: "accent",
-        title: `Group text to ${recipientOf(text)}`,
-        meta: [
-          { text: "to ", color: "faint" },
-          { text: recipientOf(text), color: "dim" },
-          dot,
-          g.chat ? { text: `group chat · ${g.chat.participants.length} people`, color: "faint" } : { text: `${GLYPH.notdone} group chat needed`, color: "warn" },
-          dot,
-          { text: `${text.service} · drafted ${relative(a.createdAt, now)}`, color: "faint" },
-        ],
-        body: [
-          ...quote,
-          ...wrapStyled([{ text: people.length ? `People: ${people.join(", ")}` : "People: not known until you find the chat", color: "dim" }], inner).slice(0, 2),
-          ...(text.lastError ? [[{ text: `${GLYPH.bad} Last try failed: ${text.lastError}`, color: "bad" as const }]] : []),
-          ...(g.chat ? [] : [[{ text: "Find the group chat on the dashboard, then send it here.", color: "dim" as const }]]),
-        ],
-        keys: [...(hasTarget(text) ? [{ key: "s", label: "Send", input: "s", hot: true }] : []), { key: "e", label: "Edit", input: "e" }, { key: "x", label: "Skip", input: "x" }],
-      });
-      continue;
-    }
-    if (text) {
-      const quote = wrapStyled([{ text: `"${oneLine(text.text)}"`, italic: true }], inner).slice(0, 2);
-      cards.push({
-        id: a.id,
-        glyph: GLYPH.text,
-        tone: "accent",
-        title: `Text to ${text.toName}`,
-        meta: [{ text: "to ", color: "faint" }, { text: text.toName, color: "dim" }, dot, text.handle ? { text: displayHandle(text.handle), color: "faint" } : { text: `${GLYPH.notdone} number needed`, color: "warn" }, dot, { text: `${text.service} · drafted ${relative(a.createdAt, now)}`, color: "faint" }],
-        body: [...quote, ...(text.lastError ? [[{ text: `${GLYPH.bad} Last try failed: ${text.lastError}`, color: "bad" as const }]] : []), ...(text.handle ? [] : [[{ text: "Pick who this goes to on the dashboard, then send it here.", color: "dim" as const }]])],
-        keys: [...(text.handle ? [{ key: "s", label: "Send", input: "s", hot: true }] : []), { key: "e", label: "Edit", input: "e" }, { key: "x", label: "Skip", input: "x" }],
-      });
-      continue;
-    }
     const task = a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
     if (a.kind === "review") {
       const told = task ? outcomeText(task.outcome, task.outcomeReason) : null;

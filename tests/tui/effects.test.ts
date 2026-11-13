@@ -37,8 +37,6 @@ const rows: Row[] = [
   { intent: { type: "budget", spaceId: "spc_inv", category: "Dining", limit: null }, method: "PUT", path: "/api/investing/spc_inv/money/budgets", body: { category: "Dining", limit: null }, text: "No budget for Dining now." },
   { intent: { type: "importCsv", spaceId: "spc_inv", csv: "a,b", account: "Amex" }, method: "POST", path: "/api/investing/spc_inv/money/import", body: { csv: "a,b", account: "Amex" }, data: { added: 20, duplicates: 2 }, text: "Imported 20 rows, skipped 2 already there." },
   { intent: { type: "investAsk", spaceId: "spc_inv", key: "SHOP.TO", question: "Why?" }, method: "POST", path: "/api/investing/spc_inv/symbol/SHOP.TO/ask", body: { question: "Why?" }, text: "Asked Claude about SHOP.TO. The answer lands in the Investing space." },
-  { intent: { type: "newSpace", text: "text mom happy birthday" }, method: "POST", path: "/api/command", body: { text: "text mom happy birthday" }, data: { message: { toName: "Mom" } }, text: "Drafted a text to Mom. It's waiting in Needs you." },
-  { intent: { type: "newSpace", text: "text mom" }, method: "POST", path: "/api/command", body: { text: "text mom" }, data: { space: { id: "spc_m", name: "Messages" }, tasks: [{ title: "Draft a text to Mom" }], messaging: true }, text: "Atrium is drafting a text to Mom. It'll be in Needs you to send." },
 ];
 
 for (const row of rows) {

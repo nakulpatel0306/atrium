@@ -12,8 +12,6 @@ import { atriumDiskUsage } from "./storage";
 import { config } from "./config";
 import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
-import { type Candidate, type Group, type HandleSource, pendingMessageActions, type Service } from "./messaging/store";
-import { type MessagingState, messagingState } from "./capabilities";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
 import { type Attachment, claimedAttachments } from "./attachments";
@@ -73,56 +71,9 @@ export type State = {
   disk: ReturnType<typeof atriumDiskUsage>;
   // Pending new-project drafts and clone removals, for the forms in Needs you.
   repoActions: RepoActionView[];
-  // Pending texts, for the send cards in Needs you.
-  messageActions: MessageActionView[];
   // The monthly import reminder, shown in Needs you as a quiet row (budget heads-ups are notifications only).
   nudges: Nudge[];
-  // Whether sending has worked, is blocked, or hasn't been tried; and whether a Contacts lookup has worked (null
-  // until the first one).
-  messaging: { state: MessagingState; contactsReady: boolean | null };
 };
-
-export type MessageActionView = {
-  id: string;
-  approvalId: string;
-  spaceId: string;
-  taskId: string | null;
-  toName: string;
-  handle: string | null;
-  handleSource: HandleSource | null;
-  candidates: Candidate[] | null;
-  service: Service;
-  text: string;
-  // A group text: whom the agent named and the chat Find picked (members' handles masked). Null for one person.
-  group: Group | null;
-  lastError: string | null;
-  // Whether a Contacts lookup has worked before, so the card knows macOS won't ask again.
-  contactsReady: boolean;
-};
-
-function contactsReadyOf(db: Database): boolean | null {
-  const v = getSetting(db, "messaging.contactsReady");
-  return v === null ? null : v === "true";
-}
-
-function messageActionViews(db: Database): MessageActionView[] {
-  const contactsReady = getSetting(db, "messaging.contactsReady") === "true";
-  return pendingMessageActions(db).map((a) => ({
-    id: a.id,
-    approvalId: a.approvalId,
-    spaceId: a.spaceId,
-    taskId: a.taskId,
-    toName: a.toName,
-    handle: a.handle,
-    handleSource: a.handleSource,
-    candidates: a.candidates,
-    service: a.service,
-    text: a.text,
-    group: a.group,
-    lastError: a.error,
-    contactsReady,
-  }));
-}
 
 export type RepoActionView = {
   id: string;
@@ -230,8 +181,6 @@ export function snapshot(db: Database, registry?: Registry): State {
         : null,
     disk: atriumDiskUsage(),
     repoActions: repoActionViews(db),
-    messageActions: messageActionViews(db),
     nudges: activeNudges(db, now).filter((n) => n.kind === "import"),
-    messaging: { state: messagingState(db), contactsReady: contactsReadyOf(db) },
   };
 }

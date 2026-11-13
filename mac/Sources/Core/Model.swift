@@ -11,8 +11,6 @@ struct Need: Decodable, Equatable {
   var symbol: String? = nil
   // What a review's agent said when it wasn't plainly done ("couldnt", "partial", "unknown"); absent from older engines.
   var outcome: String? = nil
-  // "send_message" for a text waiting for Nakul's Send; absent from older engines.
-  var action: String? = nil
 }
 
 // The engine's TradingView chart listener this launch; absent from older engines, null when it didn't start.

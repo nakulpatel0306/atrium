@@ -1,5 +1,5 @@
-// The Needs you page's keys. Single letters only move, open, approve a review or open its send-back note: nothing
-// here can send a text, and every key is ignored while Nakul is typing.
+// The Needs you page's keys. Single letters only move, open, approve a review or open its send-back note, and every
+// key is ignored while Nakul is typing.
 export type NeedsKey = "next" | "prev" | "open" | "approve" | "sendBack" | "close";
 
 type KeyLike = { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; target: EventTarget | null };

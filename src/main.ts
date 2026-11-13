@@ -31,9 +31,7 @@ import { createRepos } from "./engine/repos";
 import { recoverRemovals } from "./engine/repos/cleanup";
 import { finishPendingDeletes } from "./engine/delete-files";
 import { recoverRepoActions } from "./engine/repos/create";
-import { createMessaging } from "./engine/messaging";
 import { moneyDaily } from "./engine/money/reminder";
-import { recoverMessageActions } from "./engine/messaging/send";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
@@ -98,9 +96,6 @@ const feed = createFeed({
 onApprovalResolved((a, decision) => handleStrategyDecision(db, a, decision));
 // The only path to creating, pushing or removing a repo: Nakul's own decision on its approval.
 onApprovalResolved(repos.onDecision);
-// Likewise the only path to sending a text: his own Send on its card.
-const messaging = createMessaging({ db, kick: () => runner.kick() });
-onApprovalResolved(messaging.onDecision);
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
 let server: ReturnType<typeof startServer>;
@@ -112,7 +107,6 @@ try {
     onViewers: (n) => void feed.setViewers(n),
     markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs, catchUp },
     repos,
-    messaging,
   });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
@@ -120,9 +114,6 @@ try {
   process.exit(1);
 }
 
-// Texts a stopped engine left mid-send, settled before anything awaits: the port is bound (it's the lock),
-// but no request can run until this synchronous code yields, so no new Send can start in between.
-recoverMessageActions(db);
 await recoverOnBoot(db);
 // Before the runner starts, so no run works in a folder that is being moved.
 for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);

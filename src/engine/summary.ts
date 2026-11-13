@@ -8,7 +8,7 @@ import { listSpaces } from "./spaces";
 import { getTask, listTasks } from "./tasks";
 
 // `files` is how many files a review's task made (0 for everything else), so the notification can say so.
-// `outcome` is what a review's agent said when it wasn't plainly done; `action` marks a text waiting to be sent.
+// `outcome` is what a review's agent said when it wasn't plainly done.
 export type Need = {
   id: string;
   kind: "review" | "question" | "alert" | "suggestion";
@@ -19,7 +19,6 @@ export type Need = {
   files: number;
   symbol: string | null;
   outcome: "partial" | "couldnt" | "unknown" | null;
-  action: "send_message" | null;
 };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
 export type Summary = {
@@ -46,7 +45,7 @@ export function summary(db: Database): Summary {
     .filter((a) => a.spaceId === null || names.has(a.spaceId))
     .map((a) => {
       const told = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
-      const extra = { outcome: told && told !== "done" ? told : null, action: a.alwaysAsk === "send_message" ? "send_message" : null };
+      const extra = { outcome: told && told !== "done" ? told : null };
       return {
       at: a.createdAt,
       need: ({ ...(a.spaceId === null
@@ -68,7 +67,7 @@ export function summary(db: Database): Summary {
     .filter((p) => names.has(p.spaceId))
     .map((p) => ({
       at: p.createdAt,
-      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0, symbol: null, outcome: null, action: null } as Need,
+      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0, symbol: null, outcome: null } as Need,
     }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
   const needs = [...approvals, ...suggestions].sort((a, b) => b.at - a.at).map((x) => x.need);

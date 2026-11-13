@@ -15,7 +15,6 @@ const preview = (over: Partial<SpaceDeletePreview> = {}): SpaceDeletePreview => 
   runs: 4,
   history: 12,
   folder: { path: "~/Atrium/text-dana", files: 2, bytes: 2048, more: false },
-  texts: { sent: 1, drafts: 1 },
   repo: null,
   investing: 0,
   refusal: null,
@@ -24,22 +23,19 @@ const preview = (over: Partial<SpaceDeletePreview> = {}): SpaceDeletePreview => 
 
 test("the confirm lists what goes and what stays, plainly", () => {
   expect(spaceDeleteLines(preview())).toEqual({
-    goes: ["3 tasks, with 4 runs and their transcripts", "Its folder ~/Atrium/text-dana (2 files, 2 KB)", "Its history: 12 activity lines", "1 unsent draft text"],
-    stays: [
-      "Its folder goes to the Trash when macOS allows it. If it can't, Atrium leaves the folder where it is and tells you.",
-      "The text already sent stays in Messages on your Mac. Atrium can't unsend a text.",
-    ],
+    goes: ["3 tasks, with 4 runs and their transcripts", "Its folder ~/Atrium/text-dana (2 files, 2 KB)", "Its history: 12 activity lines"],
+    stays: ["Its folder goes to the Trash when macOS allows it. If it can't, Atrium leaves the folder where it is and tells you."],
   });
-  expect(spaceDeleteLines(preview({ tasks: 0, runs: 0, history: 0, folder: { path: "~/Atrium/x", files: 0, bytes: 0, more: false }, texts: { sent: 0, drafts: 0 } })).goes).toEqual([
+  expect(spaceDeleteLines(preview({ tasks: 0, runs: 0, history: 0, folder: { path: "~/Atrium/x", files: 0, bytes: 0, more: false } })).goes).toEqual([
     "The space itself (it has no tasks)",
     "Its folder ~/Atrium/x (nothing in it yet)",
   ]);
-  const yours = spaceDeleteLines(preview({ kind: "repo", folder: null, texts: { sent: 0, drafts: 0 }, repo: { path: "~/dev/app", atriumClone: false } }));
+  const yours = spaceDeleteLines(preview({ kind: "repo", folder: null, repo: { path: "~/dev/app", atriumClone: false } }));
   expect(yours.stays).toEqual([
     "Your repo at ~/dev/app stays exactly as it is, including any atrium/ branches. Delete those yourself if you don't need them.",
     "Nothing on GitHub changes.",
   ]);
-  const clone = spaceDeleteLines(preview({ kind: "repo", folder: null, texts: { sent: 0, drafts: 0 }, repo: { path: "~/Projects/app", atriumClone: true } }));
+  const clone = spaceDeleteLines(preview({ kind: "repo", folder: null, repo: { path: "~/Projects/app", atriumClone: true } }));
   expect(clone.stays[0]).toBe("The copy Atrium cloned at ~/Projects/app is removed only if everything in it is on GitHub. Otherwise Atrium keeps it and says why.");
   expect(spaceDeleteLines(preview({ investing: 30 })).goes).toContain("Its holdings, watchlists, alerts and other investing data");
 });

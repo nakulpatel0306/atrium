@@ -7,7 +7,6 @@ import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import { money } from "../engine/markets/labels";
-import { askLine, displayHandle, hasTarget, memberNames, recipientOf } from "../engine/messaging/rules";
 import { outcomeText } from "../engine/outcome";
 import { fileSize, plural } from "../engine/text";
 import type { MarketsGlance } from "./client";
@@ -145,40 +144,6 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   return lines;
 }
 
-function messageLines(m: State["messageActions"][number]): DetailLine[] {
-  const lines: DetailLine[] = [];
-  if (m.lastError) lines.push(blank, plain(`Last try failed: ${m.lastError}`, { color: color.bad }));
-  if (m.group) {
-    const people = memberNames(m.group);
-    lines.push(
-      blank,
-      m.group.chat
-        ? [{ text: "To      ", color: color.muted }, { text: m.group.chat.name ?? "Unnamed group", bold: true }, { text: m.group.chat.name ? "  chat name from Messages" : "  group chat in Messages", color: color.muted }]
-        : [{ text: "To      ", color: color.muted }, { text: recipientOf(m), bold: true }, { text: "  group chat needed", color: color.warn }],
-      [{ text: "Asked   ", color: color.muted }, { text: askLine(m.group) }],
-      [{ text: "People  ", color: color.muted }, { text: people.length ? people.join(", ") : "not known until you find the chat" }],
-      [{ text: "Via     ", color: color.muted }, { text: m.service }],
-      blank,
-      ...block(m.text),
-      blank,
-      muted("Sends to the existing group chat from Messages on this Mac. Atrium can't confirm delivery."),
-      muted(hasTarget(m) ? "a send · r don't send" : "Find the group chat on the dashboard, then a sends it here · r don't send"),
-    );
-    return lines;
-  }
-  lines.push(
-    blank,
-    [{ text: "To   ", color: color.muted }, { text: m.toName, bold: true }, { text: m.handle ? `  ${displayHandle(m.handle)}` : "  number needed", color: m.handle ? undefined : color.warn }],
-    [{ text: "Via  ", color: color.muted }, { text: m.service }],
-    blank,
-    ...block(m.text),
-    blank,
-    muted("Sends from Messages on this Mac. Atrium can't confirm delivery."),
-    muted(m.handle ? "a send · r don't send" : "Pick who this goes to on the dashboard, then a sends it here · r don't send"),
-  );
-  return lines;
-}
-
 export function approvalDetail(view: View, messages: Message[] | null, width = 100): DetailLine[] {
   const approval = view.approval;
   if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
@@ -186,8 +151,6 @@ export function approvalDetail(view: View, messages: Message[] | null, width = 1
   const review = reviewLine(approval, view.state, messages);
   const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");
   const lines: DetailLine[] = [muted(owner), plain(approval.title, { bold: true })];
-  const text = approval.alwaysAsk === "send_message" ? view.state.messageActions.find((m) => m.approvalId === approval.id) : undefined;
-  if (text) return [...lines, ...messageLines(text), blank, muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`)];
   const task = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const told = task ? outcomeText(task.outcome, task.outcomeReason) : null;
   if (told) lines.push(plain(told, { color: task?.outcome === "unknown" ? color.muted : color.warn }));
@@ -218,7 +181,7 @@ export function proposalDetail(view: View): DetailLine[] {
     blank,
     // The dashboard's wording, so both front-ends promise the same thing.
     plain(
-      `If you say yes, Atrium approves these in ${space} on its own from now on. It never merges or pushes, each one shows up in Activity, and you can undo any of them or turn the rule off on the dashboard's Rules page. It still always asks before merging, deploying, deleting, messaging someone new, spending money, or touching secrets.`,
+      `If you say yes, Atrium approves these in ${space} on its own from now on. It never merges or pushes, each one shows up in Activity, and you can undo any of them or turn the rule off on the dashboard's Rules page. It still always asks before merging, deploying, deleting, or touching secrets.`,
       { color: color.muted },
     ),
     blank,

@@ -55,18 +55,6 @@ function said<T>(res: PostResult<T>, ok: (data: T) => string): Outcome {
   return { tone: "ok", text: ok(res.data) };
 }
 
-// What became of a text after "Sending…": read from the engine's own activity rows once they arrive.
-export function sendFollowUp(state: State, pending: { toName: string; at: number }): Flash | null {
-  for (const row of state.activity) {
-    if (row.createdAt < pending.at) continue;
-    if (row.message.startsWith(`Sent via Messages to ${pending.toName} (`) || row.message.startsWith(`Sent a text to ${pending.toName} (`)) return { tone: "ok", text: `Sent to ${pending.toName}. Atrium can't confirm delivery.` };
-    if (row.message.startsWith(`Couldn't send the text to ${pending.toName}:`)) {
-      return { tone: "bad", text: `Couldn't send the text to ${pending.toName}. It's back in Needs you with what went wrong.` };
-    }
-  }
-  return null;
-}
-
 export const stopText = (title: string, status: Task["status"]) =>
   status === "blocked"
     ? `Stopped "${title}". Its edits so far are kept; R retries it.`
@@ -84,18 +72,6 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
   switch (intent.type) {
     case "approve":
       return said(await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "approve" }), () => `Approved "${intent.title}".`);
-    case "send_message": {
-      // Exactly the text, number and service the confirm showed: what the engine has stored for this draft.
-      const text = state.messageActions.find((m) => m.id === intent.actionId);
-      if (text?.group) {
-        if (!intent.chatId) return { tone: "bad", text: "Find the group chat on the dashboard first." };
-        const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: intent.text ?? text.text, chatId: intent.chatId });
-        return said(res, () => `Sending to ${intent.toName}… If it doesn't go, the text comes back in Needs you.`);
-      }
-      if (!text?.handle) return { tone: "bad", text: "Pick who this goes to on the dashboard first." };
-      const res = await client.post(`/api/message-actions/${enc(text.id)}/send`, { text: intent.text ?? text.text, handle: text.handle, service: text.service });
-      return said(res, () => `Sending to ${intent.toName}… If it doesn't go, the text comes back in Needs you.`);
-    }
     case "reject": {
       const note = intent.note.trim();
       const res = await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "reject", ...(note ? { note } : {}) });
@@ -114,18 +90,12 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return said(res, (d) => `Queued "${d.task.title}" in ${spaceName(intent.spaceId)}${by}.`);
     }
     case "newSpace": {
-      type Reply = { space: Space; tasks?: Task[]; messaging?: true } | { draft: { draft: { name: string } | null } } | { message: { toName: string } };
+      type Reply = { space: Space; tasks?: Task[] } | { draft: { draft: { name: string } | null } };
       const res = await client.post<Reply>("/api/command", { text: intent.text });
       if (!res.ok) return said(res, () => "");
       const data = res.data;
       // A new project is only a draft until Nakul approves it, so there's no space to select yet.
       if ("draft" in data) return said(res, () => `Drafted "${data.draft.draft?.name ?? "your project"}". It's waiting in Needs you.`);
-      // A text with its words is a card on Home right away; one without waits for an agent to draft it.
-      if ("message" in data) return said(res, () => `Drafted a text to ${data.message.toName}. It's waiting in Needs you.`);
-      if (data.messaging) {
-        const to = data.tasks?.[0]?.title.replace(/^Draft a text to /, "") ?? "them";
-        return said(res, () => `Atrium is drafting a text to ${to}. It'll be in Needs you to send.`);
-      }
       return { ...said(res, () => `Set up ${data.space.name}.`), spaceId: data.space.id };
     }
     case "stop":

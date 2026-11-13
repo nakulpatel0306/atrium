@@ -19,7 +19,6 @@ import { SpaceNeeds } from "./NeedsYou";
 import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
 import { OutcomeBanner } from "./OutcomeBanner";
-import { SentMessages } from "./SentMessages";
 import { outcomeLabel } from "../../engine/outcome";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
@@ -533,7 +532,6 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
             )}
           </div>
           )}
-          {tab === "tasks" && <SentMessages spaceId={space.id} />}
           <Activity state={state} spaceId={space.id} />
         </div>
         <div className="live">

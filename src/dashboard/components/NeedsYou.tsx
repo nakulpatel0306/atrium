@@ -4,8 +4,6 @@ import { post, type State, useMessages } from "../api";
 import { absolute, relative } from "../format";
 import { navigate } from "../route";
 import { reviewLine, reviewTarget, summaryLine } from "../summary";
-import { GroupMessageCard } from "./GroupMessageCard";
-import { MessageCard } from "./MessageCard";
 import { DecideButtons, SendBackNote, useDecision } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { ProjectDraftRow } from "./ProjectDraft";
@@ -159,9 +157,6 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
         const action = state.repoActions.find((r) => r.approvalId === a.id);
         if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
         if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
-        const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
-        const Card = text?.group ? GroupMessageCard : MessageCard;
-        if (text) return <Card key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} folded />;
         return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
       })}
     </>

@@ -97,15 +97,6 @@ export function StartView(p: ViewProps) {
           <button className="btn" onClick={p.onRecheck} disabled={p.busy}>
             Check again
           </button>
-          {report.permissions.map((perm) => (
-            <div key={perm.label} className="set-card">
-              <div className="set-title">
-                <b>{perm.label}</b>
-                <span className="tag">Optional</span>
-              </div>
-              <p className="hint">{perm.message} Atrium doesn't ask from this screen.</p>
-            </div>
-          ))}
         </>
       )}
 

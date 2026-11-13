@@ -15,10 +15,6 @@ import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
 import { AttachRefused } from "./attachments";
 import { capabilityLines } from "./capabilities";
-import { type GroupAsk, groupAskOf } from "./messaging/block";
-import { nameProblem, peopleLine, textProblem } from "./messaging/rules";
-import { messagesSpace } from "./messaging/space";
-import { draftGroupMessage, draftMessage, type MessageAction } from "./messaging/store";
 
 export type SpacePlan = {
   name: string;
@@ -33,12 +29,7 @@ export type SpacePlan = {
 
 export type SetupResult =
   | { space: Space; tasks: Task[] }
-  | { draft: RepoAction; approval: Approval }
-  | { message: MessageAction; approval: Approval }
-  | { space: Space; tasks: Task[]; messaging: true };
-
-// `to` is who the card names: the person, or for a group text the group's name (or its people).
-export type MessageRequest = { kind: "message"; to: string; group: GroupAsk | null; text: string | null; about: string };
+  | { draft: RepoAction; approval: Approval };
 
 // Runs inside the transaction that makes a new space and its starter tasks, before anything can start them; returns
 // the tasks as they now stand. The ask bar uses it to hand its attached files to the first task.
@@ -74,10 +65,7 @@ Rules:
 - If the user names a GitHub repo ("owner/name") with no folder for it under ${projects}, use kind "repo", set "github" to "owner/name" and omit repoPath.
 - Give at most ${MAX_TASKS} starter tasks, with small, concrete titles. Use weight "heavy" for work that edits code or takes a long time and "light" for quick reads and summaries.`;
 
-const MESSAGE_RULE =
-  '- If the user wants to text or message someone, reply instead {"kind":"message","to": "<who, as they said it>", "text"?: "<only if they gave the exact words>", "about"?: "<what the message is for, one line>"}. For a group chat, use "group": "<the chat\'s name, as they said it>" and/or "people": ["<name>", …] instead of "to". Never make a task that sends something.';
-
-const systemPrompt = (db: Database, projectsRoot: string) => [systemBody(tildePath(projectsRoot)), ...capabilityLines(db, "setup"), MESSAGE_RULE].join("\n");
+const systemPrompt = (projectsRoot: string) => [systemBody(tildePath(projectsRoot)), ...capabilityLines()].join("\n");
 
 // Agents wrap JSON in prose or fences, so scan for the first balanced object instead of parsing the whole text.
 function firstJsonObject(text: string): string | null {
@@ -172,7 +160,7 @@ export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot(
 export function parseSetupReply(
   text: string,
   projectsRoot = defaultProjectsRoot(),
-): SpacePlan | { kind: "new_project"; draft: ProjectDraft } | MessageRequest {
+): SpacePlan | { kind: "new_project"; draft: ProjectDraft } {
   const raw = firstJsonObject(text);
   let obj: Record<string, unknown> | null = null;
   try {
@@ -180,7 +168,6 @@ export function parseSetupReply(
   } catch {
     // parseSpacePlan reports it.
   }
-  if (obj?.kind === "message") return parseMessageRequest(obj);
   if (obj?.kind !== "new_project") return parseSpacePlan(text, projectsRoot);
   let name: string;
   try {
@@ -195,45 +182,6 @@ export function parseSetupReply(
     kind: "new_project",
     draft: { name, description, visibility: obj.visibility === "public" ? "public" : "private", template: obj.template === "empty" ? "empty" : "bun-ts" },
   };
-}
-
-const oneLine = (v: unknown, max: number) =>
-  typeof v === "string" ? stripHidden((v.split(/[\r\n\u2028\u2029]/)[0] ?? "").replace(/[\u0000-\u001f\u007f]/g, "")).trim().slice(0, max) : "";
-
-// A message request is reduced to who, the exact words if the user gave them, and what it's for. Nothing else in
-// the reply (a handle, an "approved" flag, a service) is read: those are Nakul's to fill in on the card.
-function parseMessageRequest(obj: Record<string, unknown>): MessageRequest {
-  const text = typeof obj.text === "string" && !textProblem(obj.text) ? obj.text.trim() : null;
-  const group = groupAskOf(obj, false);
-  if (group === "bad") throw new BadPlan("A group text needs the group's name or its people, each in one short line.");
-  if (group) return { kind: "message", to: group.name ?? peopleLine(group.people), group, text, about: oneLine(obj.about, 500) };
-  const to = typeof obj.to === "string" ? obj.to.trim() : "";
-  if (nameProblem(to)) throw new BadPlan("A message needs who it's for, in one short line.");
-  return { kind: "message", to, group: null, text, about: oneLine(obj.about, 500) };
-}
-
-// The block a drafting task ends with, spelled for whom this text is for.
-function blockFor(req: MessageRequest): string {
-  if (!req.group) return `{"to": "${req.to}", "text": "<the text>"}`;
-  return JSON.stringify({ ...(req.group.name ? { group: req.group.name } : {}), ...(req.group.people.length ? { people: req.group.people } : {}), text: "<the text>" });
-}
-
-function setupMessage(db: Database, req: MessageRequest): SetupResult {
-  const space = messagesSpace(db);
-  if (req.text) {
-    const { action, approval } = req.group
-      ? draftGroupMessage(db, { spaceId: space.id, name: req.group.name, people: req.group.people, text: req.text })
-      : draftMessage(db, { spaceId: space.id, toName: req.to, text: req.text });
-    return { message: action, approval };
-  }
-  const detail = [
-    ...(req.about ? [`What it's for: ${req.about}`] : []),
-    `Write the text the user would send to ${req.group ? `the group chat ${req.to}` : req.to}: short, warm and in their voice. You can't send it, and nobody needs you to.`,
-    `End your reply with a fenced block tagged atrium-message holding ${blockFor(req)}, then the OUTCOME line. Atrium shows it to the user and sends it only when they press Send.`,
-  ].join("\n\n");
-  const title = req.group ? `Draft a group text to ${req.to}` : `Draft a text to ${req.to}`;
-  const task = createTask(db, { spaceId: space.id, title, detail, weight: "light", allowOnBattery: true, purpose: "message" });
-  return { space, tasks: [task], messaging: true };
 }
 
 // A folder under the projects root that's already a checkout of this repo is the user's: it's used, never recorded
@@ -263,7 +211,7 @@ export async function setupSpace(
     const result = await adapter.run({
       prompt: description,
       cwd,
-      systemPrompt: systemPrompt(db, projectsRoot),
+      systemPrompt: systemPrompt(projectsRoot),
       allowedTools: ["Read", "Glob"],
       mode: "work",
       onChunk: () => {},
@@ -278,7 +226,6 @@ export async function setupSpace(
       const { action, approval } = draftProject(db, reply.draft);
       return { draft: action, approval };
     }
-    if (reply.kind === "message") return setupMessage(db, reply);
     const plan = reply;
     if (plan.github) {
       let view: Awaited<ReturnType<typeof ghViewRepo>>;

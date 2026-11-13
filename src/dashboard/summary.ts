@@ -73,12 +73,8 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
     return { text: `Blocked: ${stuck[0]!.blockedReason ?? stuck[0]!.title}`, tone: "blocked" };
   }
   if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
-  // A text waiting for Send is its own kind of waiting, whether or not a task drafted it.
-  const texts = state.approvals.filter((a) => a.alwaysAsk === "send_message" && a.spaceId === space.id);
-  const waitingOnText = new Set(texts.map((a) => a.taskId));
-  const review = tasks.filter((t) => t.status === "review" && !waitingOnText.has(t.id)).length;
-  if (review > 0) return { text: `${review} ready for your review${texts.length ? ` · ${texts.length} ${texts.length === 1 ? "text" : "texts"} ready to send` : ""}` };
-  if (texts.length > 0) return { text: `${texts.length} ${texts.length === 1 ? "text" : "texts"} ready to send` };
+  const review = tasks.filter((t) => t.status === "review").length;
+  if (review > 0) return { text: `${review} ready for your review` };
   const queued = tasks.filter((t) => t.status === "queued").length;
   if (queued > 0) return { text: `${queued} ${queued === 1 ? "task" : "tasks"} queued` };
   const last = state.activity.find((a) => a.spaceId === space.id)?.createdAt ?? space.updatedAt;

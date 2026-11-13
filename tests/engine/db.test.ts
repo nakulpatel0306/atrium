@@ -392,58 +392,6 @@ test("approvals gain subject and keep their rows", () => {
   t.cleanup();
 });
 
-test("approvals rebuild adds send_message", () => {
-  const t = tempHome();
-  const path = join(t.home, "atrium.db");
-  openDb(path).close();
-  // The approvals table as plans 8–10 left it (514c0ea), before send_message joined the always-ask kinds.
-  const old = new Database(path);
-  old.exec("PRAGMA foreign_keys = OFF");
-  old.exec(`DROP TABLE approvals;
-  CREATE TABLE approvals (
-    id TEXT PRIMARY KEY, space_id TEXT REFERENCES spaces(id), task_id TEXT REFERENCES tasks(id),
-    kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), note TEXT,
-    created_at INTEGER NOT NULL, resolved_at INTEGER, branch_head TEXT, fingerprint TEXT,
-    decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
-    rule_id TEXT REFERENCES autonomy_rules(id), undone_at INTEGER, topic TEXT, subject TEXT,
-    always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN ('merge_main','deploy','first_contact','delete','spend','secrets','create_repo','push','remove_clone')),
-    CHECK (space_id IS NOT NULL OR kind = 'question'),
-    CHECK (always_ask IS NULL OR fingerprint IS NULL),
-    CHECK (always_ask IS NULL OR decided_by = 'you'));
-  INSERT INTO approvals (id, kind, title, always_ask, created_at) VALUES ('apr_r', 'question', 'Create?', 'create_repo', 1);`);
-  old.close();
-  const db = openDb(path);
-  expect(db.query("SELECT id, always_ask FROM approvals").get()).toEqual({ id: "apr_r", always_ask: "create_repo" });
-  db.exec("INSERT INTO approvals (id, kind, title, always_ask, created_at) VALUES ('apr_m', 'question', 'Send?', 'send_message', 1)");
-  expect(() => db.exec("UPDATE approvals SET status = 'approved', decided_by = 'rule' WHERE id = 'apr_m'")).toThrow();
-  const sql = () => (db.query("SELECT sql FROM sqlite_master WHERE name = 'approvals'").get() as { sql: string }).sql;
-  const before = sql();
-  db.close();
-  const again = openDb(path);
-  expect((again.query("SELECT sql FROM sqlite_master WHERE name = 'approvals'").get() as { sql: string }).sql).toBe(before);
-  expect((again.query("SELECT COUNT(*) AS n FROM approvals").get() as { n: number }).n).toBe(2);
-  again.close();
-  t.cleanup();
-});
-
-test("message_actions refuses sending without a handle", () => {
-  const t = tempHome();
-  const db = openDb();
-  db.exec(`INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_1', 'S', 'general', 'x', 1, 1);
-    INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_1', 'spc_1', 'question', 'Send?', 'send_message', 1);`);
-  const insert = (status: string, handle: string | null) =>
-    db
-      .query("INSERT INTO message_actions (id, approval_id, space_id, to_name, handle, text, status, created_at, updated_at) VALUES (?, 'apr_1', 'spc_1', 'Dana', ?, 'hi', ?, 1, 1)")
-      .run(`msa_${status}`, handle, status);
-  expect(() => insert("sending", null)).toThrow();
-  insert("draft", null);
-  expect(() => db.exec("UPDATE message_actions SET status = 'sent' WHERE id = 'msa_draft'")).toThrow();
-  expect(() => db.exec("UPDATE message_actions SET service = 'WhatsApp' WHERE id = 'msa_draft'")).toThrow();
-  db.close();
-  t.cleanup();
-});
-
 test("tasks gain outcome columns", () => {
   const t = tempHome();
   const db = openDb();
@@ -454,46 +402,6 @@ test("tasks gain outcome columns", () => {
   db.exec("UPDATE tasks SET outcome = 'couldnt' WHERE id = 'tsk_1'");
   expect(() => db.exec("UPDATE tasks SET outcome = 'bogus' WHERE id = 'tsk_1'")).toThrow();
   db.close();
-  t.cleanup();
-});
-
-test("message_actions rebuild adds group texts and keeps every row", () => {
-  const t = tempHome();
-  const path = join(t.home, "atrium.db");
-  openDb(path).close();
-  // The table as Plan 11 left it (390038b), before group texts.
-  const old = new Database(path);
-  old.exec("PRAGMA foreign_keys = OFF");
-  old.exec(`DROP TABLE message_actions;
-  CREATE TABLE message_actions (
-    id TEXT PRIMARY KEY, approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id), space_id TEXT NOT NULL REFERENCES spaces(id),
-    task_id TEXT REFERENCES tasks(id), to_name TEXT NOT NULL, handle TEXT,
-    handle_source TEXT CHECK (handle_source IS NULL OR handle_source IN ('contacts','you','agent')), candidates TEXT,
-    service TEXT NOT NULL DEFAULT 'iMessage' CHECK (service IN ('iMessage','SMS')), text TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','rejected')), error TEXT, sent_at INTEGER,
-    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, CHECK (status NOT IN ('sending','sent') OR handle IS NOT NULL));
-  INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_1', 'S', 'general', 'x', 1, 1);
-  INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_1', 'spc_1', 'question', 'Send?', 'send_message', 1);
-  INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_2', 'spc_1', 'question', 'Send?', 'send_message', 1);
-  INSERT INTO message_actions (id, approval_id, space_id, to_name, handle, text, status, created_at, updated_at) VALUES ('msa_old', 'apr_1', 'spc_1', 'Dana', '+15550100134', 'hi', 'sent', 1, 1);`);
-  old.close();
-  const db = openDb(path);
-  expect(db.query("SELECT id, kind, handle, status, chat_id FROM message_actions").get()).toEqual({ id: "msa_old", kind: "person", handle: "+15550100134", status: "sent", chat_id: null });
-  const insert = (status: string, chat: string | null, kind = "group") =>
-    db
-      .query("INSERT INTO message_actions (id, approval_id, space_id, to_name, text, status, kind, chat_id, created_at, updated_at) VALUES (?, 'apr_2', 'spc_1', 'Hike', 'hi', ?, ?, ?, 1, 1)")
-      .run(`msa_${status}_${kind}`, status, kind, chat);
-  expect(() => insert("sending", null)).toThrow();
-  expect(() => insert("sending", "iMessage;+;chat1", "person")).toThrow();
-  expect(() => insert("split", null, "person")).toThrow();
-  insert("sending", "iMessage;+;chat1");
-  const sql = (d: Database) => (d.query("SELECT sql FROM sqlite_master WHERE name = 'message_actions'").get() as { sql: string }).sql;
-  const before = sql(db);
-  db.close();
-  const again = openDb(path);
-  expect(sql(again)).toBe(before);
-  expect((again.query("SELECT COUNT(*) AS n FROM message_actions").get() as { n: number }).n).toBe(2);
-  again.close();
   t.cleanup();
 });
 
