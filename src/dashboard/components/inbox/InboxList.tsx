@@ -47,7 +47,7 @@ export function InboxList({ overview }: { overview: MailOverview }) {
     else if (e.key === "k" || e.key === "ArrowUp") move(cursor - 1);
     else if (open && (e.key === "r" || e.key === "a" || e.key === "f")) {
       e.preventDefault();
-      void startDraft(open, e.key === "r" ? "reply" : e.key === "a" ? "reply_all" : "forward").then(setDraftError);
+      void startDraft(open, e.key === "r" ? "reply" : e.key === "a" ? "reply_all" : "forward", state?.mailActions ?? []).then(setDraftError);
     } else if (e.key === "Escape" && open) {
       setOpen(null);
       requestAnimationFrame(() => rows.current[cursor]?.focus());

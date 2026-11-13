@@ -111,7 +111,7 @@ export function MailCard({ approval, action, folded = false }: { approval: Appro
   if (!open) return <FoldedDraft title={approval.title} line={body.split("\n")[0] || action.subject} onOpen={() => setOpen(true)} />;
 
   return (
-    <div className="entry msg-entry mail-card-entry">
+    <div className="entry msg-entry mail-card-entry" data-draft-id={action.id}>
       <div className="item">
         <Mail className="msg-ico" />
         <span className="who">Inbox</span>

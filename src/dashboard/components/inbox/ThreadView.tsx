@@ -4,6 +4,7 @@ import type { MailKind } from "../../../engine/mail/compose";
 import { post, useEngineState } from "../../api";
 import { announce } from "../../live";
 import { DraftCard } from "./DraftCard";
+import type { MailActionView } from "./MailCard";
 import { Rsvp } from "./Rsvp";
 import { absolute, bytes } from "../../format";
 import { type MessageView, personName, splitQuoted, useThread } from "../../mail";
@@ -101,8 +102,15 @@ function Message({ m, threadId, last, loading }: { m: MessageView; threadId: str
 
 const KIND_LABEL: Record<Exclude<MailKind, "new">, string> = { reply: "Reply", reply_all: "Reply all", forward: "Forward" };
 
-// Opens a draft card under the thread. The engine fills in who it goes to from the thread's own headers.
-export async function startDraft(threadId: string, kind: Exclude<MailKind, "new">): Promise<string | null> {
+// Opens a draft card under the thread. The engine fills in who it goes to from the thread's own headers. If the user
+// already has that kind of draft open on the thread, it goes to that one instead of making a second.
+export async function startDraft(threadId: string, kind: Exclude<MailKind, "new">, drafts: MailActionView[] = []): Promise<string | null> {
+  const open = drafts.find((d) => d.threadId === threadId && d.kind === kind && d.draftedBy === "you");
+  const field = open ? document.querySelector<HTMLTextAreaElement>(`[data-draft-id="${CSS.escape(open.id)}"] textarea`) : null;
+  if (field) {
+    field.focus();
+    return null;
+  }
   const res = await post("/api/mail/drafts", { kind, threadId });
   if (!res.ok) return res.error;
   announce(`${KIND_LABEL[kind]} drafted below the thread.`);
@@ -116,8 +124,8 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
   const head = useRef<HTMLHeadingElement>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
-  const draft = async (kind: Exclude<MailKind, "new">) => setDraftError(await startDraft(id, kind));
   const drafts = (state?.mailActions ?? []).filter((m) => m.threadId === id);
+  const draft = async (kind: Exclude<MailKind, "new">) => setDraftError(await startDraft(id, kind, drafts));
   // Bodies are fetched once per opening, not on every refresh of the view.
   useEffect(() => {
     void post(`/api/mail/threads/${encodeURIComponent(id)}/open`, {});

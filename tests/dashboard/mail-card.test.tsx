@@ -4,6 +4,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { EventCard } from "../../src/dashboard/components/inbox/EventCard";
 import { MailCard } from "../../src/dashboard/components/inbox/MailCard";
+import { startDraft } from "../../src/dashboard/components/inbox/ThreadView";
 import { SendTray } from "../../src/dashboard/components/SendTray";
 import { cancelAll, SEND_DELAY_MS } from "../../src/dashboard/pending-send";
 import type { State } from "../../src/engine/state";
@@ -147,4 +148,17 @@ test("a From the card can't send from shows as unpicked, and Send waits for a pi
   expect(select.value).toBe("");
   expect(select.selectedOptions[0]!.textContent).toBe("Pick an account");
   expect(button(card, "Send").disabled).toBe(true);
+});
+
+test("pressing r again on a thread with your reply open goes to that reply instead of making another", async () => {
+  const card = render(<MailCard approval={approval("apr_1", "Send a reply?")} action={draft({ draftedBy: "you" })} />);
+  await act(async () => {
+    expect(await startDraft("mth_1", "reply", [draft({ draftedBy: "you" })])).toBeNull();
+  });
+  expect(calls).toEqual([]);
+  expect(document.activeElement).toBe(card.querySelector("textarea"));
+  await act(async () => {
+    await startDraft("mth_1", "forward", [draft({ draftedBy: "you" })]);
+  });
+  expect(calls.map((c) => c.url)).toEqual(["/api/mail/drafts"]);
 });

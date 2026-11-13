@@ -77,7 +77,7 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
   if (!open) return <FoldedDraft title={approval.title} line={new Date(e.start).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })} onOpen={() => setOpen(true)} />;
 
   return (
-    <div className="entry msg-entry mail-card-entry">
+    <div className="entry msg-entry mail-card-entry" data-draft-id={action.id}>
       <div className="item">
         <CalendarDays className="msg-ico" />
         <span className="who">Calendar</span>
