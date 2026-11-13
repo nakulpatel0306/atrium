@@ -7,6 +7,7 @@ const ev = (id: string, start: number, end: number, allDay = false): EventView =
   id,
   calendar: { id: "c", title: "Home", color: "#4cb782", source: "apple" },
   title: id,
+  icalUid: `${id}@example.org`,
   start,
   end,
   allDay,

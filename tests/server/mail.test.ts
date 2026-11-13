@@ -248,15 +248,18 @@ describe("drafts and sends", () => {
     expect(await errorOf(r)).toContain("repeating event");
   });
 
-  test("an invitation email's thread carries its event, so it can be answered right there", async () => {
+  test("an invitation's thread carries its event only by the invitation's own UID, never by a title it mentions", async () => {
+    const kit = "Kit Moreno <kit@example.org>";
+    fakes.google.data[SAM]!.threads.push(
+      { id: "gt-invite", historyId: "300", messages: [{ id: "gm-inv", threadId: "gt-invite", from: kit, to: SAM, subject: "Invitation: Planning with Kit @ Tue Nov 3", date: T0, text: "You're invited.", calendar: "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:standup-1@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n" }] },
+      { id: "gt-mention", historyId: "301", messages: [{ id: "gm-men", threadId: "gt-mention", from: kit, to: SAM, subject: "Notes from Planning with Kit", date: T0, text: "Notes." }] },
+    );
     await connectGoogle();
-    const acct = listAccounts(db)[0]!;
-    ingestMessages(db, acct, [{ sourceId: "inv-1", threadKey: "gt-invite", messageId: "<inv@example.org>", inReplyTo: null, references: [], subject: "Invitation: Planning with Kit @ Tue Nov 3", from: { name: "Kit Moreno", address: "kit@example.org" }, to: [{ name: "", address: SAM }], cc: [], date: T0, snippet: "", unread: true, sent: false, labels: ["INBOX"], attachments: [] }]);
-    const thread = listThreads(db).find((t) => t.subject.startsWith("Invitation:"))!;
-    const detail = await get<{ invite: { id: string; title: string; myStatus: string } | null }>(`/api/mail/threads/${thread.id}`);
-    expect(detail.invite).toMatchObject({ title: "Planning with Kit", myStatus: "accepted" });
-    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
-    expect((await get<{ invite: unknown }>(`/api/mail/threads/${lease.id}`)).invite).toBeNull();
+    for (const subject of ["Invitation: Planning with Kit @ Tue Nov 3", "Notes from Planning with Kit"]) await openThread(listThreads(db).find((t) => t.subject === subject)!.id);
+    const invite = listThreads(db).find((t) => t.subject.startsWith("Invitation:"))!;
+    expect((await get<{ invite: { title: string; myStatus: string } | null }>(`/api/mail/threads/${invite.id}`)).invite).toMatchObject({ title: "Planning with Kit", myStatus: "accepted" });
+    const mention = listThreads(db).find((t) => t.subject === "Notes from Planning with Kit")!;
+    expect((await get<{ invite: unknown }>(`/api/mail/threads/${mention.id}`)).invite).toBeNull();
   });
 
   test("e archives a Gmail thread and Undo brings it back; new mail on it brings it back too", async () => {

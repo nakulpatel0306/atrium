@@ -19,6 +19,8 @@ export type FakeMessageInput = {
   // The text part's charset; its bytes are encoded in it, as Gmail serves them.
   charset?: "ISO-8859-1";
   html?: string;
+  // An invitation's text/calendar part, as Google Calendar sends it.
+  calendar?: string;
   labels?: string[];
   attachments?: { name: string; size: number; data: string }[];
 };
@@ -52,6 +54,7 @@ export function gmailMessage(m: FakeMessageInput, format: "full" | "metadata") {
         ]
       : []),
     ...(m.html !== undefined ? [{ mimeType: "text/html", filename: "", body: { data: b64(m.html), size: m.html.length } }] : []),
+    ...(m.calendar !== undefined ? [{ mimeType: "text/calendar", filename: "", body: { data: b64(m.calendar), size: m.calendar.length } }] : []),
     ...(m.attachments ?? []).map((a, i) => ({ mimeType: "application/octet-stream", filename: a.name, body: { attachmentId: `att${i}`, size: a.size } })),
   ];
   return {

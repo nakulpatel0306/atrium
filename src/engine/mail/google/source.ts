@@ -71,17 +71,25 @@ function attachmentsOf(p: GPart | undefined): SourceAttachment[] {
   return out;
 }
 
-function textParts(p: GPart | undefined): { text: string | null; html: string | null } {
+function textParts(p: GPart | undefined): { text: string | null; html: string | null; icalUid: string | null } {
   let text: string | null = null;
   let html: string | null = null;
+  let icalUid: string | null = null;
   const walk = (part: GPart | undefined) => {
     if (!part || part.filename) return;
     if (part.mimeType === "text/plain" && part.body?.data && text === null) text = decode(part.body.data, part);
     if (part.mimeType === "text/html" && part.body?.data && html === null) html = decode(part.body.data, part);
+    if (part.mimeType === "text/calendar" && part.body?.data && icalUid === null) icalUid = calendarUid(decode(part.body.data, part));
     part.parts?.forEach(walk);
   };
   walk(p);
-  return { text, html };
+  return { text, html, icalUid };
+}
+
+// The UID line of an invitation's iCalendar text, with folded lines joined (RFC 5545 3.1).
+export function calendarUid(ics: string): string | null {
+  const uid = /^UID:(.+)$/m.exec(ics.replace(/\r?\n[ \t]/g, ""))?.[1]?.trim();
+  return uid || null;
 }
 
 async function inBatches<T, R>(items: T[], fn: (t: T) => Promise<R>): Promise<R[]> {

@@ -578,6 +578,7 @@ export type EventView = {
   organizer: string | null;
   myStatus: AttendeeStatus | null;
   recurring: boolean;
+  icalUid: string;
 };
 
 export type CalendarView = { id: string; title: string; color: string; source: SourceKind; enabled: boolean; writable: boolean; hidden: string | null };
@@ -658,23 +659,18 @@ export function listEvents(db: Database, from: number, to: number): EventView[] 
       organizer: r.organizer,
       myStatus: r.my_status,
       recurring: !!r.recurrence || r.recurrence_id !== "",
+      icalUid: r.ical_uid,
     });
   }
   return out;
 }
 
-// The invitation a thread is about, so it can be answered from the thread: an upcoming event the user is invited to,
-// organised by someone who wrote on the thread, whose title the thread's subject carries ("Invitation: Lunch @ Fri").
+// The invitation a thread carries, so it can be answered from the thread: the event whose iCalUID is the one in a
+// message's own text/calendar part, read with its body. Nothing is matched by title, so a thread without that part
+// (or a Mail.app message, whose parts Atrium doesn't read) shows no answer buttons rather than a guess.
 export function inviteForThread(db: Database, threadId: string): EventView | null {
-  const thread = db.query("SELECT subject, (SELECT MIN(date) FROM mail_messages WHERE thread_id = mail_threads.id) AS first FROM mail_threads WHERE id = ?").get(threadId) as { subject: string; first: number | null } | null;
-  if (!thread?.first) return null;
-  const senders = new Set((db.query("SELECT from_json FROM mail_messages WHERE thread_id = ?").all(threadId) as { from_json: string }[]).map((r) => json<Person>(r.from_json, { name: "", address: "" }).address).filter(Boolean));
+  const uids = new Set((db.query("SELECT DISTINCT ical_uid FROM mail_messages WHERE thread_id = ? AND ical_uid IS NOT NULL").all(threadId) as { ical_uid: string }[]).map((r) => r.ical_uid));
+  if (!uids.size) return null;
   const own = new Set((db.query("SELECT DISTINCT address FROM mail_accounts").all() as { address: string }[]).map((r) => r.address));
-  const subject = thread.subject.toLowerCase();
-  return (
-    // An invitation is sent before its event, so events from the thread's first message on are candidates.
-    listEvents(db, thread.first - 86_400_000, thread.first + 365 * 86_400_000).find(
-      (e) => e.myStatus !== null && !!e.organizer && senders.has(e.organizer) && !own.has(e.organizer) && e.title.trim().length > 0 && subject.includes(e.title.toLowerCase()),
-    ) ?? null
-  );
+  return listEvents(db, 0, Number.MAX_SAFE_INTEGER).find((e) => uids.has(e.icalUid) && e.myStatus !== null && !!e.organizer && !own.has(e.organizer)) ?? null;
 }

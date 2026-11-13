@@ -193,6 +193,7 @@ export function createMailSync(deps: {
         cacheBody(db, id, text, now());
         // Mail.app's listing carries no snippet (reading content there is slow), so the body supplies it.
         fillSnippet(db, id, text);
+        if (body.icalUid) db.query("UPDATE mail_messages SET ical_uid = ? WHERE id = ?").run(body.icalUid, id);
         if (body.attachments.length) {
           db.query("UPDATE mail_messages SET attachments = ?, has_attachments = 1 WHERE id = ?").run(JSON.stringify(body.attachments), id);
         }
