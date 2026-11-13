@@ -76,13 +76,15 @@ const lstatOrNull = (p: string) => {
 const BASE_CACHE = 32;
 const baseRuns = new Map<string, CheckResult[]>();
 
-// The user's dependencies as they stand, by each lockfile's and dependency folder's identity (inode, size, time):
-// enough to notice a reinstall, and nothing is read, so a FIFO or a huge file in their place can't stall the engine.
+// The user's dependencies as they stand, by each lockfile's and dependency folder's identity (inode, size, mtime, and
+// ctime, which utimes can't set back): enough to notice a reinstall. Nothing is read, so a FIFO or a huge file in
+// their place can't stall the engine. Agents can't write the user's checkout; a stale key only reads a regression
+// as unverified, never as passed.
 function depsFingerprint(repo: string): string {
   return [...LOCKFILES, ...DEPENDENCY_DIRS]
     .flatMap((name) => {
       const st = lstatOrNull(join(repo, name));
-      return st ? [`${name}:${st.ino}:${st.size}:${st.mtimeMs}`] : [];
+      return st ? [`${name}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`] : [];
     })
     .join("|");
 }
