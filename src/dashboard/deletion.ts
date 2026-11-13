@@ -36,7 +36,7 @@ const names = (paths: string[]) => {
 export function taskDeleteLine(p: TaskDeletePreview): string {
   const n = p.files.length;
   const parts = [p.runs > 0 ? `its ${plural(p.runs, "run")} and transcripts` : null, "its history", n > 0 ? `${n === 1 ? "the file" : `the ${n} files`} it made (${names(p.files)})` : null].filter(Boolean);
-  const followers = p.followers > 0 ? ` and its ${p.followers === 1 ? "review or fix" : `${p.followers} reviews and fixes`}` : "";
+  const followers = p.followers > 0 ? ` and its ${p.followers === 1 ? "review" : `${p.followers} reviews`}` : "";
   const last = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
   const kept = [
     p.edited.length ? `${names(p.edited)} changed since, so ${p.edited.length === 1 ? "it stays" : "they stay"}.` : null,

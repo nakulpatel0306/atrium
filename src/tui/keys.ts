@@ -336,7 +336,7 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
     case "A":
       if (!task) return [nothingHere(u, view, NO_TASK)];
       if (task.status !== "queued") return [info("This task has already started, so its agent can't change.")];
-      if (task.kind !== "work") return [info("Reviews and fixes use the agent the space picked.")];
+      if (task.kind !== "work") return [info("Reviews use the reviewer the space picked.")];
       return [open({ kind: "picker", purpose: "agent", targetId: task.id, options: [...AGENT_CHOICES], index: Math.max(0, AGENT_CHOICES.indexOf(task.agent as AgentChoice)) })];
     case "p":
       if (!space) return [info(NO_SPACE)];
