@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { config } from "../../src/engine/config";
 import { openDb } from "../../src/engine/db";
+import { getSpace } from "../../src/engine/spaces";
 import { getTask } from "../../src/engine/tasks";
 import { tempHome } from "../helpers";
 
@@ -296,5 +297,34 @@ test("an older database without attachments gains the table, and its tasks read 
   expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attachments'").get()).toEqual({ name: "attachments" });
   expect(getTask(db, "tsk_old")?.title).toBe("Kept");
   db.close();
+  t.cleanup();
+});
+
+test("an older database gains the loop's columns and checks table; its spaces review with auto and its tasks have no brief", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const old = new Database(path);
+  old.exec(`CREATE TABLE spaces (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', color TEXT NOT NULL,
+    repo_path TEXT, private INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, review_by TEXT);
+  CREATE TABLE tasks (
+    id TEXT PRIMARY KEY, space_id TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued', blocked_reason TEXT, agent TEXT NOT NULL, weight TEXT NOT NULL,
+    allow_on_battery INTEGER NOT NULL DEFAULT 0, branch TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  INSERT INTO spaces (id, name, kind, color, created_at, updated_at, review_by) VALUES ('spc_a', 'A', 'repo', '#fff', 1, 1, NULL), ('spc_b', 'B', 'repo', '#fff', 1, 1, 'codex');
+  INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('tsk_old', 'spc_a', 'old', 'claude', 'heavy', 1, 1)`);
+  old.close();
+  const db = openDb(path);
+  const cols = (table: string) => (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  expect(cols("tasks")).toEqual(expect.arrayContaining(["brief", "loop"]));
+  expect(cols("spaces")).toEqual(expect.arrayContaining(["checks", "budget"]));
+  expect(cols("checks")).toContain("output");
+  const task = getTask(db, "tsk_old")!;
+  expect([task.brief, task.loop]).toEqual([null, null]);
+  expect(getSpace(db, "spc_a")!.reviewBy).toBe("auto");
+  expect(getSpace(db, "spc_b")!.reviewBy).toBe("codex");
+  db.close();
+  openDb(path).close();
   t.cleanup();
 });

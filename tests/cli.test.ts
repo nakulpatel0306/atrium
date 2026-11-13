@@ -38,7 +38,7 @@ test("renderPlist escapes XML characters in paths", () => {
 });
 
 test("statusLine is plain language", () => {
-  const state = { spaces: [{}, {}], approvals: [{}] } as unknown as State;
+  const state = { spaces: [{}, {}], approvals: [{}], proposals: [], tasks: [] } as unknown as State;
   expect(statusLine(state, "http://127.0.0.1:7420")).toBe("running at http://127.0.0.1:7420 · 2 spaces · 1 needs you");
   expect(statusLine(null, "http://127.0.0.1:7420")).toBe("not running");
 });

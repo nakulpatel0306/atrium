@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import type { Wait } from "../../src/dashboard/agents";
-import type { Message, State } from "../../src/dashboard/api";
+import type { State } from "../../src/dashboard/api";
+import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import {
   agentStatus,
   distinctWaits,
   emptyHome,
   orderedTasks,
+  attentionText,
   reviewLine,
-  reviewTarget,
   runOutcome,
   spaceStatus,
 } from "../../src/dashboard/summary";
@@ -53,36 +54,24 @@ test("spaceStatus says who is running", () => {
   expect(spaceStatus(space, [], state()).text.startsWith("Idle · last activity ")).toBe(true);
 });
 
-const review = (over: Partial<Task> = {}) =>
-  task({ id: "tsk_rev", kind: "review", parentTaskId: "tsk_1", agent: "codex", status: "running", ...over });
-const approval = { id: "apr_1", spaceId: "spc_1", taskId: "tsk_1", title: "Review: Task" } as Approval;
-const msg = (body: string, fromAgent = "codex") => ({ id: "m", fromAgent, toAgent: "claude", body }) as Message;
+const approval = { id: "apr_1", spaceId: "spc_1", taskId: "tsk_1", title: "Task" } as Approval;
+const repo = { ...space, kind: "repo" } as Space;
+const loop = (over: Partial<NonNullable<Task["loop"]>> = {}) => ({ ...newLoop(SIZE_BUDGETS.medium), ...over });
 
-test("reviewLine follows the review and the fix", () => {
-  const running = state({ tasks: [task(), review()] });
-  expect(reviewLine(approval, running, null)).toEqual({
-    text: "Codex is reviewing · you can decide now",
-    tone: "waiting",
-    fixing: false,
-  });
+test("reviewLine says what the checks and the reviewer made of the work", () => {
+  const passed = task({ loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] }) });
+  expect(reviewLine(approval, state({ tasks: [passed], spaces: [repo] }))).toEqual({ text: "Checks passed · reviewed by Codex", tone: "ok" });
 
-  const done = state({ tasks: [task(), review({ status: "done" })] });
-  expect(reviewLine(approval, done, null)?.text).toBe("Reviewed by Codex");
-  const approved = reviewLine(approval, done, [msg("Looks good.\nVERDICT: approve")]);
-  expect(approved?.text).toBe("Reviewed by Codex · approve");
-  expect(approved?.tone).toBe("ok");
+  const finding = { severity: "high" as const, file: "a.ts", line: 1, reason: "r", resolution: { action: "fixed" as const, note: "" } };
+  const fixed = task({ loop: loop({ checks: "none", reviews: [{ reviewer: "claude", verdict: "changes", findings: [finding, { ...finding, resolution: null }], skipped: null }] }) });
+  expect(reviewLine(approval, state({ tasks: [fixed], spaces: [repo] }))).toEqual({ text: "Unverified: no checks found · Claude found 2 to fix, 1 fixed", tone: "waiting" });
 
-  const fix = task({ id: "tsk_fix", kind: "fix", parentTaskId: "tsk_1", agent: "claude", status: "done" });
-  const fixed = reviewLine(approval, state({ tasks: [task(), review({ status: "done" }), fix] }), null);
-  expect(fixed?.text).toBe("Codex asked for changes · Claude fixed them");
-  expect(fixed?.fixing).toBe(true);
+  const flagged = task({ loop: loop({ checks: "passed", attention: ["This change edits how checks run: package.json."] }) });
+  expect(reviewLine(approval, state({ tasks: [flagged], spaces: [repo] }))?.tone).toBe("bad");
+  expect(attentionText(flagged.loop)).toBe("Look closely: This change edits how checks run: package.json.");
 
-  expect(reviewLine(approval, state({ tasks: [task()] }), null)).toBeNull();
-});
-
-test("reviewTarget asks for the thread only once the review is done without a fix", () => {
-  expect(reviewTarget(approval, state({ tasks: [task(), review()] }))).toBeNull();
-  expect(reviewTarget(approval, state({ tasks: [task(), review({ status: "done" })] }))).toBe("tsk_1");
+  // Work outside the loop has no line.
+  expect(reviewLine(approval, state({ tasks: [task()], spaces: [repo] }))).toBeNull();
 });
 
 test("agentStatus", () => {
@@ -121,15 +110,4 @@ test("Home is only empty when there are no spaces and nothing waiting", () => {
   const ask = { id: "apr_1", spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?' } as Approval;
   expect(emptyHome(state({ spaces: [], proposals: [], approvals: [ask] } as Partial<State>))).toBe(false);
   expect(emptyHome(state({ spaces: [space], proposals: [] } as Partial<State>))).toBe(false);
-});
-
-test("reviewLine never shows an agent's markdown markers", () => {
-  // The line is built from the verdict, never the message text, so markdown in the review can't leak into it.
-  const approval = { id: "apr_1", taskId: "tsk_w" } as Approval;
-  const state = {
-    tasks: [{ id: "tsk_r", kind: "review", parentTaskId: "tsk_w", approvalId: "apr_1", status: "done", agent: "codex" }],
-    runs: [],
-  } as unknown as State;
-  const line = reviewLine(approval, state, [{ id: "m", spaceId: "s", taskId: "tsk_w", fromAgent: "codex", toAgent: "claude", body: "**Approve.** Looks good", createdAt: 1 }]);
-  expect(line?.text).not.toContain("**");
 });

@@ -12,13 +12,17 @@ export type Pane = "spaces" | "tasks" | "detail" | "live";
 
 // What the Ask box is for right now. "ask" is the tab's own (new space, new task); the
 // rest are the prompts other keys open in the same box.
-export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter";
-export type Ask = { purpose: AskPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null };
+export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter" | "answer";
+// Answers so far to a brief's questions, while they're being given one at a time.
+export type Answering = { step: number; answers: { question: string; answer: string }[] };
+export type Ask = { purpose: AskPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null; answering?: Answering };
 
 export type Overlay =
   | { kind: "help" }
   | { kind: "agents"; scroll: number }
   | { kind: "picker"; purpose: "agent" | "reviewer"; targetId: string; options: string[]; index: number }
+  // A brief's questions for the task, one at a time: its answers by number, a typed one, or none.
+  | ({ kind: "answer"; taskId: string; index: number } & Answering)
   | { kind: "transcript"; taskId: string; runIndex: number; scroll: number }
   // A Needs you item's full text (a question, an alert, a suggestion), scrollable.
   | { kind: "detail"; scroll: number }

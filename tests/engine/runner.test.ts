@@ -21,7 +21,8 @@ import { OUTCOME_INSTRUCTION, outcomeLabel, outcomeText } from "../../src/engine
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
 import { spaceFolder } from "../../src/engine/folders";
-import { createTask, getTask, listTasks, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, getTask, listTasks, setTaskLoop, setTaskStatus } from "../../src/engine/tasks";
+import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { claimAttachments, storeAttachments, withAttachments } from "../../src/engine/attachments";
 import { tempHome, tempRepo } from "../helpers";
 import { readdirSync } from "node:fs";
@@ -127,7 +128,8 @@ const realSnapshot = snapshot.snapshotFolder;
 // The system prompt without the shared capability and outcome lines, which name branches for every agent.
 const ownLines = (prompt: string) => prompt.split("What Atrium can and can't do right now:")[0]!;
 const generalSpace = () => createSpace(db, { name: "Docs", kind: "general", goal: "Write clear docs" });
-const repoSpace = (path: string) => createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path });
+// Review is off so these stay about the run itself; the loop's checks and reviews are covered in loop.test.ts.
+const repoSpace = (path: string) => updateSpace(db, createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path }).id, { reviewBy: "off" });
 const status = (id: string) => getTask(db, id)!.status;
 
 test("runs a queued task to review and creates a review approval", async () => {
@@ -188,13 +190,15 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   expect(calls[0]!.systemPrompt).toContain("Atrium commits them for you.");
   expect(calls[0]!.allowedTools).toEqual([
     "Read", "Edit", "Write", "Glob", "Grep",
-    "Bash(bun test*)", "Bash(bun install --ignore-scripts*)", "Bash(bunx tsc*)",
+    "Bash(bun test*)", "Bash(bunx tsc*)",
     "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
   ]);
   const [a] = listPending(db);
   expect(a!.detail).toContain("Added new.txt.");
   expect(a!.detail).toContain(`1 commit, 1 file (+1 −0) on atrium/${task.id}`);
-  expect(a!.detail.endsWith(`Branch atrium/${task.id} is on your machine. Push it when you're ready.`)).toBe(true);
+  expect(a!.detail).toContain(`Branch atrium/${task.id} is on your machine. Push it when you're ready.`);
+  // The fixture repo has nothing to run, and this space has review off, and the approval says both.
+  expect(a!.detail.endsWith("Unverified: no checks found. Add a check command in this space's settings or in the brief.\n\nReview: off for this space.")).toBe(true);
 });
 
 test("dirty repo blocks the task without touching files", async () => {
@@ -895,14 +899,13 @@ test("stop aborts a running task, requeues it, and puts the repo back", async ()
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Long job" });
   let aborted = false;
-  const r = start({
-    adapter: fakeAdapter(async (input) => {
-      const res = await untilAborted(input);
-      aborted = true;
-      return res;
-    }).adapter,
+  const { adapter, calls } = fakeAdapter(async (input) => {
+    const res = await untilAborted(input);
+    aborted = true;
+    return res;
   });
-  await waitFor(() => status(t.id) === "running");
+  const r = start({ adapter });
+  await waitFor(() => calls.length > 0);
   const started = Date.now();
   await r.stop();
   runner = null;
@@ -1086,34 +1089,33 @@ for (const [label, result, expectStatus] of [
   });
 }
 
-test("stopping a review hands it back like any review that didn't happen", async () => {
-  const s = generalSpace();
-  const parent = createTask(db, { spaceId: s.id, title: "Work", agent: "codex" });
-  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run("run_w", parent.id, "codex", Date.now(), "/tmp/x.log");
-  setTaskStatus(db, parent.id, "running");
-  setTaskStatus(db, parent.id, "review");
+test("stopping a review sends the work on to you, saying the review didn't happen", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const parent = createTask(db, { spaceId: s.id, title: "Work" });
+  setTaskLoop(db, parent.id, { ...newLoop(SIZE_BUDGETS.medium), stage: "review", checks: "none", report: ["Did the work."] });
   const review = createTask(db, { spaceId: s.id, title: "Review: Work", kind: "review", parentTaskId: parent.id, agent: "claude" });
   const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
   await waitFor(() => status(review.id) === "running");
   expect(await r.stopTask(review.id)).toBe("stopped");
   expect(status(review.id)).toBe("blocked");
-  const { listMessages } = await import("../../src/engine/messages");
-  expect(listMessages(db, parent.id).map((m) => m.body)).toContain("Claude's review didn't happen: You stopped the review. The approval is unchanged; decide on it as usual.");
+  await waitFor(() => status(parent.id) === "review");
+  expect(listPending(db)[0]!.detail).toContain("Review: Claude's review didn't happen. You stopped the review.");
 });
 
-test("stopping a fix says so on the work it was fixing", async () => {
+test("fix tasks and approval-bound reviews from the old handoff end on boot; the work still waits for you", async () => {
   const s = generalSpace();
   const parent = createTask(db, { spaceId: s.id, title: "Add a note" });
   setTaskStatus(db, parent.id, "running");
   setTaskStatus(db, parent.id, "review");
   const { createApproval } = await import("../../src/engine/approvals");
   const a = createApproval(db, { spaceId: s.id, taskId: parent.id, kind: "review", title: "Add a note", detail: "Added it." });
-  const fix = createTask(db, { spaceId: s.id, title: "Fix: Add a note", kind: "fix", parentTaskId: parent.id, approvalId: a.id, agent: "claude" });
-  const r = start({ adapter: fakeAdapter(async (input) => untilAborted(input)).adapter });
-  await waitFor(() => status(fix.id) === "running");
-  expect(await r.stopTask(fix.id)).toBe("stopped");
-  expect(status(fix.id)).toBe("blocked");
-  expect(getApproval(db, a.id)!.detail).toContain("The fix didn't finish: You stopped the fix.");
+  const fix = createTask(db, { spaceId: s.id, title: "Fix: Add a note", kind: "fix", parentTaskId: parent.id, approvalId: a.id });
+  const review = createTask(db, { spaceId: s.id, title: "Review: Add a note", kind: "review", parentTaskId: parent.id, approvalId: a.id });
+  await recoverOnBoot(db);
+  expect([status(fix.id), status(review.id), status(parent.id)]).toEqual(["done", "done", "review"]);
+  expect(getApproval(db, a.id)!.status).toBe("pending");
+  expect(listActivity(db).map((x) => x.message)).toContain("Ended: Fix: Add a note. Reviews now run before work reaches you, so this older step won't run; decide on the work as usual.");
 });
 
 test("stopTask stops only the task asked for, and says no for one that isn't running", async () => {
@@ -1457,22 +1459,6 @@ test("a commit refusal says where the changes are and what to do next", async ()
   );
 });
 
-test("a review that would go to the agent that did the work is skipped at launch", async () => {
-  const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
-  const parent = createTask(db, { spaceId: s.id, title: "Work", agent: "codex" });
-  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path) VALUES (?, ?, ?, ?, ?)").run(
-    "run_w", parent.id, "codex", Date.now(), "/tmp/x.log",
-  );
-  setTaskStatus(db, parent.id, "running");
-  setTaskStatus(db, parent.id, "review");
-  // Nakul switched the review to auto, which resolves to the free agent that did the work.
-  const review = createTask(db, { spaceId: s.id, title: "Review: Work", kind: "review", parentTaskId: parent.id, agent: "auto" });
-  const codex = fakeAdapter();
-  start({ adapter: fakeAdapter().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
-  await waitFor(() => status(review.id) === "done");
-  expect(codex.calls).toHaveLength(0);
-  expect(listActivity(db).some((a) => a.message.includes("Codex did the work, so it can't review it too"))).toBe(true);
-});
 
 test("a scratch copy whose sandbox won't start keeps nothing and the approval says so", async () => {
   const s = createSpace(db, { name: "Docs", kind: "general", goal: "", private: false });
@@ -1583,7 +1569,7 @@ test("an active rule approves a matching result on its own", async () => {
   expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("1");
 });
 
-test("a rule waits for the space's review", async () => {
+test("a rule decides only once the space's review has approved", async () => {
   const path = repo();
   const s = reviewSpaceBy(path);
   yesRule(s.id);
@@ -1591,25 +1577,26 @@ test("a rule waits for the space's review", async () => {
   const codex = gated("codex", "Reads well.\nVERDICT: approve");
   start({ adapter: writesDoc().adapter, extra: { codex: codex.adapter } });
   await waitFor(() => codex.calls.length === 1);
-  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+  // Nothing reaches Nakul, or a rule, before the review is in.
+  expect(approvalFor(t.id)).toBeNull();
   codex.release();
   await waitFor(() => status(t.id) === "done");
   expect(getApproval(db, approvalFor(t.id)!.id)!.decidedBy).toBe("rule");
   expect(reviewOf(t.id)!.status).toBe("done");
 });
 
-test("a review asking for changes keeps the result waiting", async () => {
+test("a review asking for changes keeps the result waiting, even after the writer fixed it", async () => {
   const path = repo();
   const s = reviewSpaceBy(path);
   yesRule(s.id);
   const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
-  const codex = fakeAdapter(() => ok("Typo on line 2.\nVERDICT: changes"));
+  const codex = fakeAdapter(() => ok("FINDING medium docs/a.md:2 typo\nVERDICT: changes"));
   start({ adapter: writesDoc().adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
-  await waitFor(() => listTasks(db).some((x) => x.parentTaskId === t.id && x.kind === "fix" && x.status === "done"));
+  await waitFor(() => status(t.id) === "review");
   await runner!.stop();
   runner = null;
   expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
-  expect(status(t.id)).toBe("review");
+  expect(getTask(db, t.id)!.loop!.triaged).toBe(true);
 });
 
 test("a review without a verdict keeps the result waiting", async () => {
@@ -1635,7 +1622,7 @@ test("rule applies after a review that finished after a restart", async () => {
   await waitFor(() => first.calls.length === 1);
   await runner!.stop();
   expect(reviewOf(t.id)!.status).toBe("queued");
-  expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
+  expect(approvalFor(t.id)).toBeNull();
   const second = fakeAdapter(() => ok("All good.\nVERDICT: approve"));
   start({ adapter: writesDoc().adapter, extra: { codex: { ...second.adapter, id: "codex", label: "Codex" } } });
   await waitFor(() => status(t.id) === "done");
@@ -1911,15 +1898,16 @@ describe("honest outcomes", () => {
   };
   const activity = (spaceId: string) => listActivity(db, { spaceId }).map((x) => x.message);
 
-  test("work and fix prompts end with the capabilities and the outcome instruction; reviews get neither", async () => {
+  test("writer prompts end with the capabilities and the outcome instruction; reviews get neither", async () => {
     const path = repo();
     const s = reviewSpaceBy(path);
     const t = createTask(db, { spaceId: s.id, title: "Add a note", agent: "claude" });
-    const codex = fakeAdapter(() => ok("Typo.\nVERDICT: changes"));
+    const codex = fakeAdapter(() => ok("FINDING medium docs/a.md:2 typo\nVERDICT: changes"));
     const claude = writesDoc();
     start({ adapter: claude.adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
-    await waitFor(() => listTasks(db).some((x) => x.parentTaskId === t.id && x.kind === "fix" && x.status === "done"));
+    await waitFor(() => status(t.id) === "review");
     const lines = capabilityLines();
+    // The first turn, then the one that answers the review.
     expect(claude.calls).toHaveLength(2);
     for (const call of claude.calls) {
       for (const l of lines) expect(call.systemPrompt).toContain(l);
@@ -2214,4 +2202,16 @@ describe("live changes", () => {
     await Bun.sleep(120);
     expect(n).toBe(after);
   });
+});
+
+test("on battery a heavy task drafts its brief, then its writer waits for power", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Add totals", detail: "Add totals" });
+  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.medium), stage: "brief" });
+  const { adapter, calls } = fakeAdapter((input) => ok(input.model === "haiku" ? JSON.stringify({ goal: "Add totals" }) : "Did it."));
+  start({ adapter, power: async () => "battery" });
+  await waitFor(() => getTask(db, t.id)!.loop!.stage === "writing" && waits().some((w) => w.taskId === t.id && w.kind === "power"));
+  expect(calls.map((c) => c.model)).toEqual(["haiku"]);
+  expect(getTask(db, t.id)!.brief!.goal).toBe("Add totals");
 });

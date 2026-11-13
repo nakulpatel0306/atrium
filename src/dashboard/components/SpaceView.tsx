@@ -5,7 +5,9 @@ import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
-import { distinctWaits, liveRun, orderedTasks, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
+import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
+import { REVIEW_CHOICES } from "../../engine/spaces";
+import { ChecksBadge, LoopPanel } from "./LoopPanel";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ReviewActions } from "./Decision";
@@ -33,8 +35,6 @@ type Space = State["spaces"][number];
 type Task = State["tasks"][number];
 type Run = State["runs"][number];
 
-const REVIEWER_CHOICES = ["none", "codex", "gemini", "claude"] as const;
-
 const KIND: Record<Exclude<Task["kind"], "work">, { label: string; icon: typeof SearchCheck }> = {
   review: { label: "Review", icon: SearchCheck },
   fix: { label: "Fix", icon: Wrench },
@@ -51,43 +51,70 @@ function KindBadge({ kind }: { kind: Task["kind"] }) {
   );
 }
 
-function ReviewSetting({ space }: { space: Space }) {
+// Who reviews, what the gate runs and how much a task may spend before it pauses; every field has a default.
+function LoopSettings({ space }: { space: Space }) {
   const reasons = useReviewers(space);
+  const [open, setOpen] = useState(false);
+  const [checks, setChecks] = useState(space.checks ?? "");
+  const [tokens, setTokens] = useState(space.budget ? String(space.budget.tokens) : "");
+  const [minutes, setMinutes] = useState(space.budget ? String(space.budget.minutes) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const reason = space.reviewBy ? reasons?.[space.reviewBy] : null;
+  const reason = space.reviewBy !== "auto" && space.reviewBy !== "off" ? reasons?.[space.reviewBy] : null;
 
-  const choose = async (value: (typeof REVIEWER_CHOICES)[number]) => {
+  const save = async (body: Record<string, unknown>) => {
     setBusy(true);
     setError(null);
-    const res = await patch<Space>(`/api/spaces/${space.id}`, { reviewBy: value === "none" ? null : value });
+    const res = await patch<Space>(`/api/spaces/${space.id}`, body);
     setBusy(false);
     if (!res.ok) setError(res.error);
+    return res.ok;
   };
 
   return (
     <div className="review-setting">
       <label>
         <SearchCheck />
-        Review finished work with
-        <select
-          className="pick"
-          value={space.reviewBy ?? "none"}
-          disabled={busy}
-          onChange={(e) => void choose(e.target.value as (typeof REVIEWER_CHOICES)[number])}
-        >
-          {REVIEWER_CHOICES.map((id) => (
+        Review with
+        <select className="pick" value={space.reviewBy} disabled={busy} onChange={(e) => void save({ reviewBy: e.target.value })}>
+          {REVIEW_CHOICES.map((id) => (
             <option key={id} value={id}>
-              {id === "none" ? "No one" : agentName(id)}
-              {id !== "none" && reasons?.[id] ? " (can't work here)" : ""}
+              {reviewerName(id)}
+              {id !== "auto" && id !== "off" && reasons?.[id] ? " (can't work here)" : ""}
             </option>
           ))}
         </select>
       </label>
-      {reason ? (
-        <span className="why bad">{reason} Reviews will be skipped until you pick another reviewer.</span>
-      ) : (
-        <span className="hint">{reviewHint(space.reviewBy)}</span>
+      {reason ? <span className="why bad">{reason} Reviews will be skipped until you pick another reviewer.</span> : <span className="hint">{reviewHint(space.reviewBy)}</span>}
+      <button className="btn link subtle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        Checks and budget
+      </button>
+      {open && (
+        <form
+          className="loop-settings"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const budget = tokens.trim() || minutes.trim() ? { tokens: Number(tokens), minutes: Number(minutes) } : null;
+            void save({ checks: checks.trim() || null, budget }).then((ok) => ok && setOpen(false));
+          }}
+        >
+          <label>
+            Check commands <span className="hint">one per line, the last is the full test run; leave empty to use what Atrium finds</span>
+            <textarea className="mono" rows={2} value={checks} onChange={(e) => setChecks(e.target.value)} />
+          </label>
+          <label>
+            Budget per task <span className="hint">empty uses the defaults by task size</span>
+            <span className="budget-fields">
+              <input aria-label="Tokens per task" inputMode="numeric" placeholder="600000" value={tokens} onChange={(e) => setTokens(e.target.value)} />
+              tokens
+              <input aria-label="Minutes per task" inputMode="numeric" placeholder="45" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+              min
+            </span>
+          </label>
+          <button className="btn p" type="submit" disabled={busy}>
+            Save
+          </button>
+        </form>
       )}
       {error && <span className="err">{error}</span>}
     </div>
@@ -212,8 +239,8 @@ function Header({ space }: { space: Space }) {
         </button>
       )}
       {error && <div className="err">{error}</div>}
-      {/* Reviews read the branch diff, so only repo spaces have anything to review. */}
-      {space.kind === "repo" && <ReviewSetting space={space} />}
+      {/* Checks and reviews read the branch, so only repo spaces have them. */}
+      {space.kind === "repo" && <LoopSettings space={space} />}
       {deleting && <DeleteSpace space={space} onClose={() => setDeleting(false)} onDeleted={() => navigate("/")} />}
     </div>
   );
@@ -258,6 +285,7 @@ type TaskRowProps = {
 
 function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
+  const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stuck = task.status === "blocked" || task.status === "failed";
   const runs = state.runs.filter((r) => r.taskId === task.id);
@@ -313,6 +341,15 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
             Run now
           </button>
         )}
+        {space?.kind === "repo" && task.kind === "work" && (
+          <ChecksBadge
+            task={task}
+            onOpen={() => {
+              setShowChecks(true);
+              if (!open) onToggle();
+            }}
+          />
+        )}
         <StopTask task={task} />
         <Avatar agent={ranAgent(task, state.runs)} live={task.status === "running"} title={agent} />
       </div>
@@ -327,6 +364,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
               <CornerDownRight />
               {task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "{parent.title}"
             </p>
+          )}
+          {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
+            <LoopPanel key={String(showChecks)} task={task} repo={space?.kind === "repo"} showChecks={showChecks} />
           )}
           <section className="asked">
             <h4>You asked</h4>

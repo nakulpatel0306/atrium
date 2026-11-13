@@ -1,6 +1,5 @@
 import { Box, type Key, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { reviewTarget } from "../../dashboard/summary";
 import type { State } from "../../engine/state";
 import type { Click, Hit } from "../canvas";
 import type { EngineClient } from "../client";
@@ -32,11 +31,9 @@ function useWrapped(text: string, cols: number): string[] {
   return useMemo(() => (text ? wrapLines(clean(text).replace(/\n$/, ""), cols) : []), [text, cols]);
 }
 
-// The agent thread a subject needs: a work task's own, or an approval's once its review has finished.
+// The agent thread a subject needs: a work task's own.
 function threadOf(view: View): string | null {
-  if (view.subject === "task") return view.task?.kind === "work" ? view.task.id : null;
-  if (view.subject === "approval" && view.approval) return reviewTarget(view.approval, view.state);
-  return null;
+  return view.subject === "task" && view.task?.kind === "work" ? view.task.id : null;
 }
 
 // The key a click on a key cap stands for, as Ink would have parsed it.
@@ -178,7 +175,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
     const out = await runIntent(client, intent, s);
     if (intent.type === "newSpace") settingUp.current = false;
     // A decided item leaves the list; the next one is picked deliberately, never slid into.
-    if (["approve", "reject", "answer"].includes(intent.type) && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
+    if (["approve", "reject", "answer", "answerBrief"].includes(intent.type) && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
     if (out.spaceId) {
       dispatch({ type: "select", pane: "spaces", id: out.spaceId });
       dispatch({ type: "focus", pane: "tasks" });

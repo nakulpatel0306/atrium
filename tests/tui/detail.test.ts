@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Message } from "../../src/engine/messages";
 import type { State } from "../../src/engine/state";
+import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { activityDetail, approvalDetail, type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../../src/tui/detail";
 import { deriveView } from "../../src/tui/select";
 import { initialUi, type Ui } from "../../src/tui/ui";
@@ -49,16 +50,24 @@ test("agent output in a task's detail is cleaned", () => {
   expect(text(taskDetail(deriveView(state, onTask(ids.running, 0)), null))).toContain("step one");
 });
 
-test("approval detail shows the review line", () => {
-  const review = task({ id: "tsk_rev", kind: "review", parentTaskId: ids.review, agent: "codex", status: "running", title: "Review: Fix login redirect" });
+test("approval detail shows what the checks and the reviewer said, and anything to look at closely", () => {
   const state = makeState();
-  state.tasks.push(review);
-  const ui: Ui = { ...initialUi };
-  const lines = approvalDetail(deriveView(state, ui), null);
-  const all = text(lines);
-  expect(all).toContain("Codex is reviewing · you can decide now");
+  const at = state.tasks.findIndex((t) => t.id === ids.review);
+  state.tasks[at] = {
+    ...state.tasks[at]!,
+    loop: { ...newLoop(SIZE_BUDGETS.medium), checks: "passed", attention: ["This change edits how checks run: package.json."], reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] },
+  };
+  const all = text(approvalDetail(deriveView(state, { ...initialUi })));
+  expect(all).toContain("Checks passed · reviewed by Codex");
+  expect(all).toContain("Look closely: This change edits how checks run: package.json.");
   expect(all).toContain("Changed 2 files.");
-  expect(all).toContain("Asked ");
+});
+
+test("task detail shows the loop read-only: stage, checks and reviews", () => {
+  const state = makeState();
+  const at = state.tasks.findIndex((t) => t.id === ids.running);
+  state.tasks[at] = { ...state.tasks[at]!, loop: { ...newLoop(SIZE_BUDGETS.medium), stage: "checks", checks: "running" } };
+  expect(text(taskDetail(deriveView(state, onTask(ids.running, 0)), null))).toContain("Checks · ");
 });
 
 test("space detail explains a reviewer that can't work there", () => {
@@ -96,7 +105,7 @@ test("a repo question's detail says it belongs to Atrium and where to edit it", 
   const state = makeState();
   state.approvals = [{ ...state.approvals[0]!, spaceId: null, taskId: null, kind: "question", alwaysAsk: "create_repo", title: 'Create GitHub repo "demo"?', detail: "Name: demo" }];
   const ui: Ui = { ...initialUi };
-  const all = text(approvalDetail(deriveView(state, ui), null));
+  const all = text(approvalDetail(deriveView(state, ui)));
   expect(all).toContain("Atrium");
   expect(all).not.toContain("Unknown space");
   expect(all).toContain("Name: demo");
@@ -139,5 +148,5 @@ test("approval detail renders markdown", () => {
   const state = makeState();
   state.approvals[0]!.detail = "**Done.** See the *list*.";
   const view = deriveView(state, { ...initialUi, selected: { ...initialUi.selected, needs: { id: ids.approval, index: 0 } } });
-  expect(text(approvalDetail(view, null))).not.toContain("**");
+  expect(text(approvalDetail(view))).not.toContain("**");
 });

@@ -64,5 +64,5 @@ test("the terminal app's task and approval detail read cleanly", () => {
   const onTask = { ...initialUi, tab: "spaces" as const, focus: "tasks" as const, lastLeft: "tasks" as const, selected: { ...initialUi.selected, tasks: { id: ids.review, index: 1 } } };
   expectClean(text(taskDetail(deriveView(s, onTask), null, { summary: { text: MD, status: "pending", decidedBy: "you", at: Date.now() }, files: [] }, null)), { tui: true });
   const onNeed = { ...initialUi, selected: { ...initialUi.selected, needs: { id: ids.approval, index: 0 } } };
-  expectClean(text(approvalDetail(deriveView(s, onNeed), null)), { tui: true });
+  expectClean(text(approvalDetail(deriveView(s, onNeed))), { tui: true });
 });

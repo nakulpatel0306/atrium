@@ -36,6 +36,18 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
   const dot = { text: "  ·  ", color: "faint" } as const;
   const open: CardKey = { key: "↵", label: "Read", input: "\r" };
   const cards: Card[] = [];
+  for (const t of view.asking) {
+    const questions = t.loop!.questions;
+    cards.push({
+      id: t.id,
+      glyph: "?",
+      tone: "info",
+      title: t.title,
+      meta: [...owner(t.spaceId), dot, { text: `asks before it starts · ${relative(t.updatedAt, now)}`, color: "faint" }],
+      body: wrapStyled([{ text: oneLine(questions.map((q) => q.question).join("  ")), color: "dim" }], inner).slice(0, 2),
+      keys: [{ key: "a", label: questions.length > 1 ? "Answer them" : "Answer", input: "a", hot: true }, { key: "↵", label: "Open", input: "\r" }],
+    });
+  }
   for (const p of view.proposals) {
     cards.push({
       id: p.id,

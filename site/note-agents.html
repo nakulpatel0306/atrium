@@ -341,13 +341,13 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 
 <section id="review">
   <h2>A second agent for code</h2>
-  <p>A model reviewing its own work mostly agrees with itself. A different model, with no memory of the reasoning, reads the code as it is. So a code space can name a reviewer, and every finished change gets a second opinion before it reaches me.</p>
+  <p>A model reviewing its own work mostly agrees with itself. A fresh session, with no memory of the reasoning, reads the code as it is, and a different vendor when one can work in the space. So every change that passes its checks gets that read before it reaches me, against the task's brief.</p>
 
   <figure class="fig reveal">
     <div class="ft">The review loop, and why it always ends</div>
     <svg viewBox="0 0 360 230" role="img" aria-labelledby="frv-t frv-d">
       <title id="frv-t">Automatic review of a code change</title>
-      <desc id="frv-d">The working agent finishes a change on its branch. The diff goes to a different agent, the reviewer, which only reads. If it says approve, the result goes to Needs you with the review attached. If it asks for changes, the original agent makes one round of fixes on the same branch, with no second review, and then the result goes to Needs you.</desc>
+      <desc id="frv-d">The working agent finishes a change on its branch and it passes Atrium's checks. The diff and the brief go to a fresh reviewer, which only reads. If it says approve, the result goes to Needs you with the review attached. If it asks for changes, the original agent answers each finding on the same branch, fixing it or saying why not, for at most two rounds, and then the result goes to Needs you.</desc>
       <defs>
         <marker id="av" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#6f6f7a"/></marker>
       </defs>
@@ -357,10 +357,10 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
         <text x="20" y="46" font-size="11" fill="#9c9ca6">change on its branch</text>
         <rect x="202" y="8" width="150" height="50" rx="10" fill="#141417" stroke="#a5a5ff"/>
         <text x="214" y="29" font-size="13.5" font-weight="600" fill="#e6e6ea">Reviewer</text>
-        <text x="214" y="46" font-size="11" fill="#9c9ca6">another agent, reads only</text>
+        <text x="214" y="46" font-size="11" fill="#9c9ca6">fresh session, reads only</text>
         <rect x="8" y="98" width="150" height="50" rx="10" fill="#141417" stroke="#f2c94c"/>
-        <text x="20" y="119" font-size="13.5" font-weight="600" fill="#e6e6ea">One fix round</text>
-        <text x="20" y="136" font-size="11" fill="#9c9ca6">same worker, same branch</text>
+        <text x="20" y="119" font-size="13.5" font-weight="600" fill="#e6e6ea">Writer answers</text>
+        <text x="20" y="136" font-size="11" fill="#9c9ca6">each finding, same branch</text>
         <rect x="104" y="174" width="152" height="50" rx="10" fill="#141417" stroke="#7c7cf5"/>
         <text x="118" y="195" font-size="13.5" font-weight="600" fill="#e6e6ea">Needs you</text>
         <text x="118" y="212" font-size="11" fill="#9c9ca6">with the review attached</text>
@@ -372,17 +372,17 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
         <path d="M83 148V199H101"/>
       </g>
       <g class="m" font-size="9.5" fill="#9c9ca6">
-        <text x="166" y="27">diff</text><text x="238" y="94">changes</text><text x="306" y="94">approve</text><text x="89" y="164">no 2nd review</text>
+        <text x="166" y="27">diff</text><text x="238" y="94">changes</text><text x="306" y="94">approve</text><text x="89" y="164">after 2 rounds</text>
       </g>
     </svg>
-    <figcaption>At most one review and one fix round per task, and no second review after the fix. However the review goes, the loop ends with me.</figcaption>
+    <figcaption>At most two review rounds per task, each answered by the writer. However the review goes, the loop ends with me.</figcaption>
   </figure>
 
   <p>The details are what make it trustworthy:</p>
   <ul class="plain">
-    <li><strong>The reviewer changes nothing.</strong> The diff is in its prompt, and its instructions say not to create or change any file. It ends with a verdict line: approve or changes.</li>
-    <li><strong>One fix round, then stop.</strong> If it asks for changes, the original agent makes them on the same branch, with the review in its instructions. There's no second review, so the loop can't go back and forth on its own.</li>
-    <li><strong>It never blocks me.</strong> I can approve while the review is still running. If it arrives after I've decided, it's noted in the task's thread but not added to a decision I already made, and any pending fix is skipped.</li>
+    <li><strong>The reviewer changes nothing.</strong> The diff and the brief are in its prompt, and its instructions say not to create or change any file. It lists each problem with a severity and a file and line, and ends with a verdict line: approve or changes.</li>
+    <li><strong>Two rounds, then stop.</strong> If it asks for changes, the original agent answers each finding on the same branch: fixed, or declined with a reason against the brief. Then one more review at most, so the loop can't go back and forth on its own.</li>
+    <li><strong>It never strands the work.</strong> A review that can't happen (the reviewer is shut out of the space, or I stop it) is noted, and the work comes to me anyway.</li>
     <li><strong>The agents talk where I can read it.</strong> The review and any fix notes go into the task's thread, so I can see exactly what one agent told the other.</li>
   </ul>
   <p>I use the same idea when I build Atrium itself, with a fresh agent reviewing each plan's work. A second set of eyes catches what the first one was sure about.</p>

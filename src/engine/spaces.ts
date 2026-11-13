@@ -2,9 +2,13 @@ import type { Database } from "bun:sqlite";
 import { bus } from "./events";
 import { pickFolder } from "./folders";
 import { newId } from "./ids";
+import type { Budget } from "./loop";
 
 export const REVIEWERS = ["codex", "gemini", "claude"] as const;
 export type ReviewerId = (typeof REVIEWERS)[number];
+// Auto picks a reviewer from another vendor when one can work here, else a fresh Claude session.
+export const REVIEW_CHOICES = ["auto", ...REVIEWERS, "off"] as const;
+export type ReviewChoice = (typeof REVIEW_CHOICES)[number];
 
 export type Space = {
   id: string;
@@ -17,8 +21,12 @@ export type Space = {
   // True for a space whose kind no longer exists (see toSpace); it is treated as a plain general space.
   unknownKind: boolean;
   status: "active" | "archived";
-  // The agent that reviews finished work here; null means no automatic review.
-  reviewBy: ReviewerId | null;
+  // Who reviews finished code here before the user sees it.
+  reviewBy: ReviewChoice;
+  // The space's own check commands, one per line, in place of the ones Atrium detects; null to detect.
+  checks: string | null;
+  // The space's budget for each task, in place of the defaults by task size; null for those defaults.
+  budget: Budget | null;
   // The GitHub repo ("owner/name") a repo space comes from; its local copy is cloned when a task needs it.
   github: string | null;
   // Where a general space keeps its files; null for repo spaces, and for old spaces until boot moves them.
@@ -37,7 +45,9 @@ type SpaceRow = {
   repo_path: string | null;
   private: number;
   status: Space["status"];
-  review_by: ReviewerId | null;
+  review_by: string | null;
+  checks?: string | null;
+  budget?: string | null;
   github: string | null;
   folder: string | null;
   created_at: number;
@@ -60,7 +70,10 @@ const toSpace = (r: SpaceRow): Space => ({
   private: r.private === 1 || !KNOWN_KINDS.has(r.kind),
   unknownKind: !KNOWN_KINDS.has(r.kind),
   status: r.status,
-  reviewBy: r.review_by,
+  // Spaces from before the loop stored no reviewer as NULL; every coding task is reviewed now unless turned off.
+  reviewBy: REVIEW_CHOICES.includes(r.review_by as ReviewChoice) ? (r.review_by as ReviewChoice) : "auto",
+  checks: r.checks ?? null,
+  budget: r.budget ? (JSON.parse(r.budget) as Budget) : null,
   github: r.github,
   folder: r.folder,
   createdAt: r.created_at,
@@ -108,17 +121,19 @@ export function listSpaces(db: Database, opts: { includeArchived?: boolean } = {
 export function updateSpace(
   db: Database,
   id: string,
-  patch: Partial<Pick<Space, "name" | "goal" | "private" | "status" | "reviewBy">>,
+  patch: Partial<Pick<Space, "name" | "goal" | "private" | "status" | "reviewBy" | "checks" | "budget">>,
 ): Space {
   const cur = getSpace(db, id);
   if (!cur) throw new Error(`No space with id ${id}`);
   const next = { ...cur, ...patch };
-  db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, updated_at = ? WHERE id = ?").run(
+  db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, checks = ?, budget = ?, updated_at = ? WHERE id = ?").run(
     next.name,
     next.goal,
     next.private ? 1 : 0,
     next.status,
     next.reviewBy,
+    next.checks?.trim() || null,
+    next.budget ? JSON.stringify(next.budget) : null,
     Date.now(),
     id,
   );

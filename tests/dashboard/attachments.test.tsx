@@ -93,6 +93,7 @@ const typeIn = (el: HTMLElement, value: string) => {
   const props = (input as unknown as Record<string, { onChange: (e: { target: { value: string } }) => void }>)[key]!;
   act(() => props.onChange({ target: { value } }));
 };
+// Enter sends straight away; ⌘↩ would draft a brief to edit first (see brief.test.tsx).
 const send = async (el: HTMLElement) => {
   await act(async () => {
     el.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));

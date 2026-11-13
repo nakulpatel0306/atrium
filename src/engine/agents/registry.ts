@@ -23,7 +23,9 @@ export type WaitKind =
   | "env_files"
   | "gemini_repo"
   | "cloning"
-  | "busy";
+  | "busy"
+  | "reviewing"
+  | "answers";
 // `agent` is the one the task is waiting on; `until` is when the wait ends on its own, if it does.
 export type Wait = { agent: string; kind: WaitKind; reason: string; until?: number };
 export type TaskWait = Wait & { taskId: string };
@@ -38,7 +40,8 @@ export type Registry = {
   setLimited(id: string, until: number): void;
   recordUsage(id: string, usage: AgentUsage): void;
   inReserve(): { until: number } | null;
-  resolve(task: Task, space: Space): Resolution;
+  // `avoid` is the agent that wrote the work an auto review reads, so the review goes to another vendor when it can.
+  resolve(task: Task, space: Space, avoid?: string): Resolution;
   // Why this space shuts out a free agent for this kind of task for good (privacy, .env files), or null.
   refusal(agent: string, kind: Task["kind"], space: Space): Wait | null;
 };
@@ -144,7 +147,7 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
     return { agent: "claude" };
   }
 
-  function resolve(task: Task, space: Space): Resolution {
+  function resolve(task: Task, space: Space, avoid?: string): Resolution {
     if (task.agent === "claude") return claude(task);
     if (task.agent !== "auto") {
       const held = freeAgentBlock(task.agent, task.kind, space) ?? unavailable(task.agent);
@@ -152,10 +155,11 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
     }
     const free = () =>
       FREE_AGENTS.find(
-        (id) => adapters[id] && !unavailable(id) && limitedUntil(id) <= Date.now() && !freeAgentBlock(id, task.kind, space),
+        (id) => id !== avoid && adapters[id] && !unavailable(id) && limitedUntil(id) <= Date.now() && !freeAgentBlock(id, task.kind, space),
       );
     const repoWork = space.kind === "repo" && task.kind !== "review";
-    // Free agents only get work Claude's reserve or a review frees up; otherwise Claude does it.
+    // Free agents only get work Claude's reserve or a review frees up; otherwise Claude does it, a review in a
+    // fresh session that knows nothing of the writer's.
     const wantsFree = !space.private && (task.kind === "review" || (!repoWork && inReserve() !== null));
     const pick = wantsFree ? free() : undefined;
     return pick ? { agent: pick } : claude(task);

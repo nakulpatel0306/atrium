@@ -15,14 +15,17 @@ import type { setupSpace } from "../engine/setup";
 import { type OnCreate, SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
-import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
+import { createSpace, getSpace, REVIEW_CHOICES, REVIEWERS, type ReviewChoice, updateSpace } from "../engine/spaces";
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
 import { KeychainError } from "../engine/keychain";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import { findOldData, OLD_DATA_DISMISSED, removeOldData } from "../engine/old-data";
-import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
+import { createTask, getTask, InvalidTransition, setTaskLoop, setTaskStatus } from "../engine/tasks";
+import { normalizeBrief } from "../engine/brief";
+import { newLoop, resumed, SIZE_BUDGETS } from "../engine/loop";
+import { budgetField, loopRoute } from "./loop";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
 import { filesRoute } from "./files";
@@ -129,16 +132,20 @@ export function startServer(deps: Deps): Server<WsData> {
       // Spaces of removed kinds held personal data, so they always read as private; storing otherwise would do nothing.
       if (current.unknownKind && b.private === false) throw new HttpError(409, STAYS_PRIVATE);
       const reviewBy = b.reviewBy;
-      if (reviewBy !== undefined && reviewBy !== null && !REVIEWERS.includes(reviewBy as ReviewerId)) {
-        throw new HttpError(400, "reviewBy must be codex, gemini, claude, or null.");
+      if (reviewBy !== undefined && !REVIEW_CHOICES.includes(reviewBy as ReviewChoice)) {
+        throw new HttpError(400, "reviewBy must be auto, codex, gemini, claude, or off.");
       }
+      if (b.checks !== undefined && b.checks !== null && typeof b.checks !== "string") throw new HttpError(400, "checks must be text or null.");
+      if (typeof b.checks === "string" && b.checks.length > 2000) throw new HttpError(400, "Keep the check commands to 2,000 characters or fewer.");
       const res = json(
         updateSpace(db, id, {
           ...(b.name !== undefined && { name: str(b.name, "name") }),
           ...(b.goal !== undefined && { goal: str(b.goal, "goal") }),
           ...(b.private !== undefined && { private: opt(b.private, isBool, "private") }),
           ...(status !== undefined && { status }),
-          ...(reviewBy !== undefined && { reviewBy: reviewBy as ReviewerId | null }),
+          ...(reviewBy !== undefined && { reviewBy: reviewBy as ReviewChoice }),
+          ...(b.checks !== undefined && { checks: b.checks as string | null }),
+          ...(b.budget !== undefined && { budget: b.budget === null ? null : budgetField(b.budget) }),
         }),
       );
       // An archived space's local copy may now be idle enough to offer for removal.
@@ -201,6 +208,8 @@ export function startServer(deps: Deps): Server<WsData> {
       }
       // The runner would only fail it again.
       if (current.legacyPurpose !== null) throw new HttpError(409, REMOVED_FEATURE_RETRY);
+      // A paused or stopped loop starts its counters and budget over, as a hint would.
+      if (current.loop) setTaskLoop(db, id, resumed(current.loop));
       const task = setTaskStatus(db, id, "queued");
       runner.kick();
       return json(task);
@@ -402,8 +411,15 @@ export function startServer(deps: Deps): Server<WsData> {
           detail: withAttachments(text, files),
           weight: space.kind === "repo" ? "heavy" : "light",
           agent,
+          // A brief edited first (⌘↩ in the ask bar) is used as is.
+          ...(b.brief !== undefined && { brief: normalizeBrief(b.brief, text) }),
         });
         claimAttachments(db, t.id, files);
+        // Otherwise the task starts with drafting its brief, so sending never waits on the pre-pass. Files alone
+        // ask the agent to look at them, with nothing to brief.
+        if (b.brief === undefined && typeof b.text === "string" && b.text.trim()) {
+          return setTaskLoop(db, t.id, { ...newLoop(space.budget ?? SIZE_BUDGETS.medium), stage: "brief" });
+        }
         return t;
       })();
       runner.kick();
@@ -448,6 +464,8 @@ export function startServer(deps: Deps): Server<WsData> {
       return new Response(text, { headers });
     }
 
+    const loop = await loopRoute(db, runner.registry?.adapters.claude, runner.kick, req, url);
+    if (loop) return loop;
     const files = await filesRoute(db, req, url);
     if (files) return files;
     const attached = await attachmentsRoute(db, req, url);

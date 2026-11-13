@@ -53,7 +53,7 @@ test("deleting a task says what goes with it", () => {
     "Deletes this task, along with its 1 run and transcripts, its history and the 2 files it made (a.md and b.md). notes.md changed since, so it stays. Files it only changed stay. This can't be undone.",
   );
   expect(taskDeleteLine({ id: "t", title: "Fix", followers: 1, runs: 0, files: [], edited: [], branch: "atrium/tsk_1", refusal: null })).toBe(
-    "Deletes this task and its review or fix, along with its history. Its branch atrium/tsk_1 stays in your repo. This can't be undone.",
+    "Deletes this task and its review, along with its history. Its branch atrium/tsk_1 stays in your repo. This can't be undone.",
   );
 });
 

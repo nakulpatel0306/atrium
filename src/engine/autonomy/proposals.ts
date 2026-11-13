@@ -52,10 +52,12 @@ export function getProposal(db: Database, id: string): Proposal | null {
 }
 
 // "Unedited" for code review, where there's no draft to edit: Nakul approved it as it was, with nothing to
-// add, first time round, and no reviewer had to send it for a fix.
+// add, first time round, no reviewer had to send it back (a fix task in older databases, triage in the loop) and
+// nothing about the change touched its own checks.
 const CLEAN = `a.decided_by = 'you' AND a.status = 'approved' AND COALESCE(a.note, '') = ''
   AND NOT EXISTS (SELECT 1 FROM approvals b WHERE b.task_id = a.task_id AND b.status = 'rejected')
-  AND NOT EXISTS (SELECT 1 FROM tasks f WHERE f.parent_task_id = a.task_id AND f.kind = 'fix')`;
+  AND NOT EXISTS (SELECT 1 FROM tasks f WHERE f.parent_task_id = a.task_id AND f.kind = 'fix')
+  AND NOT EXISTS (SELECT 1 FROM tasks w WHERE w.id = a.task_id AND (json_extract(w.loop, '$.triaged') = 1 OR json_array_length(w.loop, '$.attention') > 0))`;
 
 // The approval ids of the current run of clean approvals, newest first. Automatic approvals neither count
 // nor break it; anything else Nakul decided (a send-back, a note, an undone automatic approval) ends it. Only

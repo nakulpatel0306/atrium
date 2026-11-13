@@ -3,12 +3,13 @@
 import { AGENT_IDS, agentName } from "../../dashboard/agents";
 import { type SpaceDeletePreview, spaceDeleteLines } from "../../dashboard/deletion";
 import { bytes, clock, tokens } from "../../dashboard/format";
-import { AGENT_ROLES, agentStatus, runOutcome } from "../../dashboard/summary";
+import { AGENT_ROLES, agentStatus, reviewerName, runOutcome } from "../../dashboard/summary";
+import type { ReviewChoice } from "../../engine/spaces";
 import type { State } from "../../engine/state";
 import { type Block, box, type Hit, keyRow, type Line, rowsOf, splice } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
 import { cursorParts } from "../edit";
-import { helpFor } from "../keys";
+import { answerChoices, helpFor } from "../keys";
 import { truncate, width } from "../text";
 import { GLYPH, windowGauge } from "../theme";
 import type { Overlay, Ui } from "../ui";
@@ -87,13 +88,28 @@ export function deleteOver(base: Line[], o: Extract<Overlay, { kind: "delete" }>
   return floating(base, title, lines, [{ key: "enter", label: "Delete", input: "\r" }, { key: "esc", label: "Keep it", input: "\x1b" }], w, y0);
 }
 
+// A task's question, its answers numbered for one key each.
+export function answerOver(base: Line[], o: Extract<Overlay, { kind: "answer" }>, state: State, cols: number, y0: number): Block {
+  const task = state.tasks.find((t) => t.id === o.taskId);
+  const question = task?.loop?.questions[o.step];
+  const total = task?.loop?.questions.length ?? 1;
+  const lines: Line[] = question
+    ? answerChoices(question.options).map((choice, i) => {
+        const mark = i === o.index;
+        return [{ text: mark ? `${GLYPH.pointer} ` : "  ", color: "accent" }, { text: `${i + 1} `, color: "faint" }, { text: choice, bold: mark }];
+      })
+    : [[{ text: "That task isn't asking anything anymore.", color: "faint" }]];
+  const title = `${total > 1 ? `${o.step + 1}/${total} · ` : ""}${question?.question ?? task?.title ?? "Question"}`;
+  return floating(base, title, lines, [{ key: "1-9", label: "Answer", input: "1" }, { key: "esc", label: "Later", input: "\x1b" }], Math.min(60, cols - 4), y0);
+}
+
 export function pickerOver(base: Line[], p: Extract<Overlay, { kind: "picker" }>, state: State, reviewers: Record<string, string | null> | null, cols: number, y0: number): Block {
   const title = p.purpose === "agent" ? `Agent for ${state.tasks.find((t) => t.id === p.targetId)?.title ?? "this task"}` : `Reviewer for ${state.spaces.find((s) => s.id === p.targetId)?.name ?? "this space"}`;
   const lines: Line[] = p.options.map((id, i) => {
     const mark = i === p.index;
     return [
       { text: mark ? `${GLYPH.pointer} ` : "  ", color: "accent" },
-      { text: id === "none" ? "No one" : agentName(id), bold: mark },
+      { text: p.purpose === "reviewer" ? reviewerName(id as ReviewChoice) : agentName(id), bold: mark },
       { text: p.purpose === "reviewer" && reviewers?.[id] ? " (can't work here)" : "", color: "bad" },
     ];
   });

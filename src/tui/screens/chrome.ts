@@ -71,6 +71,10 @@ export function askLabels(ui: Ui, view: View, ctx: KeyContext): { title: string;
   switch (a?.purpose) {
     case "reply":
       return { title: "Send back · what should change?", placeholder: "A note for the agent, or leave it empty." };
+    case "answer": {
+      const question = view.state.tasks.find((t) => t.id === target)?.loop?.questions[a.answering?.step ?? 0]?.question;
+      return { title: `Answer · ${question ?? "the task's question"}`, placeholder: "A few words, or leave it empty for the agent to decide." };
+    }
     case "goal":
       return { title: `Goal · ${view.state.spaces.find((s) => s.id === target)?.name ?? "this space"}`, placeholder: "What this space is for." };
     case "filter":

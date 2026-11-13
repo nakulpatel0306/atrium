@@ -1,7 +1,9 @@
 // What the Detail pane says about the selected thing, as styled lines. Pure, so it's tested without a terminal.
 import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboard/agents";
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
-import { actorName, reviewHint, reviewLine, runOutcome, spaceStatus, STATUS_TEXT } from "../dashboard/summary";
+import { actorName, attentionText, loopLine, reviewerName, reviewHint, reviewLine, runOutcome, spaceStatus, STAGE_TEXT, STATUS_TEXT } from "../dashboard/summary";
+import { shownStage } from "../engine/loop";
+import { needsYouCount } from "../engine/needs";
 import { type ActivityGroup, type ActivityTone, byDay, groupActivity, leadOf, visibleGroups } from "../engine/activity-groups";
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
@@ -121,8 +123,19 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   if (told && (task.status === "review" || task.status === "done")) lines.push(plain(told, { color: task.outcome === "unknown" ? color.muted : color.warn }));
   // Wait reasons can name a command in backticks; they're kept as written so it can be copied.
   if (wait) lines.push(plain(wait.reason, { color: needsAction(wait) ? color.bad : color.warn }));
-  if (parent) {
-    lines.push(muted(`${task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "${parent.title}"`));
+  if (parent) lines.push(muted(`${task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "${parent.title}"`));
+  // The loop at a glance, read-only: the stage, what the checks and reviews said, and the budget used.
+  if (task.loop && state.spaces.find((s) => s.id === task.spaceId)?.kind === "repo") {
+    const line = loopLine(task.loop);
+    lines.push([
+      { text: `${STAGE_TEXT[shownStage(task.status, task.loop)]} · `, bold: true },
+      { text: line.text, color: line.tone ? TONE[line.tone] : undefined },
+    ]);
+    const attention = attentionText(task.loop);
+    if (attention) lines.push(plain(attention, { color: color.bad }));
+    for (const q of task.loop.questions) lines.push(plain(`Asks: ${q.question}${q.options.length ? ` (${q.options.join(" / ")})` : ""}`, { color: color.info }));
+    if (task.loop.questions.length && task.status === "queued") lines.push(muted("a answers its questions"));
+    if (task.loop.explanation) lines.push(blank, muted("What it says is wrong"), ...block(task.loop.explanation));
   }
   lines.push(blank, ...block(task.detail || task.title), blank, ...made(outputs, selectedFile, width));
   lines.push(
@@ -139,17 +152,19 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   return lines;
 }
 
-export function approvalDetail(view: View, messages: Message[] | null, width = 100): DetailLine[] {
+export function approvalDetail(view: View, width = 100): DetailLine[] {
   const approval = view.approval;
-  if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
+  if (!approval) return [muted(needsYouCount(view.state) ? PICK : "Nothing needs you right now.")];
   const space = view.state.spaces.find((s) => s.id === approval.spaceId);
-  const review = reviewLine(approval, view.state, messages);
+  const review = reviewLine(approval, view.state);
   const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");
   const lines: DetailLine[] = [muted(owner), plain(approval.title, { bold: true })];
   const task = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const told = task ? outcomeText(task.outcome, task.outcomeReason) : null;
   if (told) lines.push(plain(told, { color: task?.outcome === "unknown" ? color.muted : color.warn }));
   if (review) lines.push(plain(review.text, { color: review.tone ? TONE[review.tone] : undefined }));
+  const attention = attentionText(task?.loop);
+  if (attention) lines.push(plain(attention, { color: color.bad }));
   lines.push(blank, ...(approval.detail ? markdownLines(approval.detail, width) : [plain("No further detail.")]), blank);
   lines.push(muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`));
   if (approval.alwaysAsk === "create_repo") lines.push(plain("Edit the fields in the dashboard. a approves them as shown."));
@@ -209,10 +224,10 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
   lines.push(plain(status.text, { color: status.tone === "blocked" ? color.bad : status.tone === "waiting" ? color.warn : undefined }));
   // Reviews read the branch diff, so only repo spaces have anything to review.
   if (space.kind === "repo") {
-    const reason = space.reviewBy ? reviewers?.[space.reviewBy] : null;
+    const reason = space.reviewBy !== "auto" && space.reviewBy !== "off" ? reviewers?.[space.reviewBy] : null;
     lines.push(blank, [
       { text: "Reviewer ", color: color.muted },
-      { text: space.reviewBy ? agentName(space.reviewBy) : "No one" },
+      { text: reviewerName(space.reviewBy) },
       { text: "  (v to change)", color: color.muted },
     ]);
     lines.push(

@@ -1,7 +1,8 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
-import type { Message } from "../engine/messages";
+import type { Stage } from "../engine/loop";
+import { needsYouCount } from "../engine/needs";
 import type { State } from "../engine/state";
-import { agentName, agentText, byPriority, inReserve, needsAction, ranAgent, verdictOf, type Wait, waitOf } from "./agents";
+import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
 import { plainText } from "./markdown";
 
@@ -84,7 +85,7 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
 // Composed from live state on every render so counts never go stale while the page stays open.
 export function liveStatus(state: State): string {
   const parts: string[] = [];
-  const pending = state.approvals.length + state.proposals.length;
+  const pending = needsYouCount(state);
   if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
   const blocked = state.tasks.filter((t) => t.status === "blocked");
   if (blocked.length > 0) {
@@ -109,46 +110,38 @@ export function liveRun(state: State, tasks: Task[]): { task: Task; run: Run } |
 export const runOutcome = (run: Run): "running" | "finished" | "ended without finishing" =>
   run.endedAt === null ? "running" : run.exitCode === 0 ? "finished" : "ended without finishing";
 
-export type Review = { text: string; tone?: "ok" | "waiting" | "bad"; fixing: boolean };
+export type Review = { text: string; tone?: "ok" | "waiting" | "bad" };
+type Loop = NonNullable<Task["loop"]>;
 
-const FIX_STATE: Partial<Record<Task["status"], string>> = {
-  queued: "fix in progress",
-  running: "fix in progress",
-  done: "fixed",
-  failed: "fix didn't finish",
-  blocked: "fix didn't finish",
-};
-
-function reviewChildren(approval: Approval, state: State): { review?: Task; fix?: Task } {
-  const children = approval.taskId ? state.tasks.filter((t) => t.parentTaskId === approval.taskId) : [];
-  return { review: children.find((t) => t.kind === "review"), fix: children.find((t) => t.kind === "fix") };
-}
-
-// The verdict lives in the thread, which is only worth reading once the review has finished without a fix.
-export function reviewTarget(approval: Approval, state: State): string | null {
-  const { review } = reviewChildren(approval, state);
-  return review?.status === "done" ? approval.taskId : null;
-}
-
-// The second agent's part in this approval, as one line; null when the space doesn't review.
-export function reviewLine(approval: Approval, state: State, messages: Message[] | null): Review | null {
-  const { review, fix } = reviewChildren(approval, state);
-  if (!review) return null;
-  const who = agentName(review.agent);
-  if (review.status !== "done") return { text: `${who} is reviewing · you can decide now`, tone: "waiting", fixing: false };
-  if (fix) {
-    const worker = agentName(ranAgent(fix, state.runs));
-    const step = FIX_STATE[fix.status] ?? "fix in progress";
-    return { text: `${who} asked for changes · ${step === "fixed" ? `${worker} fixed them` : step}`, tone: "waiting", fixing: true };
+// What Atrium's checks and the reviewer made of a coding task, as one line.
+export function loopLine(loop: Loop): Review {
+  const parts = [loop.noChanges ? "No changes" : loop.checks === "passed" ? "Checks passed" : loop.checks === "failed" ? "Checks failed" : loop.unverified ? "Unverified: changes how dependencies install" : "Unverified: no checks found"];
+  const last = loop.reviews.at(-1);
+  if (last?.skipped) parts.push("review didn't happen");
+  else if (last) {
+    const who = agentName(last.reviewer);
+    const asked = loop.reviews.flatMap((r) => (r.verdict === "changes" ? r.findings : []));
+    const fixed = asked.filter((f) => f.resolution?.action === "fixed").length;
+    if (asked.length) parts.push(`${who} found ${asked.length} to fix, ${fixed} fixed`);
+    else parts.push(last.verdict === "approve" ? `reviewed by ${who}` : `${who} gave no verdict`);
   }
-  if (!messages) return { text: `Reviewed by ${who}`, fixing: false };
-  const said = messages.filter((m) => m.fromAgent === review.agent).at(-1);
-  if (!said) return { text: `${who}'s review didn't happen · decide as usual`, tone: "bad", fixing: false };
-  const verdict = verdictOf(said.body);
-  if (verdict === "approve") return { text: `Reviewed by ${who} · approve`, tone: "ok", fixing: false };
-  if (verdict === "changes") return { text: `${who} asked for changes`, tone: "waiting", fixing: false };
-  return { text: `Reviewed by ${who} · no verdict, see the thread`, fixing: false };
+  const tone = loop.attention.length || loop.checks === "failed" ? "bad" : loop.checks === "passed" && !loop.noChanges ? "ok" : "waiting";
+  return { text: parts.join(" · "), tone };
 }
+
+// The line on an approval's card, for work that went through the loop; null for anything else.
+export function reviewLine(approval: Approval, state: State): Review | null {
+  const loop = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId)?.loop : null;
+  const space = state.spaces.find((s) => s.id === approval.spaceId);
+  return loop && space?.kind === "repo" ? loopLine(loop) : null;
+}
+
+export const reviewerName = (choice: Space["reviewBy"]) => (choice === "off" ? "Off" : agentName(choice));
+
+export const STAGE_TEXT: Record<Stage | "brief", string> = { brief: "Brief", writing: "Writing", checks: "Checks", review: "Review", ready: "Ready", paused: "Paused" };
+
+// Things the change does to the checks themselves, which every card shows before anything else.
+export const attentionText = (loop: Loop | null | undefined): string | null => (loop?.attention.length ? `Look closely: ${loop.attention.join(" ")}` : null);
 
 // What the router lets each agent do, so a reader knows why work went where it did.
 export const AGENT_ROLES: Record<string, string> = {
@@ -171,9 +164,9 @@ export function agentStatus(id: string, info: AgentInfo, state: State): AgentLin
 }
 
 export function reviewHint(reviewBy: Space["reviewBy"]): string {
-  if (!reviewBy) return "A second agent can read each finished change before you approve it.";
-  // The engine skips the review when the reviewer is the agent that did the work.
-  return `${agentName(reviewBy)} reads each finished change it didn't make and can ask for one round of fixes. You still decide.`;
+  if (reviewBy === "off") return "No review: finished code comes straight to you once its checks pass.";
+  if (reviewBy === "auto") return "A fresh agent reads each change against its brief before you see it: another vendor when one can work here, else a new Claude session.";
+  return `${agentName(reviewBy)} reads each change against its brief before you see it, in a fresh session. Up to two rounds of fixes, then you decide.`;
 }
 
 export const actorName = (actor: string) => (actor === "you" ? "You" : actor.charAt(0).toUpperCase() + actor.slice(1));
@@ -181,7 +174,7 @@ export const actorName = (actor: string) => (actor === "you" ? "You" : actor.cha
 // The first-run hero replaces Home only when nothing exists yet; a waiting question (say, a first project's draft)
 // must still be shown.
 export const emptyHome = (state: State): boolean =>
-  state.spaces.length === 0 && state.approvals.length === 0 && state.proposals.length === 0;
+  state.spaces.length === 0 && needsYouCount(state) === 0;
 
 // One line for a row: the first paragraph of agent text, without its markdown.
 export const summaryLine = (text: string): string => plainText(text.trim().split(/\n\s*\n/)[0] ?? "");

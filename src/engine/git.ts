@@ -56,9 +56,7 @@ export async function headRef(path: string): Promise<{ branch: string | null; sh
   return { branch: name.out.trim() || null, sha: sha.out.trim() };
 }
 
-// A fix task passes its parent's id with `existing`: it adds to the branch under review, and a branch that's
-// gone means there is nothing left to fix, so it is never recreated.
-export async function prepareBranch(path: string, taskId: string, opts: { existing?: boolean } = {}): Promise<string> {
+export async function prepareBranch(path: string, taskId: string): Promise<string> {
   if (isProtected(taskId)) throw new Error("Refusing to work on main");
   const branch = `atrium/${taskId}`;
   const valid = await git(path, ["check-ref-format", "--branch", branch]);
@@ -70,7 +68,6 @@ export async function prepareBranch(path: string, taskId: string, opts: { existi
   // A retry after a send-back reuses the existing branch. Plain checkout (never --force)
   // fails rather than overwrite local changes.
   const exists = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
-  if (opts.existing && exists.code !== 0) throw new Error(`${branch} no longer exists, so there's no work left to fix.`);
   const res = await git(path, exists.code === 0 ? ["checkout", branch] : ["checkout", "-b", branch]);
   if (res.code !== 0) throw new Error(`Couldn't switch to ${branch}: ${res.err.trim()}`);
   return branch;
@@ -489,6 +486,18 @@ export async function branchSha(path: string, branch: string): Promise<string | 
 
 const PATCH_READ_CAP = 256 * 1024;
 
+// Files in the working tree that git doesn't track: untracked and ignored ones, never the dependency folders
+// (agents can't write them, and listing an installed node_modules would take long).
+export async function outsideGit(path: string): Promise<string[]> {
+  const exclude = ["node_modules", ".venv"].flatMap((d) => [`:(exclude,glob)${d}/**`, `:(exclude,glob)**/${d}/**`]);
+  const res = await git(path, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "--ignored=traditional", "--untracked-files=all", "--", ".", ...exclude]);
+  if (res.code !== 0) throw new Error(`Couldn't read git status: ${firstLine(res.err)}`);
+  return res.out
+    .split("\0")
+    .filter((rec) => rec.startsWith("?? ") || rec.startsWith("!! "))
+    .map((rec) => rec.slice(3));
+}
+
 // The text a change adds, and how many bytes it adds and removes, read from a zero-context diff. A diff too big to
 // read in full reports more bytes than the cap, which is all a caller deciding "small enough?" needs.
 export async function changedText(path: string, base: string, sha: string): Promise<{ added: string[]; bytes: number }> {
@@ -543,37 +552,20 @@ export function branchHeadSync(path: string, branch: string): string | null {
   }
 }
 
-// Moves a late fix's uncommitted work onto its own new branch at the current commit, so the branch Nakul
-// decided on gets nothing after his decision. Null when there is nothing to move. Creating a branch at
-// HEAD rewrites no files, so nothing in the tree is checked out over. A fix stopped more than once gets a
-// numbered branch each time, since its earlier edits already sit on `atrium/<id>`.
-export async function branchOffDirty(path: string, taskId: string): Promise<string | null> {
-  const status = await git(path, ["status", "--porcelain"]);
-  if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
-  if (status.out.trim() === "") return null;
-  let branch = `atrium/${taskId}`;
-  for (let n = 2; (await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0; n++) {
-    branch = `atrium/${taskId}-${n}`;
-  }
-  const valid = await git(path, ["check-ref-format", "--branch", branch]);
-  if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
-  const res = await git(path, ["checkout", "-b", branch]);
-  if (res.code !== 0) throw new Error(`Couldn't create ${branch}: ${res.err.trim()}`);
-  return branch;
+// A detached checkout of `sha` in a folder of its own, where Atrium's checks run, so nothing they or the engine's
+// install do reaches the user's checkout. Attributes come from the empty tree, so no checkout filter runs.
+export async function addCheckTree(path: string, sha: string, dir: string): Promise<void> {
+  const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
+  if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
+  const res = await git(path, [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`, "worktree", "add", "--detach", "--quiet", dir, sha]);
+  if (res.code !== 0) throw new Error(`Couldn't check out ${sha.slice(0, 8)} for the checks: ${res.err.trim()}`);
 }
 
-// A fix commit that landed just after Nakul decided: the fix keeps it on a branch of its own, and the decided
-// branch goes back to `pre` only if it still points at `post` (update-ref compare-and-swap), so nothing anyone
-// else put there is lost. Switching to the new branch first changes no files and frees the decided branch's ref.
-export async function moveLateCommit(path: string, taskId: string, decided: string, pre: string, post: string): Promise<string> {
-  const branch = `atrium/${taskId}`;
-  const valid = await git(path, ["check-ref-format", "--branch", branch]);
-  if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
-  const res = await git(path, ["checkout", "-b", branch, post]);
-  if (res.code !== 0) throw new Error(`Couldn't create ${branch}: ${res.err.trim()}`);
-  const back = await git(path, ["update-ref", `refs/heads/${decided}`, pre, post]);
-  if (back.code !== 0) throw new Error(`Couldn't move ${decided} back to the commit you decided on: ${back.err.trim()}`);
-  return branch;
+// Removes the folder and git's record of it, whatever the checks left there.
+export async function removeCheckTree(path: string, dir: string): Promise<void> {
+  const res = await git(path, ["worktree", "remove", "--force", dir]);
+  if (res.code !== 0) rmSync(dir, { recursive: true, force: true });
+  await git(path, ["worktree", "prune"]);
 }
 
 const CHANGES_CAP = 200 * 1024;

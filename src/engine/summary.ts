@@ -4,6 +4,7 @@ import { listPendingProposals } from "./autonomy/proposals";
 import { taskFiles } from "./outputs/store";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
+import { asksBeforeStarting } from "./needs";
 import { getTask, listTasks } from "./tasks";
 
 // `files` is how many files a review's task made (0 for everything else), so the notification can say so.
@@ -30,7 +31,8 @@ const STOPPED_LIMIT = 20;
 const pathFor = (spaceId: string, taskId: string | null) => (taskId ? `/space/${spaceId}?task=${taskId}` : `/space/${spaceId}`);
 
 // The Mac app's badge, menu and notifications; small enough to refetch on every change. Only active spaces count,
-// and "stop asking about this?" suggestions count like approvals, so the badge matches the dashboard's Needs you.
+// and "stop asking about this?" suggestions and tasks asking before they start count like approvals, so the badge
+// matches the dashboard's Needs you (needs.ts).
 export function summary(db: Database): Summary {
   const names = new Map(listSpaces(db).map((s) => [s.id, s.name]));
   // An Atrium-wide question (a new repo, removing a local copy) belongs to no space and is answered from Home.
@@ -60,8 +62,15 @@ export function summary(db: Database): Summary {
       at: p.createdAt,
       need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", files: 0, outcome: null } as Need,
     }));
+  // Tasks whose brief asks something before the writer starts; answered on the task or in Needs you.
+  const asking = listTasks(db, { status: ["queued"] })
+    .filter((t) => asksBeforeStarting(t) && names.has(t.spaceId))
+    .map((t) => ({
+      at: t.updatedAt,
+      need: { id: t.id, kind: "question", title: `${t.title}: ${t.loop!.questions[0]!.question}`, spaceName: names.get(t.spaceId)!, path: pathFor(t.spaceId, t.id), files: 0, outcome: null } as Need,
+    }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
-  const needs = [...approvals, ...suggestions].sort((a, b) => b.at - a.at).map((x) => x.need);
+  const needs = [...approvals, ...suggestions, ...asking].sort((a, b) => b.at - a.at).map((x) => x.need);
   const stopped = listTasks(db, { status: ["failed", "blocked"] })
     .filter((t) => t.kind === "work" && names.has(t.spaceId))
     .sort((a, b) => b.updatedAt - a.updatedAt)

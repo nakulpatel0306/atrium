@@ -11,7 +11,7 @@ import type { Rows, Ui } from "../ui";
 import { activityDetailRows, activityLines, activityScreen } from "./activity";
 import { askBox, keyStrip, topBar } from "./chrome";
 import { type HomeData, homeScreen } from "./home";
-import { agentsLines, confirmOver, deleteOver, fullView, helpOver, pickerOver } from "./overlays";
+import { agentsLines, answerOver, confirmOver, deleteOver, fullView, helpOver, pickerOver } from "./overlays";
 import { leftWidth, spacesRows, spacesScreen } from "./spaces";
 
 export const CHROME_ROWS = 6;
@@ -42,7 +42,7 @@ export const bodyRows = (rows: number) => rows - CHROME_ROWS;
 // The full text of the Needs you item picked on Home.
 export function needsLines(view: View, messages: Message[] | null, cols: number): DetailLine[] {
   const w = cols - 4;
-  const lines = view.proposal ? proposalDetail(view) : approvalDetail(view, messages, w);
+  const lines = view.proposal ? proposalDetail(view) : approvalDetail(view, w);
   return lines.flatMap((l) => wrapStyled(l, w));
 }
 
@@ -117,6 +117,7 @@ export function compose(f: Frame): Block {
   if (o?.kind === "confirm") ({ lines: main.lines, hits: boxHits } = confirmOver(lines, o, f.view.state, f.cols, BODY_TOP));
   else if (o?.kind === "delete") ({ lines: main.lines, hits: boxHits } = deleteOver(lines, o, f.view.state, f.deletePreview, f.cols, BODY_TOP));
   else if (o?.kind === "picker") ({ lines: main.lines, hits: boxHits } = pickerOver(lines, o, f.view.state, f.reviewers, f.cols, BODY_TOP));
+  else if (o?.kind === "answer") ({ lines: main.lines, hits: boxHits } = answerOver(lines, o, f.view.state, f.cols, BODY_TOP));
   else if (o?.kind === "help") ({ lines: main.lines, hits: boxHits } = helpOver(lines, f.ui, f.cols, BODY_TOP));
   else main = { ...main, lines };
   const ask = askBox(f.ui, f.view, f.ctx, f.cols, BODY_TOP + rows);

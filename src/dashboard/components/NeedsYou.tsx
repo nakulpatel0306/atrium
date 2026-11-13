@@ -1,11 +1,13 @@
-import { Inbox, SearchCheck, Wrench } from "lucide-react";
+import { Inbox, SearchCheck, TriangleAlert } from "lucide-react";
 import { type Ref, useState } from "react";
-import { post, type State, useMessages } from "../api";
+import { post, type State } from "../api";
 import { absolute, relative } from "../format";
 import { navigate } from "../route";
-import { reviewLine, reviewTarget, summaryLine } from "../summary";
+import { attentionText, reviewLine, summaryLine } from "../summary";
 import { DecideButtons, SendBackNote, useDecision } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
+import { askingTasks, QuestionsRow } from "./BriefQuestions";
+import { needsYouCount } from "../../engine/needs";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -14,19 +16,15 @@ import { WhatItMade } from "./WhatItMade";
 
 type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
-// The second agent's part in this approval; the thread is read only once the verdict is in it.
-const useReview = (approval: Approval, state: State) =>
-  reviewLine(approval, state, useMessages(reviewTarget(approval, state)));
-
 function Row({ approval, space, state }: { approval: Approval; space: Space | undefined; state: State }) {
   const [open, setOpen] = useState(false);
   const d = useDecision(approval);
   const { error } = d;
-  const review = useReview(approval, state);
-  const ReviewIcon = review?.fixing ? Wrench : SearchCheck;
+  const review = reviewLine(approval, state);
   // What the agent said about a result that isn't plainly done; only reviews carry one.
   const task = approval.kind === "review" && approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
+  const attention = attentionText(task?.loop);
 
   return (
     <div className="entry">
@@ -39,7 +37,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
         </span>
         {review && (
           <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>
-            <ReviewIcon />
+            <SearchCheck />
             {review.text}
           </span>
         )}
@@ -55,6 +53,14 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           <DecideButtons d={d} outcome={outcome} />
         </div>
       </div>
+      {attention && (
+        <div className="outcome-row">
+          <p className="attention" role="note">
+            <TriangleAlert />
+            {attention}
+          </p>
+        </div>
+      )}
       {outcome && (
         <div className="outcome-row">
           <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
@@ -96,6 +102,9 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const mine = <T extends { spaceId: string | null }>(xs: T[]) => (spaceId ? xs.filter((x) => x.spaceId === spaceId) : xs);
   return (
     <>
+      {askingTasks(state, spaceId).map((t) => (
+        <QuestionsRow key={t.id} task={t} space={spaces.get(t.spaceId)} />
+      ))}
       {mine(state.proposals).map((p) => (
         <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
       ))}
@@ -110,7 +119,7 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
 }
 
 export const waitingIn = (state: State, spaceId: string) =>
-  state.approvals.filter((a) => a.spaceId === spaceId).length + state.proposals.filter((p) => p.spaceId === spaceId).length;
+  state.approvals.filter((a) => a.spaceId === spaceId).length + state.proposals.filter((p) => p.spaceId === spaceId).length + askingTasks(state, spaceId).length;
 
 // At the top of a space: what's waiting on Nakul there, answered right where the work is.
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
@@ -129,7 +138,7 @@ export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }
   );
 }
 
-export const needsCount = (state: State) => state.approvals.length + state.proposals.length;
+export const needsCount = (state: State) => needsYouCount(state);
 
 // The whole list, on Home and on the Needs you page.
 export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {

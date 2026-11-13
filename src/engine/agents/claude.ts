@@ -4,7 +4,7 @@ import { atriumDenyPaths } from "./atrium-paths";
 import { privateReadRules, privateReads } from "./private-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
-import { agentEnv } from "./seatbelt";
+import { agentEnv, DEPENDENCY_DIRS } from "./seatbelt";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
@@ -33,6 +33,8 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
   "Write(**/.git/**)",
+  // Atrium's checks run tools from these, so only the engine installs into them.
+  ...DEPENDENCY_DIRS.flatMap((d) => [`Edit(**/${d}/**)`, `Write(**/${d}/**)`]),
   // Project settings in .claude are loaded by later runs (--setting-sources project), so an agent could widen its own permissions.
   "Edit(**/.claude/**)",
   "Write(**/.claude/**)",
@@ -79,6 +81,8 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash
           ...atriumDenyPaths(cwd),
           ...(reads?.denyRead ?? []),
         ],
+        // Bash can't install into or plant tools in the folders Atrium's checks run from.
+        denyWrite: DEPENDENCY_DIRS.map((d) => `${cwd}/${d}`),
         ...(reads?.allowRead.length && { allowRead: reads.allowRead }),
       },
       network: { allowedDomains: ["registry.npmjs.org"], allowLocalBinding: false, allowAllUnixSockets: false },
@@ -152,7 +156,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       let limitResetsAt: number | undefined;
       let limitRejected = false;
       let usage: AgentUsage | undefined;
-      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number } | undefined;
+      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } | undefined;
 
       const handle = (line: string) => {
         let msg: any;
@@ -167,6 +171,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
               input.onChunk(block.text);
             } else if (block.type === "tool_use") {
               input.onChunk(`→ ${block.name} ${shortInput(block.input)}`.trimEnd());
+              input.onTool?.(String(block.name), block.input);
             }
           }
         } else if (msg.type === "rate_limit_event") {
@@ -186,6 +191,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
             isError: Boolean(msg.is_error),
             inputTokens: msg.usage?.input_tokens ?? 0,
             outputTokens: msg.usage?.output_tokens ?? 0,
+            cacheReadTokens: msg.usage?.cache_read_input_tokens ?? 0,
+            cacheWriteTokens: msg.usage?.cache_creation_input_tokens ?? 0,
           };
         }
       };
@@ -198,6 +205,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           "--strict-mcp-config", "--no-session-persistence",
           "--output-format", "stream-json", "--verbose",
           "--permission-mode", "dontAsk",
+          ...(input.model ? ["--model", input.model] : []),
+          ...(input.maxTurns ? ["--max-turns", String(input.maxTurns)] : []),
           "--append-system-prompt", input.systemPrompt,
           // No tools at all ("--tools ''") rather than an empty allow list, which the variadic flag can't express.
           ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : ["--tools", ""]),
@@ -229,6 +238,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           summary: final.result,
           inputTokens: final.inputTokens,
           outputTokens: final.outputTokens,
+          cacheReadTokens: final.cacheReadTokens,
+          cacheWriteTokens: final.cacheWriteTokens,
           ...(usage && { usage }),
         };
       }
