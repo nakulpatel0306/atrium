@@ -29,7 +29,6 @@ import { DEFAULT_PROMPT } from "../engine/attachment-rules";
 import { embedResponse } from "./embed";
 import { investingRoute } from "./investing";
 import { simpleRoute } from "./investing-simple";
-import { moneyRoute } from "./money";
 import { startRoute } from "./start";
 import { marketsRoute, type MarketsDeps } from "./markets";
 import type { Repos } from "../engine/repos";
@@ -472,9 +471,7 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     if (start) return start;
 
     if (deps.markets) {
-      const res =
-        (await marketsRoute(db, deps.markets, req, url)) ?? (await simpleRoute(db, deps.markets, req, url)) ??
-        (await moneyRoute(db, deps.markets, req, url)) ?? (await investingRoute(db, deps.markets, req, url));
+      const res = (await marketsRoute(db, deps.markets, req, url)) ?? (await simpleRoute(db, deps.markets, req, url)) ?? (await investingRoute(db, deps.markets, req, url));
       if (res) return res;
     }
     if (deps.repos) {

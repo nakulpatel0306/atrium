@@ -445,8 +445,6 @@ type Props = {
   tab?: SpaceTab;
   // A markets space's open symbol page, from `?symbol=`.
   symbol?: string | null;
-  // Open a markets space on its Money tab, from `?tab=money`.
-  money?: boolean;
   // Open the focused task on its Changes, from `&view=changes`.
   changes?: boolean;
 };
@@ -467,7 +465,7 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
   );
 }
 
-export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null, money = false, changes = false }: Props) {
+export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null, changes = false }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
   const [, setTick] = useState(0);
@@ -507,7 +505,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
     <div className="wrap">
       <Header key={space.id} space={space} />
       <SpaceNeeds state={state} spaceId={space.id} />
-      {space.kind === "markets" && <InvestPanel key={money ? "money" : "invest"} spaceId={space.id} symbol={symbol} initial={money ? "money" : undefined} />}
+      {space.kind === "markets" && <InvestPanel spaceId={space.id} symbol={symbol} />}
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />

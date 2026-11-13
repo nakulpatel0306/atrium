@@ -1,6 +1,4 @@
 import type { Database } from "bun:sqlite";
-import { maskNumbers } from "../money/import";
-import { explainContext, moneyFacts } from "../money/summary";
 import { isAdvanced } from "./advanced";
 import { portfolioView } from "./views";
 import { createApproval } from "../approvals";
@@ -116,13 +114,6 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
           : `Write at most 4 short sentences for the user: what moved in their portfolio ${when} and why, from these prices and headlines. Say which numbers are delayed. No headings.`,
       );
     }
-    if (task.purpose === "money") {
-      out.push(...moneyFacts(db, space.id, at));
-      if (task.detail.trim()) out.push(`The user asks: ${task.detail.trim()}`);
-      out.push(
-        "Answer in at most 250 words of plain, everyday markdown, using only these facts and the portfolio above. Say plainly when they don't cover the question. Don't recommend specific investments.",
-      );
-    }
     if (task.purpose === "ask" && task.subject) {
       out.push(...subjectFacts(task.subject, at, true, space.id).slice(0, -1));
       const held = positionLine(space.id, task.subject, at);
@@ -179,14 +170,6 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
 
   async function buildContext(task: Task, space: Space, agent: string): Promise<string> {
     const at = now();
-    // Money stays with Claude, masked; Explain my month gets the month's recap and nothing else.
-    if (task.purpose === "money") {
-      if (agent !== "claude") return "";
-      const explain = explainContext(db, task, at);
-      if (explain) return explain.join("\n");
-      // A money question gets the portfolio summary and the money facts, not raw quotes, holdings or paper trades.
-      return investingContext(task, space, at).join("\n");
-    }
     const session = usSession(at);
     const status = await data.status();
     const watch = listWatchlist(db, space.id);
@@ -357,12 +340,10 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
         }
       }
       if (task.purpose) {
-        // Money answers are masked again here, whatever the runner already did: nothing unmasked is ever saved.
-        const said = task.purpose === "money" ? maskNumbers(summary) : summary;
-        const body = said.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
+        const body = summary.replace(/```atrium-markets[^\n]*\n[\s\S]*?```/g, "").trim();
         // Every answer to an ask is kept, so it's dated to the instant rather than the day.
         const forDate =
-          task.purpose === "ask" || task.purpose === "money"
+          task.purpose === "ask"
             ? askInstant(space.id, task.purpose, task.subject, at)
             : task.purpose === "thesis_check"
               ? (task.title.match(/on (\d{4}-\d{2}-\d{2})$/)?.[1] ?? etDate(at))
@@ -375,7 +356,7 @@ export function createMarketsHooks(db: Database, deps: { data: MarketData; now?:
           body: body.endsWith("Analysis, not advice.") ? body : `${body}\n\nAnalysis, not advice.`,
           taskId: task.id,
         });
-        if (task.purpose === "ask" || task.purpose === "money") return { done: true, lines, activity: "Answer saved" };
+        if (task.purpose === "ask") return { done: true, lines, activity: "Answer saved" };
         const what = task.purpose === "digest" ? "Digest" : task.purpose === "thesis_draft" ? "Thesis draft" : "Thesis check";
         return { done: true, lines, activity: `${what} saved` };
       }

@@ -4,13 +4,13 @@ import { type Action, initialUi, pin, reduce, type Ui } from "../../src/tui/ui";
 import { ids, makeState } from "./fixtures";
 
 const state = makeState();
-const rows = { detail: 20, live: 10, detailLines: 100, liveLines: 50, moneyRows: 5, investRows: 3, activity: 10, activityLines: 30 };
+const rows = { detail: 20, live: 10, detailLines: 100, liveLines: 50, investRows: 3, activity: 10, activityLines: 30 };
 const onSpaces: Ui = { ...initialUi, tab: "spaces" };
 const run = (actions: Action[], start: Ui = onSpaces) => actions.reduce((ui, a) => reduce(ui, a, deriveView(state, ui), rows), start);
 
 test("Home opens first, and tabs switch", () => {
   expect(initialUi.tab).toBe("home");
-  expect(run([{ type: "tab", tab: "money" }]).tab).toBe("money");
+  expect(run([{ type: "tab", tab: "investing" }]).tab).toBe("investing");
 });
 
 test("move and edges stay in range", () => {
@@ -27,11 +27,9 @@ test("on Home and Activity the arrows move through their own list", () => {
   expect(act.selected.spaces.id).toBeNull();
 });
 
-test("Money and Investing rows stay inside their lists", () => {
-  expect(run([{ type: "tab", tab: "money" }, { type: "move", delta: 9 }]).money.row).toBe(4);
+test("Investing rows stay inside their list", () => {
   expect(run([{ type: "tab", tab: "investing" }, { type: "edge", to: "bottom" }]).invest.row).toBe(2);
   expect(run([{ type: "tab", tab: "investing" }, { type: "move", delta: -3 }]).invest.row).toBe(0);
-  expect(run([{ type: "month", month: "2026-09" }]).money).toEqual({ month: "2026-09", row: 0 });
 });
 
 test("changing space resets the task selection and scrolls", () => {

@@ -8,7 +8,7 @@ import { initialUi, type Overlay, pin, reduce, type Ui } from "../../src/tui/ui"
 import { ids, makeState } from "./fixtures";
 import { key } from "./key";
 
-const rows = { detail: 20, live: 10, moneyRows: 3, investRows: 2 };
+const rows = { detail: 20, live: 10, investRows: 2 };
 
 // Plays keys through commandsFor and the reducer, the way the App does, collecting every command.
 function play(steps: (string | [string, Partial<Key>])[], start: Partial<Ui> = {}, state: State = makeState(), ctx: KeyContext = NO_CONTEXT) {
@@ -50,10 +50,9 @@ test("a chunk of command keys acts once per key", () => {
 
 test("numbers switch tabs; tab and arrows move between Spaces panes", () => {
   expect(play(["2"]).ui.tab).toBe("spaces");
-  expect(play(["3"]).ui.tab).toBe("money");
-  expect(play(["4"]).ui.tab).toBe("investing");
-  expect(play(["5"]).ui.tab).toBe("activity");
-  expect(play(["5", "1"]).ui.tab).toBe("home");
+  expect(play(["3"]).ui.tab).toBe("investing");
+  expect(play(["4"]).ui.tab).toBe("activity");
+  expect(play(["4", "1"]).ui.tab).toBe("home");
   expect(uiActions(play([["", { tab: true }]], spaces).all)).toEqual([{ type: "cycle", dir: 1 }]);
   expect(uiActions(play([["", { tab: true, shift: true }]], spaces).all)).toEqual([{ type: "cycle", dir: -1 }]);
   expect(uiActions(play(["l"], spaces).all)).toEqual([{ type: "column", dir: "right" }]);
@@ -171,7 +170,7 @@ test("the filter box filters live", () => {
   expect(cancelled.ui.filters.tasks).toBe("");
   expect(cancelled.ui.ask).toBeNull();
   expect(play(["/"]).ui.ask).toMatchObject({ purpose: "filter", targetId: "needs" });
-  expect(flashText(play(["/"], { tab: "money" }).all)[0]).toStartWith("Filter works in lists");
+  expect(flashText(play(["/"], { tab: "investing" }).all)[0]).toStartWith("Filter works in lists");
 });
 
 test("space keys", () => {
@@ -221,7 +220,6 @@ test("the key strip follows the tab and the focused pane, and always offers help
   expect(keysOf(home)).toContain("space ask");
   const tasks = { ...home, tab: "spaces" as const, focus: "tasks" as const, lastLeft: "tasks" as const };
   expect(keysOf(tasks)).toContain(". stop");
-  expect(keysOf({ ...home, tab: "money" })).toContain("b budget");
   expect(keysOf({ ...home, ask: { purpose: "ask", value: "", cursor: 0, agent: "auto", targetId: null } })).toEqual(["enter send", "esc cancel"]);
   expect(keysOf({ ...home, overlay: { kind: "confirm", purpose: "stop", targetId: ids.running } })).toEqual(["y stop it", "n keep running"]);
 });
@@ -267,38 +265,6 @@ test("esc clears the file before leaving detail", () => {
   expect(once.detailFile).toBeNull();
   expect(once.focus).toBe("detail");
   expect(play(["f", esc, esc], start, makeState(), withFiles()).ui.focus).toBe("tasks");
-});
-
-const money: KeyContext = { ...NO_CONTEXT, money: { spaceId: "spc_inv", month: "2026-10", months: ["2026-11", "2026-10", "2026-09"], categories: ["Housing", "Dining", "Groceries"] } };
-
-test("Money: arrows step through the months the engine lists, and say where they end", () => {
-  const onMoney: Partial<Ui> = { tab: "money" };
-  expect(uiActions(play([["", { leftArrow: true }]], onMoney, makeState(), money).all)).toContainEqual({ type: "month", month: "2026-09" });
-  expect(uiActions(play(["]"], onMoney, makeState(), money).all)).toContainEqual({ type: "month", month: "2026-11" });
-  const latest = { ...money, money: { ...money.money!, month: "2026-11" } };
-  expect(flashText(play(["]"], onMoney, makeState(), latest).all)).toEqual(["That's the latest month imported."]);
-});
-
-test("Money: e explains the month, b budgets the picked category, i imports by path", () => {
-  const onMoney: Partial<Ui> = { tab: "money", money: { month: null, row: 1 } };
-  expect(play(["e"], onMoney, makeState(), money).intents).toEqual([{ type: "explain", spaceId: "spc_inv", month: "2026-10" }]);
-  const budget = play(["b"], onMoney, makeState(), money);
-  expect(budget.ui.ask).toMatchObject({ purpose: "budget", targetId: "Dining" });
-  expect(play(["CA$1,200", enter], { ...onMoney, ask: budget.ui.ask }, makeState(), money).intents).toEqual([{ type: "budget", spaceId: "spc_inv", category: "Dining", limit: 1200 }]);
-  expect(play([enter], { ...onMoney, ask: budget.ui.ask }, makeState(), money).intents).toEqual([{ type: "budget", spaceId: "spc_inv", category: "Dining", limit: null }]);
-  expect(flashText(play(["lots", enter], { ...onMoney, ask: budget.ui.ask }, makeState(), money).all)).toEqual(["Type an amount like 400, or leave it empty for no budget."]);
-  const imp = play(["i"], onMoney, makeState(), money);
-  expect(imp.ui.ask).toMatchObject({ purpose: "import", targetId: "spc_inv" });
-  expect(play(["~/Downloads/td.csv", enter], { ...onMoney, ask: imp.ui.ask }, makeState(), money).intents).toEqual([{ type: "importPreview", spaceId: "spc_inv", path: "~/Downloads/td.csv" }]);
-  // The import's confirm imports what the preview read.
-  const confirm: Overlay = { kind: "confirm", purpose: "import", targetId: "spc_inv", csv: "a,b", account: "TD chequing", summary: ["TD · 2 rows"] };
-  expect(play(["y"], { overlay: confirm }).intents).toEqual([{ type: "importCsv", spaceId: "spc_inv", csv: "a,b", account: "TD chequing" }]);
-});
-
-test("Money: the Ask box asks Claude about money; with no Investing space it says how to get one", () => {
-  expect(play([" ", "where did it go?", enter], { tab: "money" }, makeState(), money).intents).toEqual([{ type: "moneyAsk", spaceId: "spc_inv", question: "where did it go?" }]);
-  const none = play(["e"], { tab: "money" });
-  expect(flashText(none.all)[0]).toStartWith("There's no Investing space yet.");
 });
 
 test("Investing: the Ask box asks about the picked symbol, or adds a task when none is listed", () => {

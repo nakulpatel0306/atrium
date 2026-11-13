@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS research_notes (
 CREATE TABLE IF NOT EXISTS market_writeups (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
-  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask','money')),
+  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask')),
   key TEXT,
   for_date TEXT NOT NULL,
   body TEXT NOT NULL,
@@ -227,59 +227,5 @@ CREATE TABLE IF NOT EXISTS tfsa_entries (
   amount REAL NOT NULL,
   note TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS money_transactions (
-  id TEXT PRIMARY KEY,
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  source TEXT NOT NULL CHECK (source IN ('bank','wealthsimple')),
-  account TEXT NOT NULL,
-  date TEXT NOT NULL,
-  description TEXT NOT NULL,
-  merchant TEXT NOT NULL,
-  amount REAL NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'CAD',
-  kind TEXT NOT NULL,
-  symbol TEXT,
-  fingerprint TEXT NOT NULL,
-  imported_at INTEGER NOT NULL,
-  UNIQUE (space_id, fingerprint)
-);
-CREATE INDEX IF NOT EXISTS money_transactions_date ON money_transactions(space_id, date);
-CREATE TABLE IF NOT EXISTS money_imports (
-  id TEXT PRIMARY KEY,
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  account TEXT NOT NULL,
-  first_date TEXT NOT NULL,
-  last_date TEXT NOT NULL,
-  rows INTEGER NOT NULL,
-  imported_at INTEGER NOT NULL,
-  period_start TEXT,
-  period_end TEXT
-);
-CREATE TABLE IF NOT EXISTS money_accounts (
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  name TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  institution TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (space_id, name)
-);
-CREATE TABLE IF NOT EXISTS money_budgets (
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  category TEXT NOT NULL,
-  monthly_limit REAL NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (space_id, category)
-);
-CREATE TABLE IF NOT EXISTS money_nudges (
-  id TEXT PRIMARY KEY,
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  kind TEXT NOT NULL CHECK (kind IN ('budget','import')),
-  key TEXT NOT NULL,
-  title TEXT NOT NULL,
-  body TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  dismissed_at INTEGER,
-  UNIQUE (space_id, key)
 );
 `;

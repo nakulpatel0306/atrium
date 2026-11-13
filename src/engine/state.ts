@@ -5,7 +5,6 @@ import { listNeverProposals, listPendingProposals, type Proposal } from "./auton
 import { listRules, type Rule } from "./autonomy/rules";
 import { briefing } from "./briefing";
 import { type ActivityRow, listActivity } from "./events";
-import { activeNudges, type Nudge } from "./money/nudges";
 import { getSetting } from "./settings";
 import { type Space, listSpaces } from "./spaces";
 import { atriumDiskUsage } from "./storage";
@@ -71,8 +70,6 @@ export type State = {
   disk: ReturnType<typeof atriumDiskUsage>;
   // Pending new-project drafts and clone removals, for the forms in Needs you.
   repoActions: RepoActionView[];
-  // The monthly import reminder, shown in Needs you as a quiet row (budget heads-ups are notifications only).
-  nudges: Nudge[];
 };
 
 export type RepoActionView = {
@@ -181,6 +178,5 @@ export function snapshot(db: Database, registry?: Registry): State {
         : null,
     disk: atriumDiskUsage(),
     repoActions: repoActionViews(db),
-    nudges: activeNudges(db, now).filter((n) => n.kind === "import"),
   };
 }

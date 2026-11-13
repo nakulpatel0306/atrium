@@ -15,9 +15,7 @@ import { deriveView, type View } from "../select";
 import { clean, wrapLines } from "../text";
 import { type Action, type Flash, initialUi, listPaneOf, pin, reduce, type Ui } from "../ui";
 import { bodyRows, compose, detailWidth, fullCount, rowsFor, transcriptTitle } from "../screens/compose";
-import { thisMonth } from "../screens/format";
 import { investKeys } from "../screens/investing";
-import { type MoneyPage, moneyCategories } from "../screens/money";
 import { Screen } from "./Screen";
 
 const NO_KEY = {} as Key;
@@ -101,7 +99,6 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
   const investSpace = state?.spaces.find((s) => s.kind === "markets") ?? null;
   const base = investSpace ? `/api/investing/${encodeURIComponent(investSpace.id)}` : null;
   const tab = ui.tab;
-  const money = useEngineRead<MoneyPage>(client, base && (tab === "money" || tab === "home") ? `${base}/money?summary=1&month=${tab === "home" ? thisMonth() : (ui.money.month ?? "")}` : null);
   const glance = useMarketsGlance(client, investSpace && (tab === "home" || tab === "investing") ? investSpace : null) as GlanceView | null;
   const portfolio = useEngineRead<PortfolioView>(client, base && tab === "investing" ? `${base}/portfolio` : null);
   const markets = useEngineRead<{ alerts: Alert[] }>(client, investSpace && tab === "investing" ? `/api/markets/${encodeURIComponent(investSpace.id)}` : null);
@@ -133,7 +130,6 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
 
   const ctx: KeyContext = {
     files: madeFiles,
-    money: investSpace ? { spaceId: investSpace.id, month: money?.month ?? null, months: money?.months ?? [], categories: money ? moneyCategories(money).map((c) => c.category) : [] } : null,
     invest: investSpace ? { spaceId: investSpace.id, keys: investKeys(invest) } : null,
   };
   const now = Date.now();
@@ -146,8 +142,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
         rows: height,
         ctx,
         investing: !!investSpace,
-        home: { glance, money, investing: !!investSpace, lastLine, frame, now, briefing: briefing.current ?? view.state.briefing },
-        money,
+        home: { glance, investing: !!investSpace, lastLine, frame, now, briefing: briefing.current ?? view.state.briefing },
         invest,
         detail,
         live,
@@ -198,7 +193,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
     const out = await runIntent(client, intent, s);
     if (intent.type === "newSpace") settingUp.current = false;
     // A decided item leaves the list; the next one is picked deliberately, never slid into.
-    if (["approve", "reject", "answer", "dismissNudge"].includes(intent.type) && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
+    if (["approve", "reject", "answer"].includes(intent.type) && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
     if (out.spaceId) {
       dispatch({ type: "select", pane: "spaces", id: out.spaceId });
       dispatch({ type: "focus", pane: "tasks" });
@@ -247,10 +242,10 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
     const actions: Action[] = [];
     // A click anywhere but the box (or its own keys on the strip) leaves it: a card's key cap then acts, never types.
     if (uiRef.current.ask && !c.ask && !c.strip) actions.push({ type: "ask", ask: null });
-    if (c.tab !== undefined) actions.push({ type: "tab", tab: (["home", "spaces", "money", "investing", "activity"] as const)[c.tab]! });
+    if (c.tab !== undefined) actions.push({ type: "tab", tab: (["home", "spaces", "investing", "activity"] as const)[c.tab]! });
     if (c.select) actions.push({ type: "select", pane: c.select.pane, id: c.select.id });
     if (c.focus) actions.push({ type: "focus", pane: c.focus });
-    if (c.row) actions.push({ type: "row", list: c.row.list, index: c.row.index });
+    if (c.row) actions.push({ type: "row", index: c.row.index });
     if (c.ask && !uiRef.current.ask && !uiRef.current.overlay) actions.push({ type: "ask", ask: { purpose: "ask", value: "", cursor: 0, agent: "auto", targetId: null } });
     let cur = uiRef.current;
     for (const a of actions) cur = reduce(cur, a, deriveView(s, cur), rows);

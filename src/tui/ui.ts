@@ -2,7 +2,7 @@
 import type { AgentChoice } from "../dashboard/agents";
 import { CLEARED, listOf, pick, type View } from "./select";
 
-export const TABS = ["home", "spaces", "money", "investing", "activity"] as const;
+export const TABS = ["home", "spaces", "investing", "activity"] as const;
 export type Tab = (typeof TABS)[number];
 
 // Lists whose selection is pinned to a row id: spaces and tasks (Spaces), needs (Home's cards), activity.
@@ -10,9 +10,9 @@ export type ListPane = "spaces" | "tasks" | "needs" | "activity";
 // Where the keys go on the Spaces tab.
 export type Pane = "spaces" | "tasks" | "detail" | "live";
 
-// What the Ask box is for right now. "ask" is the tab's own (new space, new task, money question, symbol ask); the
+// What the Ask box is for right now. "ask" is the tab's own (new space, new task, symbol ask); the
 // rest are the prompts other keys open in the same box.
-export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter" | "budget" | "import";
+export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter";
 export type Ask = { purpose: AskPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null };
 
 export type Overlay =
@@ -26,9 +26,7 @@ export type Overlay =
   // Deleting a space for good waits for its name, typed in full.
   | { kind: "delete"; spaceId: string; value: string; cursor: number }
   | { kind: "confirm"; purpose: "accept"; targetId: string }
-  | { kind: "confirm"; purpose: "stop"; targetId: string }
-  // An import waits for a y on what the file holds (account, rows, dates), never its rows.
-  | { kind: "confirm"; purpose: "import"; targetId: string; csv: string; account: string; summary: string[] };
+  | { kind: "confirm"; purpose: "stop"; targetId: string };
 
 export type Flash = { text: string; tone: "ok" | "bad" | "info" };
 
@@ -45,8 +43,7 @@ export type Ui = {
   // The made file picked in the task's detail with f, which o and R then act on.
   detailFile: number | null;
   liveScroll: number | null;
-  // Money: the month asked for (null is the one the engine picks) and the category row; Investing: the symbol row.
-  money: { month: string | null; row: number };
+  // Investing: the symbol row.
   invest: { row: number };
   activityScroll: number;
   // Null while the cursor isn't in the Ask box.
@@ -74,11 +71,10 @@ export type Action =
   | { type: "flash"; flash: Flash | null }
   | { type: "file"; index: number | null }
   | { type: "ask"; ask: Ask | null }
-  | { type: "month"; month: string | null }
-  | { type: "row"; list: "money" | "invest"; index: number };
+  | { type: "row"; index: number };
 
 // How many lines each scrollable part holds and shows, so scrolling and moving know where the ends are.
-export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number; moneyRows?: number; investRows?: number; activityLines?: number; activity?: number };
+export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number; investRows?: number; activityLines?: number; activity?: number };
 
 const none: Selection = { id: null, index: 0 };
 
@@ -92,7 +88,6 @@ export const initialUi: Ui = {
   detailScroll: 0,
   detailFile: null,
   liveScroll: null,
-  money: { month: null, row: 0 },
   invest: { row: 0 },
   activityScroll: 0,
   ask: null,
@@ -163,9 +158,8 @@ export function pin(ui: Ui, view: View): Ui {
   return next;
 }
 
-function moveRow(ui: Ui, list: "money" | "invest", to: number, count: number): Ui {
-  const index = clamp(to, count - 1);
-  return list === "money" ? { ...ui, money: { ...ui.money, row: index } } : { ...ui, invest: { row: index } };
+function moveRow(ui: Ui, to: number, count: number): Ui {
+  return { ...ui, invest: { row: clamp(to, count - 1) } };
 }
 
 export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
@@ -183,16 +177,14 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
     case "move": {
       const pane = listPaneOf(ui);
       if (pane) return moveTo(ui, view, pane, (i) => i + action.delta);
-      if (ui.tab === "money") return moveRow(ui, "money", ui.money.row + action.delta, rows.moneyRows ?? 0);
-      if (ui.tab === "investing") return moveRow(ui, "invest", ui.invest.row + action.delta, rows.investRows ?? 0);
+      if (ui.tab === "investing") return moveRow(ui, ui.invest.row + action.delta, rows.investRows ?? 0);
       if (ui.tab === "spaces") return scroll(ui, action.delta, rows);
       return ui;
     }
     case "edge": {
       const pane = listPaneOf(ui);
       if (pane) return moveTo(ui, view, pane, (_, last) => (action.to === "top" ? 0 : last));
-      if (ui.tab === "money") return moveRow(ui, "money", action.to === "top" ? 0 : Number.MAX_SAFE_INTEGER, rows.moneyRows ?? 0);
-      if (ui.tab === "investing") return moveRow(ui, "invest", action.to === "top" ? 0 : Number.MAX_SAFE_INTEGER, rows.investRows ?? 0);
+      if (ui.tab === "investing") return moveRow(ui, action.to === "top" ? 0 : Number.MAX_SAFE_INTEGER, rows.investRows ?? 0);
       if (ui.tab !== "spaces") return ui;
       if (ui.focus === "detail") return { ...ui, detailScroll: action.to === "top" ? 0 : detailMax(rows) };
       return { ...ui, liveScroll: action.to === "top" ? 0 : null };
@@ -243,9 +235,7 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
       return { ...ui, detailFile: action.index };
     case "ask":
       return { ...ui, ask: action.ask };
-    case "month":
-      return { ...ui, money: { month: action.month, row: 0 } };
     case "row":
-      return action.list === "money" ? { ...ui, money: { ...ui.money, row: action.index } } : { ...ui, invest: { row: action.index } };
+      return { ...ui, invest: { row: action.index } };
   }
 }

@@ -7,7 +7,6 @@ import { money } from "../../format";
 import { dayText, investingPath, perfRow, pctText, signedPctText, useHealth, type HealthView } from "../../investing";
 import { AllocationBars } from "./AllocationBars";
 import { SourceTag } from "./SourceTag";
-import { TfsaCard } from "./TfsaCard";
 
 type View = "holding" | "sector" | "country" | "currency" | "company";
 const VIEWS: { id: View; label: string }[] = [
@@ -250,7 +249,6 @@ export function Health({ spaceId }: { spaceId: string }) {
       </section>
 
       <Funds spaceId={spaceId} funds={v.funds} />
-      <TfsaCard />
     </div>
   );
 }

@@ -109,7 +109,6 @@ test("GETs never fetch", async () => {
     `/api/investing/${s.id}/screener`,
     `/api/investing/${s.id}/digests`,
     "/api/investing/budget",
-    "/api/investing/tfsa?year=2026",
   ]) {
     const r = await get(path);
     expect(`${path} ${r.status}`).toBe(`${path} 200`);
@@ -171,24 +170,12 @@ test("ideas and the screener", async () => {
   expect(rows.map((r: { key: string }) => r.key)).toContain("NOW");
 });
 
-test("TFSA room round-trip, with the over-contribution text", async () => {
-  boot();
-  expect((await call("PUT", "/api/investing/tfsa/room", { year: 2026, roomJan1: 1000 })).status).toBe(200);
-  const e = await (await call("POST", "/api/investing/tfsa/entries", { date: "2026-02-01", kind: "contribution", amount: 1300 })).json();
-  const t = await (await get("/api/investing/tfsa?year=2026")).json();
-  expect(t.text).toBe("Over by CA$300.00: CRA charges 1% a month on the excess until it's withdrawn.");
-  expect(t.entries).toHaveLength(1);
-  expect((await call("DELETE", `/api/investing/tfsa/entries/${e.id}`)).status).toBe(200);
-  expect((await (await get("/api/investing/tfsa?year=2026")).json()).remaining).toBe(1000);
-  expect((await call("POST", "/api/investing/tfsa/entries", { date: "2026-02-01", kind: "contribution", amount: -1 })).status).toBe(400);
-});
-
 test("cross-site requests are refused on the new routes too", async () => {
   boot();
   const s = investing();
   const r = await fetch(`${base}/api/investing/${s.id}/health`, { headers: { origin: "https://evil.example" } });
   expect(r.status).toBe(403);
-  const w = await fetch(`${base}/api/investing/tfsa/room`, { method: "PUT", headers: { origin: "https://evil.example", "content-type": "application/json" }, body: "{}" });
+  const w = await fetch(`${base}/api/investing/budget`, { method: "PUT", headers: { origin: "https://evil.example", "content-type": "application/json" }, body: "{}" });
   expect(w.status).toBe(403);
 });
 

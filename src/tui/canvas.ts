@@ -10,7 +10,7 @@ export type Line = Seg[];
 // What a click on a region does: switch tab, select a row (and focus its pane), and/or act as if a key was pressed.
 // `strip` marks a key cap on the bottom strip: while the Ask box is open those are its own keys (enter, esc, tab),
 // so a click there goes to the box; every other click closes the box first.
-export type Click = { strip?: true; tab?: number; select?: { pane: "spaces" | "tasks" | "needs" | "activity"; id: string }; focus?: "spaces" | "tasks" | "detail" | "live"; input?: string; ask?: true; row?: { list: "money" | "invest"; index: number } };
+export type Click = { strip?: true; tab?: number; select?: { pane: "spaces" | "tasks" | "needs" | "activity"; id: string }; focus?: "spaces" | "tasks" | "detail" | "live"; input?: string; ask?: true; row?: { index: number } };
 export type Hit = { x: number; y: number; w: number; h: number; click: Click; wheel?: "list" | "detail" | "live" };
 export type Block = { lines: Line[]; hits: Hit[] };
 

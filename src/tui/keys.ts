@@ -26,32 +26,25 @@ export type Intent =
   | { type: "deleteSpace"; spaceId: string; name: string }
   | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
-  | { type: "dismissNudge"; spaceId: string; nudgeId: string }
-  | { type: "explain"; spaceId: string; month: string }
-  | { type: "moneyAsk"; spaceId: string; question: string }
-  | { type: "budget"; spaceId: string; category: string; limit: number | null }
-  | { type: "importPreview"; spaceId: string; path: string }
-  | { type: "importCsv"; spaceId: string; csv: string; account: string }
   | { type: "investAsk"; spaceId: string; key: string; question: string };
 
 // A file the selected task made, as the keys need it.
 export type MadeFile = { path: string; exists: boolean; root: "space" | "branch" };
 
-// What the fetched Money and Investing views hold, as the keys need it.
+// What the fetched Investing view holds, as the keys need it.
 export type KeyContext = {
   files: MadeFile[];
-  money: { spaceId: string; month: string | null; months: string[]; categories: string[] } | null;
   invest: { spaceId: string; keys: string[] } | null;
 };
 
-export const NO_CONTEXT: KeyContext = { files: [], money: null, invest: null };
+export const NO_CONTEXT: KeyContext = { files: [], invest: null };
 
 export type Command = { kind: "ui"; action: Action } | { kind: "intent"; intent: Intent } | { kind: "quit" };
 
-type Section = "Everywhere" | "Home" | "Spaces" | "Money" | "Investing" | "Activity";
+type Section = "Everywhere" | "Home" | "Spaces" | "Investing" | "Activity";
 
 export const HELP: { section: Section; keys: string; does: string }[] = [
-  { section: "Everywhere", keys: "1 2 3 4 5", does: "switch tab" },
+  { section: "Everywhere", keys: "1 2 3 4", does: "switch tab" },
   { section: "Everywhere", keys: "space or :", does: "type in the Ask box" },
   { section: "Everywhere", keys: "j k ↑ ↓", does: "move or scroll" },
   { section: "Everywhere", keys: "g G", does: "top, bottom" },
@@ -80,16 +73,12 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Spaces", keys: "p e v", does: "private, goal, reviewer" },
   { section: "Spaces", keys: "X D", does: "archive, delete" },
   { section: "Spaces", keys: "ctrl-d/u", does: "half page" },
-  { section: "Money", keys: "← → [ ]", does: "earlier, later month" },
-  { section: "Money", keys: "b", does: "set a budget" },
-  { section: "Money", keys: "e", does: "explain my month" },
-  { section: "Money", keys: "i", does: "import a CSV" },
   { section: "Investing", keys: "j k", does: "pick a symbol" },
   { section: "Activity", keys: "enter", does: "open its space" },
   { section: "Activity", keys: "ctrl-d/u", does: "scroll its lines" },
 ];
 
-const SECTION: Record<Ui["tab"], Section> = { home: "Home", spaces: "Spaces", money: "Money", investing: "Investing", activity: "Activity" };
+const SECTION: Record<Ui["tab"], Section> = { home: "Home", spaces: "Spaces", investing: "Investing", activity: "Activity" };
 export const helpFor = (tab: Ui["tab"]) => HELP.filter((h) => h.section === "Everywhere" || h.section === SECTION[tab]);
 
 // One key cap on the strip. `input` is what a click on it presses; none for keys a click can't stand for.
@@ -116,7 +105,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
     return keys;
   }
   if (ui.overlay?.kind === "confirm") {
-    const yes = { accept: "accept", archive: "archive", stop: "stop it", import: "import" }[ui.overlay.purpose];
+    const yes = { accept: "accept", archive: "archive", stop: "stop it" }[ui.overlay.purpose];
     return [k("y", yes), k("n", ui.overlay.purpose === "stop" ? "keep running" : "not now")];
   }
   const overlay = ui.overlay && OVERLAY_KEYS[ui.overlay.kind];
@@ -127,14 +116,12 @@ export function strip(ui: Ui, view: View): StripKey[] {
   const ask = k("space", "ask", " ");
   switch (ui.tab) {
     case "home":
-      return [...lead, k("↵", "open", "\r"), ask, k("1-5", "views", undefined), k("/", "filter"), HELP_KEY, k("q", "quit")];
+      return [...lead, k("↵", "open", "\r"), ask, k("1-4", "views", undefined), k("/", "filter"), HELP_KEY, k("q", "quit")];
     case "spaces":
       if (ui.focus === "spaces") return [...lead, k("↵", "tasks", "\r"), k("n", "new task"), k("N", "new space"), k("e", "goal"), k("X", "archive"), k("D", "delete"), HELP_KEY];
       if (ui.focus === "tasks") return [...lead, k("↵", "detail", "\r"), k("n", "new task"), k("R", "retry"), k("s", "run now"), k(".", "stop"), k("A", "agent"), k("t", "transcript"), HELP_KEY];
       if (ui.focus === "detail") return [k("j k", "scroll", undefined), k("a", "approve"), k("r", "send back"), k("f", "files"), k("t", "transcript"), k("esc", "back", "\x1b"), HELP_KEY];
       return [k("j k", "scroll", undefined), k("g G", "top / follow", undefined), k(".", "stop"), k("esc", "back", "\x1b"), HELP_KEY];
-    case "money":
-      return [k("←→", "month", undefined), k("↑↓", "category", undefined), k("b", "budget"), k("e", "explain"), k("i", "import"), ask, HELP_KEY];
     case "investing":
       return [k("↑↓", "pick a symbol", undefined), k("space", "ask about it", " "), k("u", "usage"), HELP_KEY, k("q", "quit")];
     case "activity":
@@ -230,11 +217,6 @@ function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
     if (input === "a" || input === "r") return [info("That's a suggestion: y yes, n not now, N never.")];
     if (key.return) return [open({ kind: "detail", scroll: 0 })];
   }
-  const nudge = view.nudge && u.selected.needs.id === view.nudge.id ? view.nudge : null;
-  if (nudge) {
-    if (input === "x") return [intent({ type: "dismissNudge", spaceId: nudge.spaceId, nudgeId: nudge.id })];
-    if (key.return || input === "i") return [ui({ type: "tab", tab: "money" })];
-  }
   const approval = pinned(u, "needs", view.approval);
   if (!approval) return null;
   if (key.return) {
@@ -271,27 +253,6 @@ function fileKey(input: string, u: Ui, view: View, files: MadeFile[]): Command[]
   return null;
 }
 
-function moneyKey(input: string, key: Key, u: Ui, ctx: KeyContext): Command[] | null {
-  const m = ctx.money;
-  const earlier = key.leftArrow || input === "[" || input === "h";
-  const later = key.rightArrow || input === "]" || input === "l";
-  if (!earlier && !later && !["b", "e", "i"].includes(input)) return null;
-  if (!m) return [info(NO_INVESTING)];
-  if (input === "i") return [ask("import", m.spaceId)];
-  if (earlier || later) {
-    // Months are listed newest first.
-    const at = m.month ? m.months.indexOf(m.month) : -1;
-    const next = m.months[at + (earlier ? 1 : -1)];
-    if (at < 0 || next === undefined) return [info(earlier ? "That's the earliest month imported." : "That's the latest month imported.")];
-    return [ui({ type: "month", month: next })];
-  }
-  if (!m.month) return [info("Import a bank, card or Wealthsimple file first. Press i.")];
-  if (input === "e") return [intent({ type: "explain", spaceId: m.spaceId, month: m.month })];
-  const category = m.categories[u.money.row];
-  if (!category) return [info("Pick a category with j or k first.")];
-  return [ask("budget", category)];
-}
-
 // One command key, outside any overlay and the Ask box.
 function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext): Command[] {
   if (key.escape) return [ui({ type: "back" })];
@@ -299,10 +260,6 @@ function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext):
     if (input === "d") return [ui({ type: "page", dir: 1 })];
     if (input === "u") return [ui({ type: "page", dir: -1 })];
     return [];
-  }
-  if (u.tab === "money") {
-    const m = moneyKey(input, key, u, ctx);
-    if (m) return m;
   }
   if (key.tab) return u.tab === "spaces" ? [ui({ type: "cycle", dir: key.shift ? -1 : 1 })] : [ui({ type: "move", delta: key.shift ? -1 : 1 })];
   if (key.leftArrow || key.rightArrow) return u.tab === "spaces" ? [ui({ type: "column", dir: key.leftArrow ? "left" : "right" })] : [];
@@ -319,7 +276,7 @@ function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext):
   }
   const onFile = fileKey(input, u, view, ctx.files);
   if (onFile) return onFile;
-  const tab = "12345".indexOf(input);
+  const tab = "1234".indexOf(input);
   if (input && tab >= 0) return [ui({ type: "tab", tab: TABS[tab]! })];
   switch (input) {
     case " ":
@@ -428,24 +385,11 @@ function submitAsk(a: Ask, u: Ui, view: View, ctx: KeyContext): Command[] {
     case "goal":
       if (!text) return [info("A goal can't be empty. Describe what this space is for.")];
       return [intent({ type: "goal", spaceId: target, goal: text }), leaveAsk];
-    case "budget": {
-      if (!ctx.money) return [leaveAsk, info(NO_INVESTING)];
-      const n = Number(text.replace(/[$,\s]|CA\$/gi, ""));
-      if (text && (!Number.isFinite(n) || n < 0)) return [info("Type an amount like 400, or leave it empty for no budget.")];
-      return [intent({ type: "budget", spaceId: ctx.money.spaceId, category: target, limit: !text || n === 0 ? null : n }), leaveAsk];
-    }
-    case "import":
-      if (!text) return [info("Type the path to a CSV file, or drag the file into the terminal.")];
-      return [intent({ type: "importPreview", spaceId: target, path: text }), leaveAsk];
     case "space":
       if (!text) return [empty];
       return [intent({ type: "newSpace", text }), leaveAsk];
     case "ask": {
       if (!text) return [empty];
-      if (u.tab === "money") {
-        if (!ctx.money) return [leaveAsk, info(NO_INVESTING)];
-        return [intent({ type: "moneyAsk", spaceId: ctx.money.spaceId, question: text }), leaveAsk];
-      }
       if (u.tab === "investing") {
         if (!ctx.invest) return [leaveAsk, info(NO_INVESTING)];
         const key = ctx.invest.keys[u.invest.row];
@@ -554,8 +498,6 @@ function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): 
       return [intent({ type: "archive", spaceId: overlay.targetId })];
     case "stop":
       return [intent({ type: "stop", taskId: overlay.targetId })];
-    case "import":
-      return [intent({ type: "importCsv", spaceId: overlay.targetId, csv: overlay.csv, account: overlay.account })];
     case "accept": {
       const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
       return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];

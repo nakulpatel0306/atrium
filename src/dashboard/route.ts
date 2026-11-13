@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; money: boolean; changes: boolean };
+export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; changes: boolean };
 export type SpaceTab = "tasks" | "files";
 
 const listeners = new Set<() => void>();
@@ -37,7 +37,6 @@ export function parseRoute(path: string): Route {
   if (!m) return { name: "home" };
   try {
     const q = new URLSearchParams(search);
-    // `?tab=money` opens an investing space on its Money tab, from a money reminder or heads-up.
     // `&view=changes` opens the task on its Changes, from Needs you's "See changes".
     return {
       name: "space",
@@ -45,7 +44,6 @@ export function parseRoute(path: string): Route {
       task: q.get("task"),
       tab: q.get("tab") === "files" ? "files" : "tasks",
       symbol: q.get("symbol"),
-      money: q.get("tab") === "money",
       changes: q.get("view") === "changes",
     };
   } catch {

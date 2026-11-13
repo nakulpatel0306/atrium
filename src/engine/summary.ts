@@ -2,7 +2,6 @@ import type { Database } from "bun:sqlite";
 import { listPending, type AlertTopic } from "./approvals";
 import { listPendingProposals } from "./autonomy/proposals";
 import { taskFiles } from "./outputs/store";
-import { activeNudges, type Nudge } from "./money/nudges";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
 import { getTask, listTasks } from "./tasks";
@@ -28,8 +27,6 @@ export type Summary = {
   overnight: boolean;
   // Pending market alerts by kind; indicator alerts count as price.
   alerts: { price: number; earnings: number; news: number; flag: number };
-  // Money heads-ups (a budget at 80% or 100%, the monthly import reminder): notified once, not counted in the badge.
-  nudges: Nudge[];
 };
 
 const STOPPED_LIMIT = 20;
@@ -91,5 +88,5 @@ export function summary(db: Database): Summary {
     const t = n.topic === "indicator" || !n.topic ? "price" : n.topic;
     alerts[t]++;
   }
-  return { needsYou: needs.length, needs, stopped, overnight: getSetting(db, "overnight") === "true", alerts, nudges: activeNudges(db, Date.now()) };
+  return { needsYou: needs.length, needs, stopped, overnight: getSetting(db, "overnight") === "true", alerts };
 }

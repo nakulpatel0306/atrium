@@ -6,7 +6,7 @@ import { runAgentProcess } from "./agents/process";
 import type { AgentAdapter } from "./agents/types";
 import { config } from "./config";
 import { tildePath } from "./folders";
-import { HOME_CURRENCY, storedName, suggestedName } from "./profile";
+import { storedName, suggestedName } from "./profile";
 import { runGh } from "./repos/gh";
 import { listSpaces } from "./spaces";
 
@@ -28,8 +28,7 @@ export type Report = {
   agents: Check[];
   github: Check;
   investing: { spaceId: string | null };
-  money: { formats: string[]; message: string };
-  profile: { name: string | null; suggestedName: string | null; projectsRoot: string; homeCurrency: string };
+  profile: { name: string | null; suggestedName: string | null; projectsRoot: string };
   hasSpaces: boolean;
 };
 
@@ -86,8 +85,6 @@ async function githubCheck(): Promise<Check> {
   return { ...base, state: "ready", version, message: "The GitHub CLI is installed and signed in." };
 }
 
-export const MONEY_FORMATS = ["TD", "Amex", "Wealthsimple (chequing, savings, activity and holdings)", "Any bank's CSV with date, description and amount columns"];
-
 // With no database (the command line), the profile and space questions use what the Mac itself says.
 export async function doctor(db: Database | null): Promise<Report> {
   const c = config();
@@ -102,8 +99,7 @@ export async function doctor(db: Database | null): Promise<Report> {
     agents: [claude, codex, gemini],
     github,
     investing: { spaceId: spaces.find((s) => s.kind === "markets" && s.name === "Investing")?.id ?? null },
-    money: { formats: MONEY_FORMATS, message: "Import a CSV from your bank each month. Card and account numbers are masked before anything is saved." },
-    profile: { name: db ? storedName(db) : null, suggestedName: suggestedName(), projectsRoot: tildePath(c.projectsRoot), homeCurrency: HOME_CURRENCY },
+    profile: { name: db ? storedName(db) : null, suggestedName: suggestedName(), projectsRoot: tildePath(c.projectsRoot) },
     hasSpaces: spaces.length > 0,
   };
 }
@@ -121,7 +117,7 @@ export function formatDoctor(r: Report): string {
   r.agents.forEach(row);
   lines.push("", "Code spaces");
   row(r.github);
-  lines.push("", "Your folders", `  Projects folder: ${r.profile.projectsRoot}`, `  Home currency:   ${r.profile.homeCurrency} (fixed for now)`);
+  lines.push("", "Your folders", `  Projects folder: ${r.profile.projectsRoot}`);
   lines.push("", "Investing and money are set up from the dashboard's Get started screen, or with: atrium investing setup");
   return lines.join("\n");
 }

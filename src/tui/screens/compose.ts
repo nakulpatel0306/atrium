@@ -12,7 +12,6 @@ import { activityDetailRows, activityLines, activityScreen } from "./activity";
 import { askBox, keyStrip, topBar } from "./chrome";
 import { type HomeData, homeScreen } from "./home";
 import { type InvestData, investingScreen, investKeys } from "./investing";
-import { type MoneyPage, moneyCategories, moneyScreen } from "./money";
 import { agentsLines, confirmOver, deleteOver, fullView, helpOver, pickerOver } from "./overlays";
 import { leftWidth, spacesRows, spacesScreen } from "./spaces";
 
@@ -28,7 +27,6 @@ export type Frame = {
   ctx: KeyContext;
   investing: boolean;
   home: HomeData;
-  money: MoneyPage | null;
   invest: InvestData;
   detail: DetailLine[];
   live: string[];
@@ -47,7 +45,7 @@ export const bodyRows = (rows: number) => rows - CHROME_ROWS;
 // The full text of the Needs you item picked on Home.
 export function needsLines(view: View, messages: Message[] | null, cols: number): DetailLine[] {
   const w = cols - 4;
-  const lines = view.proposal ? proposalDetail(view) : view.nudge ? [[{ text: view.nudge.title, bold: true }], [], [{ text: view.nudge.body }]] : approvalDetail(view, messages, w);
+  const lines = view.proposal ? proposalDetail(view) : approvalDetail(view, messages, w);
   return lines.flatMap((l) => wrapStyled(l, w));
 }
 
@@ -67,7 +65,7 @@ export function fullLines(f: Frame, from = 0, to = Number.MAX_SAFE_INTEGER): Lin
 }
 
 // What scrolling needs to know about this frame.
-export function rowsFor(f: Pick<Frame, "rows" | "cols" | "detail" | "live" | "money" | "invest" | "view">): Rows {
+export function rowsFor(f: Pick<Frame, "rows" | "cols" | "detail" | "live" | "invest" | "view">): Rows {
   const body = bodyRows(f.rows);
   const s = spacesRows(body);
   return {
@@ -75,7 +73,6 @@ export function rowsFor(f: Pick<Frame, "rows" | "cols" | "detail" | "live" | "mo
     live: s.live,
     detailLines: f.detail.length,
     liveLines: f.live.length,
-    moneyRows: f.money ? moneyCategories(f.money).length : 0,
     investRows: investKeys(f.invest).length,
     activity: activityDetailRows(body, f.cols),
     activityLines: f.view.subject === "activity" ? activityLines(f.view, f.cols).length : 0,
@@ -104,8 +101,6 @@ function body(f: Frame): Block {
     }
     case "spaces":
       return spacesScreen(f.view, f.ui, { detail: f.detail, live: f.live, frame: f.frame, now: f.now }, f.cols, rows, BODY_TOP);
-    case "money":
-      return moneyScreen(f.money, f.ui, f.investing, f.cols, rows, BODY_TOP, f.now);
     case "investing":
       return investingScreen(f.invest, f.ui, f.investing, f.cols, rows, BODY_TOP);
     case "activity":
@@ -115,7 +110,6 @@ function body(f: Frame): Block {
 
 function titleOf(view: View): string {
   if (view.proposal) return `Suggestion · ${view.proposal.label}`;
-  if (view.nudge) return view.nudge.title;
   return view.approval?.title ?? "Needs you";
 }
 

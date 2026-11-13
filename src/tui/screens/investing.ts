@@ -143,7 +143,7 @@ export function investingScreen(d: InvestData, ui: Ui, investing: boolean, cols:
   const visible = (lines: typeof listLines, room: number) => {
     const first = Math.max(0, Math.min(at - Math.floor(room / 2), lines.length - room));
     lines.slice(first, first + room).forEach((l, i) => {
-      if (l.index !== null) hits.push({ x: 0, y: y0 + head.length + i, w: leftW, h: 1, click: { row: { list: "invest", index: l.index } }, wheel: "list" });
+      if (l.index !== null) hits.push({ x: 0, y: y0 + head.length + i, w: leftW, h: 1, click: { row: { index: l.index } }, wheel: "list" });
     });
     return lines.slice(first, first + room).map((l) => l.line);
   };

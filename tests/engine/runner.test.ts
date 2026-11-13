@@ -32,8 +32,6 @@ import { tempHome, tempRepo } from "../helpers";
 import { readdirSync } from "node:fs";
 import { config } from "../../src/engine/config";
 import { claudeAdapter } from "../../src/engine/agents/claude";
-import { importMoney, isMasked, previewMoney } from "../../src/engine/money/import";
-import { requestExplain, requestMoneyAsk } from "../../src/engine/money/summary";
 import { isPrivate } from "../../src/engine/spaces";
 import { createCloner } from "../../src/engine/repos/clones";
 import { listClones } from "../../src/engine/repos/store";
@@ -1738,83 +1736,6 @@ describe("markets spaces", () => {
     runner.start();
     return runner;
   }
-
-  test("card data: Explain my month sends Claude only the masked recap, and its transcript stays masked", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    const bank = ["Date,Description,Amount", "2026-09-03,LOBLAWS,-80", "2026-10-02,PAYMENT 4111 1111 1111 1111 ON 2026-10-02,-900", "2026-10-05,LOBLAWS,-95"].join("\n");
-    importMoney(db, space.id, previewMoney(bank, { signs: "negative-out", account: "Amex" }));
-    const { adapter, calls } = fakeAdapter((input) => {
-      input.onChunk?.(input.prompt);
-      return ok("You spent more in October.\n\nAnalysis, not advice.");
-    });
-    const task = requestExplain(db, space.id, "2026-10", IN_SESSION);
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done");
-    const prompt = calls[0]!.prompt;
-    expect(prompt).toContain("Recap facts for October 2026");
-    expect(prompt).toContain("Use only the numbers above");
-    expect(prompt).not.toContain("Holdings:");
-    expect(isMasked(prompt)).toBe(true);
-    const { transcriptsDir } = config();
-    const logs = readdirSync(transcriptsDir).map((f) => readFileSync(join(transcriptsDir, f), "utf8")).join("\n");
-    expect(logs).toContain("Recap facts");
-    expect(isMasked(logs)).toBe(true);
-    expect(logs).not.toContain("4111");
-  });
-
-  test("card data: an ordinary money question with imported files and holdings passes the mask check", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money/rbc.csv"), "utf8")));
-    importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money/ws-activity-2026.csv"), "utf8")));
-    const { adapter, calls } = fakeAdapter(() => ok("You spent most on rent.\n\nAnalysis, not advice."));
-    const task = requestMoneyAsk(db, space.id, "Where did my money go last month?");
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done");
-    expect(calls[0]!.prompt).toContain("Money facts");
-    expect(calls[0]!.prompt).not.toContain("Holdings:");
-    expect(isMasked(calls[0]!.prompt)).toBe(true);
-  });
-
-  test("card data: a money question over his four bank files reaches the Claude CLI, tool-less and masked", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    for (const f of ["td-chequing.csv", "td-credit.csv", "amex.csv", "ws-cash.csv"]) importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money", f), "utf8")));
-    const dir = mkdtempSync(join(tmpdir(), "atrium-cli-"));
-    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
-    process.env.FAKE_CLAUDE_STDIN = join(dir, "stdin.txt");
-    process.env.FAKE_CLAUDE_TEXT = "Rent was the biggest part.";
-    cleanups.push(() => {
-      delete process.env.FAKE_CLAUDE_ARGV;
-      delete process.env.FAKE_CLAUDE_STDIN;
-      delete process.env.FAKE_CLAUDE_TEXT;
-      rmSync(dir, { recursive: true, force: true });
-    });
-    const task = requestMoneyAsk(db, space.id, "Where did my money go last month?");
-    marketsRunner(claudeAdapter(join(import.meta.dir, "../fixtures/fake-claude.ts")));
-    await waitFor(() => ["done", "failed", "blocked"].includes(getTask(db, task.id)!.status), 15000);
-    expect(getTask(db, task.id)!.status).toBe("done");
-    const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");
-    expect(prompt).toContain("Bank and card: 100 transactions from Aug 1, 2026 to Oct 30, 2026");
-    expect(isMasked(prompt)).toBe(true);
-    const argv = JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")) as string[];
-    expect(argv[argv.indexOf("--tools") + 1]).toBe("");
-  }, 20000);
-
-  test("card data: a money task whose prompt isn't masked never reaches the agent", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    const { adapter, calls } = fakeAdapter();
-    const task = createTask(db, { spaceId: space.id, title: "Ask Claude about my money", detail: "Is 4111 1111 1111 1111 my card?", agent: "claude", weight: "light", purpose: "money" });
-    marketsRunner(adapter);
-    await waitFor(() => ["failed", "blocked"].includes(getTask(db, task.id)!.status));
-    expect(calls).toHaveLength(0);
-    expect(listActivity(db).map((a) => a.message).join("\n")).not.toContain("4111");
-  });
-
-  test("card data: money tasks in an investing space can only go to Claude", () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    expect(isPrivate(space)).toBe(true);
-    expect(() => requestMoneyAsk(db, space.id, "card 4111111111111111?")).toThrow("Leave card and account numbers out of the question.");
-    expect(requestMoneyAsk(db, space.id, "Where did it go?").agent).toBe("claude");
-  });
 
   test("markets strategy run settles without a review", async () => {
     const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "paper" });

@@ -1,7 +1,0 @@
-"date","transaction","description","amount","balance"
-"2026-08-17","AFT_IN","Transfer in from TD","500.00","4700.00"
-"2026-08-31","INT","Interest","9.61","4709.61"
-"2026-09-17","AFT_IN","Transfer in from TD","500.00","5209.61"
-"2026-09-30","INT","Interest","10.24","5219.85"
-"2026-10-17","AFT_IN","Transfer in from TD","500.00","5719.85"
-"2026-10-30","INT","Interest","11.09","5730.94"

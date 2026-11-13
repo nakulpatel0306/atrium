@@ -1,4 +1,4 @@
-import { CalendarClock, Inbox, SearchCheck, Wrench } from "lucide-react";
+import { Inbox, SearchCheck, Wrench } from "lucide-react";
 import { type Ref, useState } from "react";
 import { post, type State, useMessages } from "../api";
 import { absolute, relative } from "../format";
@@ -117,33 +117,6 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
   );
 }
 
-type Nudge = State["nudges"][number];
-
-// The monthly "time to import" reminder: a quiet row, not something to approve, so it isn't counted.
-function NudgeRow({ nudge }: { nudge: Nudge }) {
-  const [error, setError] = useState<string | null>(null);
-  const dismiss = async () => {
-    const res = await post(`/api/investing/${encodeURIComponent(nudge.spaceId)}/money/nudges/${encodeURIComponent(nudge.id)}/dismiss`);
-    if (!res.ok) setError(res.error);
-  };
-  return (
-    <div className="row nudge-row">
-      <CalendarClock className="nudge-icon" />
-      <div className="nudge-text">
-        <b>{nudge.title}</b>
-        <span className="faint">{nudge.body}</span>
-      </div>
-      <button className="btn" onClick={() => navigate(nudge.path)}>
-        Import now
-      </button>
-      <button className="btn link" onClick={() => void dismiss()}>
-        Dismiss
-      </button>
-      {error && <div className="row-err err">{error}</div>}
-    </div>
-  );
-}
-
 // Every row waiting on Nakul, each with its own kind of answer. A space shows its share of the same rows.
 function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
@@ -187,13 +160,9 @@ export const needsCount = (state: State) => state.approvals.length + state.propo
 
 // The whole list, on Home and on the Needs you page.
 export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {
-  const nudges = state.nudges ?? [];
   return (
     <div className="list needs-list" ref={listRef}>
-      {nudges.map((n) => (
-        <NudgeRow key={n.id} nudge={n} />
-      ))}
-      {needsCount(state) === 0 ? nudges.length === 0 && <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
+      {needsCount(state) === 0 ? <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import type { Database } from "bun:sqlite";
 // touches them is a delete the user asks for, which has to clear them or the foreign keys would refuse it.
 export const LEGACY = {
   // Rows keyed by space, children before parents.
-  bySpace: ["mail_actions"],
+  bySpace: ["mail_actions", "money_transactions", "money_imports", "money_budgets", "money_nudges", "money_accounts"],
   // Rows that mention a task and keep their own row when it goes.
   byTask: ["mail_actions"],
   // Rows that belong to one approval and go with it.

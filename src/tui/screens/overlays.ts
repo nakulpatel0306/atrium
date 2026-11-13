@@ -42,13 +42,6 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
       keys: [{ key: "y", label: "Stop it", input: "y", hot: true }, no("Keep running")],
     };
   }
-  if (c.purpose === "import") {
-    return {
-      title: "Import a CSV",
-      lines: [...c.summary.flatMap((l, i) => wrap(l, cols, i === 0 ? { bold: true } : { color: "dim" })), [], ...wrap("Card and account numbers are masked before anything is stored. Re-importing a file never doubles a row.", cols, { color: "faint" })],
-      keys: [{ key: "y", label: "Import", input: "y", hot: true }, no()],
-    };
-  }
   const name = state.spaces.find((s) => s.id === c.targetId)?.name ?? "this space";
   return { title: "Archive space", lines: wrap(`Archive ${name}? Its agents stop picking up tasks. X restores it.`, cols), keys: [{ key: "y", label: "Archive", input: "y", hot: true }, no("Keep it")] };
 }

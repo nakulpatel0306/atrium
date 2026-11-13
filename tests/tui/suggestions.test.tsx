@@ -102,7 +102,7 @@ test("a rule's approval is labelled in the activity list", async () => {
   state.activity[0] = { ...state.activity[0]!, actor: "atrium", message: 'Approved by your rule "docs-only changes": Review: Update README' };
   const app = openApp(fakeClient(state));
   await app.frame((f) => f.includes("1 Home"));
-  await app.type("5");
+  await app.type("4");
   const f = await app.frame((f) => f.includes("ACTIVITY"));
   expect(f).toContain("Review: Update README · approved by your");
 });

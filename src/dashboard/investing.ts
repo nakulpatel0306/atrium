@@ -1,18 +1,17 @@
 import type { PerfResult } from "../engine/markets/performance";
 import type { Tone } from "../engine/markets/sourced";
-import type { BudgetView, HealthView, ResearchView, TfsaView } from "../server/investing";
+import type { BudgetView, HealthView, ResearchView } from "../server/investing";
 import type { Idea } from "../engine/markets/ideas";
 import type { Writeup } from "../engine/markets/research";
 import type { ScreenRow } from "../engine/markets/screen";
 import { useEngineState, useFetched } from "./api";
 
-export type { BudgetView, HealthView, ResearchView, TfsaView };
+export type { BudgetView, HealthView, ResearchView };
 
 // Investing views, read again on every engine change. Every one of these routes reads the engine's DB only.
 const space = (id: string) => `/api/investing/${encodeURIComponent(id)}`;
 export const useHealth = (spaceId: string) => useFetched<HealthView>(`${space(spaceId)}/health`, useEngineState());
 export const useBudget = () => useFetched<BudgetView>("/api/investing/budget", useEngineState());
-export const useTfsa = (year: number) => useFetched<TfsaView>(`/api/investing/tfsa?year=${year}`, useEngineState());
 export const useResearch = (spaceId: string, key: string | null) =>
   useFetched<ResearchView>(key ? `${space(spaceId)}/research/${encodeURIComponent(key)}` : null, useEngineState());
 export const useIdeas = (spaceId: string) => useFetched<Idea[]>(`${space(spaceId)}/ideas`, useEngineState());

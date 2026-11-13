@@ -25,7 +25,7 @@ import { getNotes, latestWriteups, requestThesisDraft, saveNotes } from "../engi
 import { screenRows } from "../engine/markets/screener";
 import { setupInvesting } from "../engine/markets/setup";
 import { quoteSourced } from "../engine/markets/sourced";
-import { addEntry, incomeTtm, listEntries, removeEntry, roomStatus, setRoom, tfsaOf, ttmDividends, withholdingNote } from "../engine/markets/tfsa";
+import { incomeTtm, tfsaOf, ttmDividends, withholdingNote } from "../engine/markets/tfsa";
 import { listWatchlist } from "../engine/markets/watchlist";
 import { getSetting, setSetting } from "../engine/settings";
 import type { JobStatus } from "../engine/markets/jobs";
@@ -40,7 +40,6 @@ export type BudgetView = {
   jobs: JobStatus[];
   edgar: EdgarStatus;
 };
-export type TfsaView = ReturnType<typeof roomStatus> & { entries: ReturnType<typeof listEntries> };
 
 const BAD_SYMBOL = "Type a symbol like AAPL or SHOP.TO.";
 const PERIODS: Period[] = ["1M", "3M", "YTD", "1Y"];
@@ -97,26 +96,6 @@ async function route(db: Database, m: MarketsDeps, req: Request, url: URL): Prom
     return json(edgarStatus(db, now));
   }
   if (hit("POST", /^\/setup$/)) return json(setupInvesting(db));
-  if (hit("GET", /^\/tfsa$/)) {
-    const year = Number(url.searchParams.get("year") ?? etDate(now).slice(0, 4));
-    if (!Number.isInteger(year)) throw new HttpError(400, "Pick a year like 2026.");
-    return json({ ...roomStatus(db, year), entries: listEntries(db, year) });
-  }
-  if (hit("PUT", /^\/tfsa\/room$/)) {
-    const b = await readBody(req);
-    check(() => setRoom(db, Number(b.year), Number(b.roomJan1)));
-    return json(roomStatus(db, Number(b.year)));
-  }
-  if (hit("POST", /^\/tfsa\/entries$/)) {
-    const b = await readBody(req);
-    const id = check(() => addEntry(db, { date: String(b.date ?? ""), kind: b.kind as "contribution", amount: Number(b.amount), note: typeof b.note === "string" ? b.note : "" }));
-    return json({ id });
-  }
-  const delEntry = hit("DELETE", /^\/tfsa\/entries\/([^/]+)$/);
-  if (delEntry) {
-    removeEntry(db, decodeURIComponent(delEntry[1]!));
-    return json({ ok: true });
-  }
 
   const sm = path.match(/^\/([^/]+)(\/.*)?$/);
   if (!sm) return null;

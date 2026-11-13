@@ -1,10 +1,9 @@
 // Home: the briefing, Needs you as cards with their actions on them, and Today beside them (below them under 100
-// columns): the portfolio, money this month, and what's running.
+// columns): the portfolio and what's running.
 import { agentText } from "../../dashboard/agents";
 import { duration, relative } from "../../dashboard/format";
 import { liveStatus } from "../../dashboard/summary";
 import type { GlanceView } from "../../engine/markets/views";
-import type { MoneySummary } from "../../engine/money/summary";
 import { outcomeText } from "../../engine/outcome";
 import { bar, type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
 import { wrapStyled } from "../detail";
@@ -12,11 +11,10 @@ import type { View } from "../select";
 import { oneLine } from "../text";
 import { GLYPH, SPINNER, spaceTone, type Tone } from "../theme";
 import type { Ui } from "../ui";
-import { cad, change, hourText, monthName } from "./format";
+import { cad, change, hourText } from "./format";
 
 export type HomeData = {
   glance: GlanceView | null;
-  money: MoneySummary | null;
   // Whether there's an Investing space at all, so Today can say how to get one.
   investing: boolean;
   // The last line the first running task's agent wrote.
@@ -83,17 +81,6 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         : [{ key: "a", label: "Approve", input: "a", hot: true }, { key: "r", label: a.spaceId === null ? "Decline" : "Send back", input: "r" }, open],
     });
   }
-  for (const n of view.nudges) {
-    cards.push({
-      id: n.id,
-      glyph: GLYPH.suggestion,
-      tone: "info",
-      title: n.title,
-      meta: [{ text: n.spaceName, color: "dim" }, dot, { text: "reminder", color: "faint" }],
-      body: wrapStyled([{ text: n.body, color: "dim" }], inner).slice(0, 2),
-      keys: [{ key: "↵", label: "Open Money", input: "\r", hot: true }, { key: "x", label: "Dismiss", input: "x" }],
-    });
-  }
   return cards;
 }
 
@@ -139,7 +126,7 @@ function needsColumn(view: View, ui: Ui, cols: number, rows: number, now: number
   return { lines: lines.slice(0, rows), hits: hits.filter((h) => h.y < rows) };
 }
 
-type Today = { portfolio: Line[]; money: Line[]; running: Line[] };
+type Today = { portfolio: Line[]; running: Line[] };
 
 function today(view: View, d: HomeData, cols: number): Today {
   const g = d.glance;
@@ -157,19 +144,6 @@ function today(view: View, d: HomeData, cols: number): Today {
           ];
   const next = g?.earnings[0];
   if (next) portfolio.push([{ text: `${next.key} earnings ${next.date.slice(5).replace("-", "/")}, ${hourText(next.hour)}`, color: "faint" }]);
-  const m = d.money;
-  // Budgets cover some categories, so the bar compares what those categories spent with their limits.
-  const budget = m ? m.budgets.reduce((n, b) => n + b.limit, 0) : 0;
-  const inBudget = m ? m.budgets.reduce((n, b) => n + b.spent, 0) : 0;
-  const money: Line[] = !d.investing
-    ? []
-    : !m?.month
-      ? [[{ text: "Money", color: "dim" }], [{ text: m ? "Nothing imported yet. Press 3." : "Loading…", color: "faint" }]]
-      : [
-          [{ text: `Money · ${monthName(m.month)}`, color: "dim" }, { text: `  ${cad(m.spent, 0)} spent`, color: "faint" }],
-          budget > 0 ? [{ text: cad(inBudget, 0), bold: true }, { text: ` of ${cad(budget, 0)} budgeted`, color: "faint" }] : [{ text: "No budgets set. Press 3, then b.", color: "faint" }],
-          ...(budget > 0 ? [budgetBar(inBudget / budget, Math.min(18, cols - 10))] : []),
-        ];
   const running = view.state.tasks.filter((t) => t.status === "running");
   const spin = SPINNER[d.frame % SPINNER.length]!;
   const runLines: Line[] = running.length
@@ -183,13 +157,7 @@ function today(view: View, d: HomeData, cols: number): Today {
       })
     : [[{ text: "Nothing running.", color: "faint" }]];
   if (running.length > 2) runLines.push([{ text: `+${running.length - 2} more in Spaces`, color: "faint" }]);
-  return { portfolio, money, running: runLines };
-}
-
-function budgetBar(frac: number, cells: number): Line {
-  const tone: Tone = frac >= 1 ? "bad" : frac >= 0.8 ? "warn" : "accent";
-  const note = frac >= 1 ? ` ${GLYPH.notdone} over` : frac >= 0.8 ? ` ${GLYPH.notdone}` : "";
-  return [...bar(Math.min(1, frac), cells, tone), { text: ` ${Math.round(frac * 100)}%${note}`, color: frac >= 0.8 ? tone : "dim" }];
+  return { portfolio, running: runLines };
 }
 
 export function homeScreen(view: View, ui: Ui, d: HomeData, cols: number, rows: number): Block {
@@ -207,7 +175,6 @@ export function homeScreen(view: View, ui: Ui, d: HomeData, cols: number, rows: 
       [],
       ...t.portfolio,
       [],
-      ...(t.money.length ? [...t.money, []] : []),
       [label("Running"), ...(running ? [{ text: `  ${running}`, color: "ok" as const, bold: true }] : [])],
       [],
       ...t.running,
@@ -219,7 +186,7 @@ export function homeScreen(view: View, ui: Ui, d: HomeData, cols: number, rows: 
   // Under 100 columns Today folds into two lines under the cards.
   const needs = needsColumn(view, ui, cols, rows - 5, d.now);
   const t = today(view, d, cols);
-  const glance: Line = [label("Today"), { text: "  " }, ...(t.portfolio[1] ?? []), ...(t.money[1] ? [{ text: "  ·  ", color: "faint" as const }, { text: t.money[0]![0]!.text.replace("Money · ", ""), color: "dim" as const }, { text: " " }, ...t.money[1]!] : [])];
+  const glance: Line = [label("Today"), { text: "  " }, ...(t.portfolio[1] ?? [])];
   const run: Line = [label("Running"), { text: "  " }, ...(t.running[0] ?? []), ...(running ? [{ text: ` · ${t.running[1]?.[0]?.text.trim() ?? ""}`, color: "faint" as const }] : [])];
   const lines = [...top, ...rowsOf(needs.lines, cols, rows - 5), [{ text: "─".repeat(cols), color: "line" as const }], [{ text: " " }, ...glance], [{ text: " " }, ...run]];
   return { lines: rowsOf(lines.map((l) => fit(l, cols)), cols, rows), hits: shift(needs.hits, 0, 2) };

@@ -8,7 +8,7 @@ export const STEP_TITLES: Record<Step, string> = {
   welcome: "Welcome",
   agents: "Agents",
   tools: "Optional tools",
-  investing: "Investing and money",
+  investing: "Investing",
   profile: "Your name and projects folder",
   done: "Done",
 };
@@ -115,13 +115,6 @@ export function StartView(p: ViewProps) {
               </button>
             )}
           </div>
-          <div className="set-card">
-            <div className="set-title">
-              <b>Money</b>
-              <span className="tag">Optional</span>
-            </div>
-            <p className="hint">{report.money.message} Recognised formats: {report.money.formats.join("; ")}. Money lives in the Investing space, so set that up first.</p>
-          </div>
         </>
       )}
 
@@ -141,7 +134,7 @@ export function StartView(p: ViewProps) {
             Projects folder
             <input value={p.draft.projectsRoot} onChange={(e) => p.onDraft({ ...p.draft, projectsRoot: e.target.value })} />
           </label>
-          <p className="hint">New projects and clones go in the projects folder. Amounts are in {report.profile.homeCurrency} for now.</p>
+          <p className="hint">New projects and clones go in the projects folder.</p>
           <button className="btn" type="submit" disabled={p.busy}>
             Save
           </button>

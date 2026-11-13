@@ -7,13 +7,11 @@ import { KEY, openApp } from "./harness";
 
 afterEach(() => cleanup());
 
-const nudge = { id: "mnd_1", spaceId: ids.atrium, spaceName: "Investing", kind: "import" as const, title: "Time to import October", body: "Amex isn't imported for October yet.", path: "/space/x?tab=money", createdAt: 0 };
-
 test("Home: tabs, the briefing, Needs you as cards, Today, the Ask box and the keys", async () => {
   const state = makeState();
   const app = openApp(fakeClient(state));
   const f = await app.frame((f) => f.includes("NEEDS YOU"));
-  for (const s of ["◆ atrium", " 1 Home ", " 2 Spaces ", " 3 Money ", " 4 Investing ", " 5 Activity ", "41%", "AC", state.briefing.greeting, "NEEDS YOU  1", "TODAY", "RUNNING  1", "Add the status bar", "Ask Atrium", "?  help"]) {
+  for (const s of ["◆ atrium", " 1 Home ", " 2 Spaces ", " 3 Investing ", " 4 Activity ", "41%", "AC", state.briefing.greeting, "NEEDS YOU  1", "TODAY", "RUNNING  1", "Add the status bar", "Ask Atrium", "?  help"]) {
     expect(f).toContain(s);
   }
   // The selected card carries its actions.
@@ -98,7 +96,7 @@ test("empty states read plainly", async () => {
   await app.type("2");
   const spaces = await app.frame((f) => f.includes("No spaces yet"));
   expect(spaces).toContain("No spaces yet. Press N and");
-  await app.type("5");
+  await app.type("4");
   const activity = await app.frame((f) => f.includes("No activity yet"));
   expect(activity).toContain("No activity yet. Agent runs and your decisions will show up here.");
 });
@@ -120,7 +118,7 @@ test("engine text can't send escape sequences to the terminal", async () => {
   await app.frame((f) => f.includes("1 Home"));
   await app.type("2", KEY.tab);
   await app.frame((f) => f.includes("TASK  Add the status bar"));
-  await app.type("5");
+  await app.type("4");
   await app.frame((f) => f.includes("finished it"));
   const out = app.frames.join("");
   expect(out).not.toContain("\x1b]");
@@ -133,26 +131,13 @@ test("Activity: day headings, one line per group, a mark for its tone, and its f
   state.activity[0] = { ...state.activity[0]!, createdAt: Date.now() };
   const app = openApp(fakeClient(state));
   await app.frame((f) => f.includes("1 Home"));
-  await app.type("5");
+  await app.type("4");
   const f = await app.frame((f) => f.includes("ACTIVITY"));
   expect(f).toContain("TODAY");
   expect(f).toMatch(/▌ now\s+· Claude · finished Fix login redirect · atrium/);
   expect(f).toMatch(/15m\s+· You · added Summarize postings · job hunt/);
   expect(f).toContain("LINES");
   expect(f).toContain("Claude: finished Fix login redirect");
-});
-
-test("the monthly import reminder is a quiet card; enter opens Money and x dismisses it", async () => {
-  const client = fakeClient(makeState({ approvals: [], nudges: [nudge] }));
-  const app = openApp(client);
-  const f = await app.frame((f) => f.includes("Time to import October"));
-  expect(f).toContain("✦ Time to import October");
-  expect(f).toContain("Open Money");
-  await app.type("x");
-  await app.frame((f) => f.includes("Dismissed."));
-  expect(client.calls.filter((c) => c.method === "POST" && c.path !== "/api/seen")).toEqual([{ method: "POST", path: `/api/investing/${ids.atrium}/money/nudges/mnd_1/dismiss`, body: undefined }]);
-  await app.type(KEY.enter);
-  await app.frame((f) => f.includes(" 3 Money ") && f.includes("Investing space yet"));
 });
 
 test("more cards than fit say how many are below, and the selected one stays whole", async () => {

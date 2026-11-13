@@ -65,8 +65,8 @@ test("the profile keeps a name and a projects folder in settings, and the curren
   // Folders must be inside the home folder, so the test's home is the temp one.
   process.env.ATRIUM_USER_HOME = home.home;
   const folder = join(home.home, "code");
-  const saved = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder, homeCurrency: "USD" })).json();
-  expect(saved).toMatchObject({ name: "Sam Rivera", projectsRoot: folder, homeCurrency: "CAD" });
+  const saved = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder })).json();
+  expect(saved).toMatchObject({ name: "Sam Rivera", projectsRoot: folder });
   expect(db.query("SELECT value FROM settings WHERE key = 'projects.root'").get()).toEqual({ value: folder });
   const bad = await put("/api/profile", { projectsRoot: "nope" });
   expect(bad.status).toBe(400);

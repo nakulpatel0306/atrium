@@ -5,7 +5,7 @@ import type { Outcome } from "./outcome";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
-export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask" | "money";
+export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask";
 
 export type Task = {
   id: string;

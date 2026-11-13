@@ -234,21 +234,3 @@ test("news fetched for a Claude task is kept for the daily note and asks", async
   expect(text).toContain("Apple ships a thing");
   expect(recentNews(db, ["AAPL"], 0, 5).map((n) => n.headline)).toEqual(["Apple ships a thing"]);
 });
-
-test("a money question gets the money facts and plain-language instructions, for Claude only", async () => {
-  const { importMoney, previewMoney } = await import("../../../src/engine/money/import");
-  const { readFileSync } = await import("node:fs");
-  const { join } = await import("node:path");
-  importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../../fixtures/money/rbc.csv"), "utf8")));
-  const task = createTask(db, { spaceId: space.id, title: "Ask Claude about my money", detail: "Any subscriptions I forgot about?", agent: "claude", purpose: "money" });
-  const claude = await hooks().context(task, space, "claude");
-  expect(claude).toContain("Recurring charges:");
-  expect(claude).toContain("The user asks: Any subscriptions I forgot about?");
-  expect(claude).toContain("Answer in at most 250 words of plain, everyday markdown");
-  const codex = await hooks().context(task, space, "codex");
-  expect(codex).not.toContain("Recurring charges");
-  expect(codex).not.toContain("Netflix");
-  const { latestWriteups } = await import("../../../src/engine/markets/research");
-  expect(await hooks().settle(task, space, "claude", "Netflix and Spotify each month.")).toEqual({ done: true, lines: [], activity: "Answer saved" });
-  expect(latestWriteups(db, space.id, { kind: "money" })[0]!.body).toBe("Netflix and Spotify each month.\n\nAnalysis, not advice.");
-});

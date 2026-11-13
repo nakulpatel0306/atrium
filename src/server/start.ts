@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { doctor } from "../engine/doctor";
 import { resolve } from "node:path";
-import { checkProjectsRoot, cleanUserName, expandHome, HOME_CURRENCY, NAME_KEY, setProjectsRoot, storedName, suggestedName } from "../engine/profile";
+import { checkProjectsRoot, cleanUserName, expandHome, NAME_KEY, setProjectsRoot, storedName, suggestedName } from "../engine/profile";
 import { setSetting } from "../engine/settings";
 import { config } from "../engine/config";
 import { tildePath } from "../engine/folders";
@@ -9,7 +9,7 @@ import { getProgress, saveProgress, shouldAutoOpen } from "../engine/start";
 import { claudeBlocks, needsClaudeCheck } from "../engine/start-steps";
 import { HttpError, json, readBody } from "./http";
 
-const profileOf = (db: Database) => ({ name: storedName(db), suggestedName: suggestedName(), projectsRoot: tildePath(config().projectsRoot), homeCurrency: HOME_CURRENCY });
+const profileOf = (db: Database) => ({ name: storedName(db), suggestedName: suggestedName(), projectsRoot: tildePath(config().projectsRoot) });
 
 function check<T>(fn: () => T): T {
   try {

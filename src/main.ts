@@ -31,7 +31,6 @@ import { createRepos } from "./engine/repos";
 import { recoverRemovals } from "./engine/repos/cleanup";
 import { finishPendingDeletes } from "./engine/delete-files";
 import { recoverRepoActions } from "./engine/repos/create";
-import { moneyDaily } from "./engine/money/reminder";
 import { getSetting } from "./engine/settings";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
@@ -77,7 +76,6 @@ const runner = createRunner({
   keepAwake,
   markets: createMarketsHooks(db, { data, now: marketClock }),
   repos,
-  money: { daily: (now) => moneyDaily(db, now) },
 });
 const feed = createFeed({
   db,
