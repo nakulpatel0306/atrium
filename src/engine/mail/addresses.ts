@@ -3,7 +3,10 @@ import type { Person } from "./types";
 // Accounts are keyed by address, so "Sam@Example.com " and "sam@example.com" are one account.
 export const normalizeAddress = (a: string): string => a.trim().toLowerCase();
 
-export const isAddress = (a: string): boolean => /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/.test(a.trim());
+// No format, control, bidi, zero-width or unassigned characters anywhere: the address the card shows must be the
+// address mail goes to.
+const UNSEEN = /[\p{Cf}\p{Cc}\p{Zl}\p{Zp}\p{Co}\p{Cn}]/u;
+export const isAddress = (a: string): boolean => !UNSEEN.test(a) && /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/.test(a.trim());
 
 // RFC 2047 encoded words ("=?UTF-8?Q?Ren=C3=A9?=", "=?ISO-8859-1?B?…?="), as raw headers from Mail.app carry them.
 // Whitespace between two encoded words is dropped, as the RFC says; a charset the runtime can't decode stays as is.

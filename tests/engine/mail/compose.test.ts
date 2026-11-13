@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { bodyProblem, BODY_HIDDEN_COPY, markAdded, parseRecipients, replyRecipients, subjectFor } from "../../../src/engine/mail/compose";
+import { isAddress } from "../../../src/engine/mail/addresses";
+import { parseInboxBlock } from "../../../src/engine/mail/block";
+import { bodyProblem, BODY_HIDDEN_COPY, markAdded, parseRecipients, recipientsProblem, replyRecipients, subjectFor } from "../../../src/engine/mail/compose";
 import { buildMime, encodeWord } from "../../../src/engine/mail/mime";
 import type { Outgoing } from "../../../src/engine/mail/types";
 import { SAM } from "./helpers";
@@ -67,5 +69,22 @@ describe("the message Gmail is handed", () => {
     expect(encodeWord("Café")).toBe(`=?UTF-8?B?${Buffer.from("Café").toString("base64")}?=`);
     const raw = buildMime({ ...out, subject: "Résumé", to: [{ name: "Renée", address: "renee@example.org" }] });
     expect(raw).toContain(`Subject: =?UTF-8?B?${Buffer.from("Résumé").toString("base64")}?=`);
+  });
+});
+
+describe("addresses can't hide characters", () => {
+  const sneaky = ["robin​@example.net", "kit@‮ten.elpmaxe‬.attacker.example", "kit@exa⁦mple.org", "a\u0007@example.org", "a@exa­mple.org", "a﻿@example.org"];
+  test("isAddress, the recipient rules and an agent's block all refuse them", () => {
+    for (const a of sneaky) {
+      expect([a, isAddress(a)]).toEqual([a, false]);
+      expect(recipientsProblem([{ name: "", address: a }], [])).toContain("isn't an email address");
+      expect(parseInboxBlock(`\`\`\`atrium-email\n${JSON.stringify({ mode: "new", to: [a], subject: "x", text: "hi" })}\n\`\`\``)).toBeNull();
+    }
+    expect(isAddress("robin@example.net")).toBe(true);
+  });
+
+  test("a name from a thread loses its invisible characters, so the card reads as what's sent", () => {
+    const m = { from: { name: "Robin‮ Vale", address: "robin@example.net" }, to: [], cc: [] };
+    expect(replyRecipients(own, m, "reply").to).toEqual([{ name: "Robin Vale", address: "robin@example.net" }]);
   });
 });

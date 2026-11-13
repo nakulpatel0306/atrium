@@ -68,6 +68,10 @@ export function subjectFor(kind: MailKind, original: string): string {
   return s;
 }
 
+// A display name as one plain line: invisible and direction characters from a sender's header are dropped, so the
+// card can't read differently from what's sent.
+export const plainName = (name: string): string => name.replace(/[\p{Cf}\p{Cc}]/gu, "").replace(/\s+/g, " ").trim();
+
 // One list of people with each address once, the first spelling kept.
 export function uniquePeople<T extends Person>(people: T[], skip: Set<string> = new Set()): T[] {
   const seen = new Set(skip);
@@ -76,7 +80,7 @@ export function uniquePeople<T extends Person>(people: T[], skip: Set<string> = 
     const a = normalizeAddress(p.address);
     if (!a || seen.has(a)) continue;
     seen.add(a);
-    out.push({ ...p, address: a });
+    out.push({ ...p, name: plainName(p.name), address: a });
   }
   return out;
 }
