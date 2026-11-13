@@ -5799,8 +5799,9 @@ code {
   margin: 20px 0 8px;
 }
 .cal-row .cal-when {
-  width: 128px;
+  width: 132px;
   flex: none;
+  white-space: nowrap;
   color: var(--dim);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -5938,9 +5939,6 @@ code {
   }
   .thread-list {
     max-height: none;
-  }
-  .cal-row .cal-when {
-    width: 96px;
   }
   .cal-grid {
     grid-template-columns: 40px repeat(7, minmax(0, 1fr));
