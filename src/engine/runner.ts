@@ -786,8 +786,9 @@ export function createRunner(deps: {
       if (adopted) warm = { status: "ok", summary: `${shown.loop!.said ?? "Atrium put this branch together."}\nOUTCOME: done`, inputTokens: 0, outputTokens: 0 };
       else if (plan?.resume) {
         warm = await run(resumePrompt(added, shown.loop?.feedback ?? null), { id: plan.session.id, resume: true });
-        // A session Claude Code no longer has (cleared, or from another machine) is started again from the brief.
-        if (warm.status === "error" && warm.kind === "failed" && !r.signal.aborted) {
+        // A session Claude Code no longer has (cleared, or from another machine) is started again from the brief. Any
+        // other failure stands, so a crash or a missing sandbox isn't run a second time.
+        if (warm.status === "error" && warm.kind === "failed" && !r.signal.aborted && /no conversation found/i.test(warm.message)) {
           line("— Couldn't resume the last session, so this turn starts a fresh one —");
           plan = planSession(null, { now: Date.now(), tier: tierName, fresh: true });
           warm = null;
