@@ -6,7 +6,7 @@ Why this shape: in studies of agent failures, about 44% come from the task spec 
 
 ## The brief
 
-**Enter** in the ask bar starts the task at once. Its first stage drafts the brief: a small, fast Claude model (through the CLI, read-only on the repo, a few turns at most) turns the one-liner into
+**Enter** in the ask bar starts the task at once. Its first stage, which runs on battery too since it's a short read-only call, drafts the brief: a small, fast Claude model (through the CLI, read-only on the repo, a few turns at most) turns the one-liner into
 
 - **Goal**: one sentence.
 - **Acceptance criteria**: what has to be true when it's done. General spaces call these "done when".
@@ -30,16 +30,16 @@ Atrium finds a repo's checks from the commit the task started on:
 - `Makefile` targets (typecheck or check, lint, test), run from base copies of the Makefile and the makefiles it includes.
 - `pyproject.toml` (mypy, ruff, pytest, through `uv run` or `poetry run` when locked that way), `Cargo.toml` (check, clippy, test) and `go.mod` (vet, test).
 
-A space's own commands (Settings in the space header, one per line, the last being the full test run) replace detection, and a check command you set in the brief replaces the test run. Detection is cached per commit. The writer may run the gate's plain commands itself, inside its own sandbox.
+A space's own commands (Settings in the space header, one per line, the last being the full test run) replace detection, and a check command you set in the brief replaces the test run. Detection is cached per commit. The writer's prompt lists the commands and says it may run them itself, inside its own sandbox, only exactly as written and one per call (its tools refuse pipes, redirects, `&&` and `;`), and that Atrium runs them either way.
 
-After every writer turn that changed files, the engine runs the checks itself, in a checkout of the branch head of their own that's deleted afterwards. Your dependency folders are linked in read-only. When the change touched the manifest or lockfile, they're private copies instead (APFS clones), and the engine installs the change's lockfile into those before the checks, so nothing installed outlives the run or reaches your checkout. Then fast checks (typecheck, lint), then the full test run. Each command has a time limit and its output is capped. A failing turn goes back to the writer with the end of the failing output. The agent's own "tests pass" is never taken as a result.
+After every writer turn that changed files, the engine runs the checks itself, in a checkout of the branch head of their own that's deleted afterwards. Your dependency folders are linked in read-only. When the change touched the manifest or lockfile, they're private copies instead (APFS clones), and the engine installs the change's lockfile into those before the checks, so nothing installed outlives the run or reaches your checkout. A copy that fails leaves the result unverified rather than installing into half of one. Then fast checks (typecheck, lint), then the full test run; every check runs whatever the others said. Each command has a time limit and its output is capped. A failing turn goes back to the writer with the end of the failing output. The agent's own "tests pass" is never taken as a result.
 
 What the results mean:
 
 - **passed**: at least one real check ran and passed, and none failed or couldn't run. The install never counts as a passing check.
 - **failed**: a check failed. Any non-zero exit is a failure, 127 included: whether a tool is installed is asked with `command -v` before anything from the repo runs.
 - **unverified** (`none`): no checks were found, or a check couldn't run (the tool is missing, it timed out, or the install it needed didn't happen). Checks that couldn't run also add an attention note. A registry that needs your login makes the install unverified rather than failed, since checks never get your credentials.
-- **already failing**: a check that fails the same way on the commit the task started from (run once per commit, cached) doesn't count against the task, isn't sent to the writer and doesn't trip loop detection. When the task's goal is to make that check pass, it counts as usual.
+- **already failing**: when a check fails, Atrium also runs the checks on the commit the task started from (once per commit, cached; a Stop ends it and caches nothing). A check that failed there too and still fails proves nothing about the change: the result is "Unverified: X was already failing before this task", with an attention note. It's never "passed". It doesn't count as the writer's failure or toward loop detection, and the work can still reach you labelled unverified. The writer's prompt and the reviewer's both list these checks, with the end of their output from before the task, so the writer doesn't wander off to fix them and the reviewer can judge whether the change made them worse. A check that passed there and fails now is a real failure; one that failed there and passes now is simply passed.
 
 The task carries `checks: pending | running | passed | failed | none`, shown as a badge on its row with the output one click away.
 
@@ -62,8 +62,9 @@ The writer and the checks share a codebase, so tampering can't be made impossibl
        - checker suppressions added in place (`@ts-nocheck`, `@ts-ignore`, `eslint-disable`, `# type: ignore`, `# noqa` and the like);
        - checks that couldn't run;
        - config the work leaves outside git in your checkout.
-     - Classification folds case, as APFS does. Config outside git counts only when it's new or changed since the task started (by content hash, regular files only). A link, a special file, an oversized file, or a missing snapshot always counts.
-     - A note blocks automatic approval by any rule, is put to the reviewer to scrutinise, and is shown on the result. So do checks that couldn't run or were already failing.
+     - Classification folds case, as APFS does. Config outside git counts only when it's new or changed since the task started (by content hash, regular files only). A link, an oversized file, or a missing snapshot always counts. git doesn't list FIFOs or devices, so those aren't seen at all; checks never read your checkout, so they can't affect a result.
+     - Files committed into a dependency folder add a note: the checks never use them, but the branch would carry them into your repo.
+     - A note blocks automatic approval by any rule, is put to the reviewer to scrutinise, and is shown on the result. Checks that couldn't run or were already failing add notes of their own, so the same holds for them.
 - **The reviewer and you are the final judges.**
 
 ### Known limits of the gate
@@ -77,7 +78,8 @@ The writer and the checks share a codebase, so tampering can't be made impossibl
 - **Rust and Go checks** run under the same profile with their caches pointed at the temp folder; a toolchain that insists on writing to its home folder fails, which shows as a failing check, not a pass.
 - **Python dependencies** are linked read-only (`.venv`) but never installed by the engine.
 - **Private registries.** The engine's install never gets your login, so when a change touches the lockfile of a repo whose packages need one, its checks are unverified ("the registry needs your login") rather than run.
-- **"Already failing" uses the output's shape**, with timings and temp paths taken out. A flaky check can read as newly failing, and the task's goal is matched by words ("fix", "failing", "tests"), not understood.
+- **A new failure inside a check that was already failing** isn't caught: in a repo with type debt, one more type error leaves the typecheck failing as before, so the result is unverified, not failed. The reviewer is told which checks were already failing and sees the diff.
+- **A flaky check** can fail on the branch after passing on the base commit, and then reads as a real failure. "The same failure twice" compares output with timings, clock times, sizes, colours and temp paths taken out, so a flaky check that fails the same way twice still pauses.
 
 ## The reviewer
 
