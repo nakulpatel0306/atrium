@@ -60,7 +60,7 @@ describe("Apple ingest through the helper", () => {
     expect(trip.count).toBe(2);
     expect(trip.unread).toBe(1);
     const first = threadMessages(db, trip.id)[0]!;
-    expect(first.attachments).toEqual([{ name: "tickets.pdf", size: 2048 }]);
+    expect(first.attachments).toEqual([{ name: "tickets.pdf", size: 2048, openable: true }]);
     await s.fetchBodies([first.id]);
     expect(threadMessages(db, trip.id)[0]!.body).toBe("Train at 9?");
     // No Google here, so Calendar.app's copy of the Google calendar is the one shown; the duplicate invite shows once.
@@ -141,5 +141,63 @@ describe("when sync runs", () => {
     await s.syncNow().catch(() => {});
     // The second syncNow above is the explicit one; onOpen itself added nothing.
     expect(apple.calls).toBe(2);
+  });
+});
+
+describe("bodies", () => {
+  // A source whose body() is slow, counts its calls and can be made to fail.
+  function slowBodies() {
+    const s = { ...counting(), calls: 0, concurrent: 0, peak: 0, fail: false };
+    s.body = async () => {
+      s.calls++;
+      s.concurrent++;
+      s.peak = Math.max(s.peak, s.concurrent);
+      await Bun.sleep(20);
+      s.concurrent--;
+      if (s.fail) throw new Error("Mail isn't open.");
+      return { text: "hello", html: null, attachments: [] };
+    };
+    return s;
+  }
+  async function seeded(n: number) {
+    const { upsertAccount, ingestMessages } = await import("../../../src/engine/mail/store");
+    const a = upsertAccount(db, { address: "sam.rivera@example.org", name: "", source: "apple", ref: "acct" });
+    const { msg } = await import("./helpers");
+    ingestMessages(db, a, Array.from({ length: n }, (_, i) => msg({ sourceId: `b${i}`, messageId: `<b${i}@x>`, subject: `S${i}`, date: T0 + i })));
+    return listThreads(db).flatMap((t) => threadMessages(db, t.id).map((m) => m.id));
+  }
+
+  test("a body being fetched is joined, not fetched twice, and three are fetched at a time", async () => {
+    const apple = slowBodies();
+    const s = createMailSync({ db, google: counting(), apple, appleAccounts: async () => [], now: () => NOW });
+    const ids = await seeded(7);
+    await Promise.all([s.fetchBodies(ids), s.fetchBodies(ids), s.fetchBodies([ids[0]!])]);
+    expect(apple.calls).toBe(7);
+    expect(apple.peak).toBe(3);
+    // Cached now: nothing more is fetched.
+    await s.fetchBodies(ids);
+    expect(apple.calls).toBe(7);
+  });
+
+  test("a failed body waits ten minutes before it's tried again, unless the user retries", async () => {
+    const apple = slowBodies();
+    apple.fail = true;
+    let clock = NOW;
+    const s = createMailSync({ db, google: counting(), apple, appleAccounts: async () => [], now: () => clock });
+    const ids = await seeded(1);
+    expect(await s.fetchBodies(ids)).toBe("Mail isn't open.");
+    expect(s.bodyState(ids)).toEqual({ loading: false, problem: "Mail isn't open." });
+    await s.fetchBodies(ids);
+    expect(apple.calls).toBe(1);
+    clock += 9 * 60_000;
+    await s.fetchBodies(ids);
+    expect(apple.calls).toBe(1);
+    await s.fetchBodies(ids, { retry: true });
+    expect(apple.calls).toBe(2);
+    apple.fail = false;
+    clock += 11 * 60_000;
+    expect(await s.fetchBodies(ids)).toBeNull();
+    expect(apple.calls).toBe(3);
+    expect(s.bodyState(ids)).toEqual({ loading: false, problem: null });
   });
 });

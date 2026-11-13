@@ -102,8 +102,19 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
   if (threadM) {
     const thread = getThreadView(db, threadM[1]!);
     if (!thread) throw new HttpError(404, "That thread isn't in the Inbox anymore.");
-    const problem = await mail.sync.fetchBodies(threadMessages(db, thread.id).map((m) => m.id));
-    return json({ thread, messages: threadMessages(db, thread.id), problem });
+    // A read only: what's cached, and whether bodies are still on their way. Opening the thread fetches them.
+    const messages = threadMessages(db, thread.id);
+    return json({ thread, messages, ...mail.sync.bodyState(messages.map((m) => m.id)) });
+  }
+
+  const openM = hit("POST", /^\/api\/mail\/threads\/([^/]+)\/open$/);
+  if (openM) {
+    const thread = getThreadView(db, openM[1]!);
+    if (!thread) throw new HttpError(404, "That thread isn't in the Inbox anymore.");
+    const b = await readBody(req);
+    // Fetched in the background; each body that lands is pushed to the dashboard.
+    void mail.sync.fetchBodies(threadMessages(db, thread.id).map((m) => m.id), { retry: b.retry === true });
+    return json({ ok: true });
   }
 
   const attM = hit("POST", /^\/api\/mail\/messages\/([^/]+)\/attachments\/(\d+)\/open$/);

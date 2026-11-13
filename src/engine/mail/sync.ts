@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { bus } from "../events";
 import { getSetting } from "../settings";
 import { bodyText, cacheBody } from "./body";
-import { attachmentDir } from "./files";
+import { attachmentDir, inside, quarantine, recordSaved } from "./files";
 import {
   activeAccounts,
   calendarShadowed,
@@ -28,6 +28,9 @@ export const SYNC_INTERVAL_MS = 10 * 60_000;
 // Opening Inbox or Calendar syncs, but not again within a minute of the last one.
 const OPEN_FRESH_MS = 60_000;
 const BODIES_PER_THREAD = 25;
+const BODY_PARALLEL = 3;
+// A body that failed (offline, Mail closed, deleted on the server) waits this long before it's tried again by itself.
+const BODY_RETRY_MS = 10 * 60_000;
 
 export const SETTING_KEYS = { mailDays: "mail.window.days", calBack: "cal.window.back", calAhead: "cal.window.ahead" } as const;
 export const DEFAULTS = { mailDays: 30, calBack: 30, calAhead: 90 } as const;
@@ -163,6 +166,37 @@ export function createMailSync(deps: {
     return last === null || now() - last >= maxAge;
   };
 
+  const inflight = new Map<string, Promise<void>>();
+  const failed = new Map<string, { at: number; message: string }>();
+  const hasBody = (id: string) => !!db.query("SELECT 1 FROM mail_bodies WHERE message_id = ?").get(id);
+  const backingOff = (id: string) => {
+    const f = failed.get(id);
+    return !!f && now() - f.at < BODY_RETRY_MS;
+  };
+
+  function bodyState(messageIds: string[]): { loading: boolean; problem: string | null } {
+    const problem = messageIds.map((id) => (backingOff(id) ? failed.get(id)!.message : null)).find((p) => p !== null) ?? null;
+    return { loading: messageIds.some((id) => inflight.has(id)), problem };
+  }
+
+  async function fetchBody(id: string): Promise<void> {
+    try {
+      await withSource(id, async (source, account, msg) => {
+        const body = await source.body(account, msg.sourceId);
+        cacheBody(db, id, bodyText(body), now());
+        if (body.attachments.length) {
+          db.query("UPDATE mail_messages SET attachments = ?, has_attachments = 1 WHERE id = ?").run(JSON.stringify(body.attachments), id);
+        }
+      });
+      failed.delete(id);
+    } catch (e) {
+      failed.set(id, { at: now(), message: message(e) });
+    } finally {
+      inflight.delete(id);
+      bus.emit({ type: "changed" });
+    }
+  }
+
   async function withSource<T>(messageId: string, fn: (source: MailSource, account: AccountRef, msg: NonNullable<ReturnType<typeof messageSource>>) => Promise<T>): Promise<T> {
     const msg = messageSource(db, messageId);
     if (!msg) throw new MailProblem("other", "That message isn't in the Inbox anymore. Sync, then open the thread again.");
@@ -197,34 +231,46 @@ export function createMailSync(deps: {
       if (stale(maxAge)) await syncNow();
     },
 
-    // Bodies for a thread's messages that don't have one cached yet, oldest first. Returns the first problem, if any,
-    // so the thread view can say why a body is missing.
-    async fetchBodies(messageIds: string[]): Promise<string | null> {
-      const missing = messageIds
-        .filter((id) => !(db.query("SELECT 1 FROM mail_bodies WHERE message_id = ?").get(id)))
-        .slice(0, BODIES_PER_THREAD);
-      let problem: string | null = null;
-      for (const id of missing) {
-        try {
-          await withSource(id, async (source, account, msg) => {
-            const body = await source.body(account, msg.sourceId);
-            cacheBody(db, id, bodyText(body), now());
-            if (body.attachments.length) {
-              db.query("UPDATE mail_messages SET attachments = ?, has_attachments = 1 WHERE id = ?").run(JSON.stringify(body.attachments), id);
-            }
-          });
-        } catch (e) {
-          problem ??= message(e);
+    // Bodies for messages that don't have one cached yet, three at a time. A message already being fetched is joined,
+    // not fetched twice; one that failed isn't tried again for ten minutes unless `retry` is set (the user's Retry).
+    // Resolves with the first problem, if any, once all of them have settled.
+    async fetchBodies(messageIds: string[], opts: { retry?: boolean } = {}): Promise<string | null> {
+      if (opts.retry) for (const id of messageIds) failed.delete(id);
+      const wanted = messageIds.filter((id) => !hasBody(id)).slice(0, BODIES_PER_THREAD);
+      const joined = wanted.filter((id) => inflight.has(id)).map((id) => inflight.get(id)!);
+      // Each new id is claimed before anything awaits, so a second call made meanwhile joins it instead.
+      const queue = wanted
+        .filter((id) => !inflight.has(id) && !backingOff(id))
+        .map((id) => {
+          const { promise, resolve } = Promise.withResolvers<void>();
+          inflight.set(id, promise);
+          return { id, resolve };
+        });
+      const run = async () => {
+        for (let next = queue.shift(); next; next = queue.shift()) {
+          await fetchBody(next.id);
+          next.resolve();
         }
-      }
-      return problem;
+      };
+      if (queue.length) bus.emit({ type: "changed" });
+      await Promise.all([...Array.from({ length: Math.min(BODY_PARALLEL, queue.length) }, run), ...joined]);
+      return bodyState(messageIds).problem;
     },
 
+    // Whether any of these bodies is being fetched, and the first recent failure among them, for the thread view.
+    bodyState,
+
+    // Saved inside the account's own folder, checked to be there, quarantined, and recorded for removal later.
     async saveAttachment(messageId: string, index: number): Promise<string> {
       return withSource(messageId, async (source, account, msg) => {
         const att = msg.attachments[index];
         if (!att) throw new MailProblem("other", "That attachment isn't on the message anymore.");
-        return source.attachment(account, msg.sourceId, att, attachmentDir(messageId));
+        const dir = attachmentDir(account.id, messageId);
+        const path = await source.attachment(account, msg.sourceId, att, dir);
+        if (!inside(dir, path)) throw new MailProblem("other", "Mail saved that attachment somewhere unexpected, so Atrium won't open it.");
+        await quarantine(path, now());
+        recordSaved(db, path, account.id, messageId, now());
+        return path;
       });
     },
 
