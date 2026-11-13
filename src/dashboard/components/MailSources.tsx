@@ -84,14 +84,14 @@ const APPLE = {
     title: "Apple Mail",
     icon: Mail,
     about: "Every account in the Mail app on this Mac: iCloud, Outlook, Exchange and others. Atrium reads your inbox and sent mail through Mail itself.",
-    ask: 'macOS will ask whether "bun" (Atrium\'s engine) may control Mail. Choose Allow.',
+    ask: "macOS will ask for permission to control Mail. Choose Allow.",
     pane: "automation",
   },
   calendar: {
     title: "Apple Calendar",
     icon: CalendarDays,
     about: "Every calendar in the Calendar app: iCloud, synced Google or Exchange calendars, and subscriptions.",
-    ask: "macOS will ask whether Atrium may see your calendars. Choose Allow Full Access.",
+    ask: "macOS will ask for permission to see your calendars. Choose Allow Full Access.",
     pane: "calendars",
   },
 } as const;

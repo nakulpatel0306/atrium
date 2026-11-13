@@ -262,3 +262,15 @@ describe("bodies", () => {
     expect(s.bodyState(ids)).toEqual({ loading: false, problem: null });
   });
 });
+
+describe("doctor", () => {
+  test("a denied permission is reported plainly, with where to turn it on", async () => {
+    const { mailReport } = await import("../../../src/engine/mail/report");
+    process.env.FAKE_PIM_MODE = "calendar_denied";
+    const s = appleSync();
+    s.appleOnNow("calendar");
+    await s.syncNow();
+    const line = mailReport(db).sources.find((x) => x.id === "apple_calendar")!;
+    expect(line).toMatchObject({ ready: false, message: "Permission is off. Turn it on in System Settings › Privacy & Security › Calendars, then sync again." });
+  });
+});

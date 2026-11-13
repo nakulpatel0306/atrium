@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { config } from "../config";
 import { getSetting } from "../settings";
 import { CLIENT_ID_KEY } from "./google/oauth";
+import { PIM_COPY } from "./pim";
 import { inboxSpaceId } from "./space";
 import { listAccounts } from "./store";
 import { appleOn, appleProblem } from "./sync";
@@ -24,7 +25,11 @@ export function mailReport(db: Database | null): MailReport {
       id: what === "mail" ? "apple_mail" : "apple_calendar",
       label,
       ready: on && !problem && helper,
-      message: !db ? "Turn it on from the dashboard's Get started or Settings → Accounts." : problem ?? (on ? (helper ? "Reading." : "Turned on, but the helper isn't installed.") : "Off. Optional."),
+      message: !db
+        ? "Turn it on from the dashboard's Get started or Settings → Accounts."
+        : problem === PIM_COPY.automation_denied || problem === PIM_COPY.calendar_denied
+          ? `Permission is off. Turn it on in System Settings › Privacy & Security › ${what === "mail" ? "Automation (Mail)" : "Calendars"}, then sync again.`
+          : problem ?? (on ? (helper ? "Reading." : "Turned on, but the helper isn't installed.") : "Off. Optional."),
     };
   };
   return {

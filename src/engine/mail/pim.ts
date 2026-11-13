@@ -10,7 +10,8 @@ import { MailProblem, type MailProblemKind } from "./types";
 //     → {"mail": "allowed"|"denied"|"not_determined"|"not_running", "calendar": "full"|"denied"|"not_determined"|"write_only"|"restricted"}
 //     Never shows a permission prompt.
 //   atrium-pim allow mail|calendar
-//     → {"ok": true}  Asks macOS for the permission (the prompt the dashboard announced first).
+//     → {"ok": true}  Asks macOS for the permission (the prompt the dashboard announced first). Whom macOS names in
+//     that prompt (bun, the engine, or atrium-pim) depends on how the helper was launched, so no copy promises one.
 //   atrium-pim mail.accounts
 //     → {"accounts": [{"id": string, "name": string, "addresses": [string], "fullName": string}]}
 //   atrium-pim mail.messages --account <id> --since <ISO 8601>
@@ -39,9 +40,11 @@ import { MailProblem, type MailProblemKind } from "./types";
 
 export const PIM_COPY = {
   not_installed: "Atrium's Mail and Calendar helper isn't installed. Run atrium app install in Terminal, then try again.",
+  // macOS may list the permission under Atrium's engine ("bun") or its helper ("atrium-pim"), so neither is promised.
   automation_denied:
-    'Atrium isn\'t allowed to read Mail yet. Open System Settings, go to Privacy & Security › Automation, turn on Mail under "bun" (Atrium\'s engine), then press Sync.',
-  calendar_denied: "Atrium isn't allowed to read your calendars yet. Open System Settings, go to Privacy & Security › Calendars, turn on Atrium, then press Sync.",
+    "Atrium isn't allowed to read Mail yet. Open System Settings › Privacy & Security › Automation, turn on Mail under Atrium's engine (it may be listed as bun or atrium-pim), then press Sync.",
+  calendar_denied:
+    "Atrium isn't allowed to read your calendars yet. Open System Settings › Privacy & Security › Calendars, turn on Atrium's engine (it may be listed as bun or atrium-pim), then press Sync.",
   timeout: "Mail or Calendar didn't answer within a minute. If macOS is asking for permission, answer that dialog, then press Sync.",
   not_running: "Mail isn't open, so Atrium couldn't read it. Open Mail, then press Sync.",
   other: "Mail or Calendar didn't answer, and Atrium couldn't tell why. Check that both open normally, then press Sync.",
