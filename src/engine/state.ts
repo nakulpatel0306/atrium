@@ -85,10 +85,10 @@ export type State = {
   messaging: { state: MessagingState; contactsReady: boolean | null };
 };
 
-export type MailActionView = Omit<MailAction, "references" | "inReplyTo" | "gmailThreadId" | "sourceMessageId" | "threadAccountId" | "sentAt" | "createdAt" | "updatedAt" | "error"> & { lastError: string | null };
+export type MailActionView = Omit<MailAction, "references" | "inReplyTo" | "sourceMessageId" | "threadAccountId" | "sentAt" | "createdAt" | "updatedAt" | "error"> & { lastError: string | null };
 
 function mailActionViews(db: Database): MailActionView[] {
-  return pendingMailActions(db).map(({ references: _r, inReplyTo: _i, gmailThreadId: _g, sourceMessageId: _s, threadAccountId: _t, sentAt: _a, createdAt: _c, updatedAt: _u, error, ...rest }) => ({ ...rest, lastError: error }));
+  return pendingMailActions(db).map(({ references: _r, inReplyTo: _i, sourceMessageId: _s, threadAccountId: _t, sentAt: _a, createdAt: _c, updatedAt: _u, error, ...rest }) => ({ ...rest, lastError: error }));
 }
 
 export type MessageActionView = {

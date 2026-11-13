@@ -103,19 +103,17 @@ export function createMailActions(deps: { db: Database; google: GoogleSource; ap
     return { dir, files };
   }
 
-  // Threading for the row that sends. The thread's own row has it stored; after a source switch the same message is
-  // found again under the new row by its Message-ID, so a reply still threads.
+  // Threading for the row that sends: the answered message as that row holds it, found by its Message-ID (so it still
+  // threads after a source switch), or by its own row when it had no Message-ID. Gmail threads by the thread's key,
+  // Mail.app by replying to the message itself.
   function threading(a: MailAction, account: MailAccount): { threadKey: string | null; replyTo: string | null } {
     if (a.kind === "forward") return { threadKey: null, replyTo: null };
-    if (account.id === a.threadAccountId) {
-      const answered = a.sourceMessageId ? (db.query("SELECT source_id FROM mail_messages WHERE id = ?").get(a.sourceMessageId) as { source_id: string } | null) : null;
-      return { threadKey: account.source === "google" ? a.gmailThreadId : null, replyTo: account.source === "apple" ? (answered?.source_id ?? null) : null };
-    }
-    const same = a.inReplyTo
-      ? (db.query("SELECT m.source_id, t.thread_key FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id WHERE m.account_id = ? AND m.message_id = ? LIMIT 1").get(account.id, a.inReplyTo) as { source_id: string; thread_key: string } | null)
-      : null;
-    if (!same) return { threadKey: null, replyTo: null };
-    return { threadKey: account.source === "google" ? same.thread_key : null, replyTo: account.source === "apple" ? same.source_id : null };
+    const select = "SELECT m.source_id, t.thread_key FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id WHERE m.account_id = ? AND ";
+    const found = (a.inReplyTo
+      ? db.query(`${select}m.message_id = ? LIMIT 1`).get(account.id, a.inReplyTo)
+      : db.query(`${select}m.id = ?`).get(account.id, a.sourceMessageId ?? "")) as { source_id: string; thread_key: string } | null;
+    if (!found) return { threadKey: null, replyTo: null };
+    return { threadKey: account.source === "google" ? found.thread_key : null, replyTo: account.source === "apple" ? found.source_id : null };
   }
 
   // The email exactly as the card holds it, with the threading the sending row can use.

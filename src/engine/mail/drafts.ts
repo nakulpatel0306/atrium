@@ -69,7 +69,6 @@ export type MailAction = {
   threadId: string | null;
   sourceMessageId: string | null;
   threadAccountId: string | null;
-  gmailThreadId: string | null;
   inReplyTo: string | null;
   references: string[];
   subject: string;
@@ -99,7 +98,6 @@ type Row = {
   thread_id: string | null;
   source_message_id: string | null;
   thread_account_id: string | null;
-  gmail_thread_id: string | null;
   in_reply_to: string | null;
   refs: string;
   subject: string;
@@ -136,7 +134,6 @@ const toAction = (r: Row): MailAction => ({
   threadId: r.thread_id,
   sourceMessageId: r.source_message_id,
   threadAccountId: r.thread_account_id,
-  gmailThreadId: r.gmail_thread_id,
   inReplyTo: r.in_reply_to,
   references: parse<string[]>(r.refs, []),
   subject: r.subject,
@@ -368,11 +365,11 @@ function insert(db: Database, f: Fields, now = Date.now()): { action: MailAction
     const id = newId("mla");
     db.query(
       `INSERT INTO mail_actions (id, approval_id, space_id, task_id, kind, status, drafted_by, account_id, thread_id, source_message_id, thread_account_id,
-         gmail_thread_id, in_reply_to, refs, subject, body, quoted, to_json, cc_json, attachments, event_json, reasons, error, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         in_reply_to, refs, subject, body, quoted, to_json, cc_json, attachments, event_json, reasons, error, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id, approval.id, f.spaceId, f.taskId ?? null, f.kind, f.draftedBy, f.accountId, f.threadId, f.sourceMessageId, f.threadAccountId,
-      f.gmailThreadId, f.inReplyTo, JSON.stringify(f.references), f.subject, f.body, f.quoted, JSON.stringify(f.to), JSON.stringify(f.cc),
+      f.inReplyTo, JSON.stringify(f.references), f.subject, f.body, f.quoted, JSON.stringify(f.to), JSON.stringify(f.cc),
       JSON.stringify(f.attachments), f.event ? JSON.stringify(f.event) : null, JSON.stringify(reasons), f.error, now, now,
     );
     return { action: getMailAction(db, id)!, approval };
@@ -402,7 +399,6 @@ export function draftMail(db: Database, input: MailDraftInput): { action: MailAc
     const m = messageToAnswer(db, thread.id, input.messageId);
     if (!m) throw new BadMail("That message isn't on the thread anymore. Sync, then try again.");
     const accountId = pickAccount(db, input.accountId, thread.account_id);
-    const threadAccount = getAccount(db, thread.account_id);
     const original = { from: parse<Person>(m.from_json, { name: "", address: "" }), to: parse<Person[]>(m.to_json, []), cc: parse<Person[]>(m.cc_json, []) };
     let to: Recipient[];
     let cc: Recipient[];
@@ -422,8 +418,6 @@ export function draftMail(db: Database, input: MailDraftInput): { action: MailAc
       threadId: thread.id,
       sourceMessageId: m.id,
       threadAccountId: thread.account_id,
-      // Gmail threads a reply only when it goes from the thread's own Google account.
-      gmailThreadId: reply && threadAccount?.source === "google" ? thread.thread_key : null,
       inReplyTo: reply ? m.message_id : null,
       references: reply ? [...parse<string[]>(m.refs, []), ...(m.message_id ? [m.message_id] : [])].slice(-REFS_KEPT) : [],
       subject: subjectFor(input.kind, m.subject),
@@ -452,7 +446,6 @@ function base(input: { spaceId: string; taskId?: string | null; kind: ActionKind
     threadId: null,
     sourceMessageId: null,
     threadAccountId: null,
-    gmailThreadId: null,
     inReplyTo: null,
     references: [],
     subject: "",

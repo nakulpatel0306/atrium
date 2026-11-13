@@ -141,8 +141,7 @@ CREATE TABLE IF NOT EXISTS mail_actions (
   thread_id TEXT,
   source_message_id TEXT,
   thread_account_id TEXT,
-  -- Threading the engine sets: Gmail's threadId (for a reply from the thread's own Google account) and the headers.
-  gmail_thread_id TEXT,
+  -- The threading headers the engine sets; Gmail's threadId is looked up for the sending account at send time.
   in_reply_to TEXT,
   refs TEXT NOT NULL DEFAULT '[]',
   subject TEXT NOT NULL DEFAULT '',
