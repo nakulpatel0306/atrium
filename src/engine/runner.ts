@@ -58,6 +58,7 @@ import { appendTaskDetail, endRemovedFeatureTasks, failRemovedFeatureTask, getTa
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { enforceTranscriptCap, openTranscript } from "./storage";
+import { type Tier, tierModel, tierRun } from "./tiers";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -391,7 +392,7 @@ export function createRunner(deps: {
       // told what already fails without waiting for them.
       const warm = repo ? warmBase(space, repo, controller.signal) : Promise.resolve();
       const draft = claude
-        ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, signal: controller.signal })
+        ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, model: tierModel(db, "cheap") || undefined, signal: controller.signal })
         : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null };
       await warm;
       if (getTask(db, task.id)?.status !== "running") return;
@@ -650,6 +651,7 @@ export function createRunner(deps: {
         allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
         privateData: space.private,
         mode: readOnly ? "review" : "work",
+        ...(adapter.id === "claude" && tierRun(db, tierFor(task, explaining))),
         signal: r.signal,
         onChunk: line,
         ...(watch && {
@@ -1191,6 +1193,14 @@ function readyLine(task: Task): string {
 }
 
 class StoppedEarly extends Error {}
+
+// Which tier's Claude model a run uses: review judges and an explanation only reads, and a writer the user had to
+// unstick after a pause goes on with the strong model.
+function tierFor(task: Task, explaining: boolean): Tier {
+  if (task.kind === "review") return "strong";
+  if (explaining) return "cheap";
+  return task.loop?.escalated ? "strong" : "default";
+}
 
 // The gate's own commands, so the writer can run what will judge it (inside its sandbox, like any of its commands).
 // One that needs Atrium's base copies (a pinned Makefile) or isn't a single plain command line is left to the gate.

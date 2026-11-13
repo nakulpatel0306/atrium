@@ -12,10 +12,23 @@ export interface AgentRunInput {
   // Every tool call with its full input, for spotting an agent stuck repeating itself. Display goes through onChunk.
   onTool?(name: string, input: unknown): void;
   signal?: AbortSignal;
-  // A quick, cheap side job (the brief pre-pass): a smaller model and a cap on turns. Only Claude takes them.
+  // The model for this run's tier (tiers.ts) and a cap on turns. Only Claude takes them; the fallback is the model
+  // Claude Code switches to when this one isn't available on the user's plan.
   model?: string;
+  fallbackModel?: string;
   maxTurns?: number;
+  // A session the CLI keeps on disk: started under this id, or resumed from it, so a turn inside the prompt cache's
+  // window reads its context from the cache. Without one, nothing is kept. Only Claude takes it.
+  session?: { id: string; resume: boolean };
+  // Subagents the run may hand work to through Claude Code's own Agent tool (see scouts.ts). Only Claude takes them.
+  agents?: Record<string, SubagentDefinition>;
 }
+
+export type SubagentDefinition = { description: string; prompt: string; tools: string[]; model?: string; maxTurns?: number };
+
+// One model's tokens. Claude reports them per model, subagents included; see usage.ts for how a resumed session's
+// running totals become one turn's share.
+export type ModelTokens = { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
 
 // Subscription window usage as the CLI reports it; resetsAt is epoch ms.
 export type WindowUsage = { utilization: number; resetsAt: number };
@@ -31,6 +44,10 @@ export type AgentRunResult =
       cacheReadTokens?: number;
       cacheWriteTokens?: number;
       usage?: AgentUsage;
+      // Per-model totals for the whole session so far, as Claude reports them; absent from CLIs that don't.
+      models?: ModelTokens[];
+      // The context the main agent held at its last step, so a long session can be ended before it degrades.
+      contextTokens?: number;
     }
   | {
       status: "error";

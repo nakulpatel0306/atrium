@@ -4,8 +4,7 @@ import { join } from "node:path";
 import type { AgentAdapter } from "./agents/types";
 import { type Brief, type BriefQuestion, normalizeBrief, normalizeQuestions } from "./brief";
 
-// The pre-pass is meant to feel instant next to the task itself: a small model, a few reads, then an answer.
-export const BRIEF_MODEL = "haiku";
+// The pre-pass is meant to feel instant next to the task itself: the cheap tier's model, a few reads, then an answer.
 const BRIEF_TURNS = 6;
 const BRIEF_TIMEOUT_MS = 90_000;
 const READ_TOOLS = ["Read", "Glob", "Grep"];
@@ -37,7 +36,7 @@ export type DraftResult = { brief: Brief; questions: BriefQuestion[]; error: str
 // Never fails: a pre-pass that can't answer still leaves a brief holding the ask itself, and the task runs as is.
 export async function draftBrief(
   adapter: AgentAdapter,
-  input: { ask: string; repoPath: string | null; privateData: boolean; signal?: AbortSignal },
+  input: { ask: string; repoPath: string | null; privateData: boolean; model?: string; signal?: AbortSignal },
 ): Promise<DraftResult> {
   const fallback = (error: string): DraftResult => ({ brief: normalizeBrief({}, input.ask), questions: [], error, suggestedVerify: null });
   const repo = input.repoPath !== null;
@@ -52,7 +51,7 @@ export async function draftBrief(
       allowedTools: repo ? READ_TOOLS : [],
       mode: "review",
       privateData: input.privateData,
-      model: BRIEF_MODEL,
+      ...(input.model && { model: input.model }),
       maxTurns: BRIEF_TURNS,
       signal: input.signal ? AbortSignal.any([input.signal, timeout]) : timeout,
       onChunk() {},

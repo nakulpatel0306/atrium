@@ -74,6 +74,8 @@ export type LoopState = {
   // The next run explains what's wrong instead of trying again; its answer lands in `explanation`.
   explain: boolean;
   explanation: string | null;
+  // Set once the user stepped in after a pause, so the writer goes on with the strong tier's model (tiers.ts).
+  escalated: boolean;
 };
 
 export const MAX_REVIEW_ROUNDS = 2;
@@ -116,12 +118,14 @@ export function newLoop(budget: Budget): LoopState {
     paused: null,
     explain: false,
     explanation: null,
+    escalated: false,
   };
 }
 
-// Back to writing after the user steps in: the counters that judge "stuck" and the budget start over.
+// Back to writing after the user steps in: the counters that judge "stuck" and the budget start over, and a loop
+// that was paused goes on with the strong model.
 export function resumed(loop: LoopState): LoopState {
-  return { ...loop, stage: "writing", paused: null, explain: false, stalled: 0, failSig: null, usage: { tokens: 0, ms: 0, unreported: false } };
+  return { ...loop, stage: "writing", paused: null, escalated: loop.escalated || loop.paused !== null, explain: false, stalled: 0, failSig: null, usage: { tokens: 0, ms: 0, unreported: false } };
 }
 
 export function overBudget(loop: LoopState): string | null {

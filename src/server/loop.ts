@@ -8,6 +8,7 @@ import { git } from "../engine/git";
 import { type Budget, type LoopState, resumed } from "../engine/loop";
 import { getSpace, type Space } from "../engine/spaces";
 import { appendTaskDetail, getTask, setTaskBrief, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
+import { tierModel } from "../engine/tiers";
 import { HttpError, json, readBody, str } from "./http";
 
 const ASK_MAX = 4000;
@@ -56,7 +57,7 @@ export async function loopRoute(db: Database, claude: AgentAdapter | undefined, 
     if (!claude) throw new HttpError(503, "Claude isn't set up, so Atrium can't draft a brief. Send the task as it is with ⌘↩.");
     const repo = space.kind === "repo" ? space.repoPath : null;
     const [draft, checks] = await Promise.all([
-      draftBrief(claude, { ask, repoPath: repo, privateData: space.private, signal: req.signal }),
+      draftBrief(claude, { ask, repoPath: repo, privateData: space.private, model: tierModel(db, "cheap") || undefined, signal: req.signal }),
       spaceChecks(space),
     ]);
     return json({ ...draft, checks, hints: gapHints(draft.brief, { repo: space.kind === "repo", checksFound: checks.length > 0 }) });

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { claudeAdapter } from "../../src/engine/agents/claude";
+import { TIER_DEFAULTS } from "../../src/engine/tiers";
 import { draftBrief } from "../../src/engine/brief-draft";
 import { tempHome, tempRepo } from "../helpers";
 
@@ -32,7 +33,8 @@ test("the pre-pass runs a small read-only Claude in the repo and returns the bri
     }),
     "```",
   ].join("\n");
-  const res = await draftBrief(claudeAdapter(FAKE), { ask: "login error message", repoPath: repo.path, privateData: false });
+  // The cheap tier's model, as the runner and the brief route pass it.
+  const res = await draftBrief(claudeAdapter(FAKE), { ask: "login error message", repoPath: repo.path, privateData: false, model: TIER_DEFAULTS.cheap });
   expect(res.error).toBeNull();
   expect(res.brief.goal).toBe("Show an error on a bad password");
   expect(res.brief.size).toBe("small");

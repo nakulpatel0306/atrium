@@ -26,7 +26,54 @@ describe("claudeAdapter", () => {
     const r = await claudeAdapter(FAKE).run(input(chunks));
     expect(chunks).toContain("Looking at the repo.");
     expect(chunks).toContain("→ Read /repo/README.md");
-    expect(r).toEqual({ status: "ok", summary: "All done.", inputTokens: 120, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    expect(r).toEqual({ status: "ok", summary: "All done.", inputTokens: 120, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0, contextTokens: 15 });
+  });
+
+  test("per-model totals, subagents included, and the main agent's context come back with the result", async () => {
+    process.env.FAKE_CLAUDE_MODEL_USAGE = JSON.stringify({
+      "claude-sonnet-5-5": { inputTokens: 120, outputTokens: 45, cacheReadInputTokens: 900, cacheCreationInputTokens: 30 },
+      "claude-haiku-5-5": { inputTokens: 400, outputTokens: 80, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+    });
+    process.env.FAKE_CLAUDE_CONTEXT = "42000";
+    try {
+      const r = await claudeAdapter(FAKE).run(input([]));
+      expect(r).toMatchObject({
+        status: "ok",
+        contextTokens: 42015,
+        models: [
+          { model: "claude-sonnet-5-5", inputTokens: 120, outputTokens: 45, cacheReadTokens: 900, cacheWriteTokens: 30 },
+          { model: "claude-haiku-5-5", inputTokens: 400, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        ],
+      });
+    } finally {
+      delete process.env.FAKE_CLAUDE_MODEL_USAGE;
+      delete process.env.FAKE_CLAUDE_CONTEXT;
+    }
+  });
+
+  test("a kept session starts under its id or resumes it; the tier's fallback model and subagents pass through", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
+    const id = "0b0e7c1a-3c1d-4c5e-9f00-2a1b3c4d5e6f";
+    const argv = async (extra: Partial<AgentRunInput>) => {
+      expect((await claudeAdapter(FAKE).run({ ...input(), ...extra })).status).toBe("ok");
+      return JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")) as string[];
+    };
+    try {
+      const fresh = await argv({ session: { id, resume: false } });
+      expect(fresh[fresh.indexOf("--session-id") + 1]).toBe(id);
+      expect(fresh).not.toContain("--no-session-persistence");
+      const warm = await argv({ session: { id, resume: true }, model: "opus", fallbackModel: "sonnet" });
+      expect(warm[warm.indexOf("--resume") + 1]).toBe(id);
+      expect(warm[warm.indexOf("--fallback-model") + 1]).toBe("sonnet");
+      const scouts = { "atrium-scout": { description: "Reads", prompt: "Read only.", tools: ["Read"], model: "haiku" } };
+      const withAgents = await argv({ agents: scouts });
+      expect(JSON.parse(withAgents[withAgents.indexOf("--agents") + 1]!)).toEqual(scouts);
+      await expect(claudeAdapter(FAKE).run({ ...input(), session: { id: "--dangerously-skip-permissions", resume: true } })).rejects.toThrow("Invalid session id");
+      await expect(claudeAdapter(FAKE).run({ ...input(), model: "--x" })).rejects.toThrow("Invalid model");
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
   });
 
   test("cache reads and writes are reported apart from fresh input, which is most of what Claude Code reads", async () => {

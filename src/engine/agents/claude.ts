@@ -6,7 +6,7 @@ import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { agentEnv, DEPENDENCY_DIRS } from "./seatbelt";
 import { shortCommand } from "./short";
-import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
+import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, ModelTokens, WindowUsage } from "./types";
 
 const usesBash = (tools: string[]) => tools.some((t) => t === "Bash" || t.startsWith("Bash("));
 
@@ -132,6 +132,29 @@ export function atLeast(v: number[], min: readonly number[]): boolean {
   return true;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// A kept session is started under Atrium's own id, so it's known before the run, or resumed from it. Without one
+// the CLI keeps nothing on disk.
+function sessionArgs(session: AgentRunInput["session"]): string[] {
+  if (!session) return ["--no-session-persistence"];
+  if (!UUID.test(session.id)) throw new Error(`Invalid session id: ${session.id}`);
+  return session.resume ? ["--resume", session.id] : ["--session-id", session.id];
+}
+
+// The result's per-model totals, subagents included, keyed by the model names Claude Code reports.
+function modelTotals(raw: unknown): ModelTokens[] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  return Object.entries(raw as Record<string, Record<string, unknown>>).map(([model, u]) => ({
+    model,
+    inputTokens: n(u?.inputTokens),
+    outputTokens: n(u?.outputTokens),
+    cacheReadTokens: n(u?.cacheReadInputTokens),
+    cacheWriteTokens: n(u?.cacheCreationInputTokens),
+  }));
+}
+
 async function cliVersion(bin: string, signal?: AbortSignal): Promise<number[] | null> {
   let line = "";
   const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => void (line ||= l) });
@@ -147,6 +170,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       // The variadic --allowedTools would swallow a flag-looking entry as another option.
       const flagLike = input.allowedTools.find((t) => t.startsWith("-"));
       if (flagLike) throw new Error(`Invalid allowedTools entry: ${flagLike}`);
+      for (const m of [input.model, input.fallbackModel]) if (m?.startsWith("-")) throw new Error(`Invalid model: ${m}`);
       // Fail closed: a version Atrium can't read counts as too old.
       if (input.privateData) {
         const v = await cliVersion(bin, input.signal);
@@ -156,7 +180,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       let limitResetsAt: number | undefined;
       let limitRejected = false;
       let usage: AgentUsage | undefined;
-      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } | undefined;
+      let contextTokens: number | undefined;
+      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; models?: ModelTokens[] } | undefined;
 
       const handle = (line: string) => {
         let msg: any;
@@ -166,6 +191,9 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           return;
         }
         if (msg.type === "assistant") {
+          // The main agent's own step (not a subagent's): what it read in is the context it now holds.
+          const u = msg.message?.usage;
+          if (u && !msg.parent_tool_use_id) contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
           for (const block of msg.message?.content ?? []) {
             if (block.type === "text" && block.text) {
               input.onChunk(block.text);
@@ -193,6 +221,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
             outputTokens: msg.usage?.output_tokens ?? 0,
             cacheReadTokens: msg.usage?.cache_read_input_tokens ?? 0,
             cacheWriteTokens: msg.usage?.cache_creation_input_tokens ?? 0,
+            models: modelTotals(msg.modelUsage),
           };
         }
       };
@@ -202,11 +231,13 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           bin, "-p",
           "--setting-sources", "project,local",
           "--settings", sandboxSettings(input.cwd, { privateData: input.privateData, bash: usesBash(input.allowedTools) }),
-          "--strict-mcp-config", "--no-session-persistence",
+          "--strict-mcp-config", ...sessionArgs(input.session),
           "--output-format", "stream-json", "--verbose",
           "--permission-mode", "dontAsk",
           ...(input.model ? ["--model", input.model] : []),
+          ...(input.fallbackModel ? ["--fallback-model", input.fallbackModel] : []),
           ...(input.maxTurns ? ["--max-turns", String(input.maxTurns)] : []),
+          ...(input.agents ? ["--agents", JSON.stringify(input.agents)] : []),
           "--append-system-prompt", input.systemPrompt,
           // No tools at all ("--tools ''") rather than an empty allow list, which the variadic flag can't express.
           ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : ["--tools", ""]),
@@ -241,6 +272,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           cacheReadTokens: final.cacheReadTokens,
           cacheWriteTokens: final.cacheWriteTokens,
           ...(usage && { usage }),
+          ...(final.models && { models: final.models }),
+          ...(contextTokens !== undefined && { contextTokens }),
         };
       }
       return classify(`${final?.result ?? ""}\n${stderr}`, stderr, exitCode);

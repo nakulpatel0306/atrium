@@ -124,6 +124,11 @@ export function makeState(over: Partial<State> = {}): State {
     claudeWindow: { utilization: 0.41, resetsAt: now + 2 * 60 * min, reserve: 0.5 },
     disk: { totalBytes: 12 * 1024 * 1024, transcriptsBytes: 10 * 1024 * 1024, dbBytes: 2 * 1024 * 1024 },
     repoActions: [],
+    tiers: {
+      cheap: { model: "haiku", stock: "haiku", jobs: "Briefs and the workflow it picks, scouts, explanations" },
+      default: { model: "", stock: "", jobs: "Writing" },
+      strong: { model: "opus", stock: "opus", jobs: "Review, a writer after a pause, judging attempts" },
+    },
     oldData: { present: false, dismissed: false },
     ...over,
   };

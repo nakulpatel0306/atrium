@@ -407,6 +407,17 @@ test("settings writes the Claude reserve from the allowed steps", async () => {
   expect((await post("/api/settings", {})).status).toBe(400);
 });
 
+test("settings sets each Claude tier's model, and refuses anything that isn't a model name", async () => {
+  const res = await post("/api/settings", { tiers: { default: "sonnet", strong: " opus " } });
+  expect(res.status).toBe(200);
+  expect(((await res.json()) as { tiers: Record<string, string> }).tiers).toEqual({ cheap: "haiku", default: "sonnet", strong: "opus" });
+  expect(getSetting(db, "tiers.strong")).toBe("opus");
+  expect((await post("/api/settings", { tiers: { strong: "--dangerously-skip-permissions" } })).status).toBe(400);
+  expect((await post("/api/settings", { tiers: { writer: "opus" } })).status).toBe(400);
+  const state = (await (await fetch(`${base}/api/state`)).json()) as { tiers: Record<string, { model: string; stock: string }> };
+  expect(state.tiers.default).toMatchObject({ model: "sonnet", stock: "" });
+});
+
 test("reviewers lists why each agent can't review in a space", async () => {
   server.stop(true);
   const adapter = (id: string, label: string) => ({ id, label, run: async () => ({ status: "error" as const, kind: "failed" as const, message: "" }) });

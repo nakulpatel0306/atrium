@@ -13,6 +13,7 @@ import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
+import { type Tier, TIER_DEFAULTS, TIER_JOBS, TIERS, tierModel } from "./tiers";
 import { hasOldData, OLD_DATA_DISMISSED } from "./old-data";
 import { type Attachment, claimedAttachments } from "./attachments";
 
@@ -66,6 +67,8 @@ export type State = {
   // The last five-hour reading while its window is still open; null when unknown or already reset.
   claudeWindow: { utilization: number; resetsAt: number; reserve: number } | null;
   disk: ReturnType<typeof atriumDiskUsage>;
+  // The model each Claude tier runs on ("" is Claude Code's own default), with the stock default and its jobs.
+  tiers: Record<Tier, { model: string; stock: string; jobs: string }>;
   // Pending new-project drafts and clone removals, for the forms in Needs you.
   repoActions: RepoActionView[];
   // Whether removed features left data behind (see old-data.ts), and whether Home's notice about it was put off.
@@ -177,6 +180,7 @@ export function snapshot(db: Database, registry?: Registry): State {
         ? { ...window, reserve }
         : null,
     disk: atriumDiskUsage(),
+    tiers: Object.fromEntries(TIERS.map((t) => [t, { model: tierModel(db, t), stock: TIER_DEFAULTS[t], jobs: TIER_JOBS[t] }])) as State["tiers"],
     repoActions: repoActionViews(db),
     oldData: { present: hasOldData(db), dismissed: getSetting(db, OLD_DATA_DISMISSED) === "1" },
   };
