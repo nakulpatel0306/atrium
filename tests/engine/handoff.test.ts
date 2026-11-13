@@ -270,7 +270,11 @@ describe("pauses", () => {
     await waitFor(() => explained && status(t.id) === "blocked");
     const after = getTask(db, t.id)!;
     expect(after.loop!.explanation).toBe("The test expects the file to say pass; nothing writes it.");
-    expect(claude.calls.at(-1)!.allowedTools).not.toContain("Edit");
+    // It reads and runs nothing: no edits, no Bash, with the branch's commits and diff handed to it instead.
+    const explain = claude.calls.at(-1)!;
+    expect(explain.allowedTools).toEqual(["Read", "Glob", "Grep"]);
+    expect(explain.prompt).toContain("Commits on this branch:");
+    expect(explain.prompt).toContain("+wrong");
     expect(after.blockedReason).toContain("It explained the problem below");
 
     await call("hint", { note: "write pass" });
@@ -316,22 +320,11 @@ describe("changes to the checks themselves", () => {
     return createRule(db, "prp_x", Date.now() - 1000);
   }
 
-  // A repo whose node_modules/.bin exists but is ignored, as an installed JavaScript project's is.
-  function nodeRepo() {
-    const path = repo();
-    mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
-    writeFileSync(join(path, ".gitignore"), "node_modules\n");
-    git(path, "add", "-A");
-    git(path, "commit", "-m", "ignore");
-    return path;
-  }
-
-  // Writes a plain doc, which a docs rule covers, and plants a tool when asked to.
-  const docsWriter = (plant: boolean) =>
+  // Writes a plain doc, which a docs rule covers, and when asked also marks a test as skipped in it.
+  const docsWriter = (skip: boolean) =>
     fake("claude", (input) => {
       mkdirSync(join(input.cwd, "docs"), { recursive: true });
-      writeFileSync(join(input.cwd, "docs", "a.md"), "one\ntwo\nthree\nfour\nfive\n");
-      if (plant) writeFileSync(join(input.cwd, "node_modules", ".bin", "tsc"), "#!/bin/sh\nexit 0\n");
+      writeFileSync(join(input.cwd, "docs", "a.md"), skip ? "one\ntwo\nUse test.skip( on the slow ones.\n" : "one\ntwo\nthree\nfour\nfive\n");
       return ok("Added a note.\nOUTCOME: done");
     });
 
@@ -352,7 +345,7 @@ describe("changes to the checks themselves", () => {
   });
 
   test("a note on the checks keeps a matching rule from approving it", async () => {
-    const s = space(nodeRepo(), { checks: null });
+    const s = space(repo(), { checks: null });
     yesRule(s.id);
     const t = createTask(db, { spaceId: s.id, title: "Add a note" });
     start({ claude: docsWriter(true).adapter, codex: fake("codex", () => ok("VERDICT: approve")).adapter });
@@ -361,13 +354,13 @@ describe("changes to the checks themselves", () => {
     await runner!.stop();
     runner = null;
     expect(status(t.id)).toBe("review");
-    expect(getTask(db, t.id)!.loop!.attention[0]).toContain("Tool binaries changed during this task");
+    expect(getTask(db, t.id)!.loop!.attention).toEqual(["This change marks tests as skipped."]);
     // The rule's kind matches; only the note keeps it waiting.
     expect(getApproval(db, approval(t.id)!.id)!.fingerprint).toBe("v1:code:docs:small:claude");
   });
 
   test("the same change without a note is approved by the rule", async () => {
-    const s = space(nodeRepo(), { checks: null });
+    const s = space(repo(), { checks: null });
     yesRule(s.id);
     const t = createTask(db, { spaceId: s.id, title: "Add a note" });
     start({ claude: docsWriter(false).adapter, codex: fake("codex", () => ok("VERDICT: approve")).adapter });

@@ -1,11 +1,11 @@
 import type { Database } from "bun:sqlite";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { newId } from "../ids";
 import { runAgentProcess } from "../agents/process";
 import { SANDBOX_EXEC, seatbeltFailure, withPrivateTmp } from "../agents/seatbelt";
 import type { Check } from "./detect";
-import { wrapCheck } from "./sandbox";
+import { checkProfile, installProfile, wrapCheck } from "./sandbox";
 
 export type CheckStatus = "passed" | "failed" | "timeout" | "missing" | "skipped";
 export type CheckResult = Check & { status: CheckStatus; exitCode: number | null; output: string; durationMs: number };
@@ -25,11 +25,13 @@ export async function runChecks(
   opts: { signal?: AbortSignal; timeoutMs?: number; onLine?: (line: string) => void; sandboxExec?: string } = {},
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
-  // Fast checks first; a full test run is wasted on code that doesn't typecheck.
+  // The engine's install first, then fast checks, then the full test run.
   const ordered = [...checks.filter((c) => c.kind === "fast"), ...checks.filter((c) => c.kind === "full")];
   for (const check of ordered) {
     if (opts.signal?.aborted) break;
-    if (check.kind === "full" && results.some((r) => r.status === "failed" || r.status === "timeout")) {
+    // Nothing runs on dependencies that didn't install, and a full test run is wasted on code that doesn't typecheck.
+    const broken = (r: CheckResult) => r.status === "failed" || r.status === "timeout";
+    if (results.some((r) => r.install && broken(r)) || (check.kind === "full" && results.some(broken))) {
       results.push({ ...check, status: "skipped", exitCode: null, output: "", durationMs: 0 });
       continue;
     }
@@ -59,7 +61,8 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
       mkdirSync(dirname(join(files, name)), { recursive: true });
       writeFileSync(join(files, name), body);
     }
-    return runAgentProcess(wrapCheck(["/bin/sh", "-c", `exec 2>&1\n${check.command}`], cwd, [cwd, tmp], opts.sandboxExec ?? SANDBOX_EXEC), {
+    const profile = (check.install ? installProfile : checkProfile)(cwd, [cwd, tmp]);
+    return runAgentProcess(wrapCheck(["/bin/sh", "-c", `exec 2>&1\n${check.command}`], profile, opts.sandboxExec ?? SANDBOX_EXEC), {
       cwd,
       stdin: "",
       env: checkEnv(cwd, tmp, files, check.node ?? false),
@@ -82,8 +85,8 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
 function checkEnv(cwd: string, tmp: string, files: string, node: boolean): Record<string, string> {
   const keep = (k: string) => (process.env[k] ? { [k]: process.env[k]! } : {});
   return {
-    // A package script runs with the project's own tools first, as `npm run` would run it; toolBins catches an agent
-    // planting its own there. Every other check gets the system PATH and nothing from the tree.
+    // A package script runs with the project's own tools first, as `npm run` would run it; only the engine writes
+    // node_modules (agents' sandboxes can't). Every other check gets the system PATH and nothing from the tree.
     PATH: [node ? join(cwd, "node_modules", ".bin") : null, process.env.PATH].filter(Boolean).join(":"),
     ATRIUM_CHECK_FILES: files,
     ...keep("HOME"),
@@ -142,24 +145,4 @@ export function latestChecks(db: Database, taskId: string): CheckRow[] {
        FROM checks WHERE task_id = ? AND created_at = (SELECT MAX(created_at) FROM checks WHERE task_id = ?) ORDER BY rowid`,
     )
     .all(taskId, taskId) as CheckRow[];
-}
-
-// What node_modules/.bin holds: each entry, where it points and the size and time of what it points at. Compared
-// across a task's turns, a change means the tools the checks run aren't the ones the task started with.
-export function toolBins(repo: string): string {
-  const dir = join(repo, "node_modules", ".bin");
-  if (!existsSync(dir)) return "";
-  return readdirSync(dir)
-    .sort()
-    .map((name) => {
-      const path = join(dir, name);
-      try {
-        const link = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : "";
-        const st = statSync(path);
-        return `${name}\0${link}\0${st.size}\0${st.mtimeMs}`;
-      } catch {
-        return `${name}\0broken`;
-      }
-    })
-    .join("\n");
 }

@@ -50,8 +50,6 @@ export type LoopState = {
   // Things the change does to the checks themselves (edits their config, drops or skips tests): shown on the
   // result, put to the reviewer, and never approved by a rule.
   attention: string[];
-  // node_modules/.bin as the task found it (see checks/run.ts toolBins); null away from a repo.
-  toolBins: string | null;
   // Counted since the user last stepped in (started, retried or gave a hint); `unreported` when an agent
   // didn't report its tokens, so the count is a floor.
   usage: { tokens: number; ms: number; unreported: boolean };
@@ -74,7 +72,7 @@ export const SIZE_BUDGETS: Record<TaskSize, Budget> = {
   large: { tokens: 1_500_000, minutes: 90 },
 };
 
-export function newLoop(budget: Budget, toolBins: string | null = null): LoopState {
+export function newLoop(budget: Budget): LoopState {
   return {
     stage: "writing",
     checks: "pending",
@@ -90,7 +88,6 @@ export function newLoop(budget: Budget, toolBins: string | null = null): LoopSta
     report: [],
     noChanges: false,
     attention: [],
-    toolBins,
     usage: { tokens: 0, ms: 0, unreported: false },
     budget,
     paused: null,

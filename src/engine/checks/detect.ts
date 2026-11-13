@@ -5,7 +5,8 @@ export type CheckKind = "fast" | "full";
 // of their own and named through $ATRIUM_CHECK_FILES, so the copy in the agent's tree is never what runs. `node`
 // puts the project's node_modules/.bin on PATH; nothing else from the tree ever is. `notes` say what of the check
 // couldn't be pinned to the base commit.
-export type Check = { name: string; command: string; kind: CheckKind; files?: Record<string, string>; node?: boolean; notes?: string[] };
+// `install` marks the engine's own dependency install, which needs the package registry.
+export type Check = { name: string; command: string; kind: CheckKind; files?: Record<string, string>; node?: boolean; notes?: string[]; install?: boolean };
 
 // Read from the commit the task started from, never the agent's branch, and run as that exact text: an agent that
 // rewrote the test script to `exit 0` mustn't get to choose what proves its work.
@@ -162,4 +163,22 @@ export function checksFor(detected: Check[], opts: { spaceChecks: string | null;
   const base = opts.spaceChecks ? overrideChecks(opts.spaceChecks) : detected;
   if (!opts.verify || opts.verify === "auto") return base;
   return [...base.filter((c) => c.kind === "fast"), { name: "Verify", command: opts.verify, kind: "full", node: NODE_TOOL.test(opts.verify) }];
+}
+
+const INSTALLS: [string, string][] = [
+  ["bun.lock", "bun install --frozen-lockfile --ignore-scripts"],
+  ["bun.lockb", "bun install --frozen-lockfile --ignore-scripts"],
+  ["pnpm-lock.yaml", "pnpm install --frozen-lockfile --ignore-scripts"],
+  ["yarn.lock", "yarn install --frozen-lockfile --ignore-scripts"],
+  ["package-lock.json", "npm ci --ignore-scripts"],
+];
+
+export const LOCKFILES = INSTALLS.map(([lock]) => lock);
+
+// Agents can't write node_modules, so when a change touches the manifest or the lockfile the engine installs from
+// the lockfile before the checks run. `files` are the paths the change touched; `lockfiles` the ones the tree has.
+export function installFor(files: string[], lockfiles: string[]): Check | null {
+  const touched = files.some((f) => f === "package.json" || INSTALLS.some(([lock]) => f === lock));
+  const command = INSTALLS.find(([lock]) => lockfiles.includes(lock))?.[1];
+  return touched && command ? { name: "Install", command, kind: "fast", install: true } : null;
 }

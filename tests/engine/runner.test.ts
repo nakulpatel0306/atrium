@@ -190,7 +190,7 @@ test("repo task runs on atrium/<taskId> branch", async () => {
   expect(calls[0]!.systemPrompt).toContain("Atrium commits them for you.");
   expect(calls[0]!.allowedTools).toEqual([
     "Read", "Edit", "Write", "Glob", "Grep",
-    "Bash(bun test*)", "Bash(bun install --ignore-scripts*)", "Bash(bunx tsc*)",
+    "Bash(bun test*)", "Bash(bunx tsc*)",
     "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
   ]);
   const [a] = listPending(db);

@@ -4,7 +4,7 @@ import { atriumDenyPaths } from "./atrium-paths";
 import { privateReadRules, privateReads } from "./private-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
-import { agentEnv } from "./seatbelt";
+import { agentEnv, DEPENDENCY_DIRS } from "./seatbelt";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
 
@@ -33,6 +33,8 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   // Planted hooks or config in .git could run code outside the agent's tool limits.
   "Edit(**/.git/**)",
   "Write(**/.git/**)",
+  // Atrium's checks run tools from these, so only the engine installs into them.
+  ...DEPENDENCY_DIRS.flatMap((d) => [`Edit(**/${d}/**)`, `Write(**/${d}/**)`]),
   // Project settings in .claude are loaded by later runs (--setting-sources project), so an agent could widen its own permissions.
   "Edit(**/.claude/**)",
   "Write(**/.claude/**)",
@@ -79,6 +81,8 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash
           ...atriumDenyPaths(cwd),
           ...(reads?.denyRead ?? []),
         ],
+        // Bash can't install into or plant tools in the folders Atrium's checks run from.
+        denyWrite: DEPENDENCY_DIRS.map((d) => `${cwd}/${d}`),
         ...(reads?.allowRead.length && { allowRead: reads.allowRead }),
       },
       network: { allowedDomains: ["registry.npmjs.org"], allowLocalBinding: false, allowAllUnixSockets: false },

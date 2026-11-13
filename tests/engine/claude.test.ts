@@ -158,6 +158,10 @@ describe("claudeAdapter", () => {
       "Bash(*/open *)",
       "Edit(**/.git/**)",
       "Write(**/.git/**)",
+      "Edit(**/node_modules/**)",
+      "Write(**/node_modules/**)",
+      "Edit(**/.venv/**)",
+      "Write(**/.venv/**)",
       "Edit(**/.claude/**)",
       "Write(**/.claude/**)",
       // The sandbox does not cover the Read tool.

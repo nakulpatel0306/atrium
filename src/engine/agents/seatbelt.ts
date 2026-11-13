@@ -28,9 +28,12 @@ const SECRET_PATHS = [
 const SHORTCUTS_SERVICES =
   '(deny mach-lookup (global-name-prefix "com.apple.shortcuts") (global-name-prefix "com.apple.WorkflowKit") (global-name-prefix "com.apple.siri.shortcuts") (global-name "com.apple.siri.VoiceShortcuts.xpc") (global-name "com.apple.siriactionsd.xpc"))';
 
-// Inside cwd but off limits: git metadata (engine commits happen outside the sandbox), and the per-project
-// settings of Claude and agy, which an agent could otherwise use to widen its own permissions.
+// Inside cwd but off limits: git metadata (engine commits happen outside the sandbox), the per-project
+// settings of Claude and agy, which an agent could otherwise use to widen its own permissions, and the dependency
+// folders Atrium's checks run tools from, where an agent could plant its own `tsc` (see DEPENDENCY_DIRS).
 const PROTECTED_IN_CWD = [".git", ".claude", ".agents"];
+// Only the engine installs into these (checks/run.ts), from the lockfile.
+export const DEPENDENCY_DIRS = ["node_modules", ".venv"];
 
 // Devices every CLI writes to; nothing else under /dev is writable.
 const DEVICES = ["/dev/null", "/dev/zero", "/dev/tty", "/dev/dtracehelper"];
@@ -92,7 +95,7 @@ function str(p: string): string {
   return `"${p.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-const subpath = (p: string) => `(subpath ${str(canonical(p))})`;
+export const subpath = (p: string) => `(subpath ${str(canonical(p))})`;
 
 // A deny list on top of allow-default: the CLI keeps network (it must reach its provider) and normal reads,
 // but secret paths and .env files are unreadable and writes are confined to the given dirs.
@@ -135,7 +138,7 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     ...(opts.allowReadDirs?.length ? [`(allow file-read* ${opts.allowReadDirs.map(subpath).join(" ")})`] : []),
     `(deny file-write* (require-not (require-any ${writable.join(" ")} ${DEVICES.map((d) => `(literal "${d}")`).join(" ")} (regex #"^/dev/fd/[0-9]+$"))))`,
     // Writes to .env names are denied too, or an agent could rename .env to a readable name.
-    `(deny file-write* ${PROTECTED_IN_CWD.map((d) => subpath(join(cwd, d))).join(" ")} (regex #"${ENV_FILE_PATTERN}"))`,
+    `(deny file-write* ${[...PROTECTED_IN_CWD, ...DEPENDENCY_DIRS].map((d) => subpath(join(cwd, d))).join(" ")} (regex #"${ENV_FILE_PATTERN}"))`,
   ].join("\n");
 }
 

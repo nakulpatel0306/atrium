@@ -5,9 +5,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { codexStateDir, seatbeltProfile } from "../../src/engine/agents/seatbelt";
 import { checkAttention } from "../../src/engine/checks/attention";
-import { checkProfile } from "../../src/engine/checks/sandbox";
-import { checksFor, detectChecks, hintsFrom, overrideChecks } from "../../src/engine/checks/detect";
-import { failureReport, latestChecks, outcomeOf, runChecks, saveChecks, toolBins } from "../../src/engine/checks/run";
+import { checkProfile, installProfile } from "../../src/engine/checks/sandbox";
+import { checksFor, detectChecks, hintsFrom, installFor, overrideChecks } from "../../src/engine/checks/detect";
+import { sandboxSettings } from "../../src/engine/agents/claude";
+import { failureReport, latestChecks, outcomeOf, runChecks, saveChecks } from "../../src/engine/checks/run";
 import { openDb } from "../../src/engine/db";
 import { createSpace } from "../../src/engine/spaces";
 import { createTask } from "../../src/engine/tasks";
@@ -205,6 +206,7 @@ describe("the checks' own sandbox", () => {
     expect(agent).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
     const check = checkProfile("/tmp/repo", ["/tmp/repo"]);
     expect(check.startsWith(seatbeltProfile({ cwd: "/tmp/repo", writable: ["/tmp/repo"], extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")], denyKeychain: true }))).toBe(true);
+    expect(installProfile("/tmp/repo", ["/tmp/repo"])).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
     for (const port of [7420, 7421, 22, 9229]) expect(check).toContain(`(remote tcp "localhost:${port}")`);
   });
 
@@ -306,11 +308,36 @@ describe("what a check can be made to run", () => {
     ]);
   });
 
-  test("tool snapshots differ once something is planted in node_modules/.bin", () => {
-    const path = repoWith({}).path;
-    const before = toolBins(path);
-    mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
-    writeFileSync(join(path, "node_modules", ".bin", "tsc"), "#!/bin/sh\nexit 0\n");
-    expect(toolBins(path)).not.toBe(before);
+  test("a change to the manifest or lockfile gets the engine's install from the lockfile first", () => {
+    expect(installFor(["src/a.ts"], ["bun.lock"])).toBeNull();
+    expect(installFor(["package.json"], ["bun.lock"])).toEqual({ name: "Install", command: "bun install --frozen-lockfile --ignore-scripts", kind: "fast", install: true });
+    expect(installFor(["package-lock.json"], ["package-lock.json"])!.command).toBe("npm ci --ignore-scripts");
+    expect(installFor(["package.json"], [])).toBeNull();
   });
+
+  test("a failed install stops the checks that would run on it", async () => {
+    const results = await runChecks(repoWith({}).path, [
+      { name: "Install", command: "exit 1", kind: "fast", install: true },
+      { name: "Lint", command: "echo lint", kind: "fast" },
+      { name: "Tests", command: "echo tests", kind: "full" },
+    ]);
+    expect(results.map((r) => r.status)).toEqual(["failed", "skipped", "skipped"]);
+  });
+
+  test("agents can't write the dependency folders the checks run from; the engine's own runs can", async () => {
+    const path = repoWith({}).path;
+    mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
+    mkdirSync(join(path, ".venv"), { recursive: true });
+    const write = (profile: string, file: string) =>
+      Bun.spawnSync(["/usr/bin/sandbox-exec", "-p", profile, "/bin/sh", "-c", `echo planted > ${file}`], { cwd: path }).exitCode;
+    const agent = seatbeltProfile({ cwd: path, writable: [path] });
+    expect(write(agent, "node_modules/.bin/tsc")).not.toBe(0);
+    expect(write(agent, ".venv/x")).not.toBe(0);
+    expect(write(agent, "src.txt")).toBe(0);
+    expect(write(checkProfile(path, [path]), "node_modules/.bin/tsc")).toBe(0);
+    // Claude's sandbox gets the same rule, for its file tools and for Bash.
+    const settings = JSON.parse(sandboxSettings(path)) as { sandbox: { filesystem: { denyWrite: string[] } } };
+    expect(settings.sandbox.filesystem.denyWrite).toEqual([`${path}/node_modules`, `${path}/.venv`]);
+  });
+
 });
