@@ -32,7 +32,7 @@ export function tierModel(db: Database, tier: Tier): string {
 }
 
 export function setTierModel(db: Database, tier: Tier, model: string): void {
-  if (!validModel(model)) throw new Error(`"${model}" isn't a model name Claude Code takes.`);
+  if (!validModel(model)) throw new Error(`"${model}" isn't a model name Claude knows.`);
   setSetting(db, key(tier), model);
 }
 

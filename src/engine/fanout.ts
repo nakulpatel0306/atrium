@@ -7,7 +7,7 @@ import { loopNotes } from "./handoff";
 import { type Fanout, type LoopState, newLoop, SIZE_BUDGETS } from "./loop";
 import { lastRepoRun } from "./runner";
 import type { Space } from "./spaces";
-import type { SplitPart } from "./shape";
+import { childState, type SplitPart } from "./shape";
 import { plural } from "./text";
 import { createTask, getTask, setTaskLoop, setTaskStatus, type Task } from "./tasks";
 
@@ -60,18 +60,10 @@ export function fanOut(db: Database, parent: Task & { loop: LoopState }, space: 
   return children;
 }
 
+export { childState };
+
 export const childrenOf = (db: Database, parent: Task): Task[] =>
   (parent.loop?.fanout?.children ?? []).map((id) => getTask(db, id)).filter((t): t is Task => t !== null);
-
-export type ChildState = "running" | "ready" | "stuck" | "dropped";
-
-// Where a child is: ready once its loop is done; an attempt that stopped is dropped, a part that stopped waits on the
-// user, like any blocked task.
-export function childState(t: Task): ChildState {
-  if (t.status === "done" && t.loop?.stage === "ready") return "ready";
-  if (t.status === "blocked" || t.status === "failed" || t.status === "done") return t.loop?.role === "attempt" ? "dropped" : "stuck";
-  return "running";
-}
 
 // Called whenever a child settles: once every part is ready, or every attempt has finished one way or the other, the
 // parent moves on. Returns the stage it moved to, or null while it still waits.

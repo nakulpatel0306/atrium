@@ -8,7 +8,7 @@ import { announce } from "../live";
 import { navigate } from "../route";
 import { AgentPicker } from "./AgentPicker";
 import { AttachChips } from "./AttachChips";
-import { BriefCard, type Draft as BriefDraft } from "./BriefCard";
+import { BriefCard, type Draft as BriefDraft, type ShapeChoice } from "./BriefCard";
 import type { Brief } from "../../engine/brief";
 
 type Space = State["spaces"][number];
@@ -239,11 +239,18 @@ export function CommandBar({ space, setupRequest }: Props) {
     input.current?.focus();
   };
 
-  const send = async (value: string, brief?: Brief) => {
+  const send = async (value: string, brief?: Brief, shape?: ShapeChoice | null) => {
     const attachments = files.length ? await upload(space!.id) : [];
     if (!attachments) return;
     setMessage({ kind: "busy", text: "Adding the task…" });
-    const res = await post<{ task: Task }>("/api/command", { text: value, spaceId: space!.id, agent, ...(attachments.length && { attachments }), ...(brief && { brief }) });
+    const res = await post<{ task: Task }>("/api/command", {
+      text: value,
+      spaceId: space!.id,
+      agent,
+      ...(attachments.length && { attachments }),
+      ...(brief && { brief }),
+      ...(shape && { shapeDraft: shape.draft, shape: shape.kind, mixVendors: shape.mixVendors }),
+    });
     if (!res.ok) return setMessage({ kind: "error", text: res.error });
     setText("");
     setDraft(null);
@@ -274,9 +281,10 @@ export function CommandBar({ space, setupRequest }: Props) {
         {draft && !setup && (
           <BriefCard
             draft={draft}
+            spaceId={space!.id}
             repo={repo}
             busy={busy}
-            onRun={(brief) => void send(text.trim(), brief)}
+            onRun={(brief, shape) => void send(text.trim(), brief, shape)}
             onDiscard={() => {
               setDraft(null);
               input.current?.focus();

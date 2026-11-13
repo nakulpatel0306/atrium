@@ -70,7 +70,7 @@ function tiersField(v: unknown): [Tier, string][] {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new HttpError(400, "tiers must name a model for cheap, default or strong.");
   return Object.entries(v as Record<string, unknown>).map(([tier, model]) => {
     if (!TIERS.includes(tier as Tier) || typeof model !== "string" || !validModel(model.trim())) {
-      throw new HttpError(400, "Each tier takes a model name Claude Code knows, such as haiku, sonnet or opus, or nothing for its default.");
+      throw new HttpError(400, "Each tier takes a Claude model name, such as haiku, sonnet or opus, or nothing for the default.");
     }
     return [tier as Tier, model.trim()];
   });

@@ -9,6 +9,8 @@ import { duration } from "../format";
 import { attentionText, STAGE_TEXT } from "../summary";
 import { BriefQuestions } from "./BriefQuestions";
 import { Markdown } from "./Markdown";
+import { asksBeforeStarting } from "../../engine/needs";
+import { Fanout, ShapeLine } from "./Shape";
 
 type Task = State["tasks"][number];
 
@@ -176,13 +178,15 @@ function Budget({ task }: { task: Task }) {
 
 // The loop in a task's detail: its stage, the brief it runs from, the checks, each review round and how its
 // findings ended, the budget, and the way on when it's paused. Away from a repo there are no stages or checks.
-export function LoopPanel({ task, repo, showChecks }: { task: Task; repo: boolean; showChecks: boolean }) {
+export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state: State; repo: boolean; showChecks: boolean }) {
   const [checksOpen, setChecksOpen] = useState(showChecks);
   const loop = task.loop;
   const attention = attentionText(loop);
   return (
     <section className="loop">
-      {repo && <StageStrip task={task} />}
+      {repo && !loop?.fanout && <StageStrip task={task} />}
+      {repo && <ShapeLine task={task} state={state} />}
+      {repo && <Fanout task={task} state={state} />}
       {loop?.paused && task.status === "blocked" && <Paused task={task} />}
       {loop?.explanation && (
         <div className="explained">
@@ -197,7 +201,7 @@ export function LoopPanel({ task, repo, showChecks }: { task: Task; repo: boolea
         </p>
       )}
       {loop?.stage === "brief" && task.status === "running" && <p className="hint">Drafting the brief. The writer starts as soon as it's ready.</p>}
-      {loop && loop.questions.length > 0 && <BriefQuestions task={task} />}
+      {loop?.stage === "brief" && asksBeforeStarting(task) && <BriefQuestions task={task} state={state} />}
       {task.brief && (
         <details className="brief-view" open={loop?.questions.length ? true : undefined}>
           <summary>Brief</summary>

@@ -155,9 +155,9 @@ function loopTask(patch: Partial<NonNullable<Task["loop"]>>, status: Task["statu
 }
 
 test("the stage strip shows where the task is, and a pause where it stopped", () => {
-  const el = render(<LoopPanel task={loopTask({ stage: "checks", checks: "running" })} repo showChecks={false} />);
+  const el = render(<LoopPanel task={loopTask({ stage: "checks", checks: "running" })} state={makeState()} repo showChecks={false} />);
   expect(el.querySelector('.stages [aria-current="step"]')!.textContent).toBe("Checks");
-  act(() => root!.render(<LoopPanel task={loopTask({ stage: "writing", paused: { kind: "loop", diagnosis: "x" } }, "blocked")} repo showChecks={false} />));
+  act(() => root!.render(<LoopPanel task={loopTask({ stage: "writing", paused: { kind: "loop", diagnosis: "x" } }, "blocked")} state={makeState()} repo showChecks={false} />));
   expect(el.querySelector('.stages [aria-current="step"]')!.textContent).toBe("Paused");
   expect(button(el, "Give it a hint")).toBeTruthy();
   expect(button(el, "Explain the problem instead")).toBeTruthy();
@@ -173,7 +173,7 @@ test("failing check output is one click away; findings show how each was answere
     },
     "queued",
   );
-  const el = render(<LoopPanel task={task} repo showChecks={false} />);
+  const el = render(<LoopPanel task={task} state={makeState()} repo showChecks={false} />);
   expect(el.textContent).toContain("Look closely: This change edits how checks run: package.json.");
   expect(el.textContent).toContain("[high] src/a.ts:3 — misses zero → fixed: guarded it");
   await act(async () => button(el, "Show output").click());

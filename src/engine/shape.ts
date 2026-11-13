@@ -25,6 +25,8 @@ export type Shape = {
   approved: boolean;
   // The user asked for one attempt of a best-of-N to go to another vendor (Codex) when it can work in the space.
   mixVendors: boolean;
+  // Whether the repo had checks Atrium can run when the shape was proposed, which best-of-N needs to pick with.
+  checksFound: boolean;
 };
 
 // Fan-out by task size, after Anthropic's effort scaling: one agent for small work, a few for medium, at most five.
@@ -108,6 +110,7 @@ export function proposeShape(raw: unknown, ctx: ShapeContext): Shape {
     attempts: Math.min(MAX_ATTEMPTS, FAN_OUT[ctx.size], Math.max(2, Number.isInteger(r.attempts) ? (r.attempts as number) : 2)),
     approved: false,
     mixVendors: false,
+    checksFound: ctx.checksFound,
   };
   const single = (reason: string): Shape => ({ ...base, kind: "single", reason });
   if (proposed === "scouts" && !base.scouts.length) return single(DEFAULT_REASON.single);
@@ -154,6 +157,7 @@ export function storedShape(v: unknown): Shape | null {
     attempts: Math.min(MAX_ATTEMPTS, Math.max(2, Number.isInteger(r.attempts) ? (r.attempts as number) : 2)),
     approved: r.approved === true,
     mixVendors: r.mixVendors === true,
+    checksFound: r.checksFound === true,
   };
 }
 
@@ -177,4 +181,29 @@ export function fanOutEstimate(n: number, recent: Spend[], budgetTokens: number)
   const avg = (f: (s: Spend) => number) => priced.reduce((a, s) => a + f(s), 0) / priced.length;
   const fullyPriced = priced.every((s) => s.unpriced === 0);
   return { weighted: Math.round(n * avg((s) => s.weighted)), usd: fullyPriced ? n * avg((s) => s.usd) : null, basis: "recent" };
+}
+
+type ShapedTask = {
+  kind: string;
+  status: string;
+  loop: { stage: string; fanout: unknown; role: unknown; checkedSha: string | null; said: string | null; session: unknown; shape: Shape | null } | null;
+};
+
+// Whether a task's shape can still change: nothing has run past its brief, and it hasn't fanned out.
+export const shapeOpen = (t: ShapedTask): boolean =>
+  t.kind === "work" &&
+  t.status === "queued" &&
+  !!t.loop?.shape &&
+  !t.loop.fanout &&
+  !t.loop.role &&
+  (t.loop.stage === "brief" || (t.loop.stage === "writing" && t.loop.checkedSha == null && t.loop.said == null && t.loop.session == null));
+
+export type ChildState = "running" | "ready" | "stuck" | "dropped";
+
+// Where a part or attempt is: ready once its loop is done; an attempt that stopped is dropped, a part that stopped
+// waits on the user, like any blocked task.
+export function childState(t: { status: string; loop: { stage: string; role: "part" | "attempt" | null } | null }): ChildState {
+  if (t.status === "done" && t.loop?.stage === "ready") return "ready";
+  if (t.status === "blocked" || t.status === "failed" || t.status === "done") return t.loop?.role === "attempt" ? "dropped" : "stuck";
+  return "running";
 }

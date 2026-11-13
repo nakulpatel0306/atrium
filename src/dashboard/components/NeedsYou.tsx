@@ -103,7 +103,7 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   return (
     <>
       {askingTasks(state, spaceId).map((t) => (
-        <QuestionsRow key={t.id} task={t} space={spaces.get(t.spaceId)} />
+        <QuestionsRow key={t.id} task={t} space={spaces.get(t.spaceId)} state={state} />
       ))}
       {mine(state.proposals).map((p) => (
         <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />

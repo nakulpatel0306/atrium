@@ -1,16 +1,26 @@
 import { Lightbulb, Play, X } from "lucide-react";
 import { useState } from "react";
 import { type Brief, type BriefQuestion, gapHints, SIZES, type TaskSize } from "../../engine/brief";
+import { SIZE_BUDGETS } from "../../engine/loop";
+import { type Shape, type ShapeKind, shapeLine } from "../../engine/shape";
+import { useEngineState } from "../api";
+import { estimateText, ShapePicker } from "./Shape";
 
-export type Draft = { brief: Brief; questions: BriefQuestion[]; checks: string[]; error: string | null; suggestedVerify: string | null };
+// `shape` is the pre-pass's proposal, checked by the engine; null away from a repo.
+export type Draft = { brief: Brief; questions: BriefQuestion[]; checks: string[]; error: string | null; suggestedVerify: string | null; shape?: Shape | null };
+
+// The shape the card runs with: the draft's, and the kind left chosen on it, which is the user's click for one that
+// costs more.
+export type ShapeChoice = { draft: Shape; kind: ShapeKind; mixVendors: boolean };
 
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
 type Props = {
   draft: Draft;
+  spaceId: string;
   repo: boolean;
   busy: boolean;
-  onRun: (brief: Brief) => void;
+  onRun: (brief: Brief, shape: ShapeChoice | null) => void;
   onDiscard: () => void;
 };
 
@@ -18,7 +28,7 @@ type Fields = { goal: string; acceptance: string; verify: string; scope: string;
 
 // The drafted brief under the ask, every field editable. Fields keep exactly what's typed, spaces and new lines
 // included, and become a brief only when it runs. Nothing here is required: Run sends whatever it holds.
-export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
+export function BriefCard({ draft, spaceId, repo, busy, onRun, onDiscard }: Props) {
   const b = draft.brief;
   const [f, setF] = useState<Fields>({
     goal: b.goal,
@@ -30,6 +40,9 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
     size: b.size,
   });
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [kind, setKind] = useState<ShapeKind>(draft.shape?.kind ?? "single");
+  const [mix, setMix] = useState(false);
+  const state = useEngineState();
   const set = (key: keyof Fields) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [key]: e.target.value }));
   const brief: Brief = {
     ...b,
@@ -44,10 +57,13 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
   const hints = gapHints(brief, { repo, checksFound: draft.checks.length > 0 });
 
   const run = () =>
-    onRun({
-      ...brief,
-      answers: draft.questions.flatMap((q, i) => (answers[i]?.trim() ? [{ question: q.question, answer: answers[i]!.trim() }] : [])),
-    });
+    onRun(
+      {
+        ...brief,
+        answers: draft.questions.flatMap((q, i) => (answers[i]?.trim() ? [{ question: q.question, answer: answers[i]!.trim() }] : [])),
+      },
+      draft.shape ? { draft: draft.shape, kind, mixVendors: mix } : null,
+    );
 
   return (
     <div
@@ -129,6 +145,24 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
             <textarea className="mono" rows={1} value={f.lookFirst} onChange={set("lookFirst")} />
           </label>
         </>
+      )}
+      {repo && draft.shape && (
+        <div className="brief-shape">
+          <span>
+            How it runs <span className="hint">{shapeLine(draft.shape)}</span>
+          </span>
+          <ShapePicker
+            shape={draft.shape}
+            size={f.size}
+            value={kind}
+            mix={mix}
+            onChange={(k, m) => {
+              setKind(k);
+              setMix(m);
+            }}
+            estimate={(n) => (state ? estimateText(state, spaceId, SIZE_BUDGETS[f.size].tokens, n) : "")}
+          />
+        </div>
       )}
       {hints.length > 0 && (
         <ul className="brief-hints">

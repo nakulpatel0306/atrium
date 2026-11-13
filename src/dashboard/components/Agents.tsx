@@ -2,6 +2,8 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { AGENT_IDS, agentName } from "../agents";
 import { activateOnKey } from "../activate";
+import { spendText } from "../../engine/cost";
+import { compact } from "../../engine/loop";
 import { post, type State } from "../api";
 import { absolute, clock, duration, tokens } from "../format";
 import { navigate } from "../route";
@@ -65,10 +67,79 @@ function ClaudeWindow({ state }: { state: State }) {
         <span>used, so the rest stays yours. "Run now" on a task skips this.</span>
       </div>
       {error && <div className="err">{error}</div>}
-      <p className="note-line">Estimated from Claude's own limit reports; Atrium can't see your exact quota.</p>
+      <PlanLines state={state} />
     </div>
   );
 }
+
+// What Atrium can and can't see of the plan's limits: Claude's own reading and when it came, what Atrium ran in the
+// window, and that use elsewhere only shows up at the next run.
+function PlanLines({ state }: { state: State }) {
+  const { fiveHour, sevenDay, atrium } = state.plan;
+  const ago = fiveHour?.seenAt ? Math.max(0, Math.round((Date.now() - fiveHour.seenAt) / 60_000)) : null;
+  return (
+    <>
+      <p className="note-line">
+        {ago !== null ? `As Claude reported it ${ago < 1 ? "just now" : `${ago} min ago`}. ` : ""}
+        Atrium ran {compact(atrium.weighted)} weighted tokens on Claude in this window ({spendText(atrium)} at list prices).
+      </p>
+      {sevenDay && <p className="note-line">Weekly limit: {Math.round(sevenDay.utilization * 100)}% used, resets {absolute(sevenDay.resetsAt)}.</p>}
+      <p className="note-line">
+        Claude reports these only while Atrium runs it, so your use in other Claude apps shows up at Atrium's next Claude run, and Atrium can't see your plan's
+        exact quota.
+      </p>
+    </>
+  );
+}
+
+type Tier = keyof State["tiers"];
+const TIERS: Tier[] = ["cheap", "default", "strong"];
+
+// Which model each Claude tier runs on. Empty means the model the user set in Claude itself.
+function Tiers({ state }: { state: State }) {
+  const [models, setModels] = useState<Record<string, string>>(() => Object.fromEntries(TIERS.map((t) => [t, state.tiers[t].model])));
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ error: boolean; text: string } | null>(null);
+  const save = async () => {
+    setBusy(true);
+    const res = await post("/api/settings", { tiers: models });
+    setBusy(false);
+    setNote(res.ok ? { error: false, text: "Saved. New runs use these models." } : { error: true, text: res.error });
+  };
+  return (
+    <form
+      className="tiers"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <h3>Models by job</h3>
+      {TIERS.map((t) => (
+        <label key={t}>
+          <span>
+            {TIER_NAMES[t]} <span className="hint">{state.tiers[t].jobs}</span>
+          </span>
+          <input
+            className="mono"
+            value={models[t] ?? ""}
+            placeholder={state.tiers[t].stock || "your Claude default"}
+            onChange={(e) => setModels((m) => ({ ...m, [t]: e.target.value }))}
+          />
+        </label>
+      ))}
+      <p className="note-line">The defaults work on a plain Claude subscription. When the strong model isn't on your plan, Claude falls back to Sonnet.</p>
+      <div className="acts">
+        <button className="btn" type="submit" disabled={busy}>
+          Save models
+        </button>
+        {note && <span className={note.error ? "err" : "hint"}>{note.text}</span>}
+      </div>
+    </form>
+  );
+}
+
+const TIER_NAMES: Record<Tier, string> = { cheap: "Cheap", default: "Default", strong: "Strong" };
 
 function RecentRuns({ runs, state }: { runs: Run[]; state: State }) {
   if (runs.length === 0) return <p className="runs-empty">No runs yet.</p>;
@@ -135,6 +206,7 @@ function AgentRow({ id, info, state, open, onToggle }: { id: string; info: Info;
             {info.limitedUntil && <span title={absolute(info.limitedUntil)}>Limit resets {clock(info.limitedUntil)}</span>}
           </div>
           {id === "claude" && <ClaudeWindow state={state} />}
+          {id === "claude" && <Tiers state={state} />}
           <h3>Recent runs</h3>
           <RecentRuns runs={runs} state={state} />
         </div>
@@ -156,6 +228,10 @@ export function Agents({ state }: { state: State }) {
   return (
     <div className="wrap">
       <h1>Agents</h1>
+      <p className="spend-line">
+        Spent today: {compact(state.spend.today.weighted)} weighted tokens, {spendText(state.spend.today)} · this week: {compact(state.spend.week.weighted)},{" "}
+        {spendText(state.spend.week)}. Estimates at list prices; a subscription doesn't bill per token.
+      </p>
       <p className="brief">
         Who can take work right now. Auto sends work to Claude. While Claude's window is being saved, general tasks go to
         Codex or Gemini and repo work waits. Reviews go to the agent each space picks.

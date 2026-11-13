@@ -9,7 +9,7 @@ import { type Budget, type LoopState, resumed } from "../engine/loop";
 import { getSpace, type Space } from "../engine/spaces";
 import { appendTaskDetail, getTask, setTaskBrief, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
 import { tierModel } from "../engine/tiers";
-import { awaitingShape, chooseShape, proposeShape, type Shape, type ShapeKind, SHAPES, shapeChoices } from "../engine/shape";
+import { awaitingShape, chooseShape, proposeShape, type Shape, type ShapeKind, SHAPES, shapeChoices, shapeOpen } from "../engine/shape";
 import { childrenOf, discardFanout, FanoutRefused, mergeParts, partBody, pickAttempt } from "../engine/fanout";
 import { openPullRequest } from "../engine/repos/pr";
 import { recordUsage } from "../engine/usage";
@@ -52,10 +52,6 @@ export async function cardShape(space: Space, brief: Brief, raw: unknown, kind: 
     throw new HttpError(409, (e as Error).message);
   }
 }
-
-// Whether a task's shape can still change: nothing has run past its brief, and it hasn't fanned out.
-const shapeOpen = (t: Task): boolean =>
-  t.kind === "work" && t.status === "queued" && !!t.loop && !t.loop.fanout && !t.loop.role && (t.loop.stage === "brief" || (t.loop.stage === "writing" && t.loop.checkedSha == null && t.loop.said == null && t.loop.session == null));
 
 // The user's choice of shape, checked against the task as it is now.
 export async function shapeFor(db: Database, task: Task, kind: unknown, mixVendors: unknown): Promise<Shape> {
