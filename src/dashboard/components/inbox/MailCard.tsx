@@ -77,9 +77,11 @@ export function MailCard({ approval, action, folded = false }: { approval: Appro
   const ccP = parseRecipients(cc);
   const bodyIssue = body.trim() ? bodyProblem(body, action.kind) : null;
   const subjectIssue = action.kind === "new" ? subjectProblem(subject) : null;
-  const ready = !toP.problem && !ccP.problem && toP.people.length > 0 && !bodyProblem(body, action.kind) && !subjectIssue && !!accountId;
-  const canSend = ready && !locked && busy === null;
   const accounts = (overview?.accounts ?? []).filter((a) => a.preferred && a.enabled);
+  // The picker shows exactly the account the card holds; one it can't send from shows as unpicked.
+  const fromOk = accounts.some((a) => a.id === accountId);
+  const ready = !toP.problem && !ccP.problem && toP.people.length > 0 && !bodyProblem(body, action.kind) && !subjectIssue && fromOk;
+  const canSend = ready && !locked && busy === null;
   const fields = () => ({ accountId, to: toP.people, cc: ccP.people, subject, body });
   const edited = () => {
     setError(null);
@@ -133,7 +135,12 @@ export function MailCard({ approval, action, folded = false }: { approval: Appro
         <SendNotes action={action} people={[...toP.people, ...ccP.people]} />
         <label className="mail-field">
           <span className="lbl">From</span>
-          <select className="mk-input" value={accountId} disabled={locked} onChange={(e) => (setAccountId(e.target.value), edited())}>
+          <select className="mk-input" value={fromOk ? accountId : ""} disabled={locked} onChange={(e) => (setAccountId(e.target.value), edited())}>
+            {!fromOk && (
+              <option value="" disabled>
+                Pick an account
+              </option>
+            )}
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.address}

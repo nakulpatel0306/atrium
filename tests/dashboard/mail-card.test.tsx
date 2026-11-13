@@ -64,6 +64,10 @@ const button = (within: ParentNode, label: string) => {
   return b;
 };
 const click = (el: HTMLElement) => act(() => el.click());
+const loaded = () =>
+  act(async () => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  });
 async function wait(ms: number) {
   await act(async () => {
     jest.advanceTimersByTime(ms);
@@ -86,6 +90,8 @@ test("the card shows every person, who Claude added, why it needs your Send, and
 test("Send waits in the tray for five seconds with Undo, then posts the card's fields and the notes it showed", async () => {
   const card = render(<MailCard approval={approval("apr_1", "Send a reply?")} action={draft()} />);
   const tray = render(<SendTray />);
+  // The account list arrives first; Send waits for it.
+  await loaded();
   click(button(card, "Send"));
   expect(tray.textContent).toContain("Sending to Robin Vale <robin@example.net> and Kit Moreno <kit@example.org> in 5s…");
   click(button(tray, "Undo"));
@@ -132,4 +138,13 @@ test("a cancel card names the event's day and time", () => {
   const event = { calendarId: "cal_1", eventId: "evt_1", title: "Dentist", start, end: start + 3600_000, allDay: false, location: "", attendees: [], notify: false };
   const card = render(<EventCard approval={approval("apr_1", 'Cancel "Dentist"?')} action={draft({ kind: "event_cancel", event, quoted: "", to: [], reasons: [] })} />);
   expect(card.querySelector(".msg-to")!.textContent).toContain(new Date(start).toLocaleString([], { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
+});
+
+test("a From the card can't send from shows as unpicked, and Send waits for a pick", async () => {
+  const card = render(<MailCard approval={approval("apr_1", "Send a reply?")} action={draft({ accountId: "mac_gone" })} />);
+  await loaded();
+  const select = card.querySelector("select")!;
+  expect(select.value).toBe("");
+  expect(select.selectedOptions[0]!.textContent).toBe("Pick an account");
+  expect(button(card, "Send").disabled).toBe(true);
 });
