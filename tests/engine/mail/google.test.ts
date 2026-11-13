@@ -102,6 +102,42 @@ describe("Google sign-in (PKCE on a loopback redirect)", () => {
     expect(reply).toStartWith("HTTP/1.1 404");
   });
 
+  test("a state with multi-byte characters gets the plain refusal page, not a server error", async () => {
+    const flow = await auth.start({ clientId: CLIENT_ID });
+    const real = new URL(flow.url).searchParams.get("state")!;
+    const res = await approveInBrowser(flow.url, (u) => u.searchParams.set("state", `é${real.slice(1)}`));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("couldn't connect");
+  });
+
+  test("two Connects close together leave only the newer listener", async () => {
+    const [a, b] = await Promise.all([auth.start({ clientId: CLIENT_ID, clientSecret: "s3cret-one" }), auth.start({ clientId: CLIENT_ID })]);
+    expect(await a.done).toEqual({ ok: false, error: "A newer Connect Google replaced this one." });
+    await Bun.sleep(100);
+    await expect(fetch(a.redirect)).rejects.toThrow();
+    expect((await approveInBrowser(b.url)).status).toBe(200);
+  });
+
+  test("a client secret is dropped when the client changes or the last Google account goes", async () => {
+    const stored = () => Object.keys(JSON.parse(readFileSync(fakes.keychainFile, "utf8")) as Record<string, string>);
+    const first = await auth.start({ clientId: CLIENT_ID, clientSecret: "s3cret-one" });
+    expect(stored()).toContain("Atrium/google.client.secret");
+    await approveInBrowser(first.url);
+    const r = await first.done;
+    if (!r.ok) throw new Error(r.error);
+    await auth.disconnect(r.account.id);
+    expect(stored()).not.toContain("Atrium/google.client.secret");
+    await auth.start({ clientId: CLIENT_ID, clientSecret: "s3cret-two" });
+    await auth.start({ clientId: "other-client.apps.googleusercontent.com" });
+    expect(stored()).not.toContain("Atrium/google.client.secret");
+  });
+
+  test("a client Google doesn't know is named as such, not as a sign-out", async () => {
+    const flow = await auth.start({ clientId: "unknown-client.apps.googleusercontent.com" });
+    await approveInBrowser(flow.url);
+    expect(await flow.done).toEqual({ ok: false, error: "Google didn't accept the client ID and secret. Check both in Settings → Accounts, then connect again." });
+  });
+
   test("a client ID that isn't one is refused before anything starts", async () => {
     await expect(auth.start({ clientId: "not a client id" })).rejects.toThrow("Google OAuth client ID");
     expect(auth.pending()).toBe(false);

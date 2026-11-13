@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { timingSafeEqual } from "node:crypto";
 import { config } from "../../config";
+import { bus } from "../../events";
 import { getSetting, setSetting } from "../../settings";
 import { createKeychain, type Keychain } from "../../markets/keychain";
 import { getAccount, upsertAccount, type MailAccount } from "../store";
@@ -36,11 +37,17 @@ export const mailKeychain = (bin?: string): Keychain =>
 
 const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
 const random = (n: number) => b64url(crypto.getRandomValues(new Uint8Array(n)));
-const sameText = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+// Compared as bytes: two strings of the same length can differ in byte length, which timingSafeEqual refuses.
+const sameText = (a: string, b: string) => {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.byteLength === y.byteLength && timingSafeEqual(x, y);
+};
 
 // Google ends sign-ins after 7 days for an app left in Testing, which is the usual cause; a revoke reads the same.
 export const signedOutCopy = (address: string) =>
   `Google signed Atrium out of ${address}. If your Google Cloud app is still in Testing, Google does this every 7 days: press Publish app under Google Auth Platform › Audience, then connect again in Settings → Accounts.`;
+const CLIENT_REFUSED = "Google didn't accept the client ID and secret. Check both in Settings → Accounts, then connect again.";
 const OFFLINE = "Atrium couldn't reach Google. Check the Mac is online; it tries again on the next sync.";
 
 // The page the browser lands on. Fixed text only: nothing from the request is echoed back.
@@ -94,6 +101,7 @@ export function createGoogleAuth(deps: { db: Database; keychain?: Keychain; fetc
       code_verifier: verifier,
     });
     const { access_token, refresh_token, expires_in } = r.body as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
+    if ((r.body as { error?: unknown }).error === "invalid_client") throw new Error(CLIENT_REFUSED);
     if (r.status !== 200 || typeof access_token !== "string") throw new Error("Google didn't accept the sign-in. Check the client ID (and secret, if your client has one), then connect again.");
     if (typeof refresh_token !== "string") {
       throw new Error("Google didn't give Atrium lasting access. Remove Atrium under Third-party access in your Google account, then connect again.");
@@ -119,9 +127,7 @@ export function createGoogleAuth(deps: { db: Database; keychain?: Keychain; fetc
     async start(input) {
       const clientId = input.clientId.trim();
       if (!isClientId(clientId)) throw new MailProblem("other", CLIENT_ID_COPY);
-      if (input.clientSecret?.trim()) await keychain.set(SECRET_ACCOUNT, toHex(input.clientSecret.trim()));
-      setSetting(db, CLIENT_ID_KEY, clientId);
-      // A second Connect replaces the first; the earlier listener and its state stop working at once.
+      // A second Connect replaces the first, before anything here waits, so two close together can't both stay live.
       if (flow) flow.finish({ ok: false, error: "A newer Connect Google replaced this one." });
 
       const verifier = random(48);
@@ -164,12 +170,24 @@ export function createGoogleAuth(deps: { db: Database; keychain?: Keychain; fetc
       const timer = setTimeout(() => finish({ ok: false, error: "The Google sign-in timed out. Press Connect Google to try again." }), FLOW_TIMEOUT_MS);
       const current = { server, finish };
       flow = current;
+      try {
+        // A secret belongs to its client: a new client ID without one clears the old one rather than reuse it.
+        const secret = input.clientSecret?.trim();
+        if (secret) await keychain.set(SECRET_ACCOUNT, toHex(secret));
+        else if (getSetting(db, CLIENT_ID_KEY) !== clientId) await keychain.remove(SECRET_ACCOUNT);
+        setSetting(db, CLIENT_ID_KEY, clientId);
+      } catch (e) {
+        finish({ ok: false, error: e instanceof Error ? e.message : String(e) });
+        throw e;
+      }
       void done.then((r) => {
         // Let the browser get its page before the listener goes.
         clearTimeout(timer);
         setTimeout(() => {
           server.stop(true);
           if (flow === current) flow = null;
+          // The dashboard stops showing "finish signing in" even when nothing else changed (a second cancel).
+          bus.emit({ type: "changed" });
         }, 50);
         if (r.ok) deps.onConnected?.(r.account);
       });
@@ -198,6 +216,7 @@ export function createGoogleAuth(deps: { db: Database; keychain?: Keychain; fetc
       const secret = await clientSecret();
       const r = await post(config().google.tokenUrl, { grant_type: "refresh_token", refresh_token: fromHex(hex), client_id: clientId, ...(secret ? { client_secret: secret } : {}) });
       const access = (r.body as { access_token?: unknown }).access_token;
+      if ((r.body as { error?: unknown }).error === "invalid_client") throw new MailProblem("other", CLIENT_REFUSED);
       if (r.status === 400 || r.status === 401) throw new MailProblem("signed_out", signedOutCopy(account.address));
       if (r.status !== 200 || typeof access !== "string") throw new MailProblem("other", "Google didn't answer the sign-in check. Atrium tries again on the next sync.");
       const expiresIn = (r.body as { expires_in?: unknown }).expires_in;
@@ -211,6 +230,9 @@ export function createGoogleAuth(deps: { db: Database; keychain?: Keychain; fetc
       const hex = await keychain.get(refreshAccount(accountId)).catch(() => null);
       if (hex) await post(config().google.revokeUrl, { token: fromHex(hex) }).catch(() => {});
       await keychain.remove(refreshAccount(accountId));
+      // The client secret goes with the last Google account; the client ID stays in Settings for next time.
+      const others = db.query("SELECT 1 FROM mail_accounts WHERE source = 'google' AND id != ?").get(accountId);
+      if (!others) await keychain.remove(SECRET_ACCOUNT);
     },
   };
 }

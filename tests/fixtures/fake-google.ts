@@ -99,6 +99,8 @@ export function startFakeGoogle(data: FakeData): FakeGoogle {
       }
       if (p === "/token" && req.method === "POST") {
         const f = new URLSearchParams(await req.text());
+        // A client Google doesn't know, as when the ID or secret is wrong.
+        if (f.get("client_id")?.startsWith("unknown-")) return err(401, { error: "invalid_client" });
         if (f.get("grant_type") === "authorization_code") {
           const c = codes.get(f.get("code") ?? "");
           codes.delete(f.get("code") ?? "");
