@@ -75,7 +75,6 @@ The writer and the checks share a codebase, so tampering can't be made impossibl
 ### Known limits of the gate
 
 - **A merge of parts** combines changes each checked on its own; the merged branch is checked again before anything reaches you, but a conflict git resolves cleanly can still combine badly. The review reads the merged diff.
-- **Scouts through Claude Code's subagents** rely on Claude Code applying the session's deny rules and sandbox to them, which its docs describe and Atrium's tests can't run against a real CLI.
 
 - **Editing the tests themselves.** A writer can weaken an assertion without dropping a file or adding a skip. The reviewer is told to judge against the brief, and you see the diff.
 - **Repo code the checks call.** Tests, source and helpers are the writer's to change; only the command definitions are pinned. A script a Makefile recipe builds at run time, or names through a variable, isn't seen.
@@ -135,7 +134,9 @@ The task shows the reason ("Single writer: sequential change in one module") and
 
 ### Scouts
 
-A Claude writer gets one subagent through Claude Code's own `--agents` and Agent tool: `atrium-scout`, read-only (Read, Glob, Grep), on the cheap tier, foreground, with a turn cap and an answer of about 1,500 words. Its allowed tools add `Agent(atrium-scout)` and nothing else, so the writer can't spawn a general-purpose subagent, and the session's deny rules and sandbox apply to the scout as to the writer. The first turn's prompt lists the scouts' questions. Any other writer gets Atrium's own scouts instead: a short read-only Claude session per question before the first turn, its answer capped at 8 KB and fenced in the writer's prompt as untrusted. Scouts' tokens count toward the task's budget.
+Before the writer's first turn, Atrium runs one short read-only Claude session per scout question (Read, Glob, Grep; the cheap tier; a turn cap; an answer of about 1,500 words), for any writer. The question reaches the scout fenced, since the pre-pass wrote it, and each answer (capped at 8 KB) reaches the writer fenced as untrusted. Scouts' tokens count toward the task's budget.
+
+Claude Code's own subagents aren't used. Measured on Claude Code 2.1.323: in `dontAsk` mode a run may use tools no allow rule names, so a writer allowed only `Agent(atrium-scout)` still spawned a `general-purpose` subagent that wrote into the checkout, a second writer on the branch. The same run could also create a worktree and branch (EnterWorktree), run a command outside the Bash rules (Monitor) and schedule a prompt (CronCreate). So every Claude run passes `--tools` with exactly the built-in tools Atrium allows it; the CLI then removes every other tool, for its subagents as well ("Agent is disabled for this session, in subagents as well as here"). The session's deny rules did hold for subagents (a subagent's `Read .env` was refused), but with no Agent tool there are none.
 
 ### Split
 

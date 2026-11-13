@@ -36,7 +36,7 @@ Each task has a token and time budget. An agent that repeats itself or stops mak
 One writer is the default, because more agents make most coding worse. The brief's pre-pass also suggests how the task should run, with a one-line reason on the task ("Single writer: sequential change in one module") and a one-click change while it hasn't started:
 
 - **Single writer**, for sequential or single-module work.
-- **Scouts, then one writer**, when the work first needs broad reading. Claude's own subagents do the reading, read-only on a cheap model, and hand the writer short answers instead of everything they read.
+- **Scouts, then one writer**, when the work first needs broad reading. Read-only scout sessions on a cheap model do the reading and hand the writer short answers instead of everything they read.
 - **Split into tasks**, for independent parts with their own files. Each part runs the whole loop as a task of its own, on its own branch; then you open their pull requests or merge them into one branch, which Atrium checks and reviews again.
 - **Best of N**, for uncertain work the repo's checks can judge. Two or three attempts run on their own branches; any that fail the checks are dropped, a strong model scores the rest against the brief, and you pick one.
 

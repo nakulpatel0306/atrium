@@ -64,7 +64,7 @@ import { recordUsage, runModels, withModels } from "./usage";
 import { planSession, progressNote, type Session } from "./sessions";
 import { awaitingShape, costlier, proposeShape, shapeLine } from "./shape";
 import { childrenOf, childState, fanIn, fanOut, judgePrompt, parseScores } from "./fanout";
-import { SCOUT_AGENT, SCOUT_TOOLS, SCOUT_TURNS, scoutAgent, scoutFindings, scoutSystemPrompt, scoutsSection } from "./scouts";
+import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -739,11 +739,11 @@ export function createRunner(deps: {
       writing && !adopted && adapter.id === "claude" && !space.private
         ? planSession(shown.loop?.session ?? null, { now: Date.now(), tier: tierName, fresh: !!added || !!shown.loop?.feedback })
         : null;
-    // Scouts run before the first writer turn only: through Claude Code's own subagents for a Claude writer, or as
-    // Atrium's own read-only sessions for any other.
+    // Scouts run before the first writer turn only, as Atrium's own read-only sessions for any writer. Claude Code's
+    // subagents can't be limited to a read-only scout (dontAsk lets a writer spawn any agent type), so writers get no
+    // Agent tool at all.
     const scoutQuestions = writing && !adopted && shown.loop?.shape?.kind === "scouts" && !hadTurn(shown) ? shown.loop.shape.scouts : [];
-    const subagents = scoutQuestions.length > 0 && adapter.id === "claude";
-    const scouted = scoutQuestions.length && !subagents ? await runScouts(task, space, repo!, scoutQuestions, r.signal) : null;
+    const scouted = scoutQuestions.length ? await runScouts(task, space, repo!, scoutQuestions, r.signal) : null;
     if (plan && !plan.resume && plan.why === "context") {
       logActivity(db, space.id, "atrium", `${task.title}: the last session held ${compact(shown.loop!.session!.context)} tokens of context, so this turn starts a fresh one with a progress note.`, { taskId: task.id });
     }
@@ -756,7 +756,7 @@ export function createRunner(deps: {
       const coldPrompt = async () =>
         explaining
           ? explainPrompt(task, repo ? await branchContext(repo) : null)
-          : buildPrompt(shown, space, checks, writing && repo && hadTurn(shown) ? await progressFor(repo, shown) : null, subagents ? scoutsSection(scoutQuestions) : scouted);
+          : buildPrompt(shown, space, checks, writing && repo && hadTurn(shown) ? await progressFor(repo, shown) : null, scouted);
       const run = (prompt: string, session: AgentRunInput["session"]) => {
         // Reading the checks and the branch takes a moment, in which a stop can land before the agent has started.
         if (r.signal.aborted) throw new StoppedEarly();
@@ -766,8 +766,7 @@ export function createRunner(deps: {
           systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
           // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
           // An explanation reads only: no Bash at all, with the branch's history and diff already in its prompt.
-          allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? []), ...(subagents ? [`Agent(${SCOUT_AGENT})`] : [])] : BASE_TOOLS,
-          ...(subagents && { agents: scoutAgent(tierModel(db, "cheap") || undefined) }),
+          allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
           privateData: space.private,
           mode: readOnly ? "review" : "work",
           ...tier,
@@ -1163,8 +1162,8 @@ export function createRunner(deps: {
     setTaskLoop(db, taskId, { ...loop, usage: { tokens: loop.usage.tokens + tokens, ms: loop.usage.ms + ms, unreported } });
   }
 
-  // Atrium's own scouts for a writer that isn't Claude: a short read-only Claude session per question, on the cheap
-  // tier. One that can't answer is left out; the writer still starts.
+  // Atrium's own scouts: a short read-only Claude session per question, on the cheap tier, before the writer's first
+  // turn. One that can't answer is left out; the writer still starts.
   async function runScouts(task: Task, space: Space, repo: RepoRun, questions: string[], signal: AbortSignal): Promise<string | null> {
     const claude = adapters.claude;
     if (!claude) return null;
@@ -1173,7 +1172,7 @@ export function createRunner(deps: {
       if (signal.aborted) break;
       const res = await claude
         .run({
-          prompt: `Task the writer will do next: ${task.brief?.goal || task.title}\n\nYour question: ${question}`,
+          prompt: scoutPrompt(task.brief?.goal || task.title, question),
           cwd: repo.path,
           systemPrompt: scoutSystemPrompt,
           allowedTools: SCOUT_TOOLS,

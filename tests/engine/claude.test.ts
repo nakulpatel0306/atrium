@@ -51,7 +51,7 @@ describe("claudeAdapter", () => {
     }
   });
 
-  test("a kept session starts under its id or resumes it; the tier's fallback model and subagents pass through", async () => {
+  test("a kept session starts under its id or resumes it, the tier's fallback model passes through, and only allowed tools exist", async () => {
     const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
     process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
     const id = "0b0e7c1a-3c1d-4c5e-9f00-2a1b3c4d5e6f";
@@ -66,9 +66,11 @@ describe("claudeAdapter", () => {
       const warm = await argv({ session: { id, resume: true }, model: "opus", fallbackModel: "sonnet" });
       expect(warm[warm.indexOf("--resume") + 1]).toBe(id);
       expect(warm[warm.indexOf("--fallback-model") + 1]).toBe("sonnet");
-      const scouts = { "atrium-scout": { description: "Reads", prompt: "Read only.", tools: ["Read"], model: "haiku", background: false } };
-      const withAgents = await argv({ agents: scouts });
-      expect(JSON.parse(withAgents[withAgents.indexOf("--agents") + 1]!)).toEqual(scouts);
+      // Only the allowed built-in tools exist in the run, so Agent, EnterWorktree, Monitor and the rest aren't there
+      // to spawn a second writer or run a command outside the Bash rules.
+      const tools = await argv({ allowedTools: ["Read", "Edit", "Bash(bun test*)", "Bash(git status*)"] });
+      expect(tools[tools.indexOf("--tools") + 1]).toBe("Read,Edit,Bash");
+      expect(tools).not.toContain("--agents");
       await expect(claudeAdapter(FAKE).run({ ...input(), session: { id: "--dangerously-skip-permissions", resume: true } })).rejects.toThrow("Invalid session id");
       await expect(claudeAdapter(FAKE).run({ ...input(), model: "--x" })).rejects.toThrow("Invalid model");
     } finally {

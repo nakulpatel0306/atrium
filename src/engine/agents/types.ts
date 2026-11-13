@@ -20,12 +20,7 @@ export interface AgentRunInput {
   // A session the CLI keeps on disk: started under this id, or resumed from it, so a turn inside the prompt cache's
   // window reads its context from the cache. Without one, nothing is kept. Only Claude takes it.
   session?: { id: string; resume: boolean };
-  // Subagents the run may hand work to through Claude Code's own Agent tool (see scouts.ts). Only Claude takes them.
-  agents?: Record<string, SubagentDefinition>;
 }
-
-// `background: false` keeps the run waiting for the subagent's answer instead of carrying on without it.
-export type SubagentDefinition = { description: string; prompt: string; tools: string[]; model?: string; maxTurns?: number; background: boolean };
 
 // One model's tokens. Claude reports them per model, subagents included; see usage.ts for how a resumed session's
 // running totals become one turn's share.

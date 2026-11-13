@@ -8,6 +8,9 @@ import { agentEnv, DEPENDENCY_DIRS } from "./seatbelt";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, ModelTokens, WindowUsage } from "./types";
 
+// "Bash(bun test*)" is the Bash tool with a rule; --tools takes only the tool names.
+const builtinTools = (allowed: string[]): string[] => [...new Set(allowed.map((t) => t.replace(/\(.*$/, "")))];
+
 const usesBash = (tools: string[]) => tools.some((t) => t === "Bash" || t.startsWith("Bash("));
 
 const denyRules = (cwd: string, privateData = false, bash = true) => [
@@ -237,10 +240,13 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           ...(input.model ? ["--model", input.model] : []),
           ...(input.fallbackModel ? ["--fallback-model", input.fallbackModel] : []),
           ...(input.maxTurns ? ["--max-turns", String(input.maxTurns)] : []),
-          ...(input.agents ? ["--agents", JSON.stringify(input.agents)] : []),
           "--append-system-prompt", input.systemPrompt,
-          // No tools at all ("--tools ''") rather than an empty allow list, which the variadic flag can't express.
-          ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : ["--tools", ""]),
+          // Only the built-in tools Atrium allows exist in the run at all. Without --tools, dontAsk still lets an agent
+          // use tools no rule names (Agent, EnterWorktree, Monitor, CronCreate…: a second writer, a worktree, a command
+          // outside the Bash rules), and Claude Code removes the others for its subagents too. No tools at all is
+          // "--tools ''", since an empty allow list can't be expressed with the variadic flag.
+          "--tools", builtinTools(input.allowedTools).join(","),
+          ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : []),
           "--disallowedTools", ...denyRules(input.cwd, input.privateData, usesBash(input.allowedTools)), ...(input.allowedTools.length ? [] : ["mcp__*"]),
         ],
         { cwd: input.cwd, stdin: input.prompt, env: agentEnv(process.env), signal: input.signal, onLine: handle },
