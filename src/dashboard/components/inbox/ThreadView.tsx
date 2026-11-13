@@ -1,6 +1,9 @@
-import { ArrowLeft, FileSearch, Paperclip } from "lucide-react";
+import { ArrowLeft, FileSearch, Forward, Paperclip, Reply, ReplyAll } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { post } from "../../api";
+import type { MailKind } from "../../../engine/mail/compose";
+import { post, useEngineState } from "../../api";
+import { announce } from "../../live";
+import { DraftCard } from "./DraftCard";
 import { absolute, bytes } from "../../format";
 import { type MessageView, personName, splitQuoted, useThread } from "../../mail";
 
@@ -95,11 +98,25 @@ function Message({ m, threadId, last, loading }: { m: MessageView; threadId: str
   );
 }
 
+const KIND_LABEL: Record<Exclude<MailKind, "new">, string> = { reply: "Reply", reply_all: "Reply all", forward: "Forward" };
+
+// Opens a draft card under the thread. The engine fills in who it goes to from the thread's own headers.
+export async function startDraft(threadId: string, kind: Exclude<MailKind, "new">): Promise<string | null> {
+  const res = await post("/api/mail/drafts", { kind, threadId });
+  if (!res.ok) return res.error;
+  announce(`${KIND_LABEL[kind]} drafted below the thread.`);
+  return null;
+}
+
 // The chain, oldest first. Nothing in it loads from the web: bodies are text and attachments open only on request.
 export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
   const detail = useThread(id);
+  const state = useEngineState();
   const head = useRef<HTMLHeadingElement>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const draft = async (kind: Exclude<MailKind, "new">) => setDraftError(await startDraft(id, kind));
+  const drafts = (state?.mailActions ?? []).filter((m) => m.threadId === id);
   // Bodies are fetched once per opening, not on every refresh of the view.
   useEffect(() => {
     void post(`/api/mail/threads/${encodeURIComponent(id)}/open`, {});
@@ -136,6 +153,25 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
       {messages.map((m, i) => (
         <Message key={m.id} m={m} threadId={thread.id} last={i === messages.length - 1} loading={loading && m.body === null} />
       ))}
+      <div className="thread-acts" role="group" aria-label="Answer this thread">
+        <button className="btn" onClick={() => void draft("reply")} aria-keyshortcuts="r">
+          <Reply />
+          Reply
+        </button>
+        <button className="btn" onClick={() => void draft("reply_all")} aria-keyshortcuts="a">
+          <ReplyAll />
+          Reply all
+        </button>
+        <button className="btn" onClick={() => void draft("forward")} aria-keyshortcuts="f">
+          <Forward />
+          Forward
+        </button>
+        {draftError && <span className="err">{draftError}</span>}
+      </div>
+      {drafts.map((d) => {
+        const approval = state?.approvals.find((a) => a.id === d.approvalId);
+        return approval ? <DraftCard key={d.id} approval={approval} action={d} /> : null;
+      })}
     </div>
   );
 }

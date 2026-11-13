@@ -1,6 +1,9 @@
-import { ChevronLeft, ChevronRight, MapPin, Repeat } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight, MapPin, Repeat } from "lucide-react";
 import { useMemo, useState } from "react";
+import { post, useEngineState } from "../../api";
 import { clock } from "../../format";
+import { announce } from "../../live";
+import { DraftCard } from "./DraftCard";
 import { addDays, agenda, type EventView, type MailOverview, overlaps, placeDay, startOfDay, startOfWeek, useEvents } from "../../mail";
 
 const HOUR_PX = 40;
@@ -11,7 +14,60 @@ function when(e: EventView): string {
   return `${clock(e.start)} – ${clock(e.end)}`;
 }
 
-function AgendaRow({ e, clash }: { e: EventView; clash: boolean }) {
+const ANSWERS = [
+  { id: "accepted", label: "Going" },
+  { id: "tentative", label: "Maybe" },
+  { id: "declined", label: "Not going" },
+] as const;
+
+// The user's own answer to an invitation, sent at once: it's his action, like answering in Calendar.
+function Rsvp({ e }: { e: EventView }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const answer = async (id: (typeof ANSWERS)[number]["id"], label: string) => {
+    setBusy(true);
+    const res = await post(`/api/mail/events/${encodeURIComponent(e.id)}/rsvp`, { answer: id, note });
+    setBusy(false);
+    setError(res.ok ? null : res.error);
+    if (res.ok) announce(`Answered ${e.title || "the invitation"}: ${label}.`);
+  };
+  return (
+    <div className="cal-rsvp" role="group" aria-label={`Answer ${e.title || "this invitation"}`}>
+      {ANSWERS.map((a) => (
+        <button key={a.id} className="btn" aria-pressed={e.myStatus === a.id} disabled={busy} onClick={() => void answer(a.id, a.label)}>
+          {a.label}
+        </button>
+      ))}
+      <input className="mk-input cal-note" value={note} maxLength={500} placeholder="Note (optional)" aria-label="Note to the organizer" onChange={(x) => setNote(x.target.value)} />
+      {error && <span className="err">{error}</span>}
+    </div>
+  );
+}
+
+// Move or cancel opens a card first; nothing changes until its own button and Undo window.
+function OwnActions({ e }: { e: EventView }) {
+  const [error, setError] = useState<string | null>(null);
+  const draft = async (kind: "event_move" | "event_cancel") => {
+    const res = await post("/api/mail/event-drafts", { kind, eventId: e.id });
+    setError(res.ok ? null : res.error);
+  };
+  return (
+    <span className="cal-own">
+      <button className="btn link subtle" onClick={() => void draft("event_move")}>
+        Move
+      </button>
+      <button className="btn link subtle" onClick={() => void draft("event_cancel")}>
+        Cancel event
+      </button>
+      {error && <span className="err">{error}</span>}
+    </span>
+  );
+}
+
+function AgendaRow({ e, clash, own }: { e: EventView; clash: boolean; own: Set<string> }) {
+  const invited = e.myStatus !== null && !!e.organizer && !own.has(e.organizer);
+  const mine = (!e.organizer || own.has(e.organizer)) && !e.recurring;
   return (
     <div className="item cal-row">
       <span className="cal-dot" style={{ background: e.calendar.color }} title={e.calendar.title} aria-hidden />
@@ -32,11 +88,13 @@ function AgendaRow({ e, clash }: { e: EventView; clash: boolean }) {
       {e.recurring && <Repeat aria-label="Repeats" className="faint-ic" />}
       {e.myStatus && e.myStatus !== "accepted" && <span className="tag">{STATUS[e.myStatus]}</span>}
       {clash && <span className="tag bad">Overlaps</span>}
+      {mine && <OwnActions e={e} />}
+      {invited && <Rsvp e={e} />}
     </div>
   );
 }
 
-function Agenda({ now }: { now: number }) {
+function Agenda({ now, own }: { now: number; own: Set<string> }) {
   const from = startOfDay(now);
   const events = useEvents(from, addDays(from, 7));
   const clashes = useMemo(() => overlaps(events ?? []), [events]);
@@ -46,7 +104,7 @@ function Agenda({ now }: { now: number }) {
       {agenda(events, now).map((g) => (
         <section key={g.day} aria-label={g.label}>
           <h3 className="cal-day">{g.label}</h3>
-          <div className="list">{g.events.length ? g.events.map((e) => <AgendaRow key={e.id} e={e} clash={clashes.has(e.id)} />) : <div className="empty-row">Nothing scheduled.</div>}</div>
+          <div className="list">{g.events.length ? g.events.map((e) => <AgendaRow key={e.id} e={e} clash={clashes.has(e.id)} own={own} />) : <div className="empty-row">Nothing scheduled.</div>}</div>
         </section>
       ))}
     </div>
@@ -137,8 +195,27 @@ function WeekGrid({ now }: { now: number }) {
 export function CalendarView({ overview }: { overview: MailOverview }) {
   const now = Date.now();
   const shown = overview.calendars.filter((c) => c.enabled && !c.hidden);
+  const own = new Set(overview.accounts.map((a) => a.address));
+  const state = useEngineState();
+  const drafts = (state?.mailActions ?? []).filter((m) => m.event);
+  const [error, setError] = useState<string | null>(null);
+  const newEvent = async () => {
+    const res = await post("/api/mail/event-drafts", { kind: "event_create" });
+    setError(res.ok ? null : res.error);
+  };
   return (
     <div className="calendar">
+      <div className="cal-tools">
+        <button className="btn" onClick={() => void newEvent()} disabled={!shown.some((c) => c.writable)}>
+          <CalendarPlus />
+          New event
+        </button>
+        {error && <span className="err">{error}</span>}
+      </div>
+      {drafts.map((d) => {
+        const approval = state?.approvals.find((a) => a.id === d.approvalId);
+        return approval ? <DraftCard key={d.id} approval={approval} action={d} /> : null;
+      })}
       {shown.length > 0 && (
         <ul className="cal-legend" aria-label="Calendars">
           {shown.map((c) => (
@@ -149,7 +226,7 @@ export function CalendarView({ overview }: { overview: MailOverview }) {
           ))}
         </ul>
       )}
-      <Agenda now={now} />
+      <Agenda now={now} own={own} />
       <WeekGrid now={now} />
     </div>
   );
