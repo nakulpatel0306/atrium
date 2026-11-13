@@ -247,7 +247,7 @@ describe("drafts and sends", () => {
   test("an invitation email's thread carries its event, so it can be answered right there", async () => {
     await connectGoogle();
     const acct = listAccounts(db)[0]!;
-    ingestMessages(db, acct, [{ sourceId: "inv-1", threadKey: "gt-invite", messageId: "<inv@example.org>", inReplyTo: null, references: [], subject: "Invitation: Planning with Kit @ Tue Nov 3", from: { name: "Kit Moreno", address: "kit@example.org" }, to: [{ name: "", address: SAM }], cc: [], date: T0, snippet: "", unread: true, labels: ["INBOX"], attachments: [] }]);
+    ingestMessages(db, acct, [{ sourceId: "inv-1", threadKey: "gt-invite", messageId: "<inv@example.org>", inReplyTo: null, references: [], subject: "Invitation: Planning with Kit @ Tue Nov 3", from: { name: "Kit Moreno", address: "kit@example.org" }, to: [{ name: "", address: SAM }], cc: [], date: T0, snippet: "", unread: true, sent: false, labels: ["INBOX"], attachments: [] }]);
     const thread = listThreads(db).find((t) => t.subject.startsWith("Invitation:"))!;
     const detail = await get<{ invite: { id: string; title: string; myStatus: string } | null }>(`/api/mail/threads/${thread.id}`);
     expect(detail.invite).toMatchObject({ title: "Planning with Kit", myStatus: "accepted" });
@@ -265,7 +265,7 @@ describe("drafts and sends", () => {
     expect(fakes.google.writes.at(-1)!.body).toEqual({ addLabelIds: ["INBOX"] });
     expect(listThreads(db).map((t) => t.id)).toContain(lease.id);
     await send("POST", `/api/mail/threads/${lease.id}/archive`, {});
-    ingestMessages(db, listAccounts(db)[0]!, [{ sourceId: "gm-9", threadKey: "gt-lease", messageId: "<lease-9@example.net>", inReplyTo: null, references: [], subject: "Re: Lease renewal", from: { name: "Robin Vale", address: "robin@example.net" }, to: [{ name: "", address: SAM }], cc: [], date: NOW, snippet: "", unread: true, labels: ["INBOX"], attachments: [] }]);
+    ingestMessages(db, listAccounts(db)[0]!, [{ sourceId: "gm-9", threadKey: "gt-lease", messageId: "<lease-9@example.net>", inReplyTo: null, references: [], subject: "Re: Lease renewal", from: { name: "Robin Vale", address: "robin@example.net" }, to: [{ name: "", address: SAM }], cc: [], date: NOW, snippet: "", unread: true, sent: false, labels: ["INBOX"], attachments: [] }]);
     expect(listThreads(db).map((t) => t.id)).toContain(lease.id);
   });
 

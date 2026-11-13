@@ -232,7 +232,7 @@ export function ingestMessages(db: Database, account: { id: string; address: str
       const key = m.messageId ?? `src:${m.sourceId}`;
       const existing = db.query("SELECT id, thread_id FROM mail_messages WHERE account_id = ? AND msg_key = ?").get(account.id, key) as { id: string; thread_id: string } | null;
       if (existing) {
-        db.query("UPDATE mail_messages SET unread = ?, source_id = ? WHERE id = ?").run(m.unread ? 1 : 0, m.sourceId, existing.id);
+        db.query("UPDATE mail_messages SET unread = ?, source_id = ?, sent = MAX(sent, ?) WHERE id = ?").run(m.unread ? 1 : 0, m.sourceId, m.sent ? 1 : 0, existing.id);
         touched.add(existing.thread_id);
         labelThread(db, existing.thread_id, m.labels);
         continue;
@@ -243,8 +243,8 @@ export function ingestMessages(db: Database, account: { id: string; address: str
       db.query("INSERT OR IGNORE INTO mail_threads (id, account_id, thread_key, subject, last_at) VALUES (?, ?, ?, ?, ?)").run(threadId, account.id, threadKey, m.subject, m.date);
       labelThread(db, threadId, m.labels);
       db.query(
-        `INSERT INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments, sent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         hashId("msg", account.id, key),
         threadId,
@@ -263,6 +263,7 @@ export function ingestMessages(db: Database, account: { id: string; address: str
         m.unread ? 1 : 0,
         m.attachments.length ? 1 : 0,
         JSON.stringify(m.attachments),
+        m.sent ? 1 : 0,
       );
       touched.add(threadId);
       // New mail from someone else brings an archived thread back, as Gmail does.
@@ -300,8 +301,8 @@ export function addSentCopy(db: Database, account: { id: string; address: string
   db.transaction(() => {
     db.query("INSERT OR IGNORE INTO mail_threads (id, account_id, thread_key, subject, last_at) VALUES (?, ?, ?, ?, ?)").run(threadId, account.id, threadKey, m.subject, m.date);
     db.query(
-      `INSERT OR IGNORE INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      `INSERT OR IGNORE INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments, sent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
     ).run(id, threadId, account.id, key, m.messageId, m.sourceId, m.inReplyTo, JSON.stringify(m.references), m.subject, JSON.stringify(m.from), JSON.stringify(m.to), JSON.stringify(m.cc), m.date, m.snippet, m.attachments.length ? 1 : 0, JSON.stringify(m.attachments));
     refreshThread(db, threadId, account.address);
   })();

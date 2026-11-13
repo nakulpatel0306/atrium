@@ -30,6 +30,7 @@ export function googleData(): FakeData {
               references: "<lease-1@example.net>",
               text: "Thanks! Can we sign Thursday?\n\nOn Mon, Robin wrote:\n> Hi Sam, the lease renews on Dec 1.",
               attachments: [{ name: "lease.pdf", size: 15, data: "%PDF-1.4 fake" }],
+              labels: ["SENT"],
             },
           ],
         },
@@ -75,7 +76,7 @@ export function pimData() {
       ],
       "acct-icloud": [
         { id: "ap-2", messageId: "<trip-1@example.org>", inReplyTo: null, references: null, subject: "Trip plan", from: "Kit Moreno <kit@example.org>", to: "sam.rivera@example.org", cc: "", date: new Date(T0).toISOString(), read: false, snippet: "Train at 9?", attachments: [{ name: "tickets.pdf", size: 2048 }] },
-        { id: "ap-3", messageId: "<trip-2@example.org>", inReplyTo: "<trip-1@example.org>", references: "<trip-1@example.org>", subject: "Re: Trip plan", from: "Sam Rivera <sam.rivera@example.org>", to: "kit@example.org", cc: "", date: new Date(T0 + 60_000).toISOString(), read: true, snippet: "Yes", attachments: [] },
+        { id: "ap-3", mailbox: "Sent", messageId: "<trip-2@example.org>", inReplyTo: "<trip-1@example.org>", references: "<trip-1@example.org>", subject: "Re: Trip plan", from: "Sam Rivera <sam.rivera@example.org>", to: "kit@example.org", cc: "", date: new Date(T0 + 60_000).toISOString(), read: true, snippet: "Yes", attachments: [] },
       ],
     },
     bodies: { "ap-2": { text: null, html: "<p>Train at 9?</p>", attachments: [{ name: "tickets.pdf", size: 2048 }] } },

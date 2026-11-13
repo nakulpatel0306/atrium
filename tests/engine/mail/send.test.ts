@@ -165,8 +165,23 @@ describe("what needs the explicit Send", () => {
       explicitReasons(db, { kind: "new", accountId: acct.id, threadId: null, threadAccountId: null, to: [{ name: "", address, added: true }], cc: [], attachments: [], event: null }, NOW).map((r) => r.kind);
     expect(reasons("drop@example.net")).toEqual(["first_time"]);
     expect(reasons("promo@example.org")).toEqual(["first_time"]);
-    // Robin got mail from you on the lease thread.
+    // Robin got mail from you on the lease thread, which Gmail filed as sent.
     expect(reasons("robin@example.net")).toEqual([]);
+    // Mail that only claims to be from you, but wasn't filed as sent, doesn't count.
+    ingestMessages(db, acct, [msg({ sourceId: "s2", messageId: "<spoof@example.org>", subject: "Hi", from: { name: "Sam", address: SAM }, to: [{ name: "", address: "spoofed@example.net" }], date: NOW - 900 })]);
+    expect(reasons("spoofed@example.net")).toEqual(["first_time"]);
+  });
+
+  test("replying to people already on the thread is never first time; someone new on it is", async () => {
+    await connectGoogle();
+    const acct = google();
+    // Kit writes to Sam for the first time; Sam has never written to Kit.
+    ingestMessages(db, acct, [msg({ sourceId: "k1", threadKey: "gt-kit", messageId: "<kit-1@example.org>", subject: "Hello", from: { name: "Kit Moreno", address: "kit@example.org" }, date: NOW - 1000 })]);
+    const kit = listThreads(db).find((t) => t.subject === "Hello")!;
+    const reply = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: kit.id, body: "Hi Kit" });
+    expect(reply.action.reasons).toEqual([]);
+    const forward = draftMail(db, { spaceId: space(), kind: "forward", draftedBy: "you", threadId: kit.id, to: [{ name: "", address: "lee@example.org" }], body: "" });
+    expect(forward.action.reasons.map((r) => r.kind)).toEqual(["first_time", "outside_thread"]);
   });
 
   test("a forward with attachments, another From account, and more than ten people", async () => {

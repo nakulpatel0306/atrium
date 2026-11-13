@@ -55,7 +55,7 @@ switch (cmd) {
     const recent = msgs.filter((m) => Date.parse(m.date) >= since).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     const sent = recent.filter((m) => m.mailbox === "Sent").slice(0, Number(process.env.FAKE_PIM_SENT_LIMIT ?? 200));
     const inbox = recent.filter((m) => m.mailbox !== "Sent").slice(0, Number(process.env.FAKE_PIM_INBOX_LIMIT ?? 300));
-    out({ messages: [...inbox, ...sent].map(({ mailbox: _, ...m }) => ({ ...m, snippet: "" })) });
+    out({ messages: [...inbox, ...sent].map(({ mailbox, ...m }) => ({ ...m, sent: mailbox === "Sent", snippet: "" })) });
     break;
   }
   case "mail.message": {

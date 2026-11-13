@@ -54,6 +54,7 @@ export function toSourceMessage(m: GMessage): SourceMessage {
     date: Number(m.internalDate) || Date.parse(header(p, "Date") ?? "") || 0,
     snippet: unescape(m.snippet ?? ""),
     unread: m.labelIds?.includes("UNREAD") ?? false,
+    sent: m.labelIds?.includes("SENT") ?? false,
     labels: m.labelIds ?? [],
     attachments: attachmentsOf(p),
   };

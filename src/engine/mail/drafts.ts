@@ -180,23 +180,19 @@ export const ownAddresses = (db: Database): Set<string> =>
 
 const YEAR_MS = 365 * 86_400_000;
 
-// Someone the user has written to in the last year: on To or Cc of a message from one of his own addresses, or of an
-// Atrium send. Being on someone else's email doesn't count, so a stranger can't make an address look known by Cc'ing
-// it. Only the cached window is searched, so this errs toward showing the note.
-function knownPerson(db: Database, address: string, own: Set<string>, now: number): boolean {
+// Someone the user has written to in the last year: on To or Cc of a message the source filed as sent, or of an
+// Atrium send. Being on someone else's email, or on one that only claims to be from the user, doesn't count. Only the
+// cached window is searched, so this errs toward showing the note.
+function knownPerson(db: Database, address: string, now: number): boolean {
   const a = normalizeAddress(address);
-  const mine = [...own];
-  if (mine.length) {
-    const marks = mine.map(() => "?").join(", ");
-    const wrote = db
-      .query(
-        `SELECT 1 FROM mail_messages m WHERE m.date >= ? AND lower(json_extract(m.from_json, '$.address')) IN (${marks}) AND (
-           EXISTS (SELECT 1 FROM json_each(m.to_json) p WHERE lower(json_extract(p.value, '$.address')) = ?)
-           OR EXISTS (SELECT 1 FROM json_each(m.cc_json) p WHERE lower(json_extract(p.value, '$.address')) = ?)) LIMIT 1`,
-      )
-      .get(now - YEAR_MS, ...mine, a, a);
-    if (wrote) return true;
-  }
+  const sent = db
+    .query(
+      `SELECT 1 FROM mail_messages m WHERE m.sent = 1 AND m.date >= ? AND (
+         EXISTS (SELECT 1 FROM json_each(m.to_json) p WHERE lower(json_extract(p.value, '$.address')) = ?)
+         OR EXISTS (SELECT 1 FROM json_each(m.cc_json) p WHERE lower(json_extract(p.value, '$.address')) = ?)) LIMIT 1`,
+    )
+    .get(now - YEAR_MS, a, a);
+  if (sent) return true;
   return !!db
     .query(
       `SELECT 1 FROM mail_actions m WHERE m.status = 'sent' AND m.sent_at >= ? AND (
@@ -219,15 +215,16 @@ export function explicitReasons(
   const event = isEvent(a.kind);
   const people = event ? (a.event?.attendees ?? []) : [...a.to, ...a.cc];
   const out: Reason[] = [];
+  // People already on the thread being answered are never "first time": replying to them is the everyday case.
+  const row = a.threadId ? (db.query("SELECT participants FROM mail_threads WHERE id = ?").get(a.threadId) as { participants: string } | null) : null;
+  const onThread = new Set([...own, ...parse<Person[]>(row?.participants ?? "[]", []).map((p) => normalizeAddress(p.address))]);
   for (const p of people) {
-    if (own.has(normalizeAddress(p.address)) || knownPerson(db, p.address, own, now)) continue;
+    if (onThread.has(normalizeAddress(p.address)) || knownPerson(db, p.address, now)) continue;
     out.push({ kind: "first_time", key: `first_time:${normalizeAddress(p.address)}`, text: `first time ${event ? "inviting" : "emailing"} ${personLabel(p)}` });
   }
   // A forward carries the thread's words to whoever it goes to; anyone who wasn't on that thread is called out, whoever
   // drafted it.
   if (a.kind === "forward" && a.threadId) {
-    const row = db.query("SELECT participants FROM mail_threads WHERE id = ?").get(a.threadId) as { participants: string } | null;
-    const onThread = new Set([...own, ...parse<Person[]>(row?.participants ?? "[]", []).map((p) => normalizeAddress(p.address))]);
     for (const p of people) if (!onThread.has(normalizeAddress(p.address))) out.push({ kind: "outside_thread", key: `outside_thread:${normalizeAddress(p.address)}`, text: `forwards to ${personLabel(p)}, who wasn't on the thread` });
   }
   if (a.attachments.length) out.push({ kind: "attachments", key: `attachments:${a.attachments.length}`, text: a.attachments.length === 1 ? "1 attachment" : `${a.attachments.length} attachments` });

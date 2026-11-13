@@ -180,6 +180,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
           date: at,
           snippet: a.body.replace(/\s+/g, " ").trim().slice(0, 200),
           unread: false,
+          sent: true,
           labels: [],
           attachments: files.map((f, i) => ({ name: f.name, size: a.attachments[i]?.size ?? 0, ref: f.name })),
         });

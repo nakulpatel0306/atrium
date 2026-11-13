@@ -27,12 +27,16 @@ export type SourceMessage = {
   date: number;
   snippet: string;
   unread: boolean;
+  // The source filed it as sent: Gmail's SENT label, or Mail.app's Sent mailbox. Not "From is my address", which
+  // anyone can write.
+  sent: boolean;
   labels: string[];
   attachments: SourceAttachment[];
 };
 
 // A body as the source gives it; the engine keeps only plain text (body.ts).
-export type SourceBody = { text: string | null; html: string | null; attachments: SourceAttachment[] };
+// icalUid: the UID of the calendar invitation the message carries, when it has a text/calendar part.
+export type SourceBody = { text: string | null; html: string | null; attachments: SourceAttachment[]; icalUid?: string | null };
 
 export type SourceCalendar = { sourceId: string; title: string; color: string; writable: boolean; accountAddress: string | null };
 

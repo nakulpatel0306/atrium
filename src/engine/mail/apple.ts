@@ -16,6 +16,7 @@ type PimMessage = {
   cc: string;
   date: string;
   read: boolean;
+  sent?: boolean;
   snippet: string;
   attachments: { name: string; size: number }[];
 };
@@ -90,6 +91,7 @@ export function appleSource(): MailSource {
           date: Date.parse(m.date) || 0,
           snippet: m.snippet,
           unread: !m.read,
+          sent: m.sent === true,
           labels: [],
           attachments: m.attachments.map((a) => ({ ...a, ref: a.name })),
         })),

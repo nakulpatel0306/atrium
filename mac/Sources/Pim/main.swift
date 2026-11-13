@@ -202,6 +202,7 @@ func mailMessages(_ args: PimArgs) throws -> Any {
         "cc": headers["cc"] ?? "",
         "date": iso(m.atIndex(3)?.dateValue ?? f.date),
         "read": m.atIndex(4)?.booleanValue ?? true,
+        "sent": names == sentNames,
         "snippet": "",
         "attachments": m.atIndex(5).map(attachmentsOf) ?? [],
       ])
