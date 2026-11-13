@@ -12,6 +12,10 @@ Personal values live in the database's `settings` table, in other tables, or in 
 
 A **space** is a place for one kind of work. There are two kinds: `repo` (a git checkout) and `general` (a folder under `~/Atrium`). A space of a kind an older version had (Investing, Inbox) opens as a plain private general space. A **task** belongs to a space, has a weight (heavy tasks wait for AC power) and goes to an agent. Each run keeps a transcript, and the task ends with an outcome: done, partial or couldn't, in the agent's own words.
 
+## The loop
+
+A coding task runs brief → write → verify → review → you. The engine drafts a brief with a small read-only Claude pass, runs the repo's own checks in the task's checkout after each writer turn (in a sandbox profile of their own), feeds failures back, sends passing work to a fresh reviewer as a child task, and only then creates the approval. Budgets and loop detection pause a stuck task. See [the loop](loop.md).
+
 ## Agents
 
 An adapter per CLI: `claude` (the Claude Code CLI on your subscription), `codex` and `agy` (Gemini through Antigravity). A registry probes whether each is installed and signed in, tracks usage limits and decides which agent a task can use. Free agents are preferred when allowed; private spaces only ever use Claude. Code tasks run on a branch named `atrium/<taskId>`.

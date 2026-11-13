@@ -15,18 +15,21 @@ Site: <https://nakulpatel0306.github.io/atrium/>
 - **Pull requests.** Approve the work and Atrium pushes the branch and opens the PR. Starting a new project creates the GitHub repo too. Both wait for your yes.
 - **Attachments.** Drop files or screenshots into the ask bar and the agent works from them.
 - **Approvals.** Everything that needs you waits in **Needs you**, with the agent's own word on how it went: done, partly done or couldn't. Rules can approve kinds of work you keep approving; pushes, merges, deploys, deletes and anything that costs money always ask.
-- **Claude, Codex and Gemini.** Claude runs on your subscription through the Claude Code CLI. Add Codex or Gemini and Atrium routes code work between them, or you pick one per task. A second agent can review finished work before you see it.
+- **Claude, Codex and Gemini.** Claude runs on your subscription through the Claude Code CLI. Add Codex or Gemini and Atrium routes code work between them, or you pick one per task.
 - **Sandboxing.** Agents can't read your keys, `.env` files or passwords, can't reach Atrium's own API, and can't drive other apps.
 - **General spaces** for the work around the code: notes, release drafts and docs, as files in a folder you can open in Finder.
 
-## Coming next: the loop
+## How it works: the loop
 
-The direction is one loop for every task: **brief → write → verify → review → you.** None of these are shipped yet:
+Every coding task runs the same loop: **brief → write → verify → review → you.**
 
-- a **brief** that turns a one-line ask into goals, acceptance criteria and a check command;
-- a **verification gate** where Atrium itself runs your tests and typecheck, so "ready" means green;
-- a **fresh reviewer** that reads the diff against the brief before you do;
-- **budgets and loop detection**, so a stuck agent pauses instead of burning tokens.
+- **Brief.** Press Enter and a quick, read-only pass turns your one-liner into a brief you can edit: the goal, acceptance criteria, how it's checked, scope and files to look at first. It asks at most two questions, only when the ask is really ambiguous. ⌘↩ skips it and sends the ask as it is.
+- **Write.** The agent works on its own branch, with the brief as its task spec.
+- **Verify.** Atrium finds your typecheck, lint and test commands (package.json, Makefile, pyproject, Cargo, go.mod, CLAUDE.md/AGENTS.md, or your own list) and runs them itself, sandboxed, after every turn. Failures go back to the agent. The agent's own "tests pass" never counts.
+- **Review.** A fresh session reads only the diff and the brief, from another vendor when one is installed, else a new Claude session. The writer fixes or answers each finding, for at most two rounds.
+- **You.** Only then does the work wait in **Needs you**, with the checks, the findings and how each was resolved. Anything the change did to the checks themselves (edited their config, dropped or skipped tests) is called out, and no rule approves it for you.
+
+Each task has a token and time budget. An agent that repeats itself or stops making progress is paused with a one-line diagnosis: give it a hint, or ask it to explain the problem. The details, and what the checks can and can't prove, are in [docs/loop.md](docs/loop.md).
 
 ## Screenshots
 

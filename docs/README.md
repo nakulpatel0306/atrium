@@ -1,6 +1,7 @@
 # Atrium docs
 
 - [Architecture](architecture.md): how the engine, spaces, tasks, agents and apps fit together.
+- [The loop](loop.md): the brief, the checks, the reviewer, budgets and loop detection, and the gate's threat model.
 - [Copy inventory](copy-inventory.md): the wording used across the interface, and the rules for it.
 - [Brand](brand/): logo files.
 
