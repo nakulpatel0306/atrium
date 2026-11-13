@@ -119,9 +119,17 @@ export function resumed(loop: LoopState): LoopState {
 
 export function overBudget(loop: LoopState): string | null {
   const { usage, budget } = loop;
-  if (usage.tokens >= budget.tokens) return `It used ${compact(usage.tokens)} tokens, its budget.`;
+  if (usage.tokens >= budget.tokens) return `It used ${compact(usage.tokens)} weighted tokens, its budget.`;
   if (usage.ms >= budget.minutes * 60_000) return `It worked for ${budget.minutes} minutes, its budget.`;
   return null;
+}
+
+// Tokens as the budget counts them, weighted the way the API prices them against fresh input: a cache read costs
+// about a tenth, a cache write a quarter more. Output is counted as is.
+export const CACHE_READ_WEIGHT = 0.1;
+export const CACHE_WRITE_WEIGHT = 1.25;
+export function weightedTokens(r: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }): number {
+  return Math.round(r.inputTokens + r.outputTokens + (r.cacheReadTokens ?? 0) * CACHE_READ_WEIGHT + (r.cacheWriteTokens ?? 0) * CACHE_WRITE_WEIGHT);
 }
 
 export const compact = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));

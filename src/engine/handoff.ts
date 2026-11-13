@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { AgentRunResult } from "./agents/types";
 import { type Brief, briefSections } from "./brief";
 import type { ReviewDiff } from "./git";
-import { type Finding, findingLine, type LoopState, MAX_REVIEW_ROUNDS, parseFindings, resolutionText, type ReviewRound } from "./loop";
+import { type Finding, findingLine, type LoopState, MAX_REVIEW_ROUNDS, parseFindings, resolutionText, type ReviewRound, weightedTokens } from "./loop";
 import { addMessage } from "./messages";
 import { agentName as name, plural, sentence } from "./text";
 import type { Space } from "./spaces";
@@ -79,7 +79,7 @@ export function recordReview(db: Database, reviewTask: Task, reviewer: string, r
   const loop: LoopState = {
     ...parent.loop,
     reviews: [...parent.loop.reviews, round],
-    usage: { ...parent.loop.usage, tokens: parent.loop.usage.tokens + (result.status === "ok" ? result.inputTokens + result.outputTokens : 0) },
+    usage: { ...parent.loop.usage, tokens: parent.loop.usage.tokens + (result.status === "ok" ? weightedTokens(result) : 0) },
   };
   return { parent: setTaskLoop(db, parent.id, loop), round };
 }

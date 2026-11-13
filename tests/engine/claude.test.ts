@@ -26,7 +26,19 @@ describe("claudeAdapter", () => {
     const r = await claudeAdapter(FAKE).run(input(chunks));
     expect(chunks).toContain("Looking at the repo.");
     expect(chunks).toContain("→ Read /repo/README.md");
-    expect(r).toEqual({ status: "ok", summary: "All done.", inputTokens: 120, outputTokens: 45 });
+    expect(r).toEqual({ status: "ok", summary: "All done.", inputTokens: 120, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  });
+
+  test("cache reads and writes are reported apart from fresh input, which is most of what Claude Code reads", async () => {
+    process.env.FAKE_CLAUDE_CACHE_READ = "250000";
+    process.env.FAKE_CLAUDE_CACHE_WRITE = "9000";
+    try {
+      const r = await claudeAdapter(FAKE).run(input([]));
+      expect(r).toMatchObject({ status: "ok", inputTokens: 120, cacheReadTokens: 250000, cacheWriteTokens: 9000 });
+    } finally {
+      delete process.env.FAKE_CLAUDE_CACHE_READ;
+      delete process.env.FAKE_CLAUDE_CACHE_WRITE;
+    }
   });
 
   test("successful run near the limit (allowed_warning) still returns ok", async () => {

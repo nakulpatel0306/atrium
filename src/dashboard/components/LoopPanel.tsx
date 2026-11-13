@@ -15,7 +15,7 @@ const STRIP: (Stage | "brief")[] = ["brief", "writing", "checks", "review", "rea
 
 // Brief · Writing · Checks · Review · Ready, with where the task is now; a pause replaces the stage it stopped in.
 export function StageStrip({ task }: { task: Task }) {
-  const now = shownStage(task.status, task.loop, task.brief !== null);
+  const now = shownStage(task.status, task.loop);
   const at = now === "paused" ? STRIP.indexOf(task.loop!.stage) : STRIP.indexOf(now);
   return (
     <ol className="stages" aria-label="Where this task is">
@@ -114,11 +114,11 @@ function Budget({ task }: { task: Task }) {
     if (res.ok) setEditing(false);
     else setError(res.error);
   };
-  const used = `${compact(loop.usage.tokens)}${loop.usage.unreported ? "+" : ""} of ${compact(loop.budget.tokens)} tokens · ${Math.round(loop.usage.ms / 60_000)} of ${loop.budget.minutes} min`;
+  const used = `${compact(loop.usage.tokens)}${loop.usage.unreported ? "+" : ""} of ${compact(loop.budget.tokens)} weighted tokens · ${Math.round(loop.usage.ms / 60_000)} of ${loop.budget.minutes} min`;
   return (
     <div className="budget">
       <span>
-        Budget since you last stepped in: {used}
+        <span title="Weighted as the API prices them: cache reads count 0.1×, cache writes 1.25×, fresh input and output 1×.">Budget since you last stepped in: {used}</span>
         {loop.usage.unreported && <span className="hint"> (an agent didn't report its tokens, so this is at least)</span>}
       </span>
       {task.status !== "done" &&

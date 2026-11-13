@@ -43,6 +43,7 @@ import {
   SIZE_BUDGETS,
   STALL_TURNS,
   toolWatch,
+  weightedTokens,
 } from "./loop";
 import { newId } from "./ids";
 import { agentName, plural, sentence } from "./text";
@@ -893,7 +894,7 @@ export function createRunner(deps: {
   function countTurn(taskId: string, result: AgentRunResult, ms: number) {
     const loop = getTask(db, taskId)?.loop;
     if (!loop) return;
-    const tokens = result.status === "ok" ? result.inputTokens + result.outputTokens : 0;
+    const tokens = result.status === "ok" ? weightedTokens(result) : 0;
     const unreported = loop.usage.unreported || (result.status === "ok" && tokens === 0);
     setTaskLoop(db, taskId, { ...loop, usage: { tokens: loop.usage.tokens + tokens, ms: loop.usage.ms + ms, unreported } });
   }

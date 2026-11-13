@@ -22,7 +22,16 @@ export type WindowUsage = { utilization: number; resetsAt: number };
 export type AgentUsage = { fiveHour?: WindowUsage; sevenDay?: WindowUsage };
 
 export type AgentRunResult =
-  | { status: "ok"; summary: string; inputTokens: number; outputTokens: number; usage?: AgentUsage }
+  | {
+      status: "ok";
+      summary: string;
+      // Fresh input, not counting what was read from or written to the prompt cache, which come separately.
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+      usage?: AgentUsage;
+    }
   | {
       status: "error";
       kind: "not_installed" | "not_logged_in" | "rate_limited" | "failed";

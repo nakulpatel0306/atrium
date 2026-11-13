@@ -51,7 +51,7 @@ export function codexAdapter(bin: string = config().codexBin, sandboxExec: strin
     async run(input: AgentRunInput): Promise<AgentRunResult> {
       let lastMessage = "";
       let errorMessage = "";
-      let usage: { inputTokens: number; outputTokens: number } | undefined;
+      let usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number } | undefined;
 
       const handle = (line: string) => {
         let msg: any;
@@ -70,8 +70,9 @@ export function codexAdapter(bin: string = config().codexBin, sandboxExec: strin
             input.onTool?.("bash", { command: item.command });
           }
         } else if (msg.type === "turn.completed") {
-          // Cached input is a subset of input_tokens, not extra, so only the two totals are reported.
-          usage = { inputTokens: msg.usage?.input_tokens ?? 0, outputTokens: msg.usage?.output_tokens ?? 0 };
+          // Codex counts cached input inside input_tokens; it's split out so every agent reports fresh input alike.
+          const cached = msg.usage?.cached_input_tokens ?? 0;
+          usage = { inputTokens: Math.max(0, (msg.usage?.input_tokens ?? 0) - cached), outputTokens: msg.usage?.output_tokens ?? 0, cacheReadTokens: cached };
         } else if (msg.type === "turn.failed") {
           errorMessage = String(msg.error?.message ?? "turn failed");
         } else if (msg.type === "error") {

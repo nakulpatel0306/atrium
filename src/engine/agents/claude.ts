@@ -156,7 +156,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       let limitResetsAt: number | undefined;
       let limitRejected = false;
       let usage: AgentUsage | undefined;
-      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number } | undefined;
+      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } | undefined;
 
       const handle = (line: string) => {
         let msg: any;
@@ -191,6 +191,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
             isError: Boolean(msg.is_error),
             inputTokens: msg.usage?.input_tokens ?? 0,
             outputTokens: msg.usage?.output_tokens ?? 0,
+            cacheReadTokens: msg.usage?.cache_read_input_tokens ?? 0,
+            cacheWriteTokens: msg.usage?.cache_creation_input_tokens ?? 0,
           };
         }
       };
@@ -236,6 +238,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           summary: final.result,
           inputTokens: final.inputTokens,
           outputTokens: final.outputTokens,
+          cacheReadTokens: final.cacheReadTokens,
+          cacheWriteTokens: final.cacheWriteTokens,
           ...(usage && { usage }),
         };
       }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { briefSections, gapHints, NO_CHECK_HINT, normalizeBrief, normalizeQuestions } from "../../src/engine/brief";
-import { applyTriage, failureSignature, newLoop, overBudget, parseFindings, resumed, SIZE_BUDGETS, shownStage, toolWatch } from "../../src/engine/loop";
+import { applyTriage, weightedTokens, failureSignature, newLoop, overBudget, parseFindings, resumed, SIZE_BUDGETS, shownStage, toolWatch } from "../../src/engine/loop";
 
 describe("brief", () => {
   test("normalizing keeps the known fields, caps them and falls back to the ask", () => {
@@ -48,7 +48,8 @@ describe("brief", () => {
 describe("loop rules", () => {
   test("budgets count since the user last stepped in", () => {
     const loop = { ...newLoop(SIZE_BUDGETS.small), usage: { tokens: 250_000, ms: 0, unreported: false } };
-    expect(overBudget(loop)).toBe("It used 250k tokens, its budget.");
+    expect(overBudget(loop)).toBe("It used 250k weighted tokens, its budget.");
+    expect(weightedTokens({ inputTokens: 6, outputTokens: 1000, cacheReadTokens: 100_000, cacheWriteTokens: 8000 })).toBe(21_006);
     expect(overBudget(resumed(loop))).toBeNull();
     expect(overBudget({ ...loop, usage: { tokens: 0, ms: 21 * 60_000, unreported: false } })).toContain("20 minutes");
   });

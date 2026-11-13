@@ -293,7 +293,7 @@ describe("pauses", () => {
     start({ claude: claude.adapter });
     await waitFor(() => status(t.id) === "blocked");
     expect(claude.calls).toHaveLength(1);
-    expect(getTask(db, t.id)!.blockedReason).toBe("Paused: It used 40 tokens, its budget.");
+    expect(getTask(db, t.id)!.blockedReason).toBe("Paused: It used 40 weighted tokens, its budget.");
   });
 
   test("an agent repeating the same edit is stopped mid-run and paused", async () => {

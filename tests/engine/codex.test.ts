@@ -33,7 +33,8 @@ describe("codexAdapter", () => {
   test("ok run returns the last agent message and tokens", async () => {
     const chunks: string[] = [];
     const r = await codexAdapter(FAKE).run(input(chunks));
-    expect(r).toEqual({ status: "ok", summary: "Did the thing.", inputTokens: 1200, outputTokens: 80 });
+    // Codex counts cached input inside input_tokens; it comes out as cache reads, as Claude reports them.
+    expect(r).toEqual({ status: "ok", summary: "Did the thing.", inputTokens: 200, outputTokens: 80, cacheReadTokens: 1000 });
     expect(chunks).toContain("Did the thing.");
     expect(chunks).toContain("→ bash bun test");
   });

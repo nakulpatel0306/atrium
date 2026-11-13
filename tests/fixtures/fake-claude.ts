@@ -33,7 +33,7 @@ function result(text: string, isError = false) {
     is_error: isError,
     result: text,
     session_id: sessionId,
-    usage: { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: 0 },
+    usage: { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: Number(process.env.FAKE_CLAUDE_CACHE_READ ?? 0), cache_creation_input_tokens: Number(process.env.FAKE_CLAUDE_CACHE_WRITE ?? 0) },
   });
 }
 
