@@ -92,6 +92,6 @@ export function briefSections(brief: Brief, checks: string[] | null): string[] {
 
 export function checksSection(checks: string[]): string {
   return checks.length
-    ? `## How it's checked\nAfter your turn Atrium runs these itself and sends you anything that fails:\n${bullets(checks.map((c) => `\`${c}\``))}`
+    ? `## How it's checked\nAfter your turn Atrium runs these itself and sends you anything that fails, even ones you can't run yourself:\n${bullets(checks.map((c) => `\`${c}\``))}`
     : "## How it's checked\nThis repo has no checks Atrium can run, so say in your summary how you checked your work.";
 }

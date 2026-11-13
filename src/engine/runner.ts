@@ -624,7 +624,7 @@ export function createRunner(deps: {
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
         // An explanation reads only: no Bash at all, with the branch's history and diff already in its prompt.
-        allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? REPO_TOOLS : BASE_TOOLS,
+        allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
         privateData: space.private,
         mode: readOnly ? "review" : "work",
         signal: r.signal,
@@ -858,9 +858,8 @@ export function createRunner(deps: {
   // The agent's own word, except that "done" can't stand for a title only the engine could have carried out.
   function honestOutcome(task: Task, summary: string): ParsedOutcome {
     const parsed = parseOutcome(summary);
-    const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
     // A repo task's title is about code ("Send button styling"), never a send or a repo Atrium would create.
-    const claim = getSpace(db, task.spaceId)?.kind === "repo" ? null : engineOnlyClaim((parent ?? task).title);
+    const claim = getSpace(db, task.spaceId)?.kind === "repo" ? null : engineOnlyClaim(task.title);
     // Atrium knows for certain that nothing was sent or created, so this is "couldn't", not "can't tell".
     if (parsed.outcome === "done" && claim) return { ...parsed, outcome: "couldnt", reason: ENGINE_ONLY[claim] };
     return parsed;
@@ -1146,6 +1145,11 @@ function readyLine(task: Task): string {
 }
 
 class StoppedEarly extends Error {}
+
+// The gate's own commands, so the writer can run what will judge it (inside its sandbox, like any of its commands).
+// One that needs Atrium's base copies (a pinned Makefile) or isn't a single plain command line is left to the gate.
+const gateTools = (checks: Check[]): string[] =>
+  checks.filter((c) => !c.install && !/[$\n`]/.test(c.command) && !c.command.startsWith("-")).map((c) => `Bash(${c.command}*)`);
 
 const EXPLAIN_DIFF_CAP = 20 * 1024;
 

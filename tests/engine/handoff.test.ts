@@ -105,6 +105,8 @@ describe("checks", () => {
     // The writer is told what will judge it, as part of the brief's sections.
     expect(claude.calls[0]!.prompt).toContain("## Goal\nShow totals");
     expect(claude.calls[0]!.prompt).toContain(`\`${FAKE_CHECK}\``);
+    // And may run it itself, inside its own sandbox.
+    expect(claude.calls[0]!.allowedTools).toContain(`Bash(${FAKE_CHECK}*)`);
     // The reviewer gets the brief and the diff, and nothing of the writer's session.
     const reviewer = codex.calls[0]!;
     expect(reviewer.mode).toBe("review");
