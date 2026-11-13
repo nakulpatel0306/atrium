@@ -50,9 +50,11 @@ export type LoopState = {
   // Why the result is unverified though checks exist (they couldn't run, or the change edits how dependencies
   // install); null otherwise.
   unverified: string | null;
-  // Checks that already failed on the base commit and still fail, with the end of their base output. They keep the
-  // result unverified; they don't count toward loop detection.
-  alreadyFailing: { name: string; excerpt: string }[];
+  // Checks that fail on the base commit, with the end of their output then and on the branch now ("" before the
+  // first turn's checks). One that still fails keeps the result unverified; none counts toward loop detection.
+  alreadyFailing: { name: string; before: string; now: string }[];
+  // Whether the writer was already sent back once because such a check still fails.
+  staleRetried: boolean;
   // Config files outside git as the task found them, by content hash (checks/attention.ts outsideSnapshot); null
   // until the first repo turn takes it.
   outside: Record<string, string> | null;
@@ -103,6 +105,7 @@ export function newLoop(budget: Budget): LoopState {
     noChanges: false,
     unverified: null,
     alreadyFailing: [],
+    staleRetried: false,
     outside: null,
     questions: [],
     hints: [],
@@ -138,27 +141,46 @@ export function weightedTokens(r: { inputTokens: number; outputTokens: number; c
 
 export const compact = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 
-// What changes from run to run of the same failure, taken out of a check's output: colour codes, timings in any
-// form (bun prints `(fail) name [0.41ms]` on some runs and `(fail) name` on others), clock times and dates, sizes
-// and percentages, and paths into temp folders.
+// The line a check's output starts with when its front was cut to fit the cap (checks/run.ts).
+export const OUTPUT_CUT = "[earlier output cut]";
+// How much of the end of a failure is signed: well inside the output cap, so where the cap happened to fall
+// never shows.
+const SIGNED_LINES = 80;
+
+// A test runner's lines that change from run to run of the same failure: its totals and how long it took.
+const SUMMARY_LINE = /^\s*(Ran \d+ tests?|\d+ (pass|fail|passed|failed|skip|skipped|todo|expect\(\) calls?)\b|Tests?:|Test Suites:|Snapshots:|Time:|Duration\b|Done in |Finished in |Executed \d+)/i;
+
+// What changes from run to run of the same failure, taken out of a check's output and nothing else: colour codes,
+// bracketed timings (bun prints `(fail) name [0.41ms]` on some runs and `(fail) name` on others), the runner's
+// totals and duration lines, and paths into temp folders. Assertion text is left as it is, times and sizes in it
+// included, so a different value is a different failure.
 export function steadyOutput(output: string): string {
   return output
     .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
     .replace(/\s*\[\d+(\.\d+)?\s?(ns|µs|us|ms|s|m)\]/g, "")
-    .replace(/\b\d{4}-\d\d-\d\d([T ]\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:?\d\d)?)?/g, "#")
-    .replace(/\b\d\d?:\d\d(:\d\d(\.\d+)?)?\b/g, "#")
-    .replace(/\b\d+(\.\d+)?\s?(ns|µs|us|ms|s|sec|secs|seconds|m|min|mins|minutes|h|kb|kib|mb|mib|gb|gib|b|%)\b/gi, "#")
     .replace(/(\/private)?\/(var\/folders|tmp|var\/tmp)\/\S+/g, "#")
-    .replace(/0x[0-9a-f]+/gi, "#")
-    .replace(/[ \t]+$/gm, "");
+    .split("\n")
+    .filter((line) => !SUMMARY_LINE.test(line))
+    .map((line) => line.replace(/[ \t]+$/, ""))
+    .join("\n");
 }
 
-// One signature for a set of failing checks: each check's name, exit code and steady output. The same failure twice
-// in a row reads the same, however its timings came out.
+// A failure's last lines, from after any cut, steadied.
+function signedPart(output: string): string {
+  const lines = output.split("\n");
+  const cut = lines.findIndex((l) => l.startsWith(OUTPUT_CUT));
+  return steadyOutput((cut >= 0 ? lines.slice(cut + 1) : lines).join("\n").trimEnd())
+    .split("\n")
+    .slice(-SIGNED_LINES)
+    .join("\n");
+}
+
+// One signature for a set of failing checks: each check's name, exit code and the steady end of its output. The
+// same failure twice in a row reads the same, however its timings and the output cap came out.
 export function failureSignature(failed: { name: string; exitCode: number | null; output: string }[]): string {
   return [...failed]
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map((f) => `${f.name}\n${f.exitCode}\n${steadyOutput(f.output)}`)
+    .map((f) => `${f.name}\n${f.exitCode}\n${signedPart(f.output)}`)
     .join("\n\n");
 }
 

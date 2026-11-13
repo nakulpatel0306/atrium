@@ -5,6 +5,7 @@ import { newId } from "../ids";
 import { runAgentProcess } from "../agents/process";
 import { SANDBOX_EXEC, seatbeltFailure, withPrivateTmp } from "../agents/seatbelt";
 import type { Check } from "./detect";
+import { OUTPUT_CUT } from "../loop";
 import { checkProfile, installProfile, wrapCheck } from "./sandbox";
 
 export type CheckStatus = "passed" | "failed" | "timeout" | "missing" | "skipped";
@@ -79,7 +80,7 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
     });
   });
   const durationMs = Date.now() - started;
-  const tail = output.length > OUTPUT_CAP ? `[earlier output cut]\n${output.slice(-OUTPUT_CAP)}` : output;
+  const tail = output.length > OUTPUT_CAP ? `${OUTPUT_CUT}\n${output.slice(-OUTPUT_CAP)}` : output;
   if (proc.notInstalled || seatbeltFailure(proc)) {
     return { ...check, status: "missing", exitCode: null, output: "Atrium couldn't start the sandbox for this check.", durationMs };
   }

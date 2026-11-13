@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { briefSections, gapHints, NO_CHECK_HINT, normalizeBrief, normalizeQuestions } from "../../src/engine/brief";
-import { applyTriage, weightedTokens, failureSignature, newLoop, overBudget, parseFindings, resumed, SIZE_BUDGETS, shownStage, toolWatch } from "../../src/engine/loop";
+import { applyTriage, OUTPUT_CUT, weightedTokens, failureSignature, newLoop, overBudget, parseFindings, resumed, SIZE_BUDGETS, shownStage, toolWatch } from "../../src/engine/loop";
 
 describe("brief", () => {
   test("normalizing keeps the known fields, caps them and falls back to the ask", () => {
@@ -60,12 +60,25 @@ describe("loop rules", () => {
     const untimed = "(fail) clamp > keeps the upper bound\nexpected 10, got 12\n/private/var/folders/y/T/a.ts:3\n 0 pass\n 1 fail\nRan 1 test across 1 file. [80ms]";
     const sig = (output: string, exitCode = 1) => failureSignature([{ name: "Tests", exitCode, output }]);
     expect(sig(timed)).toBe(sig(untimed));
-    expect(sig("at 10:42:07 took 3.2s, 41 MB\nfail")).toBe(sig("at 09:01:55 took 12s, 38 MB\nfail"));
+    // Times and sizes inside an assertion are the failure itself, so a different value reads differently.
+    expect(sig('expected "took 900ms" to be "took 300ms"')).not.toBe(sig('expected "took 250ms" to be "took 300ms"'));
+    expect(sig('expected "12:45" to be "12:00"')).not.toBe(sig('expected "12:30" to be "12:00"'));
     // A different failure, or the same text with another exit code, isn't the same.
     expect(sig(untimed.replace("got 12", "got 11"))).not.toBe(sig(untimed));
     expect(sig(untimed, 2)).not.toBe(sig(untimed));
   });
 
+
+  test("a big suite's failure signs the same wherever the output cap fell", () => {
+    // 600 passing tests with timings of varying width, then one failure, cut to the cap as checks/run.ts cuts it.
+    const run = (seed: number) => {
+      const lines = Array.from({ length: 600 }, (_, i) => `(pass) suite > case ${i} [${((i * seed) % 97) / 10 + 0.01}ms]`);
+      const full = [...lines, "(fail) clamp > keeps the upper bound", "expected 10, got 12", "599 pass", "1 fail", `Ran 600 tests across 40 files. [${seed}.00ms]`].join("\n");
+      return `${OUTPUT_CUT}\n${full.slice(-16 * 1024)}`;
+    };
+    const sigs = new Set([3, 7, 11, 13, 17, 19, 23, 29].map((seed) => failureSignature([{ name: "Tests", exitCode: 1, output: run(seed) }])));
+    expect(sigs.size).toBe(1);
+  });
 
   test("tool watch catches a call repeated in a row and an edit made again and again", () => {
     const watch = toolWatch();
