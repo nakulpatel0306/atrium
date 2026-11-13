@@ -103,7 +103,7 @@ export function loopNotes(loop: LoopState, space: Space): string[] {
   const lines: string[] = [];
   if (loop.noChanges) lines.push("Checks: nothing to check, since there are no file changes.");
   else if (loop.checks === "passed") lines.push(`Checks: passed (${loop.passing.join(", ")}). Atrium ran them itself.`);
-  else if (loop.checks === "none") lines.push("Unverified: no checks found. Add a check command in this space's settings or in the brief.");
+  else if (loop.checks === "none") lines.push(loop.unverified ?? "Unverified: no checks found. Add a check command in this space's settings or in the brief.");
   if (loop.noChanges) return lines;
   if (loop.attention.length) lines.push(`Look closely:\n${loop.attention.map((n) => `- ${n}`).join("\n")}`);
   if (space.reviewBy === "off" && !loop.reviews.length) lines.push("Review: off for this space.");

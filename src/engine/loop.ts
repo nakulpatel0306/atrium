@@ -47,6 +47,8 @@ export type LoopState = {
   // The writer's last summary and branch lines, kept for the approval made once the loop is done.
   report: string[];
   noChanges: boolean;
+  // Why the checks didn't run when they could have (a change to how dependencies install); null otherwise.
+  unverified: string | null;
   // Things the change does to the checks themselves (edits their config, drops or skips tests): shown on the
   // result, put to the reviewer, and never approved by a rule.
   attention: string[];
@@ -87,6 +89,7 @@ export function newLoop(budget: Budget): LoopState {
     triaged: false,
     report: [],
     noChanges: false,
+    unverified: null,
     attention: [],
     usage: { tokens: 0, ms: 0, unreported: false },
     budget,

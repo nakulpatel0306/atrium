@@ -168,12 +168,18 @@ export function checksFor(detected: Check[], opts: { spaceChecks: string | null;
 const INSTALLS: [string, string][] = [
   ["bun.lock", "bun install --frozen-lockfile --ignore-scripts"],
   ["bun.lockb", "bun install --frozen-lockfile --ignore-scripts"],
-  ["pnpm-lock.yaml", "pnpm install --frozen-lockfile --ignore-scripts"],
+  ["pnpm-lock.yaml", "pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile"],
   ["yarn.lock", "yarn install --frozen-lockfile --ignore-scripts"],
   ["package-lock.json", "npm ci --ignore-scripts"],
 ];
 
 export const LOCKFILES = INSTALLS.map(([lock]) => lock);
+
+// Files that change what an install runs or where it fetches from. A change to any of them is never installed
+// automatically: the engine's install would be running the agent's own instructions.
+const INSTALL_CONFIG = /(^|\/)(\.npmrc|\.yarnrc|\.yarnrc\.yml|\.pnpmfile\.cjs|pnpm-workspace\.yaml|bunfig\.toml|pip\.conf|uv\.toml)$|(^|\/)\.yarn\/(releases|plugins)\//;
+
+export const touchesInstallConfig = (files: string[]): string[] => files.filter((f) => INSTALL_CONFIG.test(f));
 
 // Agents can't write node_modules, so when a change touches the manifest or the lockfile the engine installs from
 // the lockfile before the checks run. `files` are the paths the change touched; `lockfiles` the ones the tree has.

@@ -344,6 +344,25 @@ describe("changes to the checks themselves", () => {
     expect(approval(t.id)!.detail).toContain("Look closely:\n- This change edits how checks run: package.json.");
   });
 
+  test("a change to how dependencies install isn't installed or checked, and says so", async () => {
+    const path = repo();
+    const s = space(path, { reviewBy: "off" });
+    const t = createTask(db, { spaceId: s.id, title: "Add totals" });
+    start({
+      claude: fake("claude", (input) => {
+        writeFileSync(join(input.cwd, ".npmrc"), "registry=https://registry.example.com/\n");
+        writeFileSync(join(input.cwd, "status.txt"), "pass\n");
+        return ok("Done.\nOUTCOME: done");
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "review");
+    const loop = getTask(db, t.id)!.loop!;
+    expect(loop.checks).toBe("none");
+    expect(loop.attention[0]).toBe("This change edits how dependencies install: .npmrc.");
+    expect(db.query("SELECT COUNT(*) AS n FROM checks WHERE task_id = ?").get(t.id)).toEqual({ n: 0 });
+    expect(approval(t.id)!.detail).toContain("Unverified: this change edits how dependencies install, so Atrium didn't install or run the checks.");
+  });
+
   test("a note on the checks keeps a matching rule from approving it", async () => {
     const s = space(repo(), { checks: null });
     yesRule(s.id);

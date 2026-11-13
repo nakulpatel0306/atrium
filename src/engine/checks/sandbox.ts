@@ -10,32 +10,30 @@ const ENGINE_PORTS = Array.from({ length: 20 }, (_, i) => 7420 + i);
 // and the Chrome and Node debuggers.
 const ADMIN_PORTS = [22, 631, 2375, 2376, 5900, 6443, 9222, 9229];
 
-// The agent profile word for word, then the dependency folders agents may not write reopened: the engine's own
-// runs (installs and checks) are the only ones that write there. Later rules win in Seatbelt.
-function engineRunProfile(cwd: string, writable: string[]): string {
-  return [
-    seatbeltProfile({ cwd, writable, extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")], denyKeychain: true }),
-    `(allow file-write* ${DEPENDENCY_DIRS.map((d) => subpath(join(cwd, d))).join(" ")})`,
-  ].join("\n");
-}
+const agentProfile = (cwd: string, writable: string[]) =>
+  seatbeltProfile({ cwd, writable, extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")], denyKeychain: true });
 
-// The project's checks: loopback opened so a test can start and call its own server, with the internet, Atrium's
-// ports and admin ports shut. Agents never run under it; their profile keeps loopback denied. Spelled with tcp and
-// udp on purpose: Seatbelt drops a port-specific deny that follows an `ip` allow, which would leave a denied port
-// open (checked against sandbox-exec).
+// The project's checks: the agent profile word for word (so no secrets, no writes outside the worktree and its temp
+// folder, none into the dependency folders), then loopback opened so a test can start and call its own server, with
+// the internet, Atrium's ports and admin ports shut. Agents never run under it; their profile keeps loopback denied.
+// Later rules win in Seatbelt. Spelled with tcp and udp on purpose: Seatbelt drops a port-specific deny that follows
+// an `ip` allow, which would leave a denied port open (checked against sandbox-exec).
 export function checkProfile(cwd: string, writable: string[]): string {
   const shut = [...new Set([config().port, ...ENGINE_PORTS, ...ADMIN_PORTS])];
   return [
-    engineRunProfile(cwd, writable),
+    agentProfile(cwd, writable),
     '(deny network-outbound (remote tcp "*:*") (remote udp "*:*"))',
     '(allow network-outbound (remote tcp "localhost:*") (remote udp "localhost:*"))',
     `(deny network-outbound ${shut.map((p) => `(remote tcp "localhost:${p}")`).join(" ")})`,
   ].join("\n");
 }
 
-// The engine's install from the lockfile: it needs the package registry, and keeps the agent profile's shut
-// loopback. Lifecycle scripts are turned off by the install command itself.
-export const installProfile = engineRunProfile;
+// The engine's install from the lockfile, the one run that writes the dependency folders: it writes there and in
+// its temp folder (where the package manager's cache is pointed) and nowhere else in the worktree, reaches the
+// package registry, and keeps the agent profile's shut loopback, port 22 and unreadable credentials (~/.npmrc too).
+export function installProfile(cwd: string, tmp: string): string {
+  return [agentProfile(cwd, [tmp]), `(allow file-write* ${DEPENDENCY_DIRS.map((d) => subpath(join(cwd, d))).join(" ")})`].join("\n");
+}
 
 export function wrapCheck(argv: string[], profile: string, sandboxExec: string = SANDBOX_EXEC): string[] {
   return [sandboxExec, "-p", profile, ...argv];

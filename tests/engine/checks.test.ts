@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { codexStateDir, seatbeltProfile } from "../../src/engine/agents/seatbelt";
 import { checkAttention } from "../../src/engine/checks/attention";
 import { checkProfile, installProfile } from "../../src/engine/checks/sandbox";
-import { checksFor, detectChecks, hintsFrom, installFor, overrideChecks } from "../../src/engine/checks/detect";
+import { checksFor, detectChecks, hintsFrom, installFor, overrideChecks, touchesInstallConfig } from "../../src/engine/checks/detect";
 import { sandboxSettings } from "../../src/engine/agents/claude";
 import { failureReport, latestChecks, outcomeOf, runChecks, saveChecks } from "../../src/engine/checks/run";
 import { openDb } from "../../src/engine/db";
@@ -206,7 +206,7 @@ describe("the checks' own sandbox", () => {
     expect(agent).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
     const check = checkProfile("/tmp/repo", ["/tmp/repo"]);
     expect(check.startsWith(seatbeltProfile({ cwd: "/tmp/repo", writable: ["/tmp/repo"], extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")], denyKeychain: true }))).toBe(true);
-    expect(installProfile("/tmp/repo", ["/tmp/repo"])).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
+    expect(installProfile("/tmp/repo", "/tmp/t")).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
     for (const port of [7420, 7421, 22, 9229]) expect(check).toContain(`(remote tcp "localhost:${port}")`);
   });
 
@@ -312,7 +312,20 @@ describe("what a check can be made to run", () => {
     expect(installFor(["src/a.ts"], ["bun.lock"])).toBeNull();
     expect(installFor(["package.json"], ["bun.lock"])).toEqual({ name: "Install", command: "bun install --frozen-lockfile --ignore-scripts", kind: "fast", install: true });
     expect(installFor(["package-lock.json"], ["package-lock.json"])!.command).toBe("npm ci --ignore-scripts");
+    expect(installFor(["pnpm-lock.yaml"], ["pnpm-lock.yaml"])!.command).toBe("pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile");
+    expect(touchesInstallConfig(["src/a.ts", ".npmrc", "packages/x/.yarnrc.yml", ".yarn/releases/yarn-4.cjs", "bunfig.toml"])).toEqual([".npmrc", "packages/x/.yarnrc.yml", ".yarn/releases/yarn-4.cjs", "bunfig.toml"]);
     expect(installFor(["package.json"], [])).toBeNull();
+  });
+
+  test("the install sees no secrets and keeps its cache in its own temp folder", async () => {
+    process.env.ATRIUM_TEST_SECRET = "s3cret";
+    try {
+      const [r] = await runChecks(repoWith({}).path, [{ name: "Install", command: 'echo "secret=[$ATRIUM_TEST_SECRET] cache=$npm_config_cache"', kind: "fast", install: true }]);
+      expect(r!.output).toContain("secret=[]");
+      expect(r!.output).toMatch(/cache=\S*atrium-agent-\S*\/npm-cache/);
+    } finally {
+      delete process.env.ATRIUM_TEST_SECRET;
+    }
   });
 
   test("a failed install stops the checks that would run on it", async () => {
@@ -324,7 +337,7 @@ describe("what a check can be made to run", () => {
     expect(results.map((r) => r.status)).toEqual(["failed", "skipped", "skipped"]);
   });
 
-  test("agents can't write the dependency folders the checks run from; the engine's own runs can", async () => {
+  test("only the engine's install writes the dependency folders the checks run from", async () => {
     const path = repoWith({}).path;
     mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
     mkdirSync(join(path, ".venv"), { recursive: true });
@@ -334,7 +347,13 @@ describe("what a check can be made to run", () => {
     expect(write(agent, "node_modules/.bin/tsc")).not.toBe(0);
     expect(write(agent, ".venv/x")).not.toBe(0);
     expect(write(agent, "src.txt")).toBe(0);
-    expect(write(checkProfile(path, [path]), "node_modules/.bin/tsc")).toBe(0);
+    // Checks run repo code the writer can change, so they can't write there either; only the engine's install can,
+    // and it writes nothing else in the worktree.
+    expect(write(checkProfile(path, [path]), "node_modules/.bin/tsc")).not.toBe(0);
+    const tmp = mkdtempSync(join(tmpdir(), "atrium-agent-"));
+    cleanups.push(() => rmSync(tmp, { recursive: true, force: true }));
+    expect(write(installProfile(path, tmp), "node_modules/.bin/tsc")).toBe(0);
+    expect(write(installProfile(path, tmp), "src.txt")).not.toBe(0);
     // Claude's sandbox gets the same rule, for its file tools and for Bash.
     const settings = JSON.parse(sandboxSettings(path)) as { sandbox: { filesystem: { denyWrite: string[] } } };
     expect(settings.sandbox.filesystem.denyWrite).toEqual([`${path}/node_modules`, `${path}/.venv`]);

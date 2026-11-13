@@ -61,11 +61,11 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
       mkdirSync(dirname(join(files, name)), { recursive: true });
       writeFileSync(join(files, name), body);
     }
-    const profile = (check.install ? installProfile : checkProfile)(cwd, [cwd, tmp]);
+    const profile = check.install ? installProfile(cwd, tmp) : checkProfile(cwd, [cwd, tmp]);
     return runAgentProcess(wrapCheck(["/bin/sh", "-c", `exec 2>&1\n${check.command}`], profile, opts.sandboxExec ?? SANDBOX_EXEC), {
       cwd,
       stdin: "",
-      env: checkEnv(cwd, tmp, files, check.node ?? false),
+      env: check.install ? installEnv(tmp) : checkEnv(cwd, tmp, files, check.node ?? false),
       signal,
       abortGraceMs: 2000,
       onLine: add,
@@ -101,6 +101,24 @@ function checkEnv(cwd: string, tmp: string, files: string, node: boolean): Recor
     GOCACHE: join(tmp, "go-build"),
     CI: "1",
     TERM: "dumb",
+    NO_COLOR: "1",
+  };
+}
+
+// The install's environment: the same scrubbed basics, with every package manager's cache in the run's temp folder,
+// the only place outside the dependency folders it may write.
+function installEnv(tmp: string): Record<string, string> {
+  const keep = (k: string) => (process.env[k] ? { [k]: process.env[k]! } : {});
+  return {
+    ...keep("PATH"),
+    ...keep("HOME"),
+    ...keep("LANG"),
+    TMPDIR: tmp,
+    BUN_INSTALL_CACHE_DIR: join(tmp, "bun-cache"),
+    npm_config_cache: join(tmp, "npm-cache"),
+    npm_config_store_dir: join(tmp, "pnpm-store"),
+    YARN_CACHE_FOLDER: join(tmp, "yarn-cache"),
+    CI: "1",
     NO_COLOR: "1",
   };
 }

@@ -30,7 +30,7 @@ import {
 } from "./git";
 import { loopNotes, recordReview, resolvedAgent, roundsLeft, startReview, triageFeedback, wantsTriage } from "./handoff";
 import { briefSections, checksSection } from "./brief";
-import { type Check, checksFor, detectChecks, installFor, LOCKFILES } from "./checks/detect";
+import { type Check, checksFor, detectChecks, installFor, LOCKFILES, touchesInstallConfig } from "./checks/detect";
 import { checkAttention } from "./checks/attention";
 import { type CheckResult, failureReport, outcomeOf, runChecks, saveChecks } from "./checks/run";
 import {
@@ -925,21 +925,33 @@ export function createRunner(deps: {
     const loop = getTask(db, task.id)!.loop!;
     const ahead = await git(repo.path, ["rev-list", "--count", `${repo.start}..${repo.branch}`]);
     if (ahead.code !== 0) throw new Error(`Couldn't count the commits on ${repo.branch}: ${ahead.err.trim()}`);
-    if (Number(ahead.out.trim()) === 0) return { verdict: "none", results: null, sha: null, noChanges: true, attention: [] };
+    if (Number(ahead.out.trim()) === 0) return { verdict: "none", results: null, sha: null, noChanges: true, attention: [], unverified: null };
     const sha = (await headRef(repo.path)).sha;
-    if (sha === loop.checkedSha) return { verdict: loop.checks === "failed" ? "failed" : loop.checks === "passed" ? "passed" : "none", results: null, sha, noChanges: false, attention: loop.attention };
+    if (sha === loop.checkedSha) {
+      const verdict = loop.checks === "failed" ? "failed" : loop.checks === "passed" ? "passed" : "none";
+      return { verdict, results: null, sha, noChanges: false, attention: loop.attention, unverified: loop.unverified };
+    }
+    const changed = (await branchFiles(repo.path, repo.start, sha)).map((f) => f.path);
+    const attention = [...new Set(checks.flatMap((c) => c.notes ?? [])), ...(await checkAttention(repo.path, repo.start, sha, checks))];
+    // Installing would run the agent's own install instructions, so a change to them leaves the result to Nakul.
+    const installConfig = touchesInstallConfig(changed);
+    if (installConfig.length) {
+      return {
+        verdict: "none",
+        results: [],
+        sha,
+        noChanges: false,
+        attention: [`This change edits how dependencies install: ${installConfig.join(", ")}.`, ...attention],
+        unverified: "Unverified: this change edits how dependencies install, so Atrium didn't install or run the checks.",
+      };
+    }
     setTaskLoop(db, task.id, { ...loop, stage: "checks", checks: "running" });
     // A change to the manifest or lockfile gets the engine's own install first; agents can't write node_modules.
-    const changed = (await branchFiles(repo.path, repo.start, sha)).map((f) => f.path);
     const install = installFor(changed, LOCKFILES.filter((f) => existsSync(join(repo.path, f))));
     const results = await runChecks(repo.path, install ? [install, ...checks] : checks, { signal, onLine: line });
     await restoreTree(repo.path);
     saveChecks(db, task.id, runId, results);
-    const attention = [
-      ...new Set(checks.flatMap((c) => c.notes ?? [])),
-      ...(await checkAttention(repo.path, repo.start, sha, checks)),
-    ];
-    return { verdict: outcomeOf(results), results, sha, noChanges: false, attention };
+    return { verdict: outcomeOf(results), results, sha, noChanges: false, attention, unverified: null };
   }
 
   // A repo turn that finished: failing checks go back to the writer (or pause it), passing work goes to review or
@@ -947,10 +959,10 @@ export function createRunner(deps: {
   async function afterTurn(task: Task, space: Space, repo: RepoRun, gate: Gate | null, lines: string[]) {
     const before = task.loop!;
     let loop: LoopState = { ...before, report: lines, feedback: null };
-    if (gate?.noChanges) loop = { ...loop, noChanges: true, checks: "none", attention: [] };
+    if (gate?.noChanges) loop = { ...loop, noChanges: true, checks: "none", attention: [], unverified: null };
     else if (gate) {
       const passing = gate.results ? gate.results.filter((c) => c.status === "passed").map((c) => c.name) : before.passing;
-      loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention };
+      loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified };
     }
     const writer = agentName(resolvedAgent(db, task));
     if (loop.checks === "failed") {
@@ -1097,7 +1109,7 @@ async function branchContext(repo: RepoRun): Promise<string | null> {
 }
 
 // What Atrium's checks made of one turn. `results` is null when they didn't run again (nothing changed).
-type Gate = { verdict: "passed" | "failed" | "none"; results: CheckResult[] | null; sha: string | null; noChanges: boolean; attention: string[] };
+type Gate = { verdict: "passed" | "failed" | "none"; results: CheckResult[] | null; sha: string | null; noChanges: boolean; attention: string[]; unverified: string | null };
 
 // A rule may approve code only when the loop found nothing for Nakul to look at: no check edits or dropped tests,
 // no review that asked for changes, and a review (unless the space turned it off) that approved it first time.
