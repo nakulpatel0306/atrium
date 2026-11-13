@@ -1966,19 +1966,68 @@ describe("honest outcomes", () => {
     expect(activity(space.id)).toContain("Ready for review: Answer");
   });
 
-  test("done can't stand for something only Atrium can do", async () => {
+  test("done can't stand for something Atrium can't do or only Atrium can do", async () => {
+    const msg = await finish("Send the text to Dana", "Here's the text.\nOUTCOME: done");
+    expect([msg.t.outcome, msg.t.outcomeReason]).toEqual(["couldnt", "Atrium can't send texts or email, and nothing was sent."]);
+    expect(getApproval(db, msg.a.id)!.fingerprint).toBeNull();
+    await runner!.stop();
+    runner = null;
     const repoTask = await finish("Create a new GitHub repo for the blog", "Made a plan.\nOUTCOME: done");
     expect([repoTask.t.outcome, repoTask.t.outcomeReason]).toEqual(["couldnt", "Only Atrium can create repos, after your yes, and none was created."]);
     expect(getApproval(db, repoTask.a.id)!.fingerprint).toBeNull();
   });
 
   test("engineOnlyClaim", () => {
+    for (const t of ["Send the text to Dana", "Text mom happy birthday", "Can you send him a message", "iMessage Dana", "Let Dana know dinner is at 8", "Reach out to Dana"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, "message"]);
+    }
     for (const t of ["Create a new GitHub repo", "set up the repository", "make a repo for notes"]) expect(engineOnlyClaim(t)).toBe("repo");
-    for (const t of ["Summarise notes.md", "Write the repo notes", "Send PR to review"]) expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
+    for (const t of ["Draft a text to Dana", "Summarise notes.md", "Write the message copy", "Write the repo notes", "Send PR to review"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
+    }
   });
 });
 
 describe("final review", () => {
+  test("I1: an agent claiming done on 'Send the text to Dana' never ends up looking done", async () => {
+    const space = createSpace(db, { name: "Text Dana", kind: "general", goal: "" });
+    const t = createTask(db, { spaceId: space.id, title: "Send the text to Dana" });
+    start({ adapter: fakeAdapter(() => ok("Here's the text: hey!\nOUTCOME: done")).adapter });
+    await waitFor(() => status(t.id) === "review");
+    const task = getTask(db, t.id)!;
+    // What the user reads on the card must say nothing was sent, not "the agent didn't say".
+    expect(outcomeText(task.outcome, task.outcomeReason)).toContain("nothing was sent");
+    resolveApproval(db, approvalFor(t.id)!.id, "approve");
+    // Once accepted, the task list must not show a plain done check.
+    expect(outcomeLabel(getTask(db, t.id)!.outcome!)).not.toBeNull();
+    expect(listActivity(db, { spaceId: space.id }).map((r) => r.message)).toContain("Accepted anyway: Send the text to Dana. It says it couldn't do this.");
+  });
+
+  test("M1: ordinary repo task titles aren't treated as sends", () => {
+    for (const t of ["Text formatting fixes in the editor", "Message queue retry logic", "Email template redesign", "Send button styling", "DM inbox layout"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
+    }
+  });
+
+  test("a request for the agent's own output isn't a send", () => {
+    for (const t of ["Send me a summary of notes.md", "Email Template Redesign", "Message Queue cleanup", "Let me know what's in notes.md", "Send my notes to the folder"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
+    }
+  });
+
+  test("lowercase sends, as typed in the command bar, still count", () => {
+    for (const t of ["text dana that I'm late", "reach out to dana", "let dana know I'm on my way", "Text Dana"]) expect([t, engineOnlyClaim(t)]).toEqual([t, "message"]);
+  });
+
+  test("M1: a repo space never applies the send check", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Text Dana's avatar fallback" });
+    start({ adapter: writesDoc().adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(getTask(db, t.id)!.outcome).toBe("done");
+  });
+
   test("a repo space never applies the engine-only check", async () => {
     const path = repo();
     const s = repoSpace(path);

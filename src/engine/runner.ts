@@ -74,13 +74,37 @@ const REVIEW_SYSTEM_PROMPT = [
   "Never read, print, or edit .env files, keys, or tokens.",
 ].join("\n");
 
-// Titles that ask for something only the engine can do. An agent saying "done" to one of these, with nothing for
-// the engine to act on, hasn't done it.
-export function engineOnlyClaim(title: string): "repo" | null {
-  return /\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(title.trim()) ? "repo" : null;
+// Titles that ask for something an agent's "done" can't have carried out: a text or email to someone (nothing in
+// Atrium can send one) or a new repo (only the engine creates those, after a yes). A send needs a person after the
+// verb ("Text Dana", "Send the text to Dana", "text dana that I'm late"), and a false match marks a good run
+// "couldn't", so a name only counts when what follows reads like a message: "Email Template Redesign" and "Send me
+// a summary" aren't sends.
+const PERSON = "(?:him|her|them|mom|dad|my (?:mom|dad|mother|father|brother|sister|wife|husband|partner|girlfriend|boyfriend|friend|boss|manager|landlord|roommate|team))";
+const NAME = "[A-Z][\\w'-]*";
+const AFTER_NAME = "(?:$|[,:.!?—-]|\\s+(?:that|saying|about|asking|to|and|a|an|the|back|if|when|re|hi|hey|hello|happy|thanks|thank|good|i|i'm|im|we|we're|you|your|tonight|today|tomorrow)\\b)";
+const AFTER_LOWER = "\\s+(?:that|saying|about|asking|back|re|hi|hey|hello|happy|thanks|thank|i|i'm|im|we|we're|you|tonight|today|tomorrow)\\b";
+export function engineOnlyClaim(title: string): "message" | "repo" | null {
+  const t = title.trim();
+  const verb = /^(send|text|message|imessage|email|e-mail|dm)\s+(?:to\s+)?(.*)$/i.exec(t);
+  if (verb) {
+    const rest = verb[2]!;
+    const strong = !/^(?:send|email|e-mail)$/i.test(verb[1]!);
+    if (/^(?:[A-Z]{2,}|PR|CI)\b/.test(rest)) return null;
+    if (new RegExp(`^${PERSON}\\b`, "i").test(rest)) return "message";
+    if (new RegExp(`^${NAME}${AFTER_NAME}`).test(rest)) return "message";
+    if (strong && new RegExp(`^[a-z][\\w'-]*${AFTER_LOWER}`, "i").test(rest)) return "message";
+    if (new RegExp(`\\bto\\s+(?:${PERSON}|${NAME})\\b`).test(rest)) return "message";
+  }
+  if (new RegExp(`\\b(?:send|text)\\s+(?:${PERSON}|${NAME})\\s+(?:a |the )?(?:text|message|email)\\b`, "i").test(t)) return "message";
+  if (/^(?:let\s+(?!me\b)\S+\s+know|reach\s+out\s+to\s+\S)/i.test(t)) return "message";
+  if (/\b(create|make|set up)\s+(a |the )?(new )?(github )?repo(sitory)?\b/i.test(t)) return "repo";
+  return null;
 }
 
-const NO_REPO_MADE = "Only Atrium can create repos, after your yes, and none was created.";
+const ENGINE_ONLY: Record<"message" | "repo", string> = {
+  message: "Atrium can't send texts or email, and nothing was sent.",
+  repo: "Only Atrium can create repos, after your yes, and none was created.",
+};
 
 export const REVIEW_TOOLS = ["Read", "Glob", "Grep"];
 export const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
@@ -719,10 +743,10 @@ export function createRunner(deps: {
   function honestOutcome(task: Task, summary: string): ParsedOutcome {
     const parsed = parseOutcome(summary);
     const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
-    // A repo task's title is about code, never a repo Atrium would create.
+    // A repo task's title is about code ("Send button styling"), never a send or a repo Atrium would create.
     const claim = getSpace(db, task.spaceId)?.kind === "repo" ? null : engineOnlyClaim((parent ?? task).title);
-    // Atrium knows for certain that nothing was created, so this is "couldn't", not "can't tell".
-    if (parsed.outcome === "done" && claim) return { ...parsed, outcome: "couldnt", reason: NO_REPO_MADE };
+    // Atrium knows for certain that nothing was sent or created, so this is "couldn't", not "can't tell".
+    if (parsed.outcome === "done" && claim) return { ...parsed, outcome: "couldnt", reason: ENGINE_ONLY[claim] };
     return parsed;
   }
 
