@@ -64,6 +64,7 @@ import { recordUsage, runModels, withModels } from "./usage";
 import { planSession, progressNote, type Session } from "./sessions";
 import { awaitingShape, costlier, proposeShape, shapeLine } from "./shape";
 import { childrenOf, childState, fanIn, fanOut, judgePrompt, parseScores } from "./fanout";
+import { SCOUT_AGENT, SCOUT_TOOLS, SCOUT_TURNS, scoutAgent, scoutFindings, scoutSystemPrompt, scoutsSection } from "./scouts";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -738,6 +739,11 @@ export function createRunner(deps: {
       writing && !adopted && adapter.id === "claude" && !space.private
         ? planSession(shown.loop?.session ?? null, { now: Date.now(), tier: tierName, fresh: !!added || !!shown.loop?.feedback })
         : null;
+    // Scouts run before the first writer turn only: through Claude Code's own subagents for a Claude writer, or as
+    // Atrium's own read-only sessions for any other.
+    const scoutQuestions = writing && !adopted && shown.loop?.shape?.kind === "scouts" && !hadTurn(shown) ? shown.loop.shape.scouts : [];
+    const subagents = scoutQuestions.length > 0 && adapter.id === "claude";
+    const scouted = scoutQuestions.length && !subagents ? await runScouts(task, space, repo!, scoutQuestions, r.signal) : null;
     if (plan && !plan.resume && plan.why === "context") {
       logActivity(db, space.id, "atrium", `${task.title}: the last session held ${compact(shown.loop!.session!.context)} tokens of context, so this turn starts a fresh one with a progress note.`, { taskId: task.id });
     }
@@ -748,7 +754,9 @@ export function createRunner(deps: {
       const readOnly = task.kind === "review" || explaining;
       const checks = gate ? gate.map((c) => c.command) : null;
       const coldPrompt = async () =>
-        explaining ? explainPrompt(task, repo ? await branchContext(repo) : null) : buildPrompt(shown, space, checks, writing && repo && hadTurn(shown) ? await progressFor(repo, shown) : null);
+        explaining
+          ? explainPrompt(task, repo ? await branchContext(repo) : null)
+          : buildPrompt(shown, space, checks, writing && repo && hadTurn(shown) ? await progressFor(repo, shown) : null, subagents ? scoutsSection(scoutQuestions) : scouted);
       const run = (prompt: string, session: AgentRunInput["session"]) => {
         // Reading the checks and the branch takes a moment, in which a stop can land before the agent has started.
         if (r.signal.aborted) throw new StoppedEarly();
@@ -758,7 +766,8 @@ export function createRunner(deps: {
           systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
           // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
           // An explanation reads only: no Bash at all, with the branch's history and diff already in its prompt.
-          allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
+          allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? []), ...(subagents ? [`Agent(${SCOUT_AGENT})`] : [])] : BASE_TOOLS,
+          ...(subagents && { agents: scoutAgent(tierModel(db, "cheap") || undefined) }),
           privateData: space.private,
           mode: readOnly ? "review" : "work",
           ...tier,
@@ -1154,6 +1163,38 @@ export function createRunner(deps: {
     setTaskLoop(db, taskId, { ...loop, usage: { tokens: loop.usage.tokens + tokens, ms: loop.usage.ms + ms, unreported } });
   }
 
+  // Atrium's own scouts for a writer that isn't Claude: a short read-only Claude session per question, on the cheap
+  // tier. One that can't answer is left out; the writer still starts.
+  async function runScouts(task: Task, space: Space, repo: RepoRun, questions: string[], signal: AbortSignal): Promise<string | null> {
+    const claude = adapters.claude;
+    if (!claude) return null;
+    const found: { question: string; answer: string }[] = [];
+    for (const question of questions) {
+      if (signal.aborted) break;
+      const res = await claude
+        .run({
+          prompt: `Task the writer will do next: ${task.brief?.goal || task.title}\n\nYour question: ${question}`,
+          cwd: repo.path,
+          systemPrompt: scoutSystemPrompt,
+          allowedTools: SCOUT_TOOLS,
+          mode: "review",
+          privateData: space.private,
+          ...tierRun(db, "cheap"),
+          maxTurns: SCOUT_TURNS,
+          signal,
+          onChunk() {},
+        })
+        .catch((e: Error): AgentRunResult => ({ status: "error", kind: "failed", message: e.message }));
+      if (res.usage) registry.recordUsage("claude", res.usage);
+      if (res.status !== "ok") continue;
+      const models = runModels(res, tierModel(db, "cheap") || null);
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "scout", models });
+      countTurn(task.id, withModels(res, models), 0);
+      found.push({ question, answer: res.summary.trim() });
+    }
+    return found.length ? scoutFindings(found) : null;
+  }
+
   function keepSession(taskId: string, session: Session | null) {
     const loop = getTask(db, taskId)?.loop;
     if (loop) setTaskLoop(db, taskId, { ...loop, session });
@@ -1442,13 +1483,14 @@ export const steerBlock = (note: string) =>
 // turn left to deal with (failing checks or review findings). Stable parts come first and what changes from turn to
 // turn last, so a fresh session still finds most of its prompt in the cache; the fenced excerpts take a new marker
 // each time, so they come after everything that doesn't change.
-function buildPrompt(task: Task, space: Space, checks: string[] | null, progress: string | null = null): string {
+function buildPrompt(task: Task, space: Space, checks: string[] | null, progress: string | null = null, scouts: string | null = null): string {
   const parts = [`Task: ${task.title}`];
   if (task.brief) parts.push(...briefSections(task.brief, checks));
   else if (checks) parts.push(checksSection(checks));
   if (space.goal.trim()) parts.push(`Space goal: ${space.goal.trim()}`);
   if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
   if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
+  if (scouts) parts.push(scouts);
   if (progress) parts.push(progress);
   if (task.loop?.feedback) parts.push(task.loop.feedback);
   return parts.join("\n\n");
