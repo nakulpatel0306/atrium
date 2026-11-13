@@ -9,7 +9,7 @@ export type ReviewerId = (typeof REVIEWERS)[number];
 export type Space = {
   id: string;
   name: string;
-  kind: "repo" | "general" | "markets" | "inbox";
+  kind: "repo" | "general" | "markets";
   goal: string;
   color: string;
   repoPath: string | null;
@@ -44,12 +44,10 @@ type SpaceRow = {
 const DEFAULT_COLOR = "#8ba4b0";
 
 export const MARKETS_PRIVATE = "Markets spaces stay private: your holdings only go to Claude.";
-export const INBOX_PRIVATE = "The Inbox stays private: your mail and calendar only go to Claude.";
 
-// Holdings and the paper account are the user's private data, and so are their mail and calendar, so markets and inbox
-// spaces are private whatever their flag says.
-export const isPrivate = (space: Pick<Space, "kind" | "private">): boolean => space.private || space.kind === "markets" || space.kind === "inbox";
-const alwaysPrivate = (kind: Space["kind"]) => (kind === "markets" ? MARKETS_PRIVATE : kind === "inbox" ? INBOX_PRIVATE : null);
+// Holdings and the paper account are the user's private data, so markets spaces are private whatever their flag says.
+export const isPrivate = (space: Pick<Space, "kind" | "private">): boolean => space.private || space.kind === "markets";
+const alwaysPrivate = (kind: Space["kind"]) => (kind === "markets" ? MARKETS_PRIVATE : null);
 
 const toSpace = (r: SpaceRow): Space => ({
   id: r.id,

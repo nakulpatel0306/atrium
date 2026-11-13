@@ -9,7 +9,6 @@ import { tildePath } from "./folders";
 import { HOME_CURRENCY, storedName, suggestedName } from "./profile";
 import { runGh } from "./repos/gh";
 import { listSpaces } from "./spaces";
-import { mailReport, type MailReport } from "./mail/report";
 
 // What "Get started" and `atrium doctor` show. Every check asks a CLI for its own status or version; none of them
 // opens a credential file, a token or a Keychain item.
@@ -31,7 +30,6 @@ export type Report = {
   permissions: { label: string; message: string }[];
   investing: { spaceId: string | null };
   money: { formats: string[]; message: string };
-  mail: MailReport;
   profile: { name: string | null; suggestedName: string | null; projectsRoot: string; homeCurrency: string };
   hasSpaces: boolean;
 };
@@ -110,7 +108,6 @@ export async function doctor(db: Database | null): Promise<Report> {
     ],
     investing: { spaceId: spaces.find((s) => s.kind === "markets" && s.name === "Investing")?.id ?? null },
     money: { formats: MONEY_FORMATS, message: "Import a CSV from your bank each month. Card and account numbers are masked before anything is saved." },
-    mail: mailReport(db),
     profile: { name: db ? storedName(db) : null, suggestedName: suggestedName(), projectsRoot: tildePath(c.projectsRoot), homeCurrency: HOME_CURRENCY },
     hasSpaces: spaces.length > 0,
   };
@@ -131,8 +128,6 @@ export function formatDoctor(r: Report): string {
   row(r.github);
   lines.push("", "Permissions (asked on first use, never from here)");
   for (const p of r.permissions) lines.push(`  ${p.label}: ${p.message}`);
-  lines.push("", "Mail and calendar (all optional)");
-  for (const m of r.mail.sources) lines.push(`  ${m.ready ? "ok     " : "-      "}  ${m.label}: ${m.message}`);
   lines.push("", "Your folders", `  Projects folder: ${r.profile.projectsRoot}`, `  Home currency:   ${r.profile.homeCurrency} (fixed for now)`);
   lines.push("", "Investing and money are set up from the dashboard's Get started screen, or with: atrium investing setup");
   return lines.join("\n");

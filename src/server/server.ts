@@ -15,7 +15,7 @@ import type { setupSpace } from "../engine/setup";
 import { type OnCreate, SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
-import { createSpace, getSpace, INBOX_PRIVATE, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
+import { createSpace, getSpace, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
@@ -39,8 +39,6 @@ import { PushRefused } from "../engine/repos/push";
 import { reposRoute } from "./repos";
 import type { Messaging } from "../engine/messaging";
 import { messagingRoute } from "./messaging";
-import type { Mail } from "../engine/mail";
-import { mailRoute } from "./mail";
 import { mergeRestoredMessages, messagesMergeWait } from "../engine/messaging/space";
 
 type Deps = {
@@ -60,9 +58,6 @@ type Deps = {
   markets?: MarketsDeps;
   repos?: Repos;
   messaging?: Messaging;
-  mail?: Mail;
-  // How many clients (dashboard tabs, the Mac app, the terminal app) are connected; mail syncs only while one is.
-  onClients?: (n: number) => void;
 };
 
 
@@ -151,7 +146,6 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       if (!current) throw new HttpError(404, "No such space.");
       const b = await readBody(req);
       if (current.kind === "markets" && b.private === false) throw new HttpError(400, MARKETS_PRIVATE);
-      if (current.kind === "inbox" && b.private === false) throw new HttpError(400, INBOX_PRIVATE);
       const status = b.status;
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
@@ -506,15 +500,10 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       const res = await messagingRoute(db, deps.messaging, req, url);
       if (res) return res;
     }
-    if (deps.mail) {
-      const res = await mailRoute(db, deps.mail, req, url);
-      if (res) return res;
-    }
 
     throw new HttpError(404, "Not found.");
   };
 
-  const clients = new Set<ServerWebSocket<WsData>>();
   const visible = new Set<ServerWebSocket<WsData>>();
   const setVisible = (ws: ServerWebSocket<WsData>, on: boolean) => {
     const before = visible.size;
@@ -569,8 +558,6 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     websocket: {
       open: (ws) => {
         ws.subscribe(ws.data.topic);
-        clients.add(ws);
-        deps.onClients?.(clients.size);
       },
       message: (ws, raw) => {
         let msg: unknown;
@@ -584,8 +571,6 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       },
       close: (ws) => {
         setVisible(ws, false);
-        clients.delete(ws);
-        deps.onClients?.(clients.size);
       },
     },
   });

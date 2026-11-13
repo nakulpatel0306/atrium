@@ -66,21 +66,3 @@ test.skipIf(!canBuild)(
   },
   180_000,
 );
-
-test.skipIf(!canBuild)(
-  "the bundle carries the signed Mail and Calendar helper with its own permission reasons",
-  async () => {
-    const path = await app();
-    const pim = join(path, "Contents/MacOS/atrium-pim");
-    expect(existsSync(pim)).toBe(true);
-    expect(sh(["codesign", "-dv", pim]).err).toContain("Identifier=com.atrium.pim\n");
-    // The embedded plist sits in the binary as plain text; otool confirms it's in its own section.
-    expect(sh(["otool", "-l", pim]).out).toContain("sectname __info_plist");
-    expect(readFileSync(pim).toString("latin1")).toContain("<key>NSCalendarsFullAccessUsageDescription</key>");
-    // An unknown command answers in the documented error shape, without touching Mail or Calendar.
-    const r = sh([pim, "nonsense"]);
-    expect(r.code).toBe(1);
-    expect(JSON.parse(r.out)).toEqual({ error: { kind: "bad_args", message: "Unknown command nonsense." } });
-  },
-  180_000,
-);

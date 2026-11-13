@@ -39,16 +39,6 @@ export function config() {
     openBin: process.env.ATRIUM_OPEN_BIN ?? "/usr/bin/open",
     // macOS's AppleScript runner; only src/engine/messaging/osascript.ts runs it. Tests and dev engines use a fake.
     osascriptBin: process.env.ATRIUM_OSASCRIPT_BIN ?? "/usr/bin/osascript",
-    // The Mail and Calendar helper `atrium app install` builds into the Mac app; tests and dev engines use a fake.
-    pimBin: process.env.ATRIUM_PIM_BIN ?? join(homedir(), "Applications", "Atrium.app", "Contents", "MacOS", "atrium-pim"),
-    // Google's sign-in and API hosts; tests point all three at a fake server on 127.0.0.1.
-    google: {
-      authUrl: process.env.ATRIUM_GOOGLE_AUTH_URL ?? "https://accounts.google.com/o/oauth2/v2/auth",
-      tokenUrl: process.env.ATRIUM_GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
-      revokeUrl: process.env.ATRIUM_GOOGLE_REVOKE_URL ?? "https://oauth2.googleapis.com/revoke",
-      gmailUrl: process.env.ATRIUM_GOOGLE_GMAIL_URL ?? "https://gmail.googleapis.com",
-      calendarUrl: process.env.ATRIUM_GOOGLE_CALENDAR_URL ?? "https://www.googleapis.com",
-    },
     // Where new projects and on-demand clones go.
     projectsRoot: process.env.ATRIUM_PROJECTS_ROOT ?? chosenProjectsRoot ?? defaultProjectsRoot(),
     marketNow: process.env.ATRIUM_MARKET_NOW ?? null,

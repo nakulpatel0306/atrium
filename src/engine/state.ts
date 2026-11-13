@@ -14,7 +14,6 @@ import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
 import { type Candidate, type Group, type HandleSource, pendingMessageActions, type Service } from "./messaging/store";
 import { type MessagingState, messagingState } from "./capabilities";
-import { type MailAction, pendingMailActions } from "./mail/drafts";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
 import { type Attachment, claimedAttachments } from "./attachments";
@@ -76,20 +75,12 @@ export type State = {
   repoActions: RepoActionView[];
   // Pending texts, for the send cards in Needs you.
   messageActions: MessageActionView[];
-  // Emails and calendar changes waiting on the user's own Send, each with its approval.
-  mailActions: MailActionView[];
   // The monthly import reminder, shown in Needs you as a quiet row (budget heads-ups are notifications only).
   nudges: Nudge[];
   // Whether sending has worked, is blocked, or hasn't been tried; and whether a Contacts lookup has worked (null
   // until the first one).
   messaging: { state: MessagingState; contactsReady: boolean | null };
 };
-
-export type MailActionView = Omit<MailAction, "references" | "inReplyTo" | "sourceMessageId" | "threadAccountId" | "sentAt" | "createdAt" | "updatedAt" | "error"> & { lastError: string | null };
-
-function mailActionViews(db: Database): MailActionView[] {
-  return pendingMailActions(db).map(({ references: _r, inReplyTo: _i, sourceMessageId: _s, threadAccountId: _t, sentAt: _a, createdAt: _c, updatedAt: _u, error, ...rest }) => ({ ...rest, lastError: error }));
-}
 
 export type MessageActionView = {
   id: string;
@@ -240,7 +231,6 @@ export function snapshot(db: Database, registry?: Registry): State {
     disk: atriumDiskUsage(),
     repoActions: repoActionViews(db),
     messageActions: messageActionViews(db),
-    mailActions: mailActionViews(db),
     nudges: activeNudges(db, now).filter((n) => n.kind === "import"),
     messaging: { state: messagingState(db), contactsReady: contactsReadyOf(db) },
   };

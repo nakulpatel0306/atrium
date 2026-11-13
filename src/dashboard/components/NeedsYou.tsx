@@ -14,7 +14,6 @@ import { RemovalRow } from "./RepoRemoval";
 import { AdviceTag } from "./markets/AdviceTag";
 import { Markdown } from "./Markdown";
 import { WhatItMade } from "./WhatItMade";
-import { DraftCard } from "./inbox/DraftCard";
 
 type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
@@ -160,8 +159,6 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
         const action = state.repoActions.find((r) => r.approvalId === a.id);
         if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
         if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
-        const draft = a.alwaysAsk === "send_message" ? (state.mailActions ?? []).find((m) => m.approvalId === a.id) : undefined;
-        if (draft) return <DraftCard key={a.id} approval={a} action={draft} folded />;
         const text = a.alwaysAsk === "send_message" ? state.messageActions.find((m) => m.approvalId === a.id) : undefined;
         const Card = text?.group ? GroupMessageCard : MessageCard;
         if (text) return <Card key={a.id} approval={a} action={text} spaceName={spaces.get(text.spaceId)?.name} firstSend={state.messaging.state === "untested"} folded />;

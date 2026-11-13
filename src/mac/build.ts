@@ -1,7 +1,7 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { infoPlist, PIM_ID, pimInfoPlist } from "./plists";
+import { infoPlist } from "./plists";
 
 export type BuildOpts = { outDir: string; repoPath?: string; bunPath?: string; bundleId?: string };
 
@@ -66,22 +66,6 @@ export async function buildApp(o: BuildOpts): Promise<string> {
       "-o",
       join(contents, "MacOS", "Atrium"),
     ]);
-
-    // The Mail and Calendar helper the engine runs (src/engine/mail/pim.ts), signed before the app that holds it.
-    const pimPlist = join(tmp, "pim-Info.plist");
-    writeFileSync(pimPlist, pimInfoPlist(version()));
-    const pim = join(contents, "MacOS", "atrium-pim");
-    await step("compile the Mail and Calendar helper", [
-      "swiftc",
-      "-O",
-      ...TARGET,
-      ...swiftFiles("mac/Sources/PimCore"),
-      ...swiftFiles("mac/Sources/Pim"),
-      "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", pimPlist,
-      "-o",
-      pim,
-    ]);
-    await step("sign the Mail and Calendar helper", ["codesign", "--force", "-s", "-", "--identifier", PIM_ID, pim]);
 
     const iconTool = join(tmp, "icon");
     const png = join(tmp, "icon-1024.png");

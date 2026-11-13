@@ -32,9 +32,6 @@ import { recoverRemovals } from "./engine/repos/cleanup";
 import { finishPendingDeletes } from "./engine/delete-files";
 import { recoverRepoActions } from "./engine/repos/create";
 import { createMessaging } from "./engine/messaging";
-import { createMail } from "./engine/mail";
-import { createInboxHooks } from "./engine/mail/agent";
-import { recoverMailActions } from "./engine/mail/send";
 import { moneyDaily } from "./engine/money/reminder";
 import { recoverMessageActions } from "./engine/messaging/send";
 import { getSetting } from "./engine/settings";
@@ -73,8 +70,6 @@ const jobs = createJobs(
 const catchUp = createCatchUp(db, { jobs, now: marketClock });
 const catchUpLogged = (force: boolean) =>
   catchUp.run(force).catch((e) => console.error(`Market catch-up: ${redact(e instanceof Error ? e.message : String(e), data.secrets())}`));
-// Mail and calendar sync only while a client is connected, when Inbox or Calendar opens, or when an Inbox task needs it.
-const mail = createMail({ db });
 // Repo work wakes the runner when a clone lands or a new project's space is ready.
 const repos = createRepos({ db, kick: () => runner.kick() });
 const runner = createRunner({
@@ -85,7 +80,6 @@ const runner = createRunner({
   markets: createMarketsHooks(db, { data, now: marketClock }),
   repos,
   money: { daily: (now) => moneyDaily(db, now) },
-  inbox: createInboxHooks(db, mail.sync),
 });
 const feed = createFeed({
   db,
@@ -107,8 +101,6 @@ onApprovalResolved(repos.onDecision);
 // Likewise the only path to sending a text: his own Send on its card.
 const messaging = createMessaging({ db, kick: () => runner.kick() });
 onApprovalResolved(messaging.onDecision);
-// And to sending an email, an invite or a calendar change: his own Send or Approve on its card.
-onApprovalResolved(mail.actions.onDecision);
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.
 let server: ReturnType<typeof startServer>;
@@ -121,8 +113,6 @@ try {
     markets: { data, feed, keychain, kick: () => runner.kick(), now: marketClock, jobs, catchUp },
     repos,
     messaging,
-    mail,
-    onClients: (n) => mail.sync.setClients(n),
   });
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
@@ -130,10 +120,9 @@ try {
   process.exit(1);
 }
 
-// Texts and emails a stopped engine left mid-send, settled before anything awaits: the port is bound (it's the lock),
+// Texts a stopped engine left mid-send, settled before anything awaits: the port is bound (it's the lock),
 // but no request can run until this synchronous code yields, so no new Send can start in between.
 recoverMessageActions(db);
-recoverMailActions(db);
 await recoverOnBoot(db);
 // Before the runner starts, so no run works in a folder that is being moved.
 for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);
@@ -156,7 +145,6 @@ const shutdown = async () => {
   let code = 0;
   try {
     feed.stop();
-    mail.sync.stop();
     await runner.stop();
     keepAwake.stop();
     // Open dashboard sockets would otherwise keep shutdown waiting forever.

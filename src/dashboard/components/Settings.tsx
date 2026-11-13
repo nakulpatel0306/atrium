@@ -5,7 +5,6 @@ import type { Quote } from "../../engine/markets/providers/types";
 import { del, post, put } from "../api";
 import { absolute, money } from "../format";
 import { useMarketDataSettings } from "../markets";
-import { AccountsSettings } from "./AccountsSettings";
 import { ArchivedSpaces } from "./ArchivedSpaces";
 import { DataBudget } from "./DataBudget";
 import { Freshness } from "./markets/Freshness";
@@ -160,7 +159,6 @@ export function Settings() {
       <h2>You</h2>
       <Profile />
       <ArchivedSpaces />
-      <AccountsSettings />
       <h2>Market data</h2>
       {!s ? (
         <div className="list">
