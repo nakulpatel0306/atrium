@@ -9,7 +9,7 @@ export type ReviewerId = (typeof REVIEWERS)[number];
 export type Space = {
   id: string;
   name: string;
-  kind: "repo" | "general" | "markets";
+  kind: "repo" | "general" | "markets" | "inbox";
   goal: string;
   color: string;
   repoPath: string | null;
@@ -44,9 +44,12 @@ type SpaceRow = {
 const DEFAULT_COLOR = "#8ba4b0";
 
 export const MARKETS_PRIVATE = "Markets spaces stay private: your holdings only go to Claude.";
+export const INBOX_PRIVATE = "The Inbox stays private: your mail and calendar only go to Claude.";
 
-// Holdings and the paper account are Nakul's private data, so a markets space is private whatever its flag says.
-export const isPrivate = (space: Pick<Space, "kind" | "private">): boolean => space.private || space.kind === "markets";
+// Holdings and the paper account are the user's private data, and so are their mail and calendar, so markets and inbox
+// spaces are private whatever their flag says.
+export const isPrivate = (space: Pick<Space, "kind" | "private">): boolean => space.private || space.kind === "markets" || space.kind === "inbox";
+const alwaysPrivate = (kind: Space["kind"]) => (kind === "markets" ? MARKETS_PRIVATE : kind === "inbox" ? INBOX_PRIVATE : null);
 
 const toSpace = (r: SpaceRow): Space => ({
   id: r.id,
@@ -73,7 +76,8 @@ export function createSpace(
   db: Database,
   input: { name: string; kind: Space["kind"]; goal: string; color?: string; repoPath?: string; private?: boolean; github?: string },
 ): Space {
-  if (input.kind === "markets" && input.private === false) throw new Error(MARKETS_PRIVATE);
+  const locked = alwaysPrivate(input.kind);
+  if (locked && input.private === false) throw new Error(locked);
   const id = newId("spc");
   const now = Date.now();
   db.query(
@@ -111,7 +115,8 @@ export function updateSpace(
   const cur = getSpace(db, id);
   if (!cur) throw new Error(`No space with id ${id}`);
   const next = { ...cur, ...patch };
-  if (next.kind === "markets" && !next.private) throw new Error(MARKETS_PRIVATE);
+  const locked = alwaysPrivate(next.kind);
+  if (locked && !next.private) throw new Error(locked);
   db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, updated_at = ? WHERE id = ?").run(
     next.name,
     next.goal,

@@ -6,6 +6,7 @@ import { config } from "./config";
 import { applyProjectsRoot, migrateProjectsRoot } from "./profile";
 import { migrateWatchlists } from "./markets/lists";
 import { MARKETS_SCHEMA } from "./markets/schema";
+import { MAIL_SCHEMA } from "./mail/schema";
 import { remaskMoney } from "./money/remask";
 import { reflowMoney } from "./money/flows";
 import { ALWAYS_ASK } from "./approvals";
@@ -14,7 +15,7 @@ const schema = () => `
 CREATE TABLE IF NOT EXISTS spaces (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets')),
+  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets','inbox')),
   goal TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL,
   repo_path TEXT,
@@ -210,6 +211,8 @@ function migrate(db: Database): boolean {
     (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
   // CHECK constraints can't be altered, so a table whose kinds predate markets spaces is rebuilt.
   rebuildIfMissing(db, "spaces", "'markets'", SPACES_DDL);
+  // And again when the private Inbox space (mail and calendar) joined the kinds.
+  rebuildIfMissing(db, "spaces", "'inbox'", SPACES_DDL);
   rebuildIfMissing(db, "approvals", "'alert'", APPROVALS_DDL);
   // Repo approvals belong to no space and must always wait for Nakul, so the table gains both constraints.
   rebuildIfMissing(db, "approvals", "always_ask", APPROVALS_DDL);
@@ -281,6 +284,7 @@ function migrate(db: Database): boolean {
   db.exec("CREATE INDEX IF NOT EXISTS activity_space ON activity(space_id, created_at)");
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
+  db.exec(MAIL_SCHEMA);
   migrateWatchlists(db);
   // Ask Claude answers (about a symbol, or about money) are kept as write-ups of their own kinds.
   rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
@@ -359,7 +363,7 @@ const WRITEUPS_DDL = (name: string) => `CREATE TABLE ${name} (
 const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets')),
+  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets','inbox')),
   goal TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL,
   repo_path TEXT,
@@ -369,7 +373,9 @@ const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
   updated_at INTEGER NOT NULL,
   review_by TEXT,
   github TEXT,
-  folder TEXT
+  folder TEXT,
+  folder_dev INTEGER,
+  folder_ino INTEGER
 )`;
 
 // A text Atrium drafted. A person text sends to `handle`; a group text sends to `chat_id`, the existing Messages
