@@ -33,3 +33,19 @@ export function legacyUnlinkTasks(db: Database, tasks: string[]): void {
   const marks = tasks.map(() => "?").join(",");
   for (const t of LEGACY.byTask) if (present(db, t)) db.query(`UPDATE ${t} SET task_id = NULL WHERE task_id IN (${marks})`).run(...tasks);
 }
+
+export const REMOVED_FEATURE_QUESTION = "This came from a feature Atrium no longer has, so it was closed.";
+
+// Pending questions an older Atrium asked for a removed feature: paper-strategy proposals, and questions with no task
+// in a space of a removed kind (only those features asked those). Answering one would do nothing, so boot closes them
+// with a plain note and keeps the rows.
+export function closeLegacyApprovals(db: Database): number {
+  const strategies = present(db, "market_strategies") ? " OR id IN (SELECT approval_id FROM market_strategies WHERE approval_id IS NOT NULL)" : "";
+  const res = db
+    .query(
+      `UPDATE approvals SET status = 'rejected', note = ?, resolved_at = ? WHERE status = 'pending' AND (
+        (task_id IS NULL AND space_id IN (SELECT id FROM spaces WHERE kind NOT IN ('repo','general')))${strategies})`,
+    )
+    .run(REMOVED_FEATURE_QUESTION, Date.now());
+  return res.changes;
+}

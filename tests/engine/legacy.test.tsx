@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SpaceView } from "../../src/dashboard/components/SpaceView";
 import { BASE_TOOLS, createRunner, recoverOnBoot } from "../../src/engine/runner";
 import { createApproval, listPending } from "../../src/engine/approvals";
+import { REMOVED_FEATURE_QUESTION } from "../../src/engine/legacy";
 import { openDb } from "../../src/engine/db";
 import { deleteSpace } from "../../src/engine/delete";
 import { listSpaces } from "../../src/engine/spaces";
@@ -45,12 +46,13 @@ function legacyInstall() {
     INSERT INTO money_transactions VALUES ('t1', 'spc_inv', 12.5);`);
 }
 
-const legacyTask = (spaceId: string, purpose: string, status: "queued" | "running" | "done" = "queued") => {
+const legacyTask = (spaceId: string, purpose: string, status: "queued" | "running" | "blocked" | "done" = "queued") => {
   const t = createTask(db, { spaceId, title: `Old ${purpose} work` });
   db.query("UPDATE tasks SET purpose = ? WHERE id = ?").run(purpose, t.id);
   if (status !== "queued") {
     setTaskStatus(db, t.id, "running");
     if (status === "done") setTaskStatus(db, t.id, "done");
+    if (status === "blocked") setTaskStatus(db, t.id, "blocked", { blockedReason: "Waiting on the old feature." });
   }
   return t.id;
 };
@@ -115,13 +117,31 @@ test("on boot, waiting and running tasks of removed features end with a plain no
   legacyInstall();
   const queued = legacyTask("spc_inv", "money");
   const running = legacyTask("spc_inb", "inbox", "running");
+  const blocked = legacyTask("spc_inv", "thesis_check", "blocked");
   const done = legacyTask("spc_inv", "digest", "done");
   const plain = createTask(db, { spaceId: "spc_ok", title: "Plain work" }).id;
   await recoverOnBoot(db);
-  for (const id of [queued, running]) expect(getTask(db, id)).toMatchObject({ status: "failed", blockedReason: REMOVED_FEATURE });
+  for (const id of [queued, running, blocked]) expect(getTask(db, id)).toMatchObject({ status: "failed", blockedReason: REMOVED_FEATURE });
   expect(getTask(db, done)!.status).toBe("done");
   expect(getTask(db, plain)!.status).toBe("queued");
-  expect(db.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 4 });
+  expect(db.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 5 });
+});
+
+test("on boot, questions only a removed feature could have asked are closed with a plain note, and kept", async () => {
+  legacyInstall();
+  db.exec("CREATE TABLE market_strategies (id TEXT PRIMARY KEY, space_id TEXT REFERENCES spaces(id), approval_id TEXT REFERENCES approvals(id))");
+  const strategy = createApproval(db, { spaceId: "spc_ok", kind: "question", title: "Approve paper strategy: Momentum", detail: "" });
+  db.query("INSERT INTO market_strategies VALUES ('st1', 'spc_ok', ?)").run(strategy.id);
+  const inbox = createApproval(db, { spaceId: "spc_inb", kind: "question", title: "Reply to the landlord?", detail: "" });
+  const plain = createApproval(db, { spaceId: "spc_ok", kind: "question", title: "Which folder?", detail: "" });
+  const work = createTask(db, { spaceId: "spc_inv", title: "Tidy the notes" });
+  const onTask = createApproval(db, { spaceId: "spc_inv", taskId: work.id, kind: "question", title: "Keep the old file?", detail: "" });
+  await recoverOnBoot(db);
+  expect(listPending(db).map((a) => a.id).sort()).toEqual([plain.id, onTask.id].sort());
+  for (const id of [strategy.id, inbox.id]) {
+    expect(db.query("SELECT status, note FROM approvals WHERE id = ?").get(id)).toEqual({ status: "rejected", note: REMOVED_FEATURE_QUESTION });
+  }
+  expect(db.query("SELECT COUNT(*) AS n FROM approvals").get()).toEqual({ n: 4 });
 });
 
 test("a database that never had a purpose column boots without touching tasks", async () => {

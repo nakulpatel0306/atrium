@@ -211,9 +211,10 @@ export function reopenForReview(db: Database, id: string): Task {
 
 export const REMOVED_FEATURE = "This feature was removed from Atrium, so the task didn't run.";
 
-// Ends a task of a removed feature as failed with a plain note. A waiting task passes through running, the only way
-// the status rules reach failed; nothing runs in between.
+// Ends a task of a removed feature as failed with a plain note. A waiting or blocked task passes through running, the
+// only way the status rules reach failed; nothing runs in between.
 export function failRemovedFeatureTask(db: Database, id: string): void {
+  if (getTask(db, id)?.status === "blocked") setTaskStatus(db, id, "queued");
   if (getTask(db, id)?.status === "queued") setTaskStatus(db, id, "running");
   setTaskStatus(db, id, "failed");
   // Only a blocked task keeps a reason through setTaskStatus; this one is kept for the note the user reads.
@@ -221,11 +222,11 @@ export function failRemovedFeatureTask(db: Database, id: string): void {
 }
 
 // Tasks an older Atrium made for features that are gone (their `purpose` column is still in the database). One that
-// is waiting or running is ended with a plain note instead of being run; the rows themselves are kept.
+// is waiting, blocked or running is ended with a plain note instead of being run; the rows themselves are kept.
 export function endRemovedFeatureTasks(db: Database): number {
   const cols = db.query("PRAGMA table_info(tasks)").all() as { name: string }[];
   if (!cols.some((c) => c.name === "purpose")) return 0;
-  const ids = (db.query("SELECT id FROM tasks WHERE purpose IS NOT NULL AND status IN ('queued','running')").all() as { id: string }[]).map((r) => r.id);
+  const ids = (db.query("SELECT id FROM tasks WHERE purpose IS NOT NULL AND status IN ('queued','running','blocked')").all() as { id: string }[]).map((r) => r.id);
   for (const id of ids) failRemovedFeatureTask(db, id);
   return ids.length;
 }

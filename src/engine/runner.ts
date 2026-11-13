@@ -36,6 +36,7 @@ import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
+import { closeLegacyApprovals } from "./legacy";
 import { appendTaskDetail, endRemovedFeatureTasks, failRemovedFeatureTask, getTask, listTasks, REMOVED_FEATURE, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
@@ -969,6 +970,7 @@ function sweepTempDirs() {
 export async function recoverOnBoot(db: Database): Promise<number> {
   sweepTempDirs();
   endRemovedFeatureTasks(db);
+  closeLegacyApprovals(db);
   const stuck = listTasks(db, { status: ["running"] });
   for (const task of stuck) {
     const path = getSpace(db, task.spaceId)?.repoPath;
