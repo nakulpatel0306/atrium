@@ -41,8 +41,11 @@ export function parseRecipients(text: string): { people: Person[]; problem: stri
 
 export function recipientsProblem(to: Person[], cc: Person[]): string | null {
   if (to.length === 0) return NO_TO_COPY;
-  const bad = [...to, ...cc].find((p) => !isAddress(p.address) || /[\r\n]/.test(p.name) || hasHiddenText(p.name));
+  const people = [...to, ...cc];
+  const bad = people.find((p) => !isAddress(p.address));
   if (bad) return badAddressCopy(bad.address || bad.name);
+  const hidden = people.find((p) => /[\r\n]/.test(p.name) || hasHiddenText(p.name));
+  if (hidden) return `The name for ${hidden.address} has hidden characters. Remove them and try again.`;
   if (to.length + cc.length > MAX_RECIPIENTS) return TOO_MANY_COPY;
   return null;
 }

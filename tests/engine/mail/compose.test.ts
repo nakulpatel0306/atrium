@@ -83,6 +83,10 @@ describe("addresses can't hide characters", () => {
     expect(isAddress("robin@example.net")).toBe(true);
   });
 
+  test("a hidden character in a typed name is called out as the name's, not the address's", () => {
+    expect(recipientsProblem([{ name: "Robin\u202E Vale", address: "robin@example.net" }], [])).toBe("The name for robin@example.net has hidden characters. Remove them and try again.");
+  });
+
   test("a name from a thread loses its invisible characters, so the card reads as what's sent", () => {
     const m = { from: { name: "Robin\u202E Vale", address: "robin@example.net" }, to: [], cc: [] };
     expect(replyRecipients(own, m, "reply").to).toEqual([{ name: "Robin Vale", address: "robin@example.net" }]);
