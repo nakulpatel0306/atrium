@@ -1,10 +1,12 @@
 import { fileAt, treeEntries } from "../git";
 
 export type CheckKind = "fast" | "full";
-export type Check = { name: string; command: string; kind: CheckKind };
+// `files` are copies of the base commit's files a command reads (a Makefile), put in a folder of their own and
+// named through $ATRIUM_CHECK_FILES, so the copy in the agent's tree is never what runs.
+export type Check = { name: string; command: string; kind: CheckKind; files?: Record<string, string> };
 
-// Read from the commit the task started from, never the agent's branch: an agent that rewrote the test script
-// to `true` mustn't get to choose what proves its work.
+// Read from the commit the task started from, never the agent's branch, and run as that exact text: an agent that
+// rewrote the test script to `exit 0` mustn't get to choose what proves its work.
 const cache = new Map<string, Check[]>();
 
 export async function detectChecks(repo: string, sha: string): Promise<Check[]> {
@@ -16,7 +18,8 @@ export async function detectChecks(repo: string, sha: string): Promise<Check[]> 
   return found;
 }
 
-type Found = Partial<Record<"typecheck" | "lint" | "test", string>>;
+type Command = string | { command: string; files: Record<string, string> };
+type Found = Partial<Record<"typecheck" | "lint" | "test", Command>>;
 
 async function detect(repo: string, sha: string): Promise<Check[]> {
   const all = new Set((await treeEntries(repo, sha)).map((e) => e.path));
@@ -35,8 +38,9 @@ async function detect(repo: string, sha: string): Promise<Check[]> {
   const pick = (kind: keyof Found) => sources.find((s) => s[kind])?.[kind];
   const checks: Check[] = [];
   for (const [kind, name, cost] of [["typecheck", "Typecheck", "fast"], ["lint", "Lint", "fast"], ["test", "Tests", "full"]] as const) {
-    const command = pick(kind);
-    if (command) checks.push({ name, command, kind: cost });
+    const found = pick(kind);
+    if (typeof found === "string") checks.push({ name, command: found, kind: cost });
+    else if (found) checks.push({ name, command: found.command, kind: cost, files: found.files });
   }
   return checks;
 }
@@ -55,7 +59,9 @@ async function fromPackageJson(read: (f: string) => Promise<string | null>, root
   const pm = PM_LOCKS.find(([lock]) => root.has(lock))?.[1] ?? "npm";
   const scripts = pkg.scripts ?? {};
   const script = (...names: string[]) => names.find((n) => typeof scripts[n] === "string" && scripts[n]);
-  const run = (name: string) => (pm === "npm" ? `npm run ${name}` : `${pm} run ${name}`);
+  // The script's own text from the base commit, run with node_modules/.bin on PATH the way `npm run` would, not
+  // `npm run <name>`, which would read whatever the agent's package.json says now.
+  const run = (name: string) => String(scripts[name]);
   const found: Found = {};
   const typecheck = script("typecheck", "type-check", "check-types", "tsc");
   if (typecheck) found.typecheck = run(typecheck);
@@ -88,11 +94,12 @@ export function hintsFrom(text: string): Found {
 function fromMakefile(text: string | null): Found {
   if (!text) return {};
   const targets = new Set([...text.matchAll(/^([A-Za-z0-9_-]+)\s*:(?!=)/gm)].map((m) => m[1]!));
+  const make = (target: string) => ({ command: `make -f "$ATRIUM_CHECK_FILES/Makefile" ${target}`, files: { Makefile: text } });
   const found: Found = {};
-  if (targets.has("typecheck")) found.typecheck = "make typecheck";
-  else if (targets.has("check")) found.typecheck = "make check";
-  if (targets.has("lint")) found.lint = "make lint";
-  if (targets.has("test")) found.test = "make test";
+  if (targets.has("typecheck")) found.typecheck = make("typecheck");
+  else if (targets.has("check")) found.typecheck = make("check");
+  if (targets.has("lint")) found.lint = make("lint");
+  if (targets.has("test")) found.test = make("test");
   return found;
 }
 

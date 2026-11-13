@@ -1,11 +1,11 @@
 import type { Database } from "bun:sqlite";
-import { homedir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { config } from "../config";
 import { newId } from "../ids";
 import { runAgentProcess } from "../agents/process";
-import { SANDBOX_EXEC, codexStateDir, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "../agents/seatbelt";
+import { SANDBOX_EXEC, seatbeltFailure, withPrivateTmp } from "../agents/seatbelt";
 import type { Check } from "./detect";
+import { wrapCheck } from "./sandbox";
 
 export type CheckStatus = "passed" | "failed" | "timeout" | "missing" | "skipped";
 export type CheckResult = Check & { status: CheckStatus; exitCode: number | null; output: string; durationMs: number };
@@ -16,9 +16,9 @@ const OUTPUT_CAP = 16 * 1024;
 const FEEDBACK_LINES = 60;
 const FEEDBACK_CHARS = 4000;
 
-// The project's own commands, so they run the way an agent's would: inside the sandbox, writes only in the repo
-// and a private temp folder, no internet, no Atrium API, no credentials. The environment is built from scratch
-// so nothing from the engine's (tokens, keys) reaches a test.
+// The project's own commands, in the checks' own sandbox (see sandbox.ts): writes only in the repo and a private
+// temp folder, no credentials, no internet, no Atrium API. The environment is built from scratch so nothing from
+// the engine's (tokens, keys) reaches a test.
 export async function runChecks(
   cwd: string,
   checks: Check[],
@@ -52,19 +52,19 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
     output += `${line}\n`;
     if (output.length > OUTPUT_CAP * 2) output = output.slice(-OUTPUT_CAP);
   };
-  const proc = await withPrivateTmp((tmp) =>
-    runAgentProcess(
-      wrapInSeatbelt(["/bin/sh", "-c", `exec 2>&1\n${check.command}`], {
-        cwd,
-        writable: [cwd, tmp],
-        extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")],
-        denyKeychain: true,
-        loopbackExcept: config().port,
-        sandboxExec: opts.sandboxExec ?? SANDBOX_EXEC,
-      }),
-      { cwd, stdin: "", env: checkEnv(tmp), signal, abortGraceMs: 2000, onLine: add },
-    ),
-  );
+  const proc = await withPrivateTmp((tmp) => {
+    const files = join(tmp, "check-files");
+    mkdirSync(files);
+    for (const [name, body] of Object.entries(check.files ?? {})) writeFileSync(join(files, name), body);
+    return runAgentProcess(wrapCheck(["/bin/sh", "-c", `exec 2>&1\n${check.command}`], cwd, [cwd, tmp], opts.sandboxExec ?? SANDBOX_EXEC), {
+      cwd,
+      stdin: "",
+      env: checkEnv(cwd, tmp, files),
+      signal,
+      abortGraceMs: 2000,
+      onLine: add,
+    });
+  });
   const durationMs = Date.now() - started;
   const tail = output.length > OUTPUT_CAP ? `[earlier output cut]\n${output.slice(-OUTPUT_CAP)}` : output;
   if (proc.notInstalled || seatbeltFailure(proc)) {
@@ -76,10 +76,12 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
   return { ...check, status: proc.exitCode === 0 ? "passed" : "failed", exitCode: proc.exitCode, output: tail, durationMs };
 }
 
-function checkEnv(tmp: string): Record<string, string> {
+function checkEnv(cwd: string, tmp: string, files: string): Record<string, string> {
   const keep = (k: string) => (process.env[k] ? { [k]: process.env[k]! } : {});
   return {
-    ...keep("PATH"),
+    // A package script's text runs with the project's own tools first, as `npm run` would run it.
+    PATH: [join(cwd, "node_modules", ".bin"), process.env.PATH].filter(Boolean).join(":"),
+    ATRIUM_CHECK_FILES: files,
     ...keep("HOME"),
     ...keep("USER"),
     ...keep("LOGNAME"),

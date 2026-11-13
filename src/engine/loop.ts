@@ -37,6 +37,8 @@ export type LoopState = {
   stalled: number;
   // What the next writer turn is told first: a failing check report, or review findings to triage.
   feedback: string | null;
+  // The feedback is the last review's findings, so the next good turn's TRIAGE lines answer them.
+  triaging: boolean;
   reviews: ReviewRound[];
   // The commit the last review read; a triage turn that leaves it unchanged has nothing new to review.
   reviewedSha: string | null;
@@ -45,6 +47,9 @@ export type LoopState = {
   // The writer's last summary and branch lines, kept for the approval made once the loop is done.
   report: string[];
   noChanges: boolean;
+  // Things the change does to the checks themselves (edits their config, drops or skips tests): shown on the
+  // result, put to the reviewer, and never approved by a rule.
+  attention: string[];
   // Counted since the user last stepped in (started, retried or gave a hint); `unreported` when an agent
   // didn't report its tokens, so the count is a floor.
   usage: { tokens: number; ms: number; unreported: boolean };
@@ -76,11 +81,13 @@ export function newLoop(budget: Budget): LoopState {
     failSig: null,
     stalled: 0,
     feedback: null,
+    triaging: false,
     reviews: [],
     reviewedSha: null,
     triaged: false,
     report: [],
     noChanges: false,
+    attention: [],
     usage: { tokens: 0, ms: 0, unreported: false },
     budget,
     paused: null,

@@ -52,9 +52,6 @@ export interface SeatbeltOptions {
   allowReadDirs?: string[];
   // Cut the run off from the Keychain's services as well as its files. Only for a CLI that keeps its sign-in elsewhere.
   denyKeychain?: boolean;
-  // For a project's own checks: no internet at all, but loopback stays open so a test can start and call its own
-  // server; this port (Atrium's) stays shut.
-  loopbackExcept?: number;
 }
 
 // File keychains (the login keychain) are read from ~/Library/Keychains, which SECRET_PATHS
@@ -132,15 +129,6 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     // Atrium's API listens on loopback, and a forged Host/Origin from inside a run could approve its own drafts.
     // "localhost" covers 127.0.0.1, ::1, 0.0.0.0 and ::ffff:127.0.0.1; the CLIs only need the internet.
     '(deny network-outbound (remote ip "localhost:*"))',
-    // Spelled with tcp and udp on purpose: Seatbelt drops a port-specific deny that follows an `ip` allow, which
-    // would leave Atrium's port open (checked against sandbox-exec).
-    ...(opts.loopbackExcept !== undefined
-      ? [
-          '(deny network-outbound (remote tcp "*:*") (remote udp "*:*"))',
-          '(allow network-outbound (remote tcp "localhost:*") (remote udp "localhost:*"))',
-          `(deny network-outbound (remote tcp "localhost:${opts.loopbackExcept}"))`,
-        ]
-      : []),
     `(deny file-read* ${denyRead.join(" ")} (regex #"${ENV_FILE_PATTERN}"))`,
     // Later rules win in Seatbelt, so these literals reopen just the named files.
     ...(opts.allowRead?.length ? [`(allow file-read* ${opts.allowRead.map((p) => `(literal ${str(canonical(p))})`).join(" ")})`] : []),

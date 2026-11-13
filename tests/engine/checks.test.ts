@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { codexStateDir, seatbeltProfile } from "../../src/engine/agents/seatbelt";
+import { checkAttention } from "../../src/engine/checks/attention";
+import { checkProfile } from "../../src/engine/checks/sandbox";
 import { checksFor, detectChecks, hintsFrom, overrideChecks } from "../../src/engine/checks/detect";
 import { failureReport, latestChecks, outcomeOf, runChecks, saveChecks } from "../../src/engine/checks/run";
 import { openDb } from "../../src/engine/db";
@@ -33,15 +37,15 @@ function repoWith(files: Record<string, string>): { path: string; sha: string } 
 }
 
 describe("detecting checks", () => {
-  test("package.json scripts run with the package manager the lockfile names", async () => {
+  test("package.json scripts run as their text from the base commit", async () => {
     const { path, sha } = repoWith({
-      "package.json": JSON.stringify({ scripts: { typecheck: "tsc", lint: "eslint .", test: "vitest" } }),
+      "package.json": JSON.stringify({ scripts: { typecheck: "tsc", lint: "eslint .", test: "vitest run" } }),
       "pnpm-lock.yaml": "",
     });
     expect(await detectChecks(path, sha)).toEqual([
-      { name: "Typecheck", command: "pnpm run typecheck", kind: "fast" },
-      { name: "Lint", command: "pnpm run lint", kind: "fast" },
-      { name: "Tests", command: "pnpm run test", kind: "full" },
+      { name: "Typecheck", command: "tsc", kind: "fast" },
+      { name: "Lint", command: "eslint .", kind: "fast" },
+      { name: "Tests", command: "vitest run", kind: "full" },
     ]);
   });
 
@@ -57,7 +61,7 @@ describe("detecting checks", () => {
 
   test("Makefile, pyproject, Cargo and go.mod each give their commands", async () => {
     const make = repoWith({ Makefile: "lint:\n\techo\ntest: build\n\techo\nVAR := 1\n" });
-    expect((await detectChecks(make.path, make.sha)).map((c) => c.command)).toEqual(["make lint", "make test"]);
+    expect((await detectChecks(make.path, make.sha)).map((c) => c.command)).toEqual(['make -f "$ATRIUM_CHECK_FILES/Makefile" lint', 'make -f "$ATRIUM_CHECK_FILES/Makefile" test']);
     const py = repoWith({ "pyproject.toml": "[tool.ruff]\n[tool.pytest.ini_options]\n", "uv.lock": "" });
     expect((await detectChecks(py.path, py.sha)).map((c) => c.command)).toEqual(["uv run ruff check .", "uv run pytest"]);
     const rust = repoWith({ "Cargo.toml": "[package]\n" });
@@ -77,10 +81,22 @@ describe("detecting checks", () => {
     expect(await detectChecks(path, sha)).toEqual([]);
   });
 
-  test("detection reads the commit it's given, not the working tree", async () => {
-    const { path, sha } = repoWith({ "package.json": JSON.stringify({ scripts: { test: "vitest" } }) });
-    writeFileSync(join(path, "package.json"), JSON.stringify({ scripts: { test: "true" } }));
-    expect((await detectChecks(path, sha)).map((c) => c.command)).toEqual(["npm run test"]);
+  test("an agent that rewrites the test script in its tree doesn't change what runs", async () => {
+    const { path, sha } = repoWith({ "package.json": JSON.stringify({ scripts: { test: "echo base-tests-ran; exit 1" } }) });
+    writeFileSync(join(path, "package.json"), JSON.stringify({ scripts: { test: "exit 0" } }));
+    const checks = await detectChecks(path, sha);
+    expect(checks.map((c) => c.command)).toEqual(["echo base-tests-ran; exit 1"]);
+    const [r] = await runChecks(path, checks);
+    expect(r!.status).toBe("failed");
+    expect(r!.output).toContain("base-tests-ran");
+  });
+
+  test("a Makefile check runs the base commit's Makefile, not the agent's copy", async () => {
+    const { path, sha } = repoWith({ Makefile: "test:\n\t@echo base-make; exit 1\n" });
+    writeFileSync(join(path, "Makefile"), "test:\n\t@true\n");
+    const [r] = await runChecks(path, await detectChecks(path, sha));
+    expect(r!.status).toBe("failed");
+    expect(r!.output).toContain("base-make");
   });
 
   test("a space's own commands replace detection; a brief's verify replaces the test run", () => {
@@ -179,5 +195,75 @@ describe("running checks", () => {
     saveChecks(db, task.id, null, [{ ...result, status: "passed", exitCode: 0 }]);
     expect(latestChecks(db, task.id).map((c) => c.status)).toEqual(["passed"]);
     db.close();
+  });
+});
+
+describe("the checks' own sandbox", () => {
+  test("only check runs open loopback; the agent profile keeps it shut", () => {
+    const agent = seatbeltProfile({ cwd: "/tmp/repo", writable: ["/tmp/repo"] });
+    expect(agent).toContain('(deny network-outbound (remote ip "localhost:*"))');
+    expect(agent).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
+    const check = checkProfile("/tmp/repo", ["/tmp/repo"]);
+    expect(check.startsWith(seatbeltProfile({ cwd: "/tmp/repo", writable: ["/tmp/repo"], extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")], denyKeychain: true }))).toBe(true);
+    for (const port of [7420, 7421, 22, 9229]) expect(check).toContain(`(remote tcp "localhost:${port}")`);
+  });
+
+  test("no agent adapter builds its sandbox from the check profile", async () => {
+    for (const file of ["claude.ts", "codex.ts", "gemini.ts", "seatbelt.ts"]) {
+      const src = await Bun.file(join(import.meta.dir, "..", "..", "src", "engine", "agents", file)).text();
+      expect(src).not.toMatch(/checkProfile|wrapCheck|checks\/sandbox/);
+    }
+  });
+
+  test("the default engine port is shut to checks even when another one is configured", async () => {
+    let atrium: ReturnType<typeof Bun.serve>;
+    try {
+      atrium = Bun.serve({ port: 7420, hostname: "127.0.0.1", fetch: () => new Response("atrium") });
+    } catch {
+      // An engine already holds 7420 on this Mac, which the run below checks just the same.
+    }
+    process.env.ATRIUM_PORT = "7499";
+    try {
+      const [r] = await runChecks(repoWith({}).path, [{ name: "Net", command: "curl -s -m 2 http://127.0.0.1:7420/ || echo shut", kind: "full" }]);
+      expect(r!.output).toContain("shut");
+    } finally {
+      delete process.env.ATRIUM_PORT;
+      atrium!?.stop(true);
+    }
+  });
+});
+
+describe("changes to the checks themselves", () => {
+  function branchWith(base: Record<string, string>, change: (path: string) => void): { path: string; base: string; head: string } {
+    const { path, sha } = repoWith(base);
+    const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: path }).stdout.toString().trim();
+    git("checkout", "-q", "-b", "atrium/tsk_x");
+    change(path);
+    git("add", "-A");
+    git("commit", "-qm", "agent");
+    return { path, base: sha, head: git("rev-parse", "HEAD") };
+  }
+
+  test("editing check config, CI scripts the checks call, or a test runner's config is named", async () => {
+    const r = branchWith({ "package.json": "{}", "scripts/ci.sh": "bun test", "src/a.ts": "" }, (p) => {
+      writeFileSync(join(p, "package.json"), '{"scripts":{"test":"exit 0"}}');
+      writeFileSync(join(p, "vitest.config.ts"), "export default {}");
+      writeFileSync(join(p, "src/a.ts"), "export const a = 1;");
+    });
+    const notes = await checkAttention(r.path, r.base, r.head, [{ name: "Tests", command: "./scripts/ci.sh", kind: "full" }]);
+    expect(notes).toEqual(["This change edits how checks run: package.json, vitest.config.ts."]);
+  });
+
+  test("removed test files and newly skipped tests are named; a plain code change says nothing", async () => {
+    const r = branchWith({ "tests/a.test.ts": "test('a', () => {})", "tests/b.test.ts": "test('b', () => {})", "src/a.ts": "" }, (p) => {
+      rmSync(join(p, "tests/a.test.ts"));
+      writeFileSync(join(p, "tests/b.test.ts"), "test.skip('b', () => {})");
+    });
+    expect(await checkAttention(r.path, r.base, r.head, [])).toEqual([
+      "This change removes test files: 2 before, 1 now.",
+      "This change marks tests as skipped.",
+    ]);
+    const plain = branchWith({ "src/a.ts": "" }, (p) => writeFileSync(join(p, "src/a.ts"), "export const a = 2;"));
+    expect(await checkAttention(plain.path, plain.base, plain.head, [])).toEqual([]);
   });
 });
