@@ -76,13 +76,13 @@ export function askLabels(ui: Ui, view: View, ctx: KeyContext): { title: string;
     case "filter":
       return { title: "Filter", placeholder: "Type to narrow the list. Enter keeps it, esc clears it." };
     case "space":
-      return { title: "New space · describe it", placeholder: 'Like "keep my job search organized" or "start a new project called…"' };
+      return { title: "New space · describe it", placeholder: 'Like "work on the lumen-api repo" or "start a new project called…"' };
   }
   if (ui.tab === "spaces" && space && space.status !== "archived") {
     const agent = a ? ` · agent ${agentName(a.agent)}${askAgentCycles(ui, view) ? " (tab)" : ""}` : "";
     return { title: `New task in ${space.name}${agent}`, placeholder: `Give ${space.name} a task…` };
   }
-  return { title: "Ask Atrium", placeholder: 'Describe something new, like "keep my job search organized" or "start a new project called…".' };
+  return { title: "Ask Atrium", placeholder: 'Describe something new, like "work on the lumen-api repo" or "start a new project called…".' };
 }
 
 const FLASH = { ok: { glyph: GLYPH.ok, color: "ok" }, bad: { glyph: GLYPH.bad, color: "bad" }, info: { glyph: "•", color: "info" } } as const;

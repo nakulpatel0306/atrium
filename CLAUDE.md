@@ -19,7 +19,7 @@ Local bun/TypeScript engine that runs AI agents for one user on macOS, focused o
 
 ## Tests
 
-Run in groups: `bun test ./tests/engine`, `./tests/server`, `./tests/dashboard`, `./tests/e2e`, `./tests/tui`, `./tests/mac`, `./tests/copy`, `./tests/cli.test.ts`, `./tests/main.test.ts`. Then `bunx tsc --noEmit`. Migrations only add: an existing database must keep working, and a migration gets a test against a database shaped like an older install. Tables of removed features (markets, money, mail, texting) stay in old databases untouched and unread; `src/engine/legacy.ts` is the one place that knows their names.
+Run in groups: `bun test ./tests/engine`, `./tests/server`, `./tests/dashboard`, `./tests/e2e`, `./tests/tui`, `./tests/mac`, `./tests/copy`, `./tests/cli.test.ts`, `./tests/main.test.ts`. Then `bunx tsc --noEmit`. Migrations only add: an existing database must keep working, and a migration gets a test against a database shaped like an older install. Tables of removed features (markets, money, mail, texting) stay in old databases, unread, until the user chooses Remove old data, which drops them; `src/engine/legacy.ts` is the one place that knows their names.
 
 ## Public repo
 
