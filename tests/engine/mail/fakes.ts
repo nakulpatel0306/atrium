@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeGoogleEnv, type FakeData, startFakeGoogle } from "../../fixtures/fake-google";
@@ -30,6 +30,7 @@ export function googleData(): FakeData {
               references: "<lease-1@example.net>",
               text: "Thanks! Can we sign Thursday?\n\nOn Mon, Robin wrote:\n> Hi Sam, the lease renews on Dec 1.",
               attachments: [{ name: "lease.pdf", size: 15, data: "%PDF-1.4 fake" }],
+              labels: ["SENT"],
             },
           ],
         },
@@ -75,7 +76,7 @@ export function pimData() {
       ],
       "acct-icloud": [
         { id: "ap-2", messageId: "<trip-1@example.org>", inReplyTo: null, references: null, subject: "Trip plan", from: "Kit Moreno <kit@example.org>", to: "sam.rivera@example.org", cc: "", date: new Date(T0).toISOString(), read: false, snippet: "Train at 9?", attachments: [{ name: "tickets.pdf", size: 2048 }] },
-        { id: "ap-3", messageId: "<trip-2@example.org>", inReplyTo: "<trip-1@example.org>", references: "<trip-1@example.org>", subject: "Re: Trip plan", from: "Sam Rivera <sam.rivera@example.org>", to: "kit@example.org", cc: "", date: new Date(T0 + 60_000).toISOString(), read: true, snippet: "Yes", attachments: [] },
+        { id: "ap-3", mailbox: "Sent", messageId: "<trip-2@example.org>", inReplyTo: "<trip-1@example.org>", references: "<trip-1@example.org>", subject: "Re: Trip plan", from: "Sam Rivera <sam.rivera@example.org>", to: "kit@example.org", cc: "", date: new Date(T0 + 60_000).toISOString(), read: true, snippet: "Yes", attachments: [] },
       ],
     },
     bodies: { "ap-2": { text: null, html: "<p>Train at 9?</p>", attachments: [{ name: "tickets.pdf", size: 2048 }] } },
@@ -101,6 +102,7 @@ export function useFakes(data = googleData()) {
   const dir = mkdtempSync(join(tmpdir(), "atrium-mail-"));
   env.FAKE_SECURITY_STORE = join(dir, "keychain.json");
   env.FAKE_PIM_DATA = join(dir, "pim.json");
+  env.FAKE_PIM_WRITES = join(dir, "pim-writes.jsonl");
   writeFileSync(env.FAKE_PIM_DATA, JSON.stringify(pimData()));
   const before = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
@@ -109,6 +111,9 @@ export function useFakes(data = googleData()) {
     dir,
     keychainFile: env.FAKE_SECURITY_STORE,
     pimFile: env.FAKE_PIM_DATA,
+    // What the fake helper was asked to send or change, in order.
+    pimWrites: (): { cmd: string; input: Record<string, unknown> }[] =>
+      existsSync(env.FAKE_PIM_WRITES!) ? readFileSync(env.FAKE_PIM_WRITES!, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [],
     undo() {
       google.stop();
       rmSync(dir, { recursive: true, force: true });

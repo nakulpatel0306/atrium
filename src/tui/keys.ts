@@ -218,7 +218,12 @@ function approve(u: Ui, view: View): Command {
   return intent({ type: "approve", approvalId: approval.id, title: approval.title });
 }
 
+// Emails and calendar changes are sent from the dashboard, where the card shows every person and the whole message.
+const MAIL_ON_DASHBOARD = "Send emails and calendar changes from the dashboard, where the card shows who gets them.";
+const isMail = (view: View, approvalId: string) => (view.state.mailActions ?? []).some((m) => m.approvalId === approvalId);
+
 function sendText(view: View, approvalId: string, edited?: string): Command {
+  if (isMail(view, approvalId)) return info(MAIL_ON_DASHBOARD);
   const text = view.state.messageActions.find((m) => m.approvalId === approvalId);
   if (!text) return info("This text is being updated. Try again in a moment.");
   if (!hasTarget(text)) return info(text.group ? "Find the group chat on the dashboard first." : "Pick who this goes to on the dashboard first.");
@@ -254,7 +259,7 @@ function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
   if (approval.alwaysAsk === "send_message") {
     if (input === "s") return [sendText(view, approval.id)];
     if (input === "x") return [intent({ type: "reject", approvalId: approval.id, note: "" })];
-    if (input === "e") return text ? [ask("edit", approval.id, text.text)] : [info("This text is being updated. Try again in a moment.")];
+    if (input === "e") return text ? [ask("edit", approval.id, text.text)] : [info(isMail(view, approval.id) ? MAIL_ON_DASHBOARD : "This text is being updated. Try again in a moment.")];
   }
   if (key.return) {
     // A review opens on its task, where its runs, files and thread are; anything else opens its full text here.

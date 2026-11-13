@@ -114,3 +114,21 @@ func mailto(_ url: URL?) -> String? {
 func newestFirst<T>(_ found: [(box: String, id: String, date: T)], limit: Int) -> [(box: String, id: String, date: T)] where T: Comparable {
   Array(found.enumerated().sorted { $0.element.date != $1.element.date ? $0.element.date > $1.element.date : $0.offset < $1.offset }.map(\.element).prefix(limit))
 }
+
+// A write command's JSON document from stdin, as an object, or nil.
+func parseInput(_ data: Data) -> [String: Any]? {
+  (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+}
+
+// [{"name", "address"}] → parallel name and address lists for AppleScript. An entry without an address is dropped, and
+// line breaks in names are removed so they read as one line.
+func peopleLists(_ value: Any?) -> (names: [String], addresses: [String]) {
+  var names: [String] = []
+  var addresses: [String] = []
+  for p in (value as? [[String: Any]]) ?? [] {
+    guard let a = p["address"] as? String, !a.isEmpty else { continue }
+    names.append(((p["name"] as? String) ?? "").replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " "))
+    addresses.append(a)
+  }
+  return (names, addresses)
+}

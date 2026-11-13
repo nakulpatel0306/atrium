@@ -2,7 +2,7 @@ import { Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cancelSend, SEND_DELAY_MS, usePendingSends } from "../pending-send";
 
-// Every text waiting out its window, each with its own Undo. It has no close button and nothing else shows here,
+// Every text, email or calendar change waiting out its window, each with its own Undo. It has no close button and nothing else shows here,
 // so no other message can push a send's Undo off the screen.
 export function SendTray() {
   const sends = usePendingSends();
@@ -17,7 +17,7 @@ export function SendTray() {
   }, [waiting]);
   if (!waiting) return null;
   return (
-    <section className="send-tray" aria-label="Texts waiting to send">
+    <section className="send-tray" aria-label="Waiting to send">
       {sends.map((p) => {
         const left = Math.max(0, Math.ceil((p.startedAt + SEND_DELAY_MS - now) / 1000));
         return (

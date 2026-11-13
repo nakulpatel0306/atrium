@@ -1,13 +1,27 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../../config";
 import { parseAddressList, parseIds, parsePerson } from "../addresses";
-import { MailProblem, type AccountRef, type AttendeeStatus, type MailSource, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
+import { buildMime } from "../mime";
+import { MailProblem, type AccountRef, type AttendeeStatus, type GoogleSource, type Outgoing, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
 import { type GoogleAuth, signedOutCopy } from "./oauth";
 import { safeFileName } from "../files";
 import { canonicalRecurrence } from "../recurrence";
 
 const HTTP_TIMEOUT_MS = 20_000;
+const WRITE_TIMEOUT_MS = 60_000;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const SEND_COPY = {
+  unsure: "This may have gone out: Google's answer didn't say. Check Gmail's Sent mail or Google Calendar before sending it again.",
+  offline: "Atrium couldn't reach Google, so nothing went out. Check the Mac is online, then try again.",
+  refused: "Google didn't accept this, so nothing went out. Check the card, then try again.",
+};
+const CHANGE_COPY = {
+  unsure: "Google didn't answer, so Atrium can't tell whether that change went through. Check Gmail or Google Calendar, then try again if it didn't.",
+  offline: "Atrium couldn't reach Google, so nothing changed. Check the Mac is online, then try again.",
+  refused: "Google didn't accept that change. Try again.",
+};
+const NOT_CONNECTED = new Set(["ConnectionRefused", "FailedToOpenSocket", "ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH"]);
 const MAX_THREAD_PAGES = 5;
 const MAX_EVENT_PAGES = 10;
 const PARALLEL = 5;
@@ -49,6 +63,7 @@ export function toSourceMessage(m: GMessage): SourceMessage {
     date: Number(m.internalDate) || Date.parse(header(p, "Date") ?? "") || 0,
     snippet: unescape(m.snippet ?? ""),
     unread: m.labelIds?.includes("UNREAD") ?? false,
+    sent: m.labelIds?.includes("SENT") ?? false,
     labels: m.labelIds ?? [],
     attachments: attachmentsOf(p),
   };
@@ -65,17 +80,25 @@ function attachmentsOf(p: GPart | undefined): SourceAttachment[] {
   return out;
 }
 
-function textParts(p: GPart | undefined): { text: string | null; html: string | null } {
+function textParts(p: GPart | undefined): { text: string | null; html: string | null; icalUid: string | null } {
   let text: string | null = null;
   let html: string | null = null;
+  let icalUid: string | null = null;
   const walk = (part: GPart | undefined) => {
     if (!part || part.filename) return;
     if (part.mimeType === "text/plain" && part.body?.data && text === null) text = decode(part.body.data, part);
     if (part.mimeType === "text/html" && part.body?.data && html === null) html = decode(part.body.data, part);
+    if (part.mimeType === "text/calendar" && part.body?.data && icalUid === null) icalUid = calendarUid(decode(part.body.data, part));
     part.parts?.forEach(walk);
   };
   walk(p);
-  return { text, html };
+  return { text, html, icalUid };
+}
+
+// The UID line of an invitation's iCalendar text, with folded lines joined (RFC 5545 3.1).
+export function calendarUid(ics: string): string | null {
+  const uid = /^UID:(.+)$/m.exec(ics.replace(/\r?\n[ \t]/g, ""))?.[1]?.trim();
+  return uid || null;
 }
 
 async function inBatches<T, R>(items: T[], fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -101,6 +124,14 @@ type GEvent = {
   attendees?: { email?: string; displayName?: string; responseStatus?: string; self?: boolean }[];
 };
 
+const localDate = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+// Google's start and end: dates for an all-day event (the end date is the day after), else instants.
+const gTimes = (start: number, end: number, allDay: boolean) =>
+  allDay ? { start: { date: localDate(start) }, end: { date: localDate(end) } } : { start: { dateTime: new Date(start).toISOString() }, end: { dateTime: new Date(end).toISOString() } };
+
 // An all-day date is that day's local midnight, so it lines up with the dashboard's local day columns.
 const timeOf = (t: GTime | undefined): number => (t?.dateTime ? Date.parse(t.dateTime) : t?.date ? new Date(`${t.date}T00:00:00`).getTime() : 0);
 
@@ -123,26 +154,64 @@ export function toSourceEvent(e: GEvent): SourceEvent {
 }
 
 // Gmail and Google Calendar for one connected account at a time; tokens come from GoogleAuth.
-export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = {}): MailSource {
+export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = {}): GoogleSource {
   const http = deps.fetch ?? fetch;
 
-  async function get<T>(account: AccountRef, url: string): Promise<T> {
+  // A read, or with `write` a change. A 401 is refused before anything happens, so it's retried once with a fresh
+  // token; nothing else is ever retried. A write that may have reached Google (no answer, or a server error) is
+  // "unsure", so the user checks before trying again rather than Atrium sending twice.
+  // `change` marks a write that sends nothing to anyone (archive, an RSVP's own entry), so its errors say so.
+  async function call<T>(account: AccountRef, url: string, write?: { method: string; body?: unknown; change?: boolean }): Promise<T> {
+    const copy = write?.change ? CHANGE_COPY : SEND_COPY;
     for (const force of [false, true]) {
       const token = await auth.accessToken(account.id, force);
       let res: Response;
       try {
-        res = await http(url, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
-      } catch {
+        res = await http(url, {
+          method: write?.method ?? "GET",
+          headers: { authorization: `Bearer ${token}`, ...(write?.body !== undefined ? { "content-type": "application/json" } : {}) },
+          body: write?.body !== undefined ? JSON.stringify(write.body) : undefined,
+          signal: AbortSignal.timeout(write ? WRITE_TIMEOUT_MS : HTTP_TIMEOUT_MS),
+        });
+      } catch (e) {
+        // Not connected at all means nothing was sent; anything after connecting (a timeout) may have been.
+        if (write && !NOT_CONNECTED.has(String((e as { code?: unknown }).code))) throw new MailProblem("unsure", copy.unsure);
+        if (write) throw new MailProblem("offline", copy.offline);
         throw new MailProblem("offline", "Atrium couldn't reach Google. Check the Mac is online; it tries again on the next sync.");
       }
       if (res.status === 401 && !force) continue;
       if (res.status === 401) throw new MailProblem("signed_out", signedOutCopy(account.address));
       if (res.status === 403) throw new MailProblem("other", `Google refused access to ${account.address}'s mail or calendar. Connect it again and allow every permission it asks for.`);
+      if (write && res.status >= 500) throw new MailProblem("unsure", copy.unsure);
+      if (write && !res.ok) throw new MailProblem("other", copy.refused);
       if (!res.ok) throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
-      return (await res.json()) as T;
+      if (res.status === 204) return undefined as T;
+      const text = await res.text();
+      try {
+        return (text ? JSON.parse(text) : undefined) as T;
+      } catch {
+        // Google said yes in a form Atrium can't read: a write may well have gone through.
+        if (write) throw new MailProblem("unsure", copy.unsure);
+        throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
+      }
     }
     throw new MailProblem("signed_out", signedOutCopy(account.address));
   }
+  const get = <T>(account: AccountRef, url: string) => call<T>(account, url);
+
+  // Gmail's raw message, with the forwarded files read from where the engine saved them.
+  function raw(m: Outgoing): string {
+    const files = m.attachments.map((a) => ({ name: a.name, data: readFileSync(a.path) }));
+    if (files.reduce((n, f) => n + f.data.length, 0) > MAX_ATTACHMENT_BYTES) throw new MailProblem("other", "The attachments are over Gmail's 25 MB limit, so nothing went out. Forward it from Gmail instead.");
+    return Buffer.from(buildMime(m, files)).toString("base64url");
+  }
+  const calEvent = (calendarId: string, eventId?: string, q?: Record<string, string>) =>
+    cal(`/calendars/${encodeURIComponent(calendarId)}/events${eventId ? `/${encodeURIComponent(eventId)}` : ""}${q ? `?${new URLSearchParams(q)}` : ""}`);
+  const updates = (notify: boolean) => ({ sendUpdates: notify ? "all" : "none" });
+  const need = (account: AccountRef | null): AccountRef => {
+    if (!account) throw new MailProblem("other", "That calendar's Google account isn't connected anymore.");
+    return account;
+  };
   const gmail = (path: string) => `${config().google.gmailUrl}/gmail/v1/users/me${path}`;
   const cal = (path: string) => `${config().google.calendarUrl}/calendar/v3${path}`;
 
@@ -193,6 +262,42 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
           writable: c.accessRole === "owner" || c.accessRole === "writer",
           accountAddress: account.address,
         }));
+    },
+
+    async send(account, m) {
+      const r = await call<{ id?: string; threadId?: string }>(account, gmail("/messages/send"), { method: "POST", body: { raw: raw(m), ...(m.threadKey ? { threadId: m.threadKey } : {}) } });
+      return { sourceId: r?.id ?? null, threadKey: r?.threadId ?? m.threadKey };
+    },
+
+    async saveDraft(account, m) {
+      await call(account, gmail("/drafts"), { method: "POST", body: { message: { raw: raw(m), ...(m.threadKey ? { threadId: m.threadKey } : {}) } } });
+    },
+
+    async archive(account, threadKey, undo) {
+      await call(account, gmail(`/threads/${encodeURIComponent(threadKey)}/modify`), { method: "POST", body: undo ? { addLabelIds: ["INBOX"] } : { removeLabelIds: ["INBOX"] }, change: true });
+    },
+
+    async createEvent(account, calendarId, e, notify) {
+      const r = await call<{ id?: string }>(need(account), calEvent(calendarId, undefined, updates(notify)), { method: "POST", body: { summary: e.title, location: e.location || undefined, ...gTimes(e.start, e.end, e.allDay), attendees: e.attendees.map((p) => ({ email: p.address, ...(p.name ? { displayName: p.name } : {}) })) } });
+      return { sourceId: r?.id ?? "" };
+    },
+
+    async moveEvent(account, calendarId, eventId, start, end, notify) {
+      const current = await get<GEvent>(need(account), calEvent(calendarId, eventId));
+      await call(need(account), calEvent(calendarId, eventId, updates(notify)), { method: "PATCH", body: gTimes(start, end, !current.start?.dateTime) });
+    },
+
+    async cancelEvent(account, calendarId, eventId, notify) {
+      await call(need(account), calEvent(calendarId, eventId, updates(notify)), { method: "DELETE" });
+    },
+
+    // Google keeps each guest's answer on the event: the user's own entry changes, and the organizer is told.
+    async rsvp(account, calendarId, eventId, answer, note) {
+      const current = await get<GEvent>(need(account), calEvent(calendarId, eventId));
+      const attendees = current.attendees ?? [];
+      if (!attendees.some((a) => a.self)) throw new MailProblem("other", "You're not on this event's guest list, so there's nothing to answer.");
+      const next = attendees.map((a) => (a.self ? { ...a, responseStatus: answer, ...(note.trim() ? { comment: note.trim() } : {}) } : a));
+      await call(need(account), calEvent(calendarId, eventId, updates(true)), { method: "PATCH", body: { attendees: next }, change: true });
     },
 
     async events(account, calendar, from, to) {

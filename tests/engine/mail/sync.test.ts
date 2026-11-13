@@ -44,6 +44,7 @@ function counting(): MailSource & { calls: number } {
       return [];
     },
     events: async () => [],
+    createEvent: async () => ({ sourceId: "" }),
   };
   return s;
 }
@@ -230,11 +231,13 @@ describe("bodies", () => {
     };
     return s;
   }
-  async function seeded(n: number) {
+  // n messages, each its own thread, or with `oneThread` all in one chain (ids then oldest first, as the thread view
+  // passes them).
+  async function seeded(n: number, oneThread = false) {
     const { upsertAccount, ingestMessages } = await import("../../../src/engine/mail/store");
     const a = upsertAccount(db, { address: "sam.rivera@example.org", name: "", source: "apple", ref: "acct" });
     const { msg } = await import("./helpers");
-    ingestMessages(db, a, Array.from({ length: n }, (_, i) => msg({ sourceId: `b${i}`, messageId: `<b${i}@x>`, subject: `S${i}`, date: T0 + i })));
+    ingestMessages(db, a, Array.from({ length: n }, (_, i) => msg({ sourceId: `b${i}`, messageId: `<b${i}@x>`, subject: `S${i}`, date: T0 + i, ...(oneThread ? { threadKey: "long" } : {}) })));
     return listThreads(db).flatMap((t) => threadMessages(db, t.id).map((m) => m.id));
   }
 
@@ -248,6 +251,21 @@ describe("bodies", () => {
     // Cached now: nothing more is fetched.
     await s.fetchBodies(ids);
     expect(apple.calls).toBe(7);
+  });
+
+  test("a long thread's first open fetches the newest 25, so the expanded last message has its body", async () => {
+    const apple = slowBodies();
+    const s = createMailSync({ db, google: counting(), apple, appleAccounts: async () => [], now: () => NOW });
+    const ids = await seeded(30, true);
+    await s.fetchBodies(ids);
+    expect(apple.calls).toBe(25);
+    const cached = (id: string) => !!db.query("SELECT 1 FROM mail_bodies WHERE message_id = ?").get(id);
+    expect(ids.slice(-25).every(cached)).toBe(true);
+    expect(ids.slice(0, 5).some(cached)).toBe(false);
+    // An older message's own Retry fetches just that one.
+    await s.fetchBodies([ids[0]!], { retry: true });
+    expect(cached(ids[0]!)).toBe(true);
+    expect(apple.calls).toBe(26);
   });
 
   test("a failed body waits ten minutes before it's tried again, unless the user retries", async () => {

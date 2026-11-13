@@ -12,6 +12,7 @@ import { inboxSpace, inboxSpaceId } from "../engine/mail/space";
 import {
   getAccount,
   getThreadView,
+  inviteForThread,
   listAccounts,
   listCalendars,
   listEvents,
@@ -23,7 +24,11 @@ import {
   updateAccount,
 } from "../engine/mail/store";
 import { appleOn, appleProblem, LIMITS, lastSyncedAt, mailSettings, SETTING_KEYS, type MailSettings } from "../engine/mail/sync";
-import { MailProblem } from "../engine/mail/types";
+import { MailProblem, type Person } from "../engine/mail/types";
+import { AlreadyResolved, resolveApproval } from "../engine/approvals";
+import { isEvent, type MailKind } from "../engine/mail/compose";
+import { BadMail, draftEvent, draftMail, type EventEdit, getMailAction, type MailEdit, sendingRow, updateEventDraft, updateMailDraft } from "../engine/mail/drafts";
+import { OPEN_IN_MAIL_COPY } from "../engine/mail/send";
 import { ACCOUNT_COLORS } from "../engine/mail/colors";
 import { KeychainError } from "../engine/markets/keychain";
 import { HttpError, json, readBody } from "./http";
@@ -65,13 +70,78 @@ const plain = async <T>(fn: () => Promise<T>): Promise<T> => {
   }
 };
 
+const MAIL_KINDS: MailKind[] = ["reply", "reply_all", "forward", "new"];
+
+// Whether the From on a card is an address whose preferred source is Mail.app, which never sends from Atrium.
+const optString = (v: unknown, field: string): string | null => {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") throw new HttpError(400, `${field} must be text.`);
+  return v;
+};
+
+// People as the card sends them: [{name, address}]. The addresses are checked by the draft rules.
+function peopleOf(v: unknown): Person[] {
+  if (!Array.isArray(v) || v.some((p) => !p || typeof p !== "object" || typeof p.address !== "string" || (p.name !== undefined && typeof p.name !== "string"))) {
+    throw new HttpError(400, "People must be a list of {name, address}.");
+  }
+  return (v as { name?: string; address: string }[]).map((p) => ({ name: p.name ?? "", address: p.address }));
+}
+
+const mailEdit = (b: Record<string, unknown>): MailEdit => ({
+  accountId: optString(b.accountId, "accountId") ?? "",
+  to: peopleOf(b.to),
+  cc: peopleOf(b.cc ?? []),
+  subject: optString(b.subject, "subject") ?? "",
+  body: optString(b.body, "body") ?? "",
+});
+
+const num = (v: unknown, field: string): number => {
+  if (typeof v !== "number" || !Number.isFinite(v)) throw new HttpError(400, `${field} must be a time.`);
+  return v;
+};
+const eventEdit = (b: Record<string, unknown>): EventEdit => ({
+  calendarId: optString(b.calendarId, "calendarId") ?? "",
+  title: optString(b.title, "title") ?? "",
+  start: num(b.start, "start"),
+  end: num(b.end, "end"),
+  allDay: b.allDay === true,
+  location: optString(b.location, "location") ?? "",
+  attendees: peopleOf(b.attendees ?? []),
+  notify: b.notify === true,
+});
+
+const nextHour = (now: number) => Math.ceil(now / 3600_000) * 3600_000;
+
+const run = async (argv: string[]) => (await Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "ignore", env: { ...process.env } }).exited) === 0;
+
+function guardedMail<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof AlreadyResolved) throw new HttpError(409, e.message);
+    if (e instanceof BadMail) throw new HttpError(400, e.message);
+    throw e;
+  }
+}
+async function guardedMailAsync<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof AlreadyResolved) throw new HttpError(409, e.message);
+    if (e instanceof BadMail) throw new HttpError(400, e.message);
+    throw e;
+  }
+}
+const drafting = (fn: () => unknown) => guardedMail(() => json(fn()));
+
 const int = (v: unknown, lo: number, hi: number, field: string): number => {
   if (typeof v !== "number" || !Number.isInteger(v) || v < lo || v > hi) throw new HttpError(400, `${field} must be a whole number from ${lo} to ${hi}.`);
   return v;
 };
 
 // Mail and calendar: accounts and sources (Settings → Accounts, Get started), the Inbox and Calendar reads, and
-// opening attachments. Nothing here sends anything. Returns null for paths it doesn't own.
+// opening attachments, and the drafts and sends whose only trigger is the user's own press on a card. Returns null
+// for paths it doesn't own.
 export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL): Promise<Response | null> {
   const { pathname } = url;
   const method = req.method;
@@ -111,7 +181,7 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     if (!thread) throw new HttpError(404, "That thread isn't in the Inbox anymore.");
     // A read only: what's cached, and whether bodies are still on their way. Opening the thread fetches them.
     const messages = threadMessages(db, thread.id);
-    return json({ thread, messages, ...mail.sync.bodyState(messages.map((m) => m.id)) });
+    return json({ thread, messages, invite: inviteForThread(db, thread.id), ...mail.sync.bodyState(messages.map((m) => m.id)) });
   }
 
   const openM = hit("POST", /^\/api\/mail\/threads\/([^/]+)\/open$/);
@@ -119,8 +189,11 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     const thread = getThreadView(db, openM[1]!);
     if (!thread) throw new HttpError(404, "That thread isn't in the Inbox anymore.");
     const b = await readBody(req);
+    const ids = threadMessages(db, thread.id).map((m) => m.id);
+    // One message's own Retry names it; it must be on this thread.
+    if (b.messageId !== undefined && (typeof b.messageId !== "string" || !ids.includes(b.messageId))) throw new HttpError(404, "That message isn't on this thread anymore.");
     // Fetched in the background; each body that lands is pushed to the dashboard.
-    void mail.sync.fetchBodies(threadMessages(db, thread.id).map((m) => m.id), { retry: b.retry === true });
+    void mail.sync.fetchBodies(typeof b.messageId === "string" ? [b.messageId] : ids, { retry: b.retry === true });
     return json({ ok: true });
   }
 
@@ -134,6 +207,108 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     } catch (e) {
       throw new HttpError(403, e instanceof Error ? e.message : String(e));
     }
+  }
+
+  // ---- Drafts and sends. Every send is the user's own press on a card; nothing here sends on anyone else's word.
+
+  if (hit("POST", /^\/api\/mail\/drafts$/)) {
+    const b = await readBody(req);
+    if (!MAIL_KINDS.includes(b.kind as MailKind)) throw new HttpError(400, "kind must be reply, reply_all, forward or new.");
+    const kind = b.kind as MailKind;
+    const threadId = optString(b.threadId, "threadId");
+    const messageId = optString(b.messageId, "messageId");
+    if (kind !== "new") {
+      const thread = threadId ? getThreadView(db, threadId) : null;
+      if (!thread) throw new HttpError(404, "That thread isn't in the Inbox anymore.");
+      // The message answered is quoted and its attachments forwarded, so its body is fetched first if it isn't yet.
+      const ids = threadMessages(db, thread.id).map((m) => m.id);
+      await mail.sync.fetchBodies(messageId && ids.includes(messageId) ? [messageId] : ids.slice(-1));
+    }
+    return drafting(() =>
+      draftMail(db, { spaceId: inboxSpace(db).id, kind, draftedBy: "you", threadId, messageId, accountId: optString(b.accountId, "accountId"), to: peopleOf(b.to ?? []), cc: peopleOf(b.cc ?? []), subject: optString(b.subject, "subject") ?? "", body: optString(b.body, "body") ?? "" }).action,
+    );
+  }
+
+  if (hit("POST", /^\/api\/mail\/event-drafts$/)) {
+    const b = await readBody(req);
+    if (b.kind !== "event_create" && b.kind !== "event_move" && b.kind !== "event_cancel") throw new HttpError(400, "kind must be event_create, event_move or event_cancel.");
+    const kind = b.kind;
+    const start = typeof b.start === "number" ? b.start : nextHour(Date.now());
+    return drafting(() =>
+      kind === "event_create"
+        ? draftEvent(db, { spaceId: inboxSpace(db).id, kind, draftedBy: "you", calendarId: optString(b.calendarId, "calendarId"), title: optString(b.title, "title") || "New event", start, end: typeof b.end === "number" ? b.end : start + 3600_000 }).action
+        : draftEvent(db, { spaceId: inboxSpace(db).id, kind, draftedBy: "you", eventId: optString(b.eventId, "eventId") }).action,
+    );
+  }
+
+  const sendM = hit("POST", /^\/api\/mail\/actions\/([^/]+)\/send$/);
+  if (sendM) {
+    const action = getMailAction(db, sendM[1]!);
+    if (!action) throw new HttpError(404, "That draft isn't there anymore.");
+    const b = await readBody(req);
+    if (!Array.isArray(b.seen) || b.seen.some((x) => typeof x !== "string")) throw new HttpError(400, "seen must list the keys of the notes the card showed.");
+    // Only Google sends from the card; a Mail.app account's card opens the message in Mail instead.
+    const seen = new Set(b.seen as string[]);
+    // His edits and his yes land together, so what goes out is what he saw when he pressed Send. A note the card
+    // didn't show yet (his edit added someone new) keeps the edit but not the yes: he sees the note, then sends.
+    const outcome = guardedMail(() =>
+      db.transaction(() => {
+        const next = isEvent(action.kind) ? updateEventDraft(db, action.id, eventEdit(b)) : updateMailDraft(db, action.id, mailEdit(b));
+        // Only Google sends from the card; a Mail.app account's card opens the message in Mail instead. Checked on the
+        // saved From, so what's checked is what would send; throwing here keeps the edit unsaved too.
+        if (!isEvent(next.kind) && sendingRow(db, next.accountId)?.source === "apple") throw new HttpError(409, OPEN_IN_MAIL_COPY);
+        const fresh = next.reasons.filter((r) => !seen.has(r.key));
+        if (fresh.length) return { fresh };
+        resolveApproval(db, next.approvalId, "approve");
+        return { fresh: [] };
+      })(),
+    );
+    if (outcome.fresh.length) throw new HttpError(409, `Check the card before sending: ${outcome.fresh.map((r) => r.text).join(". ")}. Then press Send again.`);
+    return json(getMailAction(db, action.id));
+  }
+
+  const saveM = hit("POST", /^\/api\/mail\/actions\/([^/]+)\/save-draft$/);
+  if (saveM) {
+    const action = getMailAction(db, saveM[1]!);
+    if (!action || isEvent(action.kind)) throw new HttpError(404, "That email draft isn't there anymore.");
+    const b = await readBody(req);
+    const edit = mailEdit(b);
+    return json(await plain(() => guardedMailAsync(() => mail.actions.saveDraft(action.id, edit))));
+  }
+
+  const openMailM = hit("POST", /^\/api\/mail\/actions\/([^/]+)\/open-in-mail$/);
+  if (openMailM) {
+    const action = getMailAction(db, openMailM[1]!);
+    if (!action || isEvent(action.kind)) throw new HttpError(404, "That email draft isn't there anymore.");
+    const edit = mailEdit(await readBody(req));
+    return json(await plain(() => guardedMailAsync(() => mail.actions.openInMail(action.id, edit))));
+  }
+
+  const archiveM = hit("POST", /^\/api\/mail\/threads\/([^/]+)\/archive$/);
+  if (archiveM) {
+    const b = await readBody(req);
+    await plain(() => guardedMailAsync(() => mail.actions.archive(archiveM[1]!, b.undo === true)));
+    return json({ ok: true });
+  }
+
+  // A Calendar.app event opens in Calendar, where the user changes or answers it himself.
+  const calOpenM = hit("POST", /^\/api\/mail\/events\/([^/]+)\/open-in-calendar$/);
+  if (calOpenM) {
+    const e = db.query("SELECT e.source_id, c.source FROM cal_events e JOIN cal_calendars c ON c.id = e.calendar_id WHERE e.id = ?").get(calOpenM[1]!) as { source_id: string; source: string } | null;
+    if (!e || e.source !== "apple") throw new HttpError(404, "That Calendar.app event isn't in the calendar anymore.");
+    const id = e.source_id.split("|")[0]!;
+    const opened = await run([config().openBin, `ical://ekevent/${encodeURIComponent(id)}?method=show&options=more`]);
+    if (!opened && !(await run([config().openBin, "-b", "com.apple.iCal"]))) throw new HttpError(502, "Atrium couldn't open Calendar. Open it yourself to find the event.");
+    return json({ ok: true });
+  }
+
+  const rsvpM = hit("POST", /^\/api\/mail\/events\/([^/]+)\/rsvp$/);
+  if (rsvpM) {
+    const b = await readBody(req);
+    if (b.answer !== "accepted" && b.answer !== "tentative" && b.answer !== "declined") throw new HttpError(400, "answer must be accepted, tentative or declined.");
+    const answer = b.answer;
+    await plain(() => guardedMailAsync(() => mail.actions.rsvp(rsvpM[1]!, answer, optString(b.note, "note") ?? "")));
+    return json({ ok: true });
   }
 
   if (hit("GET", /^\/api\/mail\/events$/)) {

@@ -15,7 +15,7 @@ export const ALWAYS_ASK = [
   "create_repo",
   "push",
   "remove_clone",
-  // Every text or message Atrium sends as Nakul, to anyone, every time.
+  // Every text, email, invite or calendar change Atrium sends as Nakul, to anyone, every time.
   "send_message",
 ] as const;
 export type AlwaysAsk = (typeof ALWAYS_ASK)[number];
@@ -250,12 +250,21 @@ export function resolveApproval(
 
 // The note a group text's approval closes with when Nakul sends it as one text per person instead.
 export const SEPARATELY_NOTE = "Sending one text to each person instead.";
+// The note an email's approval closes with when Nakul saves it to his drafts instead of sending it.
+export const SAVED_DRAFT_NOTE = "Saved to drafts instead of sending.";
+// And when he opens it in Mail.app to send from there.
+export const OPENED_IN_MAIL_NOTE = "Opened in Mail for you to send.";
 
 // Accepting a result the agent said it didn't finish is recorded as exactly that.
 function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
   if (a.alwaysAsk === "send_message") {
-    const what = a.title.replace(/^Send a /, "").replace(/\?$/, "");
+    // A text or email ("Send a reply to Robin?"), or a calendar change ("Move "Lunch"?").
+    const send = /^Send an? /.test(a.title);
+    const what = a.title.replace(/^Send an? /, "").replace(/\?$/, "");
     if (decision === "reject" && a.note === SEPARATELY_NOTE) return `Chose to send separately: ${what}`;
+    if (decision === "reject" && a.note === SAVED_DRAFT_NOTE) return `Saved to drafts: ${what}`;
+    if (decision === "reject" && a.note === OPENED_IN_MAIL_NOTE) return `Opened in Mail: ${what}`;
+    if (!send) return decision === "approve" ? `Approved: ${what}` : `Chose not to: ${what}`;
     return decision === "approve" ? `Pressed Send: ${what}` : `Chose not to send: ${what}`;
   }
   if (decision === "reject") return `Rejected: ${a.title}`;

@@ -47,6 +47,9 @@ import { type MessageBlock, parseMessageBlock } from "./messaging/block";
 import { autoLookup } from "./messaging/contacts";
 import { peopleLine } from "./messaging/rules";
 import { draftGroupMessage, draftMessage } from "./messaging/store";
+import { type InboxBlock, parseInboxBlock } from "./mail/block";
+import { KIND_NOUN, namesLine } from "./mail/compose";
+import { BadMail, draftEvent, draftMail, writableCalendars } from "./mail/drafts";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -618,8 +621,10 @@ export function createRunner(deps: {
     let outcome: ParsedOutcome = { outcome: "unknown", reason: null, body: "" };
     // A text the agent asked Atrium to send; it becomes a draft that only Nakul's Send can send.
     let message: MessageBlock | null = null;
+    // An email or calendar change an Inbox task asked for; likewise only ever a draft.
+    let mailAsk: InboxBlock | null = null;
     if (result.status === "ok" && task.kind !== "review") {
-      ({ outcome, message } = honestOutcome(task, result.summary));
+      ({ outcome, message, mailAsk } = honestOutcome(task, result.summary));
       result = { ...result, summary: outcome.body };
     }
 
@@ -677,8 +682,13 @@ export function createRunner(deps: {
           // It catches its own failures; this only guards the engine if one slips past.
           autoLookup(db, action.id).catch((e) => console.error(`Contacts lookup failed: ${e instanceof Error ? e.message : String(e)}`));
         }
+      } else if (result.status === "ok" && mailAsk && draftFromInbox(task, space, mailAsk, adapter.id)) {
+        // Drafted: its card is the task's only question, and the user's Send (or Don't send) finishes the task.
       } else if (result.status === "ok") {
-        const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
+        // Why an Inbox ask couldn't become a draft, told in the review instead.
+        const mailProblem = mailProblemFor.get(task.id);
+        mailProblemFor.delete(task.id);
+        const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(mailProblem ? [mailProblem] : []), ...(settled?.lines ?? [])];
         // Repo runs already count their files in the branch summary.
         const madeText = !repo && made ? madeLine(made.changes, made.display) : null;
         if (madeText) lines.splice(1, 0, madeText);
@@ -794,13 +804,16 @@ export function createRunner(deps: {
 
   // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A
   // message block satisfies a send only as far as a draft goes: the task is partly done until Nakul presses Send.
-  function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: MessageBlock | null } {
+  function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: MessageBlock | null; mailAsk: InboxBlock | null } {
     const parsed = parseOutcome(summary);
+    // Only an Inbox task's block counts: the Inbox is where the user asks for an email, and a draft is all it makes.
+    const ask = task.kind === "work" && getSpace(db, task.spaceId)?.kind === "inbox" ? parseInboxBlock(parsed.body) : null;
+    if (ask) return { outcome: { outcome: "partial", reason: "Drafted it. It goes out only when you press Send.", body: ask.body }, message: null, mailAsk: ask };
     const block = task.kind === "work" ? parseMessageBlock(parsed.body) : null;
     if (block && isMessageTask(task)) {
       const who = block.group ? (block.group.name ?? peopleLine(block.group.people)) : block.to;
       const reason = `Drafted a text to ${who}. It sends only when you press Send.`;
-      return { outcome: { outcome: "partial", reason, body: block.body }, message: block };
+      return { outcome: { outcome: "partial", reason, body: block.body }, message: block, mailAsk: null };
     }
     // Anywhere else a block is ignored (an agent reading a repo or a web page could be talked into writing one)
     // and the result goes to review as usual, with a note saying what the agent asked for.
@@ -809,9 +822,42 @@ export function createRunner(deps: {
     // A repo task's title is about code ("Send button styling"), never a send Atrium would make.
     const claim = getSpace(db, task.spaceId)?.kind === "repo" ? null : engineOnlyClaim((parent ?? task).title);
     // Atrium knows for certain that nothing was sent or created, so this is "couldn't", not "can't tell".
-    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, body, outcome: "couldnt", reason: ENGINE_ONLY[claim] }, message: null };
-    return { outcome: { ...parsed, body }, message: null };
+    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, body, outcome: "couldnt", reason: ENGINE_ONLY[claim] }, message: null, mailAsk: null };
+    return { outcome: { ...parsed, body }, message: null, mailAsk: null };
   }
+
+  // An Inbox task's email or calendar block becomes a draft card, with Claude's added people marked. Returns false,
+  // with mailProblem set, when the ask can't be drafted (a thread that's gone, an event someone else organises); the
+  // result then goes to review as usual and says why.
+  function draftFromInbox(task: Task, space: Space, ask: InboxBlock, actor: string): boolean {
+    try {
+      let what: string;
+      if ("email" in ask) {
+        const e = ask.email;
+        const { action } = draftMail(db, { spaceId: space.id, taskId: task.id, kind: e.kind, draftedBy: "claude", threadId: e.threadId, to: e.to, cc: e.cc, subject: e.subject, body: e.text });
+        what = `Drafted ${e.kind === "new" ? "an email" : `a ${KIND_NOUN[e.kind]}`} to ${namesLine(action.to)}`;
+      } else {
+        const e = ask.event;
+        if (e.kind === "event_create") {
+          const calendarId = writableCalendars(db).find((c) => e.calendar && c.title.toLowerCase() === e.calendar.toLowerCase())?.id ?? null;
+          draftEvent(db, { spaceId: space.id, taskId: task.id, kind: e.kind, draftedBy: "claude", calendarId, title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location, attendees: e.attendees });
+          what = `Drafted "${e.title}"`;
+        } else {
+          const { action } = draftEvent(db, { spaceId: space.id, taskId: task.id, kind: e.kind, draftedBy: "claude", eventId: e.eventId, ...(e.kind === "event_move" ? { start: e.start, ...(e.end ? { end: e.end } : {}) } : {}) });
+          what = `Drafted ${e.kind === "event_move" ? "a move" : "a cancellation"} of "${action.event?.title}"`;
+        }
+      }
+      setTaskOutcome(db, task.id, "partial", `${what}. It goes out only when you press Send.`);
+      setTaskStatus(db, task.id, "review");
+      logActivity(db, space.id, actor, `${what}: ${task.title}`, { taskId: task.id });
+      return true;
+    } catch (e) {
+      if (!(e instanceof BadMail)) throw e;
+      mailProblemFor.set(task.id, `Atrium couldn't draft what Claude asked for: ${e.message}`);
+      return false;
+    }
+  }
+  const mailProblemFor = new Map<string, string>();
 
   // Marked by the engine when it made the task (the setup path), or a task Nakul added in the Messages space;
   // never anything the agent wrote.

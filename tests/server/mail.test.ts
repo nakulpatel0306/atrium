@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { onApprovalResolved } from "../../src/engine/approvals";
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openDb } from "../../src/engine/db";
 import { mailKeychain } from "../../src/engine/mail/google/oauth";
-import { listAccounts, listThreads, threadMessages } from "../../src/engine/mail/store";
+import { ingestMessages, listAccounts, listCalendars, listEvents, listThreads, replaceEvents, threadMessages } from "../../src/engine/mail/store";
 import { createMail, type Mail } from "../../src/engine/mail";
 import type { MailOverview } from "../../src/server/mail";
 import { getSpace } from "../../src/engine/spaces";
@@ -102,6 +103,19 @@ test("connecting Google makes the private Inbox space and fills it; the thread v
   expect(detail.messages[1]!.attachments).toEqual([{ name: "lease.pdf", size: 15, openable: true }]);
 });
 
+test("one message's Retry fetches that message, and only one on this thread", async () => {
+  await connectGoogle();
+  const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+  const [first] = listThreadMessages(lease.id);
+  const before = fakes.google.log.length;
+  expect((await send("POST", `/api/mail/threads/${lease.id}/open`, { retry: true, messageId: first })).status).toBe(200);
+  await mail.sync.fetchBodies([first!]);
+  expect(fakes.google.log.slice(before).filter((l) => l.includes("/messages/"))).toEqual(["GET /gmail/v1/users/me/messages/gm-1?format=full"]);
+  const news = listThreads(db).find((t) => t.subject === "This week's deals")!;
+  const other = await send("POST", `/api/mail/threads/${lease.id}/open`, { messageId: listThreadMessages(news.id)[0] });
+  expect(other.status).toBe(404);
+});
+
 test("an attachment opens through the engine's named-app path", async () => {
   await connectGoogle();
   const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
@@ -170,4 +184,125 @@ test("the Google guide is served as plain text and tells the user to publish the
   const text = await r.text();
   expect(text).toContain("Publish app");
   expect(text).toContain("Advanced");
+});
+
+describe("drafts and sends", () => {
+  let unhook: () => void;
+  beforeEach(() => {
+    unhook = onApprovalResolved(mail.actions.onDecision);
+  });
+  afterEach(async () => {
+    unhook();
+    await mail.actions.settle();
+  });
+  const sends = () => fakes.google.writes.filter((w) => w.path.endsWith("/messages/send"));
+  type Draft = { id: string; approvalId: string; to: { name: string; address: string; added: boolean }[]; reasons: { text: string }[]; accountId: string; status: string };
+
+  test("a reply drafted from the thread goes out only from its card's Send, once", async () => {
+    await connectGoogle();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    const r = await send("POST", "/api/mail/drafts", { kind: "reply", threadId: lease.id });
+    expect(r.status).toBe(200);
+    const draft = (await r.json()) as Draft;
+    expect(draft.to.map((p) => p.address)).toEqual(["robin@example.net"]);
+    // Not from the generic approve, and not with an empty body.
+    const generic = await send("POST", `/api/approvals/${draft.approvalId}`, { decision: "approve" });
+    expect(generic.status).toBe(409);
+    // An empty From is refused, never swapped for another account.
+    const noFrom = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: "", to: draft.to, cc: [], subject: "", body: "Hi", seen: [] });
+    expect(noFrom.status).toBe(400);
+    expect(await errorOf(noFrom)).toBe("Pick one of your connected accounts to send from.");
+    const empty = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: " ", seen: [] });
+    expect(await errorOf(empty)).toBe("Write the email first.");
+    const ok = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: "Thursday works.", seen: [] });
+    expect(ok.status).toBe(200);
+    await mail.actions.settle();
+    expect(sends()).toHaveLength(1);
+    const again = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: "Thursday works.", seen: [] });
+    expect(again.status).toBe(409);
+    expect(sends()).toHaveLength(1);
+  });
+
+  test("adding someone new keeps the edit but asks for a fresh Send that has seen the note", async () => {
+    await connectGoogle();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    const draft = (await (await send("POST", "/api/mail/drafts", { kind: "reply", threadId: lease.id })).json()) as Draft;
+    const to = [...draft.to, { name: "Kit Moreno", address: "kit@example.org" }];
+    const first = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: [] });
+    expect(first.status).toBe(409);
+    expect(await errorOf(first)).toBe("Check the card before sending: first time emailing Kit Moreno <kit@example.org>. Then press Send again.");
+    expect(sends()).toEqual([]);
+    const second = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: ["first_time:kit@example.org"] });
+    expect(second.status).toBe(200);
+    await mail.actions.settle();
+    expect(sends()[0]!.raw).toContain("To: robin@example.net, \"Kit Moreno\" <kit@example.org>");
+  });
+
+  test("the route refuses moving or cancelling one day of a repeating event", async () => {
+    await connectGoogle();
+    const cal = listCalendars(db)[0]!.id;
+    replaceEvents(db, cal, [{ sourceId: "abc_1", icalUid: "abc", recurrenceId: "1794582000000", title: "Weekly sync", start: NOW + 86_400_000, end: NOW + 90_000_000, allDay: false, location: "", attendees: [], organizer: SAM, myStatus: null, recurrence: "series:abc" }], NOW, NOW + 2 * 86_400_000);
+    const weekly = listEvents(db, NOW, NOW + 2 * 86_400_000).find((e) => e.title === "Weekly sync")!;
+    const r = await send("POST", "/api/mail/event-drafts", { kind: "event_cancel", eventId: weekly.id });
+    expect(r.status).toBe(400);
+    expect(await errorOf(r)).toContain("repeating event");
+  });
+
+  test("an invitation's thread carries its event only by the invitation's own UID, never by a title it mentions", async () => {
+    const kit = "Kit Moreno <kit@example.org>";
+    fakes.google.data[SAM]!.threads.push(
+      { id: "gt-invite", historyId: "300", messages: [{ id: "gm-inv", threadId: "gt-invite", from: kit, to: SAM, subject: "Invitation: Planning with Kit @ Tue Nov 3", date: T0, text: "You're invited.", calendar: "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:standup-1@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n" }] },
+      { id: "gt-mention", historyId: "301", messages: [{ id: "gm-men", threadId: "gt-mention", from: kit, to: SAM, subject: "Notes from Planning with Kit", date: T0, text: "Notes." }] },
+    );
+    await connectGoogle();
+    for (const subject of ["Invitation: Planning with Kit @ Tue Nov 3", "Notes from Planning with Kit"]) await openThread(listThreads(db).find((t) => t.subject === subject)!.id);
+    const invite = listThreads(db).find((t) => t.subject.startsWith("Invitation:"))!;
+    expect((await get<{ invite: { title: string; myStatus: string } | null }>(`/api/mail/threads/${invite.id}`)).invite).toMatchObject({ title: "Planning with Kit", myStatus: "accepted" });
+    const mention = listThreads(db).find((t) => t.subject === "Notes from Planning with Kit")!;
+    expect((await get<{ invite: unknown }>(`/api/mail/threads/${mention.id}`)).invite).toBeNull();
+  });
+
+  test("e archives a Gmail thread and Undo brings it back; new mail on it brings it back too", async () => {
+    await connectGoogle();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    expect((await send("POST", `/api/mail/threads/${lease.id}/archive`, {})).status).toBe(200);
+    expect(fakes.google.writes.at(-1)).toMatchObject({ path: "/gmail/v1/users/me/threads/gt-lease/modify", body: { removeLabelIds: ["INBOX"] } });
+    expect(listThreads(db).map((t) => t.id)).not.toContain(lease.id);
+    expect((await send("POST", `/api/mail/threads/${lease.id}/archive`, { undo: true })).status).toBe(200);
+    expect(fakes.google.writes.at(-1)!.body).toEqual({ addLabelIds: ["INBOX"] });
+    expect(listThreads(db).map((t) => t.id)).toContain(lease.id);
+    await send("POST", `/api/mail/threads/${lease.id}/archive`, {});
+    ingestMessages(db, listAccounts(db)[0]!, [{ sourceId: "gm-9", threadKey: "gt-lease", messageId: "<lease-9@example.net>", inReplyTo: null, references: [], subject: "Re: Lease renewal", from: { name: "Robin Vale", address: "robin@example.net" }, to: [{ name: "", address: SAM }], cc: [], date: NOW, snippet: "", unread: true, sent: false, labels: ["INBOX"], attachments: [] }]);
+    expect(listThreads(db).map((t) => t.id)).toContain(lease.id);
+  });
+
+  test("a Mail.app account's card opens in Mail and can't be sent from Atrium; its events open in Calendar", async () => {
+    expect((await send("POST", "/api/mail/apple", { what: "mail", on: true })).status).toBe(200);
+    expect((await send("POST", "/api/mail/apple", { what: "calendar", on: true })).status).toBe(200);
+    const trip = listThreads(db).find((t) => t.subject === "Trip plan")!;
+    const draft = (await (await send("POST", "/api/mail/drafts", { kind: "reply", threadId: trip.id })).json()) as Draft;
+    const body = { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: "9 is good.", seen: [] };
+    const refused = await send("POST", `/api/mail/actions/${draft.id}/send`, body);
+    expect(refused.status).toBe(409);
+    expect(await errorOf(refused)).toBe("This account sends from Mail. Press Open in Mail, then send it there.");
+    expect((await send("POST", `/api/mail/threads/${trip.id}/archive`, {})).status).toBe(400);
+    const inMail = await send("POST", `/api/mail/actions/${draft.id}/open-in-mail`, body);
+    expect(inMail.status).toBe(200);
+    expect(((await inMail.json()) as Draft).status).toBe("opened");
+    const dentist = (await get<{ events: { id: string; title: string }[] }>(`/api/mail/events?from=${NOW - 30 * 86_400_000}&to=${NOW + 30 * 86_400_000}`)).events.find((e) => e.title === "Dentist")!;
+    expect((await send("POST", `/api/mail/events/${dentist.id}/open-in-calendar`, {})).status).toBe(200);
+    expect(opened()).toContain("ical://ekevent/ae-2");
+  });
+
+  test("Save as draft and RSVP are the user's own presses", async () => {
+    await connectGoogle();
+    const draft = (await (await send("POST", "/api/mail/drafts", { kind: "new" })).json()) as Draft;
+    const saved = await send("POST", `/api/mail/actions/${draft.id}/save-draft`, { accountId: draft.accountId, to: [{ name: "", address: "robin@example.net" }], cc: [], subject: "Hello", body: "Draft" });
+    expect(saved.status).toBe(200);
+    expect(fakes.google.writes.map((w) => w.path)).toEqual(["/gmail/v1/users/me/drafts"]);
+    const invite = (await get<{ events: { id: string; title: string }[] }>(`/api/mail/events?from=${NOW - 30 * 86_400_000}&to=${NOW + 30 * 86_400_000}`)).events.find((e) => e.title === "Planning with Kit")!;
+    expect((await send("POST", `/api/mail/events/${invite.id}/rsvp`, { answer: "maybe" })).status).toBe(400);
+    expect((await send("POST", `/api/mail/events/${invite.id}/rsvp`, { answer: "accepted", note: "" })).status).toBe(200);
+    expect(fakes.google.writes.at(-1)).toMatchObject({ method: "PATCH", sendUpdates: "all" });
+  });
 });

@@ -1,6 +1,12 @@
-import { ArrowLeft, FileSearch, Paperclip } from "lucide-react";
+import { ArrowLeft, FileSearch, Forward, Paperclip, Reply, ReplyAll } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { post } from "../../api";
+import type { MailKind } from "../../../engine/mail/compose";
+import { post, useEngineState } from "../../api";
+import { announce } from "../../live";
+import { DraftCard } from "./DraftCard";
+import type { MailActionView } from "./DraftShell";
+import { OpenInCalendar } from "./OpenInCalendar";
+import { Rsvp } from "./Rsvp";
 import { absolute, bytes } from "../../format";
 import { type MessageView, personName, splitQuoted, useThread } from "../../mail";
 
@@ -32,9 +38,15 @@ function Attachment({ messageId, index, name, size, openable }: { messageId: str
   );
 }
 
-// One message of the chain. Its body is plain text the engine made; quoted history is folded away.
-function Message({ m, last, loading }: { m: MessageView; last: boolean; loading: boolean }) {
+// One message of the chain. Its body is plain text the engine made; quoted history is folded away. A body that
+// didn't load has its own Retry, which fetches just that message.
+function Message({ m, threadId, last, loading }: { m: MessageView; threadId: string; last: boolean; loading: boolean }) {
   const [expanded, setExpanded] = useState(last);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const retry = async () => {
+    const res = await post(`/api/mail/threads/${encodeURIComponent(threadId)}/open`, { retry: true, messageId: m.id });
+    setRetryError(res.ok ? null : res.error);
+  };
   const parts = m.body !== null ? splitQuoted(m.body) : null;
   return (
     <article className={`mail-msg${expanded ? " open" : ""}`} aria-label={`From ${personName(m.from)}, ${absolute(m.date)}`}>
@@ -62,7 +74,19 @@ function Message({ m, last, loading }: { m: MessageView; last: boolean; loading:
               )}
             </div>
           ) : (
-            <p className="mail-body faint">{loading ? "Loading the message…" : m.snippet || "Atrium couldn't load this message's text yet."}</p>
+            <div className="mail-body faint">
+              {loading ? (
+                "Loading the message…"
+              ) : (
+                <>
+                  {m.snippet || "Atrium couldn't load this message's text yet."}{" "}
+                  <button className="btn" onClick={() => void retry()} aria-label={`Load the message from ${personName(m.from)} again`}>
+                    Retry
+                  </button>
+                  {retryError && <span className="err"> {retryError}</span>}
+                </>
+              )}
+            </div>
           )}
           {m.attachments.length > 0 && (
             <ul className="mail-atts" aria-label="Attachments">
@@ -77,11 +101,32 @@ function Message({ m, last, loading }: { m: MessageView; last: boolean; loading:
   );
 }
 
+const KIND_LABEL: Record<Exclude<MailKind, "new">, string> = { reply: "Reply", reply_all: "Reply all", forward: "Forward" };
+
+// Opens a draft card under the thread. The engine fills in who it goes to from the thread's own headers. If the user
+// already has that kind of draft open on the thread, it goes to that one instead of making a second.
+export async function startDraft(threadId: string, kind: Exclude<MailKind, "new">, drafts: MailActionView[] = []): Promise<string | null> {
+  const open = drafts.find((d) => d.threadId === threadId && d.kind === kind && d.draftedBy === "you");
+  const field = open ? document.querySelector<HTMLTextAreaElement>(`[data-draft-id="${CSS.escape(open.id)}"] textarea`) : null;
+  if (field) {
+    field.focus();
+    return null;
+  }
+  const res = await post("/api/mail/drafts", { kind, threadId });
+  if (!res.ok) return res.error;
+  announce(`${KIND_LABEL[kind]} drafted below the thread.`);
+  return null;
+}
+
 // The chain, oldest first. Nothing in it loads from the web: bodies are text and attachments open only on request.
 export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
   const detail = useThread(id);
+  const state = useEngineState();
   const head = useRef<HTMLHeadingElement>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const drafts = (state?.mailActions ?? []).filter((m) => m.threadId === id);
+  const draft = async (kind: Exclude<MailKind, "new">) => setDraftError(await startDraft(id, kind, drafts));
   // Bodies are fetched once per opening, not on every refresh of the view.
   useEffect(() => {
     void post(`/api/mail/threads/${encodeURIComponent(id)}/open`, {});
@@ -94,7 +139,7 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
     if (detail?.thread.id === id) head.current?.focus();
   }, [detail?.thread.id, id]);
   if (!detail) return <div className="thread-none">Loading the thread…</div>;
-  const { thread, messages, loading, problem } = detail;
+  const { thread, messages, loading, problem, invite } = detail;
   return (
     <div className="thread">
       <button className="btn link thread-back" onClick={onBack}>
@@ -107,6 +152,14 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
       <p className="faint thread-meta">
         <span className="acct-dot" style={{ background: thread.account.color }} aria-hidden /> {thread.account.address} · {messages.length === 1 ? "1 message" : `${messages.length} messages`}
       </p>
+      {invite && (
+        <div className="thread-invite">
+          <span className="faint">
+            Invitation: {invite.title} · {new Date(invite.start).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+          </span>
+          {invite.calendar.source === "google" ? <Rsvp e={invite} /> : <OpenInCalendar eventId={invite.id} />}
+        </div>
+      )}
       {(problem || retryError) && !loading && (
         <p className="err thread-problem" role="alert">
           {retryError ?? problem}{" "}
@@ -116,8 +169,27 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
         </p>
       )}
       {messages.map((m, i) => (
-        <Message key={m.id} m={m} last={i === messages.length - 1} loading={loading && m.body === null} />
+        <Message key={m.id} m={m} threadId={thread.id} last={i === messages.length - 1} loading={loading && m.body === null} />
       ))}
+      <div className="thread-acts" role="group" aria-label="Answer this thread">
+        <button className="btn" onClick={() => void draft("reply")} aria-keyshortcuts="r">
+          <Reply />
+          Reply
+        </button>
+        <button className="btn" onClick={() => void draft("reply_all")} aria-keyshortcuts="a">
+          <ReplyAll />
+          Reply all
+        </button>
+        <button className="btn" onClick={() => void draft("forward")} aria-keyshortcuts="f">
+          <Forward />
+          Forward
+        </button>
+        {draftError && <span className="err">{draftError}</span>}
+      </div>
+      {drafts.map((d) => {
+        const approval = state?.approvals.find((a) => a.id === d.approvalId);
+        return approval ? <DraftCard key={d.id} approval={approval} action={d} /> : null;
+      })}
     </div>
   );
 }

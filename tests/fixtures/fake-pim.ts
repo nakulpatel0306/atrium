@@ -5,6 +5,8 @@
 //    "calendars": [...], "events": {"<calendar id>": [...]}}
 // in the shapes src/engine/mail/pim.ts documents. FAKE_PIM_MODE: "ok" (default), "mail_denied", "calendar_denied",
 // "hang", "malformed" (answers {} to everything). FAKE_PIM_LOG, if set, gets each call's argv as a JSON line.
+// Write commands (mail.compose, cal.create) read their JSON from stdin, as the helper
+// does, and append {"cmd", "input"} to FAKE_PIM_WRITES.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -53,7 +55,7 @@ switch (cmd) {
     const recent = msgs.filter((m) => Date.parse(m.date) >= since).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     const sent = recent.filter((m) => m.mailbox === "Sent").slice(0, Number(process.env.FAKE_PIM_SENT_LIMIT ?? 200));
     const inbox = recent.filter((m) => m.mailbox !== "Sent").slice(0, Number(process.env.FAKE_PIM_INBOX_LIMIT ?? 300));
-    out({ messages: [...inbox, ...sent].map(({ mailbox: _, ...m }) => ({ ...m, snippet: "" })) });
+    out({ messages: [...inbox, ...sent].map(({ mailbox, ...m }) => ({ ...m, sent: mailbox === "Sent", snippet: "" })) });
     break;
   }
   case "mail.message": {
@@ -74,6 +76,13 @@ switch (cmd) {
   case "cal.events":
     out({ events: data.events?.[flag("--calendar") ?? ""] ?? [] });
     break;
+  case "mail.compose":
+  case "cal.create": {
+    const input = JSON.parse(await Bun.stdin.text());
+    if (process.env.FAKE_PIM_WRITES) appendFileSync(process.env.FAKE_PIM_WRITES, `${JSON.stringify({ cmd, input })}\n`);
+    out(cmd === "cal.create" ? { event: { id: `apple-new-${Date.now()}` } } : { ok: true });
+    break;
+  }
   default:
     fail("bad_args", `Unknown command ${cmd}`);
 }

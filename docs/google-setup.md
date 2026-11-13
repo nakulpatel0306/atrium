@@ -37,8 +37,8 @@ connect again.
 
 Atrium asks for:
 
-- `gmail.modify`: read mail and labels. Later versions use it to save drafts and send, only after you press Send.
-- `calendar.events` and `calendar.readonly`: read your calendars and events.
+- `gmail.modify`: read mail and labels, archive a thread when you press e, and save drafts and send email only after you press Send.
+- `calendar.events` and `calendar.readonly`: read your calendars and events, and create, move, cancel or answer one only after you press its button.
 
 ## What Atrium keeps
 

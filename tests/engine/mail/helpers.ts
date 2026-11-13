@@ -15,6 +15,7 @@ export function msg(over: Partial<SourceMessage> & { sourceId: string }): Source
     date: T0,
     snippet: "",
     unread: true,
+    sent: false,
     labels: [],
     attachments: [],
     ...over,

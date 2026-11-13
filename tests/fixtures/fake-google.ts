@@ -19,6 +19,8 @@ export type FakeMessageInput = {
   // The text part's charset; its bytes are encoded in it, as Gmail serves them.
   charset?: "ISO-8859-1";
   html?: string;
+  // An invitation's text/calendar part, as Google Calendar sends it.
+  calendar?: string;
   labels?: string[];
   attachments?: { name: string; size: number; data: string }[];
 };
@@ -52,6 +54,7 @@ export function gmailMessage(m: FakeMessageInput, format: "full" | "metadata") {
         ]
       : []),
     ...(m.html !== undefined ? [{ mimeType: "text/html", filename: "", body: { data: b64(m.html), size: m.html.length } }] : []),
+    ...(m.calendar !== undefined ? [{ mimeType: "text/calendar", filename: "", body: { data: b64(m.calendar), size: m.calendar.length } }] : []),
     ...(m.attachments ?? []).map((a, i) => ({ mimeType: "application/octet-stream", filename: a.name, body: { attachmentId: `att${i}`, size: a.size } })),
   ];
   return {
@@ -64,8 +67,15 @@ export function gmailMessage(m: FakeMessageInput, format: "full" | "metadata") {
   };
 }
 
+// A write Atrium made: an email sent or saved as a draft (raw decoded), or a calendar change with its sendUpdates.
+export type FakeWrite = { method: string; path: string; sendUpdates: string | null; body: Record<string, unknown>; raw?: string };
+
 export type FakeGoogle = {
   url: string;
+  // Every write, in order.
+  writes: FakeWrite[];
+  // Writes answer with this status instead (a number), or never answer ("hang"); null is normal.
+  failWrites: number | "hang" | null;
   stop(): void;
   // Every request's method and path, for checking what Atrium asked for.
   log: string[];
@@ -86,6 +96,7 @@ export function startFakeGoogle(data: FakeData): FakeGoogle {
   let n = 0;
   const err = (status: number, body: unknown) => Response.json(body, { status });
 
+  const fake = { writes: [] as FakeWrite[], failWrites: null as number | "hang" | null } as FakeGoogle;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -139,6 +150,36 @@ export function startFakeGoogle(data: FakeData): FakeGoogle {
       const email = access.get((req.headers.get("authorization") ?? "").replace(/^Bearer /, ""));
       if (!email) return err(401, { error: { code: 401, message: "Invalid Credentials" } });
       const acct = data[email]!;
+      const writing = req.method !== "GET";
+      if (writing) {
+        if (fake.failWrites === "hang") return new Promise<Response>(() => {});
+        if (fake.failWrites !== null) return err(fake.failWrites, { error: { code: fake.failWrites } });
+      }
+      const body = writing && req.headers.get("content-type")?.includes("json") ? ((await req.json()) as Record<string, unknown>) : {};
+      const record = (extra: Partial<FakeWrite> = {}) => fake.writes.push({ method: req.method, path: p, sendUpdates: url.searchParams.get("sendUpdates"), body, ...extra });
+      if (p === "/gmail/v1/users/me/messages/send" && writing) {
+        const raw = Buffer.from(String(body.raw ?? ""), "base64url").toString("utf8");
+        record({ raw });
+        const id = `sent-${++n}`;
+        const threadId = (body.threadId as string | undefined) ?? `st-${n}`;
+        // Gmail files the sent message in its thread, so the next sync reads it back.
+        const head = (name: string) => new RegExp(`^${name}: (.*)$`, "mi").exec(raw.split("\r\n\r\n")[0]!)?.[1] ?? "";
+        const thread = acct.threads.find((t) => t.id === threadId);
+        if (thread) {
+          thread.messages.push({ id, threadId, from: head("From"), to: head("To"), subject: head("Subject"), date: Date.now(), messageId: head("Message-ID"), labels: ["SENT"] });
+          thread.historyId = String(Number(thread.historyId) + 1);
+        }
+        return Response.json({ id, threadId, labelIds: ["SENT"] });
+      }
+      if (/^\/gmail\/v1\/users\/me\/threads\/[^/]+\/modify$/.test(p) && writing) {
+        record();
+        return Response.json({ id: decodeURIComponent(p.split("/")[6]!) });
+      }
+      if (p === "/gmail/v1/users/me/drafts" && writing) {
+        const message = body.message as { raw?: string } | undefined;
+        record({ raw: Buffer.from(String(message?.raw ?? ""), "base64url").toString("utf8") });
+        return Response.json({ id: `draft-${++n}`, message: { id: `dm-${n}` } });
+      }
 
       if (p === "/gmail/v1/users/me/profile") return Response.json({ emailAddress: email });
       if (p === "/gmail/v1/users/me/threads") return Response.json({ threads: acct.threads.map((t) => ({ id: t.id, historyId: t.historyId })) });
@@ -161,22 +202,45 @@ export function startFakeGoogle(data: FakeData): FakeGoogle {
       }
       if (p === "/calendar/v3/users/me/calendarList") return Response.json({ items: acct.calendars.map((c) => ({ accessRole: "owner", ...c })) });
       m = p.match(/^\/calendar\/v3\/calendars\/([^/]+)\/events$/);
-      if (m) return Response.json({ items: acct.events[decodeURIComponent(m[1]!)] ?? [] });
+      if (m) {
+        const list = (acct.events[decodeURIComponent(m[1]!)] ??= []);
+        if (req.method === "POST") {
+          record();
+          const made = { ...body, id: `new-${++n}`, iCalUID: `new-${n}@example.com` };
+          list.push(made);
+          return Response.json(made);
+        }
+        return Response.json({ items: list });
+      }
+      m = p.match(/^\/calendar\/v3\/calendars\/([^/]+)\/events\/([^/]+)$/);
+      if (m) {
+        const list = acct.events[decodeURIComponent(m[1]!)] ?? [];
+        const i = list.findIndex((e) => e.id === decodeURIComponent(m![2]!));
+        if (i < 0) return err(404, {});
+        if (req.method === "GET") return Response.json(list[i]);
+        record();
+        if (req.method === "DELETE") {
+          list.splice(i, 1);
+          return new Response(null, { status: 204 });
+        }
+        list[i] = { ...list[i], ...body };
+        return Response.json(list[i]);
+      }
       return err(404, { error: "not found" });
     },
   });
 
-  return {
+  return Object.assign(fake, {
     url: `http://127.0.0.1:${server.port}`,
     stop: () => server.stop(true),
     log,
     revoked,
     expireAccessTokens: () => access.clear(),
-    revokeAccount: (address) => {
+    revokeAccount: (address: string) => {
       for (const [rt, email] of refresh) if (email === address) revoked.add(rt);
     },
     data,
-  };
+  });
 }
 
 // The environment that points Atrium's Google endpoints at a fake.

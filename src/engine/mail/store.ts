@@ -145,6 +145,7 @@ function dropMail(db: Database, accountId: string) {
   removeSaved(db, { accountId });
   db.query("DELETE FROM mail_bodies WHERE message_id IN (SELECT id FROM mail_messages WHERE account_id = ?)").run(accountId);
   db.query("DELETE FROM mail_messages WHERE account_id = ?").run(accountId);
+  db.query("DELETE FROM mail_archived WHERE thread_id IN (SELECT id FROM mail_threads WHERE account_id = ?)").run(accountId);
   db.query("DELETE FROM mail_threads WHERE account_id = ?").run(accountId);
   db.query("DELETE FROM cal_events WHERE calendar_id IN (SELECT id FROM cal_calendars WHERE account_id = ?)").run(accountId);
   db.query("DELETE FROM cal_calendars WHERE account_id = ?").run(accountId);
@@ -231,18 +232,19 @@ export function ingestMessages(db: Database, account: { id: string; address: str
       const key = m.messageId ?? `src:${m.sourceId}`;
       const existing = db.query("SELECT id, thread_id FROM mail_messages WHERE account_id = ? AND msg_key = ?").get(account.id, key) as { id: string; thread_id: string } | null;
       if (existing) {
-        db.query("UPDATE mail_messages SET unread = ?, source_id = ? WHERE id = ?").run(m.unread ? 1 : 0, m.sourceId, existing.id);
+        db.query("UPDATE mail_messages SET unread = ?, source_id = ?, sent = MAX(sent, ?) WHERE id = ?").run(m.unread ? 1 : 0, m.sourceId, m.sent ? 1 : 0, existing.id);
         touched.add(existing.thread_id);
         labelThread(db, existing.thread_id, m.labels);
         continue;
       }
+      if (m.from.address === account.address) dropSentCopies(db, account.id, m);
       const threadKey = m.threadKey ?? threadKeyFor(db, account.id, account.address, m);
       const threadId = hashId("mth", account.id, threadKey);
       db.query("INSERT OR IGNORE INTO mail_threads (id, account_id, thread_key, subject, last_at) VALUES (?, ?, ?, ?, ?)").run(threadId, account.id, threadKey, m.subject, m.date);
       labelThread(db, threadId, m.labels);
       db.query(
-        `INSERT INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments, sent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         hashId("msg", account.id, key),
         threadId,
@@ -261,8 +263,11 @@ export function ingestMessages(db: Database, account: { id: string; address: str
         m.unread ? 1 : 0,
         m.attachments.length ? 1 : 0,
         JSON.stringify(m.attachments),
+        m.sent ? 1 : 0,
       );
       touched.add(threadId);
+      // New mail from someone else brings an archived thread back, as Gmail does.
+      if (m.from.address !== account.address) db.query("DELETE FROM mail_archived WHERE thread_id = ?").run(threadId);
       added++;
     }
     for (const [threadKey, version] of Object.entries(versions)) {
@@ -272,6 +277,37 @@ export function ingestMessages(db: Database, account: { id: string; address: str
   })();
   if (touched.size) bus.emit({ type: "changed" });
   return added;
+}
+
+// The copy Atrium shows in a thread right after a Gmail send stands in until Gmail's own copy arrives, matched by
+// Gmail's message id or the Message-ID Atrium set.
+export const SENT_COPY_PREFIX = "atrium-sent:";
+function dropSentCopies(db: Database, accountId: string, m: SourceMessage) {
+  const rows = db.query("SELECT id, source_id, message_id FROM mail_messages WHERE account_id = ? AND msg_key LIKE ?").all(accountId, `${SENT_COPY_PREFIX}%`) as { id: string; source_id: string; message_id: string | null }[];
+  for (const r of rows) {
+    if (r.source_id !== m.sourceId && !(m.messageId && r.message_id === m.messageId)) continue;
+    db.query("DELETE FROM mail_bodies WHERE message_id = ?").run(r.id);
+    db.query("DELETE FROM mail_messages WHERE id = ?").run(r.id);
+  }
+}
+
+// What Atrium just sent, shown in its thread at once. Its row is keyed apart from anything a source returns, so the
+// source's own copy replaces it on the next sync instead of sitting beside it. Returns the message row's id.
+export function addSentCopy(db: Database, account: { id: string; address: string }, actionId: string, m: SourceMessage): string {
+  const key = `${SENT_COPY_PREFIX}${actionId}`;
+  const threadKey = m.threadKey ?? threadKeyFor(db, account.id, account.address, m);
+  const threadId = hashId("mth", account.id, threadKey);
+  const id = hashId("msg", account.id, key);
+  db.transaction(() => {
+    db.query("INSERT OR IGNORE INTO mail_threads (id, account_id, thread_key, subject, last_at) VALUES (?, ?, ?, ?, ?)").run(threadId, account.id, threadKey, m.subject, m.date);
+    db.query(
+      `INSERT OR IGNORE INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments, sent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
+    ).run(id, threadId, account.id, key, m.messageId, m.sourceId, m.inReplyTo, JSON.stringify(m.references), m.subject, JSON.stringify(m.from), JSON.stringify(m.to), JSON.stringify(m.cc), m.date, m.snippet, m.attachments.length ? 1 : 0, JSON.stringify(m.attachments));
+    refreshThread(db, threadId, account.address);
+  })();
+  bus.emit({ type: "changed" });
+  return id;
 }
 
 // A thread's labels are the latest set any of its messages reported.
@@ -340,6 +376,7 @@ export function pruneMail(db: Database, before: number): void {
     db.query("DELETE FROM mail_bodies WHERE message_id IN (SELECT id FROM mail_messages WHERE date < ?)").run(before);
     db.query("DELETE FROM mail_messages WHERE date < ?").run(before);
     db.query("DELETE FROM mail_threads WHERE id NOT IN (SELECT DISTINCT thread_id FROM mail_messages)").run();
+    db.query("DELETE FROM mail_archived WHERE thread_id NOT IN (SELECT id FROM mail_threads)").run();
   })();
 }
 
@@ -387,6 +424,14 @@ const toThread = (r: ThreadRow): ThreadView => ({
 const THREAD_SELECT = `SELECT t.*, a.address, a.color, (SELECT COUNT(*) FROM mail_messages m WHERE m.thread_id = t.id) AS count
   FROM mail_threads t JOIN mail_accounts a ON a.id = t.account_id
   WHERE a.preferred = 1 AND a.enabled = 1`;
+const NOT_ARCHIVED = " AND t.id NOT IN (SELECT thread_id FROM mail_archived)";
+
+// A thread archived from Atrium leaves the Inbox list; undoing it, or new mail from someone else, brings it back.
+export function setArchived(db: Database, threadId: string, archived: boolean, at = Date.now()): void {
+  if (archived) db.query("INSERT OR REPLACE INTO mail_archived (thread_id, archived_at) VALUES (?, ?)").run(threadId, at);
+  else db.query("DELETE FROM mail_archived WHERE thread_id = ?").run(threadId);
+  bus.emit({ type: "changed" });
+}
 
 // The unified Inbox, newest first, from active accounts only, so an address read two ways shows once.
 export function listThreads(db: Database, opts: { accountId?: string; filter?: "unread" | "needs_reply"; limit?: number; search?: string } = {}): ThreadView[] {
@@ -403,7 +448,7 @@ export function listThreads(db: Database, opts: { accountId?: string; filter?: "
     const like = `%${opts.search.replace(/[%_]/g, "")}%`;
     args.push(like, like, like);
   }
-  const sql = `${THREAD_SELECT}${where.map((w) => ` AND ${w}`).join("")} ORDER BY t.last_at DESC LIMIT ?`;
+  const sql = `${THREAD_SELECT}${NOT_ARCHIVED}${where.map((w) => ` AND ${w}`).join("")} ORDER BY t.last_at DESC LIMIT ?`;
   return (db.query(sql).all(...args, opts.limit ?? 200) as ThreadRow[]).map(toThread);
 }
 
@@ -533,9 +578,10 @@ export type EventView = {
   organizer: string | null;
   myStatus: AttendeeStatus | null;
   recurring: boolean;
+  icalUid: string;
 };
 
-export type CalendarView = { id: string; title: string; color: string; source: SourceKind; enabled: boolean; hidden: string | null };
+export type CalendarView = { id: string; title: string; color: string; source: SourceKind; enabled: boolean; writable: boolean; hidden: string | null };
 
 // Every calendar, with why one isn't shown: its account isn't the preferred source or is hidden, or Google reads it
 // directly.
@@ -550,6 +596,7 @@ export function listCalendars(db: Database): CalendarView[] {
     color: r.color,
     source: r.source,
     enabled: r.enabled === 1,
+    writable: r.writable === 1,
     hidden:
       r.source === "google" && r.preferred !== 1
         ? "Its account reads through Mail.app now."
@@ -612,7 +659,18 @@ export function listEvents(db: Database, from: number, to: number): EventView[] 
       organizer: r.organizer,
       myStatus: r.my_status,
       recurring: !!r.recurrence || r.recurrence_id !== "",
+      icalUid: r.ical_uid,
     });
   }
   return out;
+}
+
+// The invitation a thread carries, so it can be answered from the thread: the event whose iCalUID is the one in a
+// message's own text/calendar part, read with its body. Nothing is matched by title, so a thread without that part
+// (or a Mail.app message, whose parts Atrium doesn't read) shows no answer buttons rather than a guess.
+export function inviteForThread(db: Database, threadId: string): EventView | null {
+  const uids = new Set((db.query("SELECT DISTINCT ical_uid FROM mail_messages WHERE thread_id = ? AND ical_uid IS NOT NULL").all(threadId) as { ical_uid: string }[]).map((r) => r.ical_uid));
+  if (!uids.size) return null;
+  const own = new Set((db.query("SELECT DISTINCT address FROM mail_accounts").all() as { address: string }[]).map((r) => r.address));
+  return listEvents(db, 0, Number.MAX_SAFE_INTEGER).find((e) => uids.has(e.icalUid) && e.myStatus !== null && !!e.organizer && !own.has(e.organizer)) ?? null;
 }

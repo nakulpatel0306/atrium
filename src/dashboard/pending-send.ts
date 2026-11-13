@@ -2,16 +2,18 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { post } from "./api";
 import { announce } from "./live";
 
-// A pressed Send waits this long before anything reaches Messages, so a slip can be taken back.
+// A pressed Send waits this long before anything reaches Messages, Mail or a calendar, so a slip can be taken back.
 export const SEND_DELAY_MS = 5000;
 
-// What the card sends, fixed at the press: a person's text has a handle and service, a group's a chat id.
-export type SendBody = { text: string; handle?: string; service?: string; chatId?: string };
+// What the card sends, fixed at the press: a person's text has a handle and service, a group's a chat id; an email
+// or calendar card sends its own fields.
+export type SendBody = { text?: string; handle?: string; service?: string; chatId?: string; [field: string]: unknown };
 
-// One text waiting out its window, or already on its way once `sending` is set; by then it can't be undone.
-export type PendingSend = { id: string; name: string; body: SendBody; startedAt: number; sending: boolean };
+// One send waiting out its window, or already on its way once `sending` is set; by then it can't be undone. `url` is
+// the card's own Send endpoint.
+export type PendingSend = { id: string; name: string; body: SendBody; url: string; startedAt: number; sending: boolean };
 
-// Each text waits in its own entry, keyed by its message action, so one send can never take another's Undo away and
+// Each send waits in its own entry, keyed by its action, so one send can never take another's Undo away and
 // a card that remounts reads the truth from here.
 const pending = new Map<string, PendingSend & { timer: ReturnType<typeof setTimeout> }>();
 const failed = new Map<string, string>();
@@ -33,7 +35,7 @@ async function fire(id: string): Promise<void> {
   if (!p) return;
   pending.set(id, { ...p, sending: true });
   changed();
-  const res = await post(`/api/message-actions/${id}/send`, p.body);
+  const res = await post(p.url, p.body);
   pending.delete(id);
   // On success the card leaves with the next state push; the space's history shows the send.
   if (res.ok) announce(`Sent to ${p.name}.`);
@@ -44,10 +46,10 @@ async function fire(id: string): Promise<void> {
   changed();
 }
 
-export function startSend(id: string, name: string, body: SendBody): void {
+export function startSend(id: string, name: string, body: SendBody, url = `/api/message-actions/${id}/send`): void {
   if (pending.has(id)) return;
   failed.delete(id);
-  pending.set(id, { id, name, body, startedAt: Date.now(), sending: false, timer: setTimeout(() => void fire(id), SEND_DELAY_MS) });
+  pending.set(id, { id, name, body, url, startedAt: Date.now(), sending: false, timer: setTimeout(() => void fire(id), SEND_DELAY_MS) });
   announce(`Sending to ${name} in ${SEND_DELAY_MS / 1000} seconds. Undo is in the Sending list.`);
   changed();
 }
@@ -63,7 +65,7 @@ export function cancelSend(id: string, lead = "Not sent to"): boolean {
   return true;
 }
 
-// Leaving the page stops every waiting send: a text never goes out from a page Nakul can no longer see.
+// Leaving the page stops every waiting send: nothing goes out from a page Nakul can no longer see.
 export function cancelAll(): void {
   for (const id of [...pending.keys()]) cancelSend(id, "Didn't send to");
 }

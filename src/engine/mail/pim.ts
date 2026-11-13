@@ -16,9 +16,9 @@ import { MailProblem, type MailProblemKind } from "./types";
 //     → {"accounts": [{"id": string, "name": string, "addresses": [string], "fullName": string}]}
 //   atrium-pim mail.messages --account <id> --since <ISO 8601>
 //     → {"messages": [{"id": string, "messageId": string|null, "inReplyTo": string|null, "references": string|null,
-//         "subject": string, "from": string, "to": string, "cc": string, "date": ISO, "read": bool,
+//         "subject": string, "from": string, "to": string, "cc": string, "date": ISO, "read": bool, "sent": bool,
 //         "snippet": "", "attachments": [{"name": string, "size": number}]}]}
-//     Headers only, never content: the newest 300 of the account's Inbox and the newest 200 of its Sent, each cut
+//     Headers only, never content: the newest 300 of the account's Inbox and the newest 200 of its Sent (sent: true), each cut
 //     separately. snippet is always empty (the engine takes it from the body once fetched). id is opaque: pass it
 //     back to mail.message and mail.attachment. from/to/cc are raw header text ("Name <a@b>", RFC 2047 words
 //     included), decoded by the engine.
@@ -34,7 +34,18 @@ import { MailProblem, type MailProblemKind } from "./types";
 //         "allDay": bool, "location": string, "attendees": [{"name": string, "email": string, "status": string|null}],
 //         "organizer": string|null, "myStatus": "accepted"|"declined"|"tentative"|"needs_action"|null, "recurrence": string|null}]}
 //
-//   Reserved for Phase B (draft and send), same conventions: mail.send, mail.draft, cal.create, cal.rsvp.
+// The write commands read one JSON document on stdin, never argv, so no address or word of the email shows in the
+// process list. Each runs once per user action; the engine never retries one on its own. Atrium never sends through
+// Mail.app: it can't check what Mail would do, so the user sends from Mail's own window.
+//
+//   atrium-pim mail.compose  stdin {"account": string, "from": string, "to": [{"name", "address"}], "cc": [...],
+//                                  "subject": string, "text": string, "replyTo": id|null, "attachments": [path]}
+//     → {"ok": true}  Opens a visible, filled-in message in Mail from that account, and nothing more: the user checks
+//     it and presses Send in Mail. With replyTo (an id from mail.messages) it answers that message, so Mail sets
+//     In-Reply-To and References itself.
+//   atrium-pim cal.create    stdin {"calendar": string, "title": string, "start": ISO, "end": ISO, "allDay": bool, "location": string}
+//     → {"event": {"id": string}}  No guests: EventKit can't invite people for another app.
+//   Nothing changes or answers existing Calendar.app events: Atrium opens Calendar for that instead.
 //
 // Failure: a non-zero exit and {"error": {"kind": "automation_denied"|"calendar_denied"|"not_running"|"bad_args"|"other", "message": string}}.
 
@@ -50,12 +61,17 @@ export const PIM_COPY = {
   other: "Mail or Calendar didn't answer, and Atrium couldn't tell why. Check that both open normally, then press Sync.",
 } as const;
 
+// A write that timed out may still have gone through.
+export const PIM_UNSURE_COPY = "Mail or Calendar didn't answer in time, so this may or may not have gone through. Check Mail or Calendar before trying again.";
+
 const KINDS: Record<string, MailProblemKind> = { automation_denied: "automation_denied", calendar_denied: "calendar_denied", not_running: "other" };
 
-export async function runPim<T>(args: string[], opts: { timeoutMs?: number } = {}): Promise<T> {
+// `input` is a write command's JSON document, given on stdin.
+export async function runPim<T>(args: string[], opts: { timeoutMs?: number; input?: unknown } = {}): Promise<T> {
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn([config().pimBin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { ...process.env } });
+    const stdin = opts.input === undefined ? "ignore" : new Blob([JSON.stringify(opts.input)]);
+    proc = Bun.spawn([config().pimBin, ...args], { stdin, stdout: "pipe", stderr: "pipe", env: { ...process.env } });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT" || (e as NodeJS.ErrnoException).code === "EACCES") throw new MailProblem("not_installed", PIM_COPY.not_installed);
     throw e;
@@ -70,7 +86,7 @@ export async function runPim<T>(args: string[], opts: { timeoutMs?: number } = {
   void new Response(proc.stderr as ReadableStream).text();
   const code = await proc.exited;
   clearTimeout(timer);
-  if (timedOut) throw new MailProblem("timeout", PIM_COPY.timeout);
+  if (timedOut) throw opts.input === undefined ? new MailProblem("timeout", PIM_COPY.timeout) : new MailProblem("unsure", PIM_UNSURE_COPY);
   let body: unknown;
   try {
     body = JSON.parse(await out);

@@ -285,6 +285,9 @@ function migrate(db: Database): boolean {
   // Markets tables are created here, before their own added columns are checked.
   db.exec(MARKETS_SCHEMA);
   db.exec(MAIL_SCHEMA);
+  // Whether the source filed a message as sent, and the invitation it carries, for installs from before them.
+  if (!has("mail_messages", "sent")) db.exec("ALTER TABLE mail_messages ADD COLUMN sent INTEGER NOT NULL DEFAULT 0");
+  if (!has("mail_messages", "ical_uid")) db.exec("ALTER TABLE mail_messages ADD COLUMN ical_uid TEXT");
   migrateWatchlists(db);
   // Ask Claude answers (about a symbol, or about money) are kept as write-ups of their own kinds.
   rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
