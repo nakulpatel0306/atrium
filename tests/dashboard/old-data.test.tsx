@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Home } from "../../src/dashboard/components/Home";
+import { get } from "../../src/dashboard/api";
 import { OldDataList, OldDataNotice, removeOldDataNow } from "../../src/dashboard/components/OldData";
 import { DataSection } from "../../src/dashboard/components/Settings";
 import type { OldData } from "../../src/engine/old-data-view";
@@ -51,4 +52,14 @@ test("removing posts once and says what went", async () => {
   expect(sent).toEqual(["/api/old-data/remove"]);
   expect(await removeOldDataNow(async () => ({ ok: false as const, error: "Keychain is locked." }))).toEqual({ error: "Keychain is locked." });
   expect(await removeOldDataNow(async () => ({ ok: true as const, data: null }))).toEqual({ toast: "Nothing was left to remove." });
+});
+
+test("a failed check, such as a locked Keychain, comes back as the engine's own message", async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: "Keychain is locked." }), { status: 409 })) as unknown as typeof fetch;
+  try {
+    expect(await get("/api/old-data")).toEqual({ ok: false, error: "Keychain is locked." });
+  } finally {
+    globalThis.fetch = real;
+  }
 });

@@ -7,8 +7,9 @@ import type { OldData } from "./old-data-view";
 // Home's notice was put off ("Not now"); Settings → Data still offers the removal.
 export const OLD_DATA_DISMISSED = "notice.oldData.dismissed";
 
-const likePrefixes = (): string => LEGACY.settingsPrefixes.map(() => "key LIKE ?").join(" OR ");
-const prefixArgs = (): string[] => LEGACY.settingsPrefixes.map((p) => `${p}%`);
+// GLOB, not LIKE: a prefix match that respects case, so "Mail.x" never reads as a "mail." setting.
+const prefixMatch = (): string => LEGACY.settingsPrefixes.map(() => "key GLOB ?").join(" OR ");
+const prefixArgs = (): string[] => LEGACY.settingsPrefixes.map((p) => `${p}*`);
 const removedKinds = (): string =>
   `kind IN (${LEGACY.approvalKinds.map((k) => `'${k}'`).join(",")}) OR always_ask IN (${LEGACY.alwaysAsk.map((k) => `'${k}'`).join(",")})`;
 
@@ -25,7 +26,7 @@ function presentTables(db: Database): OldData["groups"] {
 // the Keychain items it may also hold.
 export function hasOldData(db: Database): boolean {
   if (LEGACY.tables.some((g) => g.names.some((n) => present(db, n)))) return true;
-  if (db.query(`SELECT 1 FROM settings WHERE ${likePrefixes()} LIMIT 1`).get(...prefixArgs())) return true;
+  if (db.query(`SELECT 1 FROM settings WHERE ${prefixMatch()} LIMIT 1`).get(...prefixArgs())) return true;
   return !!db.query(`SELECT 1 FROM approvals WHERE ${removedKinds()} LIMIT 1`).get();
 }
 
@@ -41,7 +42,7 @@ export async function findOldData(db: Database): Promise<OldData | null> {
   for (const account of keychainAccounts(db)) if (await hasKeychainItem(account)) keychain.push(account);
   return {
     groups: presentTables(db),
-    settings: (db.query(`SELECT key FROM settings WHERE ${likePrefixes()} ORDER BY key`).all(...prefixArgs()) as { key: string }[]).map((r) => r.key),
+    settings: (db.query(`SELECT key FROM settings WHERE ${prefixMatch()} ORDER BY key`).all(...prefixArgs()) as { key: string }[]).map((r) => r.key),
     approvals: (db.query(`SELECT COUNT(*) AS n FROM approvals WHERE ${removedKinds()}`).get() as { n: number }).n,
     keychain,
     spaces: (db.query("SELECT name FROM spaces WHERE kind NOT IN ('repo','general') ORDER BY created_at").all() as { name: string }[]).map((r) => r.name),
@@ -59,7 +60,7 @@ export async function removeOldData(db: Database): Promise<OldData | null> {
   try {
     db.transaction(() => {
       for (const g of found.groups) for (const t of g.tables) db.exec(`DROP TABLE ${t.name}`);
-      db.query(`DELETE FROM settings WHERE ${likePrefixes()}`).run(...prefixArgs());
+      db.query(`DELETE FROM settings WHERE ${prefixMatch()}`).run(...prefixArgs());
       const ids = (db.query(`SELECT id FROM approvals WHERE ${removedKinds()}`).all() as { id: string }[]).map((r) => r.id);
       if (ids.length) {
         const marks = ids.map(() => "?").join(",");

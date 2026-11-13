@@ -76,7 +76,7 @@ From a terminal, `atrium doctor` shows the same checks, with the install and sig
 ## Known limits
 
 - macOS only.
-- An older database keeps the tables of features that were removed (investing, money, mail and calendar, texting) until you remove them (see Privacy and safety). Atrium never reads them; spaces of those kinds show as plain private spaces.
+- An older database keeps the tables of features that were removed (investing, money, mail and calendar, texting) until you remove them (see Privacy and safety). Atrium reads them only to list them for removal; spaces of those kinds show as plain private spaces.
 
 ## For developers
 

@@ -145,3 +145,11 @@ test("an older install that kept no Keychain items still removes its tables", as
   expect(removed!.keychain).toEqual([]);
   expect(hasOldData(db)).toBe(false);
 });
+
+test("a kept setting that only differs in case from an old prefix is never counted or removed", async () => {
+  setSetting(db, "Mail.layout", "wide");
+  expect(hasOldData(db)).toBe(false);
+  legacyInstall();
+  await removeOldData(db);
+  expect(getSetting(db, "Mail.layout")).toBe("wide");
+});

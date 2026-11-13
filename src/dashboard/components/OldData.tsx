@@ -1,7 +1,7 @@
 import { Archive, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type OldData, oldDataLines, oldDataStays, removedLine } from "../../engine/old-data-view";
-import { post, type PostResult, useFetched } from "../api";
+import { get, post, type PostResult } from "../api";
 import { showToast } from "../toast";
 
 // What goes, line by line, and what the removal never touches.
@@ -30,9 +30,22 @@ export async function removeOldDataNow(send: (path: string) => Promise<PostResul
 
 // The list comes from the engine, which also checks the Keychain, so the user confirms what is really there.
 function RemoveOldData({ onClose }: { onClose: () => void }) {
-  const data = useFetched<OldData | null>("/api/old-data", 0);
+  const [data, setData] = useState<OldData | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // A locked Keychain fails the check; say so rather than wait on "Checking" for ever.
+  useEffect(() => {
+    let live = true;
+    void get<OldData | null>("/api/old-data").then((r) => {
+      if (!live) return;
+      if (r.ok) setData(r.data);
+      else setError(r.error);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -57,13 +70,13 @@ function RemoveOldData({ onClose }: { onClose: () => void }) {
           <Trash2 />
           Remove old data for good?
         </h3>
-        {data === null ? <p className="hint">Checking what's there…</p> : <OldDataList data={data} />}
+        {data ? <OldDataList data={data} /> : !error && <p className="hint">Checking what's there…</p>}
         {error && <p className="err">{error}</p>}
         <div className="dialog-acts">
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn danger" disabled={data === null || busy} onClick={() => void remove()}>
+          <button type="button" className="btn danger" disabled={!data || busy} onClick={() => void remove()}>
             {busy ? "Removing…" : "Remove for good"}
           </button>
         </div>

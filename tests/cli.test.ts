@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openArgs, renderPlist, statusLine } from "../src/cli";
 import { dataLocations, formatData } from "../src/engine/data-report";
@@ -125,6 +125,18 @@ test("atrium data points an older install at remove-old, and a fresh one at noth
   cleanup = h.cleanup;
   expect(formatData(dataLocations(), false)).not.toContain("remove-old");
   expect(formatData(dataLocations(), true)).toContain("Run `atrium data remove-old` to see exactly what's there and remove it.");
+});
+
+test("atrium data still reports when the database lost its -shm file", () => {
+  const h = tempHome();
+  cleanup = h.cleanup;
+  const db = openDb();
+  db.exec("CREATE TABLE money_accounts (id TEXT PRIMARY KEY)");
+  db.close();
+  rmSync(`${join(h.home, "atrium.db")}-shm`, { force: true });
+  const r = Bun.spawnSync(["bun", join(import.meta.dir, "..", "src", "cli.ts"), "data"], { env: process.env });
+  expect(r.stderr.toString()).toBe("");
+  expect(r.stdout.toString()).toContain("atrium data remove-old");
 });
 
 // The real command, as typed: it lists what goes, and only a typed "remove" removes it.

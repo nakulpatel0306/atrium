@@ -173,10 +173,11 @@ function appUninstall(): number {
 
 const NOTHING_OLD = "Nothing is left from features Atrium no longer has.";
 
-// Read-only, so asking never creates a database on a Mac Atrium hasn't run on.
+// Never creates a database on a Mac Atrium hasn't run on. Not read-only: SQLite can't open a WAL database read-only
+// once its -shm file is gone (after a restore, or a sqlite3 session while the engine was stopped).
 function oldDataPresent(): boolean {
   if (!existsSync(config().dbPath)) return false;
-  const db = new Database(config().dbPath, { readonly: true });
+  const db = new Database(config().dbPath, { readwrite: true, create: false });
   try {
     return hasOldData(db);
   } finally {
