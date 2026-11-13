@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { config } from "./config";
 import { applyProjectsRoot, migrateProjectsRoot } from "./profile";
 import { ALWAYS_ASK } from "./approvals";
+import { LEGACY } from "./legacy";
 
 const schema = () => `
 CREATE TABLE IF NOT EXISTS spaces (
@@ -205,9 +206,9 @@ function migrate(db: Database): boolean {
     (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
   // CHECK constraints can't be altered, so an approvals table that predates these is rebuilt.
   // Repo approvals belong to no space and must always wait for Nakul, so the table gains both constraints.
-  rebuilt = rebuildIfMissing(db, "approvals", "always_ask", APPROVALS_DDL) || rebuilt;
+  rebuilt = rebuildIfMissing(db, "approvals", "always_ask", (n) => APPROVALS_DDL(n, true)) || rebuilt;
   // And no rule may ever be recorded as deciding one.
-  rebuilt = rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL) || rebuilt;
+  rebuilt = rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", (n) => APPROVALS_DDL(n, true)) || rebuilt;
   // The GitHub repo ("owner/name") a repo space comes from, so a missing local copy can be cloned.
   if (!has("spaces", "github")) db.exec("ALTER TABLE spaces ADD COLUMN github TEXT");
   // The first commit a create run pushed, so a retry can tell its own commit from someone else's.
@@ -264,12 +265,15 @@ function migrate(db: Database): boolean {
   return rebuilt;
 }
 
-// Full current definitions, migrated columns included, used only when rebuilding an older table.
-const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
+const sqlList = (items: readonly string[]) => items.map((k) => `'${k}'`).join(",");
+
+// The full current definition, migrated columns included. A rebuild of an older table (`legacy`) still allows the
+// kinds of removed features it may hold; a fresh install's table never does.
+const APPROVALS_DDL = (name: string, legacy = false) => `CREATE TABLE ${name} (
   id TEXT PRIMARY KEY,
   space_id TEXT REFERENCES spaces(id),
   task_id TEXT REFERENCES tasks(id),
-  kind TEXT NOT NULL CHECK (kind IN ('review','question')),
+  kind TEXT NOT NULL CHECK (kind IN (${sqlList(["review", "question", ...(legacy ? LEGACY.approvalKinds : [])])})),
   title TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
@@ -281,7 +285,7 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
   rule_id TEXT REFERENCES autonomy_rules(id),
   undone_at INTEGER,
-  always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${ALWAYS_ASK.map((k) => `'${k}'`).join(",")})),
+  always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${sqlList([...ALWAYS_ASK, ...(legacy ? LEGACY.alwaysAsk : [])])})),
   CHECK (space_id IS NOT NULL OR kind = 'question'),
   CHECK (always_ask IS NULL OR fingerprint IS NULL),
   CHECK (always_ask IS NULL OR decided_by = 'you')

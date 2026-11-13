@@ -146,6 +146,42 @@ test("approvals rebuild adds always_ask and allows spaceless questions", () => {
   t.cleanup();
 });
 
+// An install last opened between always-ask (f8e9e34) and 8c98d90 has an approvals table without the decided_by
+// check, and may hold kinds of removed features. The rebuild keeps those rows instead of refusing to boot.
+test("an older approvals table holding removed kinds is rebuilt with its rows kept", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  openDb(path).close();
+  const old = new Database(path);
+  old.exec("PRAGMA foreign_keys = OFF");
+  old.exec(`DROP TABLE approvals;
+  CREATE TABLE approvals (
+    id TEXT PRIMARY KEY, space_id TEXT REFERENCES spaces(id), task_id TEXT REFERENCES tasks(id),
+    kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), note TEXT,
+    created_at INTEGER NOT NULL, resolved_at INTEGER, branch_head TEXT, fingerprint TEXT,
+    decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
+    rule_id TEXT REFERENCES autonomy_rules(id), undone_at INTEGER,
+    always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN ('merge_main','deploy','first_contact','delete','spend','secrets','create_repo','push','remove_clone','send_message')),
+    CHECK (space_id IS NOT NULL OR kind = 'question'),
+    CHECK (always_ask IS NULL OR fingerprint IS NULL));
+  INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_1', 'S', 'general', 'x', 1, 1);
+  INSERT INTO approvals (id, space_id, kind, title, created_at) VALUES ('apr_alert', 'spc_1', 'alert', 'Price alert', 1);
+  INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_first', 'spc_1', 'question', 'First text to Dana', 'first_contact', 2);
+  INSERT INTO approvals (id, space_id, kind, title, always_ask, created_at) VALUES ('apr_send', 'spc_1', 'question', 'Send the text', 'send_message', 3);`);
+  old.close();
+  const db = openDb(path);
+  expect(db.query("SELECT id, kind, always_ask FROM approvals ORDER BY created_at").all()).toEqual([
+    { id: "apr_alert", kind: "alert", always_ask: null },
+    { id: "apr_first", kind: "question", always_ask: "first_contact" },
+    { id: "apr_send", kind: "question", always_ask: "send_message" },
+  ]);
+  expect(() => db.exec("UPDATE approvals SET status = 'approved', decided_by = 'rule' WHERE id = 'apr_send'")).toThrow();
+  db.close();
+  openDb(path).close();
+  t.cleanup();
+});
+
 test("repo tables and spaces.github exist", () => {
   const t = tempHome();
   const db = openDb();
@@ -185,6 +221,8 @@ test("an old spaces table gains github", () => {
 test("an always-ask approval can only ever be decided by you", () => {
   const t = tempHome();
   const db = openDb();
+  expect(() => db.exec("INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_1', 'S', 'general', 'x', 1, 1); INSERT INTO approvals (id, space_id, kind, title, created_at) VALUES ('apr_a', 'spc_1', 'alert', 'a', 1)")).toThrow();
+  expect(() => db.exec("INSERT INTO approvals (id, kind, title, always_ask, created_at) VALUES ('apr_s', 'question', 'q', 'send_message', 1)")).toThrow();
   db.exec("INSERT INTO approvals (id, kind, title, always_ask, created_at) VALUES ('apr_q', 'question', 'q', 'create_repo', 1)");
   expect(() => db.exec("UPDATE approvals SET status = 'approved', decided_by = 'rule' WHERE id = 'apr_q'")).toThrow();
   db.exec("UPDATE approvals SET status = 'approved' WHERE id = 'apr_q'");

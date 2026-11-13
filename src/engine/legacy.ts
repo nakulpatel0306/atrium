@@ -14,6 +14,10 @@ export const LEGACY = {
   byTask: ["mail_actions", "message_actions", "paper_fills", "market_writeups"],
   // Rows that belong to one approval and go with it.
   byApproval: ["mail_actions", "message_actions"],
+  // Approval kinds and always-ask values only those features made. An older approvals table can still hold them, so
+  // rebuilding it keeps them allowed; nothing lists or decides them.
+  approvalKinds: ["alert"],
+  alwaysAsk: ["first_contact", "send_message"],
 } as const;
 
 const present = (db: Database, table: string): boolean => !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
