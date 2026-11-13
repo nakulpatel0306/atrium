@@ -343,7 +343,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
 
     // Gmail archive, or with `undo` back to the inbox. Atrium hides the thread at once; new mail on it brings it back.
     archive(threadId: string, undo: boolean): Promise<void> {
-      return track(`archive:${threadId}`, async () => {
+      return track(`archive:${threadId}:${undo}`, async () => {
         const t = db.query("SELECT t.thread_key, a.* FROM mail_threads t JOIN mail_accounts a ON a.id = t.account_id WHERE t.id = ?").get(threadId) as { thread_key: string; id: string; address: string; source: string; source_ref: string | null } | null;
         if (!t) throw new BadMail("That thread isn't in the Inbox anymore.");
         if (t.source !== "google") throw new BadMail("Archive works for Google accounts. Archive this one in Mail.");
