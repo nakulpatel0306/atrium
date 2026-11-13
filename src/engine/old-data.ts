@@ -2,17 +2,7 @@ import type { Database } from "bun:sqlite";
 import { bus } from "./events";
 import { hasKeychainItem, removeKeychainItem } from "./keychain";
 import { LEGACY, present } from "./legacy";
-
-// What features Atrium no longer has left behind on an older install: their tables, settings, approvals nobody can
-// act on, and Keychain items. Nothing removes it until the user has seen this list and said yes.
-export type OldData = {
-  groups: { label: string; tables: { name: string; rows: number }[] }[];
-  settings: string[];
-  approvals: number;
-  keychain: string[];
-  // Spaces of removed kinds. They stay (with their tasks) until the user deletes them, like any other space.
-  spaces: string[];
-};
+import type { OldData } from "./old-data-view";
 
 // Home's notice was put off ("Not now"); Settings → Data still offers the removal.
 export const OLD_DATA_DISMISSED = "notice.oldData.dismissed";
@@ -85,16 +75,4 @@ export async function removeOldData(db: Database): Promise<OldData | null> {
   db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   bus.emit({ type: "changed" });
   return found;
-}
-
-const rows = (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? "row" : "rows"}`;
-
-// The same list the dashboard shows, as lines for the terminal.
-export function oldDataLines(d: OldData): string[] {
-  return [
-    ...d.groups.map((g) => `${g.label}: ${rows(g.tables.reduce((n, t) => n + t.rows, 0))} in ${g.tables.map((t) => `${t.name} (${t.rows})`).join(", ")}`),
-    ...(d.settings.length ? [`Settings: ${d.settings.join(", ")}`] : []),
-    ...(d.approvals ? [`Approvals nobody can act on: ${d.approvals}`] : []),
-    ...(d.keychain.length ? [`Keychain items (service "Atrium"): ${d.keychain.join(", ")}`] : []),
-  ];
 }

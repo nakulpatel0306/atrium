@@ -2448,6 +2448,32 @@ code {
   color: var(--dim);
 }
 
+/* An older install's leftover data: one line, with the way to remove it. */
+.old-data {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 7px 10px;
+  margin: 0 0 16px;
+}
+.old-data > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--dim);
+}
+.old-data > span {
+  flex: 1;
+  min-width: 200px;
+}
+
 .start { max-width: 640px; }
 .start-nav { display: flex; gap: 8px; align-items: center; margin-top: 20px; }
 .start-nav .primary { margin-left: auto; }

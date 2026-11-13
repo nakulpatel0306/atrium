@@ -123,7 +123,7 @@ function App() {
         ) : route.name === "rules" ? (
           <Rules state={state} />
         ) : route.name === "settings" ? (
-          <Settings />
+          <Settings state={state} />
         ) : route.name === "start" ? (
           <GetStarted />
         ) : (

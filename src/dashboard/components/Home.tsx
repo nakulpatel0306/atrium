@@ -8,6 +8,7 @@ import { Activity } from "./Activity";
 import { Avatar } from "./Avatar";
 import { Logo } from "./Logo";
 import { NeedsYou } from "./NeedsYou";
+import { OldDataNotice } from "./OldData";
 import { StatusIcon } from "./StatusIcon";
 import { Plain, WAIT_ICONS } from "./WaitLine";
 
@@ -101,6 +102,7 @@ export function Home({ state, briefing, onNewSpace }: Props) {
         {briefing.summary}
         <Plain text={liveStatus(state)} />
       </p>
+      {state.oldData.present && !state.oldData.dismissed && <OldDataNotice dismissable />}
 
       <NeedsYou state={state} />
 
