@@ -6,6 +6,7 @@ import { navigate } from "../route";
 import { attentionText, reviewLine, summaryLine } from "../summary";
 import { DecideButtons, SendBackNote, useDecision } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
+import { askingTasks, QuestionsRow } from "./BriefQuestions";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -100,6 +101,9 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const mine = <T extends { spaceId: string | null }>(xs: T[]) => (spaceId ? xs.filter((x) => x.spaceId === spaceId) : xs);
   return (
     <>
+      {askingTasks(state, spaceId).map((t) => (
+        <QuestionsRow key={t.id} task={t} space={spaces.get(t.spaceId)} />
+      ))}
       {mine(state.proposals).map((p) => (
         <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
       ))}
@@ -114,7 +118,7 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
 }
 
 export const waitingIn = (state: State, spaceId: string) =>
-  state.approvals.filter((a) => a.spaceId === spaceId).length + state.proposals.filter((p) => p.spaceId === spaceId).length;
+  state.approvals.filter((a) => a.spaceId === spaceId).length + state.proposals.filter((p) => p.spaceId === spaceId).length + askingTasks(state, spaceId).length;
 
 // At the top of a space: what's waiting on Nakul there, answered right where the work is.
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
@@ -133,7 +137,7 @@ export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }
   );
 }
 
-export const needsCount = (state: State) => state.approvals.length + state.proposals.length;
+export const needsCount = (state: State) => state.approvals.length + state.proposals.length + askingTasks(state).length;
 
 // The whole list, on Home and on the Needs you page.
 export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {

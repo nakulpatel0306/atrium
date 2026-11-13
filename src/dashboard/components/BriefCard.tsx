@@ -14,11 +14,33 @@ type Props = {
   onDiscard: () => void;
 };
 
-// The drafted brief under the ask, every field editable. Nothing here is required: Run sends whatever it holds.
+type Fields = { goal: string; acceptance: string; verify: string; scope: string; nonGoals: string; lookFirst: string; size: TaskSize };
+
+// The drafted brief under the ask, every field editable. Fields keep exactly what's typed, spaces and new lines
+// included, and become a brief only when it runs. Nothing here is required: Run sends whatever it holds.
 export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
-  const [brief, setBrief] = useState<Brief>(draft.brief);
+  const b = draft.brief;
+  const [f, setF] = useState<Fields>({
+    goal: b.goal,
+    acceptance: b.acceptance.join("\n"),
+    verify: b.verify,
+    scope: b.scope,
+    nonGoals: b.nonGoals.join("\n"),
+    lookFirst: b.lookFirst.join("\n"),
+    size: b.size,
+  });
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const set = <K extends keyof Brief>(key: K, value: Brief[K]) => setBrief((b) => ({ ...b, [key]: value }));
+  const set = (key: keyof Fields) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [key]: e.target.value }));
+  const brief: Brief = {
+    ...b,
+    goal: f.goal.trim(),
+    acceptance: lines(f.acceptance),
+    verify: f.verify.trim() || "auto",
+    scope: f.scope.trim(),
+    nonGoals: lines(f.nonGoals),
+    lookFirst: lines(f.lookFirst),
+    size: f.size,
+  };
   const hints = gapHints(brief, { repo, checksFound: draft.checks.length > 0 });
 
   const run = () =>
@@ -44,7 +66,7 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
     >
       <div className="brief-head">
         <b>Brief</b>
-        <span className="hint">Edit anything, then Run. ⌘↩ runs it, Esc discards it.</span>
+        <span className="hint">Edit anything, then Run. ↩ in a box adds a line · ⌘↩ runs · Esc discards.</span>
         <button type="button" className="btn link subtle" aria-label="Discard the brief" onClick={onDiscard}>
           <X />
         </button>
@@ -65,26 +87,26 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
       ))}
       <label>
         Goal
-        <input value={brief.goal} onChange={(e) => set("goal", e.target.value)} />
+        <input value={f.goal} onChange={set("goal")} />
       </label>
       <label>
         <span>{repo ? "Acceptance criteria" : "Done when"} <span className="hint">one per line</span></span>
-        <textarea rows={2} value={brief.acceptance.join("\n")} onChange={(e) => set("acceptance", lines(e.target.value))} />
+        <textarea rows={2} value={f.acceptance} onChange={set("acceptance")} />
       </label>
       {repo && (
         <>
           <label>
             <span>Check with <span className="hint">a command, or auto for {draft.checks.length ? draft.checks.join(", ") : "what Atrium finds"}</span></span>
-            <input className="mono" value={brief.verify} onChange={(e) => set("verify", e.target.value.trim() || "auto")} />
+            <input className="mono" value={f.verify} placeholder="auto" onChange={set("verify")} />
           </label>
           <div className="brief-row">
             <label>
               Scope
-              <input value={brief.scope} onChange={(e) => set("scope", e.target.value)} />
+              <input value={f.scope} onChange={set("scope")} />
             </label>
             <label>
               Size
-              <select className="pick" value={brief.size} onChange={(e) => set("size", e.target.value as TaskSize)}>
+              <select className="pick" value={f.size} onChange={set("size")}>
                 {SIZES.map((s) => (
                   <option key={s} value={s}>
                     {s[0]!.toUpperCase() + s.slice(1)}
@@ -95,11 +117,11 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
           </div>
           <label>
             <span>Not in scope <span className="hint">one per line</span></span>
-            <textarea rows={1} value={brief.nonGoals.join("\n")} onChange={(e) => set("nonGoals", lines(e.target.value))} />
+            <textarea rows={1} value={f.nonGoals} onChange={set("nonGoals")} />
           </label>
           <label>
             <span>Look at first <span className="hint">one file per line</span></span>
-            <textarea className="mono" rows={1} value={brief.lookFirst.join("\n")} onChange={(e) => set("lookFirst", lines(e.target.value))} />
+            <textarea className="mono" rows={1} value={f.lookFirst} onChange={set("lookFirst")} />
           </label>
         </>
       )}

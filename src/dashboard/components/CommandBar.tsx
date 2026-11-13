@@ -35,8 +35,10 @@ export function CommandBar({ space, setupRequest }: Props) {
   const [agent, setAgent] = useState<AgentChoice>("auto");
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
-  // The brief drafted from the ask, shown under it until it's run or discarded.
+  // "Brief first" (⌘↩): the brief drafted from the ask, shown under it until it's run or discarded, and the
+  // request drafting it, which Esc cancels.
   const [draft, setDraft] = useState<BriefDraft | null>(null);
+  const drafting = useRef<AbortController | null>(null);
   // Files already saved in a space, so a retry after a failed send doesn't save them a second time.
   const uploaded = useRef(new Map<File, { spaceId: string; id: string }>());
   // Set when a message must survive the navigation that follows it.
@@ -173,8 +175,9 @@ export function CommandBar({ space, setupRequest }: Props) {
     return files.map((f) => uploaded.current.get(f)!.id);
   };
 
-  // Enter in a space drafts a brief first; ⌘↩ (`quick`) sends the ask as it is, as fast as before briefs existed.
-  const submit = async (quick = false) => {
+  // Enter in a space runs the task at once (its brief is drafted as its first stage); ⌘↩ (`briefFirst`) drafts the
+  // brief here to edit before running.
+  const submit = async (briefFirst = false) => {
     const value = text.trim();
     if (busy) return;
     if (setup) {
@@ -212,17 +215,28 @@ export function CommandBar({ space, setupRequest }: Props) {
       if (!value && !files.length) return;
       if (files.length && repo) return setMessage({ kind: "error", text: `${REPO_REFUSED} Remove the files to send this here.` });
       // Files alone ask the agent to look at them; there's nothing to brief.
-      if (!quick && value) return draftBrief(value);
+      if (briefFirst && value) return draftBrief(value);
       await send(value);
     }
   };
 
   const draftBrief = async (value: string) => {
-    setMessage({ kind: "busy", text: "Drafting a brief… ⌘↩ sends the ask as it is." });
-    const res = await post<BriefDraft>("/api/brief", { spaceId: space!.id, text: value });
-    if (!res.ok) return setMessage({ kind: "error", text: `${res.error} ⌘↩ sends the ask as it is.` });
+    const controller = new AbortController();
+    drafting.current = controller;
+    setMessage({ kind: "busy", text: "Drafting a brief to edit… Esc cancels." });
+    const res = await post<BriefDraft>("/api/brief", { spaceId: space!.id, text: value }, controller.signal);
+    drafting.current = null;
+    if (controller.signal.aborted) return;
+    if (!res.ok) return setMessage({ kind: "error", text: `${res.error} Press ↩ to run it as it is.` });
     setMessage(null);
     setDraft(res.data);
+  };
+
+  const cancelDraft = () => {
+    drafting.current?.abort();
+    drafting.current = null;
+    setMessage(null);
+    input.current?.focus();
   };
 
   const send = async (value: string, brief?: Brief) => {
@@ -237,13 +251,14 @@ export function CommandBar({ space, setupRequest }: Props) {
     uploaded.current.clear();
     const by = agent === "auto" ? "" : ` for ${agentName(agent)}`;
     const carrying = attachments.length ? ` with ${plural(attachments.length, "file")}` : "";
-    setMessage({ kind: "info", text: `Queued "${res.data.task.title}" in ${space!.name}${carrying}${by}.` });
+    const first = brief || !value ? "" : " Its brief is drafted first, on the task.";
+    setMessage({ kind: "info", text: `Queued "${res.data.task.title}" in ${space!.name}${carrying}${by}.${first}` });
     input.current?.focus();
   };
 
   const placeholder = setup
     ? 'Describe something new, like "add dark mode to my site" or "start a new project called…"'
-    : `Give ${space!.name} a task…`;
+    : `Give ${space!.name} a task. ⌘↩ edits the brief first.`;
 
   return (
     <>
@@ -289,7 +304,8 @@ export function CommandBar({ space, setupRequest }: Props) {
               if (message?.kind !== "busy") setMessage(null);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") e.currentTarget.blur();
+              if (e.key === "Escape" && drafting.current) cancelDraft();
+              else if (e.key === "Escape") e.currentTarget.blur();
               else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 void submit(true);

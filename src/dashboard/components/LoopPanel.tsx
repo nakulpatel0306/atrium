@@ -7,6 +7,7 @@ import { agentName } from "../agents";
 import { post, type State, useFetched } from "../api";
 import { duration } from "../format";
 import { attentionText, STAGE_TEXT } from "../summary";
+import { BriefQuestions } from "./BriefQuestions";
 import { Markdown } from "./Markdown";
 
 type Task = State["tasks"][number];
@@ -34,7 +35,7 @@ export function StageStrip({ task }: { task: Task }) {
 
 const CHECK_WORD: Record<CheckRow["status"], string> = { passed: "passed", failed: "failed", timeout: "timed out", missing: "couldn't run", skipped: "skipped" };
 
-function CheckOutput({ taskId, version }: { taskId: string; version: unknown }) {
+function CheckOutput({ taskId, version, preexisting }: { taskId: string; version: unknown; preexisting: string[] }) {
   const rows = useFetched<CheckRow[]>(`/api/tasks/${taskId}/checks`, version);
   if (!rows) return <p className="hint">Loading the check output…</p>;
   if (!rows.length) return <p className="hint">No checks have run yet.</p>;
@@ -42,7 +43,11 @@ function CheckOutput({ taskId, version }: { taskId: string; version: unknown }) 
     <ul className="check-rows">
       {rows.map((r) => (
         <li key={r.id}>
-          <span className={`tag${r.status === "failed" || r.status === "timeout" ? " bad" : ""}`}>{CHECK_WORD[r.status]}</span>
+          {preexisting.includes(r.name) ? (
+            <span className="tag wait">already failing before this task</span>
+          ) : (
+            <span className={`tag${r.status === "failed" || r.status === "timeout" ? " bad" : ""}`}>{CHECK_WORD[r.status]}</span>
+          )}
           <code>{r.command}</code>
           <span className="hint">{duration(r.durationMs)}</span>
           {r.output.trim() && r.status !== "passed" && <pre className="term mono">{r.output.trimEnd()}</pre>}
@@ -59,7 +64,7 @@ export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }
   const text = loop.checks === "running" ? "checking" : loop.checks === "passed" ? "checks passed" : loop.checks === "failed" ? "checks failed" : "unverified";
   const tone = loop.checks === "failed" ? " bad" : loop.checks === "passed" ? " good" : loop.checks === "none" ? " wait" : "";
   return (
-    <button type="button" className={`tag check-badge${tone}`} title={loop.checks === "none" ? "Unverified: no checks found" : "Show what the checks said"} onClick={onOpen}>
+    <button type="button" className={`tag check-badge${tone}`} title={loop.checks === "none" ? (loop.unverified ?? "Unverified: no checks found") : "Show what the checks said"} onClick={onOpen}>
       {text}
     </button>
   );
@@ -169,11 +174,23 @@ export function LoopPanel({ task, repo, showChecks }: { task: Task; repo: boolea
           {attention}
         </p>
       )}
+      {loop?.stage === "brief" && task.status === "running" && <p className="hint">Drafting the brief. The writer starts as soon as it's ready.</p>}
+      {loop && loop.questions.length > 0 && <BriefQuestions task={task} />}
       {task.brief && (
-        <details className="brief-view">
+        <details className="brief-view" open={loop?.questions.length ? true : undefined}>
           <summary>Brief</summary>
           <Markdown text={briefSections(task.brief, null).join("\n\n")} />
         </details>
+      )}
+      {loop && loop.hints.length > 0 && (
+        <ul className="brief-hints">
+          {loop.hints.map((h) => (
+            <li key={h}>
+              <Lightbulb />
+              {h}
+            </li>
+          ))}
+        </ul>
       )}
       {repo && loop && !loop.noChanges && loop.checks !== "pending" && (
         <div className="checks-line">
@@ -183,7 +200,7 @@ export function LoopPanel({ task, repo, showChecks }: { task: Task; repo: boolea
           </button>
         </div>
       )}
-      {checksOpen && <CheckOutput taskId={task.id} version={task.updatedAt} />}
+      {checksOpen && <CheckOutput taskId={task.id} version={task.updatedAt} preexisting={loop?.preexisting ?? []} />}
       {loop?.reviews.map((r, i) => (
         <div className="review-round" key={i}>
           <b>

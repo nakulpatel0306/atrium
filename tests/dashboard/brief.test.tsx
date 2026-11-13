@@ -64,45 +64,86 @@ const key = async (target: Element, init: KeyboardEventInit) => {
 };
 const button = (el: HTMLElement, text: string) => [...el.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)!;
 
-test("Enter drafts a brief under the ask; Run sends the edited brief with the answers", async () => {
+const submit = (el: HTMLElement) => act(async () => void el.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+
+test("Enter runs the task at once; its brief is drafted on the task, with no wait here", async () => {
+  const space = repoSpace();
+  const el = render(<CommandBar space={space} setupRequest={0} />);
+  typeIn(ask(el), "fix the typo in the footer");
+  await submit(el);
+  expect(calls.map((c) => c.url)).toEqual(["/api/command"]);
+  expect((calls[0]!.body as { brief?: unknown }).brief).toBeUndefined();
+  expect(el.querySelector(".msg")!.textContent).toContain("Its brief is drafted first, on the task.");
+  expect(el.querySelector(".brief-card")).toBeNull();
+});
+
+test("⌘↩ drafts the brief here to edit; fields keep spaces and new lines as typed; Run sends it with the answers", async () => {
   const space = repoSpace();
   const el = render(<CommandBar space={space} setupRequest={0} />);
   typeIn(ask(el), "totals on the report");
-  await act(async () => void el.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  await key(ask(el), { key: "Enter", metaKey: true });
   expect(calls[0]).toEqual({ url: "/api/brief", body: { spaceId: space.id, text: "totals on the report" } });
   const card = el.querySelector(".brief-card")!;
   expect(card.textContent).toContain("Which report?");
   expect(card.textContent).toContain(NO_CHECK_HINT);
+  expect(card.textContent).toContain("⌘↩ runs · Esc discards");
   await act(async () => button(el, "Monthly").click());
-  typeIn(card.querySelector<HTMLTextAreaElement>("label textarea")!, "Totals match the rows\nA zero total shows 0");
-  // The hint about acceptance criteria goes once there are some.
+  // One keystroke at a time, as a person types: a trailing space or a new line must survive each step.
+  const verify = card.querySelector<HTMLInputElement>("input.mono")!;
+  for (const step of ["b", "bun", "bun ", "bun t", "bun test"]) {
+    typeIn(verify, step);
+    expect(verify.value).toBe(step);
+  }
+  const acceptance = card.querySelector<HTMLTextAreaElement>("label textarea")!;
+  for (const step of ["Totals match", "Totals match\n", "Totals match\nZero ", "Totals match\nZero shows 0"]) {
+    typeIn(acceptance, step);
+    expect(acceptance.value).toBe(step);
+  }
   expect(card.textContent).not.toContain("No acceptance criteria");
   await act(async () => button(el, "Run").click());
   const sent = calls.at(-1)!;
   expect(sent.url).toBe("/api/command");
   expect(sent.body).toMatchObject({
     text: "totals on the report",
-    spaceId: space.id,
-    brief: { goal: "Show totals on the report", acceptance: ["Totals match the rows", "A zero total shows 0"], answers: [{ question: "Which report?", answer: "Monthly" }] },
+    brief: { verify: "bun test", acceptance: ["Totals match", "Zero shows 0"], answers: [{ question: "Which report?", answer: "Monthly" }] },
   });
   expect(el.querySelector(".brief-card")).toBeNull();
 });
 
-test("⌘↩ sends the ask straight away, with no brief and no pre-pass", async () => {
-  const el = render(<CommandBar space={repoSpace()} setupRequest={0} />);
-  typeIn(ask(el), "fix the typo in the footer");
-  await key(ask(el), { key: "Enter", metaKey: true });
-  expect(calls.map((c) => c.url)).toEqual(["/api/command"]);
-  expect((calls[0]!.body as { brief?: unknown }).brief).toBeUndefined();
-});
-
-test("Esc discards the brief, and editing the ask drops a stale one", async () => {
+test("Esc cancels a brief still drafting, and discards one that's shown; editing the ask drops a stale one", async () => {
+  let release: () => void = () => {};
+  const aborted: boolean[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (url === "/api/brief" && aborted.length === 0) {
+      return new Promise((_, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          aborted.push(true);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+        release = () => reject(new Error("never"));
+      });
+    }
+    return Response.json(DRAFT);
+  }) as typeof fetch;
   const el = render(<CommandBar space={repoSpace()} setupRequest={0} />);
   typeIn(ask(el), "totals");
-  await act(async () => void el.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  // Dispatched without waiting on it: the draft stays in flight until Esc.
+  act(() => void ask(el).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true })));
+  await act(async () => await Bun.sleep(5));
+  expect(el.querySelector(".msg")!.textContent).toContain("Esc cancels");
+  await key(ask(el), { key: "Escape" });
+  expect(aborted).toEqual([true]);
+  expect(el.querySelector(".msg")).toBeNull();
+  expect(el.querySelector(".brief-card")).toBeNull();
+  release();
+  await key(ask(el), { key: "Enter", metaKey: true });
+  await act(async () => await Bun.sleep(5));
+  expect(el.querySelector(".brief-card")).not.toBeNull();
   await key(el.querySelector(".brief-card input")!, { key: "Escape" });
   expect(el.querySelector(".brief-card")).toBeNull();
-  await act(async () => void el.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  await key(ask(el), { key: "Enter", metaKey: true });
+  await act(async () => await Bun.sleep(5));
   expect(el.querySelector(".brief-card")).not.toBeNull();
   typeIn(ask(el), "totals, monthly");
   expect(el.querySelector(".brief-card")).toBeNull();

@@ -93,10 +93,10 @@ const typeIn = (el: HTMLElement, value: string) => {
   const props = (input as unknown as Record<string, { onChange: (e: { target: { value: string } }) => void }>)[key]!;
   act(() => props.onChange({ target: { value } }));
 };
-// ⌘↩ sends the ask as it is; Enter would draft a brief first (see brief.test.tsx).
+// Enter sends straight away; ⌘↩ would draft a brief to edit first (see brief.test.tsx).
 const send = async (el: HTMLElement) => {
   await act(async () => {
-    el.querySelector<HTMLInputElement>("form input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
+    el.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 };
 
