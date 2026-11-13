@@ -93,21 +93,24 @@ export type MailSource = {
   calendars(account: AccountRef | null): Promise<SourceCalendar[]>;
   events(account: AccountRef | null, calendar: SourceCalendar, from: number, to: number): Promise<SourceEvent[]>;
 
-  // The write half. Each is called once per user action and never retried on its own: a call that may have reached
-  // the source throws MailProblem "unsure" rather than risk sending twice. A source has only the ones it can do.
-  // Google: send, keep drafts, change and answer events, archive.
-  send?(account: AccountRef, mail: Outgoing): Promise<Sent>;
-  saveDraft?(account: AccountRef, mail: Outgoing): Promise<void>;
-  moveEvent?(account: AccountRef | null, calendarId: string, eventId: string, start: number, end: number, notify: boolean): Promise<void>;
-  cancelEvent?(account: AccountRef | null, calendarId: string, eventId: string, notify: boolean): Promise<void>;
-  rsvp?(account: AccountRef | null, calendarId: string, eventId: string, answer: Rsvp, note: string): Promise<void>;
-  // Takes the thread out of the inbox, or with `undo` puts it back.
-  archive?(account: AccountRef, threadKey: string, undo: boolean): Promise<void>;
-  // Mail.app: opens the message in a visible compose window; the user presses Send in Mail.
-  compose?(account: AccountRef, mail: Outgoing): Promise<void>;
-  // Both. notify: whether guests hear about it (Google's sendUpdates). Returns the new event's source id.
+  // Both sources add events. notify: whether guests hear about it (Google's sendUpdates).
   createEvent(account: AccountRef | null, calendarId: string, event: OutgoingEvent, notify: boolean): Promise<{ sourceId: string }>;
 };
+
+// The write half. Each is called once per user action and never retried on its own: a call that may have reached the
+// source throws MailProblem "unsure" rather than risk sending twice.
+// Google sends, keeps drafts, changes and answers events, and archives.
+export type GoogleSource = MailSource & {
+  send(account: AccountRef, mail: Outgoing): Promise<Sent>;
+  saveDraft(account: AccountRef, mail: Outgoing): Promise<void>;
+  moveEvent(account: AccountRef | null, calendarId: string, eventId: string, start: number, end: number, notify: boolean): Promise<void>;
+  cancelEvent(account: AccountRef | null, calendarId: string, eventId: string, notify: boolean): Promise<void>;
+  rsvp(account: AccountRef | null, calendarId: string, eventId: string, answer: Rsvp, note: string): Promise<void>;
+  // Takes the thread out of the inbox, or with `undo` puts it back.
+  archive(account: AccountRef, threadKey: string, undo: boolean): Promise<void>;
+};
+// Mail.app only opens a message in a visible compose window; the user presses Send in Mail.
+export type AppleSource = MailSource & { compose(account: AccountRef, mail: Outgoing): Promise<void> };
 
 // A source that couldn't do what was asked, in words for the user. kind lets the caller mark the account
 // (signed_out) or point at the right System Settings pane.

@@ -44,12 +44,7 @@ function counting(): MailSource & { calls: number } {
       return [];
     },
     events: async () => [],
-    send: async () => ({ sourceId: null, threadKey: null }),
-    saveDraft: async () => {},
     createEvent: async () => ({ sourceId: "" }),
-    moveEvent: async () => {},
-    cancelEvent: async () => {},
-    rsvp: async () => {},
   };
   return s;
 }

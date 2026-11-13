@@ -2,7 +2,7 @@ import { decodeWords, parseAddressList, parseIds, parsePerson } from "./addresse
 import { PIM_COPY, runPim } from "./pim";
 import { normalizeAddress } from "./addresses";
 import { canonicalRecurrence } from "./recurrence";
-import { MailProblem, type AttendeeStatus, type MailSource, type Outgoing, type SourceAccount, type SourceEvent } from "./types";
+import { MailProblem, type AppleSource, type AttendeeStatus, type Outgoing, type SourceAccount, type SourceEvent } from "./types";
 
 type PimAccount = { id: string; name: string; addresses: string[]; fullName: string };
 type PimMessage = {
@@ -70,7 +70,7 @@ const mailInput = (account: string | null, m: Outgoing) => {
 };
 
 // Mail.app and Calendar.app, through the helper. Threads are built by the engine from each message's headers.
-export function appleSource(): MailSource {
+export function appleSource(): AppleSource {
   return {
     kind: "apple",
 

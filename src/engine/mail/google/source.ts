@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { config } from "../../config";
 import { parseAddressList, parseIds, parsePerson } from "../addresses";
 import { buildMime } from "../mime";
-import { MailProblem, type AccountRef, type AttendeeStatus, type MailSource, type Outgoing, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
+import { MailProblem, type AccountRef, type AttendeeStatus, type GoogleSource, type Outgoing, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
 import { type GoogleAuth, signedOutCopy } from "./oauth";
 import { safeFileName } from "../files";
 import { canonicalRecurrence } from "../recurrence";
@@ -154,7 +154,7 @@ export function toSourceEvent(e: GEvent): SourceEvent {
 }
 
 // Gmail and Google Calendar for one connected account at a time; tokens come from GoogleAuth.
-export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = {}): MailSource {
+export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = {}): GoogleSource {
   const http = deps.fetch ?? fetch;
 
   // A read, or with `write` a change. A 401 is refused before anything happens, so it's retried once with a fresh

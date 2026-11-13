@@ -26,7 +26,7 @@ import { inboxSpaceId } from "./space";
 import { newMessageId } from "./mime";
 import { addSentCopy, getAccount, type MailAccount, setArchived } from "./store";
 import type { MailSync } from "./sync";
-import { type AccountRef, MailProblem, type MailSource, type Outgoing, type Rsvp, type Sent, type SourceAttachment } from "./types";
+import { type AccountRef, type AppleSource, type GoogleSource, MailProblem, type Outgoing, type Rsvp, type Sent, type SourceAttachment } from "./types";
 
 // The only path from a mail or calendar draft to the outside world: the user's own Send (or Approve) on its card,
 // through the account's preferred source, at most once per draft. Modelled on messaging/send.ts.
@@ -46,12 +46,6 @@ const ref = (a: MailAccount): AccountRef => ({ id: a.id, address: a.address, ref
 // For the engine log: what kind of error, never its message, which can carry a file or attachment name.
 const errorKind = (e: unknown) => (e instanceof Error ? `${e.name}${(e as { code?: unknown }).code ? ` ${String((e as { code?: unknown }).code)}` : ""}` : typeof e);
 
-// A write the source doesn't offer is a plain refusal, made before anything is sent.
-function need<F>(fn: F | undefined): F {
-  if (!fn) throw new BadMail("That account's source can't do this.");
-  return fn;
-}
-
 // An error from the source call itself, after which the message may have gone out.
 class Delivery extends Error {
   constructor(override readonly cause: unknown) {
@@ -63,7 +57,7 @@ const people = (rs: Recipient[]) => rs.map(({ name, address }) => ({ name, addre
 
 export type MailActions = ReturnType<typeof createMailActions>;
 
-export function createMailActions(deps: { db: Database; google: MailSource; apple: MailSource; sync?: Pick<MailSync, "syncNow">; now?: () => number }) {
+export function createMailActions(deps: { db: Database; google: GoogleSource; apple: AppleSource; sync?: Pick<MailSync, "syncNow">; now?: () => number }) {
   const { db } = deps;
   const now = deps.now ?? Date.now;
   const sourceOf = (kind: "google" | "apple") => (kind === "google" ? deps.google : deps.apple);
@@ -159,7 +153,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
       const out = outgoing(a, account, files);
       let sent: Sent;
       try {
-        sent = await need(deps.google.send)(ref(account), out);
+        sent = await deps.google.send(ref(account), out);
       } catch (e) {
         throw new Delivery(e);
       }
@@ -213,10 +207,10 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
     if (!stored) throw new MailProblem("other", "That event isn't in the calendar anymore. Sync, then try again.");
     const told = e.notify ? " and told its guests" : "";
     if (a.kind === "event_move") {
-      await deliver(() => need(source.moveEvent)(account, cal.source_id, stored.source_id, e.start, e.end, e.notify));
+      await deliver(() => deps.google.moveEvent(account, cal.source_id, stored.source_id, e.start, e.end, e.notify));
       return { line: `Moved "${e.title}"${told}.`, record: () => void db.query("UPDATE cal_events SET start_at = ?, end_at = ? WHERE id = ?").run(e.start, e.end, e.eventId) };
     }
-    await deliver(() => need(source.cancelEvent)(account, cal.source_id, stored.source_id, e.notify));
+    await deliver(() => deps.google.cancelEvent(account, cal.source_id, stored.source_id, e.notify));
     return { line: `Cancelled "${e.title}"${told}.`, record: () => void db.query("DELETE FROM cal_events WHERE id = ?").run(e.eventId) };
   }
 
@@ -307,7 +301,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
         try {
           const { dir, files } = await forwardedFiles(a);
           try {
-            await need(deps.google.saveDraft)(ref(account), outgoing(a, account, files));
+            await deps.google.saveDraft(ref(account), outgoing(a, account, files));
           } finally {
             if (dir) rmSync(dir, { recursive: true, force: true });
           }
@@ -332,7 +326,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
         const account = sendingAccount(a.accountId);
         if (account.source !== "apple") throw new BadMail("This account sends from the card. Press Send.");
         const { files } = await forwardedFiles(a);
-        await need(deps.apple.compose)(ref(account), outgoing(a, account, files));
+        await deps.apple.compose(ref(account), outgoing(a, account, files));
         const opened = setMailStatus(db, id, "opened");
         resolveApproval(db, a.approvalId, "reject", OPENED_IN_MAIL_NOTE);
         logActivity(db, a.spaceId, "atrium", `Opened ${what(a)} in Mail for you to send.`, { taskId: a.taskId });
@@ -347,7 +341,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
         const t = db.query("SELECT t.thread_key, a.* FROM mail_threads t JOIN mail_accounts a ON a.id = t.account_id WHERE t.id = ?").get(threadId) as { thread_key: string; id: string; address: string; source: string; source_ref: string | null } | null;
         if (!t) throw new BadMail("That thread isn't in the Inbox anymore.");
         if (t.source !== "google") throw new BadMail("Archive works for Google accounts. Archive this one in Mail.");
-        await need(deps.google.archive)({ id: t.id, address: t.address, ref: t.source_ref }, t.thread_key, undo);
+        await deps.google.archive({ id: t.id, address: t.address, ref: t.source_ref }, t.thread_key, undo);
         setArchived(db, threadId, !undo, now());
       });
     },
@@ -361,9 +355,8 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
           | null;
         if (!e) throw new BadMail("That event isn't in the calendar anymore. Sync, then try again.");
         const holder = e.account_id ? getAccount(db, e.account_id) : null;
-        const rsvp = sourceOf(e.source).rsvp;
-        if (!rsvp) throw new BadMail(NO_RSVP_COPY);
-        await rsvp(holder ? ref(holder) : null, e.cal_source_id, e.source_id, answer, note);
+        if (e.source !== "google") throw new BadMail(NO_RSVP_COPY);
+        await deps.google.rsvp(holder ? ref(holder) : null, e.cal_source_id, e.source_id, answer, note);
         db.query("UPDATE cal_events SET my_status = ? WHERE id = ?").run(answer, eventId);
         logActivity(db, inboxSpaceId(db), "you", `Answered "${e.title}": ${ANSWER_WORD[answer]}.`);
       });

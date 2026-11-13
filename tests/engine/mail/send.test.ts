@@ -334,7 +334,7 @@ describe("errors", () => {
     await connectGoogle();
     const google = googleSource(mail.auth);
     // Gmail takes it, then the copy for the thread can't be stored.
-    const send = google.send!;
+    const send = google.send;
     const breaking = { ...google, send: async (acct: Parameters<typeof send>[0], m: Parameters<typeof send>[1]) => {
       const r = await send(acct, m);
       db.exec("DROP TABLE mail_bodies");
