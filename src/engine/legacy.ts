@@ -35,6 +35,7 @@ export function legacyUnlinkTasks(db: Database, tasks: string[]): void {
 }
 
 export const REMOVED_FEATURE_RETRY = "This task belongs to a feature Atrium no longer has, so it can't run again.";
+export const STAYS_PRIVATE = "This space came from a feature Atrium no longer has, so it stays private.";
 export const REMOVED_FEATURE_QUESTION = "This came from a feature Atrium no longer has, so it was closed.";
 
 // Pending questions an older Atrium asked for a removed feature: paper-strategy proposals, and questions with no task

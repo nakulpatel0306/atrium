@@ -20,6 +20,7 @@ import { Avatar } from "./Avatar";
 import { StatusIcon } from "./StatusIcon";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { outcomeLabel } from "../../engine/outcome";
+import { STAYS_PRIVATE } from "../../engine/legacy";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
@@ -143,14 +144,14 @@ function Header({ space }: { space: Space }) {
               className="toggle"
               role="switch"
               aria-checked={space.private}
-              disabled={busy}
+              disabled={busy || space.unknownKind}
               onClick={() => void save({ private: !space.private })}
             >
               <span className="switch" />
               <Lock />
               Private
             </button>
-            <span className="hint">Private spaces only use Claude</span>
+            <span className="hint">{space.unknownKind ? STAYS_PRIVATE : "Private spaces only use Claude"}</span>
           </div>
           {confirmArchive ? (
             <>

@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SpaceView } from "../../src/dashboard/components/SpaceView";
 import { BASE_TOOLS, createRunner, recoverOnBoot } from "../../src/engine/runner";
 import { createApproval, listPending } from "../../src/engine/approvals";
-import { REMOVED_FEATURE_QUESTION } from "../../src/engine/legacy";
+import { REMOVED_FEATURE_QUESTION, STAYS_PRIVATE } from "../../src/engine/legacy";
 import { openDb } from "../../src/engine/db";
 import { deleteSpace } from "../../src/engine/delete";
 import { listSpaces } from "../../src/engine/spaces";
@@ -72,6 +72,10 @@ test("a space of a kind that no longer exists reads as a private general space, 
   expect(view.spaces.map((s) => s.name)).toEqual(["Investing", "Inbox", "Notes"]);
   const html = renderToStaticMarkup(<SpaceView state={state} space={state.spaces[0]!} focusTask={null} />);
   expect(html).toContain("Investing");
+  expect(html).toMatch(/<button class="toggle" role="switch" aria-checked="true" disabled="">/);
+  expect(html).toContain(STAYS_PRIVATE);
+  const notes = renderToStaticMarkup(<SpaceView state={state} space={state.spaces[2]!} focusTask={null} />);
+  expect(notes).toMatch(/<button class="toggle" role="switch" aria-checked="false">/);
 });
 
 test("opening the database again keeps every old table and row, and secure_delete stays on", () => {

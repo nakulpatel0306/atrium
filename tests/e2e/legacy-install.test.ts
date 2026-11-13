@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../src/engine/db";
 import { startServer } from "../../src/server/server";
-import { REMOVED_FEATURE_RETRY } from "../../src/engine/legacy";
+import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../../src/engine/legacy";
 import { tempHome } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -44,4 +44,12 @@ test("retrying a task of a removed feature is refused, and the task stays failed
   expect(res.status).toBe(409);
   expect(await res.json()).toEqual({ error: REMOVED_FEATURE_RETRY });
   expect(db.query("SELECT status FROM tasks WHERE id = 'tsk_old'").get()).toEqual({ status: "failed" });
+});
+
+test("an old space can't be made non-private, and says why", async () => {
+  const base = `http://127.0.0.1:${server.port}`;
+  const res = await fetch(`${base}/api/spaces/spc_inv`, { method: "PATCH", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ private: false }) });
+  expect(res.status).toBe(409);
+  expect(await res.json()).toEqual({ error: STAYS_PRIVATE });
+  expect(db.query("SELECT private FROM spaces WHERE id = 'spc_inv'").get()).toEqual({ private: 1 });
 });

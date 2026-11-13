@@ -2,7 +2,7 @@
 import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
-import { REMOVED_FEATURE_RETRY } from "../engine/legacy";
+import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import type { ReviewerId } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
@@ -340,6 +340,7 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
       return [open({ kind: "picker", purpose: "agent", targetId: task.id, options: [...AGENT_CHOICES], index: Math.max(0, AGENT_CHOICES.indexOf(task.agent as AgentChoice)) })];
     case "p":
       if (!space) return [info(NO_SPACE)];
+      if (space.unknownKind) return [info(STAYS_PRIVATE)];
       return [intent({ type: "private", spaceId: space.id, on: !space.private })];
     case "e":
       if (!space) return [info(NO_SPACE)];

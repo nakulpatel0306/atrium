@@ -19,7 +19,7 @@ import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
-import { REMOVED_FEATURE_RETRY } from "../engine/legacy";
+import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
@@ -115,6 +115,8 @@ export function startServer(deps: Deps): Server<WsData> {
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
       }
+      // Spaces of removed kinds held personal data, so they always read as private; storing otherwise would do nothing.
+      if (current.unknownKind && b.private === false) throw new HttpError(409, STAYS_PRIVATE);
       const reviewBy = b.reviewBy;
       if (reviewBy !== undefined && reviewBy !== null && !REVIEWERS.includes(reviewBy as ReviewerId)) {
         throw new HttpError(400, "reviewBy must be codex, gemini, claude, or null.");

@@ -3,7 +3,7 @@ import type { Key } from "ink";
 import { join } from "node:path";
 import type { State } from "../../src/engine/state";
 import { type Command, commandsFor, HELP, type KeyContext, NO_CONTEXT, strip } from "../../src/tui/keys";
-import { REMOVED_FEATURE_RETRY } from "../../src/engine/legacy";
+import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../../src/engine/legacy";
 import { deriveView } from "../../src/tui/select";
 import { initialUi, type Overlay, pin, reduce, type Ui } from "../../src/tui/ui";
 import { ids, makeState } from "./fixtures";
@@ -193,6 +193,14 @@ test("space keys", () => {
   expect(no.ui.overlay).toBeNull();
   // Space keys belong to Spaces; elsewhere they do nothing.
   expect(play(["p"]).intents).toEqual([]);
+});
+
+test("p on a space from a removed feature says it stays private", () => {
+  const old = makeState();
+  old.spaces = old.spaces.map((s) => (s.id === ids.jobHunt ? { ...s, private: true, unknownKind: true } : s));
+  const res = play(["p"], inJobHunt, old);
+  expect(res.intents).toEqual([]);
+  expect(flashText(res.all)).toEqual([STAYS_PRIVATE]);
 });
 
 test("t opens the transcript of the selected task's latest run", () => {
