@@ -41,6 +41,8 @@ import { MailProblem, type MailProblemKind } from "./types";
 //                                  "subject": string, "text": string, "replyTo": id|null, "attachments": [path]}
 //     → {"ok": true}  Sends through Mail.app from that account. With replyTo (an id from mail.messages) it answers that
 //     message, so Mail sets In-Reply-To and References itself; the recipients are then replaced by exactly these.
+//     The sender is the account's own "Full Name <from>" entry; a from the account doesn't list fails with kind
+//     "mismatch", as does Mail holding any sender or recipient other than these when read back before sending.
 //   atrium-pim mail.draft    stdin as mail.send
 //     → {"ok": true}  Saves the same message to that account's Drafts instead of sending it.
 //   atrium-pim cal.create    stdin {"calendar": string, "title": string, "start": ISO, "end": ISO, "allDay": bool, "location": string}
@@ -51,7 +53,7 @@ import { MailProblem, type MailProblemKind } from "./types";
 //     → {"ok": true}  Removes that one occurrence.
 //   There is no cal.rsvp: EventKit can't answer an invitation for another app. The engine says so instead.
 //
-// Failure: a non-zero exit and {"error": {"kind": "automation_denied"|"calendar_denied"|"not_running"|"bad_args"|"not_found"|"other", "message": string}}.
+// Failure: a non-zero exit and {"error": {"kind": "automation_denied"|"calendar_denied"|"not_running"|"bad_args"|"not_found"|"mismatch"|"other", "message": string}}.
 
 export const PIM_COPY = {
   not_installed: "Atrium's Mail and Calendar helper isn't installed. Run atrium app install in Terminal, then try again.",
@@ -64,6 +66,7 @@ export const PIM_COPY = {
   not_running: "Mail isn't open, so Atrium couldn't read it. Open Mail, then press Sync.",
   other: "Mail or Calendar didn't answer, and Atrium couldn't tell why. Check that both open normally, then press Sync.",
   not_found: "Mail or Calendar couldn't find that message or event anymore. Sync, then try again.",
+  mismatch: "Mail didn't take exactly the sender and people on the card, so nothing was sent. Check that this address is set up as an account in Mail, then try again.",
 } as const;
 
 // A write that timed out may still have gone through.

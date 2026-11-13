@@ -93,10 +93,37 @@ let mailScript = """
     return outPath
   end saveAttachment
 
+  -- Two address lists hold the same addresses (Mail compares text without case).
+  on sameAddresses(got, want)
+    if (count of got) is not (count of want) then return false
+    repeat with x in want
+      if got does not contain (x as text) then return false
+    end repeat
+    repeat with x in got
+      if want does not contain (x as text) then return false
+    end repeat
+    return true
+  end sameAddresses
+
   -- One email, sent or saved to Drafts. With a reply id it answers that message, so Mail sets In-Reply-To and
-  -- References; its recipients and words are then replaced by exactly the card's.
+  -- References; its recipients and words are then replaced by exactly the card's. The sender is the account's own
+  -- "Full Name <address>" entry, so Mail can't fall back to another account. Before sending or saving, what Mail
+  -- holds is read back; anything other than exactly the card's sender and people stops it with nothing sent.
   on composeMessage(acctId, fromAddr, toNames, toAddrs, ccNames, ccAddrs, subj, body, replyBox, replyId, attPaths, doSend)
     tell application "Mail"
+      set acct to first account whose id is acctId
+      set senderText to ""
+      repeat with addr in (email addresses of acct)
+        if (addr as text) is fromAddr then
+          set fullName to full name of acct as text
+          if fullName is "" then
+            set senderText to addr as text
+          else
+            set senderText to fullName & " <" & (addr as text) & ">"
+          end if
+        end if
+      end repeat
+      if senderText is "" then error "The From address isn't one of this account's addresses." number 6001
       if replyId is not "" then
         set orig to my findMessage(acctId, replyBox, replyId)
         set m to reply orig opening window false without reply to all
@@ -108,7 +135,7 @@ let mailScript = """
       else
         set m to make new outgoing message with properties {subject:subj, content:body, visible:false}
       end if
-      set sender of m to fromAddr
+      set sender of m to senderText
       tell m
         repeat with i from 1 to count of toAddrs
           make new to recipient at end of to recipients with properties {name:(item i of toNames), address:(item i of toAddrs)}
@@ -120,6 +147,15 @@ let mailScript = """
           make new attachment with properties {file name:(POSIX file (p as text))} at after the last paragraph
         end repeat
       end tell
+      set gotTo to address of every to recipient of m
+      set gotCc to address of every cc recipient of m
+      set gotBcc to address of every bcc recipient of m
+      if (sender of m as text) is not senderText or (count of gotBcc) > 0 or not my sameAddresses(gotTo, toAddrs) or not my sameAddresses(gotCc, ccAddrs) then
+        try
+          delete m
+        end try
+        error "Mail didn't hold exactly the card's sender and people." number 6002
+      end if
       if doSend then
         send m
       else
@@ -146,6 +182,8 @@ func runHandler(_ name: String, _ args: [NSAppleEventDescriptor]) throws -> NSAp
     let message = error[NSAppleScript.errorMessage] as? String ?? "Mail didn't answer."
     if code == -1743 { throw PimError(kind: "automation_denied", message: message) }
     if code == -600 { throw PimError(kind: "not_running", message: message) }
+    // composeMessage's own refusals: the From isn't the account's, or Mail held other people than the card.
+    if code == 6001 || code == 6002 { throw PimError(kind: "mismatch", message: message) }
     throw PimError(kind: "other", message: message)
   }
   return result

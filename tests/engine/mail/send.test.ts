@@ -336,6 +336,17 @@ describe("errors", () => {
     expect((await pressSend(action)).error).toBe(PIM_COPY.automation_denied);
   });
 
+  test("Mail.app holding other people than the card stops the send: nothing went out, and the card comes back", async () => {
+    mail.sync.appleOnNow("mail");
+    await mail.sync.syncNow();
+    const trip = listThreads(db).find((t) => t.subject === "Trip plan")!;
+    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: trip.id, body: "Hi" });
+    process.env.FAKE_PIM_MODE = "mismatch";
+    const failed = await pressSend(action);
+    expect(failed).toMatchObject({ status: "failed", error: PIM_COPY.mismatch });
+    expect(pendingMailActions(db)[0]!.error).toBe(PIM_COPY.mismatch);
+  });
+
   test("a send cut off by a restart comes back as a draft that says to check first, and never resends", async () => {
     await connectGoogle();
     const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
