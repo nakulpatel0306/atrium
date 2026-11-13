@@ -614,7 +614,7 @@ const MOVES: Record<MailStatus, MailStatus[]> = {
   // Straight to failed only when the executor refuses to send at all.
   draft: ["sending", "rejected", "failed", "saving", "opened"],
   sending: ["sent", "failed", "unsure"],
-  // Saving to Gmail or Mail.app drafts: done, or back to a draft when the source couldn't.
+  // Saving to Gmail Drafts: done, or back to a draft when Gmail couldn't.
   saving: ["saved", "draft"],
   sent: [],
   failed: [],
