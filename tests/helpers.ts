@@ -9,6 +9,8 @@ export function tempHome(): { home: string; cleanup(): void } {
   process.env.ATRIUM_FILES_HOME = join(home, "files");
   // Tests never launch real apps.
   process.env.ATRIUM_OPEN_BIN ??= join(import.meta.dir, "fixtures", "fake-open.ts");
+  // Nor touch the real Keychain.
+  process.env.ATRIUM_SECURITY_BIN ??= join(import.meta.dir, "fixtures", "fake-security.ts");
   // The greeting and own-transfer name never come from the Mac account that happens to run the tests.
   process.env.ATRIUM_MAC_NAME = "";
   return {

@@ -18,9 +18,31 @@ export const LEGACY = {
   // rebuilding it keeps them allowed; nothing lists or decides them.
   approvalKinds: ["alert"],
   alwaysAsk: ["first_contact", "send_message"],
+  // Every table those features made, by feature, for the user's "Remove old data".
+  tables: [
+    {
+      label: "Mail and calendar",
+      names: ["mail_actions", "mail_bodies", "mail_saved_files", "mail_archived", "mail_messages", "mail_threads", "cal_events", "cal_calendars", "mail_accounts"],
+    },
+    { label: "Texting", names: ["message_actions"] },
+    { label: "Money", names: ["money_transactions", "money_imports", "money_budgets", "money_nudges", "money_accounts", "tfsa_entries", "tfsa_room"] },
+    {
+      label: "Markets and investing",
+      names: [
+        "market_watchlist", "market_lists", "market_holdings", "market_alerts", "market_quotes", "market_bars", "market_closes", "market_dividends",
+        "market_earnings", "market_news", "market_strategies", "market_writeups", "market_ideas", "research_notes", "paper_fills", "paper_accounts",
+        "fx_rates", "fund_lines", "fund_files", "instrument_meta",
+      ],
+    },
+  ],
+  settingsPrefixes: ["mail.", "cal.", "markets.", "messaging.", "money."],
+  // Keychain items (service "Atrium") they stored: mail's Google sign-in, one refresh token per mail account, and
+  // market-data keys.
+  keychain: ["google.client.secret", "finnhub.token", "alpaca.keyId", "alpaca.secret", "alphavantage.key", "tiingo.token"],
+  googleRefresh: "google.refresh.",
 } as const;
 
-const present = (db: Database, table: string): boolean => !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+export const present = (db: Database, table: string): boolean => !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
 
 export function legacyDelete(db: Database, tables: readonly string[], column: string, ids: string[]): void {
   if (!ids.length) return;

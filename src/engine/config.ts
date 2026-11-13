@@ -35,6 +35,8 @@ export function config() {
     ghBin: process.env.ATRIUM_GH_BIN ?? "gh",
     // macOS's open, the only way Atrium launches a file. Tests and dev engines point it at a logging fake.
     openBin: process.env.ATRIUM_OPEN_BIN ?? "/usr/bin/open",
+    // macOS's Keychain CLI, used only to find and remove items older features stored. Tests point it at a fake.
+    securityBin: process.env.ATRIUM_SECURITY_BIN ?? "/usr/bin/security",
     // Where new projects and on-demand clones go.
     projectsRoot: process.env.ATRIUM_PROJECTS_ROOT ?? chosenProjectsRoot ?? defaultProjectsRoot(),
     transcriptCapBytes: 209715200 as const,
