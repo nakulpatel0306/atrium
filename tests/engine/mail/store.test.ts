@@ -17,7 +17,9 @@ import {
   threadMessages,
   upsertAccount,
   upsertCalendar,
+  updateAccount,
 } from "../../../src/engine/mail/store";
+import { canonicalRecurrence } from "../../../src/engine/mail/recurrence";
 import type { SourceEvent } from "../../../src/engine/mail/types";
 import { msg, SAM, T0 } from "./helpers";
 import { tempHome } from "../../helpers";
@@ -205,5 +207,21 @@ describe("calendar", () => {
     replaceEvents(db, ac, [ev(), ev({ icalUid: "uid-2", sourceId: "e2" })], T0 - 1, T0 + 1e9);
     replaceEvents(db, ac, [ev()], T0 - 1, T0 + 1e9);
     expect(listEvents(db, T0 - 1, T0 + 1e9).map((e) => e.title)).toEqual(["Lunch with Priya"]);
+  });
+
+  test("hiding a Google account keeps its Calendar.app copy hidden, and says it's hidden", () => {
+    const g = upsertAccount(db, { address: SAM, name: "", source: "google", ref: null });
+    const gc = upsertCalendar(db, "google", { sourceId: SAM, title: "Sam", color: "#5e9fe0", writable: true, accountAddress: SAM }, g.id);
+    const ac = upsertCalendar(db, "apple", { sourceId: "apple-cal-9", title: "Sam (Google)", color: "#d9825b", writable: true, accountAddress: SAM }, null);
+    updateAccount(db, g.id, { enabled: false });
+    const cals = listCalendars(db);
+    expect(cals.find((c) => c.id === gc)!.hidden).toBe("Its account is hidden.");
+    expect(cals.find((c) => c.id === ac)!.hidden).toBe("Google reads this calendar directly.");
+  });
+
+  test("occurrence ids from both sources come out the same", () => {
+    expect(canonicalRecurrence("2026-11-12T10:00:00-05:00")).toBe(canonicalRecurrence("2026-11-12T15:00:00Z"));
+    expect(canonicalRecurrence("2026-11-12")).toBe(String(new Date("2026-11-12T00:00:00").getTime()));
+    expect(canonicalRecurrence(null)).toBeNull();
   });
 });
