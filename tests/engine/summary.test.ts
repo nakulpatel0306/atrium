@@ -6,7 +6,8 @@ import { setSetting } from "../../src/engine/settings";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { summary } from "../../src/engine/summary";
 import { recordRunFiles } from "../../src/engine/outputs/store";
-import { createTask, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
+import { createTask, setTaskLoop, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
+import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { labelOf } from "../../src/engine/autonomy/kinds";
 import { tempHome } from "../helpers";
 
@@ -144,4 +145,32 @@ test("needs carry the task's outcome", () => {
   const needs = new Map(summary(db).needs.map((n) => [n.id, n]));
   expect(needs.get(review.id)).toMatchObject({ outcome: "partial" });
   expect(needs.get(ok.id)).toMatchObject({ outcome: null });
+});
+
+test("a task asking before it starts counts toward the badge and opens on its task", () => {
+  const s = createSpace(db, { name: "atrium", kind: "repo", goal: "g", repoPath: "/tmp/x" });
+  const t = createTask(db, { spaceId: s.id, title: "Add totals" });
+  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), stage: "brief", questions: [{ question: "Weekly or monthly?", options: ["Weekly", "Monthly"] }] });
+  const sum = summary(db);
+  expect(sum.needsYou).toBe(1);
+  expect(sum.needs[0]).toEqual({ id: t.id, kind: "question", title: "Add totals: Weekly or monthly?", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null });
+});
+
+test("every needs-you counter uses the one definition", async () => {
+  const { needsYouCount } = await import("../../src/engine/needs");
+  const { snapshot } = await import("../../src/engine/state");
+  const { needsCount } = await import("../../src/dashboard/components/NeedsYou");
+  const { liveStatus } = await import("../../src/dashboard/summary");
+  const { statusLine } = await import("../../src/cli");
+  const s = createSpace(db, { name: "atrium", kind: "repo", goal: "g", repoPath: "/tmp/x" });
+  createApproval(db, { spaceId: s.id, kind: "question", title: "Which one?", detail: "" });
+  suggest(s.id, "prp_1", Date.now());
+  const t = createTask(db, { spaceId: s.id, title: "Add totals" });
+  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), stage: "brief", questions: [{ question: "Weekly?", options: [] }] });
+  const state = snapshot(db);
+  expect(needsYouCount(state)).toBe(3);
+  expect(summary(db).needsYou).toBe(3);
+  expect(needsCount(state)).toBe(3);
+  expect(liveStatus(state)).toContain("3 things need you");
+  expect(statusLine(state, "http://127.0.0.1:7420")).toContain("3 needs you");
 });

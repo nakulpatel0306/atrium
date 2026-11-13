@@ -1,5 +1,6 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
 import type { Stage } from "../engine/loop";
+import { needsYouCount } from "../engine/needs";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
@@ -84,7 +85,7 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
 // Composed from live state on every render so counts never go stale while the page stays open.
 export function liveStatus(state: State): string {
   const parts: string[] = [];
-  const pending = state.approvals.length + state.proposals.length;
+  const pending = needsYouCount(state);
   if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
   const blocked = state.tasks.filter((t) => t.status === "blocked");
   if (blocked.length > 0) {
@@ -173,7 +174,7 @@ export const actorName = (actor: string) => (actor === "you" ? "You" : actor.cha
 // The first-run hero replaces Home only when nothing exists yet; a waiting question (say, a first project's draft)
 // must still be shown.
 export const emptyHome = (state: State): boolean =>
-  state.spaces.length === 0 && state.approvals.length === 0 && state.proposals.length === 0;
+  state.spaces.length === 0 && needsYouCount(state) === 0;
 
 // One line for a row: the first paragraph of agent text, without its markdown.
 export const summaryLine = (text: string): string => plainText(text.trim().split(/\n\s*\n/)[0] ?? "");

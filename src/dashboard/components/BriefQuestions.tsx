@@ -1,13 +1,13 @@
 import { MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
+import { asksBeforeStarting } from "../../engine/needs";
 import { post, type State } from "../api";
 
 type Task = State["tasks"][number];
 type Space = State["spaces"][number];
 
 // Tasks whose brief asked something, waiting for the answers before the writer starts.
-export const askingTasks = (state: State, spaceId?: string): Task[] =>
-  state.tasks.filter((t) => t.status === "queued" && (t.loop?.questions.length ?? 0) > 0 && (!spaceId || t.spaceId === spaceId));
+export const askingTasks = (state: State, spaceId?: string): Task[] => state.tasks.filter((t) => asksBeforeStarting(t) && (!spaceId || t.spaceId === spaceId));
 
 // A brief's questions, one tap or a few words each. Start sends what's answered; the writer starts either way.
 export function BriefQuestions({ task }: { task: Task }) {

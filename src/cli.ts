@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { needsYouCount } from "./engine/needs";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -57,7 +58,7 @@ export function renderPlist(opts: PlistOpts): string {
 export function statusLine(state: State | null, url: string): string {
   if (!state) return "not running";
   const n = state.spaces.length;
-  const needs = state.approvals.length;
+  const needs = needsYouCount(state);
   const parts = [`running at ${url}`, `${n} ${n === 1 ? "space" : "spaces"}`];
   parts.push(needs > 0 ? `${needs} needs you` : "nothing needs you");
   return parts.join(" · ");

@@ -5,6 +5,7 @@ import { navigate, type Route } from "../route";
 import { WindowBar } from "./Agents";
 import { showArchived } from "./ArchivedSpaces";
 import { Logo } from "./Logo";
+import { needsCount, waitingIn } from "./NeedsYou";
 
 type Props = {
   state: State;
@@ -14,11 +15,8 @@ type Props = {
 };
 
 export function Sidebar({ state, archived, route, onNewSpace }: Props) {
-  // Suggestions wait for an answer just like approvals do.
-  const waiting = [...state.approvals, ...state.proposals];
-  const pending = waiting.length;
-  const pendingBySpace = new Map<string, number>();
-  for (const a of waiting) if (a.spaceId) pendingBySpace.set(a.spaceId, (pendingBySpace.get(a.spaceId) ?? 0) + 1);
+  // Suggestions and tasks asking before they start wait for an answer just like approvals do.
+  const pending = needsCount(state);
   const activeRules = state.rules.filter((r) => r.state === "active").length;
   const battery = state.power.source === "battery";
   // Agents that can't take work right now: missing, signed out, or at a limit.
@@ -70,7 +68,7 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
         </button>
       </div>
       {state.spaces.map((s) => {
-        const n = pendingBySpace.get(s.id) ?? 0;
+        const n = waitingIn(state, s.id);
         return (
           <button
             key={s.id}

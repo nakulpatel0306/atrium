@@ -7,6 +7,7 @@ import { attentionText, reviewLine, summaryLine } from "../summary";
 import { DecideButtons, SendBackNote, useDecision } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { askingTasks, QuestionsRow } from "./BriefQuestions";
+import { needsYouCount } from "../../engine/needs";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -137,7 +138,7 @@ export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }
   );
 }
 
-export const needsCount = (state: State) => state.approvals.length + state.proposals.length + askingTasks(state).length;
+export const needsCount = (state: State) => needsYouCount(state);
 
 // The whole list, on Home and on the Needs you page.
 export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {

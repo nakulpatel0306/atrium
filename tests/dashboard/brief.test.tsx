@@ -180,3 +180,23 @@ test("failing check output is one click away; findings show how each was answere
   await act(async () => await Bun.sleep(5));
   expect(el.querySelector(".check-rows pre")!.textContent).toBe("(fail) adds totals");
 });
+
+test("a task asking before it starts is in Needs you and its counts, and Start sends the one-tap answers", async () => {
+  const { NeedsYou } = await import("../../src/dashboard/components/NeedsYou");
+  const { Sidebar } = await import("../../src/dashboard/components/Sidebar");
+  const state = makeState();
+  const asking = { ...state.tasks[0]!, id: "tsk_asks", title: "Add totals", status: "queued" as const, loop: { ...newLoop(SIZE_BUDGETS.small), stage: "brief" as const, questions: [{ question: "Weekly or monthly?", options: ["Weekly", "Monthly"] }] } };
+  const s = { ...state, approvals: [], proposals: [], tasks: [...state.tasks, asking] };
+  const el = render(
+    <>
+      <Sidebar state={s} archived={0} route={{ name: "home" } as never} onNewSpace={() => {}} />
+      <NeedsYou state={s} />
+    </>,
+  );
+  expect(el.querySelector(".nav .ct.hot")!.textContent).toBe("1");
+  expect(el.textContent).toContain("Needs you · 1");
+  expect(el.textContent).toContain("has a question before it starts");
+  await act(async () => button(el, "Monthly").click());
+  await act(async () => button(el, "Start").click());
+  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_asks/answers", body: { answers: [{ question: "Weekly or monthly?", answer: "Monthly" }] } });
+});
