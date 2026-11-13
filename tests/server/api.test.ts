@@ -55,19 +55,23 @@ const post = (path: string, body?: unknown, headers: Record<string, string> = {}
 const patch = (path: string, body: unknown) =>
   fetch(base + path, { method: "PATCH", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body) });
 
-test("PATCH reviewBy validates the agent id", async () => {
+test("PATCH reviewBy takes auto, an agent or off, and space checks and budget", async () => {
   const s = createSpace(db, { name: "App", kind: "general", goal: "g" });
+  expect(getSpace(db, s.id)!.reviewBy).toBe("auto");
   const bad = await patch(`/api/spaces/${s.id}`, { reviewBy: "bogus" });
   expect(bad.status).toBe(400);
-  expect(((await bad.json()) as { error: string }).error).toBe("reviewBy must be codex, gemini, claude, or null.");
+  expect(((await bad.json()) as { error: string }).error).toBe("reviewBy must be auto, codex, gemini, claude, or off.");
   const set = await patch(`/api/spaces/${s.id}`, { reviewBy: "codex" });
-  expect(set.status).toBe(200);
   expect(((await set.json()) as { reviewBy: string }).reviewBy).toBe("codex");
-  const cleared = await patch(`/api/spaces/${s.id}`, { reviewBy: null });
-  expect(((await cleared.json()) as { reviewBy: string | null }).reviewBy).toBeNull();
+  expect(((await (await patch(`/api/spaces/${s.id}`, { reviewBy: "off" })).json()) as { reviewBy: string }).reviewBy).toBe("off");
   // Leaving it out keeps what's there.
-  await patch(`/api/spaces/${s.id}`, { reviewBy: "gemini" });
-  expect(((await (await patch(`/api/spaces/${s.id}`, { name: "Renamed" })).json()) as { reviewBy: string }).reviewBy).toBe("gemini");
+  expect(((await (await patch(`/api/spaces/${s.id}`, { name: "Renamed" })).json()) as { reviewBy: string }).reviewBy).toBe("off");
+  const tuned = (await (await patch(`/api/spaces/${s.id}`, { checks: "make lint\nmake test", budget: { tokens: 100000, minutes: 10 } })).json()) as { checks: string; budget: unknown };
+  expect(tuned.checks).toBe("make lint\nmake test");
+  expect(tuned.budget).toEqual({ tokens: 100000, minutes: 10 });
+  expect((await patch(`/api/spaces/${s.id}`, { budget: { tokens: -1, minutes: 10 } })).status).toBe(400);
+  const cleared = (await (await patch(`/api/spaces/${s.id}`, { checks: "  ", budget: null })).json()) as { checks: string | null; budget: unknown };
+  expect([cleared.checks, cleared.budget]).toEqual([null, null]);
 });
 
 test("GET messages returns the thread in order", async () => {
