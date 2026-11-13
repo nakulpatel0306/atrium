@@ -1,4 +1,5 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DEPENDENCY_DIRS } from "../agents/seatbelt";
@@ -13,8 +14,8 @@ export type GateOutcome = {
   results: CheckResult[] | null;
   attention: string[];
   unverified: string | null;
-  // Checks that failed on the base commit too and still fail, with the end of their base output.
-  alreadyFailing: { name: string; excerpt: string }[];
+  // Checks that failed on the base commit too and still fail, with the end of their output then and now.
+  alreadyFailing: { name: string; before: string; now: string }[];
 };
 
 // Runs `checks` on `sha` in a checkout of its own that's deleted afterwards. The dependency folders are the
@@ -70,19 +71,46 @@ const lstatOrNull = (p: string) => {
   }
 };
 
-// The base commit's own results, once per repo, commit and set of checks, so a check that was already failing
-// before the task is told apart from one the change broke. Only a run that finished is kept: a Stop mid-run leaves
-// nothing cached.
+// The base commit's own results, kept for the most recent few bases, so a check that was already failing before
+// the task is told apart from one the change broke. The key holds the dependencies as well as the commit: after a
+// reinstall the base runs again. Only a run that finished is kept; a Stop mid-run leaves nothing cached.
+const BASE_CACHE = 32;
 const baseRuns = new Map<string, CheckResult[]>();
 
-async function baseResults(repo: string, base: string, checks: Check[], signal?: AbortSignal): Promise<CheckResult[] | null> {
-  const key = `${repo}\0${base}\0${JSON.stringify(checks)}`;
+// The user's dependencies as they stand: each lockfile's content, and each dependency folder's identity and time.
+function depsFingerprint(repo: string): string {
+  const locks = LOCKFILES.flatMap((l) => {
+    const p = join(repo, l);
+    return existsSync(p) ? [`${l}:${createHash("sha256").update(readFileSync(p)).digest("hex")}`] : [];
+  });
+  const dirs = DEPENDENCY_DIRS.flatMap((d) => {
+    const st = lstatOrNull(join(repo, d));
+    return st ? [`${d}:${st.ino}:${st.mtimeMs}`] : [];
+  });
+  return [...locks, ...dirs].join("|");
+}
+
+export async function baseResults(repo: string, base: string, checks: Check[], signal?: AbortSignal): Promise<CheckResult[] | null> {
+  const key = `${repo}\0${base}\0${depsFingerprint(repo)}\0${JSON.stringify(checks)}`;
   const hit = baseRuns.get(key);
-  if (hit) return hit;
+  if (hit) {
+    // Most recently used last, so the oldest is the one let go.
+    baseRuns.delete(key);
+    baseRuns.set(key, hit);
+    return hit;
+  }
   const results = await runInTree(repo, base, checks, { install: null, signal });
   if (signal?.aborted) return null;
   baseRuns.set(key, results);
+  if (baseRuns.size > BASE_CACHE) baseRuns.delete(baseRuns.keys().next().value!);
   return results;
+}
+
+// The checks that fail on the base commit, with the end of their output then, for telling the writer before its
+// first turn.
+export async function failingAtBase(repo: string, base: string, checks: Check[], signal?: AbortSignal): Promise<GateOutcome["alreadyFailing"]> {
+  const before = await baseResults(repo, base, checks, signal);
+  return (before ?? []).filter((r) => r.status === "failed").map((r) => ({ name: r.name, before: excerptOf(r), now: "" }));
 }
 
 // The gate on one turn: what the change does to the checks themselves, then the checks on the branch head in a
@@ -125,7 +153,7 @@ export async function runGate(input: {
   const before = failing.length && !input.signal?.aborted ? await baseResults(repo, base, checks, input.signal) : null;
   for (const r of failing) {
     const b = before?.find((x) => x.name === r.name);
-    if (b?.status === "failed") alreadyFailing.push({ name: r.name, excerpt: excerptOf(b) });
+    if (b?.status === "failed") alreadyFailing.push({ name: r.name, before: excerptOf(b), now: excerptOf(r) });
   }
   const judged = judge(results, new Set(alreadyFailing.map((f) => f.name)));
   return { verdict: judged.verdict, results, attention: [...attention, ...judged.attention], unverified: judged.unverified, alreadyFailing };

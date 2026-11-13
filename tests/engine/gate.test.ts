@@ -137,7 +137,8 @@ describe("checks that were already failing", () => {
     expect(out.unverified).toBe("Unverified: Tests was already failing before this task.");
     expect(out.attention).toContain("Tests was already failing before this task and still fails, so it proves nothing about this change.");
     expect(out.alreadyFailing.map((f) => f.name)).toEqual(["Tests"]);
-    expect(out.alreadyFailing[0]!.excerpt).toContain('expected "pass", got "wrong"');
+    expect(out.alreadyFailing[0]!.before).toContain('expected "pass", got "wrong"');
+    expect(out.alreadyFailing[0]!.now).toContain('expected "pass", got "wrong"');
   });
 
   test("a check that passed on the base commit and fails now is a real failure, whatever its output", async () => {
@@ -186,6 +187,30 @@ describe("checks that were already failing", () => {
     const again = await gate(r, command.replace("sleep 30", "exit 1"));
     expect(again.alreadyFailing.map((f) => f.name)).toEqual(["Tests"]);
   });
+});
+
+describe("the base results cache", () => {
+  const nonce = "date +%s%N";
+
+  test("a reinstall of the user's dependencies runs the base again; the same ones reuse it", async () => {
+    const { failingAtBase } = await import("../../src/engine/checks/gate");
+    const r = branch({ ".gitignore": "node_modules\n" }, (p) => writeFileSync(join(p, "a.txt"), "x"), (p) => mkdirSync(join(p, "node_modules")));
+    const checks = [{ name: "Tests", command: `${nonce}; exit 1`, kind: "full" as const }];
+    const first = await failingAtBase(r.path, r.base, checks);
+    expect((await failingAtBase(r.path, r.base, checks))[0]!.before).toBe(first[0]!.before);
+    rmSync(join(r.path, "node_modules"), { recursive: true });
+    mkdirSync(join(r.path, "node_modules"));
+    expect((await failingAtBase(r.path, r.base, checks))[0]!.before).not.toBe(first[0]!.before);
+  });
+
+  test("it keeps only the most recent 32 bases", async () => {
+    const { failingAtBase } = await import("../../src/engine/checks/gate");
+    const r = branch({ "b.txt": "b" }, (p) => writeFileSync(join(p, "a.txt"), "x"));
+    const checks = (n: number) => [{ name: "Tests", command: `${nonce}; exit 1 # set ${n}`, kind: "full" as const }];
+    const first = await failingAtBase(r.path, r.base, checks(0));
+    for (let n = 1; n <= 32; n++) await failingAtBase(r.path, r.base, checks(n));
+    expect((await failingAtBase(r.path, r.base, checks(0)))[0]!.before).not.toBe(first[0]!.before);
+  }, 60_000);
 });
 
 describe("fail-closed edges", () => {

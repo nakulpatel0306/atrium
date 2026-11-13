@@ -33,7 +33,7 @@ import { draftBrief } from "./brief-draft";
 import { withoutBlock } from "./attachment-rules";
 import { changedOutside, outsideSnapshot } from "./checks/attention";
 import { type Check, checksFor, detectChecks } from "./checks/detect";
-import { type GateOutcome, runGate } from "./checks/gate";
+import { failingAtBase, type GateOutcome, runGate } from "./checks/gate";
 import { failureReport, saveChecks } from "./checks/run";
 import {
   applyTriage,
@@ -387,9 +387,13 @@ export function createRunner(deps: {
       const claude = adapters.claude;
       const repo = space.kind === "repo" ? space.repoPath : null;
       const ask = withoutBlock(task.detail).trim() || task.title;
+      // The base commit's checks run alongside the pre-pass (both only read), so the writer's first turn can be
+      // told what already fails without waiting for them.
+      const warm = repo ? warmBase(space, repo, controller.signal) : Promise.resolve();
       const draft = claude
         ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, signal: controller.signal })
         : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null };
+      await warm;
       if (getTask(db, task.id)?.status !== "running") return;
       if (controller.signal.aborted) {
         if (stopRequested.has(task.id)) stoppedByYou(task, null);
@@ -414,6 +418,20 @@ export function createRunner(deps: {
         kick();
       });
     active.set(key, { taskId: task.id, done, controller });
+  }
+
+  // Runs the checks on the commit the user's checkout is on, into the base cache. Anything that goes wrong just
+  // leaves the cache cold; the gate runs them when it needs them.
+  async function warmBase(space: Space, repo: string, signal: AbortSignal): Promise<void> {
+    try {
+      const head = await git(repo, ["rev-parse", "--verify", "HEAD^{commit}"]);
+      if (head.code !== 0) return;
+      const sha = head.out.trim();
+      const checks = checksFor(await detectChecks(repo, sha), { spaceChecks: space.checks, verify: null });
+      if (checks.length) await failingAtBase(repo, sha, checks, signal);
+    } catch {
+      // Cold cache; nothing lost.
+    }
   }
 
   // What the gate would run in a repo space now, for the brief's gap hints; empty when it can't be read.
@@ -610,6 +628,10 @@ export function createRunner(deps: {
     const explaining = task.kind === "work" && !!task.loop?.explain;
     // Read before the agent starts, from the commit its work began on, so the writer is told what will judge it.
     const gate = repo && task.kind === "work" && !explaining ? await gateChecks(task, space, repo) : null;
+    // Before the first turn the writer is told which checks already fail on the base commit (cached per base and
+    // dependencies, and usually already run while the brief drafted), so it knows from the start.
+    const firstTurn = repo && gate?.length && task.loop && task.loop.checkedSha == null && !task.loop.alreadyFailing.length;
+    const shown = firstTurn ? await withBaseFailures(task, repo!, gate!, r.signal) : task;
     const watch = task.kind === "work" && !explaining ? toolWatch() : null;
     let result: AgentRunResult;
     try {
@@ -620,7 +642,7 @@ export function createRunner(deps: {
       // Reading the checks takes a moment, in which a stop can land before the agent has started.
       if (r.signal.aborted) throw new StoppedEarly();
       result = await adapter.run({
-        prompt: explaining ? explainPrompt(task, repo ? await branchContext(repo) : null) : buildPrompt(task, space, gate ? gate.map((c) => c.command) : null),
+        prompt: explaining ? explainPrompt(task, repo ? await branchContext(repo) : null) : buildPrompt(shown, space, gate ? gate.map((c) => c.command) : null),
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
@@ -972,6 +994,19 @@ export function createRunner(deps: {
     return rest;
   }
 
+  // The task with the checks failing on its base commit in its loop, when there are any; the task as it was when
+  // they can't be run. A Stop while they run leaves it to the run's own stop handling.
+  async function withBaseFailures(task: Task, repo: RepoRun, checks: Check[], signal: AbortSignal): Promise<Task> {
+    try {
+      const base = await git(repo.path, ["rev-parse", "--verify", `${repo.start}^{commit}`]);
+      if (base.code !== 0) return task;
+      const failing = await failingAtBase(repo.path, base.out.trim(), checks, signal);
+      return failing.length && !signal.aborted ? setTaskLoop(db, task.id, { ...getTask(db, task.id)!.loop!, alreadyFailing: failing }) : task;
+    } catch {
+      return task;
+    }
+  }
+
   // What the gate runs for this task, read from the commit its work started on. A repo whose checks can't be read
   // runs unverified rather than not at all.
   async function gateChecks(task: Task, space: Space, repo: RepoRun): Promise<Check[]> {
@@ -1046,6 +1081,15 @@ export function createRunner(deps: {
       return;
     }
     loop = { ...loop, stalled: 0, failSig: null };
+    // A check that already failed before the task and still fails sends the writer back once, outside loop
+    // detection: the task's goal may be exactly to make it pass. After that the result goes on, unverified.
+    if (loop.alreadyFailing.length && gate?.results && !loop.staleRetried && !overBudget(loop)) {
+      const still = loop.alreadyFailing.map((f) => `\`${f.name}\` still fails as it did before the task. Your goal may need it to pass.`).join("\n");
+      setTaskLoop(db, task.id, { ...loop, stage: "writing", staleRetried: true, feedback: `## Still failing\n${still}` });
+      setTaskStatus(db, task.id, "queued");
+      logActivity(db, space.id, "atrium", `${task.title}: ${loop.alreadyFailing.map((f) => f.name).join(", ")} still ${loop.alreadyFailing.length === 1 ? "fails" : "fail"} as before the task. Sent it back to ${writer} once.`, { taskId: task.id });
+      return;
+    }
     const review = !loop.noChanges && space.reviewBy !== "off" && roundsLeft(loop) && gate?.sha !== loop.reviewedSha;
     const diff = review ? await reviewDiff(repo.path, repo.start, repo.branch).catch(() => null) : null;
     if (diff && diff.files > 0) {

@@ -18,9 +18,14 @@ export function resolvedAgent(db: Database, task: Task): string {
   return row?.agent ?? task.agent;
 }
 
-// Checks that failed on the base commit too, with the end of their base output, for the writer and the reviewer.
+// Checks that fail on the base commit, with the end of their output then and now, for the writer and the reviewer.
 export function alreadyFailingSection(failing: LoopState["alreadyFailing"], ask: string): string {
-  const each = failing.map((f) => `\`${f.name}\` failed before this task too. The end of its output then:\n\`\`\`\n${f.excerpt}\n\`\`\``);
+  const each = failing.map((f) =>
+    [
+      `\`${f.name}\` failed before this task. The end of its output then:\n\`\`\`\n${f.before}\n\`\`\``,
+      ...(f.now ? [`And now, on this branch:\n\`\`\`\n${f.now}\n\`\`\``] : []),
+    ].join("\n"),
+  );
   return [`## Already failing before this task\n${ask}`, ...each].join("\n\n");
 }
 

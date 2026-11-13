@@ -189,7 +189,7 @@ export function resolveApproval(
         if (note) appendTaskDetail(db, a.taskId, `\n\nFeedback: ${note}`);
         // Sent back by the user: a new attempt, with its own review rounds and budget.
         const loop = getTask(db, a.taskId)?.loop;
-        if (loop) setTaskLoop(db, a.taskId, { ...resumed(loop), reviews: [], reviewedSha: null, triaged: false, report: [] });
+        if (loop) setTaskLoop(db, a.taskId, { ...resumed(loop), reviews: [], reviewedSha: null, triaged: false, report: [], staleRetried: false });
       }
       // A review still waiting would only second-guess a decision the user has made.
       const parentId = a.taskId;

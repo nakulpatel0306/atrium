@@ -607,13 +607,18 @@ describe("checks already failing before the task", () => {
     const loop = getTask(db, t.id)!.loop!;
     expect(loop.checks).toBe("none");
     expect(loop.unverified).toBe(`Unverified: ${FAKE_CHECK} was already failing before this task.`);
-    // Not sent back to the writer as its own failure, and not a loop.
-    expect(claude.calls.filter((c) => c.mode === "work")).toHaveLength(1);
+    // Told from its first turn; sent back exactly once, outside loop detection, then on to review, unverified.
+    const turns = claude.calls.filter((c) => c.mode === "work");
+    expect(turns).toHaveLength(2);
+    expect(turns[0]!.prompt).toContain("## Already failing before this task");
+    expect(turns[1]!.prompt).toContain(`\`${FAKE_CHECK}\` still fails as it did before the task. Your goal may need it to pass.`);
     const detail = approval(t.id)!.detail;
     expect(detail).toContain(`Unverified: ${FAKE_CHECK} was already failing before this task.`);
     expect(detail).not.toContain("Checks: passed");
     expect(codex.calls[0]!.prompt).toContain("## Already failing before this task");
     expect(codex.calls[0]!.prompt).toContain('expected "pass", got "wrong"');
+    // What it says on the branch now sits next to what it said before.
+    expect(codex.calls[0]!.prompt).toContain("And now, on this branch:");
   });
 
   test("the writer is told what was already failing, and that it may run the checks only as plain single commands", async () => {
@@ -631,9 +636,11 @@ describe("checks already failing before the task", () => {
     start({ claude: claude.adapter });
     await waitFor(() => status(t.id) === "review");
     expect(claude.calls[0]!.prompt).toContain("only exactly as written, one command per call");
-    expect(claude.calls).toHaveLength(2);
+    expect(claude.calls[0]!.prompt).toContain("## Already failing before this task\nLeave them alone unless the brief asks for them");
+    // Its own failure, then the one retry for the check that was already failing.
+    expect(claude.calls).toHaveLength(3);
     expect(claude.calls[1]!.prompt).toContain("## Atrium's checks failed after your last turn");
-    expect(claude.calls[1]!.prompt).toContain("## Already failing before this task\nLeave them alone unless the brief asks for them");
+    expect(claude.calls[2]!.prompt).toContain("still fails as it did before the task");
     expect(getTask(db, t.id)!.loop!.alreadyFailing.map((f) => f.name)).toEqual([FAKE_CHECK]);
   });
 });
