@@ -11,7 +11,16 @@ import { canonicalRecurrence } from "../recurrence";
 const HTTP_TIMEOUT_MS = 20_000;
 const WRITE_TIMEOUT_MS = 60_000;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const UNSURE_COPY = "This may have gone out: Google's answer didn't say. Check Gmail's Sent mail or Google Calendar before sending it again.";
+const SEND_COPY = {
+  unsure: "This may have gone out: Google's answer didn't say. Check Gmail's Sent mail or Google Calendar before sending it again.",
+  offline: "Atrium couldn't reach Google, so nothing went out. Check the Mac is online, then try again.",
+  refused: "Google didn't accept this, so nothing went out. Check the card, then try again.",
+};
+const CHANGE_COPY = {
+  unsure: "Google didn't answer, so Atrium can't tell whether that change went through. Check Gmail or Google Calendar, then try again if it didn't.",
+  offline: "Atrium couldn't reach Google, so nothing changed. Check the Mac is online, then try again.",
+  refused: "Google didn't accept that change. Try again.",
+};
 const NOT_CONNECTED = new Set(["ConnectionRefused", "FailedToOpenSocket", "ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH"]);
 const MAX_THREAD_PAGES = 5;
 const MAX_EVENT_PAGES = 10;
@@ -151,7 +160,9 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
   // A read, or with `write` a change. A 401 is refused before anything happens, so it's retried once with a fresh
   // token; nothing else is ever retried. A write that may have reached Google (no answer, or a server error) is
   // "unsure", so the user checks before trying again rather than Atrium sending twice.
-  async function call<T>(account: AccountRef, url: string, write?: { method: string; body?: unknown }): Promise<T> {
+  // `change` marks a write that sends nothing to anyone (archive, an RSVP's own entry), so its errors say so.
+  async function call<T>(account: AccountRef, url: string, write?: { method: string; body?: unknown; change?: boolean }): Promise<T> {
+    const copy = write?.change ? CHANGE_COPY : SEND_COPY;
     for (const force of [false, true]) {
       const token = await auth.accessToken(account.id, force);
       let res: Response;
@@ -164,15 +175,15 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
         });
       } catch (e) {
         // Not connected at all means nothing was sent; anything after connecting (a timeout) may have been.
-        if (write && !NOT_CONNECTED.has(String((e as { code?: unknown }).code))) throw new MailProblem("unsure", UNSURE_COPY);
-        if (write) throw new MailProblem("offline", "Atrium couldn't reach Google, so nothing went out. Check the Mac is online, then try again.");
+        if (write && !NOT_CONNECTED.has(String((e as { code?: unknown }).code))) throw new MailProblem("unsure", copy.unsure);
+        if (write) throw new MailProblem("offline", copy.offline);
         throw new MailProblem("offline", "Atrium couldn't reach Google. Check the Mac is online; it tries again on the next sync.");
       }
       if (res.status === 401 && !force) continue;
       if (res.status === 401) throw new MailProblem("signed_out", signedOutCopy(account.address));
       if (res.status === 403) throw new MailProblem("other", `Google refused access to ${account.address}'s mail or calendar. Connect it again and allow every permission it asks for.`);
-      if (write && res.status >= 500) throw new MailProblem("unsure", UNSURE_COPY);
-      if (write && !res.ok) throw new MailProblem("other", "Google didn't accept this, so nothing went out. Check the card, then try again.");
+      if (write && res.status >= 500) throw new MailProblem("unsure", copy.unsure);
+      if (write && !res.ok) throw new MailProblem("other", copy.refused);
       if (!res.ok) throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
       if (res.status === 204) return undefined as T;
       const text = await res.text();
@@ -180,7 +191,7 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
         return (text ? JSON.parse(text) : undefined) as T;
       } catch {
         // Google said yes in a form Atrium can't read: a write may well have gone through.
-        if (write) throw new MailProblem("unsure", UNSURE_COPY);
+        if (write) throw new MailProblem("unsure", copy.unsure);
         throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
       }
     }
@@ -263,7 +274,7 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
     },
 
     async archive(account, threadKey, undo) {
-      await call(account, gmail(`/threads/${encodeURIComponent(threadKey)}/modify`), { method: "POST", body: undo ? { addLabelIds: ["INBOX"] } : { removeLabelIds: ["INBOX"] } });
+      await call(account, gmail(`/threads/${encodeURIComponent(threadKey)}/modify`), { method: "POST", body: undo ? { addLabelIds: ["INBOX"] } : { removeLabelIds: ["INBOX"] }, change: true });
     },
 
     async createEvent(account, calendarId, e, notify) {
@@ -286,7 +297,7 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
       const attendees = current.attendees ?? [];
       if (!attendees.some((a) => a.self)) throw new MailProblem("other", "You're not on this event's guest list, so there's nothing to answer.");
       const next = attendees.map((a) => (a.self ? { ...a, responseStatus: answer, ...(note.trim() ? { comment: note.trim() } : {}) } : a));
-      await call(need(account), calEvent(calendarId, eventId, updates(true)), { method: "PATCH", body: { attendees: next } });
+      await call(need(account), calEvent(calendarId, eventId, updates(true)), { method: "PATCH", body: { attendees: next }, change: true });
     },
 
     async events(account, calendar, from, to) {

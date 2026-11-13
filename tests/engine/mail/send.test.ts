@@ -406,6 +406,17 @@ describe("errors", () => {
     expect(failed.error).toContain("connect again in Settings");
   });
 
+  test("archive and RSVP errors speak of a change, not of sending", async () => {
+    await connectGoogle();
+    fakes.google.failWrites = 503;
+    expect(mail.actions.archive(lease().id, false)).rejects.toThrow("Atrium can't tell whether that change went through");
+    await mail.actions.settle();
+    fakes.google.failWrites = 400;
+    const invite = listEvents(db, NOW - 30 * 86_400_000, NOW + 30 * 86_400_000).find((e) => e.title === "Planning with Kit")!;
+    expect(mail.actions.rsvp(invite.id, "accepted", "")).rejects.toThrow("Google didn't accept that change. Try again.");
+    await mail.actions.settle();
+  });
+
   test("a send cut off by a restart comes back as a draft that says to check first, and never resends", async () => {
     await connectGoogle();
     const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
