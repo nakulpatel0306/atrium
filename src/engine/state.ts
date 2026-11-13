@@ -13,6 +13,7 @@ import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
+import { hasOldData, OLD_DATA_DISMISSED } from "./old-data";
 import { type Attachment, claimedAttachments } from "./attachments";
 
 export type RunSummary = {
@@ -67,6 +68,8 @@ export type State = {
   disk: ReturnType<typeof atriumDiskUsage>;
   // Pending new-project drafts and clone removals, for the forms in Needs you.
   repoActions: RepoActionView[];
+  // Whether removed features left data behind (see old-data.ts), and whether Home's notice about it was put off.
+  oldData: { present: boolean; dismissed: boolean };
 };
 
 export type RepoActionView = {
@@ -175,5 +178,6 @@ export function snapshot(db: Database, registry?: Registry): State {
         : null,
     disk: atriumDiskUsage(),
     repoActions: repoActionViews(db),
+    oldData: { present: hasOldData(db), dismissed: getSetting(db, OLD_DATA_DISMISSED) === "1" },
   };
 }

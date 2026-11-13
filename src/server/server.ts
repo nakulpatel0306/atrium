@@ -19,7 +19,9 @@ import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
+import { KeychainError } from "../engine/keychain";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
+import { findOldData, OLD_DATA_DISMISSED, removeOldData } from "../engine/old-data";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
@@ -89,6 +91,15 @@ export function startServer(deps: Deps): Server<WsData> {
 
     if (hit("GET", /^\/api\/state$/)) return json(snapshot(db, runner.registry));
     if (hit("GET", /^\/api\/summary$/)) return json(summary(db));
+
+    // What removed features left behind: listed first, removed only when the user confirms that list.
+    if (hit("GET", /^\/api\/old-data$/)) return json(await findOldData(db));
+    if (hit("POST", /^\/api\/old-data\/remove$/)) return json(await removeOldData(db));
+    if (hit("POST", /^\/api\/old-data\/dismiss$/)) {
+      setSetting(db, OLD_DATA_DISMISSED, "1");
+      bus.emit({ type: "changed" });
+      return json({ ok: true });
+    }
 
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);
@@ -486,6 +497,7 @@ export function startServer(deps: Deps): Server<WsData> {
         if (e instanceof PushRefused) return fail(409, e.message);
         if (e instanceof ChangesRefused) return fail(e.status, e.message);
         if (e instanceof PrFailed) return fail(502, e.message);
+        if (e instanceof KeychainError) return fail(409, e.message);
         if (e instanceof SetupFailed) {
           // The user sees the plain message; the log keeps what actually went wrong.
           console.error("Setup failed:", e.cause instanceof Error ? e.cause.message : e.message);

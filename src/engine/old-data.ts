@@ -14,6 +14,9 @@ export type OldData = {
   spaces: string[];
 };
 
+// Home's notice was put off ("Not now"); Settings → Data still offers the removal.
+export const OLD_DATA_DISMISSED = "notice.oldData.dismissed";
+
 const likePrefixes = (): string => LEGACY.settingsPrefixes.map(() => "key LIKE ?").join(" OR ");
 const prefixArgs = (): string[] => LEGACY.settingsPrefixes.map((p) => `${p}%`);
 const removedKinds = (): string =>
