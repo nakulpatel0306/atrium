@@ -45,6 +45,13 @@ test("the pre-pass runs a small read-only Claude in the repo and returns the bri
   repo.cleanup();
 });
 
+test("a check command the pre-pass picks is only a suggestion: the brief keeps auto", async () => {
+  process.env.FAKE_CLAUDE_TEXT = JSON.stringify({ goal: "Fix login", verify: "true" });
+  const res = await draftBrief(claudeAdapter(FAKE), { ask: "fix login", repoPath: null, privateData: false });
+  expect(res.brief.verify).toBe("auto");
+  expect(res.suggestedVerify).toBe("true");
+});
+
 test("a general space's pre-pass gets no tools", async () => {
   const argvFile = join(home.home, "argv.json");
   process.env.FAKE_CLAUDE_ARGV = argvFile;

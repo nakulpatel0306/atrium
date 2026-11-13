@@ -57,6 +57,28 @@ function CheckOutput({ taskId, version, preexisting }: { taskId: string; version
   );
 }
 
+// The pre-pass's idea of a check command, used only once the user says so.
+function SuggestedCheck({ task, command }: { task: Task; command: string }) {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <p className="checks-line">
+      <span>
+        The brief suggests checking with <code>{command}</code>.
+      </span>
+      <button
+        className="btn"
+        onClick={async () => {
+          const res = await post(`/api/tasks/${task.id}/accept-verify`);
+          if (!res.ok) setError(res.error);
+        }}
+      >
+        Use it as the check
+      </button>
+      {error && <span className="err">{error}</span>}
+    </p>
+  );
+}
+
 // The header badge: what the checks said, with their output one click away.
 export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const loop = task.loop;
@@ -182,6 +204,7 @@ export function LoopPanel({ task, repo, showChecks }: { task: Task; repo: boolea
           <Markdown text={briefSections(task.brief, null).join("\n\n")} />
         </details>
       )}
+      {loop?.suggestedVerify && task.status !== "done" && <SuggestedCheck task={task} command={loop.suggestedVerify} />}
       {loop && loop.hints.length > 0 && (
         <ul className="brief-hints">
           {loop.hints.map((h) => (

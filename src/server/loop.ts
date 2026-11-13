@@ -92,6 +92,15 @@ export async function loopRoute(db: Database, claude: AgentAdapter | undefined, 
     return json(next);
   }
 
+  // Taking the pre-pass's suggested check command is the user's edit, and from then on the gate runs it.
+  const verifyM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/accept-verify$/) : null;
+  if (verifyM) {
+    const task = getTask(db, verifyM[1]!);
+    if (!task?.brief || !task.loop?.suggestedVerify || task.status === "done") throw new HttpError(409, "This task has no suggested check to use.");
+    setTaskBrief(db, task.id, { ...task.brief, verify: task.loop.suggestedVerify });
+    return json(setTaskLoop(db, task.id, { ...task.loop, suggestedVerify: null }));
+  }
+
   // The answers to a brief's questions go with it, and the writer starts. Sending none skips them.
   const answersM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/answers$/) : null;
   if (answersM) {

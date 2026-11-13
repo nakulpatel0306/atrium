@@ -30,14 +30,16 @@ function prompt(ask: string, repo: boolean): string {
   ].join("\n\n");
 }
 
-export type DraftResult = { brief: Brief; questions: BriefQuestion[]; error: string | null };
+// `suggestedVerify` is the pre-pass's own idea of a check command. The gate never takes it from the pre-pass, which
+// reads a repo that may be written to mislead it: the brief's verify stays "auto" until the user accepts it.
+export type DraftResult = { brief: Brief; questions: BriefQuestion[]; error: string | null; suggestedVerify: string | null };
 
 // Never fails: a pre-pass that can't answer still leaves a brief holding the ask itself, and the task runs as is.
 export async function draftBrief(
   adapter: AgentAdapter,
   input: { ask: string; repoPath: string | null; privateData: boolean; signal?: AbortSignal },
 ): Promise<DraftResult> {
-  const fallback = (error: string): DraftResult => ({ brief: normalizeBrief({}, input.ask), questions: [], error });
+  const fallback = (error: string): DraftResult => ({ brief: normalizeBrief({}, input.ask), questions: [], error, suggestedVerify: null });
   const repo = input.repoPath !== null;
   // Away from a repo there's nothing to read, so it gets an empty folder and no tools.
   const cwd = input.repoPath ?? mkdtempSync(join(tmpdir(), "atrium-run-"));
@@ -58,7 +60,9 @@ export async function draftBrief(
     if (result.status !== "ok") return fallback(timeout.aborted ? "The brief took too long to draft." : result.message);
     const parsed = parseJson(result.summary);
     if (!parsed) return fallback("The brief came back in a shape Atrium couldn't read.");
-    return { brief: normalizeBrief(parsed, input.ask), questions: normalizeQuestions(parsed.questions), error: null };
+    const drafted = normalizeBrief(parsed, input.ask);
+    const suggestedVerify = drafted.verify === "auto" ? null : drafted.verify;
+    return { brief: { ...drafted, verify: "auto" }, questions: normalizeQuestions(parsed.questions), error: null, suggestedVerify };
   } catch (e) {
     return fallback((e as Error).message);
   } finally {

@@ -127,7 +127,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   if (task.loop && state.spaces.find((s) => s.id === task.spaceId)?.kind === "repo") {
     const line = loopLine(task.loop);
     lines.push([
-      { text: `${STAGE_TEXT[shownStage(task.status, task.loop, task.brief !== null)]} · `, bold: true },
+      { text: `${STAGE_TEXT[shownStage(task.status, task.loop)]} · `, bold: true },
       { text: line.text, color: line.tone ? TONE[line.tone] : undefined },
     ]);
     const attention = attentionText(task.loop);

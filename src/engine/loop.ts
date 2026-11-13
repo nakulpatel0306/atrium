@@ -58,6 +58,8 @@ export type LoopState = {
   // What the brief's pre-pass asked and what it noticed, while the brief stage waits for answers.
   questions: BriefQuestion[];
   hints: string[];
+  // A check command the pre-pass suggested, which the brief uses only once the user accepts it.
+  suggestedVerify: string | null;
   // Things the change does to the checks themselves (edits their config, drops or skips tests): shown on the
   // result, put to the reviewer, and never approved by a rule.
   attention: string[];
@@ -103,6 +105,7 @@ export function newLoop(budget: Budget): LoopState {
     outside: null,
     questions: [],
     hints: [],
+    suggestedVerify: null,
     attention: [],
     usage: { tokens: 0, ms: 0, unreported: false },
     budget,

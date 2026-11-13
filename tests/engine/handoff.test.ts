@@ -528,6 +528,22 @@ describe("the brief as the first stage", () => {
     expect(task.loop!.budget).toEqual(SIZE_BUDGETS.small);
   });
 
+  test("a pre-pass that picks `true` as the check still gets the detected checks, until you accept its suggestion", async () => {
+    const s = space(repo(), { reviewBy: "off" });
+    const t = queuedWithBrief(s.id);
+    const claude = fake("claude", (input) => {
+      if (input.model === "haiku") return ok(JSON.stringify({ goal: "Show totals", verify: "true", size: "small" }));
+      writeFileSync(join(input.cwd, "status.txt"), "wrong\n");
+      return ok("Done.\nOUTCOME: done");
+    });
+    start({ claude: claude.adapter });
+    await waitFor(() => (getTask(db, t.id)!.loop?.checks ?? "pending") === "failed" || status(t.id) === "blocked");
+    const task = getTask(db, t.id)!;
+    expect(task.brief!.verify).toBe("auto");
+    expect(task.loop!.suggestedVerify).toBe("true");
+    expect(db.query("SELECT command FROM checks WHERE task_id = ? LIMIT 1").get(t.id)).toEqual({ command: FAKE_CHECK });
+  });
+
   test("questions wait for answers, which reach the writer", async () => {
     const s = space(repo(), { reviewBy: "off" });
     const t = queuedWithBrief(s.id);

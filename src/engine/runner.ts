@@ -388,7 +388,7 @@ export function createRunner(deps: {
       const ask = withoutBlock(task.detail).trim() || task.title;
       const draft = claude
         ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, signal: controller.signal })
-        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up." };
+        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null };
       if (getTask(db, task.id)?.status !== "running") return;
       if (controller.signal.aborted) {
         if (stopRequested.has(task.id)) stoppedByYou(task, null);
@@ -400,7 +400,7 @@ export function createRunner(deps: {
       const loop = getTask(db, task.id)!.loop!;
       setTaskBrief(db, task.id, draft.brief);
       const budget = space.budget ?? SIZE_BUDGETS[draft.brief.size];
-      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, stage: draft.questions.length ? "brief" : "writing" });
+      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, suggestedVerify: draft.suggestedVerify, stage: draft.questions.length ? "brief" : "writing" });
       setTaskStatus(db, task.id, "queued");
       if (draft.questions.length) logActivity(db, space.id, "claude", `${task.title} has ${plural(draft.questions.length, "question")} before it starts. Answer in Needs you.`, { taskId: task.id });
     })()

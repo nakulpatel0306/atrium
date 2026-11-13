@@ -2,7 +2,7 @@ import { Lightbulb, Play, X } from "lucide-react";
 import { useState } from "react";
 import { type Brief, type BriefQuestion, gapHints, SIZES, type TaskSize } from "../../engine/brief";
 
-export type Draft = { brief: Brief; questions: BriefQuestion[]; checks: string[]; error: string | null };
+export type Draft = { brief: Brief; questions: BriefQuestion[]; checks: string[]; error: string | null; suggestedVerify: string | null };
 
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -98,6 +98,11 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
           <label>
             <span>Check with <span className="hint">a command, or auto for {draft.checks.length ? draft.checks.join(", ") : "what Atrium finds"}</span></span>
             <input className="mono" value={f.verify} placeholder="auto" onChange={set("verify")} />
+            {draft.suggestedVerify && f.verify !== draft.suggestedVerify && (
+              <button type="button" className="btn link subtle" onClick={() => setF((x) => ({ ...x, verify: draft.suggestedVerify! }))}>
+                Use <code>{draft.suggestedVerify}</code> as the check
+              </button>
+            )}
           </label>
           <div className="brief-row">
             <label>

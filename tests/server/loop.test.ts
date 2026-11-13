@@ -117,3 +117,13 @@ test("retrying a paused task starts its budget over; a budget can be changed unt
   expect((await post(`/api/tasks/${t.id}/retry`)).status).toBe(200);
   expect(getTask(db, t.id)!.loop!.usage.tokens).toBe(0);
 });
+
+test("accepting a suggested check is what sets the brief's verify; without a suggestion there's nothing to accept", async () => {
+  const s = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: "/tmp/x" });
+  const t = createTask(db, { spaceId: s.id, title: "Fix", brief: normalizeBrief({ goal: "Fix" }) });
+  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), suggestedVerify: "bun test tests/api" });
+  expect((await post(`/api/tasks/${t.id}/accept-verify`)).status).toBe(200);
+  expect(getTask(db, t.id)!.brief!.verify).toBe("bun test tests/api");
+  expect(getTask(db, t.id)!.loop!.suggestedVerify).toBeNull();
+  expect((await post(`/api/tasks/${t.id}/accept-verify`)).status).toBe(409);
+});
