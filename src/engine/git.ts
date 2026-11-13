@@ -543,37 +543,20 @@ export function branchHeadSync(path: string, branch: string): string | null {
   }
 }
 
-// Moves a late fix's uncommitted work onto its own new branch at the current commit, so the branch Nakul
-// decided on gets nothing after his decision. Null when there is nothing to move. Creating a branch at
-// HEAD rewrites no files, so nothing in the tree is checked out over. A fix stopped more than once gets a
-// numbered branch each time, since its earlier edits already sit on `atrium/<id>`.
-export async function branchOffDirty(path: string, taskId: string): Promise<string | null> {
-  const status = await git(path, ["status", "--porcelain"]);
+// Puts the tree back to its last commit after Atrium's checks ran in it, so build output and caches they left
+// can't block switching back to the user's branch. Everything the agent did is committed by then. Attributes come
+// from the empty tree, so no checkout filter runs, whatever a check wrote into .gitattributes.
+export async function restoreTree(path: string): Promise<void> {
+  const status = await git(path, [...STAGE_FLAGS, "status", "--porcelain"]);
   if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
-  if (status.out.trim() === "") return null;
-  let branch = `atrium/${taskId}`;
-  for (let n = 2; (await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0; n++) {
-    branch = `atrium/${taskId}-${n}`;
+  if (status.out.trim() === "") return;
+  const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
+  if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
+  const flags = [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`];
+  for (const args of [["checkout", "--", "."], ["clean", "-fdq"]]) {
+    const res = await git(path, [...flags, ...args]);
+    if (res.code !== 0) throw new Error(`Couldn't tidy up after the checks: ${res.err.trim()}`);
   }
-  const valid = await git(path, ["check-ref-format", "--branch", branch]);
-  if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
-  const res = await git(path, ["checkout", "-b", branch]);
-  if (res.code !== 0) throw new Error(`Couldn't create ${branch}: ${res.err.trim()}`);
-  return branch;
-}
-
-// A fix commit that landed just after Nakul decided: the fix keeps it on a branch of its own, and the decided
-// branch goes back to `pre` only if it still points at `post` (update-ref compare-and-swap), so nothing anyone
-// else put there is lost. Switching to the new branch first changes no files and frees the decided branch's ref.
-export async function moveLateCommit(path: string, taskId: string, decided: string, pre: string, post: string): Promise<string> {
-  const branch = `atrium/${taskId}`;
-  const valid = await git(path, ["check-ref-format", "--branch", branch]);
-  if (valid.code !== 0) throw new Error(`Invalid branch name: ${branch}`);
-  const res = await git(path, ["checkout", "-b", branch, post]);
-  if (res.code !== 0) throw new Error(`Couldn't create ${branch}: ${res.err.trim()}`);
-  const back = await git(path, ["update-ref", `refs/heads/${decided}`, pre, post]);
-  if (back.code !== 0) throw new Error(`Couldn't move ${decided} back to the commit you decided on: ${back.err.trim()}`);
-  return branch;
 }
 
 const CHANGES_CAP = 200 * 1024;

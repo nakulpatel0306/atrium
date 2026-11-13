@@ -1,9 +1,11 @@
 import { fileAt, treeEntries } from "../git";
 
 export type CheckKind = "fast" | "full";
-// `files` are copies of the base commit's files a command reads (a Makefile), put in a folder of their own and
-// named through $ATRIUM_CHECK_FILES, so the copy in the agent's tree is never what runs.
-export type Check = { name: string; command: string; kind: CheckKind; files?: Record<string, string> };
+// `files` are copies of the base commit's files a command reads (a Makefile and what it includes), put in a folder
+// of their own and named through $ATRIUM_CHECK_FILES, so the copy in the agent's tree is never what runs. `node`
+// puts the project's node_modules/.bin on PATH; nothing else from the tree ever is. `notes` say what of the check
+// couldn't be pinned to the base commit.
+export type Check = { name: string; command: string; kind: CheckKind; files?: Record<string, string>; node?: boolean; notes?: string[] };
 
 // Read from the commit the task started from, never the agent's branch, and run as that exact text: an agent that
 // rewrote the test script to `exit 0` mustn't get to choose what proves its work.
@@ -18,7 +20,9 @@ export async function detectChecks(repo: string, sha: string): Promise<Check[]> 
   return found;
 }
 
-type Command = string | { command: string; files: Record<string, string> };
+type Command = string | Omit<Check, "name" | "kind">;
+// Commands run through a JavaScript package manager, which look in node_modules/.bin for their tools.
+const NODE_TOOL = /^(bun|bunx|npm|npx|pnpm|yarn)\b/;
 type Found = Partial<Record<"typecheck" | "lint" | "test", Command>>;
 
 async function detect(repo: string, sha: string): Promise<Check[]> {
@@ -30,7 +34,7 @@ async function detect(repo: string, sha: string): Promise<Check[]> {
   const sources: Found[] = [
     await fromPackageJson(read, root, all),
     hintsFrom(`${(await read("CLAUDE.md")) ?? ""}\n${(await read("AGENTS.md")) ?? ""}`),
-    fromMakefile(await read("Makefile")),
+    await fromMakefile(read, all),
     await fromPyproject(read, root, all),
     root.has("Cargo.toml") ? { typecheck: "cargo check", lint: "cargo clippy", test: "cargo test" } : {},
     root.has("go.mod") ? { typecheck: "go vet ./...", test: "go test ./..." } : {},
@@ -39,8 +43,9 @@ async function detect(repo: string, sha: string): Promise<Check[]> {
   const checks: Check[] = [];
   for (const [kind, name, cost] of [["typecheck", "Typecheck", "fast"], ["lint", "Lint", "fast"], ["test", "Tests", "full"]] as const) {
     const found = pick(kind);
-    if (typeof found === "string") checks.push({ name, command: found, kind: cost });
-    else if (found) checks.push({ name, command: found.command, kind: cost, files: found.files });
+    if (!found) continue;
+    const c = typeof found === "string" ? { command: found } : found;
+    checks.push({ ...c, name, kind: cost, node: c.node ?? NODE_TOOL.test(c.command) });
   }
   return checks;
 }
@@ -61,7 +66,7 @@ async function fromPackageJson(read: (f: string) => Promise<string | null>, root
   const script = (...names: string[]) => names.find((n) => typeof scripts[n] === "string" && scripts[n]);
   // The script's own text from the base commit, run with node_modules/.bin on PATH the way `npm run` would, not
   // `npm run <name>`, which would read whatever the agent's package.json says now.
-  const run = (name: string) => String(scripts[name]);
+  const run = (name: string) => ({ command: String(scripts[name]), node: true });
   const found: Found = {};
   const typecheck = script("typecheck", "type-check", "check-types", "tsc");
   if (typecheck) found.typecheck = run(typecheck);
@@ -91,10 +96,41 @@ export function hintsFrom(text: string): Found {
   return found;
 }
 
-function fromMakefile(text: string | null): Found {
-  if (!text) return {};
-  const targets = new Set([...text.matchAll(/^([A-Za-z0-9_-]+)\s*:(?!=)/gm)].map((m) => m[1]!));
-  const make = (target: string) => ({ command: `make -f "$ATRIUM_CHECK_FILES/Makefile" ${target}`, files: { Makefile: text } });
+const globRe = (glob: string) => new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]")}$`);
+const INCLUDE = /^(\s*-?(?:include|sinclude)\s+)(.+)$/gm;
+
+// The base commit's Makefile and every makefile it includes, with each include pointed at its base copy: make looks
+// for a relative include in the working tree first, where the agent could have put its own.
+async function fromMakefile(read: (f: string) => Promise<string | null>, all: Set<string>): Promise<Found> {
+  const main = await read("Makefile");
+  if (main === null) return {};
+  const files: Record<string, string> = {};
+  const notes: string[] = [];
+  const pin = async (name: string, text: string, depth: number) => {
+    const includes: string[] = [];
+    files[name] = text.replace(INCLUDE, (line, head: string, list: string) => {
+      const kept = list.split(/\s+/).filter(Boolean).flatMap((inc) => {
+        // A wildcard is matched against the base commit's files; a variable can't be resolved without running make,
+        // so it stays as written and says so.
+        const matches = /[$%]/.test(inc) || inc.startsWith("/") ? [] : /[*?]/.test(inc) ? [...all].filter((p) => globRe(inc).test(p)) : all.has(inc) ? [inc] : [];
+        if (!matches.length) {
+          notes.push(`The Makefile includes ${inc}, which Atrium couldn't take from the commit the task started on.`);
+          return [inc];
+        }
+        includes.push(...matches);
+        return matches.map((m) => `$(ATRIUM_CHECK_FILES)/${m}`);
+      });
+      return `${head}${kept.join(" ")}`;
+    });
+    for (const inc of includes) {
+      if (files[inc] !== undefined || depth > 4) continue;
+      await pin(inc, (await read(inc)) ?? "", depth + 1);
+    }
+  };
+  await pin("Makefile", main, 0);
+  // Targets defined in included makefiles count too.
+  const targets = new Set(Object.values(files).flatMap((text) => [...text.matchAll(/^([A-Za-z0-9_-]+)\s*:(?!=)/gm)].map((m) => m[1]!)));
+  const make = (target: string) => ({ command: `make -f "$ATRIUM_CHECK_FILES/Makefile" ${target}`, files, notes: [...new Set(notes)] });
   const found: Found = {};
   if (targets.has("typecheck")) found.typecheck = make("typecheck");
   else if (targets.has("check")) found.typecheck = make("check");
@@ -117,7 +153,7 @@ async function fromPyproject(read: (f: string) => Promise<string | null>, root: 
 // A space's own commands, one per line: the first ones are fast and the last is the full test run.
 export function overrideChecks(text: string): Check[] {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 6);
-  return lines.map((command, i) => ({ name: command, command, kind: i === lines.length - 1 ? "full" : "fast" }));
+  return lines.map((command, i) => ({ name: command, command, kind: i === lines.length - 1 ? "full" : "fast", node: NODE_TOOL.test(command) }));
 }
 
 // What the gate runs for a task: the space's own list if it has one, else what the repo says, with the brief's
@@ -125,5 +161,5 @@ export function overrideChecks(text: string): Check[] {
 export function checksFor(detected: Check[], opts: { spaceChecks: string | null; verify: string | null }): Check[] {
   const base = opts.spaceChecks ? overrideChecks(opts.spaceChecks) : detected;
   if (!opts.verify || opts.verify === "auto") return base;
-  return [...base.filter((c) => c.kind === "fast"), { name: "Verify", command: opts.verify, kind: "full" }];
+  return [...base.filter((c) => c.kind === "fast"), { name: "Verify", command: opts.verify, kind: "full", node: NODE_TOOL.test(opts.verify) }];
 }

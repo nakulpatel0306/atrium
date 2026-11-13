@@ -82,16 +82,16 @@ export function briefSections(brief: Brief, checks: string[] | null): string[] {
   const parts: string[] = [];
   if (brief.goal) parts.push(`## Goal\n${brief.goal}`);
   if (brief.acceptance.length) parts.push(`## ${checks ? "Acceptance criteria" : "Done when"}\n${bullets(brief.acceptance)}`);
-  if (checks) {
-    parts.push(
-      checks.length
-        ? `## How it's checked\nAfter your turn Atrium runs these itself and sends you anything that fails:\n${bullets(checks.map((c) => `\`${c}\``))}`
-        : "## How it's checked\nThis repo has no checks Atrium can run, so say in your summary how you checked your work.",
-    );
-  }
+  if (checks) parts.push(checksSection(checks));
   if (brief.scope) parts.push(`## Scope\n${brief.scope}`);
   if (brief.nonGoals.length) parts.push(`## Not in scope\n${bullets(brief.nonGoals)}`);
   if (brief.lookFirst.length) parts.push(`## Look at these first\n${bullets(brief.lookFirst)}`);
   if (brief.answers.length) parts.push(`## Clarified\n${brief.answers.map((a) => `- ${a.question} ${a.answer}`).join("\n")}`);
   return parts;
+}
+
+export function checksSection(checks: string[]): string {
+  return checks.length
+    ? `## How it's checked\nAfter your turn Atrium runs these itself and sends you anything that fails:\n${bullets(checks.map((c) => `\`${c}\``))}`
+    : "## How it's checked\nThis repo has no checks Atrium can run, so say in your summary how you checked your work.";
 }

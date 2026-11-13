@@ -48,7 +48,7 @@ describe("brief", () => {
 describe("loop rules", () => {
   test("budgets count since the user last stepped in", () => {
     const loop = { ...newLoop(SIZE_BUDGETS.small), usage: { tokens: 250_000, ms: 0, unreported: false } };
-    expect(overBudget(loop)).toContain("250k tokens");
+    expect(overBudget(loop)).toBe("It used 250k tokens, its budget.");
     expect(overBudget(resumed(loop))).toBeNull();
     expect(overBudget({ ...loop, usage: { tokens: 0, ms: 21 * 60_000, unreported: false } })).toContain("20 minutes");
   });

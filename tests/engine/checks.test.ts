@@ -7,7 +7,7 @@ import { codexStateDir, seatbeltProfile } from "../../src/engine/agents/seatbelt
 import { checkAttention } from "../../src/engine/checks/attention";
 import { checkProfile } from "../../src/engine/checks/sandbox";
 import { checksFor, detectChecks, hintsFrom, overrideChecks } from "../../src/engine/checks/detect";
-import { failureReport, latestChecks, outcomeOf, runChecks, saveChecks } from "../../src/engine/checks/run";
+import { failureReport, latestChecks, outcomeOf, runChecks, saveChecks, toolBins } from "../../src/engine/checks/run";
 import { openDb } from "../../src/engine/db";
 import { createSpace } from "../../src/engine/spaces";
 import { createTask } from "../../src/engine/tasks";
@@ -43,9 +43,9 @@ describe("detecting checks", () => {
       "pnpm-lock.yaml": "",
     });
     expect(await detectChecks(path, sha)).toEqual([
-      { name: "Typecheck", command: "tsc", kind: "fast" },
-      { name: "Lint", command: "eslint .", kind: "fast" },
-      { name: "Tests", command: "vitest run", kind: "full" },
+      { name: "Typecheck", command: "tsc", kind: "fast", node: true },
+      { name: "Lint", command: "eslint .", kind: "fast", node: true },
+      { name: "Tests", command: "vitest run", kind: "full", node: true },
     ]);
   });
 
@@ -105,8 +105,8 @@ describe("detecting checks", () => {
       { name: "Tests", command: "bun test", kind: "full" as const },
     ];
     expect(overrideChecks("make lint\n\nmake test")).toEqual([
-      { name: "make lint", command: "make lint", kind: "fast" },
-      { name: "make test", command: "make test", kind: "full" },
+      { name: "make lint", command: "make lint", kind: "fast", node: false },
+      { name: "make test", command: "make test", kind: "full", node: false },
     ]);
     expect(checksFor(detected, { spaceChecks: null, verify: "bun test tests/a.test.ts" }).map((c) => c.command)).toEqual(["bunx tsc --noEmit", "bun test tests/a.test.ts"]);
     expect(checksFor(detected, { spaceChecks: "make ci", verify: "auto" }).map((c) => c.command)).toEqual(["make ci"]);
@@ -265,5 +265,52 @@ describe("changes to the checks themselves", () => {
     ]);
     const plain = branchWith({ "src/a.ts": "" }, (p) => writeFileSync(join(p, "src/a.ts"), "export const a = 2;"));
     expect(await checkAttention(plain.path, plain.base, plain.head, [])).toEqual([]);
+  });
+});
+
+describe("what a check can be made to run", () => {
+  test("a Makefile's includes come from the base commit too; one Atrium can't resolve is named", async () => {
+    const { path, sha } = repoWith({ Makefile: "include mk/rules.mk\n-include $(LOCAL).mk\n", "mk/rules.mk": "test:\n\t@echo base-rules; exit 1\n" });
+    writeFileSync(join(path, "mk/rules.mk"), "test:\n\t@true\n");
+    const checks = await detectChecks(path, sha);
+    expect(checks[0]!.notes).toEqual(["The Makefile includes $(LOCAL).mk, which Atrium couldn't take from the commit the task started on."]);
+    const [r] = await runChecks(path, checks);
+    expect(r!.status).toBe("failed");
+    expect(r!.output).toContain("base-rules");
+  });
+
+  test("a wildcard include is matched against the base commit's files", async () => {
+    const { path, sha } = repoWith({ Makefile: "include mk/*.mk\n", "mk/a.mk": "test:\n\t@echo from-a\n" });
+    const [r] = await runChecks(path, await detectChecks(path, sha));
+    expect(r!.output).toContain("from-a");
+  });
+
+  test("only package-manager checks see node_modules/.bin, and after the system PATH's own tools never", async () => {
+    const path = repoWith({}).path;
+    mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(path, "node_modules", ".bin", "planted-tool"), "#!/bin/sh\necho planted\n", { mode: 0o755 });
+    const [js, other] = await runChecks(path, [
+      { name: "Lint", command: "planted-tool", kind: "fast", node: true },
+      { name: "Make", command: "planted-tool", kind: "fast" },
+    ]);
+    expect(js!.output).toContain("planted");
+    expect(other!.status).toBe("missing");
+  });
+
+  test("package scripts are node checks; make, cargo, go and pytest aren't", async () => {
+    const { path, sha } = repoWith({ "package.json": JSON.stringify({ scripts: { lint: "eslint ." } }), "go.mod": "module example.com/x\n" });
+    expect((await detectChecks(path, sha)).map((c) => [c.command, c.node])).toEqual([
+      ["go vet ./...", false],
+      ["eslint .", true],
+      ["go test ./...", false],
+    ]);
+  });
+
+  test("tool snapshots differ once something is planted in node_modules/.bin", () => {
+    const path = repoWith({}).path;
+    const before = toolBins(path);
+    mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(path, "node_modules", ".bin", "tsc"), "#!/bin/sh\nexit 0\n");
+    expect(toolBins(path)).not.toBe(before);
   });
 });

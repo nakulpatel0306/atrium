@@ -3,7 +3,8 @@ import { bus, logActivity } from "./events";
 import { newId } from "./ids";
 import { branchHeadSync } from "./git";
 import { getSpace } from "./spaces";
-import { appendTaskDetail, getTask, listTasks, setTaskStatus } from "./tasks";
+import { resumed } from "./loop";
+import { appendTaskDetail, getTask, listTasks, setTaskLoop, setTaskStatus } from "./tasks";
 
 export const ALWAYS_ASK = [
   "merge_main",
@@ -142,12 +143,6 @@ export function replaceApprovalDetail(db: Database, id: string, old: string | Re
   bus.emit({ type: "changed" });
 }
 
-// After a late fix commit is moved off the branch, the recorded head goes back to what Nakul decided on;
-// only if it recorded that late commit.
-export function correctBranchHead(db: Database, id: string, from: string, to: string): void {
-  db.query("UPDATE approvals SET branch_head = ? WHERE id = ? AND branch_head = ?").run(to, id, from);
-}
-
 export function listPending(db: Database): Approval[] {
   // rowid breaks ties between approvals created in the same millisecond. Alerts, texts and the other kinds an older
   // database holds from features Atrium no longer has can't be acted on, so they aren't listed.
@@ -192,8 +187,11 @@ export function resolveApproval(
       } else {
         setTaskStatus(db, a.taskId, "queued");
         if (note) appendTaskDetail(db, a.taskId, `\n\nFeedback: ${note}`);
+        // Sent back by Nakul: a new attempt, with its own review rounds and budget.
+        const loop = getTask(db, a.taskId)?.loop;
+        if (loop) setTaskLoop(db, a.taskId, { ...resumed(loop), reviews: [], reviewedSha: null, triaged: false, report: [] });
       }
-      // A review or fix still waiting would only second-guess a decision Nakul has made.
+      // A review still waiting would only second-guess a decision Nakul has made.
       const parentId = a.taskId;
       for (const child of listTasks(db, { status: ["queued", "running", "blocked", "failed"] })) {
         if (child.parentTaskId !== parentId) continue;

@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { newId } from "../ids";
 import { runAgentProcess } from "../agents/process";
 import { SANDBOX_EXEC, seatbeltFailure, withPrivateTmp } from "../agents/seatbelt";
@@ -55,11 +55,14 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
   const proc = await withPrivateTmp((tmp) => {
     const files = join(tmp, "check-files");
     mkdirSync(files);
-    for (const [name, body] of Object.entries(check.files ?? {})) writeFileSync(join(files, name), body);
+    for (const [name, body] of Object.entries(check.files ?? {})) {
+      mkdirSync(dirname(join(files, name)), { recursive: true });
+      writeFileSync(join(files, name), body);
+    }
     return runAgentProcess(wrapCheck(["/bin/sh", "-c", `exec 2>&1\n${check.command}`], cwd, [cwd, tmp], opts.sandboxExec ?? SANDBOX_EXEC), {
       cwd,
       stdin: "",
-      env: checkEnv(cwd, tmp, files),
+      env: checkEnv(cwd, tmp, files, check.node ?? false),
       signal,
       abortGraceMs: 2000,
       onLine: add,
@@ -76,11 +79,12 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
   return { ...check, status: proc.exitCode === 0 ? "passed" : "failed", exitCode: proc.exitCode, output: tail, durationMs };
 }
 
-function checkEnv(cwd: string, tmp: string, files: string): Record<string, string> {
+function checkEnv(cwd: string, tmp: string, files: string, node: boolean): Record<string, string> {
   const keep = (k: string) => (process.env[k] ? { [k]: process.env[k]! } : {});
   return {
-    // A package script's text runs with the project's own tools first, as `npm run` would run it.
-    PATH: [join(cwd, "node_modules", ".bin"), process.env.PATH].filter(Boolean).join(":"),
+    // A package script runs with the project's own tools first, as `npm run` would run it; toolBins catches an agent
+    // planting its own there. Every other check gets the system PATH and nothing from the tree.
+    PATH: [node ? join(cwd, "node_modules", ".bin") : null, process.env.PATH].filter(Boolean).join(":"),
     ATRIUM_CHECK_FILES: files,
     ...keep("HOME"),
     ...keep("USER"),
@@ -138,4 +142,24 @@ export function latestChecks(db: Database, taskId: string): CheckRow[] {
        FROM checks WHERE task_id = ? AND created_at = (SELECT MAX(created_at) FROM checks WHERE task_id = ?) ORDER BY rowid`,
     )
     .all(taskId, taskId) as CheckRow[];
+}
+
+// What node_modules/.bin holds: each entry, where it points and the size and time of what it points at. Compared
+// across a task's turns, a change means the tools the checks run aren't the ones the task started with.
+export function toolBins(repo: string): string {
+  const dir = join(repo, "node_modules", ".bin");
+  if (!existsSync(dir)) return "";
+  return readdirSync(dir)
+    .sort()
+    .map((name) => {
+      const path = join(dir, name);
+      try {
+        const link = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : "";
+        const st = statSync(path);
+        return `${name}\0${link}\0${st.size}\0${st.mtimeMs}`;
+      } catch {
+        return `${name}\0broken`;
+      }
+    })
+    .join("\n");
 }

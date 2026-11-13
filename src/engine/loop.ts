@@ -50,6 +50,8 @@ export type LoopState = {
   // Things the change does to the checks themselves (edits their config, drops or skips tests): shown on the
   // result, put to the reviewer, and never approved by a rule.
   attention: string[];
+  // node_modules/.bin as the task found it (see checks/run.ts toolBins); null away from a repo.
+  toolBins: string | null;
   // Counted since the user last stepped in (started, retried or gave a hint); `unreported` when an agent
   // didn't report its tokens, so the count is a floor.
   usage: { tokens: number; ms: number; unreported: boolean };
@@ -72,7 +74,7 @@ export const SIZE_BUDGETS: Record<TaskSize, Budget> = {
   large: { tokens: 1_500_000, minutes: 90 },
 };
 
-export function newLoop(budget: Budget): LoopState {
+export function newLoop(budget: Budget, toolBins: string | null = null): LoopState {
   return {
     stage: "writing",
     checks: "pending",
@@ -88,6 +90,7 @@ export function newLoop(budget: Budget): LoopState {
     report: [],
     noChanges: false,
     attention: [],
+    toolBins,
     usage: { tokens: 0, ms: 0, unreported: false },
     budget,
     paused: null,
@@ -103,8 +106,8 @@ export function resumed(loop: LoopState): LoopState {
 
 export function overBudget(loop: LoopState): string | null {
   const { usage, budget } = loop;
-  if (usage.tokens >= budget.tokens) return `It used ${compact(usage.tokens)} tokens, its budget, without getting its checks to pass.`;
-  if (usage.ms >= budget.minutes * 60_000) return `It worked for ${budget.minutes} minutes, its budget, without getting its checks to pass.`;
+  if (usage.tokens >= budget.tokens) return `It used ${compact(usage.tokens)} tokens, its budget.`;
+  if (usage.ms >= budget.minutes * 60_000) return `It worked for ${budget.minutes} minutes, its budget.`;
   return null;
 }
 
@@ -139,12 +142,12 @@ export function toolWatch(limit = REPEAT_LIMIT): (name: string, input: unknown) 
     streak = sig === last ? streak + 1 : 1;
     last = sig;
     const what = describeTool(name, input);
-    if (streak >= limit) return `It ran the same ${what} ${limit} times in a row.`;
     if (EDIT_TOOLS.has(name)) {
       const n = (edits.get(sig) ?? 0) + 1;
       edits.set(sig, n);
       if (n >= limit) return `It made the same ${what} ${limit} times.`;
     }
+    if (streak >= limit) return `It ran the same ${what} ${limit} times in a row.`;
     return null;
   };
 }

@@ -26,8 +26,8 @@ export class DeleteRefused extends Error {
 // the live schema, so a new table can't be missed.
 export const HANDLED = {
   space: ["tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions", "run_files", "rule_events", "attachments"],
-  task: ["tasks", "runs", "approvals", "activity", "messages", "run_files", "attachments"],
-  run: ["run_files"],
+  task: ["tasks", "runs", "approvals", "activity", "messages", "run_files", "attachments", "checks"],
+  run: ["run_files", "checks"],
 } as const;
 
 const SPACE_GONE = "That space isn't here anymore. It may have been deleted somewhere else.";
@@ -108,6 +108,7 @@ function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] 
     // Attached files are Nakul's own and stay in the space folder; only the link to the task goes.
     db.query(`UPDATE attachments SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM run_files WHERE task_id IN (${t})`).run(...tasks);
+    db.query(`DELETE FROM checks WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM messages WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM activity WHERE task_id IN (${t})`).run(...tasks);
     // Tasks and approvals point at each other, so the task side lets go first.
