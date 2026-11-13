@@ -25,7 +25,7 @@ import { findOldData, OLD_DATA_DISMISSED, removeOldData } from "../engine/old-da
 import { createTask, getTask, InvalidTransition, setTaskLoop, setTaskStatus } from "../engine/tasks";
 import { normalizeBrief } from "../engine/brief";
 import { newLoop, resumed, SIZE_BUDGETS } from "../engine/loop";
-import { budgetField, loopRoute } from "./loop";
+import { budgetField, cardShape, loopRoute } from "./loop";
 import { setTierModel, type Tier, TIERS, tierModel, validModel } from "../engine/tiers";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
@@ -414,6 +414,9 @@ export function startServer(deps: Deps): Server<WsData> {
       const space = getSpace(db, str(b.spaceId, "spaceId"));
       if (!space) throw new HttpError(404, "No such space.");
       const agent = agentField(b.agent);
+      // A brief-first card carries the draft's shape and the one left chosen on it.
+      const brief = b.brief !== undefined ? normalizeBrief(b.brief, typeof b.text === "string" ? b.text : "") : null;
+      const shape = brief ? await cardShape(space, brief, b.shapeDraft, b.shape, b.mixVendors) : null;
       const task = db.transaction(() => {
         const files = checkAttachments(db, space, b.attachments);
         // Files alone are a request too: the agent is asked to look at them.
@@ -428,6 +431,7 @@ export function startServer(deps: Deps): Server<WsData> {
           ...(b.brief !== undefined && { brief: normalizeBrief(b.brief, text) }),
         });
         claimAttachments(db, t.id, files);
+        if (shape) return setTaskLoop(db, t.id, { ...newLoop(space.budget ?? SIZE_BUDGETS[brief!.size]), shape });
         // Otherwise the task starts with drafting its brief, so sending never waits on the pre-pass. Files alone
         // ask the agent to look at them, with nothing to brief.
         if (b.brief === undefined && typeof b.text === "string" && b.text.trim()) {

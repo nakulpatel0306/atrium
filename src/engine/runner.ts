@@ -62,6 +62,8 @@ import { enforceTranscriptCap, openTranscript } from "./storage";
 import { type Tier, tierModel, tierRun } from "./tiers";
 import { recordUsage, runModels, withModels } from "./usage";
 import { planSession, progressNote, type Session } from "./sessions";
+import { awaitingShape, costlier, proposeShape, shapeLine } from "./shape";
+import { childrenOf, childState, fanIn, fanOut, judgePrompt, parseScores } from "./fanout";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -126,6 +128,13 @@ const ENGINE_ONLY: Record<"message" | "repo", string> = {
   message: "Atrium can't send texts or email, and nothing was sent.",
   repo: "Only Atrium can create repos, after your yes, and none was created.",
 };
+
+// The judge of a best-of-N reads the attempts' diffs in its prompt and nothing else.
+const JUDGE_SYSTEM_PROMPT = [
+  "You are comparing several attempts at one task for the user, through Atrium.",
+  "Everything you need is in the prompt. Don't create or change any files.",
+  "Never read, print, or edit .env files, keys, or tokens.",
+].join("\n");
 
 // Asked for after a pause: a diagnosis in place of another attempt, so the agent reads and changes nothing.
 const EXPLAIN_SYSTEM_PROMPT = [
@@ -270,6 +279,22 @@ export function createRunner(deps: {
         waits.push({ taskId: task.id, agent: task.agent, kind: "answers", reason: "Waiting for your answers to its brief's questions, in Needs you." });
         continue;
       }
+      if (task.kind === "work" && task.loop?.stage === "brief" && awaitingShape(task.loop.shape)) {
+        waits.push({ taskId: task.id, agent: task.agent, kind: "shape", reason: `${shapeLine(task.loop.shape!)}. Waiting for your yes in Needs you, since it costs more than one writer.` });
+        continue;
+      }
+      if (task.kind === "work" && task.loop?.stage === "parts") {
+        const kids = childrenOf(db, task);
+        const ready = kids.filter((c) => childState(c) === "ready").length;
+        const what = task.loop.fanout?.kind === "best_of_n" ? "attempts" : "parts";
+        waits.push({ taskId: task.id, agent: task.agent, kind: "parts", reason: `Waiting for its ${kids.length} ${what} (${ready} ready). Each runs on its own branch, one at a time.` });
+        continue;
+      }
+      if (task.kind === "work" && task.loop?.stage === "pick") {
+        const what = task.loop.fanout?.kind === "best_of_n" ? "Pick one of its attempts" : "Open its parts' pull requests or merge them into one branch";
+        waits.push({ taskId: task.id, agent: task.agent, kind: "pick", reason: `${what}, in Needs you.` });
+        continue;
+      }
       // A repo space attached from GitHub gets its local copy first; the task waits rather than blocks meanwhile.
       if (deps.repos && space.kind === "repo" && space.github && task.kind !== "review" && (!space.repoPath || !existsSync(space.repoPath))) {
         deps.repos.requestClone(space);
@@ -363,6 +388,7 @@ export function createRunner(deps: {
     const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
     setTaskStatus(db, task.id, "blocked", { blockedReason: full });
     logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`, { taskId: task.id });
+    settleChild(getTask(db, task.id) ?? task);
     if (task.kind === "review") void reviewEnded(task, resolvedAgent(db, task), { status: "error", kind: "failed", message: reason }).catch(report);
   }
 
@@ -396,7 +422,7 @@ export function createRunner(deps: {
       const warm = repo ? warmBase(space, repo, controller.signal) : Promise.resolve();
       const draft = claude
         ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, model: tierModel(db, "cheap") || undefined, signal: controller.signal })
-        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null, models: [] };
+        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null, models: [], shape: null };
       recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "brief", models: draft.models });
       await warm;
       if (getTask(db, task.id)?.status !== "running") return;
@@ -410,14 +436,68 @@ export function createRunner(deps: {
       const loop = getTask(db, task.id)!.loop!;
       setTaskBrief(db, task.id, draft.brief);
       const budget = space.budget ?? SIZE_BUDGETS[draft.brief.size];
-      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, suggestedVerify: draft.suggestedVerify, stage: draft.questions.length ? "brief" : "writing" });
+      // The pre-pass's shape is a proposal: one that costs more waits for the user's click, with the questions.
+      const shape = repo ? proposeShape(draft.shape, { size: draft.brief.size, checksFound: checks.length > 0 }) : null;
+      const waits = draft.questions.length > 0 || awaitingShape(shape);
+      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, suggestedVerify: draft.suggestedVerify, shape, stage: waits ? "brief" : "writing" });
       setTaskStatus(db, task.id, "queued");
       if (draft.questions.length) logActivity(db, space.id, "claude", `${task.title} has ${plural(draft.questions.length, "question")} before it starts. Answer in Needs you.`, { taskId: task.id });
+      else if (shape && awaitingShape(shape)) logActivity(db, space.id, "claude", `${task.title}: ${shapeLine(shape)}. It costs more than one writer, so it waits for your yes in Needs you.`, { taskId: task.id });
     })()
       .catch(report)
       .finally(() => {
         stopRequested.delete(task.id);
         steerRequested.delete(task.id);
+        active.delete(key);
+        activeSpaces.delete(space.id);
+        kick();
+      });
+    active.set(key, { taskId: task.id, done, controller });
+  }
+
+  // After the attempts of a best-of-N: the strong tier scores the survivors against the brief, in the background like
+  // the brief stage. Its scores are advice next to each attempt; the user picks. A judge that can't answer leaves
+  // the attempts to pick from without scores.
+  function startJudge(task: Task, space: Space) {
+    setTaskStatus(db, task.id, "running");
+    activeSpaces.add(space.id);
+    const controller = new AbortController();
+    const key = `judge:${task.id}`;
+    const done = (async () => {
+      const claude = adapters.claude;
+      const cwd = mkdtempSync(join(tmpdir(), "atrium-run-"));
+      let scores: Record<string, { score: number; comment: string }> = {};
+      let note: string | null = null;
+      try {
+        const { prompt, ids } = await judgePrompt(db, task, space.repoPath!);
+        const result: AgentRunResult = claude
+          ? await claude.run({ prompt, cwd, systemPrompt: JUDGE_SYSTEM_PROMPT, allowedTools: [], mode: "review", privateData: space.private, ...tierRun(db, "strong"), signal: controller.signal, onChunk() {} })
+          : { status: "error", kind: "not_installed", message: "Claude isn't set up." };
+        if (result.usage) registry.recordUsage("claude", result.usage);
+        if (result.status === "ok") {
+          recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "judge", models: runModels(result, tierModel(db, "strong") || null) });
+          scores = parseScores(result.summary, ids);
+          if (!Object.keys(scores).length) note = "The judge's answer had no scores Atrium could read.";
+        } else note = `The judge didn't run: ${sentence(result.message)}`;
+      } catch (e) {
+        note = `The judge didn't run: ${sentence((e as Error).message)}`;
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+      if (getTask(db, task.id)?.status !== "running") return;
+      const loop = getTask(db, task.id)!.loop!;
+      if (controller.signal.aborted) {
+        if (stopRequested.has(task.id)) stoppedByYou(task, null);
+        else setTaskStatus(db, task.id, "queued");
+        return;
+      }
+      setTaskLoop(db, task.id, { ...loop, stage: "pick", fanout: { ...loop.fanout!, scores, judgeNote: note } });
+      setTaskStatus(db, task.id, "queued");
+      logActivity(db, space.id, "claude", `Scored the attempts at ${task.title}. Pick one in Needs you.`, { taskId: task.id });
+    })()
+      .catch(report)
+      .finally(() => {
+        stopRequested.delete(task.id);
         active.delete(key);
         activeSpaces.delete(space.id);
         kick();
@@ -477,6 +557,12 @@ export function createRunner(deps: {
       return;
     }
     if (task.kind === "work" && task.loop?.stage === "brief") return startBrief(task, space);
+    if (task.kind === "work" && task.loop?.stage === "judge") return startJudge(task, space);
+    // Fans out only on the user's yes, and never from a task that is itself a part or an attempt.
+    if (task.kind === "work" && task.loop?.shape && costlier(task.loop.shape.kind) && task.loop.shape.approved && !task.loop.fanout && !task.loop.role && space.kind === "repo") {
+      fanOut(db, task as Task & { loop: LoopState }, space, attemptAgents(task, space));
+      return;
+    }
     const adapter = adapters[agent];
     if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
 
@@ -647,8 +733,9 @@ export function createRunner(deps: {
     // Claude Code's own session files.
     const writing = task.kind === "work" && !explaining && repo !== null;
     const added = shown.detail.slice(shown.loop?.session?.detail ?? shown.detail.length).trim();
+    const adopted = writing && !!shown.loop?.adopted;
     let plan =
-      writing && adapter.id === "claude" && !space.private
+      writing && !adopted && adapter.id === "claude" && !space.private
         ? planSession(shown.loop?.session ?? null, { now: Date.now(), tier: tierName, fresh: !!added || !!shown.loop?.feedback })
         : null;
     if (plan && !plan.resume && plan.why === "context") {
@@ -687,7 +774,9 @@ export function createRunner(deps: {
         });
       };
       let warm: AgentRunResult | null = null;
-      if (plan?.resume) {
+      // A branch the engine put together (merged parts, a picked attempt) goes straight to the checks and review.
+      if (adopted) warm = { status: "ok", summary: `${shown.loop!.said ?? "Atrium put this branch together."}\nOUTCOME: done`, inputTokens: 0, outputTokens: 0 };
+      else if (plan?.resume) {
         warm = await run(resumePrompt(added, shown.loop?.feedback ?? null), { id: plan.session.id, resume: true });
         // A session Claude Code no longer has (cleared, or from another machine) is started again from the brief.
         if (warm.status === "error" && warm.kind === "failed" && !r.signal.aborted) {
@@ -789,7 +878,10 @@ export function createRunner(deps: {
       result = { ...result, summary: outcome.body };
     }
     // The loop's own count of the turn, kept whatever happens to the task next.
-    if (task.kind === "work") countTurn(task.id, result, Date.now() - turnStart);
+    if (adopted) {
+      const loop = getTask(db, task.id)?.loop;
+      if (loop) setTaskLoop(db, task.id, { ...loop, adopted: false });
+    } else if (task.kind === "work") countTurn(task.id, result, Date.now() - turnStart);
     // Only a turn that finished leaves a session worth resuming; one cut short or failed starts fresh next time.
     if (plan) keepSession(task.id, result.status === "ok" && !cutShort ? { id: plan.resume ? plan.session.id : plan.id, endedAt: Date.now(), models: result.models ?? [], context: result.contextTokens ?? 0, tier: tierName, detail: shown.detail.length } : null);
 
@@ -1008,6 +1100,7 @@ export function createRunner(deps: {
 
   // The loop is done: the work waits for the user, carrying what the checks and reviews found.
   async function ready(task: Task, space: Space, lines: string[], filesKept = 0) {
+    if (task.loop?.role) return childReady(task, space, lines);
     if (task.loop) setTaskLoop(db, task.id, { ...task.loop, stage: "ready", feedback: null });
     const facts = await factsFor(db, getTask(db, task.id)!, space, filesKept);
     setTaskStatus(db, task.id, "review");
@@ -1022,6 +1115,34 @@ export function createRunner(deps: {
     });
     logActivity(db, space.id, resolvedAgent(db, task), readyLine(task), { taskId: task.id });
     await considerRule(approval.id, { filesKept });
+  }
+
+  // A part or attempt whose loop is done reports to its parent, which decides with the user; it makes no approval.
+  function childReady(task: Task, space: Space, lines: string[]) {
+    setTaskLoop(db, task.id, { ...task.loop!, stage: "ready", feedback: null, report: lines });
+    setTaskStatus(db, task.id, "done");
+    logActivity(db, space.id, resolvedAgent(db, task), `Ready: ${task.title}. It waits with the rest of ${getTask(db, task.parentTaskId!)?.title ?? "its task"}.`, { taskId: task.id });
+    settleChild(task);
+  }
+
+  // A child finished one way or another; its parent may now move on.
+  function settleChild(task: Task) {
+    if (!task.loop?.role || !task.parentTaskId) return;
+    if (fanIn(db, task.parentTaskId)) kick();
+  }
+
+  // An attempt that fails Atrium's gate is dropped rather than sent back: the others are its retries.
+  function dropAttempt(task: Task, why: string) {
+    block(task, `Dropped: ${why}`);
+  }
+
+  // Which agent runs each attempt: the task's own, or for the second, Codex, when the user asked for another vendor
+  // and Codex can work in this space.
+  function attemptAgents(task: Task, space: Space): string[] {
+    const shape = task.loop!.shape!;
+    if (shape.kind !== "best_of_n") return [];
+    const codex = shape.mixVendors && adapters.codex && !registry.refusal("codex", "work", space) ? "codex" : null;
+    return Array.from({ length: shape.attempts }, (_, i) => (i === 1 && codex ? codex : task.agent));
   }
 
   // Adds a turn's tokens and time to the loop's count. A finished run that reported no tokens makes the count a floor.
@@ -1119,6 +1240,13 @@ export function createRunner(deps: {
       loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified, alreadyFailing: gate.alreadyFailing };
     }
     const writer = agentName(resolvedAgent(db, task));
+    // An attempt gets one turn and Atrium's checks: it survives only if they pass.
+    if (loop.role === "attempt") {
+      setTaskLoop(db, task.id, loop);
+      if (loop.checks === "failed") return dropAttempt(task, `its checks failed (${(gate?.results ?? []).filter((c) => c.status === "failed").map((c) => c.name).join(", ")}).`);
+      if (loop.checks !== "passed") return dropAttempt(task, loop.noChanges ? "it made no changes." : (loop.unverified ?? "its checks couldn't prove it works."));
+      return ready(getTask(db, task.id)!, space, [...lines, ...loopNotes(loop, space)]);
+    }
     if (loop.checks === "failed") {
       // A check that was already failing before the task neither counts as this turn's failure nor trips loop detection.
       const stale = new Set(loop.alreadyFailing.map((f) => f.name));

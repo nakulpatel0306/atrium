@@ -208,7 +208,7 @@ export function snapshot(db: Database, registry?: Registry): State {
     agents,
     claudeWindow:
       window && window.resetsAt > now
-        ? { ...window, reserve }
+        ? { utilization: window.utilization, resetsAt: window.resetsAt, reserve }
         : null,
     disk: atriumDiskUsage(),
     spend: { tasks: taskSpend(db), spaces: spaceSpend(db, now), today: totalSince(db, spendWindows(now).today), week: totalSince(db, spendWindows(now).week) },

@@ -4,7 +4,7 @@ import { listPendingProposals } from "./autonomy/proposals";
 import { taskFiles } from "./outputs/store";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
-import { asksBeforeStarting } from "./needs";
+import { askLine, asksBeforeStarting } from "./needs";
 import { getTask, listTasks } from "./tasks";
 
 // `files` is how many files a review's task made (0 for everything else), so the notification can say so.
@@ -67,7 +67,7 @@ export function summary(db: Database): Summary {
     .filter((t) => asksBeforeStarting(t) && names.has(t.spaceId))
     .map((t) => ({
       at: t.updatedAt,
-      need: { id: t.id, kind: "question", title: `${t.title}: ${t.loop!.questions[0]!.question}`, spaceName: names.get(t.spaceId)!, path: pathFor(t.spaceId, t.id), files: 0, outcome: null } as Need,
+      need: { id: t.id, kind: "question", title: `${t.title}: ${askLine(t)}`, spaceName: names.get(t.spaceId)!, path: pathFor(t.spaceId, t.id), files: 0, outcome: null } as Need,
     }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
   const needs = [...approvals, ...suggestions, ...asking].sort((a, b) => b.at - a.at).map((x) => x.need);

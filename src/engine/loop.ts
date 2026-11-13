@@ -2,8 +2,19 @@
 // Shared by the engine and the dashboard, so it imports nothing but types.
 import type { BriefQuestion, TaskSize } from "./brief";
 import type { Session } from "./sessions";
+import type { Shape } from "./shape";
 
-export type Stage = "brief" | "writing" | "checks" | "review" | "ready" | "paused";
+// A task that fanned out: its parts (a split) or attempts (best-of-N), and what the judge made of the attempts.
+export type Fanout = {
+  kind: "split" | "best_of_n";
+  children: string[];
+  scores: Record<string, { score: number; comment: string }>;
+  // Why the judge didn't score the attempts, when it didn't.
+  judgeNote: string | null;
+};
+
+// A split's or a best-of-N's parent waits on its children ("parts"), its judge ("judge") and then the user ("pick").
+export type Stage = "brief" | "writing" | "checks" | "review" | "ready" | "paused" | "parts" | "judge" | "pick";
 export type ChecksState = "pending" | "running" | "passed" | "failed" | "none";
 export type Severity = "high" | "medium" | "low";
 
@@ -80,6 +91,14 @@ export type LoopState = {
   session: Session | null;
   // What the writer's last finished turn said it did, for the progress note a fresh session starts with.
   said: string | null;
+  // How the work runs (shape.ts); null for one writer, as before shapes existed.
+  shape: Shape | null;
+  // A part of a split or an attempt of a best-of-N, which reports to its parent instead of to the user.
+  role: "part" | "attempt" | null;
+  fanout: Fanout | null;
+  // The branch was put together by the engine (a merge of the parts, or the attempt the user picked), so the next
+  // turn runs the checks and review on it without a writer.
+  adopted: boolean;
   // Set once the user stepped in after a pause, so the writer goes on with the strong tier's model (tiers.ts).
   escalated: boolean;
 };
@@ -127,6 +146,10 @@ export function newLoop(budget: Budget): LoopState {
     escalated: false,
     session: null,
     said: null,
+    shape: null,
+    role: null,
+    fanout: null,
+    adopted: false,
   };
 }
 

@@ -24,7 +24,8 @@ export interface AgentRunInput {
   agents?: Record<string, SubagentDefinition>;
 }
 
-export type SubagentDefinition = { description: string; prompt: string; tools: string[]; model?: string; maxTurns?: number };
+// `background: false` keeps the run waiting for the subagent's answer instead of carrying on without it.
+export type SubagentDefinition = { description: string; prompt: string; tools: string[]; model?: string; maxTurns?: number; background: boolean };
 
 // One model's tokens. Claude reports them per model, subagents included; see usage.ts for how a resumed session's
 // running totals become one turn's share.

@@ -66,7 +66,7 @@ describe("claudeAdapter", () => {
       const warm = await argv({ session: { id, resume: true }, model: "opus", fallbackModel: "sonnet" });
       expect(warm[warm.indexOf("--resume") + 1]).toBe(id);
       expect(warm[warm.indexOf("--fallback-model") + 1]).toBe("sonnet");
-      const scouts = { "atrium-scout": { description: "Reads", prompt: "Read only.", tools: ["Read"], model: "haiku" } };
+      const scouts = { "atrium-scout": { description: "Reads", prompt: "Read only.", tools: ["Read"], model: "haiku", background: false } };
       const withAgents = await argv({ agents: scouts });
       expect(JSON.parse(withAgents[withAgents.indexOf("--agents") + 1]!)).toEqual(scouts);
       await expect(claudeAdapter(FAKE).run({ ...input(), session: { id: "--dangerously-skip-permissions", resume: true } })).rejects.toThrow("Invalid session id");

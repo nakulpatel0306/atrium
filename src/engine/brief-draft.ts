@@ -19,21 +19,33 @@ const SYSTEM = [
 
 function prompt(ask: string, repo: boolean): string {
   const shape = repo
-    ? `{"goal": "one sentence", "acceptance": ["what has to be true when it's done"], "verify": "a command that proves it, or auto", "scope": "what may change", "nonGoals": ["what must not change"], "lookFirst": ["repo-relative paths"], "size": "small | medium | large", "questions": []}`
+    ? `{"goal": "one sentence", "acceptance": ["what has to be true when it's done"], "verify": "a command that proves it, or auto", "scope": "what may change", "nonGoals": ["what must not change"], "lookFirst": ["repo-relative paths"], "size": "small | medium | large", "questions": [], "shape": {"kind": "single | scouts | split | best_of_n", "reason": "one short line", "scouts": [], "parts": [], "attempts": 2}}`
     : `{"goal": "one sentence", "acceptance": ["what done looks like"], "size": "small | medium | large", "questions": []}`;
   return [
     `Request: ${ask}`,
     `Write the brief as JSON in this shape:\n${shape}`,
     "Keep every field short. Size: small is one file or a few lines, medium a feature in one area, large a change across several areas.",
     "Only when the request could reasonably mean two different things, add up to 2 questions as {\"question\": \"…\", \"options\": [\"…\", \"…\"]} with 2–3 short answers each. Otherwise leave questions empty; never ask what you can find out by reading.",
-    ...(repo ? ["Use \"auto\" for verify unless the request names a specific test or command."] : []),
+    ...(repo ? ["Use \"auto\" for verify unless the request names a specific test or command.", SHAPE_RULES] : []),
   ].join("\n\n");
 }
+
+// How work should be shaped, after the evidence on when more agents help: most coding is sequential, and parallel
+// writers on dependent work make conflicting choices.
+const SHAPE_RULES = [
+  "Shape: how the work should run. Pick single unless another clearly fits:",
+  "- single: one writer. Bug fixes, refactors, features in one module, anything sequential. The default.",
+  "- scouts: the work first needs broad read-only exploration (where is X used, how do these parts fit). Put up to 3 questions for read-only scouts in \"scouts\".",
+  "- split: truly independent pieces that touch disjoint files and each have their own tests. Put each in \"parts\" as {\"title\": \"…\", \"goal\": \"…\", \"files\": [\"paths\"]}; no file in two parts.",
+  "- best_of_n: uncertain work (a flaky bug, performance, several plausible designs) that the repo's tests can judge. Set \"attempts\" to 2 or 3.",
+  "Give one short reason, like \"sequential change in one module\".",
+].join("\n");
 
 // `suggestedVerify` is the pre-pass's own idea of a check command. The gate never takes it from the pre-pass, which
 // reads a repo that may be written to mislead it: the brief's verify stays "auto" until the user accepts it.
 // `models` is what the pre-pass itself used, for the cost meter.
-export type DraftResult = { brief: Brief; questions: BriefQuestion[]; error: string | null; suggestedVerify: string | null; models: ModelTokens[] };
+// `shape` is the pre-pass's proposal as it came, for proposeShape to read once the checks are known.
+export type DraftResult = { brief: Brief; questions: BriefQuestion[]; error: string | null; suggestedVerify: string | null; models: ModelTokens[]; shape: unknown };
 
 // Never fails: a pre-pass that can't answer still leaves a brief holding the ask itself, and the task runs as is.
 export async function draftBrief(
@@ -41,7 +53,7 @@ export async function draftBrief(
   input: { ask: string; repoPath: string | null; privateData: boolean; model?: string; signal?: AbortSignal },
 ): Promise<DraftResult> {
   let models: ModelTokens[] = [];
-  const fallback = (error: string): DraftResult => ({ brief: normalizeBrief({}, input.ask), questions: [], error, suggestedVerify: null, models });
+  const fallback = (error: string): DraftResult => ({ brief: normalizeBrief({}, input.ask), questions: [], error, suggestedVerify: null, models, shape: null });
   const repo = input.repoPath !== null;
   // Away from a repo there's nothing to read, so it gets an empty folder and no tools.
   const cwd = input.repoPath ?? mkdtempSync(join(tmpdir(), "atrium-run-"));
@@ -65,7 +77,7 @@ export async function draftBrief(
     if (!parsed) return fallback("The brief came back in a shape Atrium couldn't read.");
     const drafted = normalizeBrief(parsed, input.ask);
     const suggestedVerify = drafted.verify === "auto" ? null : drafted.verify;
-    return { brief: { ...drafted, verify: "auto" }, questions: normalizeQuestions(parsed.questions), error: null, suggestedVerify, models };
+    return { brief: { ...drafted, verify: "auto" }, questions: normalizeQuestions(parsed.questions), error: null, suggestedVerify, models, shape: repo ? parsed.shape : null };
   } catch (e) {
     return fallback((e as Error).message);
   } finally {
