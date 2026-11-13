@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeGoogleEnv, type FakeData, startFakeGoogle } from "../../fixtures/fake-google";
@@ -111,6 +111,7 @@ export function useFakes(data = googleData()) {
     pimFile: env.FAKE_PIM_DATA,
     undo() {
       google.stop();
+      rmSync(dir, { recursive: true, force: true });
       for (const [k, v] of Object.entries(before)) {
         if (v === undefined) delete process.env[k];
         else process.env[k] = v;
