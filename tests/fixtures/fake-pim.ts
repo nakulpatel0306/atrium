@@ -5,6 +5,8 @@
 //    "calendars": [...], "events": {"<calendar id>": [...]}}
 // in the shapes src/engine/mail/pim.ts documents. FAKE_PIM_MODE: "ok" (default), "mail_denied", "calendar_denied",
 // "hang", "malformed" (answers {} to everything). FAKE_PIM_LOG, if set, gets each call's argv as a JSON line.
+// Write commands (mail.send, mail.draft, cal.create, cal.update, cal.delete) read their JSON from stdin, as the helper
+// does, and append {"cmd", "input"} to FAKE_PIM_WRITES.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -74,6 +76,16 @@ switch (cmd) {
   case "cal.events":
     out({ events: data.events?.[flag("--calendar") ?? ""] ?? [] });
     break;
+  case "mail.send":
+  case "mail.draft":
+  case "cal.create":
+  case "cal.update":
+  case "cal.delete": {
+    const input = JSON.parse(await Bun.stdin.text());
+    if (process.env.FAKE_PIM_WRITES) appendFileSync(process.env.FAKE_PIM_WRITES, `${JSON.stringify({ cmd, input })}\n`);
+    out(cmd === "cal.create" ? { event: { id: `apple-new-${Date.now()}` } } : { ok: true });
+    break;
+  }
   default:
     fail("bad_args", `Unknown command ${cmd}`);
 }

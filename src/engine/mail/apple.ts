@@ -1,7 +1,8 @@
 import { decodeWords, parseAddressList, parseIds, parsePerson } from "./addresses";
 import { PIM_COPY, runPim } from "./pim";
+import { normalizeAddress } from "./addresses";
 import { canonicalRecurrence } from "./recurrence";
-import { MailProblem, type AttendeeStatus, type MailSource, type SourceAccount, type SourceEvent } from "./types";
+import { MailProblem, type AttendeeStatus, type MailSource, type Outgoing, type SourceAccount, type SourceEvent } from "./types";
 
 type PimAccount = { id: string; name: string; addresses: string[]; fullName: string };
 type PimMessage = {
@@ -42,6 +43,31 @@ export async function appleAccounts(): Promise<SourceAccount[]> {
   const accounts = await list<PimAccount>("accounts", ["mail.accounts"]);
   return accounts.filter((a) => a.addresses.length).map((a) => ({ address: a.addresses[0]!, name: a.fullName || a.name, ref: a.id }));
 }
+
+const WRITE_TIMEOUT_MS = 120_000;
+export const NO_GUESTS_COPY = "Calendar.app doesn't let other apps invite people or tell guests about changes. Pick a Google calendar, or do this in Calendar.";
+export const NO_RSVP_COPY = "Calendar.app doesn't let other apps answer invitations. Answer it in Calendar, or read this account through Google in Settings › Accounts.";
+
+// A write command's answer: {"ok": true}, or the shape the caller asked for.
+async function write<T = { ok?: unknown }>(cmd: string, input: unknown, check: (r: T) => boolean = (r) => (r as { ok?: unknown })?.ok === true): Promise<T> {
+  const r = await runPim<T>([cmd], { input, timeoutMs: WRITE_TIMEOUT_MS });
+  if (!check(r)) throw new MailProblem("other", PIM_COPY.other);
+  return r;
+}
+
+const mailInput = (account: string | null, m: Outgoing) => {
+  if (!account) throw new MailProblem("other", "Mail.app doesn't list this account anymore. Sync, then try again.");
+  return {
+    account,
+    from: normalizeAddress(m.from.address),
+    to: m.to.map((p) => ({ name: p.name, address: p.address })),
+    cc: m.cc.map((p) => ({ name: p.name, address: p.address })),
+    subject: m.subject,
+    text: m.text,
+    replyTo: m.replyToSourceId,
+    attachments: m.attachments.map((a) => a.path),
+  };
+};
 
 // Mail.app and Calendar.app, through the helper. Threads are built by the engine from each message's headers.
 export function appleSource(): MailSource {
@@ -90,6 +116,40 @@ export function appleSource(): MailSource {
     async calendars() {
       const calendars = await list<{ id: string; title: string; color: string; writable: boolean; source: string; account: string | null }>("calendars", ["cal.calendars"]);
       return calendars.map((c) => ({ sourceId: c.id, title: c.title, color: c.color, writable: c.writable, accountAddress: c.account }));
+    },
+
+    async send(account, m) {
+      await write("mail.send", mailInput(account.ref, m));
+      // Mail.app makes its own Message-ID and doesn't say which; the next sync reads the real copy from Sent.
+      return { sourceId: null, threadKey: null };
+    },
+
+    async saveDraft(account, m) {
+      await write("mail.draft", mailInput(account.ref, m));
+    },
+
+    async createEvent(_account, calendarId, e) {
+      if (e.attendees.length) throw new MailProblem("unsupported", NO_GUESTS_COPY);
+      const r = await write<{ event?: { id?: unknown } }>(
+        "cal.create",
+        { calendar: calendarId, title: e.title, start: new Date(e.start).toISOString(), end: new Date(e.end).toISOString(), allDay: e.allDay, location: e.location },
+        (x) => typeof x?.event?.id === "string",
+      );
+      return { sourceId: r.event!.id as string };
+    },
+
+    async moveEvent(_account, _calendarId, eventId, start, end, notify) {
+      if (notify) throw new MailProblem("unsupported", NO_GUESTS_COPY);
+      await write("cal.update", { id: eventId, start: new Date(start).toISOString(), end: new Date(end).toISOString() });
+    },
+
+    async cancelEvent(_account, _calendarId, eventId, notify) {
+      if (notify) throw new MailProblem("unsupported", NO_GUESTS_COPY);
+      await write("cal.delete", { id: eventId });
+    },
+
+    async rsvp() {
+      throw new MailProblem("unsupported", NO_RSVP_COPY);
     },
 
     async events(_account, calendar, from, to) {

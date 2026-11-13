@@ -1,13 +1,17 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../../config";
 import { parseAddressList, parseIds, parsePerson } from "../addresses";
-import { MailProblem, type AccountRef, type AttendeeStatus, type MailSource, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
+import { buildMime } from "../mime";
+import { MailProblem, type AccountRef, type AttendeeStatus, type MailSource, type Outgoing, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
 import { type GoogleAuth, signedOutCopy } from "./oauth";
 import { safeFileName } from "../files";
 import { canonicalRecurrence } from "../recurrence";
 
 const HTTP_TIMEOUT_MS = 20_000;
+const WRITE_TIMEOUT_MS = 60_000;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const UNSURE_COPY = "Google didn't answer, so Atrium can't tell whether this went through. Check Gmail or Google Calendar before trying again.";
 const MAX_THREAD_PAGES = 5;
 const MAX_EVENT_PAGES = 10;
 const PARALLEL = 5;
@@ -101,6 +105,14 @@ type GEvent = {
   attendees?: { email?: string; displayName?: string; responseStatus?: string; self?: boolean }[];
 };
 
+const localDate = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+// Google's start and end: dates for an all-day event (the end date is the day after), else instants.
+const gTimes = (start: number, end: number, allDay: boolean) =>
+  allDay ? { start: { date: localDate(start) }, end: { date: localDate(end) } } : { start: { dateTime: new Date(start).toISOString() }, end: { dateTime: new Date(end).toISOString() } };
+
 // An all-day date is that day's local midnight, so it lines up with the dashboard's local day columns.
 const timeOf = (t: GTime | undefined): number => (t?.dateTime ? Date.parse(t.dateTime) : t?.date ? new Date(`${t.date}T00:00:00`).getTime() : 0);
 
@@ -126,23 +138,51 @@ export function toSourceEvent(e: GEvent): SourceEvent {
 export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = {}): MailSource {
   const http = deps.fetch ?? fetch;
 
-  async function get<T>(account: AccountRef, url: string): Promise<T> {
+  // A read, or with `write` a change. A 401 is refused before anything happens, so it's retried once with a fresh
+  // token; nothing else is ever retried. A write that may have reached Google (no answer, or a server error) is
+  // "unsure", so the user checks before trying again rather than Atrium sending twice.
+  async function call<T>(account: AccountRef, url: string, write?: { method: string; body?: unknown }): Promise<T> {
     for (const force of [false, true]) {
       const token = await auth.accessToken(account.id, force);
       let res: Response;
       try {
-        res = await http(url, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
+        res = await http(url, {
+          method: write?.method ?? "GET",
+          headers: { authorization: `Bearer ${token}`, ...(write?.body !== undefined ? { "content-type": "application/json" } : {}) },
+          body: write?.body !== undefined ? JSON.stringify(write.body) : undefined,
+          signal: AbortSignal.timeout(write ? WRITE_TIMEOUT_MS : HTTP_TIMEOUT_MS),
+        });
       } catch {
+        if (write) throw new MailProblem("unsure", UNSURE_COPY);
         throw new MailProblem("offline", "Atrium couldn't reach Google. Check the Mac is online; it tries again on the next sync.");
       }
       if (res.status === 401 && !force) continue;
       if (res.status === 401) throw new MailProblem("signed_out", signedOutCopy(account.address));
       if (res.status === 403) throw new MailProblem("other", `Google refused access to ${account.address}'s mail or calendar. Connect it again and allow every permission it asks for.`);
+      if (write && res.status >= 500) throw new MailProblem("unsure", UNSURE_COPY);
+      if (write && !res.ok) throw new MailProblem("other", "Google didn't accept this, so nothing went out. Check the card, then try again.");
       if (!res.ok) throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
-      return (await res.json()) as T;
+      if (res.status === 204) return undefined as T;
+      const text = await res.text();
+      return (text ? JSON.parse(text) : undefined) as T;
     }
     throw new MailProblem("signed_out", signedOutCopy(account.address));
   }
+  const get = <T>(account: AccountRef, url: string) => call<T>(account, url);
+
+  // Gmail's raw message, with the forwarded files read from where the engine saved them.
+  function raw(m: Outgoing): string {
+    const files = m.attachments.map((a) => ({ name: a.name, data: readFileSync(a.path) }));
+    if (files.reduce((n, f) => n + f.data.length, 0) > MAX_ATTACHMENT_BYTES) throw new MailProblem("other", "The attachments are over Gmail's 25 MB limit, so nothing went out. Forward it from Gmail instead.");
+    return Buffer.from(buildMime(m, files)).toString("base64url");
+  }
+  const calEvent = (calendarId: string, eventId?: string, q?: Record<string, string>) =>
+    cal(`/calendars/${encodeURIComponent(calendarId)}/events${eventId ? `/${encodeURIComponent(eventId)}` : ""}${q ? `?${new URLSearchParams(q)}` : ""}`);
+  const updates = (notify: boolean) => ({ sendUpdates: notify ? "all" : "none" });
+  const need = (account: AccountRef | null): AccountRef => {
+    if (!account) throw new MailProblem("other", "That calendar's Google account isn't connected anymore.");
+    return account;
+  };
   const gmail = (path: string) => `${config().google.gmailUrl}/gmail/v1/users/me${path}`;
   const cal = (path: string) => `${config().google.calendarUrl}/calendar/v3${path}`;
 
@@ -193,6 +233,38 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
           writable: c.accessRole === "owner" || c.accessRole === "writer",
           accountAddress: account.address,
         }));
+    },
+
+    async send(account, m) {
+      const r = await call<{ id?: string; threadId?: string }>(account, gmail("/messages/send"), { method: "POST", body: { raw: raw(m), ...(m.threadKey ? { threadId: m.threadKey } : {}) } });
+      return { sourceId: r?.id ?? null, threadKey: r?.threadId ?? m.threadKey };
+    },
+
+    async saveDraft(account, m) {
+      await call(account, gmail("/drafts"), { method: "POST", body: { message: { raw: raw(m), ...(m.threadKey ? { threadId: m.threadKey } : {}) } } });
+    },
+
+    async createEvent(account, calendarId, e, notify) {
+      const r = await call<{ id?: string }>(need(account), calEvent(calendarId, undefined, updates(notify)), { method: "POST", body: { summary: e.title, location: e.location || undefined, ...gTimes(e.start, e.end, e.allDay), attendees: e.attendees.map((p) => ({ email: p.address, ...(p.name ? { displayName: p.name } : {}) })) } });
+      return { sourceId: r?.id ?? "" };
+    },
+
+    async moveEvent(account, calendarId, eventId, start, end, notify) {
+      const current = await get<GEvent>(need(account), calEvent(calendarId, eventId));
+      await call(need(account), calEvent(calendarId, eventId, updates(notify)), { method: "PATCH", body: gTimes(start, end, !current.start?.dateTime) });
+    },
+
+    async cancelEvent(account, calendarId, eventId, notify) {
+      await call(need(account), calEvent(calendarId, eventId, updates(notify)), { method: "DELETE" });
+    },
+
+    // Google keeps each guest's answer on the event: the user's own entry changes, and the organizer is told.
+    async rsvp(account, calendarId, eventId, answer, note) {
+      const current = await get<GEvent>(need(account), calEvent(calendarId, eventId));
+      const attendees = current.attendees ?? [];
+      if (!attendees.some((a) => a.self)) throw new MailProblem("other", "You're not on this event's guest list, so there's nothing to answer.");
+      const next = attendees.map((a) => (a.self ? { ...a, responseStatus: answer, ...(note.trim() ? { comment: note.trim() } : {}) } : a));
+      await call(need(account), calEvent(calendarId, eventId, updates(true)), { method: "PATCH", body: { attendees: next } });
     },
 
     async events(account, calendar, from, to) {

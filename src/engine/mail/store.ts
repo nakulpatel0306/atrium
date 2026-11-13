@@ -236,6 +236,7 @@ export function ingestMessages(db: Database, account: { id: string; address: str
         labelThread(db, existing.thread_id, m.labels);
         continue;
       }
+      if (m.from.address === account.address) dropSentCopies(db, account.id, m);
       const threadKey = m.threadKey ?? threadKeyFor(db, account.id, account.address, m);
       const threadId = hashId("mth", account.id, threadKey);
       db.query("INSERT OR IGNORE INTO mail_threads (id, account_id, thread_key, subject, last_at) VALUES (?, ?, ?, ?, ?)").run(threadId, account.id, threadKey, m.subject, m.date);
@@ -272,6 +273,41 @@ export function ingestMessages(db: Database, account: { id: string; address: str
   })();
   if (touched.size) bus.emit({ type: "changed" });
   return added;
+}
+
+// The copy Atrium shows in a thread right after a send stands in until the source's own copy arrives: by the source's
+// id or Message-ID when the source gave one, else (Mail.app makes its own) by the same subject within 15 minutes.
+export const SENT_COPY_PREFIX = "atrium-sent:";
+const SENT_MATCH_MS = 15 * 60_000;
+function dropSentCopies(db: Database, accountId: string, m: SourceMessage) {
+  const rows = db
+    .query("SELECT id, source_id, message_id, subject, date FROM mail_messages WHERE account_id = ? AND msg_key LIKE ?")
+    .all(accountId, `${SENT_COPY_PREFIX}%`) as { id: string; source_id: string; message_id: string | null; subject: string; date: number }[];
+  for (const r of rows) {
+    const same = r.source_id === m.sourceId || (!!m.messageId && r.message_id === m.messageId) || (normalizeSubject(r.subject) === normalizeSubject(m.subject) && Math.abs(r.date - m.date) <= SENT_MATCH_MS);
+    if (!same) continue;
+    db.query("DELETE FROM mail_bodies WHERE message_id = ?").run(r.id);
+    db.query("DELETE FROM mail_messages WHERE id = ?").run(r.id);
+  }
+}
+
+// What Atrium just sent, shown in its thread at once. Its row is keyed apart from anything a source returns, so the
+// source's own copy replaces it on the next sync instead of sitting beside it. Returns the message row's id.
+export function addSentCopy(db: Database, account: { id: string; address: string }, actionId: string, m: SourceMessage): string {
+  const key = `${SENT_COPY_PREFIX}${actionId}`;
+  const threadKey = m.threadKey ?? threadKeyFor(db, account.id, account.address, m);
+  const threadId = hashId("mth", account.id, threadKey);
+  const id = hashId("msg", account.id, key);
+  db.transaction(() => {
+    db.query("INSERT OR IGNORE INTO mail_threads (id, account_id, thread_key, subject, last_at) VALUES (?, ?, ?, ?, ?)").run(threadId, account.id, threadKey, m.subject, m.date);
+    db.query(
+      `INSERT OR IGNORE INTO mail_messages (id, thread_id, account_id, msg_key, message_id, source_id, in_reply_to, refs, subject, from_json, to_json, cc_json, date, snippet, unread, has_attachments, attachments)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+    ).run(id, threadId, account.id, key, m.messageId, m.sourceId, m.inReplyTo, JSON.stringify(m.references), m.subject, JSON.stringify(m.from), JSON.stringify(m.to), JSON.stringify(m.cc), m.date, m.snippet, m.attachments.length ? 1 : 0, JSON.stringify(m.attachments));
+    refreshThread(db, threadId, account.address);
+  })();
+  bus.emit({ type: "changed" });
+  return id;
 }
 
 // A thread's labels are the latest set any of its messages reported.

@@ -536,6 +536,21 @@ test("an older database without attachments gains the table, and its tasks read 
   t.cleanup();
 });
 
+test("a database from Phase A mail gains the drafts table and keeps its mail", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  openDb(path).close();
+  const old = new Database(path);
+  old.exec("DROP TABLE mail_actions");
+  old.exec("INSERT INTO mail_accounts (id, address, source, preferred, color, created_at) VALUES ('mac_1', 'sam@example.com', 'google', 1, '#5e9fe0', 1)");
+  old.close();
+  const db = openDb(path);
+  expect(db.query("SELECT address FROM mail_accounts").all()).toEqual([{ address: "sam@example.com" }]);
+  expect(db.query("SELECT COUNT(*) AS n FROM mail_actions").get()).toEqual({ n: 0 });
+  db.close();
+  t.cleanup();
+});
+
 test("a database from before mail gains the inbox kind and mail tables, keeping every space column", () => {
   const t = tempHome();
   const path = join(t.home, "atrium.db");

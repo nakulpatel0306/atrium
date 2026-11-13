@@ -28,10 +28,13 @@ const EMOJI_JOINER = /(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}]?)\u200D(?=
 const FLAG_TAGS = /\u{1F3F4}[\u{E0061}-\u{E007A}]{2,7}\u{E007F}/gu;
 const withoutEmojiSpelling = (t: string) => t.replace(FLAG_TAGS, "\u{1F3F4}").replace(EMOJI_SELECTOR, "$1").replace(EMOJI_JOINER, "$1");
 
+// Control characters or direction marks that would make what's shown differ from what's sent. Emoji spelling is fine.
+export const hasHiddenText = (t: string): boolean => CONTROL.test(t) || hasHidden(withoutEmojiSpelling(t));
+
 export function textProblem(text: string): string | null {
   const t = text.trim();
   if (!t) return EMPTY_COPY;
-  if (CONTROL.test(t) || hasHidden(withoutEmojiSpelling(t))) return HIDDEN_COPY;
+  if (hasHiddenText(t)) return HIDDEN_COPY;
   if (textLength(t) > MAX_TEXT) return TOO_LONG_COPY;
   return null;
 }

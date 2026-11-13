@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeGoogleEnv, type FakeData, startFakeGoogle } from "../../fixtures/fake-google";
@@ -101,6 +101,7 @@ export function useFakes(data = googleData()) {
   const dir = mkdtempSync(join(tmpdir(), "atrium-mail-"));
   env.FAKE_SECURITY_STORE = join(dir, "keychain.json");
   env.FAKE_PIM_DATA = join(dir, "pim.json");
+  env.FAKE_PIM_WRITES = join(dir, "pim-writes.jsonl");
   writeFileSync(env.FAKE_PIM_DATA, JSON.stringify(pimData()));
   const before = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
@@ -109,6 +110,9 @@ export function useFakes(data = googleData()) {
     dir,
     keychainFile: env.FAKE_SECURITY_STORE,
     pimFile: env.FAKE_PIM_DATA,
+    // What the fake helper was asked to send or change, in order.
+    pimWrites: (): { cmd: string; input: Record<string, unknown> }[] =>
+      existsSync(env.FAKE_PIM_WRITES!) ? readFileSync(env.FAKE_PIM_WRITES!, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [],
     undo() {
       google.stop();
       rmSync(dir, { recursive: true, force: true });
