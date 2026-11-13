@@ -144,6 +144,22 @@ describe("checks that were already failing", () => {
 });
 
 describe("fail-closed edges", () => {
+  for (const install of [true, false]) {
+    test(`a committed node_modules link pointing outside the tree is replaced, never written through (${install ? "install" : "no install"})`, async () => {
+      const outside = mkdtempSync(join(tmpdir(), "atrium-outside-"));
+      cleanups.push(() => rmSync(outside, { recursive: true, force: true }));
+      const pkg = (v: string) => `{ "name": "demo", "version": "${v}", "dependencies": { "local-pkg": "file:./local-pkg" } }\n`;
+      const r = branch({ "package.json": pkg("1.0.0"), "local-pkg/package.json": '{ "name": "local-pkg", "version": "1.0.0" }\n' }, (p) => {
+        rmSync(join(p, "node_modules"), { recursive: true, force: true });
+        symlinkSync(outside, join(p, "node_modules"));
+        if (install) writeFileSync(join(p, "package.json"), pkg("1.0.1"));
+      }, (p) => Bun.spawnSync(["bun", "install"], { cwd: p }));
+      const out = await gate(r, "echo planted > node_modules/planted; mkdir -p node_modules/x; true");
+      expect(out.results![0]!.install ?? false).toBe(install);
+      expect(readdirSync(outside)).toEqual([]);
+    });
+  }
+
   test("the install can't write through a dependency folder linked to the user's own", async () => {
     const { installProfile } = await import("../../src/engine/checks/sandbox");
     const theirs = tempRepoPath();
@@ -166,10 +182,11 @@ describe("fail-closed edges", () => {
     Bun.spawnSync(["mkfifo", join(path, ".npmrc")]);
     symlinkSync("/etc/hosts", join(path, "bunfig.toml"));
     writeFileSync(join(path, ".yarnrc"), "x".repeat(2 * 1024 * 1024));
-    // git doesn't list a FIFO at all, so it's never opened; the link is recorded as a link, never followed.
+    // git doesn't list a FIFO at all, so it's never opened; the link is recorded by its target, never followed, and
+    // like an oversized file it's never taken as unchanged, since a retarget could otherwise go unseen.
     const snap = await outsideSnapshot(path);
-    expect(snap).toEqual({ "bunfig.toml": "link", ".yarnrc": "oversize" });
-    expect(await changedOutside(path, snap)).toEqual([".yarnrc"]);
+    expect(snap).toEqual({ "bunfig.toml": "link:/etc/hosts", ".yarnrc": "oversize" });
+    expect((await changedOutside(path, snap)).sort()).toEqual([".yarnrc", "bunfig.toml"]);
     expect((await changedOutside(path, null)).sort()).toEqual([".yarnrc", "bunfig.toml"]);
   });
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, readlink } from "node:fs/promises";
 import { basename, dirname, join, normalize } from "node:path";
 import { changedText, fileAt, outsideGit, treeEntries } from "../git";
 import { type Check, touchesInstallConfig } from "./detect";
@@ -76,17 +76,22 @@ export function isConfig(path: string, extra: Set<string> = new Set()): boolean 
 
 const SNAPSHOT_CAP = 1024 * 1024;
 const OVERSIZE = "oversize";
+const SPECIAL = "special";
+const LINK = "link:";
+// What can't be compared by content, so it's never taken as unchanged.
+const unsure = (v: string) => v === OVERSIZE || v === SPECIAL || v.startsWith(LINK);
 
 // Config files outside git (ignored, or untracked) as they are now, by content hash. Taken when a task starts, so
 // files that were already there unchanged are never put down to the task. Only regular files are read, and only up
-// to a cap: an agent can leave a FIFO or a link that would hang or mislead a read. Anything else that looks like
-// config is recorded by kind, and an oversized file counts as changed every time.
+// to a cap: an agent can leave a FIFO or a link that would hang or mislead a read. A link is recorded by its
+// target, never followed; a link, a special file or an oversized file counts as changed every time.
 export async function outsideSnapshot(repo: string): Promise<Record<string, string>> {
   const snap: Record<string, string> = {};
   for (const path of (await outsideGit(repo)).filter((p) => isConfig(p))) {
     const st = await lstat(join(repo, path)).catch(() => null);
     if (!st) continue;
-    if (!st.isFile()) snap[path] = st.isSymbolicLink() ? "link" : "special";
+    if (st.isSymbolicLink()) snap[path] = `${LINK}${await readlink(join(repo, path)).catch(() => "?")}`;
+    else if (!st.isFile()) snap[path] = SPECIAL;
     else if (st.size > SNAPSHOT_CAP) snap[path] = OVERSIZE;
     else snap[path] = createHash("sha256").update(await readFile(join(repo, path))).digest("hex");
   }
@@ -97,7 +102,7 @@ export async function outsideSnapshot(repo: string): Promise<Record<string, stri
 // every such file counts as changed.
 export async function changedOutside(repo: string, before: Record<string, string> | null): Promise<string[]> {
   const now = await outsideSnapshot(repo);
-  return Object.keys(now).filter((p) => !before || now[p] === OVERSIZE || before[p] !== now[p]);
+  return Object.keys(now).filter((p) => !before || unsure(now[p]!) || before[p] !== now[p]);
 }
 
 // Ways a change can make a gate pass without making the code better: editing how the checks run (directly, through

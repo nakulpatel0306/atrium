@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DEPENDENCY_DIRS } from "../agents/seatbelt";
 import { addCheckTree, branchFiles, removeCheckTree, treeEntries } from "../git";
 import { checkAttention } from "./attention";
@@ -26,12 +26,27 @@ async function runInTree(repo: string, sha: string, checks: Check[], opts: { ins
   const tree = join(dir, "tree");
   try {
     await addCheckTree(repo, sha, tree);
+    const root = realpathSync(tree);
     for (const d of DEPENDENCY_DIRS) {
+      const dest = join(tree, d);
+      // Whatever the commit put at this name (a link pointing out of the tree, say) goes first; rm removes a link
+      // itself, never what it points at, and the folder it sits in is checked to be the tree's own.
+      if (lstatOrNull(dest)) {
+        if (realpathSync(dirname(dest)) !== root) throw new Error(`The check tree's ${d} isn't inside it.`);
+        rmSync(dest, { recursive: true, force: true });
+      }
       const theirs = join(repo, d);
       if (!existsSync(theirs)) continue;
-      // An install may write every dependency folder in the tree, so each is a real copy then, never a link.
-      if (opts.install) Bun.spawnSync(["/bin/cp", "-c", "-R", theirs, join(tree, d)]);
-      else symlinkSync(theirs, join(tree, d));
+      if (!opts.install) {
+        symlinkSync(theirs, dest);
+        continue;
+      }
+      // An install may write every dependency folder in the tree, so each is then a real copy, made in a fresh
+      // folder of the run's own (links copied as links, never followed) and renamed into place.
+      const fresh = join(dir, `copy-${d}`);
+      mkdirSync(fresh);
+      Bun.spawnSync(["/bin/cp", "-c", "-R", "-P", `${theirs}/.`, fresh]);
+      renameSync(fresh, dest);
     }
     return await runChecks(tree, opts.install ? [opts.install, ...checks] : checks, { signal: opts.signal, onLine: opts.onLine });
   } finally {
@@ -39,6 +54,14 @@ async function runInTree(repo: string, sha: string, checks: Check[], opts: { ins
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+const lstatOrNull = (p: string) => {
+  try {
+    return lstatSync(p);
+  } catch {
+    return null;
+  }
+};
 
 // The base commit's own results, once per repo, commit and set of checks, so a check that was already failing
 // before the task isn't put down to it.
