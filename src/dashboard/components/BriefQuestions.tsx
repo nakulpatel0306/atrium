@@ -1,9 +1,8 @@
 import { MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
 import { askLine, asksBeforeStarting } from "../../engine/needs";
-import { awaitingShape, type ShapeKind, shapeLine } from "../../engine/shape";
 import { post, type State } from "../api";
-import { estimateText, Fanout, ShapePicker } from "./Shape";
+import { Fanout } from "./Shape";
 
 type Task = State["tasks"][number];
 type Space = State["spaces"][number];
@@ -11,43 +10,22 @@ type Space = State["spaces"][number];
 // Tasks whose brief asked something, waiting for the answers before the writer starts.
 export const askingTasks = (state: State, spaceId?: string): Task[] => state.tasks.filter((t) => asksBeforeStarting(t) && (!spaceId || t.spaceId === spaceId));
 
-// Everything a task asks before it starts, in one place so one answer covers it: the brief's questions (one tap or a
-// few words each) and, when the pre-pass proposed a shape that costs more, which shape to run, with what it would
-// cost. Start sends it all; unanswered questions go to the agent, and a shape left alone runs as proposed.
-export function BriefQuestions({ task, state }: { task: Task; state: State }) {
+// A brief's questions, one tap or a few words each. Start sends what's answered; the writer starts either way.
+export function BriefQuestions({ task }: { task: Task }) {
   const questions = task.loop?.questions ?? [];
-  const shape = task.loop?.stage === "brief" && awaitingShape(task.loop.shape) ? task.loop.shape : null;
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [kind, setKind] = useState<ShapeKind>(shape?.kind ?? "single");
-  const [mix, setMix] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const start = async () => {
     setBusy(true);
     setError(null);
     const sent = questions.flatMap((q, i) => (answers[i]?.trim() ? [{ question: q.question, answer: answers[i]!.trim() }] : []));
-    const res = await post(`/api/tasks/${task.id}/answers`, { answers: sent, ...(shape && { shape: kind, mixVendors: mix }) });
+    const res = await post(`/api/tasks/${task.id}/answers`, { answers: sent });
     setBusy(false);
     if (!res.ok) setError(res.error);
   };
   return (
     <div className="brief-qs">
-      {shape && (
-        <div className="brief-q">
-          <span>{shapeLine(shape)}. It costs more than one writer, so it runs this way only if you say so.</span>
-          <ShapePicker
-            shape={shape}
-            size={task.brief?.size ?? "medium"}
-            value={kind}
-            mix={mix}
-            onChange={(k, m) => {
-              setKind(k);
-              setMix(m);
-            }}
-            estimate={(n) => estimateText(state, task.spaceId, task.loop!.budget.tokens, n)}
-          />
-        </div>
-      )}
       {questions.map((q, i) => (
         <div className="brief-q" key={q.question}>
           <span>{q.question}</span>
@@ -65,7 +43,7 @@ export function BriefQuestions({ task, state }: { task: Task; state: State }) {
         <button type="button" className="btn p" disabled={busy} onClick={() => void start()}>
           Start
         </button>
-        {questions.length > 0 && <span className="hint">Unanswered questions are left to the agent.</span>}
+        <span className="hint">Unanswered questions are left to the agent.</span>
       </div>
       {error && <p className="err">{error}</p>}
     </div>
@@ -85,7 +63,7 @@ export function QuestionsRow({ task, space, state }: { task: Task; space: Space 
         </span>
         <MessageCircleQuestion />
       </div>
-      <div className="detail">{task.loop?.stage === "pick" ? <Fanout task={task} state={state} /> : <BriefQuestions task={task} state={state} />}</div>
+      <div className="detail">{task.loop?.stage === "pick" ? <Fanout task={task} state={state} /> : <BriefQuestions task={task} />}</div>
     </div>
   );
 }

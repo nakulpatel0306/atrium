@@ -7,7 +7,7 @@ import { normalizeBrief } from "../../src/engine/brief";
 import { saveChecks } from "../../src/engine/checks/run";
 import { openDb } from "../../src/engine/db";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
-import { proposeShape } from "../../src/engine/shape";
+import { proposeShape, runNow } from "../../src/engine/shape";
 import { createSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskLoop, setTaskStatus } from "../../src/engine/tasks";
 import { startServer, type WsData } from "../../src/server/server";
@@ -140,28 +140,31 @@ function shaped(raw: unknown, over: Partial<ReturnType<typeof newLoop>> = {}) {
 
 const SPLIT = { kind: "split", reason: "two pieces", parts: [{ title: "A", goal: "a", files: ["a.ts"] }, { title: "B", goal: "b", files: ["b.ts"] }] };
 
-test("Start without a shape runs a waiting costlier proposal as one writer; with it, the click approves it", async () => {
-  const one = shaped(SPLIT);
-  const single = (await (await post(`/api/tasks/${one.task.id}/answers`, { answers: [] })).json()) as { loop: { stage: string; shape: { kind: string; approved: boolean } } };
-  expect(single.loop).toMatchObject({ stage: "writing", shape: { kind: "single", approved: false } });
-  const two = shaped(SPLIT);
-  const split = (await (await post(`/api/tasks/${two.task.id}/answers`, { answers: [], shape: "split" })).json()) as { loop: { shape: { kind: string; approved: boolean } } };
-  expect(split.loop.shape).toMatchObject({ kind: "split", approved: true });
-  expect(kicks).toBe(2);
-  one.repo.cleanup();
-  two.repo.cleanup();
+test("answers go with the brief, and a shape the pre-pass suggested doesn't hold the task back", async () => {
+  const { task, repo } = shaped(SPLIT, { questions: [{ question: "Weekly?", options: [] }] });
+  const res = (await (await post(`/api/tasks/${task.id}/answers`, { answers: [{ question: "Weekly?", answer: "Yes" }] })).json()) as { loop: { stage: string; shape: { kind: string; approved: boolean } } };
+  // The proposal stays a proposal: answering doesn't approve it.
+  expect(res.loop).toMatchObject({ stage: "writing", shape: { kind: "split", approved: false } });
+  expect(kicks).toBe(1);
+  repo.cleanup();
 });
 
-test("the shape override works until the writer starts, and refuses a shape the task can't take", async () => {
+test("the shape override works until the writer starts; after that only a costlier shape, which starts over", async () => {
   const { task, repo } = shaped({ kind: "single" });
   expect((await post(`/api/tasks/${task.id}/shape`, { kind: "split" })).status).toBe(409);
   expect((await post(`/api/tasks/${task.id}/shape`, { kind: "swarm" })).status).toBe(400);
   const res = await post(`/api/tasks/${task.id}/shape`, { kind: "scouts" });
   expect(res.status).toBe(200);
   expect(((await res.json()) as { loop: { shape: { kind: string } } }).loop.shape.kind).toBe("scouts");
-  setTaskLoop(db, task.id, { ...getTask(db, task.id)!.loop!, said: "Did some of it." });
+  setTaskLoop(db, task.id, { ...getTask(db, task.id)!.loop!, stage: "writing", said: "Did some of it." });
   expect((await post(`/api/tasks/${task.id}/shape`, { kind: "single" })).status).toBe(409);
+  // A split suggested while it runs as one writer starts it over from the brief, on the user's click.
+  const two = shaped(SPLIT);
+  setTaskLoop(db, two.task.id, { ...getTask(db, two.task.id)!.loop!, stage: "writing", said: "Did some of it.", shape: runNow(getTask(db, two.task.id)!.loop!.shape!) });
+  const started = (await (await post(`/api/tasks/${two.task.id}/shape`, { kind: "split" })).json()) as { status: string; loop: { said: string | null; shape: { kind: string; approved: boolean } } };
+  expect(started).toMatchObject({ status: "queued", loop: { said: null, shape: { kind: "split", approved: true } } });
   repo.cleanup();
+  two.repo.cleanup();
 });
 
 test("parts and pick refuse a task with nothing waiting", async () => {

@@ -26,7 +26,6 @@ export type WaitKind =
   | "busy"
   | "reviewing"
   | "answers"
-  | "shape"
   | "parts"
   | "pick";
 // `agent` is the one the task is waiting on; `until` is when the wait ends on its own, if it does.

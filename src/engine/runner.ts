@@ -62,7 +62,7 @@ import { enforceTranscriptCap, openTranscript } from "./storage";
 import { type Tier, tierModel, tierRun } from "./tiers";
 import { recordUsage, runModels, withModels } from "./usage";
 import { planSession, progressNote, type Session } from "./sessions";
-import { awaitingShape, costlier, proposeShape, shapeLine } from "./shape";
+import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./shape";
 import { childrenOf, childState, fanIn, fanOut, judgePrompt, parseScores } from "./fanout";
 import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
 
@@ -280,10 +280,6 @@ export function createRunner(deps: {
         waits.push({ taskId: task.id, agent: task.agent, kind: "answers", reason: "Waiting for your answers to its brief's questions, in Needs you." });
         continue;
       }
-      if (task.kind === "work" && task.loop?.stage === "brief" && awaitingShape(task.loop.shape)) {
-        waits.push({ taskId: task.id, agent: task.agent, kind: "shape", reason: `${shapeLine(task.loop.shape!)}. Waiting for your yes in Needs you, since it costs more than one writer.` });
-        continue;
-      }
       if (task.kind === "work" && task.loop?.stage === "parts") {
         const kids = childrenOf(db, task);
         const ready = kids.filter((c) => childState(c) === "ready").length;
@@ -437,13 +433,15 @@ export function createRunner(deps: {
       const loop = getTask(db, task.id)!.loop!;
       setTaskBrief(db, task.id, draft.brief);
       const budget = space.budget ?? SIZE_BUDGETS[draft.brief.size];
-      // The pre-pass's shape is a proposal: one that costs more waits for the user's click, with the questions.
-      const shape = repo ? proposeShape(draft.shape, { size: draft.brief.size, checksFound: checks.length > 0 }) : null;
-      const waits = draft.questions.length > 0 || awaitingShape(shape);
-      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, suggestedVerify: draft.suggestedVerify, shape, stage: waits ? "brief" : "writing" });
+      // The pre-pass's shape is a proposal. Enter runs at once: a shape that costs more runs as one writer meanwhile,
+      // and stays on the task as a suggestion the user can switch to.
+      const proposed = repo ? proposeShape(draft.shape, { size: draft.brief.size, checksFound: checks.length > 0 }) : null;
+      const shape = proposed && runNow(proposed);
+      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, suggestedVerify: draft.suggestedVerify, shape, stage: draft.questions.length ? "brief" : "writing" });
       setTaskStatus(db, task.id, "queued");
       if (draft.questions.length) logActivity(db, space.id, "claude", `${task.title} has ${plural(draft.questions.length, "question")} before it starts. Answer in Needs you.`, { taskId: task.id });
-      else if (shape && awaitingShape(shape)) logActivity(db, space.id, "claude", `${task.title}: ${shapeLine(shape)}. It costs more than one writer, so it waits for your yes in Needs you.`, { taskId: task.id });
+      const offer = shape && suggestion(shape, draft.brief.size);
+      if (shape && offer) logActivity(db, space.id, "claude", `${task.title}: ${suggestionLine(shape, offer)}. It runs as one writer; switch on the task if you'd rather.`, { taskId: task.id });
     })()
       .catch(report)
       .finally(() => {

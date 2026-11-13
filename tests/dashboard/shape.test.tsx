@@ -6,7 +6,7 @@ import { NeedsYou } from "../../src/dashboard/components/NeedsYou";
 import { CostChip, Fanout, ShapeLine } from "../../src/dashboard/components/Shape";
 import { normalizeBrief } from "../../src/engine/brief";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
-import { proposeShape } from "../../src/engine/shape";
+import { proposeShape, runNow } from "../../src/engine/shape";
 import type { State } from "../../src/engine/state";
 import { makeState } from "../tui/fixtures";
 
@@ -53,18 +53,20 @@ function task(over: Partial<Task>, loop: Partial<NonNullable<Task["loop"]>> = {}
   return { ...base, id: "tsk_p", title: "Totals", status: "queued", approvalId: null, brief: normalizeBrief({ goal: "Totals", size: "medium" }), ...over, loop: { ...newLoop(SIZE_BUDGETS.medium), ...loop } };
 }
 
-test("a costlier shape waits in Needs you with its reason and estimate; Start sends the shape left chosen", async () => {
-  const state = makeState();
-  const waiting = task({}, { stage: "brief", shape: proposeShape({ kind: "split", reason: "two independent pieces", parts: PARTS }, ctx) });
-  const s = { ...state, approvals: [], proposals: [], tasks: [...state.tasks, waiting] };
-  const el = render(<NeedsYou state={s} />);
-  expect(el.textContent).toContain("Split into 2 tasks: two independent pieces. It costs more than one writer");
+test("a suggested costlier shape shows on the task with its estimate while it runs as one writer, one click away", async () => {
+  const shape = runNow(proposeShape({ kind: "split", reason: "two independent pieces", parts: PARTS }, ctx));
+  const running = task({ status: "running" }, { stage: "writing", shape });
+  const el = render(<ShapeLine task={running} state={makeState()} />);
   // No finished tasks in this space yet, so the estimate is the budgets' ceiling.
-  expect(el.textContent).toContain("Runs 2 tasks, each with its own budget: up to 1.2M weighted tokens in all.");
-  expect(button(el, "Best of 2").disabled).toBe(false);
-  await act(async () => button(el, "Single writer").click());
-  await act(async () => button(el, "Start").click());
-  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_p/answers", body: { answers: [], shape: "single", mixVendors: false } });
+  expect(el.textContent).toContain("Single writer");
+  expect(el.textContent).toContain("Could run as 2 parts: two independent pieces (up to 1.2M weighted tokens)");
+  expect(button(el, "Split instead").title).toBe("Stops the writer and starts over from the brief.");
+  await act(async () => button(el, "Split instead").click());
+  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_p/shape", body: { kind: "split" } });
+  // Nothing waits in Needs you for a shape alone.
+  const state = makeState();
+  const ny = render(<NeedsYou state={{ ...state, approvals: [], proposals: [], tasks: [...state.tasks, { ...running, status: "queued" }] }} />);
+  expect(ny.textContent).not.toContain("two independent pieces");
 });
 
 test("the shape line shows the reason and offers the override only before the writer starts", async () => {

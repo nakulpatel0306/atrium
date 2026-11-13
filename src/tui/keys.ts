@@ -1,6 +1,5 @@
 // What every key does, as a pure function of the key, the UI state, and what's on screen.
 import type { Key } from "ink";
-import { awaitingShape, type Shape, SHAPE_LABEL, type ShapeKind, shapeLine } from "../engine/shape";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
@@ -28,7 +27,7 @@ export type Intent =
   | { type: "restore"; spaceId: string }
   | { type: "deleteSpace"; spaceId: string; name: string }
   | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
-  | { type: "answerBrief"; taskId: string; title: string; answers: Answering["answers"]; shape?: ShapeKind }
+  | { type: "answerBrief"; taskId: string; title: string; answers: Answering["answers"] }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
 
 
@@ -217,32 +216,21 @@ const answering = (task: { id: string }): Command => open({ kind: "answer", task
 function answered(view: View, taskId: string, a: Answering): Command[] {
   const task = view.state.tasks.find((t) => t.id === taskId);
   if (!task?.loop) return [close, info("That task isn't asking anything anymore.")];
-  if (a.step + 1 < askSteps(task).length) return [open({ kind: "answer", taskId, index: 0, step: a.step + 1, answers: a.answers, shape: a.shape })];
-  const shape = a.shape === "proposed" ? task.loop.shape!.kind : a.shape;
-  return [close, intent({ type: "answerBrief", taskId, title: task.title, answers: a.answers, ...(shape && { shape }) })];
+  if (a.step + 1 < askSteps(task).length) return [open({ kind: "answer", taskId, index: 0, step: a.step + 1, answers: a.answers })];
+  return [close, intent({ type: "answerBrief", taskId, title: task.title, answers: a.answers })];
 }
 
 export const TYPE_ANSWER = "Type an answer";
 export const LEAVE_IT = "Leave it to the agent";
-export const ONE_WRITER = "One writer instead";
 
 // A question's choices: its own options by number, then typing one, then leaving it.
 export const answerChoices = (options: string[]) => [...options, TYPE_ANSWER, LEAVE_IT];
 
-type AskTask = { loop: { questions: { question: string; options: string[] }[]; stage: string; shape: Shape | null } | null };
-export type AskStep = { question: string; choices: string[]; shape: boolean };
+type AskTask = { loop: { questions: { question: string; options: string[] }[] } | null };
+export type AskStep = { question: string; choices: string[] };
 
-// What a task asks before it starts, one step at a time: the brief's questions, then a costlier shape waiting for a
-// yes, answered together when the last step is.
-export function askSteps(task: AskTask): AskStep[] {
-  const loop = task.loop;
-  if (!loop) return [];
-  const steps: AskStep[] = loop.questions.map((q) => ({ question: q.question, choices: answerChoices(q.options), shape: false }));
-  if (loop.stage === "brief" && awaitingShape(loop.shape)) {
-    steps.push({ question: `${shapeLine(loop.shape!)}. It costs more than one writer. Run it this way?`, choices: [`Yes, ${SHAPE_LABEL[loop.shape!.kind].toLowerCase()}`, ONE_WRITER], shape: true });
-  }
-  return steps;
-}
+// What a task asks before it starts, one question at a time.
+export const askSteps = (task: AskTask): AskStep[] => (task.loop?.questions ?? []).map((q) => ({ question: q.question, choices: answerChoices(q.options) }));
 
 function answerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "answer" }>, view: View): Command[] {
   const task = view.state.tasks.find((t) => t.id === overlay.taskId);
@@ -256,7 +244,6 @@ function answerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "a
   const n = /^[1-9]$/.test(input) ? Number(input) - 1 : key.return ? overlay.index : -1;
   if (n < 0 || n >= choices.length) return [];
   const choice = choices[n]!;
-  if (step.shape) return answered(view, overlay.taskId, { step: overlay.step, answers: overlay.answers, shape: choice === ONE_WRITER ? "single" : "proposed" });
   if (choice === TYPE_ANSWER) {
     return [close, ui({ type: "ask", ask: { purpose: "answer", value: "", cursor: 0, agent: "auto", targetId: overlay.taskId, answering: { step: overlay.step, answers: overlay.answers } } })];
   }

@@ -1,6 +1,5 @@
 // Carries out what a key asked for against the engine, and says what happened in the dashboard's words.
 import { agentName } from "../dashboard/agents";
-import { SHAPE_LABEL } from "../engine/shape";
 import type { PostResult } from "../dashboard/api";
 import type { State } from "../engine/state";
 import type { EngineClient } from "./client";
@@ -101,8 +100,8 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return space(intent.spaceId, { reviewBy: intent.reviewBy }, ok);
     }
     case "answerBrief": {
-      const res = await client.post(`/api/tasks/${enc(intent.taskId)}/answers`, { answers: intent.answers, ...(intent.shape && { shape: intent.shape }) });
-      const how = intent.shape && intent.shape !== "single" ? `as ${SHAPE_LABEL[intent.shape].toLowerCase()}` : intent.answers.length ? "with your answers" : intent.shape ? "with one writer" : "leaving the questions to the agent";
+      const res = await client.post(`/api/tasks/${enc(intent.taskId)}/answers`, { answers: intent.answers });
+      const how = intent.answers.length ? "with your answers" : "leaving the questions to the agent";
       return said(res, () => `Started "${intent.title}" ${how}.`);
     }
     case "answer": {

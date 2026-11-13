@@ -9,8 +9,8 @@ import { type Budget, type LoopState, resumed } from "../engine/loop";
 import { getSpace, type Space } from "../engine/spaces";
 import { appendTaskDetail, getTask, setTaskBrief, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
 import { tierModel } from "../engine/tiers";
-import { awaitingShape, chooseShape, proposeShape, type Shape, type ShapeKind, SHAPES, shapeChoices, shapeOpen } from "../engine/shape";
-import { childrenOf, discardFanout, FanoutRefused, mergeParts, partBody, pickAttempt } from "../engine/fanout";
+import { chooseShape, costlier, proposeShape, runNow, type Shape, type ShapeKind, SHAPES, shapeChoices, shapeOpen, switchOpen } from "../engine/shape";
+import { childrenOf, discardFanout, FanoutRefused, mergeParts, partBody, pickAttempt, restartAs } from "../engine/fanout";
 import { openPullRequest } from "../engine/repos/pr";
 import { recordUsage } from "../engine/usage";
 import { HttpError, json, readBody, str } from "./http";
@@ -44,7 +44,7 @@ export async function cardShape(space: Space, brief: Brief, raw: unknown, kind: 
   if (space.kind !== "repo" || raw === undefined) return null;
   const ctx = { size: brief.size, checksFound: (await spaceChecks(space)).length > 0 };
   const proposed = proposeShape(raw, ctx);
-  if (kind === undefined) return awaitingShape(proposed) ? { ...proposed, kind: "single", reason: "your choice" } : proposed;
+  if (kind === undefined) return runNow(proposed);
   if (!SHAPES.includes(kind as ShapeKind)) throw new HttpError(400, "shape must be single, scouts, split or best_of_n.");
   try {
     return chooseShape(proposed, kind as ShapeKind, ctx, brief.goal, { mixVendors: mixVendors === true });
@@ -102,7 +102,14 @@ const pausedTask = (db: Database, id: string): Task & { loop: LoopState } => {
 
 // The brief pre-pass, the checks a task's badge speaks for, budgets, and the two ways on from a pause.
 // Returns null for paths it doesn't own.
-export async function loopRoute(db: Database, claude: AgentAdapter | undefined, kick: () => void, req: Request, url: URL): Promise<Response | null> {
+export async function loopRoute(
+  db: Database,
+  claude: AgentAdapter | undefined,
+  kick: () => void,
+  stop: (taskId: string) => Promise<string>,
+  req: Request,
+  url: URL,
+): Promise<Response | null> {
   const { pathname } = url;
   const method = req.method;
 
@@ -165,35 +172,46 @@ export async function loopRoute(db: Database, claude: AgentAdapter | undefined, 
     return json(setTaskLoop(db, task.id, { ...task.loop, suggestedVerify: null }));
   }
 
-  // The answers to a brief's questions and the shape to run go together, and the work starts. Sending no answers skips
-  // them; sending no shape when a costlier one waits runs one writer, never the costlier shape.
+  // The answers to a brief's questions go with it, and the writer starts. Sending none skips them.
   const answersM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/answers$/) : null;
   if (answersM) {
     const task = getTask(db, answersM[1]!);
-    const waiting = task?.loop && (task.loop.questions.length > 0 || awaitingShape(task.loop.shape));
-    if (!task?.brief || !task.loop || !waiting || task.status !== "queued" || task.loop.stage !== "brief") throw new HttpError(409, "This task has nothing waiting for you before it starts.");
-    const b = await readBody(req);
-    const answers = normalizeBrief({ answers: b.answers }).answers.filter((a) => task.loop!.questions.some((q) => q.question === a.question));
-    const kind = b.shape ?? (awaitingShape(task.loop.shape) ? "single" : undefined);
-    const shape = task.loop.shape && kind !== undefined ? await shapeFor(db, task, kind, b.mixVendors) : task.loop.shape;
-    setTaskBrief(db, task.id, { ...task.brief, answers: task.loop.questions.length ? answers : task.brief.answers });
-    const next = setTaskLoop(db, task.id, { ...task.loop, questions: [], shape, stage: "writing" });
+    if (!task?.brief || !task.loop?.questions.length || task.status !== "queued") throw new HttpError(409, "This task has no questions waiting for you.");
+    const answers = normalizeBrief({ answers: (await readBody(req)).answers }).answers.filter((a) => task.loop!.questions.some((q) => q.question === a.question));
+    setTaskBrief(db, task.id, { ...task.brief, answers });
+    const next = setTaskLoop(db, task.id, { ...task.loop, questions: [], stage: "writing" });
     kick();
     return json(next);
   }
 
-  // The override on the task header: a different shape, any time before the writer starts.
+  // The override on the task header: any shape before the writer starts, and a costlier one (the click a split or a
+  // best-of-N needs) until the task reaches review, which stops its writer and starts over from the brief.
   const shapeM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/shape$/) : null;
   if (shapeM) {
     const task = getTask(db, shapeM[1]!);
     if (!task?.loop?.shape) throw new HttpError(404, "No such task with a shape.");
-    if (!shapeOpen(task)) throw new HttpError(409, "This task has already started, so its shape can't change.");
     const b = await readBody(req);
+    if (shapeOpen(task)) {
+      const shape = await shapeFor(db, task, b.kind, b.mixVendors);
+      const next = setTaskLoop(db, task.id, { ...task.loop, shape });
+      kick();
+      return json(next);
+    }
+    if (!costlier(b.kind as ShapeKind) || !switchOpen(task)) throw new HttpError(409, "This task has already started, so its shape can't change.");
     const shape = await shapeFor(db, task, b.kind, b.mixVendors);
-    // Choosing answers the shape question; any questions of the brief still wait.
-    const next = setTaskLoop(db, task.id, { ...task.loop, shape, stage: task.loop.questions.length ? "brief" : "writing" });
+    if (task.status === "running") {
+      const outcome = await stop(task.id);
+      if (outcome === "timeout") throw new HttpError(409, "Its writer is still stopping. Try again in a moment.");
+    }
+    const space = getSpace(db, task.spaceId)!;
+    try {
+      await restartAs(db, task.id, shape, space);
+    } catch (e) {
+      if (e instanceof FanoutRefused) throw new HttpError(409, e.message);
+      throw e;
+    }
     kick();
-    return json(next);
+    return json(getTask(db, task.id));
   }
 
   // A split's parts are ready: open each one's pull request (the click is the yes to push them), merge them into one

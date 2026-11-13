@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { createApproval } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { setSetting } from "../../src/engine/settings";
-import { proposeShape } from "../../src/engine/shape";
+import { proposeShape, runNow } from "../../src/engine/shape";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { summary } from "../../src/engine/summary";
 import { recordRunFiles } from "../../src/engine/outputs/store";
@@ -157,20 +157,17 @@ test("a task asking before it starts counts toward the badge and opens on its ta
   expect(sum.needs[0]).toEqual({ id: t.id, kind: "question", title: "Add totals: Weekly or monthly?", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null });
 });
 
-test("a costlier shape waiting for a yes, and parts waiting for a decision, count like questions", () => {
+test("parts waiting for a decision count like questions; a suggested shape doesn't", () => {
   const s = createSpace(db, { name: "atrium", kind: "repo", goal: "g", repoPath: "/tmp/x" });
   const shaped = createTask(db, { spaceId: s.id, title: "Totals" });
   const parts = [{ title: "A", goal: "a", files: ["a.ts"] }, { title: "B", goal: "b", files: ["b.ts"] }];
   const shape = proposeShape({ kind: "split", reason: "two pieces", parts }, { size: "medium", checksFound: true });
-  setTaskLoop(db, shaped.id, { ...newLoop(SIZE_BUDGETS.small), stage: "brief", shape });
+  setTaskLoop(db, shaped.id, { ...newLoop(SIZE_BUDGETS.small), stage: "writing", shape: runNow(shape) });
   const picking = createTask(db, { spaceId: s.id, title: "Speed" });
   setTaskLoop(db, picking.id, { ...newLoop(SIZE_BUDGETS.small), stage: "pick", fanout: { kind: "best_of_n", children: [], scores: {}, judgeNote: null } });
-  // Once approved, the shape no longer waits.
-  const approved = createTask(db, { spaceId: s.id, title: "Approved" });
-  setTaskLoop(db, approved.id, { ...newLoop(SIZE_BUDGETS.small), stage: "writing", shape: { ...shape, approved: true } });
   const sum = summary(db);
-  expect(sum.needsYou).toBe(2);
-  expect(sum.needs.map((n) => n.title).sort()).toEqual(["Speed: pick one of its attempts", "Totals: Split into 2 tasks: two pieces. Run it this way?"]);
+  expect(sum.needsYou).toBe(1);
+  expect(sum.needs.map((n) => n.title)).toEqual(["Speed: pick one of its attempts"]);
 });
 
 test("every needs-you counter uses the one definition", async () => {

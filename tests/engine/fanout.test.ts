@@ -6,6 +6,8 @@ import { listPending } from "../../src/engine/approvals";
 import { childrenOf, childState, FanoutRefused, mergeParts, pickAttempt } from "../../src/engine/fanout";
 import { asksBeforeStarting } from "../../src/engine/needs";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
+import { normalizeBrief } from "../../src/engine/brief";
+import { chooseShape, proposeShape, type ShapeKind } from "../../src/engine/shape";
 import { getSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskLoop } from "../../src/engine/tasks";
 import { updateSpace } from "../../src/engine/spaces";
@@ -23,6 +25,15 @@ const PARTS = [
   { title: "Add the endpoint", goal: "Serve totals", files: ["api.txt"] },
   { title: "Write the docs", goal: "Document totals", files: ["docs.txt"] },
 ];
+
+// A task the user chose a costlier shape for, as the ⌘↩ card or the switch on a running task leaves it: its brief and
+// the approved shape, ready to fan out.
+function chosen(spaceId: string, title: string, raw: { kind: string } & Record<string, unknown>) {
+  const ctx = { size: "medium" as const, checksFound: true };
+  const t = createTask(h.db, { spaceId, title, detail: title, brief: normalizeBrief({ goal: title, size: "medium" }) });
+  const shape = chooseShape(proposeShape(raw, ctx), raw.kind as ShapeKind, ctx, title);
+  return setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.medium), shape });
+}
 
 // Claude as the pre-pass (proposing `shape`), the writer of each part or attempt, and the judge.
 function claudeFor(shape: unknown, write: (input: AgentRunInput, n: number) => void = () => {}, judge = "SCORE 1 6 fine\nSCORE 2 9 cleaner") {
@@ -47,36 +58,58 @@ describe("router", () => {
     expect(h.task(t.id).loop!.shape).toMatchObject({ kind: "scouts", reason: "find every caller first", approved: false });
   });
 
-  test("a costlier proposal waits in Needs you with the reason; no answer runs one writer, never the costlier shape", async () => {
+  test("a costlier proposal doesn't hold Enter back: the task runs as one writer at once, with the suggestion kept", async () => {
     const s = h.space(h.repo());
     const t = asked(s.id, "Totals everywhere");
     const claude = claudeFor({ kind: "split", reason: "two independent pieces", parts: PARTS }, (input) => writeFileSync(join(input.cwd, "work.txt"), "x\n"));
     h.start({ claude: claude.adapter });
-    await waitFor(() => h.task(t.id).loop?.shape != null);
-    await waitFor(() => JSON.parse((h.db.query("SELECT value FROM settings WHERE key = 'runner.waiting'").get() as { value: string }).value).some((w: { kind: string }) => w.kind === "shape"));
-    expect(asksBeforeStarting(h.task(t.id))).toBe(true);
-    expect(h.status(t.id)).toBe("queued");
-    // Nothing fanned out, and the writer hasn't run.
+    await waitFor(() => h.status(t.id) === "review");
+    const loop = h.task(t.id).loop!;
+    expect(loop.shape).toMatchObject({ kind: "single", proposed: "split", approved: false });
+    expect(asksBeforeStarting(h.task(t.id))).toBe(false);
     expect(childrenOf(h.db, h.task(t.id))).toEqual([]);
-    expect(claude.calls).toHaveLength(1);
+    expect(claude.calls.filter((c) => c.mode === "work")).toHaveLength(1);
   });
+
+  test("taking the suggestion stops the one writer and starts over from the brief as the parts", async () => {
+    const path = h.repo();
+    const s = h.space(path);
+    const t = asked(s.id, "Totals everywhere");
+    const claude = claudeFor({ kind: "split", reason: "two independent pieces", parts: PARTS }, () => {});
+    const writer = fake("claude", async (input, n) => {
+      // The single writer's turn waits until it's stopped; the parts' turns write their files.
+      if (input.mode === "work" && !input.prompt.includes("Part ") && n === 2) {
+        writeFileSync(join(input.cwd, "work.txt"), "half\n");
+        await new Promise<void>((r) => (input.signal!.aborted ? r() : input.signal!.addEventListener("abort", () => r())));
+        return { status: "error", kind: "failed", message: "Stopped" };
+      }
+      if (input.mode === "work") writeFileSync(join(input.cwd, input.prompt.includes("Serve totals") ? "api.txt" : "docs.txt"), "x\n");
+      return claude.adapter.run(input);
+    });
+    h.start({ claude: writer.adapter });
+    await waitFor(() => h.status(t.id) === "running" && h.task(t.id).loop?.stage === "writing");
+    const { loopRoute } = await import("../../src/server/loop");
+    const url = `http://127.0.0.1/api/tasks/${t.id}/shape`;
+    const res = await loopRoute(h.db, undefined, h.runner!.kick, h.runner!.stopTask, new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "split" }) }), new URL(url));
+    expect(res!.status).toBe(200);
+    await waitFor(() => h.task(t.id).loop?.stage === "pick", 20000);
+    expect(childrenOf(h.db, h.task(t.id)).map((c) => c.title)).toEqual(["Add the endpoint", "Write the docs"]);
+    // The one writer's branch went, so the merge can take its name.
+    expect(git(path, "branch", "--list", `atrium/${t.id}`)).toBe("");
+    expect(h.task(t.id).loop!.shape).toMatchObject({ kind: "split", approved: true });
+  }, 30000);
 });
 
 describe("split", () => {
   test("approved parts run as their own tasks on their own branches, then merge into one branch that's checked", async () => {
     const path = h.repo();
     const s = h.space(path);
-    const t = asked(s.id, "Totals everywhere");
+    const t = chosen(s.id, "Totals everywhere", { kind: "split", reason: "two independent pieces", parts: PARTS });
     const claude = claudeFor({ kind: "split", reason: "two independent pieces", parts: PARTS }, (input) => {
       const file = input.prompt.includes("Serve totals") ? "api.txt" : "docs.txt";
       writeFileSync(join(input.cwd, file), `${file}\n`);
     });
     h.start({ claude: claude.adapter });
-    await waitFor(() => h.task(t.id).loop?.stage === "brief" && h.task(t.id).loop?.shape != null);
-    // The user's click: what the Needs you item sends.
-    const loop = h.task(t.id).loop!;
-    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
-    h.runner!.kick();
     await waitFor(() => h.task(t.id).loop?.stage === "pick", 15000);
     const parts = childrenOf(h.db, h.task(t.id));
     expect(parts.map((p) => [p.title, childState(p), p.branch])).toEqual([
@@ -104,13 +137,9 @@ describe("split", () => {
   test("parts that changed the same lines aren't merged; the user is told to open their pull requests", async () => {
     const path = h.repo();
     const s = h.space(path);
-    const t = asked(s.id, "Totals everywhere");
+    const t = chosen(s.id, "Totals everywhere", { kind: "split", parts: PARTS });
     const claude = claudeFor({ kind: "split", parts: PARTS }, (input) => writeFileSync(join(input.cwd, "README.md"), input.prompt.includes("Serve totals") ? "one\n" : "two\n"));
     h.start({ claude: claude.adapter });
-    await waitFor(() => h.task(t.id).loop?.shape != null && h.task(t.id).loop?.stage === "brief");
-    const loop = h.task(t.id).loop!;
-    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
-    h.runner!.kick();
     await waitFor(() => h.task(t.id).loop?.stage === "pick", 15000);
     await expect(mergeParts(h.db, t.id, getSpace(h.db, s.id)!)).rejects.toThrow(FanoutRefused);
     expect(git(path, "branch", "--list", `atrium/${t.id}`)).toBe("");
@@ -121,17 +150,13 @@ describe("best of N", () => {
   test("attempts that fail the gate are dropped, the judge scores the rest, and the pick becomes the task's branch", async () => {
     const path = h.repo();
     const s = h.space(path);
-    const t = asked(s.id, "Speed up totals");
+    const t = chosen(s.id, "Speed up totals", { kind: "best_of_n", reason: "several plausible designs", attempts: 3 });
     // The first attempt breaks the check; the other two pass with different work.
     const claude = claudeFor({ kind: "best_of_n", reason: "several plausible designs", attempts: 3 }, (input, n) => {
       writeFileSync(join(input.cwd, "status.txt"), n === 1 ? "wrong\n" : "pass\n");
       writeFileSync(join(input.cwd, "work.txt"), `attempt ${n}\n`);
     }, "SCORE 1 6 works but slow\nSCORE 2 9 cleaner and faster");
     h.start({ claude: claude.adapter });
-    await waitFor(() => h.task(t.id).loop?.shape != null && h.task(t.id).loop?.stage === "brief");
-    const loop = h.task(t.id).loop!;
-    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
-    h.runner!.kick();
     await waitFor(() => h.task(t.id).loop?.stage === "pick", 20000);
     const attempts = childrenOf(h.db, h.task(t.id));
     expect(attempts.map(childState)).toEqual(["dropped", "ready", "ready"]);
@@ -163,16 +188,12 @@ describe("best of N", () => {
 
   test("when no attempt passes, the task stops and says so, with nothing to pick", async () => {
     const s = h.space(h.repo());
-    const t = asked(s.id, "Speed up totals");
+    const t = chosen(s.id, "Speed up totals", { kind: "best_of_n", attempts: 2 });
     const claude = claudeFor({ kind: "best_of_n", attempts: 2 }, (input) => {
       writeFileSync(join(input.cwd, "status.txt"), "wrong\n");
       writeFileSync(join(input.cwd, "work.txt"), "x\n");
     });
     h.start({ claude: claude.adapter });
-    await waitFor(() => h.task(t.id).loop?.shape != null && h.task(t.id).loop?.stage === "brief");
-    const loop = h.task(t.id).loop!;
-    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
-    h.runner!.kick();
     await waitFor(() => h.status(t.id) === "blocked", 15000);
     expect(h.task(t.id).blockedReason).toContain("None of the 2 attempts passed Atrium's checks");
     expect(claude.calls.some((c) => c.prompt.includes("Several attempts"))).toBe(false);
@@ -194,16 +215,12 @@ describe("a base that already fails a check", () => {
 
   test("an attempt that only leaves an already-failing check failing survives, unverified; a new failure drops one", async () => {
     const { s } = failingBase();
-    const t = asked(s.id, "Speed up totals");
+    const t = chosen(s.id, "Speed up totals", { kind: "best_of_n", attempts: 2 });
     const claude = claudeFor({ kind: "best_of_n", attempts: 2 }, (input, n) => {
       writeFileSync(join(input.cwd, "work.txt"), `attempt ${n}\n`);
       if (n === 2) writeFileSync(join(input.cwd, "lint.txt"), "bad\n");
     });
     h.start({ claude: claude.adapter });
-    await waitFor(() => h.task(t.id).loop?.shape != null && h.task(t.id).loop?.stage === "brief");
-    const loop = h.task(t.id).loop!;
-    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
-    h.runner!.kick();
     await waitFor(() => h.task(t.id).loop?.stage === "pick", 20000);
     const attempts = childrenOf(h.db, h.task(t.id));
     expect(attempts.map(childState)).toEqual(["ready", "dropped"]);
@@ -215,16 +232,12 @@ describe("a base that already fails a check", () => {
 
   test("a part isn't sent back over a check that was already failing; the merged branch's gate decides", async () => {
     const { s } = failingBase();
-    const t = asked(s.id, "Totals everywhere");
+    const t = chosen(s.id, "Totals everywhere", { kind: "split", parts: PARTS });
     const claude = claudeFor({ kind: "split", parts: PARTS }, (input) => {
       const file = input.prompt.includes("Serve totals") ? "api.txt" : "docs.txt";
       writeFileSync(join(input.cwd, file), `${file}\n`);
     });
     h.start({ claude: claude.adapter });
-    await waitFor(() => h.task(t.id).loop?.shape != null && h.task(t.id).loop?.stage === "brief");
-    const loop = h.task(t.id).loop!;
-    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
-    h.runner!.kick();
     await waitFor(() => h.task(t.id).loop?.stage === "pick", 20000);
     // One writer turn per part, with no "still fails as before" send-back.
     expect(claude.calls.filter((c) => c.mode === "work")).toHaveLength(2);

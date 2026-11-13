@@ -167,8 +167,23 @@ export function shapeLine(shape: Shape): string {
   return `${label}: ${shape.reason}`;
 }
 
-// Whether a costlier shape is waiting for the user's click before anything runs.
-export const awaitingShape = (shape: Shape | null | undefined): boolean => !!shape && costlier(shape.kind) && !shape.approved;
+// What runs at once from the pre-pass's proposal: the proposal itself when it costs no more than one writer, and
+// otherwise one writer, with the proposal kept as a suggestion the user can take with a click.
+export function runNow(shape: Shape): Shape {
+  return costlier(shape.kind) && !shape.approved ? { ...shape, kind: "single" } : shape;
+}
+
+// The costlier shape the pre-pass suggested and the task can still take, while it runs as something cheaper.
+export function suggestion(shape: Shape | null | undefined, size: TaskSize): ShapeKind | null {
+  if (!shape || !costlier(shape.proposed) || shape.kind === shape.proposed) return null;
+  return shapeChoices(shape, { size, checksFound: shape.checksFound }).find((c) => c.kind === shape.proposed)?.why === null ? shape.proposed : null;
+}
+
+// "Could run as 2 parts: two independent pieces" for the suggestion line.
+export function suggestionLine(shape: Shape, kind: ShapeKind): string {
+  const as = kind === "split" ? `${shape.parts.length} parts` : `the best of ${shape.attempts} attempts`;
+  return `Could run as ${as}: ${shape.reason}`;
+}
 
 // How many tasks a shape runs.
 export const fanOutOf = (shape: Shape): number => (shape.kind === "split" ? shape.parts.length : shape.kind === "best_of_n" ? shape.attempts : 1);
@@ -182,6 +197,16 @@ export function fanOutEstimate(n: number, recent: Spend[], budgetTokens: number)
   const fullyPriced = priced.every((s) => s.unpriced === 0);
   return { weighted: Math.round(n * avg((s) => s.weighted)), usd: fullyPriced ? n * avg((s) => s.usd) : null, basis: "recent" };
 }
+
+// Whether a task can switch to a costlier shape: it hasn't fanned out or reached review, so starting over from the
+// brief throws away no more than its writer's turns so far.
+export const switchOpen = (t: ShapedTask): boolean =>
+  t.kind === "work" &&
+  (t.status === "queued" || t.status === "running" || t.status === "blocked") &&
+  !!t.loop?.shape &&
+  !t.loop.fanout &&
+  !t.loop.role &&
+  ["writing", "checks", "paused"].includes(t.loop.stage);
 
 type ShapedTask = {
   kind: string;

@@ -201,7 +201,7 @@ export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state
         </p>
       )}
       {loop?.stage === "brief" && task.status === "running" && <p className="hint">Drafting the brief. The writer starts as soon as it's ready.</p>}
-      {loop?.stage === "brief" && asksBeforeStarting(task) && <BriefQuestions task={task} state={state} />}
+      {loop?.stage === "brief" && asksBeforeStarting(task) && <BriefQuestions task={task} />}
       {task.brief && (
         <details className="brief-view" open={loop?.questions.length ? true : undefined}>
           <summary>Brief</summary>

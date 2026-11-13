@@ -7,7 +7,7 @@ import { loopNotes } from "./handoff";
 import { type Fanout, type LoopState, newLoop, SIZE_BUDGETS } from "./loop";
 import { lastRepoRun } from "./runner";
 import type { Space } from "./spaces";
-import { childState, type SplitPart } from "./shape";
+import { childState, type Shape, type SplitPart } from "./shape";
 import { plural } from "./text";
 import { createTask, getTask, setTaskLoop, setTaskStatus, type Task } from "./tasks";
 
@@ -204,6 +204,20 @@ export async function pickAttempt(db: Database, parentId: string, childId: strin
   for (const a of attempts) if (a.branch) await deleteAtriumBranch(space.repoPath!, a.branch);
   const n = attempts.indexOf(picked) + 1;
   logActivity(db, space.id, "you", `Picked attempt ${n} of ${parent.title}; the other attempts' branches were deleted.`, { taskId: parent.id });
+}
+
+// The user's switch to a costlier shape the task was running without: its writer has stopped, its branch is removed
+// (it has to be free for the merge or pick that ends the fan-out), and it starts over from the brief as that shape.
+export async function restartAs(db: Database, taskId: string, shape: Shape, space: Space): Promise<void> {
+  const task = getTask(db, taskId);
+  if (!task?.loop || task.loop.fanout || task.loop.role || !["queued", "blocked"].includes(task.status)) throw new FanoutRefused("This task can't start over as another shape now.");
+  if (task.branch && space.repoPath && (await branchSha(space.repoPath, task.branch)) && !(await deleteAtriumBranch(space.repoPath, task.branch))) {
+    throw new FanoutRefused(`Couldn't remove ${task.branch}, the writer's branch so far. Switch your checkout off it, then try again.`);
+  }
+  const loop = task.loop;
+  setTaskLoop(db, task.id, { ...newLoop(loop.budget), hints: loop.hints, suggestedVerify: loop.suggestedVerify, shape });
+  if (task.status === "blocked") setTaskStatus(db, task.id, "queued");
+  logActivity(db, task.spaceId, "you", `Started ${task.title} over as ${shape.kind === "split" ? `${plural(shape.parts.length, "part")}` : `the best of ${shape.attempts} attempts`}, from its brief.`, { taskId: task.id });
 }
 
 // Ends a fan-out the user doesn't want: the parent is done, and the children's branches stay where they are.

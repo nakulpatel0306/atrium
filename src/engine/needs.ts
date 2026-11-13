@@ -1,16 +1,15 @@
 // What counts as needing the user, in one place for every app: the dashboard's Needs you, the terminal app, the
-// Mac app's badge and `atrium status`. Imports nothing but types and shape.ts, which imports none, so the dashboard
-// can bundle it.
+// Mac app's badge and `atrium status`. Imports nothing but types, so the dashboard can bundle it.
 import type { LoopState } from "./loop";
-import { awaitingShape, shapeLine } from "./shape";
+
 
 type TaskLike = { kind: string; status: string; spaceId: string; loop: LoopState | null };
 type InSpace = { spaceId: string | null };
 
-// A task waiting on the user before anything more runs: its brief's questions, a costlier shape the pre-pass
-// proposed, or a split's parts or best-of-N's attempts ready for a decision. All of a task's asks come in one item.
+// A task waiting on the user before anything more runs: its brief's questions, or a split's parts or best-of-N's
+// attempts ready for a decision. A shape the pre-pass suggests never waits: the task runs as one writer meanwhile.
 export const asksBeforeStarting = (t: TaskLike): boolean =>
-  t.kind === "work" && t.status === "queued" && ((t.loop?.questions.length ?? 0) > 0 || (t.loop?.stage === "brief" && awaitingShape(t.loop.shape)) || t.loop?.stage === "pick");
+  t.kind === "work" && t.status === "queued" && ((t.loop?.questions.length ?? 0) > 0 || t.loop?.stage === "pick");
 
 // Approvals and questions waiting on the user, rule suggestions, and tasks asking before they start, in active
 // spaces only (`spaces` lists those); an Atrium-wide question belongs to no space and always counts.
@@ -25,5 +24,5 @@ export function askLine(t: TaskLike): string {
   const loop = t.loop;
   if (loop?.questions.length) return loop.questions[0]!.question;
   if (loop?.stage === "pick") return loop.fanout?.kind === "best_of_n" ? "pick one of its attempts" : "its parts are ready to open or merge";
-  return loop?.shape ? `${shapeLine(loop.shape)}. Run it this way?` : "it's waiting for you";
+  return "it's waiting for you";
 }

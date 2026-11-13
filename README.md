@@ -33,14 +33,14 @@ Each task has a token and time budget. An agent that repeats itself or stops mak
 
 ## The right shape, cheaper
 
-One writer is the default, because more agents make most coding worse. The brief's pre-pass also suggests how the task should run, with a one-line reason on the task ("Single writer: sequential change in one module") and a one-click change while it hasn't started:
+One writer is the default, because more agents make most coding worse. The brief's pre-pass also suggests how the task should run, with a one-line reason on the task ("Single writer: sequential change in one module") and a one-click change while it hasn't started (a costlier shape can still be taken until review):
 
 - **Single writer**, for sequential or single-module work.
 - **Scouts, then one writer**, when the work first needs broad reading. Read-only scout sessions on a cheap model do the reading and hand the writer short answers instead of everything they read.
 - **Split into tasks**, for independent parts with their own files. Each part runs the whole loop as a task of its own, on its own branch; then you open their pull requests or merge them into one branch, which Atrium checks and reviews again.
 - **Best of N**, for uncertain work the repo's checks can judge. Two or three attempts run on their own branches; any that fail the checks are dropped, a strong model scores the rest against the brief, and you pick one.
 
-Splits and best-of-N cost more, so they run only on your yes, with an estimate first. Claude runs on three tiers you can change under Agents: a cheap model for briefs, scouts and explanations, your own model for writing, and a strong one for review, a writer you had to unstick, and judging attempts. Every task shows its weighted tokens and an estimate at list prices, each space shows today and this week, and the five-hour gauge says what Atrium ran in the window and what it can't see. A writer's next turn within the hour Claude Code keeps its prompt cache resumes its Claude session, so most of its context comes from the cache; a long one starts afresh with a progress note.
+Splits and best-of-N cost more, so they run only on your click. Enter never waits for it: a task the pre-pass would split runs as one writer, with "Could run as 2 parts (est. ~$0.04) · Split instead" on it, and the click starts it over from the brief as the parts. Claude runs on three tiers you can change under Agents: a cheap model for briefs, scouts and explanations, your own model for writing, and a strong one for review, a writer you had to unstick, and judging attempts. Every task shows its weighted tokens and an estimate at list prices, each space shows today and this week, and the five-hour gauge says what Atrium ran in the window and what it can't see. A writer's next turn within the hour Claude Code keeps its prompt cache resumes its Claude session, so most of its context comes from the cache; a long one starts afresh with a progress note.
 
 ## Screenshots
 

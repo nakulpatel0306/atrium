@@ -483,7 +483,7 @@ export function startServer(deps: Deps): Server<WsData> {
       return new Response(text, { headers });
     }
 
-    const loop = await loopRoute(db, runner.registry?.adapters.claude, runner.kick, req, url);
+    const loop = await loopRoute(db, runner.registry?.adapters.claude, runner.kick, async (id) => (await runner.stopTask?.(id)) ?? "not-running", req, url);
     if (loop) return loop;
     const files = await filesRoute(db, req, url);
     if (files) return files;

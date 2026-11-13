@@ -2,7 +2,22 @@ import { GitMerge, GitPullRequest, Split } from "lucide-react";
 import { useState } from "react";
 import { cacheShare, type Spend, spendText } from "../../engine/cost";
 import { compact, SIZE_BUDGETS } from "../../engine/loop";
-import { type ChildState, childState, costlier, fanOutEstimate, fanOutOf, type Shape, SHAPE_LABEL, type ShapeKind, shapeChoices, shapeLine, shapeOpen } from "../../engine/shape";
+import {
+  type ChildState,
+  childState,
+  costlier,
+  fanOutEstimate,
+  fanOutOf,
+  type Shape,
+  SHAPE_LABEL,
+  type ShapeKind,
+  shapeChoices,
+  shapeLine,
+  shapeOpen,
+  suggestion,
+  suggestionLine,
+  switchOpen,
+} from "../../engine/shape";
 import { agentName } from "../agents";
 import { get, post, type State } from "../api";
 
@@ -85,13 +100,37 @@ export function ShapePicker({
   );
 }
 
-// The shape line on a task: its chip, the one-line reason, and the override while it can still change.
+// What a fan-out would cost, short, for the suggestion line: "est. ~$0.04", or the budgets' ceiling.
+export function estimateShort(state: State, spaceId: string, budget: number, n: number): string {
+  const recent = state.tasks
+    .filter((t) => t.spaceId === spaceId && t.kind === "work" && t.status === "done" && !t.loop?.role && !t.loop?.fanout)
+    .slice(-5)
+    .map((t) => state.spend.tasks[t.id])
+    .filter((s): s is Spend => !!s);
+  const e = fanOutEstimate(n, recent, budget);
+  return e.usd !== null ? `est. ~$${e.usd.toFixed(2)}` : `up to ${compact(e.weighted)} weighted tokens`;
+}
+
+const SWITCH_LABEL: Record<ShapeKind, string> = { single: "One writer instead", scouts: "Scouts instead", split: "Split instead", best_of_n: "Try best of N instead" };
+
+// The shape line on a task: its chip, the one-line reason, the pre-pass's costlier suggestion while it runs as one
+// writer, and the override while it can still change.
 export function ShapeLine({ task, state }: { task: Task; state: State }) {
   const shape = task.loop?.shape;
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   if (!shape) return null;
   const open = shapeOpen(task);
+  const size = task.brief?.size ?? "medium";
+  const offer = switchOpen(task) ? suggestion(shape, size) : null;
+  const take = async (kind: ShapeKind) => {
+    setBusy(true);
+    setError(null);
+    const res = await post(`/api/tasks/${task.id}/shape`, { kind });
+    setBusy(false);
+    if (!res.ok) setError(res.error);
+  };
   const choose = async (kind: ShapeKind, mix: boolean) => {
     setError(null);
     const res = await post(`/api/tasks/${task.id}/shape`, { kind, mixVendors: mix });
@@ -102,8 +141,22 @@ export function ShapeLine({ task, state }: { task: Task; state: State }) {
   return (
     <div className="shape-line">
       <Split />
-      <span>{shapeLine(shape)}</span>
-      {shape.proposed !== shape.kind && <span className="hint">(suggested: {SHAPE_LABEL[shape.proposed]})</span>}
+      <span>{offer ? SHAPE_LABEL[shape.kind] : shapeLine(shape)}</span>
+      {offer && (
+        <span className="suggest">
+          {suggestionLine(shape, offer)} ({estimateShort(state, task.spaceId, task.loop!.budget.tokens, fanOutOf({ ...shape, kind: offer }))}) ·{" "}
+          <button
+            type="button"
+            className="btn link"
+            disabled={busy}
+            title={task.status === "running" ? "Stops the writer and starts over from the brief." : "Starts over from the brief."}
+            onClick={() => void take(offer)}
+          >
+            {offer === "best_of_n" ? SWITCH_LABEL.best_of_n.replace("N", String(shape.attempts)) : SWITCH_LABEL[offer]}
+          </button>
+        </span>
+      )}
+      {!offer && shape.proposed !== shape.kind && <span className="hint">(suggested: {SHAPE_LABEL[shape.proposed]})</span>}
       {open && (
         <button type="button" className="btn link subtle" aria-expanded={editing} onClick={() => setEditing(!editing)}>
           Change

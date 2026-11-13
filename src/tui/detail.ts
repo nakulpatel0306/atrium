@@ -2,7 +2,7 @@
 import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboard/agents";
 import { cacheShare, spendText } from "../engine/cost";
 import { compact } from "../engine/loop";
-import { awaitingShape, childState, shapeLine } from "../engine/shape";
+import { childState, SHAPE_LABEL, shapeLine, suggestion, suggestionLine, switchOpen } from "../engine/shape";
 import { askSteps } from "./keys";
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
 import { actorName, attentionText, loopLine, reviewerName, reviewHint, reviewLine, runOutcome, spaceStatus, STAGE_TEXT, STATUS_TEXT } from "../dashboard/summary";
@@ -137,7 +137,9 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
     ]);
     const attention = attentionText(task.loop);
     if (attention) lines.push(plain(attention, { color: color.bad }));
-    if (task.loop.shape) lines.push(plain(`Shape: ${shapeLine(task.loop.shape)}`, { color: awaitingShape(task.loop.shape) && task.loop.stage === "brief" ? color.info : color.muted }));
+    const offer = switchOpen(task) ? suggestion(task.loop.shape, task.brief?.size ?? "medium") : null;
+    if (task.loop.shape) lines.push(muted(`Shape: ${offer ? SHAPE_LABEL[task.loop.shape.kind] : shapeLine(task.loop.shape)}`));
+    if (task.loop.shape && offer) lines.push(plain(`${suggestionLine(task.loop.shape, offer)}. Switch on the dashboard, which stops the writer and starts over.`, { color: color.info }));
     const spend = state.spend.tasks[task.id];
     if (spend?.weighted) {
       const share = cacheShare(spend);
