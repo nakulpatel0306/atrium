@@ -132,6 +132,8 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
     ]);
     const attention = attentionText(task.loop);
     if (attention) lines.push(plain(attention, { color: color.bad }));
+    for (const q of task.loop.questions) lines.push(plain(`Asks: ${q.question}${q.options.length ? ` (${q.options.join(" / ")})` : ""}`, { color: color.info }));
+    if (task.loop.questions.length && task.status === "queued") lines.push(muted("a answers its questions"));
     if (task.loop.explanation) lines.push(blank, muted("What it says is wrong"), ...block(task.loop.explanation));
   }
   lines.push(blank, ...block(task.detail || task.title), blank, ...made(outputs, selectedFile, width));
@@ -151,7 +153,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
 
 export function approvalDetail(view: View, width = 100): DetailLine[] {
   const approval = view.approval;
-  if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
+  if (!approval) return [muted(view.approvals.length + view.proposals.length + view.asking.length ? PICK : "Nothing needs you right now.")];
   const space = view.state.spaces.find((s) => s.id === approval.spaceId);
   const review = reviewLine(approval, view.state);
   const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");

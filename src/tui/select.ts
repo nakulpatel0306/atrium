@@ -1,6 +1,7 @@
 // What each pane lists and which item is selected, derived fresh from the engine's state on every render.
 import { activeOnly, liveRun, orderedTasks } from "../dashboard/summary";
 import { type ActivityGroup, groupActivity } from "../engine/activity-groups";
+import { asksBeforeStarting } from "../engine/needs";
 import type { State } from "../engine/state";
 import type { ListPane, Ui } from "./ui";
 
@@ -19,12 +20,15 @@ export type View = {
   approvals: Approval[];
   // "Stop asking about …?" suggestions; they share Needs you with approvals and list first.
   proposals: Proposal[];
+  // Tasks asking before they start, which list first of all: nothing runs until they're answered.
+  asking: Task[];
   // The feed folded into groups (see activity-groups.ts); the detail shows a group's full lines.
   activity: ActivityGroup[];
   space: Space | null;
   task: Task | null;
   approval: Approval | null;
   proposal: Proposal | null;
+  askingTask: Task | null;
   activityRow: ActivityGroup | null;
   subject: Subject;
   live: { task: Task; run: Run } | null;
@@ -68,7 +72,8 @@ export function deriveView(raw: State, ui: Ui): View {
   const tasks = orderedTasks(spaceTasks).filter((t) => matches(ui.filters.tasks, t.title));
   const approvals = state.approvals.filter((a) => matches(ui.filters.needs, a.title, a.spaceId ? names.get(a.spaceId) : "Atrium"));
   const proposals = state.proposals.filter((p) => matches(ui.filters.needs, p.label, names.get(p.spaceId)));
-  const needs = pick<Approval | Proposal>([...proposals, ...approvals], ui.selected.needs).item;
+  const asking = state.tasks.filter((t) => asksBeforeStarting(t) && matches(ui.filters.needs, t.title, names.get(t.spaceId)));
+  const needs = pick<Approval | Proposal | Task>([...asking, ...proposals, ...approvals], ui.selected.needs).item;
   const activity = groupActivity(state.activity, { tasks: state.tasks, files: state.activityFiles }).filter((g) =>
     matches(ui.filters.activity, g.text, g.title, ...g.events.map((e) => e.message)),
   );
@@ -78,11 +83,13 @@ export function deriveView(raw: State, ui: Ui): View {
     tasks,
     approvals,
     proposals,
+    asking,
     activity,
     space,
     task: pick(tasks, ui.selected.tasks).item,
-    approval: needs && "kind" in needs && "detail" in needs ? (needs as Approval) : null,
+    approval: needs && "decidedBy" in needs ? needs : null,
     proposal: needs && "label" in needs ? needs : null,
+    askingTask: needs && "loop" in needs ? needs : null,
     activityRow: pick(activity, ui.selected.activity).item,
     subject: subjectOf(ui),
     live: liveRun(state, spaceTasks),
@@ -90,6 +97,6 @@ export function deriveView(raw: State, ui: Ui): View {
 }
 
 export function listOf(view: View, pane: ListPane): { id: string }[] {
-  if (pane === "needs") return [...view.proposals, ...view.approvals];
+  if (pane === "needs") return [...view.asking, ...view.proposals, ...view.approvals];
   return pane === "spaces" ? view.spaces : pane === "tasks" ? view.tasks : view.activity;
 }

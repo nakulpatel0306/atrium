@@ -175,7 +175,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
     const out = await runIntent(client, intent, s);
     if (intent.type === "newSpace") settingUp.current = false;
     // A decided item leaves the list; the next one is picked deliberately, never slid into.
-    if (["approve", "reject", "answer"].includes(intent.type) && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
+    if (["approve", "reject", "answer", "answerBrief"].includes(intent.type) && out.tone === "ok") dispatch({ type: "unpin", pane: "needs" });
     if (out.spaceId) {
       dispatch({ type: "select", pane: "spaces", id: out.spaceId });
       dispatch({ type: "focus", pane: "tasks" });

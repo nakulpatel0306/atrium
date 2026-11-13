@@ -6,7 +6,8 @@ import { type Command, commandsFor, HELP, type KeyContext, NO_CONTEXT, strip } f
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../../src/engine/legacy";
 import { deriveView } from "../../src/tui/select";
 import { initialUi, type Overlay, pin, reduce, type Ui } from "../../src/tui/ui";
-import { ids, makeState } from "./fixtures";
+import { ids, makeState, task } from "./fixtures";
+import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { key } from "./key";
 
 const rows = { detail: 20, live: 10, investRows: 2 };
@@ -284,4 +285,57 @@ test("Activity: enter opens the picked line's space", () => {
   const opened = play(["j", enter], { tab: "activity" });
   expect(opened.ui.tab).toBe("spaces");
   expect(opened.ui.selected.spaces.id).toBe(ids.jobHunt);
+});
+
+// A queued task in atrium whose brief asks two questions before it starts; it lists first in Needs you.
+function asking(): State {
+  const state = makeState();
+  state.tasks.push(
+    task({
+      id: "tsk_asks",
+      title: "Add totals",
+      status: "queued",
+      loop: { ...newLoop(SIZE_BUDGETS.small), stage: "brief", questions: [{ question: "Weekly or monthly?", options: ["Weekly", "Monthly"] }, { question: "Which page?", options: [] }] },
+    }),
+  );
+  return state;
+}
+
+test("a task's questions are answered from Home with one key each, or typed, and then it starts", () => {
+  const state = asking();
+  const home = { selected: { ...initialUi.selected, needs: { id: "tsk_asks", index: 0 } } };
+  // 2 picks Monthly; the second question has no options, so 1 types an answer.
+  const typed = play(["a", "2", "1", "T", "h", "e", " ", "r", "e", "p", "o", "r", "t", enter], home, state);
+  expect(typed.intents).toEqual([
+    { type: "answerBrief", taskId: "tsk_asks", title: "Add totals", answers: [{ question: "Weekly or monthly?", answer: "Monthly" }, { question: "Which page?", answer: "The report" }] },
+  ]);
+  // The last choice leaves a question to the agent.
+  const left = play(["a", "1", "2"], home, state);
+  expect(left.intents).toEqual([{ type: "answerBrief", taskId: "tsk_asks", title: "Add totals", answers: [{ question: "Weekly or monthly?", answer: "Weekly" }] }]);
+  expect(play(["a"], home, state).ui.overlay).toMatchObject({ kind: "answer", taskId: "tsk_asks", step: 0 });
+  expect(strip(play(["a"], home, state).ui, deriveView(state, play(["a"], home, state).ui)).map((s) => s.label)).toContain("answer");
+});
+
+test("a task asking before it starts can be answered from its row in Spaces too", () => {
+  const state = asking();
+  const ui = { tab: "spaces" as const, focus: "tasks" as const, lastLeft: "tasks" as const, selected: { ...initialUi.selected, tasks: { id: "tsk_asks", index: 3 } } };
+  expect(play(["a"], ui, state).ui.overlay).toMatchObject({ kind: "answer", taskId: "tsk_asks" });
+});
+
+test("the asking card and the question box show the questions and numbered answers", async () => {
+  const { answerOver } = await import("../../src/tui/screens/overlays");
+  const { homeScreen } = await import("../../src/tui/screens/home");
+  const state = asking();
+  const view = deriveView(state, initialUi);
+  const text = (lines: { text: string }[][]) => lines.map((l) => l.map((s) => s.text).join("")).join("\n");
+  const briefing = { greeting: "Hi.", summary: "" } as Parameters<typeof homeScreen>[2]["briefing"];
+  const home = homeScreen(view, initialUi, { briefing, now: Date.now(), frame: 0, lastLine: "" } as unknown as Parameters<typeof homeScreen>[2], 120, 30);
+  expect(text(home.lines)).toContain("Add totals");
+  expect(text(home.lines)).toContain("asks before it starts");
+  const box = answerOver(Array.from({ length: 20 }, () => []), { kind: "answer", taskId: "tsk_asks", index: 0, step: 0, answers: [] }, state, 100, 0);
+  const shown = text(box.lines);
+  expect(shown).toContain("1/2 · Weekly or monthly?");
+  expect(shown).toContain("1 Weekly");
+  expect(shown).toContain("3 Type an answer");
+  expect(shown).toContain("4 Leave it to the agent");
 });

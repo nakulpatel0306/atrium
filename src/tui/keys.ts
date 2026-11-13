@@ -3,10 +3,11 @@ import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
+import { asksBeforeStarting } from "../engine/needs";
 import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
-import { type Action, type Ask, type AskPurpose, listPaneOf, type ListPane, type Overlay, TABS, type Ui } from "./ui";
+import { type Action, type Answering, type Ask, type AskPurpose, listPaneOf, type ListPane, type Overlay, TABS, type Ui } from "./ui";
 
 export type Intent =
   | { type: "approve"; approvalId: string; title: string }
@@ -26,6 +27,7 @@ export type Intent =
   | { type: "restore"; spaceId: string }
   | { type: "deleteSpace"; spaceId: string; name: string }
   | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
+  | { type: "answerBrief"; taskId: string; title: string; answers: Answering["answers"] }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
 
 
@@ -58,6 +60,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Everywhere", keys: "Opt/Shift", does: "drag to select text" },
   { section: "Home", keys: "s e x", does: "text: send, edit, skip" },
   { section: "Home", keys: "a r", does: "approve, send back" },
+  { section: "Home", keys: "a 1-9", does: "answer a task's questions" },
   { section: "Home", keys: "y n N", does: "yes, not now, never" },
   { section: "Home", keys: "t", does: "transcript" },
   { section: "Home", keys: ".", does: "stop running task" },
@@ -93,6 +96,7 @@ const OVERLAY_KEYS: Partial<Record<Overlay["kind"], StripKey[]>> = {
   detail: [k("j k", "scroll", undefined), k("a", "approve"), k("r", "send back"), k("q", "close")],
   help: [k("?", "close")],
   picker: [k("j k", "move", undefined), k("enter", "pick", "\r"), k("esc", "cancel", "\x1b")],
+  answer: [k("1-9", "answer", undefined), k("j k", "move", undefined), k("enter", "pick", "\r"), k("esc", "later", "\x1b")],
   delete: [k("enter", "delete", "\r"), k("esc", "keep it", "\x1b")],
 };
 
@@ -205,7 +209,55 @@ function sendBack(u: Ui, view: View): Command {
 const ANSWERS = { y: "yes", n: "not_now", N: "never" } as const;
 
 // Keys on Home's selected card.
+// Starts answering a task's questions from the first.
+const answering = (task: { id: string }): Command => open({ kind: "answer", taskId: task.id, index: 0, step: 0, answers: [] });
+
+// After one question: the next, or the answers sent and the writer started.
+function answered(view: View, taskId: string, a: Answering): Command[] {
+  const task = view.state.tasks.find((t) => t.id === taskId);
+  if (!task?.loop) return [close, info("That task isn't asking anything anymore.")];
+  if (a.step + 1 < task.loop.questions.length) return [open({ kind: "answer", taskId, index: 0, step: a.step + 1, answers: a.answers })];
+  return [close, intent({ type: "answerBrief", taskId, title: task.title, answers: a.answers })];
+}
+
+export const TYPE_ANSWER = "Type an answer";
+export const LEAVE_IT = "Leave it to the agent";
+
+// A question's choices: its own options by number, then typing one, then leaving it.
+export const answerChoices = (options: string[]) => [...options, TYPE_ANSWER, LEAVE_IT];
+
+function answerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "answer" }>, view: View): Command[] {
+  const question = view.state.tasks.find((t) => t.id === overlay.taskId)?.loop?.questions[overlay.step];
+  if (!question) return [close, info("That task isn't asking anything anymore.")];
+  const choices = answerChoices(question.options);
+  if (key.escape || input === "q") return [close];
+  const move = (delta: number) => [ui({ type: "setOverlay", overlay: { ...overlay, index: (overlay.index + delta + choices.length) % choices.length } })];
+  if (key.downArrow || input === "j") return move(1);
+  if (key.upArrow || input === "k") return move(-1);
+  const n = /^[1-9]$/.test(input) ? Number(input) - 1 : key.return ? overlay.index : -1;
+  if (n < 0 || n >= choices.length) return [];
+  const choice = choices[n]!;
+  if (choice === TYPE_ANSWER) {
+    return [close, ui({ type: "ask", ask: { purpose: "answer", value: "", cursor: 0, agent: "auto", targetId: overlay.taskId, answering: { step: overlay.step, answers: overlay.answers } } })];
+  }
+  const answers = choice === LEAVE_IT ? overlay.answers : [...overlay.answers, { question: question.question, answer: choice }];
+  return answered(view, overlay.taskId, { step: overlay.step, answers });
+}
+
 function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
+  const asking = pinned(u, "needs", view.askingTask);
+  if (asking) {
+    if (input === "a") return [answering(asking)];
+    if (input === "r") return [info("This task is asking before it starts: a answers its questions.")];
+    if (key.return) {
+      return [
+        ui({ type: "select", pane: "spaces", id: asking.spaceId }),
+        ui({ type: "focus", pane: "tasks" }),
+        ui({ type: "select", pane: "tasks", id: asking.id }),
+        ui({ type: "focus", pane: "detail" }),
+      ];
+    }
+  }
   const suggestion = pinnedSuggestion(u, view) ? view.proposal : null;
   if (suggestion) {
     if (input === "y" || input === "n" || input === "N") return [intent({ type: "answer", proposalId: suggestion.id, answer: ANSWERS[input], label: suggestion.label })];
@@ -302,8 +354,10 @@ function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext):
       return [stop(u, view)];
     case "t":
       return [transcript(u, view)];
-    case "a":
-      return [approve(u, view)];
+    case "a": {
+      const task = u.tab === "spaces" && u.lastLeft === "tasks" ? pinned(u, "tasks", view.task) : null;
+      return [task && asksBeforeStarting(task) ? answering(task) : approve(u, view)];
+    }
     case "r":
       return [sendBack(u, view)];
   }
@@ -385,6 +439,14 @@ function submitAsk(a: Ask, u: Ui, view: View, ctx: KeyContext): Command[] {
     case "space":
       if (!text) return [empty];
       return [intent({ type: "newSpace", text }), leaveAsk];
+    case "answer": {
+      const a = u.ask!.answering!;
+      const question = view.state.tasks.find((t) => t.id === target)?.loop?.questions[a.step]?.question;
+      if (!question) return [leaveAsk, info("That task isn't asking anything anymore.")];
+      // An empty answer leaves the question to the agent, like the choice that says so.
+      const answers = text ? [...a.answers, { question, answer: text }] : a.answers;
+      return [leaveAsk, ...answered(view, target, { step: a.step, answers })];
+    }
     case "ask": {
       if (!text) return [empty];
       const space = spaceOf(u, view);
@@ -500,6 +562,8 @@ function overlayKey(input: string, key: Key, overlay: Overlay, u: Ui, view: View
   switch (overlay.kind) {
     case "picker":
       return pickerKey(input, key, overlay);
+    case "answer":
+      return answerKey(input, key, overlay, view);
     case "delete":
       return deleteKey(input, key, overlay, view);
     case "confirm":

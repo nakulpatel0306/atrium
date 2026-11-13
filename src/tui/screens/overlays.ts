@@ -9,7 +9,7 @@ import type { State } from "../../engine/state";
 import { type Block, box, type Hit, keyRow, type Line, rowsOf, splice } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
 import { cursorParts } from "../edit";
-import { helpFor } from "../keys";
+import { answerChoices, helpFor } from "../keys";
 import { truncate, width } from "../text";
 import { GLYPH, windowGauge } from "../theme";
 import type { Overlay, Ui } from "../ui";
@@ -86,6 +86,21 @@ export function deleteOver(base: Line[], o: Extract<Overlay, { kind: "delete" }>
   const w = Math.min(66, cols - 4);
   const { title, lines } = deleteBoxLines(o, state, preview, w - 4);
   return floating(base, title, lines, [{ key: "enter", label: "Delete", input: "\r" }, { key: "esc", label: "Keep it", input: "\x1b" }], w, y0);
+}
+
+// A task's question, its answers numbered for one key each.
+export function answerOver(base: Line[], o: Extract<Overlay, { kind: "answer" }>, state: State, cols: number, y0: number): Block {
+  const task = state.tasks.find((t) => t.id === o.taskId);
+  const question = task?.loop?.questions[o.step];
+  const total = task?.loop?.questions.length ?? 1;
+  const lines: Line[] = question
+    ? answerChoices(question.options).map((choice, i) => {
+        const mark = i === o.index;
+        return [{ text: mark ? `${GLYPH.pointer} ` : "  ", color: "accent" }, { text: `${i + 1} `, color: "faint" }, { text: choice, bold: mark }];
+      })
+    : [[{ text: "That task isn't asking anything anymore.", color: "faint" }]];
+  const title = `${total > 1 ? `${o.step + 1}/${total} · ` : ""}${question?.question ?? task?.title ?? "Question"}`;
+  return floating(base, title, lines, [{ key: "1-9", label: "Answer", input: "1" }, { key: "esc", label: "Later", input: "\x1b" }], Math.min(60, cols - 4), y0);
 }
 
 export function pickerOver(base: Line[], p: Extract<Overlay, { kind: "picker" }>, state: State, reviewers: Record<string, string | null> | null, cols: number, y0: number): Block {

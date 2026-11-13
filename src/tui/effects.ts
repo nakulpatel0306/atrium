@@ -99,6 +99,11 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
             : `${agentName(intent.reviewBy)} reviews finished code in ${name}.`;
       return space(intent.spaceId, { reviewBy: intent.reviewBy }, ok);
     }
+    case "answerBrief": {
+      const res = await client.post(`/api/tasks/${enc(intent.taskId)}/answers`, { answers: intent.answers });
+      const how = intent.answers.length ? "with your answers" : "leaving the questions to the agent";
+      return said(res, () => `Started "${intent.title}" ${how}.`);
+    }
     case "answer": {
       const proposal = state.proposals.find((p) => p.id === intent.proposalId);
       const name = proposal ? spaceName(proposal.spaceId) : "this space";
