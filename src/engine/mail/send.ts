@@ -24,7 +24,7 @@ import { cacheBody } from "./body";
 import { safeFileName } from "./files";
 import { inboxSpaceId } from "./space";
 import { newMessageId } from "./mime";
-import { addSentCopy, getAccount, listAccounts, type MailAccount, setArchived } from "./store";
+import { addSentCopy, getAccount, type MailAccount, setArchived } from "./store";
 import type { MailSync } from "./sync";
 import { type AccountRef, MailProblem, type MailSource, type Outgoing, type Rsvp, type Sent, type SourceAttachment } from "./types";
 
