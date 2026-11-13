@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chooseShape, FAN_OUT, fanOutEstimate, proposeShape, shapeChoices, shapeLine, storedShape } from "../../src/engine/shape";
+import { chooseShape, FAN_OUT, fanOutEstimate, partPath, proposeShape, shapeChoices, shapeLine, storedShape } from "../../src/engine/shape";
 
 const medium = { size: "medium" as const, checksFound: true };
 const parts = [
@@ -24,6 +24,23 @@ describe("the pre-pass's proposal", () => {
     expect(shared).toMatchObject({ kind: "single", proposed: "split", reason: "Two of the parts touch the same files, so one writer does it." });
     expect(proposeShape({ kind: "split", parts: [parts[0], { ...parts[1], files: [] }] }, medium).kind).toBe("single");
     expect(proposeShape({ kind: "split", parts: [parts[0]] }, medium).kind).toBe("single");
+  });
+
+  test("a part's paths must name files inside the repo, and overlap is judged on the paths as they resolve", () => {
+    const split = (a: string[], b: string[]) => proposeShape({ kind: "split", parts: [{ ...parts[0], files: a }, { ...parts[1], files: b }] }, medium);
+    const outside = "A part named a path outside the repo, a pattern or the whole repo, so one writer does it.";
+    for (const bad of ["/", ".", "./", "/etc/hosts", "~/notes.md", "../../outside/x.ts", "src/../src/math.ts", "src/**", "src/*.ts", "src\\a.ts"]) {
+      expect([bad, split([bad], ["docs/totals.md"]).reason]).toEqual([bad, outside]);
+    }
+    expect(split(["./src/api/totals.ts"], ["SRC/API/"]).reason).toBe("Two of the parts touch the same files, so one writer does it.");
+    expect(split(["src/./api/totals.ts"], ["docs/totals.md"]).kind).toBe("split");
+    expect(partPath("src//api/./x.ts/")).toBe("src/api/x.ts");
+  });
+
+  test("a small task never splits or tries attempts, and says so plainly", () => {
+    expect(proposeShape({ kind: "split", parts }, { size: "small", checksFound: true }).reason).toBe("A small task runs as one writer.");
+    // The attempts count stays two or three, so no label ever reads "Best of 1".
+    expect(proposeShape({ kind: "best_of_n", attempts: 1 }, { size: "small", checksFound: true }).attempts).toBe(2);
   });
 
   test("fan-out is capped by size: a small task never fans out, a large one at most five ways", () => {

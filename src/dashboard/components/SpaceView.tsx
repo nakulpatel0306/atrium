@@ -9,6 +9,7 @@ import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutc
 import { REVIEW_CHOICES } from "../../engine/spaces";
 import { ChecksBadge, LoopPanel } from "./LoopPanel";
 import { CostChip } from "./Shape";
+import { followsText } from "../../engine/shape";
 import { spendText } from "../../engine/cost";
 import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
@@ -371,7 +372,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
           {parent && (
             <p className="follows">
               <CornerDownRight />
-              {task.kind === "review" ? "Reviews" : task.loop?.role === "part" ? "A part of" : task.loop?.role === "attempt" ? "An attempt at" : "Fixes what the review found in"} "{parent.title}"
+              {followsText(task)} "{parent.title}"
             </p>
           )}
           {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (

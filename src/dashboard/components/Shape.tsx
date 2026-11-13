@@ -3,7 +3,7 @@ import { useState } from "react";
 import { cacheShare, type Spend, spendText } from "../../engine/cost";
 import { compact, SIZE_BUDGETS } from "../../engine/loop";
 import {
-  type ChildState,
+  CHILD_STATE_TEXT,
   childState,
   costlier,
   fanOutEstimate,
@@ -177,8 +177,6 @@ export function ShapeLine({ task, state }: { task: Task; state: State }) {
   );
 }
 
-const CHILD_TEXT: Record<ChildState, string> = { running: "working", ready: "ready", stuck: "needs you", dropped: "dropped" };
-
 // A split's parts or a best-of-N's attempts under their parent, with the decision once they're ready. Each child is a
 // task of its own in the list, one click away.
 export function Fanout({ task, state }: { task: Task; state: State }) {
@@ -214,7 +212,7 @@ export function Fanout({ task, state }: { task: Task; state: State }) {
         <ul className="fanout-list">
           {children.map((c, i) => (
             <li key={c.id}>
-              <span className={`tag${childState(c) === "stuck" || childState(c) === "dropped" ? " bad" : childState(c) === "ready" ? " good" : ""}`}>{CHILD_TEXT[childState(c)]}</span>
+              <span className={`tag${childState(c) === "stuck" || childState(c) === "dropped" ? " bad" : childState(c) === "ready" ? " good" : ""}`}>{CHILD_STATE_TEXT[childState(c)]}</span>
               <a href={`#task-${c.id}`}>{split ? c.title : `Attempt ${i + 1}`}</a>
               <span className="hint">{c.branch ?? ""}</span>
               {c.prUrl && (

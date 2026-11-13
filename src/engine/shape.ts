@@ -67,22 +67,30 @@ function parts(v: unknown, max: number): SplitPart[] {
     .slice(0, max);
 }
 
-// Two paths overlap when they're the same file or one is a folder holding the other, folding case as APFS does.
-function overlaps(a: string, b: string): boolean {
-  const x = a.toLowerCase().replace(/^\.\//, "").replace(/\/+$/, "");
-  const y = b.toLowerCase().replace(/^\.\//, "").replace(/\/+$/, "");
-  return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
+// A part's path as a repo-relative path with `.` segments and trailing slashes gone and case folded, as APFS does;
+// null for anything that doesn't name a file or folder inside the repo: an absolute or home path, a glob, `..`, the
+// repo root itself, or a backslash.
+export function partPath(p: string): string | null {
+  if (!p || /^[/~]/.test(p) || /[*?[\]{}\\]/.test(p)) return null;
+  const segs = p.split("/").filter((s) => s !== "" && s !== ".");
+  if (!segs.length || segs.includes("..")) return null;
+  return segs.join("/").toLowerCase();
 }
 
+// Two paths overlap when they're the same file or one is a folder holding the other.
+const overlaps = (x: string, y: string): boolean => x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
+
 // Why these parts can't run as separate tasks, or null when they can: at least two, within the fan-out cap, each
-// naming its files, and no file in two parts.
+// naming files inside the repo, and no file in two parts.
 export function splitProblem(ps: SplitPart[], size: TaskSize): string | null {
   if (ps.length < 2) return "It didn't find independent parts to split into.";
-  if (ps.length > FAN_OUT[size]) return `A ${size} task splits into at most ${FAN_OUT[size]} parts.`;
+  if (ps.length > FAN_OUT[size]) return size === "small" ? "A small task runs as one writer." : `A ${size} task splits into at most ${FAN_OUT[size]} parts.`;
   if (ps.some((p) => !p.files.length)) return "Each part needs its own files, and one named none.";
+  const paths = ps.map((p) => p.files.map(partPath));
+  if (paths.some((fs) => fs.some((f) => f === null))) return "A part named a path outside the repo, a pattern or the whole repo, so one writer does it.";
   for (let i = 0; i < ps.length; i++) {
     for (let j = i + 1; j < ps.length; j++) {
-      if (ps[i]!.files.some((f) => ps[j]!.files.some((g) => overlaps(f, g)))) return "Two of the parts touch the same files, so one writer does it.";
+      if (paths[i]!.some((f) => paths[j]!.some((g) => overlaps(f!, g!)))) return "Two of the parts touch the same files, so one writer does it.";
     }
   }
   return null;
@@ -107,7 +115,8 @@ export function proposeShape(raw: unknown, ctx: ShapeContext): Shape {
     scouts: list(r.scouts, FAN_OUT[ctx.size], LIMITS.question),
     // Read past the cap, so too many parts turn the split down rather than silently dropping one.
     parts: parts(r.parts, PARTS_READ),
-    attempts: Math.min(MAX_ATTEMPTS, FAN_OUT[ctx.size], Math.max(2, Number.isInteger(r.attempts) ? (r.attempts as number) : 2)),
+    // Two or three whatever the size: a small task can't take best-of-N at all (bestOfProblem).
+    attempts: Math.min(MAX_ATTEMPTS, Math.max(2, Number.isInteger(r.attempts) ? (r.attempts as number) : 2)),
     approved: false,
     mixVendors: false,
     checksFound: ctx.checksFound,
@@ -231,4 +240,15 @@ export function childState(t: { status: string; loop: { stage: string; role: "pa
   if (t.status === "done" && t.loop?.stage === "ready") return "ready";
   if (t.status === "blocked" || t.status === "failed" || t.status === "done") return t.loop?.role === "attempt" ? "dropped" : "stuck";
   return "running";
+}
+
+// The words every surface uses for where a part or attempt is.
+export const CHILD_STATE_TEXT: Record<ChildState, string> = { running: "working", ready: "ready", stuck: "needs you", dropped: "dropped" };
+
+// What a task with a parent is to it, for its row and detail.
+export function followsText(t: { kind: string; loop: { role: "part" | "attempt" | null } | null }): string {
+  if (t.kind === "review") return "Reviews";
+  if (t.loop?.role === "part") return "A part of";
+  if (t.loop?.role === "attempt") return "An attempt at";
+  return "Fixes what the review found in";
 }

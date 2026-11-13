@@ -2,7 +2,7 @@
 import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboard/agents";
 import { cacheShare, spendText } from "../engine/cost";
 import { compact } from "../engine/loop";
-import { childState, SHAPE_LABEL, shapeLine, suggestion, suggestionLine, switchOpen } from "../engine/shape";
+import { CHILD_STATE_TEXT, childState, followsText, SHAPE_LABEL, shapeLine, suggestion, suggestionLine, switchOpen } from "../engine/shape";
 import { askSteps } from "./keys";
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
 import { actorName, attentionText, loopLine, reviewerName, reviewHint, reviewLine, runOutcome, spaceStatus, STAGE_TEXT, STATUS_TEXT } from "../dashboard/summary";
@@ -127,7 +127,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   if (told && (task.status === "review" || task.status === "done")) lines.push(plain(told, { color: task.outcome === "unknown" ? color.muted : color.warn }));
   // Wait reasons can name a command in backticks; they're kept as written so it can be copied.
   if (wait) lines.push(plain(wait.reason, { color: needsAction(wait) ? color.bad : color.warn }));
-  if (parent) lines.push(muted(`${task.kind === "review" ? "Reviews" : task.loop?.role === "part" ? "A part of" : task.loop?.role === "attempt" ? "An attempt at" : "Fixes what the review found in"} "${parent.title}"`));
+  if (parent) lines.push(muted(`${followsText(task)} "${parent.title}"`));
   // The loop at a glance, read-only: the stage, what the checks and reviews said, and the budget used.
   if (task.loop && state.spaces.find((s) => s.id === task.spaceId)?.kind === "repo") {
     const line = loopLine(task.loop);
@@ -326,8 +326,6 @@ export function wrapStyled(line: DetailLine, cols: number): DetailLine[] {
   });
 }
 
-const CHILD_WORD = { running: "working", ready: "ready", stuck: "needs you", dropped: "dropped" } as const;
-
 // A split's parts or a best-of-N's attempts, read-only: where each is and, for attempts, the judge's score.
 function fanoutLines(task: State["tasks"][number], state: State): DetailLine[] {
   const fanout = task.loop?.fanout;
@@ -338,7 +336,7 @@ function fanoutLines(task: State["tasks"][number], state: State): DetailLine[] {
     const s = childState(k);
     const score = fanout.scores[k.id];
     out.push([
-      { text: `  ${CHILD_WORD[s]} `, color: s === "ready" ? color.ok : s === "running" ? color.muted : color.bad },
+      { text: `  ${CHILD_STATE_TEXT[s]} `, color: s === "ready" ? color.ok : s === "running" ? color.muted : color.bad },
       { text: fanout.kind === "split" ? k.title : `Attempt ${i + 1}` },
       { text: score ? ` · ${score.score}/10 ${score.comment}` : "", color: color.muted },
     ]);
