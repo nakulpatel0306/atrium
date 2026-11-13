@@ -32,9 +32,15 @@ function Attachment({ messageId, index, name, size, openable }: { messageId: str
   );
 }
 
-// One message of the chain. Its body is plain text the engine made; quoted history is folded away.
-function Message({ m, last, loading }: { m: MessageView; last: boolean; loading: boolean }) {
+// One message of the chain. Its body is plain text the engine made; quoted history is folded away. A body that
+// didn't load has its own Retry, which fetches just that message.
+function Message({ m, threadId, last, loading }: { m: MessageView; threadId: string; last: boolean; loading: boolean }) {
   const [expanded, setExpanded] = useState(last);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const retry = async () => {
+    const res = await post(`/api/mail/threads/${encodeURIComponent(threadId)}/open`, { retry: true, messageId: m.id });
+    setRetryError(res.ok ? null : res.error);
+  };
   const parts = m.body !== null ? splitQuoted(m.body) : null;
   return (
     <article className={`mail-msg${expanded ? " open" : ""}`} aria-label={`From ${personName(m.from)}, ${absolute(m.date)}`}>
@@ -62,7 +68,19 @@ function Message({ m, last, loading }: { m: MessageView; last: boolean; loading:
               )}
             </div>
           ) : (
-            <p className="mail-body faint">{loading ? "Loading the message…" : m.snippet || "Atrium couldn't load this message's text yet."}</p>
+            <div className="mail-body faint">
+              {loading ? (
+                "Loading the message…"
+              ) : (
+                <>
+                  {m.snippet || "Atrium couldn't load this message's text yet."}{" "}
+                  <button className="btn" onClick={() => void retry()} aria-label={`Load the message from ${personName(m.from)} again`}>
+                    Retry
+                  </button>
+                  {retryError && <span className="err"> {retryError}</span>}
+                </>
+              )}
+            </div>
           )}
           {m.attachments.length > 0 && (
             <ul className="mail-atts" aria-label="Attachments">
@@ -116,7 +134,7 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
         </p>
       )}
       {messages.map((m, i) => (
-        <Message key={m.id} m={m} last={i === messages.length - 1} loading={loading && m.body === null} />
+        <Message key={m.id} m={m} threadId={thread.id} last={i === messages.length - 1} loading={loading && m.body === null} />
       ))}
     </div>
   );

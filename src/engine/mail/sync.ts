@@ -240,12 +240,13 @@ export function createMailSync(deps: {
       if (stale(maxAge)) await syncNow();
     },
 
-    // Bodies for messages that don't have one cached yet, three at a time. A message already being fetched is joined,
-    // not fetched twice; one that failed isn't tried again for ten minutes unless `retry` is set (the user's Retry).
-    // Resolves with the first problem, if any, once all of them have settled.
+    // Bodies for messages that don't have one cached yet, three at a time. `messageIds` is a thread oldest first, and
+    // the newest 25 missing are taken, so the message the thread view expands is always among them. A message already
+    // being fetched is joined, not fetched twice; one that failed isn't tried again for ten minutes unless `retry` is
+    // set (the user's Retry). Resolves with the first problem, if any, once all of them have settled.
     async fetchBodies(messageIds: string[], opts: { retry?: boolean } = {}): Promise<string | null> {
       if (opts.retry) for (const id of messageIds) failed.delete(id);
-      const wanted = messageIds.filter((id) => !hasBody(id)).slice(0, BODIES_PER_THREAD);
+      const wanted = messageIds.filter((id) => !hasBody(id)).slice(-BODIES_PER_THREAD);
       const joined = wanted.filter((id) => inflight.has(id)).map((id) => inflight.get(id)!);
       // Each new id is claimed before anything awaits, so a second call made meanwhile joins it instead.
       const queue = wanted

@@ -119,8 +119,11 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     const thread = getThreadView(db, openM[1]!);
     if (!thread) throw new HttpError(404, "That thread isn't in the Inbox anymore.");
     const b = await readBody(req);
+    const ids = threadMessages(db, thread.id).map((m) => m.id);
+    // One message's own Retry names it; it must be on this thread.
+    if (b.messageId !== undefined && (typeof b.messageId !== "string" || !ids.includes(b.messageId))) throw new HttpError(404, "That message isn't on this thread anymore.");
     // Fetched in the background; each body that lands is pushed to the dashboard.
-    void mail.sync.fetchBodies(threadMessages(db, thread.id).map((m) => m.id), { retry: b.retry === true });
+    void mail.sync.fetchBodies(typeof b.messageId === "string" ? [b.messageId] : ids, { retry: b.retry === true });
     return json({ ok: true });
   }
 

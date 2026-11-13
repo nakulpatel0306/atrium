@@ -102,6 +102,19 @@ test("connecting Google makes the private Inbox space and fills it; the thread v
   expect(detail.messages[1]!.attachments).toEqual([{ name: "lease.pdf", size: 15, openable: true }]);
 });
 
+test("one message's Retry fetches that message, and only one on this thread", async () => {
+  await connectGoogle();
+  const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+  const [first] = listThreadMessages(lease.id);
+  const before = fakes.google.log.length;
+  expect((await send("POST", `/api/mail/threads/${lease.id}/open`, { retry: true, messageId: first })).status).toBe(200);
+  await mail.sync.fetchBodies([first!]);
+  expect(fakes.google.log.slice(before).filter((l) => l.includes("/messages/"))).toEqual(["GET /gmail/v1/users/me/messages/gm-1?format=full"]);
+  const news = listThreads(db).find((t) => t.subject === "This week's deals")!;
+  const other = await send("POST", `/api/mail/threads/${lease.id}/open`, { messageId: listThreadMessages(news.id)[0] });
+  expect(other.status).toBe(404);
+});
+
 test("an attachment opens through the engine's named-app path", async () => {
   await connectGoogle();
   const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
