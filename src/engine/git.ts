@@ -491,6 +491,27 @@ const PATCH_READ_CAP = 256 * 1024;
 
 // The text a change adds, and how many bytes it adds and removes, read from a zero-context diff. A diff too big to
 // read in full reports more bytes than the cap, which is all a caller deciding "small enough?" needs.
+// Every path a task's work touched: committed on the branch since `base`, and whatever is in the working tree
+// beyond that, untracked and ignored files included, since checks run in the tree and an ignored .npmrc changes
+// them as much as a committed one. The dependency folders are left out: agents can't write them, and listing an
+// installed node_modules would take long.
+export async function touchedPaths(path: string, base: string, head: string): Promise<string[]> {
+  const committed = (await branchFiles(path, base, head)).map((f) => f.path);
+  const exclude = ["node_modules", ".venv"].flatMap((d) => [`:(exclude,glob)${d}/**`, `:(exclude,glob)**/${d}/**`]);
+  const res = await git(path, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "--ignored=traditional", "--untracked-files=all", "--", ".", ...exclude]);
+  if (res.code !== 0) throw new Error(`Couldn't read git status: ${firstLine(res.err)}`);
+  // Each record is "XY path", with a rename's old path as the next record.
+  const fields = res.out.split("\0");
+  const tree: string[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const rec = fields[i]!;
+    if (rec.length < 4) continue;
+    tree.push(rec.slice(3));
+    if (rec[0] === "R" || rec[0] === "C") i++;
+  }
+  return [...new Set([...committed, ...tree])];
+}
+
 export async function changedText(path: string, base: string, sha: string): Promise<{ added: string[]; bytes: number }> {
   const res = await gitCapped(
     path,

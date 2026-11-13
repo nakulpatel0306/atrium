@@ -177,14 +177,18 @@ export const LOCKFILES = INSTALLS.map(([lock]) => lock);
 
 // Files that change what an install runs or where it fetches from. A change to any of them is never installed
 // automatically: the engine's install would be running the agent's own instructions.
-const INSTALL_CONFIG = /(^|\/)(\.npmrc|\.yarnrc|\.yarnrc\.yml|\.pnpmfile\.cjs|pnpm-workspace\.yaml|bunfig\.toml|pip\.conf|uv\.toml)$|(^|\/)\.yarn\/(releases|plugins)\//;
+// Matched with case folded, since APFS is case-insensitive: .NPMRC is .npmrc.
+const INSTALL_CONFIG = /(^|\/)(\.npmrc|\.yarnrc|\.yarnrc\.yml|\.pnpmfile\.cjs|pnpm-workspace\.yaml|bunfig\.toml|pip\.conf|uv\.toml)$|(^|\/)\.yarn\/(releases|plugins)\//i;
 
 export const touchesInstallConfig = (files: string[]): string[] => files.filter((f) => INSTALL_CONFIG.test(f));
 
 // Agents can't write node_modules, so when a change touches the manifest or the lockfile the engine installs from
 // the lockfile before the checks run. `files` are the paths the change touched; `lockfiles` the ones the tree has.
 export function installFor(files: string[], lockfiles: string[]): Check | null {
-  const touched = files.some((f) => f === "package.json" || INSTALLS.some(([lock]) => f === lock));
+  const touched = files.some((f) => {
+    const p = f.toLowerCase();
+    return p === "package.json" || INSTALLS.some(([lock]) => p === lock);
+  });
   const command = INSTALLS.find(([lock]) => lockfiles.includes(lock))?.[1];
   return touched && command ? { name: "Install", command, kind: "fast", install: true } : null;
 }

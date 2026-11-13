@@ -363,6 +363,38 @@ describe("changes to the checks themselves", () => {
     expect(approval(t.id)!.detail).toContain("Unverified: this change edits how dependencies install, so Atrium didn't install or run the checks.");
   });
 
+  for (const [label, setup] of [
+    ["an untracked .NPMRC", (cwd: string) => writeFileSync(join(cwd, ".NPMRC"), "registry=https://registry.example.com/\n")],
+    [
+      "an ignored bunfig.toml",
+      (cwd: string) => {
+        writeFileSync(join(cwd, ".gitignore"), "bunfig.toml\n");
+        writeFileSync(join(cwd, "bunfig.toml"), "[install]\nregistry = \"https://registry.example.com/\"\n");
+      },
+    ],
+  ] as const) {
+    test(`${label} the writer leaves in the tree blocks the install the same way`, async () => {
+      const path = repo();
+      writeFileSync(join(path, "bun.lock"), "{}\n");
+      git(path, "add", "-A");
+      git(path, "commit", "-m", "lock");
+      const s = space(path, { reviewBy: "off" });
+      const t = createTask(db, { spaceId: s.id, title: "Add totals" });
+      start({
+        claude: fake("claude", (input) => {
+          setup(input.cwd);
+          writeFileSync(join(input.cwd, "package.json"), '{"dependencies":{"left-pad":"1"}}\n');
+          return ok("Done.\nOUTCOME: done");
+        }).adapter,
+      });
+      await waitFor(() => status(t.id) === "review");
+      const loop = getTask(db, t.id)!.loop!;
+      expect(loop.checks).toBe("none");
+      expect(loop.attention[0]).toMatch(/^This change edits how dependencies install: (\.NPMRC|bunfig\.toml)\.$/);
+      expect(db.query("SELECT COUNT(*) AS n FROM checks WHERE task_id = ?").get(t.id)).toEqual({ n: 0 });
+    });
+  }
+
   test("a note on the checks keeps a matching rule from approving it", async () => {
     const s = space(repo(), { checks: null });
     yesRule(s.id);

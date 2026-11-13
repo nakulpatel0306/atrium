@@ -27,6 +27,7 @@ import {
   restoreTree,
   returnToBranch,
   reviewDiff,
+  touchedPaths,
 } from "./git";
 import { loopNotes, recordReview, resolvedAgent, roundsLeft, startReview, triageFeedback, wantsTriage } from "./handoff";
 import { briefSections, checksSection } from "./brief";
@@ -931,8 +932,9 @@ export function createRunner(deps: {
       const verdict = loop.checks === "failed" ? "failed" : loop.checks === "passed" ? "passed" : "none";
       return { verdict, results: null, sha, noChanges: false, attention: loop.attention, unverified: loop.unverified };
     }
-    const changed = (await branchFiles(repo.path, repo.start, sha)).map((f) => f.path);
-    const attention = [...new Set(checks.flatMap((c) => c.notes ?? [])), ...(await checkAttention(repo.path, repo.start, sha, checks))];
+    // Committed and not: an ignored .npmrc in the tree changes the checks as much as a committed one.
+    const changed = await touchedPaths(repo.path, repo.start, sha);
+    const attention = [...new Set(checks.flatMap((c) => c.notes ?? [])), ...(await checkAttention(repo.path, repo.start, sha, changed, checks))];
     // Installing would run the agent's own install instructions, so a change to them leaves the result to Nakul.
     const installConfig = touchesInstallConfig(changed);
     if (installConfig.length) {

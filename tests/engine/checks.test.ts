@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { codexStateDir, seatbeltProfile } from "../../src/engine/agents/seatbelt";
+import { touchedPaths } from "../../src/engine/git";
 import { checkAttention } from "../../src/engine/checks/attention";
 import { checkProfile, installProfile } from "../../src/engine/checks/sandbox";
 import { checksFor, detectChecks, hintsFrom, installFor, overrideChecks, touchesInstallConfig } from "../../src/engine/checks/detect";
@@ -252,8 +253,24 @@ describe("changes to the checks themselves", () => {
       writeFileSync(join(p, "vitest.config.ts"), "export default {}");
       writeFileSync(join(p, "src/a.ts"), "export const a = 1;");
     });
-    const notes = await checkAttention(r.path, r.base, r.head, [{ name: "Tests", command: "./scripts/ci.sh", kind: "full" }]);
+    const notes = await checkAttention(r.path, r.base, r.head, await touchedPaths(r.path, r.base, r.head), [{ name: "Tests", command: "./scripts/ci.sh", kind: "full" }]);
     expect(notes).toEqual(["This change edits how checks run: package.json, vitest.config.ts."]);
+  });
+
+  test("touched paths cover the branch's commits and the tree: untracked and ignored files, never the dependency folders", async () => {
+    const r = branchWith({ ".gitignore": "*.local\nnode_modules\n", "src/a.ts": "" }, (p) => writeFileSync(join(p, "src/a.ts"), "export const a = 1;"));
+    writeFileSync(join(r.path, ".NPMRC"), "registry=https://registry.example.com/\n");
+    writeFileSync(join(r.path, "bunfig.local"), "x");
+    mkdirSync(join(r.path, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(r.path, "node_modules", "pkg", "index.js"), "");
+    expect((await touchedPaths(r.path, r.base, r.head)).sort()).toEqual([".NPMRC", "bunfig.local", "src/a.ts"]);
+  });
+
+  test("path classifiers fold case, as APFS does", async () => {
+    expect(touchesInstallConfig([".NPMRC", "BunFig.Toml"])).toEqual([".NPMRC", "BunFig.Toml"]);
+    expect(installFor(["Package.JSON"], ["bun.lock"])).not.toBeNull();
+    const r = branchWith({ "src/a.ts": "" }, (p) => writeFileSync(join(p, "MAKEFILE"), "test:\n\ttrue\n"));
+    expect(await checkAttention(r.path, r.base, r.head, await touchedPaths(r.path, r.base, r.head), [])).toEqual(["This change edits how checks run: MAKEFILE."]);
   });
 
   test("removed test files and newly skipped tests are named; a plain code change says nothing", async () => {
@@ -261,12 +278,12 @@ describe("changes to the checks themselves", () => {
       rmSync(join(p, "tests/a.test.ts"));
       writeFileSync(join(p, "tests/b.test.ts"), "test.skip('b', () => {})");
     });
-    expect(await checkAttention(r.path, r.base, r.head, [])).toEqual([
+    expect(await checkAttention(r.path, r.base, r.head, await touchedPaths(r.path, r.base, r.head), [])).toEqual([
       "This change removes test files: 2 before, 1 now.",
       "This change marks tests as skipped.",
     ]);
     const plain = branchWith({ "src/a.ts": "" }, (p) => writeFileSync(join(p, "src/a.ts"), "export const a = 2;"));
-    expect(await checkAttention(plain.path, plain.base, plain.head, [])).toEqual([]);
+    expect(await checkAttention(plain.path, plain.base, plain.head, await touchedPaths(plain.path, plain.base, plain.head), [])).toEqual([]);
   });
 });
 
