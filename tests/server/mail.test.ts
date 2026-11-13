@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openDb } from "../../src/engine/db";
 import { mailKeychain } from "../../src/engine/mail/google/oauth";
-import { listAccounts, listThreads, threadMessages } from "../../src/engine/mail/store";
+import { listAccounts, listCalendars, listEvents, listThreads, replaceEvents, threadMessages } from "../../src/engine/mail/store";
 import { createMail, type Mail } from "../../src/engine/mail";
 import type { MailOverview } from "../../src/server/mail";
 import { getSpace } from "../../src/engine/spaces";
@@ -232,6 +232,16 @@ describe("drafts and sends", () => {
     expect(second.status).toBe(200);
     await mail.actions.settle();
     expect(sends()[0]!.raw).toContain("To: robin@example.net, \"Kit Moreno\" <kit@example.org>");
+  });
+
+  test("the route refuses moving or cancelling one day of a repeating event", async () => {
+    await connectGoogle();
+    const cal = listCalendars(db)[0]!.id;
+    replaceEvents(db, cal, [{ sourceId: "abc_1", icalUid: "abc", recurrenceId: "1794582000000", title: "Weekly sync", start: NOW + 86_400_000, end: NOW + 90_000_000, allDay: false, location: "", attendees: [], organizer: SAM, myStatus: null, recurrence: "series:abc" }], NOW, NOW + 2 * 86_400_000);
+    const weekly = listEvents(db, NOW, NOW + 2 * 86_400_000).find((e) => e.title === "Weekly sync")!;
+    const r = await send("POST", "/api/mail/event-drafts", { kind: "event_cancel", eventId: weekly.id });
+    expect(r.status).toBe(400);
+    expect(await errorOf(r)).toContain("repeating event");
   });
 
   test("Save as draft and RSVP are the user's own presses", async () => {

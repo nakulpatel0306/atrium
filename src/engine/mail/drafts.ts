@@ -471,12 +471,17 @@ export function eventProblem(db: Database, kind: EventKind, e: EventPlan): strin
   return null;
 }
 
-type StoredEvent = { id: string; calendar_id: string; source_id: string; title: string; start_at: number; end_at: number; all_day: number; location: string; attendees: string; organizer: string | null };
+type StoredEvent = { id: string; calendar_id: string; source_id: string; title: string; start_at: number; end_at: number; all_day: number; location: string; attendees: string; organizer: string | null; recurrence: string | null; recurrence_id: string };
 
-// An event the user may move or cancel: on a calendar Atrium can write to, and organised by the user (or by no one).
+export const REPEATING_COPY = "Atrium can't move or cancel one day of a repeating event yet. Change it in Calendar or Google Calendar.";
+
+// An event the user may move or cancel: a single event (not one day of a series), on a calendar Atrium can write to,
+// and organised by the user (or by no one).
 export function ownedEvent(db: Database, eventId: string): StoredEvent {
   const e = db.query("SELECT * FROM cal_events WHERE id = ?").get(eventId) as StoredEvent | null;
   if (!e) throw new BadMail("That event isn't in the calendar anymore. Sync, then try again.");
+  // One occurrence of a series can't be changed safely yet, so no path (agent, route or card) may draft it.
+  if (e.recurrence || e.recurrence_id) throw new BadMail(REPEATING_COPY);
   if (e.organizer && !ownAddresses(db).has(normalizeAddress(e.organizer))) throw new BadMail("Only the organizer can move or cancel this event. Reply to the invite instead.");
   if (!writableCalendars(db).some((c) => c.id === e.calendar_id)) throw new BadMail("Atrium can't change events on that calendar.");
   return e;

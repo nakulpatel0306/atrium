@@ -126,3 +126,10 @@ test("an invite card names its button for what it does, and goes through the sam
   await wait(SEND_DELAY_MS);
   expect(calls[0]).toMatchObject({ url: "/api/mail/actions/mla_1/send", body: { title: "Lunch with Priya", start, end: start + 3600_000, attendees: [{ name: "Priya", address: "priya@example.org" }], seen: ["First time inviting Priya"] } });
 });
+
+test("a cancel card names the event's day and time", () => {
+  const start = new Date("2026-11-13T12:00").getTime();
+  const event = { calendarId: "cal_1", eventId: "evt_1", title: "Dentist", start, end: start + 3600_000, allDay: false, location: "", attendees: [], notify: false };
+  const card = render(<EventCard approval={approval("apr_1", 'Cancel "Dentist"?')} action={draft({ kind: "event_cancel", event, quoted: "", to: [], reasons: [] })} />);
+  expect(card.querySelector(".msg-to")!.textContent).toContain(new Date(start).toLocaleString([], { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
+});

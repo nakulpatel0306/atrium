@@ -12,7 +12,7 @@ import { createMailActions, recoverMailActions, STOPPED_COPY } from "../../../sr
 import { googleSource } from "../../../src/engine/mail/google/source";
 import { appleSource, NO_GUESTS_COPY, NO_RSVP_COPY } from "../../../src/engine/mail/apple";
 import { inboxSpace } from "../../../src/engine/mail/space";
-import { ingestMessages, listAccounts, listCalendars, listEvents, listThreads, setPreferred, threadMessages, upsertAccount } from "../../../src/engine/mail/store";
+import { ingestMessages, listAccounts, listCalendars, listEvents, listThreads, replaceEvents, setPreferred, threadMessages, upsertAccount } from "../../../src/engine/mail/store";
 import { createTask, getTask } from "../../../src/engine/tasks";
 import { tempHome } from "../../helpers";
 import { approveInBrowser, CLIENT_ID, FAKE_SECURITY, useFakes } from "./fakes";
@@ -401,6 +401,17 @@ describe("calendar changes", () => {
     // Someone else's invite can't be moved.
     const theirs = listEvents(db, NOW - 30 * 86_400_000, NOW + 30 * 86_400_000).find((e) => e.title === "Planning with Kit")!;
     expect(() => draftEvent(db, { spaceId: space(), kind: "event_move", draftedBy: "you", eventId: theirs.id, start: NOW })).toThrow("Only the organizer");
+  });
+
+  test("one occurrence of a repeating event can't be moved or cancelled, by Claude or anyone", async () => {
+    await connectGoogle();
+    const cal = listCalendars(db)[0]!.id;
+    replaceEvents(db, cal, [{ sourceId: "abc_20261113T150000Z", icalUid: "abc", recurrenceId: "1794582000000", title: "Weekly sync", start: NOW + 86_400_000, end: NOW + 90_000_000, allDay: false, location: "", attendees: [{ name: "Kit", address: "kit@example.org", status: null }], organizer: SAM, myStatus: "accepted", recurrence: "series:abc" }], NOW, NOW + 2 * 86_400_000);
+    const weekly = listEvents(db, NOW, NOW + 2 * 86_400_000).find((e) => e.title === "Weekly sync")!;
+    for (const kind of ["event_cancel", "event_move"] as const) {
+      expect(() => draftEvent(db, { spaceId: space(), kind, draftedBy: "claude", eventId: weekly.id, start: NOW })).toThrow("repeating event");
+    }
+    expect(pendingMailActions(db)).toEqual([]);
   });
 
   test("RSVP answers through Google and tells the organizer; Calendar.app says it can't", async () => {

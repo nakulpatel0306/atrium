@@ -16,6 +16,12 @@ export const toLocalInput = (ms: number) => {
 };
 export const fromLocalInput = (s: string) => (s ? new Date(s).getTime() : NaN);
 
+// The day and time of the event a move or cancel is about, so the card names the exact one.
+export const eventWhen = (e: { start: number; end: number; allDay: boolean }) =>
+  e.allDay
+    ? new Date(e.start).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })
+    : `${new Date(e.start).toLocaleString([], { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} to ${new Date(e.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+
 const ACT: Record<string, string> = { event_create: "Create event", event_move: "Move event", event_cancel: "Cancel event" };
 
 // A calendar change waiting on the user: a new event (and its invites), a move or a cancellation. Approve goes
@@ -114,6 +120,8 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
           <p className="msg-to">
             <span className="lbl">Event</span>
             <b>{e.title || "(no title)"}</b>
+            <span className="sep">·</span>
+            <span>{eventWhen(e)}</span>
           </p>
         )}
         {action.kind !== "event_cancel" && (

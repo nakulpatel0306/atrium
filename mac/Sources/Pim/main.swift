@@ -273,15 +273,20 @@ func mailCompose(send: Bool) throws -> Any {
   return ["ok": true]
 }
 
-// The event a write names: one occurrence when the id carries its date, else the event itself.
+// The exact event a write names, or an error. An id with an occurrence date must match that occurrence; it never
+// falls back to the series, which would change a different day. Repeating events are refused outright.
 func findEvent(_ id: String) throws -> EKEvent {
   let store = eventStore()
   guard let parts = splitEventId(id) else { throw PimError(kind: "bad_args", message: "That event id isn't one atrium-pim made.") }
+  let found: EKEvent?
   if let occurrence = parts.occurrence {
     let around = store.predicateForEvents(withStart: occurrence.addingTimeInterval(-86_400), end: occurrence.addingTimeInterval(86_400), calendars: nil)
-    if let e = store.events(matching: around).first(where: { $0.eventIdentifier == parts.event && ($0.occurrenceDate ?? $0.startDate) == occurrence }) { return e }
+    found = store.events(matching: around).first { $0.eventIdentifier == parts.event && ($0.occurrenceDate ?? $0.startDate) == occurrence }
+  } else {
+    found = store.event(withIdentifier: parts.event)
   }
-  guard let e = store.event(withIdentifier: parts.event) else { throw PimError(kind: "not_found", message: "That event isn't in Calendar anymore.") }
+  guard let e = found else { throw PimError(kind: "not_found", message: "That event isn't in Calendar anymore.") }
+  if e.hasRecurrenceRules { throw PimError(kind: "bad_args", message: "atrium-pim doesn't change repeating events.") }
   return e
 }
 
