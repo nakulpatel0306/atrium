@@ -19,7 +19,7 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier" |
 | Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |
-| Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that Atrium can't unsend a text and never touches your repo or GitHub |
+| Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that a repo task's branch stays and Atrium never touches your repo or GitHub |
 | Views | `src/dashboard/components/DeleteTask.tsx` | Delete task…, what goes with it | yes | New in Plan 13 |
 | Views | `src/dashboard/components/StopTask.tsx` | Stop…, the two-step confirm, Keep running | yes | New in Plan 15 |
 | Views | `src/dashboard/components/Toast.tsx` | toast text, Undo, Dismiss | yes | New in Plan 13: Archived / Restored / Deleted lines |
@@ -94,9 +94,9 @@ this page is the record of the reading pass.
 | App | `mac/Sources/App/StatusMenu.swift` | messages | yes | Sentence case: "Open at login", "Open notification settings…" |
 | App | `mac/Sources/App/WebController.swift` | messages | yes | No change needed |
 | App | `mac/Sources/App/main.swift` | messages | yes | No change needed |
-| Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made; Plan 10: alert titles name the symbol ("AMZN price alert") |
+| Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made; titles say when a result is only partly done or couldn't be done |
 | Core | `mac/Sources/Core/ContentRules.swift` | none | yes | New in Plan 10 |
-| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files, Need.symbol, Summary.embed; Plan 14: Summary.nudges (titles come from the engine) |
+| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files, Need.outcome (titles come from the engine) |
 
 ### Engine messages that reach the UI
 

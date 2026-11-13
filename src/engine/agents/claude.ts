@@ -22,8 +22,8 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   "Bash(git remote*)",
   "Bash(git clone*)",
   "Bash(git -c*)",
-  // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send. Matched anywhere in the
-  // command, so "sh -c 'osascript …'" or "env osascript" is denied too.
+  // Driving other apps would let an agent act outside its sandbox. Matched anywhere in the command,
+  // so "sh -c 'osascript …'" or "env osascript" is denied too.
   "Bash(*osascript*)",
   "Bash(*shortcuts*)",
   "Bash(*automator*)",
@@ -65,7 +65,7 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash
       // Passed with --settings, which outranks the repo's .claude settings and the user's, and (with this false) makes
       // the sandbox admin-required, so a cloned repo can't add excluded commands, sockets or hosts.
       allowUnsandboxedCommands: false,
-      // Apple Events would let a sandboxed command drive Messages or Terminal as "bun" once Nakul has allowed that.
+      // Apple Events would let a sandboxed command drive Mail, Messages or Terminal as "bun" once the user has allowed that.
       allowAppleEvents: false,
       enableWeakerNestedSandbox: false,
       enableWeakerNetworkIsolation: false,

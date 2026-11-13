@@ -206,8 +206,8 @@ export function resolveApproval(
     return a;
   });
   const a = resolve();
-  // Listeners act on the decision (a send, a repo push), so they wait until it's committed. Inside a caller's
-  // transaction (the Send route saves Nakul's edits and his yes together) they run once that transaction has
+  // Listeners act on the decision (a repo push), so they wait until it's committed. Inside a caller's transaction
+  // (the new-project route saves the draft's edits and the yes together) they run once that transaction has
   // finished, and only if the decision is still there; a rolled-back yes runs nothing.
   const fire = () => {
     if (db.inTransaction) return queueMicrotask(fire);

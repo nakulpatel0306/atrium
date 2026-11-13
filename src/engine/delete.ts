@@ -91,7 +91,7 @@ function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] 
   if (!tasks.length && !extraApprovals.length) return { transcripts: [] };
   const t = marks(tasks);
   const runs = tasks.length ? (db.query(`SELECT id, transcript_path FROM runs WHERE task_id IN (${t})`).all(...tasks) as { id: string; transcript_path: string }[]) : [];
-  // An approval in another space (a text waiting in Messages) outlives the task it came from.
+  // An approval in another space, or one that belongs to no space (a repo-wide question), outlives the task it came from.
   const own = tasks.length
     ? idsOf(db, `SELECT a.id FROM approvals a JOIN tasks t ON t.id = a.task_id WHERE a.task_id IN (${t}) AND (a.space_id IS NULL OR a.space_id = t.space_id)`, ...tasks)
     : [];

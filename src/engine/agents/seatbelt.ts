@@ -112,7 +112,7 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     "(deny appleevent-send)",
     // The Keychain CLI would hand an agent whatever the login keychain holds.
     '(deny process-exec (literal "/usr/bin/security"))',
-    // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send.
+    // Driving other apps (Mail, Messages, Terminal) or running Shortcuts would let an agent act outside its sandbox.
     '(deny process-exec (literal "/usr/bin/osascript"))',
     '(deny process-exec (literal "/usr/bin/shortcuts"))',
     '(deny process-exec (literal "/usr/bin/automator"))',
