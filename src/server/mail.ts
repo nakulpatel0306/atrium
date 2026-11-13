@@ -27,7 +27,7 @@ import { appleOn, appleProblem, LIMITS, lastSyncedAt, mailSettings, SETTING_KEYS
 import { MailProblem, type Person } from "../engine/mail/types";
 import { AlreadyResolved, resolveApproval } from "../engine/approvals";
 import { isEvent, type MailKind } from "../engine/mail/compose";
-import { BadMail, draftEvent, draftMail, type EventEdit, getMailAction, type MailEdit, updateEventDraft, updateMailDraft } from "../engine/mail/drafts";
+import { BadMail, draftEvent, draftMail, type EventEdit, getMailAction, type MailEdit, sendingRow, updateEventDraft, updateMailDraft } from "../engine/mail/drafts";
 import { OPEN_IN_MAIL_COPY } from "../engine/mail/send";
 import { ACCOUNT_COLORS } from "../engine/mail/colors";
 import { KeychainError } from "../engine/markets/keychain";
@@ -73,11 +73,6 @@ const plain = async <T>(fn: () => Promise<T>): Promise<T> => {
 const MAIL_KINDS: MailKind[] = ["reply", "reply_all", "forward", "new"];
 
 // Whether the From on a card is an address whose preferred source is Mail.app, which never sends from Atrium.
-function sendsThroughMail(db: Database, accountId: string | null): boolean {
-  const picked = accountId ? getAccount(db, accountId) : null;
-  return !!picked && listAccounts(db).some((a) => a.address === picked.address && a.preferred && a.source === "apple");
-}
-
 const optString = (v: unknown, field: string): string | null => {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string") throw new HttpError(400, `${field} must be text.`);
@@ -253,13 +248,15 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     const b = await readBody(req);
     if (!Array.isArray(b.seen) || b.seen.some((x) => typeof x !== "string")) throw new HttpError(400, "seen must list the keys of the notes the card showed.");
     // Only Google sends from the card; a Mail.app account's card opens the message in Mail instead.
-    if (!isEvent(action.kind) && sendsThroughMail(db, typeof b.accountId === "string" ? b.accountId : action.accountId)) throw new HttpError(409, OPEN_IN_MAIL_COPY);
     const seen = new Set(b.seen as string[]);
     // His edits and his yes land together, so what goes out is what he saw when he pressed Send. A note the card
     // didn't show yet (his edit added someone new) keeps the edit but not the yes: he sees the note, then sends.
     const outcome = guardedMail(() =>
       db.transaction(() => {
         const next = isEvent(action.kind) ? updateEventDraft(db, action.id, eventEdit(b)) : updateMailDraft(db, action.id, mailEdit(b));
+        // Only Google sends from the card; a Mail.app account's card opens the message in Mail instead. Checked on the
+        // saved From, so what's checked is what would send; throwing here keeps the edit unsaved too.
+        if (!isEvent(next.kind) && sendingRow(db, next.accountId)?.source === "apple") throw new HttpError(409, OPEN_IN_MAIL_COPY);
         const fresh = next.reasons.filter((r) => !seen.has(r.key));
         if (fresh.length) return { fresh };
         resolveApproval(db, next.approvalId, "approve");

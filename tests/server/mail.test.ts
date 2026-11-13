@@ -208,6 +208,10 @@ describe("drafts and sends", () => {
     // Not from the generic approve, and not with an empty body.
     const generic = await send("POST", `/api/approvals/${draft.approvalId}`, { decision: "approve" });
     expect(generic.status).toBe(409);
+    // An empty From is refused, never swapped for another account.
+    const noFrom = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: "", to: draft.to, cc: [], subject: "", body: "Hi", seen: [] });
+    expect(noFrom.status).toBe(400);
+    expect(await errorOf(noFrom)).toBe("Pick one of your connected accounts to send from.");
     const empty = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: " ", seen: [] });
     expect(await errorOf(empty)).toBe("Write the email first.");
     const ok = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to: draft.to, cc: [], subject: "", body: "Thursday works.", seen: [] });

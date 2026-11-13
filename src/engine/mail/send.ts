@@ -14,6 +14,7 @@ import {
   mailActionForApproval,
   type MailEdit,
   redraftMail,
+  sendingRow,
   APPLE_EVENT_COPY,
   setMailStatus,
   updateMailDraft,
@@ -77,11 +78,8 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
     return job;
   }
 
-  // The row the address sends through now: its preferred one, whichever source that is. A crossover address has two
-  // rows, and only this one is ever used, so it never sends twice.
   function sendingAccount(accountId: string | null): MailAccount {
-    const picked = accountId ? getAccount(db, accountId) : null;
-    const preferred = picked ? listAccounts(db).find((a) => a.address === picked.address && a.preferred) : null;
+    const preferred = sendingRow(db, accountId);
     if (!preferred) throw new MailProblem("other", "The account this was going to be sent from isn't connected anymore. Pick another From, then press Send.");
     return preferred;
   }

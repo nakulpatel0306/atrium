@@ -23,7 +23,7 @@ import {
   subjectProblem,
   uniquePeople,
 } from "./compose";
-import { activeAccounts, getAccount, listCalendars } from "./store";
+import { activeAccounts, getAccount, listAccounts, listCalendars, type MailAccount } from "./store";
 import type { Person } from "./types";
 
 // Emails and calendar changes as message actions, the way texts are (messaging/store.ts): each draft has an
@@ -296,6 +296,15 @@ function quotedFor(kind: MailKind, m: ThreadMessage): string {
 }
 
 // A From the user can pick: an account that's synced and shown. The thread's own account comes first.
+export const NO_FROM_COPY = "Pick one of your connected accounts to send from.";
+
+// The row an address sends through now: its preferred one, whichever source that is. A crossover address has two
+// rows, and only this one is ever used, so it never goes out twice.
+export function sendingRow(db: Database, accountId: string | null): MailAccount | null {
+  const picked = accountId ? getAccount(db, accountId) : null;
+  return picked ? (listAccounts(db).find((a) => a.address === picked.address && a.preferred) ?? null) : null;
+}
+
 function pickAccount(db: Database, wanted: string | null | undefined, fallback: string | null): string {
   const active = activeAccounts(db);
   const ids = new Set(active.map((a) => a.id));
@@ -304,7 +313,7 @@ function pickAccount(db: Database, wanted: string | null | undefined, fallback: 
     // An address names its preferred row, whichever source that is.
     const byAddress = active.find((a) => a.address === normalizeAddress(wanted));
     if (byAddress) return byAddress.id;
-    throw new BadMail("Pick one of your connected accounts to send from.");
+    throw new BadMail(NO_FROM_COPY);
   }
   if (fallback && ids.has(fallback)) return fallback;
   const first = active[0];
@@ -560,6 +569,8 @@ export function updateMailDraft(db: Database, id: string, patch: MailEdit): Mail
   const next = db.transaction(() => {
     const cur = draftOrThrow(db, id);
     if (isEvent(cur.kind)) throw new BadMail("This is a calendar change, not an email.");
+    // An empty From is refused, never swapped for another account.
+    if (!patch.accountId) throw new BadMail(NO_FROM_COPY);
     const accountId = pickAccount(db, patch.accountId, null);
     const to = markAdded(patch.to, [...cur.to, ...cur.cc]);
     const cc = markAdded(patch.cc, [...cur.to, ...cur.cc]).filter((p) => !to.some((t) => t.address === p.address));
