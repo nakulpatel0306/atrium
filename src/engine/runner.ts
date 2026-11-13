@@ -1281,11 +1281,16 @@ export function createRunner(deps: {
       loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified, alreadyFailing: gate.alreadyFailing };
     }
     const writer = agentName(resolvedAgent(db, task));
-    // An attempt gets one turn and Atrium's checks: it survives only if they pass.
+    // An attempt gets one turn and Atrium's checks. It survives when nothing fails that passed before the task: its
+    // checks pass, or the only ones failing already failed on the base commit, which leaves it unverified, labelled
+    // so, rather than dropped. A new failure, or checks that couldn't run, drops it.
     if (loop.role === "attempt") {
       setTaskLoop(db, task.id, loop);
-      if (loop.checks === "failed") return dropAttempt(task, `its checks failed (${(gate?.results ?? []).filter((c) => c.status === "failed").map((c) => c.name).join(", ")}).`);
-      if (loop.checks !== "passed") return dropAttempt(task, loop.noChanges ? "it made no changes." : (loop.unverified ?? "its checks couldn't prove it works."));
+      const stale = new Set(loop.alreadyFailing.map((f) => f.name));
+      if (loop.checks === "failed") return dropAttempt(task, `its checks failed (${(gate?.results ?? []).filter((c) => c.status === "failed" && !stale.has(c.name)).map((c) => c.name).join(", ")}).`);
+      if (loop.noChanges) return dropAttempt(task, "it made no changes.");
+      const onlyStale = stale.size > 0 && (gate?.results ?? []).every((c) => c.status === "passed" || (c.status === "failed" && stale.has(c.name)));
+      if (loop.checks !== "passed" && !onlyStale) return dropAttempt(task, loop.unverified ?? "its checks couldn't prove it works.");
       return ready(getTask(db, task.id)!, space, [...lines, ...loopNotes(loop, space)]);
     }
     if (loop.checks === "failed") {
@@ -1318,7 +1323,9 @@ export function createRunner(deps: {
     loop = { ...loop, stalled: 0, failSig: null };
     // A check that already failed before the task and still fails sends the writer back once, outside loop
     // detection: the task's goal may be exactly to make it pass. After that the result goes on, unverified.
-    if (loop.alreadyFailing.length && gate?.results && !loop.staleRetried && !overBudget(loop)) {
+    // Not for a split's part: another part may be the one whose goal is that check, and the merged branch's gate
+    // decides.
+    if (loop.alreadyFailing.length && gate?.results && !loop.staleRetried && loop.role !== "part" && !overBudget(loop)) {
       const still = loop.alreadyFailing.map((f) => `\`${f.name}\` still fails as it did before the task. Your goal may need it to pass.`).join("\n");
       setTaskLoop(db, task.id, { ...loop, stage: "writing", staleRetried: true, feedback: `## Still failing\n${still}` });
       setTaskStatus(db, task.id, "queued");

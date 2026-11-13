@@ -8,7 +8,8 @@ import { asksBeforeStarting } from "../../src/engine/needs";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { getSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskLoop } from "../../src/engine/tasks";
-import { fake, git, loopHarness, ok, waitFor } from "./loop-harness";
+import { updateSpace } from "../../src/engine/spaces";
+import { FAKE_CHECK, fake, git, loopHarness, ok, waitFor } from "./loop-harness";
 
 const h = loopHarness();
 
@@ -175,5 +176,58 @@ describe("best of N", () => {
     await waitFor(() => h.status(t.id) === "blocked", 15000);
     expect(h.task(t.id).blockedReason).toContain("None of the 2 attempts passed Atrium's checks");
     expect(claude.calls.some((c) => c.prompt.includes("Several attempts"))).toBe(false);
+  });
+});
+
+describe("a base that already fails a check", () => {
+  // The repo's tests fail before any task (status.txt says so), and its lint, a second check, passes.
+  function failingBase() {
+    const path = h.repo();
+    writeFileSync(join(path, "status.txt"), "wrong\n");
+    writeFileSync(join(path, "lint.txt"), "pass\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-qm", "tests already fail");
+    const s = h.space(path);
+    updateSpace(h.db, s.id, { checks: `${FAKE_CHECK} lint.txt\n${FAKE_CHECK}` });
+    return { path, s };
+  }
+
+  test("an attempt that only leaves an already-failing check failing survives, unverified; a new failure drops one", async () => {
+    const { s } = failingBase();
+    const t = asked(s.id, "Speed up totals");
+    const claude = claudeFor({ kind: "best_of_n", attempts: 2 }, (input, n) => {
+      writeFileSync(join(input.cwd, "work.txt"), `attempt ${n}\n`);
+      if (n === 2) writeFileSync(join(input.cwd, "lint.txt"), "bad\n");
+    });
+    h.start({ claude: claude.adapter });
+    await waitFor(() => h.task(t.id).loop?.shape != null && h.task(t.id).loop?.stage === "brief");
+    const loop = h.task(t.id).loop!;
+    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
+    h.runner!.kick();
+    await waitFor(() => h.task(t.id).loop?.stage === "pick", 20000);
+    const attempts = childrenOf(h.db, h.task(t.id));
+    expect(attempts.map(childState)).toEqual(["ready", "dropped"]);
+    expect(attempts[0]!.loop).toMatchObject({ checks: "none" });
+    expect(attempts[0]!.loop!.unverified).toContain("already failing");
+    expect(getTask(h.db, attempts[1]!.id)!.blockedReason).toContain("its checks failed (");
+    expect(getTask(h.db, attempts[1]!.id)!.blockedReason).toContain("lint.txt");
+  });
+
+  test("a part isn't sent back over a check that was already failing; the merged branch's gate decides", async () => {
+    const { s } = failingBase();
+    const t = asked(s.id, "Totals everywhere");
+    const claude = claudeFor({ kind: "split", parts: PARTS }, (input) => {
+      const file = input.prompt.includes("Serve totals") ? "api.txt" : "docs.txt";
+      writeFileSync(join(input.cwd, file), `${file}\n`);
+    });
+    h.start({ claude: claude.adapter });
+    await waitFor(() => h.task(t.id).loop?.shape != null && h.task(t.id).loop?.stage === "brief");
+    const loop = h.task(t.id).loop!;
+    setTaskLoop(h.db, t.id, { ...loop, shape: { ...loop.shape!, approved: true }, stage: "writing" });
+    h.runner!.kick();
+    await waitFor(() => h.task(t.id).loop?.stage === "pick", 20000);
+    // One writer turn per part, with no "still fails as before" send-back.
+    expect(claude.calls.filter((c) => c.mode === "work")).toHaveLength(2);
+    expect(claude.calls.some((c) => c.prompt.includes("## Still failing"))).toBe(false);
   });
 });

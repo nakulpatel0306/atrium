@@ -185,7 +185,13 @@ export function Fanout({ task, state }: { task: Task; state: State }) {
                 </b>
                 {ready ? (
                   <>
-                    <span className="tag good">checks passed</span>
+                    {c.loop?.checks === "passed" ? (
+                      <span className="tag good">checks passed</span>
+                    ) : (
+                      <span className="tag wait" title={c.loop?.unverified ?? undefined}>
+                        unverified: already failing before
+                      </span>
+                    )}
                     {score ? (
                       <p>
                         <span className="tag">{score.score}/10</span> {score.comment}
