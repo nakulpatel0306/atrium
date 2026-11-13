@@ -19,6 +19,8 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier" |
 | Views | `src/dashboard/components/BriefCard.tsx`, `BriefQuestions.tsx`, `LoopPanel.tsx` | brief fields, gap hints, stage strip, checks badge, pause actions | yes | New with the loop; "Give it a hint", "Explain the problem instead", "Unverified: no checks found" |
+| Views | `src/dashboard/components/Shape.tsx` | shape line and override, cost chip, parts and attempts | yes | New with shapes: "Single writer: …", "Change", "Open 2 pull requests", "Merge into one branch", "Pick this one", "None of these", estimates labelled "est." |
+| Views | `src/dashboard/components/Agents.tsx` | models by job, plan gauge, spend | yes | "Models by job", "Atrium ran … in this window", what the gauge can't see |
 | Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |
 | Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that a repo task's branch stays and Atrium never touches your repo or GitHub |
 | Views | `src/dashboard/components/DeleteTask.tsx` | Delete task…, what goes with it | yes | New in Plan 13 |
@@ -105,7 +107,8 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Runs | `src/engine/runner.ts` | messages | yes | "Runner error:" became a sentence with a next step; "Atrium couldn't start the run" says what to check; "Repo is on …" says what to do; requeue lines are sentences; em dashes removed; made line added to reviews; kept-files path shown with ~ |
 | Runs | `src/engine/handoff.ts`, `src/engine/checks/` | review prompt, loop notes on approvals, attention notes | yes | The loop: "Checks: passed (…)", "Unverified: … couldn't run", "Already failing before this task", "Review round N by …", "Look closely: …" |
-| Server | `src/server/loop.ts` | errors | yes | Brief, hint, explain and budget routes; errors say what to do next |
+| Server | `src/server/loop.ts` | errors | yes | Brief, hint, explain and budget routes; errors say what to do next. Shape, parts and pick routes refuse with the reason ("Two of the parts touch the same files, so one writer does it.") |
+| Runs | `src/engine/shape.ts`, `fanout.ts`, `scouts.ts`, `sessions.ts` | shape reasons, fan-out activity, scout and judge prompts, progress notes | yes | New with shapes; "Dropped: its checks failed (…)", "None of the 2 attempts passed Atrium's checks…" |
 | Runs | `src/engine/approvals.ts` | messages | yes | No change needed |
 | Delete | `src/engine/delete.ts`, `src/engine/delete-files.ts` | refusals, kept-folder lines | yes | New in Plan 13: every refusal says nothing was deleted and what to do; "Kept <file>: it changed after the task made it."; clone-in-flight and space-busy refusals; "Deleted "X". Its folder … went to the Trash." / "Atrium couldn't move … to the Trash, so it's still there; delete it in Finder if you don't need it." |
 | Engine | `src/engine/crash-guard.ts` | restart line | yes | Plan 13: "Atrium restarted after an error. Check engine.log if something looks off." |
