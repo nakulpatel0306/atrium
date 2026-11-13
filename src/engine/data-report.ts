@@ -32,13 +32,20 @@ export function formatBytes(n: number | null): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function formatData(locs: DataLocation[]): string {
+// `oldData`: removed features left data in the database (and maybe the Keychain); see old-data.ts.
+export function formatData(locs: DataLocation[], oldData: boolean): string {
   const rows = locs.map((l) => `  ${l.label.padEnd(12)} ${l.where}\n  ${"".padEnd(12)} ${formatBytes(l.bytes)} · ${l.note}`);
   return [
     "Everything Atrium keeps about you:",
     ...rows,
     "",
     "Your projects folder is yours and isn't listed: Atrium only clones into it.",
+    ...(oldData
+      ? [
+          "An older Atrium left mail, texting, money and investing data in the database, and may have left sign-in tokens and keys in your Keychain.",
+          "Run `atrium data remove-old` to see exactly what's there and remove it.",
+        ]
+      : []),
     "To remove all personal data, run `atrium uninstall`, quit Atrium, then delete the folders above.",
   ].join("\n");
 }

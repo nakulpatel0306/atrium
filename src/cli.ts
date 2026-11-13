@@ -3,8 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { config } from "./engine/config";
+import { Database } from "bun:sqlite";
 import { dataLocations, formatData } from "./engine/data-report";
 import { doctor, formatDoctor } from "./engine/doctor";
+import { KeychainError } from "./engine/keychain";
+import { findOldData, hasOldData, removeOldData } from "./engine/old-data";
+import { oldDataLines, oldDataStays, removedLine } from "./engine/old-data-view";
 import { applyProjectsRootFromFile } from "./engine/profile";
 import type { State } from "./engine/state";
 import { buildApp } from "./mac/build";
@@ -17,7 +21,7 @@ const root = resolve(import.meta.dir, "..");
 const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data]";
+const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]]";
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
@@ -167,6 +171,54 @@ function appUninstall(): number {
   return 0;
 }
 
+const NOTHING_OLD = "Nothing is left from features Atrium no longer has.";
+
+// Read-only, so asking never creates a database on a Mac Atrium hasn't run on.
+function oldDataPresent(): boolean {
+  if (!existsSync(config().dbPath)) return false;
+  const db = new Database(config().dbPath, { readonly: true });
+  try {
+    return hasOldData(db);
+  } finally {
+    db.close();
+  }
+}
+
+// The same list and removal as Settings → Data. A running engine shares the database, so a busy one is waited on
+// briefly; secure_delete zeroes what the drop frees before VACUUM rewrites the file.
+async function removeOld(): Promise<number> {
+  if (!existsSync(config().dbPath)) {
+    console.log(NOTHING_OLD);
+    return 0;
+  }
+  const db = new Database(config().dbPath);
+  db.exec("PRAGMA busy_timeout = 5000");
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec("PRAGMA secure_delete = ON");
+  try {
+    const found = await findOldData(db);
+    if (!found) {
+      console.log(NOTHING_OLD);
+      return 0;
+    }
+    console.log(["This removes:", ...oldDataLines(found).map((l) => `  ${l}`), "", ...oldDataStays(found)].join("\n"));
+    if (prompt("Type remove to delete all of this for good:")?.trim() !== "remove") {
+      console.log("Nothing was removed.");
+      return 0;
+    }
+    console.log(removedLine(await removeOldData(db)));
+    return 0;
+  } catch (e) {
+    if (e instanceof KeychainError) return fail(`${e.message} Nothing was removed.`);
+    if (e instanceof Error && /database is locked|SQLITE_BUSY/i.test(e.message)) {
+      return fail("Atrium's engine is busy with the database. Try again in a moment, or use Settings → Data in the dashboard.");
+    }
+    throw e;
+  } finally {
+    db.close();
+  }
+}
+
 function fail(message: string): number {
   console.error(message);
   return 1;
@@ -201,7 +253,9 @@ export async function main(cmd: string | undefined): Promise<number> {
       return report.agents[0]!.state === "ready" || report.agents[0]!.state === "unknown" ? 0 : 1;
     }
     case "data":
-      console.log(formatData(dataLocations()));
+      if (process.argv[3] === "remove-old") return removeOld();
+      if (process.argv[3] !== undefined) return fail(USAGE);
+      console.log(formatData(dataLocations(), oldDataPresent()));
       return 0;
     case "app":
       if (process.argv[3] === "install") return appInstall();

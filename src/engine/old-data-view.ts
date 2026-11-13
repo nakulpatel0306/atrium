@@ -21,3 +21,18 @@ export function oldDataLines(d: OldData): string[] {
     ...(d.keychain.length ? [`Keychain items (service "Atrium"): ${d.keychain.join(", ")}`] : []),
   ];
 }
+
+// What the removal never touches.
+export function oldDataStays(d: OldData): string[] {
+  const one = d.spaces.length === 1;
+  const spaces = d.spaces.length
+    ? [`${d.spaces.join(", ")} ${one ? "stays" : "stay"}, with ${one ? "its" : "their"} tasks. Delete ${one ? "it" : "them"} yourself if you don't need ${one ? "it" : "them"}.`]
+    : [];
+  return [...spaces, "Your projects, repos and other spaces aren't touched."];
+}
+
+export function removedLine(d: OldData | null): string {
+  if (!d) return "Nothing was left to remove.";
+  const n = d.groups.reduce((sum, g) => sum + g.tables.reduce((m, t) => m + t.rows, 0), 0);
+  return `Removed the old data: ${n} ${n === 1 ? "row" : "rows"} and ${d.keychain.length} ${d.keychain.length === 1 ? "Keychain item" : "Keychain items"}.`;
+}

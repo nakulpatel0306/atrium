@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openArgs, renderPlist, statusLine } from "../src/cli";
+import { dataLocations, formatData } from "../src/engine/data-report";
 import { openDb } from "../src/engine/db";
 import { setSetting } from "../src/engine/settings";
 import { trimLog } from "../src/engine/logfile";
@@ -81,7 +82,7 @@ test("usage lists tui", async () => {
   } finally {
     console.error = err;
   }
-  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data]"]);
+  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]]"]);
 });
 
 test("the removed investing command is just an unknown command", async () => {
@@ -117,4 +118,43 @@ test("atrium doctor and atrium data run from the command line", () => {
   const data = run("data");
   expect(data.exitCode).toBe(0);
   expect(data.stdout.toString()).toContain(join(home(), "atrium.db"));
+});
+
+test("atrium data points an older install at remove-old, and a fresh one at nothing", () => {
+  const h = tempHome();
+  cleanup = h.cleanup;
+  expect(formatData(dataLocations(), false)).not.toContain("remove-old");
+  expect(formatData(dataLocations(), true)).toContain("Run `atrium data remove-old` to see exactly what's there and remove it.");
+});
+
+// The real command, as typed: it lists what goes, and only a typed "remove" removes it.
+function cliRemoveOld(answer: string) {
+  const r = Bun.spawnSync(["bun", join(import.meta.dir, "..", "src", "cli.ts"), "data", "remove-old"], { stdin: Buffer.from(`${answer}\n`), env: process.env });
+  return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
+}
+
+test("atrium data remove-old lists, asks, and removes only on yes", () => {
+  const h = tempHome();
+  cleanup = () => {
+    delete process.env.FAKE_SECURITY_STORE;
+    h.cleanup();
+  };
+  process.env.FAKE_SECURITY_STORE = join(h.home, "keychain.json");
+  writeFileSync(process.env.FAKE_SECURITY_STORE, JSON.stringify({ "Atrium/tiingo.token": "abc123" }));
+  expect(cliRemoveOld("remove")).toEqual({ code: 0, out: expect.stringContaining("Nothing is left from features Atrium no longer has.") });
+  const db = openDb();
+  db.exec("CREATE TABLE money_accounts (id TEXT PRIMARY KEY); INSERT INTO money_accounts VALUES ('a1')");
+  setSetting(db, "money.lastDaily", "1");
+  db.close();
+  const no = cliRemoveOld("no");
+  expect(no.out).toContain("Money: 1 row in money_accounts (1)");
+  expect(no.out).toContain('Keychain items (service "Atrium"): tiingo.token');
+  expect(no.out).toContain("Nothing was removed.");
+  const yes = cliRemoveOld("remove");
+  expect(yes.code).toBe(0);
+  expect(yes.out).toContain("Removed the old data: 1 row and 1 Keychain item.");
+  expect(JSON.parse(readFileSync(process.env.FAKE_SECURITY_STORE, "utf8"))).toEqual({});
+  const after = openDb();
+  expect(after.query("SELECT name FROM sqlite_master WHERE name = 'money_accounts'").get()).toBeNull();
+  after.close();
 });

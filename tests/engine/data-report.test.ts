@@ -19,7 +19,7 @@ test("atrium data lists the database, transcripts, space files with sizes", () =
   expect(locs.map((l) => l.label)).toEqual(["Database", "Transcripts", "Space files"]);
   expect(locs[0]!.bytes).toBeGreaterThan(0);
   expect(locs[2]!.bytes).toBe(2048);
-  const text = formatData(locs);
+  const text = formatData(locs, false);
   expect(text).toContain("atrium.db");
   expect(text).toContain("2.0 KB");
   expect(text).toContain("atrium uninstall");

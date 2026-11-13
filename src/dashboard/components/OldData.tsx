@@ -1,16 +1,11 @@
 import { Archive, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { type OldData, oldDataLines } from "../../engine/old-data-view";
+import { type OldData, oldDataLines, oldDataStays, removedLine } from "../../engine/old-data-view";
 import { post, type PostResult, useFetched } from "../api";
-import { plural } from "../../engine/text";
 import { showToast } from "../toast";
 
 // What goes, line by line, and what the removal never touches.
 export function OldDataList({ data }: { data: OldData }) {
-  const one = data.spaces.length === 1;
-  const stays = data.spaces.length
-    ? `${data.spaces.join(", ")} ${one ? "stays" : "stay"}, with ${one ? "its" : "their"} tasks. Delete ${one ? "it" : "them"} yourself if you don't need ${one ? "it" : "them"}.`
-    : null;
   return (
     <>
       <p className="dialog-lead">This removes:</p>
@@ -20,8 +15,9 @@ export function OldDataList({ data }: { data: OldData }) {
         ))}
       </ul>
       <ul className="stays">
-        {stays && <li>{stays}</li>}
-        <li>Your projects, repos and other spaces aren't touched.</li>
+        {oldDataStays(data).map((l) => (
+          <li key={l}>{l}</li>
+        ))}
       </ul>
     </>
   );
@@ -29,10 +25,7 @@ export function OldDataList({ data }: { data: OldData }) {
 
 export async function removeOldDataNow(send: (path: string) => Promise<PostResult<OldData | null>> = post): Promise<{ toast: string } | { error: string }> {
   const res = await send("/api/old-data/remove");
-  if (!res.ok) return { error: res.error };
-  if (!res.data) return { toast: "Nothing was left to remove." };
-  const rows = res.data.groups.reduce((n, g) => n + g.tables.reduce((m, t) => m + t.rows, 0), 0);
-  return { toast: `Removed the old data: ${plural(rows, "row")} and ${plural(res.data.keychain.length, "Keychain item")}.` };
+  return res.ok ? { toast: removedLine(res.data) } : { error: res.error };
 }
 
 // The list comes from the engine, which also checks the Keychain, so the user confirms what is really there.
