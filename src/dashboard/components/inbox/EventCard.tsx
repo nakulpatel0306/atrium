@@ -52,8 +52,10 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
   const s = fromLocalInput(start);
   const en = fromLocalInput(end);
   const timeIssue = action.kind !== "event_cancel" && !(en > s) ? "The event has to end after it starts." : null;
-  const ready = !timeIssue && !guestsP.problem && (!create || !!title.trim());
   const calendars = (overview?.calendars ?? []).filter((c) => c.enabled && !c.hidden && c.writable);
+  // Said before the press, not after the Undo window: Calendar.app can't invite people for another app.
+  const noGuestsHere = create && guestsP.people.length > 0 && calendars.find((c) => c.id === calendarId)?.source === "apple";
+  const ready = !timeIssue && !guestsP.problem && (!create || !!title.trim()) && !noGuestsHere;
   const edited = () => {
     setError(null);
     clearSendError(action.id);
@@ -148,6 +150,7 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
               <input className="mk-input" value={guests} readOnly={locked} spellCheck={false} placeholder="Optional: name@example.com" onChange={(x) => (setGuests(x.target.value), edited())} />
             </label>
             {guestsP.problem && <span className="err">{guestsP.problem}</span>}
+            {noGuestsHere && <span className="err">Calendar.app can't invite people for Atrium. Pick a Google calendar, or leave Guests empty.</span>}
           </>
         )}
         {!create && e.attendees.length > 0 && !mayNotify && (

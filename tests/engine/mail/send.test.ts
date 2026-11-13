@@ -247,6 +247,18 @@ describe("crossovers", () => {
     expect(writes[0]!.input).toMatchObject({ account: "acct-gmail", from: SAM, to: [{ name: "", address: "robin@example.net" }], subject: "Re: Lease renewal" });
   });
 
+  test("a reply drafted through Google and sent after a switch to Mail.app still threads", async () => {
+    await connectGoogle();
+    mail.sync.appleOnNow("mail");
+    await mail.sync.syncNow();
+    const first = threadMessages(db, lease().id)[0]!;
+    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, messageId: first.id, body: "Via Mail." });
+    setPreferred(db, listAccounts(db).find((a) => a.address === SAM && a.source === "apple")!.id);
+    await mail.sync.syncNow();
+    await pressSend(action);
+    expect(fakes.pimWrites()[0]!.input).toMatchObject({ replyTo: "ap-1" });
+  });
+
   test("Mail.app answers the message it replies to, so Mail sets the threading headers", async () => {
     mail.sync.appleOnNow("mail");
     await mail.sync.syncNow();
