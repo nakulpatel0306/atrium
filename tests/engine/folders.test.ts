@@ -37,19 +37,17 @@ test("the visible folder honours ATRIUM_FILES_HOME and never defaults into a tes
   }
 });
 
-test("general and markets spaces get a folder named after them, de-duplicated", () => {
+test("general spaces get a folder named after them, de-duplicated", () => {
   const files = config().filesHome;
   mkdirSync(join(files, "notes"), { recursive: true });
   const a = createSpace(db, { name: "Weekly Planning", kind: "general", goal: "" });
   const b = createSpace(db, { name: "Weekly planning!", kind: "general", goal: "" });
   const c = createSpace(db, { name: "Notes", kind: "general", goal: "" });
-  const m = createSpace(db, { name: "Investing", kind: "markets", goal: "" });
   const r = createSpace(db, { name: "Code", kind: "repo", goal: "", repoPath: "/tmp/x" });
   const odd = createSpace(db, { name: "  ✨ ", kind: "general", goal: "" });
   expect(a.folder).toBe(join(files, "weekly-planning"));
   expect(b.folder).toBe(join(files, "weekly-planning-2"));
   expect(c.folder).toBe(join(files, "notes-2"));
-  expect(m.folder).toBe(join(files, "investing"));
   expect(r.folder).toBeNull();
   expect(odd.folder).toBe(join(files, "space"));
   expect(spaceFolder(a)).toBe(a.folder!);

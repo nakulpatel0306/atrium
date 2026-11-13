@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Check, Report } from "../../engine/doctor";
 import { claudeBlocks, nextStep, prevStep, STEPS, type Progress, type Step } from "../../engine/start-steps";
-import { post, put } from "../api";
+import { put } from "../api";
 import { navigate } from "../route";
 
 export const STEP_TITLES: Record<Step, string> = {
   welcome: "Welcome",
   agents: "Agents",
   tools: "Optional tools",
-  investing: "Investing",
   profile: "Your name and projects folder",
   done: "Done",
 };
@@ -51,7 +50,6 @@ type ViewProps = {
   onGo(step: Step): void;
   onSkip(step: Step): void;
   onRecheck(): void;
-  onSetupInvesting(): void;
   onSaveProfile(): void;
   onFinish(): void;
   onDismiss(): void;
@@ -100,24 +98,6 @@ export function StartView(p: ViewProps) {
         </>
       )}
 
-      {step === "investing" && (
-        <>
-          <div className="set-card">
-            <div className="set-title">
-              <b>Investing</b>
-              <span className="tag">Optional</span>
-              {report.investing.spaceId && <span className="tag ok">Set up</span>}
-            </div>
-            <p className="hint">Creates an empty, private Investing space. Import your holdings there or add tickers yourself. Add free market-data keys (Finnhub, Alpha Vantage) in Settings; they stay in your Mac's Keychain.</p>
-            {!report.investing.spaceId && (
-              <button className="btn" onClick={p.onSetupInvesting} disabled={p.busy}>
-                Set up investing
-              </button>
-            )}
-          </div>
-        </>
-      )}
-
       {step === "profile" && (
         <form
           className="mk-form"
@@ -150,7 +130,6 @@ export function StartView(p: ViewProps) {
               </li>
             ))}
             <li>GitHub CLI: {report.github.state === "ready" ? "ready" : "not set up"}</li>
-            <li>Investing: {report.investing.spaceId ? "set up" : "skipped"}</li>
             <li>Projects folder: {report.profile.projectsRoot}</li>
           </ul>
           {progress.skipped.length > 0 && <p className="hint">Skipped: {progress.skipped.map((s) => STEP_TITLES[s]).join(", ")}. Find them again in Settings → Get started.</p>}
@@ -231,11 +210,6 @@ export function GetStarted() {
       onGo={(step) => void save({ step })}
       onSkip={(step) => void save({ skip: step, step: nextStep(step) })}
       onRecheck={() => void load()}
-      onSetupInvesting={async () => {
-        const res = await post("/api/investing/setup");
-        setMessage(res.ok ? "Investing is set up." : res.error);
-        await load();
-      }}
       onSaveProfile={async () => {
         const res = await put("/api/profile", { name: draft.name, projectsRoot: draft.projectsRoot });
         setMessage(res.ok ? "Saved." : res.error);

@@ -95,7 +95,7 @@ test("summary counts pending suggestions as things that need you", () => {
 
   const sum = summary(db);
   expect(sum.needsYou).toBe(2);
-  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", topic: null, files: 0, symbol: null, outcome: null });
+  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", files: 0, outcome: null });
   expect(sum.needs[1]!.id).toBe(a.id);
 });
 
@@ -106,31 +106,10 @@ test("summary skips suggestions in archived spaces", () => {
   expect(summary(db).needsYou).toBe(0);
 });
 
-test("summary counts price alerts like any other approval", () => {
-  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
-  createApproval(db, { spaceId: s.id, kind: "alert", title: "AAPL price above $200.00", detail: "d" });
-  expect(summary(db)).toMatchObject({
-    needsYou: 1,
-    needs: [{ kind: "alert", title: "AAPL price above $200.00", spaceName: "Stocks", path: `/space/${s.id}` }],
-  });
-});
-
-test("summary counts alert kinds and gives each need its topic", () => {
-  const s = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
-  for (const topic of ["price", "indicator", "earnings", "news", "news", "flag"] as const) {
-    createApproval(db, { spaceId: s.id, kind: "alert", title: `x ${topic}`, detail: "", topic });
-  }
-  createApproval(db, { spaceId: s.id, kind: "question", title: "q", detail: "" });
-  const sum = summary(db);
-  expect(sum.alerts).toEqual({ price: 2, earnings: 1, news: 2, flag: 1 });
-  expect(sum.needs.find((n) => n.title === "x earnings")!.topic).toBe("earnings");
-  expect(sum.needs.find((n) => n.title === "q")!.topic).toBeNull();
-});
-
 test("summary shows an Atrium-wide question as Atrium's", () => {
   const a = createApproval(db, { spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?', detail: "", alwaysAsk: "create_repo" });
   const sum = summary(db);
-  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", topic: null, files: 0, symbol: null, outcome: null });
+  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", files: 0, outcome: null });
   expect(sum.needsYou).toBe(1);
 });
 
@@ -145,21 +124,9 @@ test("a review need says how many files its task made", () => {
     { path: "old.md", change: "deleted" as const, size: null },
   ]);
   createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title: "Make a grocery list", detail: "" });
-  createApproval(db, { spaceId: s.id, kind: "alert", title: "SPY moved", detail: "" });
   const needs = summary(db).needs;
   expect(needs.find((n) => n.kind === "review")!.files).toBe(4);
   expect(needs.find((n) => n.kind === "review")!.path).toBe(`/space/${s.id}?task=${t.id}`);
-  expect(needs.find((n) => n.kind === "alert")!.files).toBe(0);
-});
-
-test("an alert need carries its symbol; a review need has null", () => {
-  const space = createSpace(db, { name: "Investing", kind: "markets", goal: "g" });
-  createApproval(db, { spaceId: space.id, kind: "alert", topic: "price", title: "AMZN price above $300.00", detail: "d", subject: "AMZN" });
-  const work = createSpace(db, { name: "Docs", kind: "general", goal: "g" });
-  createApproval(db, { spaceId: work.id, kind: "review", title: "Review", detail: "d" });
-  const needs = summary(db).needs;
-  expect(needs.find((n) => n.kind === "alert")?.symbol).toBe("AMZN");
-  expect(needs.find((n) => n.kind === "review")?.symbol).toBeNull();
 });
 
 test("needs carry the task's outcome", () => {

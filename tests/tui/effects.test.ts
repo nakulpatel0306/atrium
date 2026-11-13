@@ -30,7 +30,6 @@ const rows: Row[] = [
   { intent: { type: "restore", spaceId: ids.atrium }, method: "PATCH", path: `/api/spaces/${ids.atrium}`, body: { status: "active" }, text: "Restored the space. Press X to archive it again." },
   { intent: { type: "stop", taskId: ids.running }, method: "POST", path: `/api/tasks/${ids.running}/stop`, data: { status: "blocked" }, text: 'Stopped "Add the status bar". Its edits so far are kept; R retries it.' },
   { intent: { type: "stop", taskId: ids.running }, method: "POST", path: `/api/tasks/${ids.running}/stop`, data: { status: "running" }, text: `Stopping "Add the status bar": the agent hasn't exited yet. Atrium marks it stopped when it does.` },
-  { intent: { type: "investAsk", spaceId: "spc_inv", key: "SHOP.TO", question: "Why?" }, method: "POST", path: "/api/investing/spc_inv/symbol/SHOP.TO/ask", body: { question: "Why?" }, text: "Asked Claude about SHOP.TO. The answer lands in the Investing space." },
 ];
 
 for (const row of rows) {

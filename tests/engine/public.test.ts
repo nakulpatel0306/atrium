@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { briefing } from "../../src/engine/briefing";
 import { config, setChosenProjectsRoot } from "../../src/engine/config";
 import { openDb } from "../../src/engine/db";
-import { listHoldings } from "../../src/engine/markets/holdings";
 import { applyProjectsRoot, migrateProjectsRoot, PROJECTS_KEY, setProjectsRoot, setUserName, suggestedName } from "../../src/engine/profile";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, listSpaces } from "../../src/engine/spaces";
@@ -26,7 +25,6 @@ afterEach(() => {
 
 test("a fresh engine on an empty home has no spaces, holdings or names", () => {
   expect(listSpaces(db, { includeArchived: true })).toHaveLength(0);
-  expect(db.query("SELECT COUNT(*) AS n FROM market_holdings").get()).toEqual({ n: 0 });
   // Nothing in settings is a name or a path of anyone's.
   const settings = db.query("SELECT key, value FROM settings").all() as { key: string; value: string }[];
   expect(settings.filter((s) => /name|root/i.test(s.key))).toEqual([]);
@@ -58,7 +56,7 @@ test("the old default folder is kept once, additively, only when spaces already 
   const legacy = mkdtempSync(join(tmpdir(), "atrium-legacy-"));
   try {
     mkdirSync(join(legacy, "app"));
-    const investing = createSpace(db, { name: "Investing", kind: "markets", goal: "g", private: true });
+    const notes = createSpace(db, { name: "Notes", kind: "general", goal: "g", private: true });
     expect(migrateProjectsRoot(db, legacy)).toBe(false);
     expect(getSetting(db, PROJECTS_KEY)).toBeNull();
     createSpace(db, { name: "App", kind: "repo", goal: "g", repoPath: join(legacy, "app") });
@@ -72,9 +70,8 @@ test("the old default folder is kept once, additively, only when spaces already 
     expect(migrateProjectsRoot(db, legacy)).toBe(false);
     expect(getSetting(db, PROJECTS_KEY)).toBe("/somewhere/else");
     // The existing spaces are untouched.
-    expect(listSpaces(db).map((s) => s.name).sort()).toEqual(["App", "Investing"]);
-    expect(listSpaces(db).find((s) => s.id === investing.id)).toBeTruthy();
-    expect(listHoldings(db, investing.id)).toEqual([]);
+    expect(listSpaces(db).map((s) => s.name).sort()).toEqual(["App", "Notes"]);
+    expect(listSpaces(db).find((s) => s.id === notes.id)).toBeTruthy();
   } finally {
     rmSync(legacy, { recursive: true, force: true });
   }

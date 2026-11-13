@@ -4,7 +4,7 @@ import { showToast } from "./toast";
 type Space = State["spaces"][number];
 
 // The tag a space shows for its kind. General needs no tag; the stored kind names are internal.
-export const kindLabel = (kind: Space["kind"]): string | null => (kind === "markets" ? "Investing" : kind === "repo" ? "Code" : null);
+export const kindLabel = (kind: Space["kind"]): string | null => (kind === "repo" ? "Code" : null);
 
 // Archive and restore are the two reversible changes to a space, so each offers an Undo for a few seconds.
 export async function setArchived(space: Pick<Space, "id" | "name">, archived: boolean): Promise<{ ok: boolean; error?: string }> {

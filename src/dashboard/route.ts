@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; symbol: string | null; changes: boolean };
+export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; changes: boolean };
 export type SpaceTab = "tasks" | "files";
 
 const listeners = new Set<() => void>();
@@ -43,7 +43,6 @@ export function parseRoute(path: string): Route {
       id: decodeURIComponent(m[1]!),
       task: q.get("task"),
       tab: q.get("tab") === "files" ? "files" : "tasks",
-      symbol: q.get("symbol"),
       changes: q.get("view") === "changes",
     };
   } catch {

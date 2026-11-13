@@ -4,15 +4,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "./config";
 import { applyProjectsRoot, migrateProjectsRoot } from "./profile";
-import { migrateWatchlists } from "./markets/lists";
-import { MARKETS_SCHEMA } from "./markets/schema";
 import { ALWAYS_ASK } from "./approvals";
 
 const schema = () => `
 CREATE TABLE IF NOT EXISTS spaces (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets')),
+  kind TEXT NOT NULL CHECK (kind IN ('repo','general')),
   goal TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL,
   repo_path TEXT,
@@ -183,8 +181,16 @@ export function openDb(path?: string): Database {
   const db = new Database(path ?? c.dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
+  // Deleted and overwritten rows are zeroed on disk, not left in free pages: older databases still hold personal data
+  // from features Atrium no longer has, and a delete must really remove it.
+  db.exec("PRAGMA secure_delete = ON");
   db.exec(schema());
-  migrate(db);
+  // A migration that rebuilt a table pushes the old rows out of the WAL and the file, so no copy is left behind.
+  if (migrate(db)) {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    db.exec("VACUUM");
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  }
   // Installs from before the projects folder was a setting kept their projects under this folder. A dev engine or a
   // test (own ATRIUM_HOME) never pins a folder from the machine it happens to run on.
   if (!process.env.ATRIUM_HOME) migrateProjectsRoot(db, join(homedir(), "dev-workspace", "projects"));
@@ -193,16 +199,15 @@ export function openDb(path?: string): Database {
 }
 
 // Columns added after a table first shipped; CREATE TABLE IF NOT EXISTS skips existing tables.
-function migrate(db: Database): void {
+function migrate(db: Database): boolean {
+  let rebuilt = false;
   const has = (table: string, column: string) =>
     (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
-  // CHECK constraints can't be altered, so a table whose kinds predate markets spaces is rebuilt.
-  rebuildIfMissing(db, "spaces", "'markets'", SPACES_DDL);
-  rebuildIfMissing(db, "approvals", "'alert'", APPROVALS_DDL);
+  // CHECK constraints can't be altered, so an approvals table that predates these is rebuilt.
   // Repo approvals belong to no space and must always wait for Nakul, so the table gains both constraints.
-  rebuildIfMissing(db, "approvals", "always_ask", APPROVALS_DDL);
+  rebuilt = rebuildIfMissing(db, "approvals", "always_ask", APPROVALS_DDL) || rebuilt;
   // And no rule may ever be recorded as deciding one.
-  rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL);
+  rebuilt = rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL) || rebuilt;
   // The GitHub repo ("owner/name") a repo space comes from, so a missing local copy can be cloned.
   if (!has("spaces", "github")) db.exec("ALTER TABLE spaces ADD COLUMN github TEXT");
   // The first commit a create run pushed, so a retry can tell its own commit from someone else's.
@@ -220,7 +225,7 @@ function migrate(db: Database): void {
   if (!has("tasks", "parent_task_id")) db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id)");
   // Which agent reviews this space's finished work; NULL means no automatic review.
   if (!has("spaces", "review_by")) db.exec("ALTER TABLE spaces ADD COLUMN review_by TEXT");
-  // The visible folder a general or markets space keeps its files in (see folders.ts).
+  // The visible folder a general space keeps its files in (see folders.ts).
   if (!has("spaces", "folder")) db.exec("ALTER TABLE spaces ADD COLUMN folder TEXT");
   // The approval a review or fix reports to, so a late one can't land on a newer approval.
   if (!has("tasks", "approval_id")) db.exec("ALTER TABLE tasks ADD COLUMN approval_id TEXT REFERENCES approvals(id)");
@@ -236,15 +241,6 @@ function migrate(db: Database): void {
   if (!has("approvals", "rule_id")) db.exec("ALTER TABLE approvals ADD COLUMN rule_id TEXT REFERENCES autonomy_rules(id)");
   // When Nakul undid an automatic approval; an undone one is neither evidence nor counted again.
   if (!has("approvals", "undone_at")) db.exec("ALTER TABLE approvals ADD COLUMN undone_at INTEGER");
-  // The paper strategy a task runs for, so its orders can be checked against that strategy's limits.
-  if (!has("tasks", "strategy_id")) db.exec("ALTER TABLE tasks ADD COLUMN strategy_id TEXT");
-  // What an investing task produces (a digest or thesis write-up) and the instrument it's about.
-  if (!has("tasks", "purpose")) db.exec("ALTER TABLE tasks ADD COLUMN purpose TEXT");
-  if (!has("tasks", "subject")) db.exec("ALTER TABLE tasks ADD COLUMN subject TEXT");
-  // Which kind of market alert an approval is, so Needs-you and notifications can group them.
-  if (!has("approvals", "topic")) db.exec("ALTER TABLE approvals ADD COLUMN topic TEXT");
-  // The instrument an alert is about, so the Mac app can name it in a notification.
-  if (!has("approvals", "subject")) db.exec("ALTER TABLE approvals ADD COLUMN subject TEXT");
   // Whether a finished run did what its task asks, from the agent's OUTCOME line; NULL for older or unfinished tasks.
   if (!has("tasks", "outcome")) {
     db.exec("ALTER TABLE tasks ADD COLUMN outcome TEXT CHECK (outcome IS NULL OR outcome IN ('done','partial','couldnt','unknown'))");
@@ -263,54 +259,17 @@ function migrate(db: Database): void {
   // The pull request opened from a task's branch, once there is one.
   if (!has("tasks", "pr_url")) db.exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS activity_space ON activity(space_id, created_at)");
-  // Markets tables are created here, before their own added columns are checked.
-  db.exec(MARKETS_SCHEMA);
-  migrateWatchlists(db);
-  // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
-  if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");
-  if (!has("instrument_meta", "market_cap")) db.exec("ALTER TABLE instrument_meta ADD COLUMN market_cap REAL");
-  // The holding's book value in CAD from a Wealthsimple holdings export, for an honest CAD gain.
-  if (!has("market_holdings", "book_value_cad")) db.exec("ALTER TABLE market_holdings ADD COLUMN book_value_cad REAL");
-  // The export's account type ("TFSA"), so a renamed account keeps its tax treatment.
-  if (!has("market_holdings", "account_type")) db.exec("ALTER TABLE market_holdings ADD COLUMN account_type TEXT");
-  // The earnings date an alert last fired for, so one date fires once.
-  if (!has("market_alerts", "fired_for")) db.exec("ALTER TABLE market_alerts ADD COLUMN fired_for TEXT");
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");
-  migrateProvider(db);
+  return rebuilt;
 }
-
-// Alpaca left the default path in Plan 10. A stored choice of it becomes Finnhub once; written directly, since
-// nothing is listening while the database opens.
-export function migrateProvider(db: Database): void {
-  db.query("UPDATE settings SET value = 'finnhub' WHERE key = 'markets.provider' AND value = 'alpaca'").run();
-}
-
 
 // Full current definitions, migrated columns included, used only when rebuilding an older table.
-const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets')),
-  goal TEXT NOT NULL DEFAULT '',
-  color TEXT NOT NULL,
-  repo_path TEXT,
-  private INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  review_by TEXT,
-  github TEXT,
-  folder TEXT,
-  folder_dev INTEGER,
-  folder_ino INTEGER
-)`;
-
 const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   id TEXT PRIMARY KEY,
   space_id TEXT REFERENCES spaces(id),
   task_id TEXT REFERENCES tasks(id),
-  kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')),
+  kind TEXT NOT NULL CHECK (kind IN ('review','question')),
   title TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
@@ -322,8 +281,6 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
   rule_id TEXT REFERENCES autonomy_rules(id),
   undone_at INTEGER,
-  topic TEXT,
-  subject TEXT,
   always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${ALWAYS_ASK.map((k) => `'${k}'`).join(",")})),
   CHECK (space_id IS NOT NULL OR kind = 'question'),
   CHECK (always_ask IS NULL OR fingerprint IS NULL),
@@ -333,9 +290,9 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
 // SQLite's documented table rebuild: foreign keys off (outside any transaction), copy into a new table,
 // swap names, then check the rebuild left no new dangling references. Ones that were already there (old test
 // fixtures, hand-edited DBs) aren't the rebuild's doing and don't stop the engine starting.
-function rebuildIfMissing(db: Database, table: string, marker: string, ddl: (name: string) => string) {
+function rebuildIfMissing(db: Database, table: string, marker: string, ddl: (name: string) => string): boolean {
   const row = db.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string } | null;
-  if (!row || row.sql.includes(marker)) return;
+  if (!row || row.sql.includes(marker)) return false;
   const before = db.query("PRAGMA foreign_key_check").all().length;
   const columns = (t: string) => (db.query(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
   db.exec("PRAGMA foreign_keys = OFF");
@@ -353,4 +310,5 @@ function rebuildIfMissing(db: Database, table: string, marker: string, ddl: (nam
   }
   const after = db.query("PRAGMA foreign_key_check").all().length;
   if (after > before) throw new Error(`Rebuilding ${table} left ${after - before} broken references.`);
+  return true;
 }

@@ -131,9 +131,9 @@ test("reopenForReview only reopens done work tasks", () => {
   expect(getTask(db, review.id)!.status).toBe("done");
 });
 
-test("alert approvals resolve without a task", () => {
-  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
-  const a = createApproval(db, { spaceId: s.id, kind: "alert", title: "AAPL price above $200.00", detail: "d" });
+test("a question resolves without a task, and a broken listener changes nothing", () => {
+  const s = createSpace(db, { name: "Notes", kind: "general", goal: "g" });
+  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Which folder?", detail: "d" });
   const seen: string[] = [];
   const offBad = onApprovalResolved(() => {
     throw new Error("listener broke");
@@ -150,15 +150,7 @@ test("alert approvals resolve without a task", () => {
     offBad();
   }
   expect(seen).toEqual([`${a.id}:approve`]);
-  expect(listActivity(db)[0]!.message).toBe("Dismissed: AAPL price above $200.00");
-});
-
-test("topic round-trips", () => {
-  const s = createSpace(db, { name: "M", kind: "general", goal: "g" });
-  const a = createApproval(db, { spaceId: s.id, kind: "alert", title: "SPY earnings within 5 days", detail: "d", topic: "earnings" });
-  expect(getApproval(db, a.id)!.topic).toBe("earnings");
-  const b = createApproval(db, { spaceId: s.id, kind: "alert", title: "x", detail: "d" });
-  expect(b.topic).toBeNull();
+  expect(listActivity(db)[0]!.message).toBe("Approved: Which folder?");
 });
 
 test("a spaceless always-ask question waits for Nakul and no rule can decide it", () => {

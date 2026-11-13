@@ -9,17 +9,19 @@ export type ReviewerId = (typeof REVIEWERS)[number];
 export type Space = {
   id: string;
   name: string;
-  kind: "repo" | "general" | "markets";
+  kind: "repo" | "general";
   goal: string;
   color: string;
   repoPath: string | null;
   private: boolean;
+  // True for a space whose kind no longer exists (see toSpace); it is treated as a plain general space.
+  unknownKind: boolean;
   status: "active" | "archived";
   // The agent that reviews finished work here; null means no automatic review.
   reviewBy: ReviewerId | null;
   // The GitHub repo ("owner/name") a repo space comes from; its local copy is cloned when a task needs it.
   github: string | null;
-  // Where a general or markets space keeps its files; null for repo spaces, and for old spaces until boot moves them.
+  // Where a general space keeps its files; null for repo spaces, and for old spaces until boot moves them.
   folder: string | null;
   createdAt: number;
   updatedAt: number;
@@ -28,7 +30,8 @@ export type Space = {
 type SpaceRow = {
   id: string;
   name: string;
-  kind: Space["kind"];
+  // Whatever the row holds, including kinds of spaces Atrium no longer has (see toSpace).
+  kind: string;
   goal: string;
   color: string;
   repo_path: string | null;
@@ -43,20 +46,19 @@ type SpaceRow = {
 
 const DEFAULT_COLOR = "#8ba4b0";
 
-export const MARKETS_PRIVATE = "Markets spaces stay private: your holdings only go to Claude.";
+const KNOWN_KINDS = new Set(["repo", "general"]);
 
-// Holdings and the paper account are the user's private data, so markets spaces are private whatever their flag says.
-export const isPrivate = (space: Pick<Space, "kind" | "private">): boolean => space.private || space.kind === "markets";
-const alwaysPrivate = (kind: Space["kind"]) => (kind === "markets" ? MARKETS_PRIVATE : null);
-
+// A database from an older Atrium can hold spaces of kinds that no longer exist (Investing, Inbox). They show as plain
+// general spaces, and as private ones: those held personal data, and a private space only ever goes to Claude.
 const toSpace = (r: SpaceRow): Space => ({
   id: r.id,
   name: r.name,
-  kind: r.kind,
+  kind: r.kind === "repo" ? "repo" : "general",
   goal: r.goal,
   color: r.color,
   repoPath: r.repo_path,
-  private: r.private === 1,
+  private: r.private === 1 || !KNOWN_KINDS.has(r.kind),
+  unknownKind: !KNOWN_KINDS.has(r.kind),
   status: r.status,
   reviewBy: r.review_by,
   github: r.github,
@@ -74,8 +76,6 @@ export function createSpace(
   db: Database,
   input: { name: string; kind: Space["kind"]; goal: string; color?: string; repoPath?: string; private?: boolean; github?: string },
 ): Space {
-  const locked = alwaysPrivate(input.kind);
-  if (locked && input.private === false) throw new Error(locked);
   const id = newId("spc");
   const now = Date.now();
   db.query(
@@ -113,8 +113,6 @@ export function updateSpace(
   const cur = getSpace(db, id);
   if (!cur) throw new Error(`No space with id ${id}`);
   const next = { ...cur, ...patch };
-  const locked = alwaysPrivate(next.kind);
-  if (locked && !next.private) throw new Error(locked);
   db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, updated_at = ? WHERE id = ?").run(
     next.name,
     next.goal,

@@ -15,7 +15,7 @@ import type { setupSpace } from "../engine/setup";
 import { type OnCreate, SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
-import { createSpace, getSpace, MARKETS_PRIVATE, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
+import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "../engine/spaces";
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
@@ -26,11 +26,7 @@ import { filesRoute } from "./files";
 import { attachedView, attachmentsRoute, isMultipart, MAX_BODY_BYTES, readUploads } from "./attachments";
 import { type Attachment, AttachRefused, attachToTask, checkAttachments, checkUploads, claimAttachments, storeAttachments, withAttachments } from "../engine/attachments";
 import { DEFAULT_PROMPT } from "../engine/attachment-rules";
-import { embedResponse } from "./embed";
-import { investingRoute } from "./investing";
-import { simpleRoute } from "./investing-simple";
 import { startRoute } from "./start";
-import { marketsRoute, type MarketsDeps } from "./markets";
 import type { Repos } from "../engine/repos";
 import { BadDraft } from "../engine/repos/names";
 import { openPullRequest, PrFailed, prInfo } from "../engine/repos/pr";
@@ -49,9 +45,6 @@ type Deps = {
   };
   setup: (text: string, onCreate?: OnCreate) => ReturnType<typeof setupSpace>;
   port?: number;
-  // How many dashboard tabs are visible; the market feed only streams while someone is looking.
-  onViewers?: (n: number) => void;
-  markets?: MarketsDeps;
   repos?: Repos;
 };
 
@@ -67,37 +60,15 @@ const RESERVE_STEPS = [0.25, 0.5, 0.75];
 // "changed" sockets (the Mac app) skip run output, which only the dashboard's live transcript needs.
 export type WsData = { topic: "engine" | "changed" };
 
-const embedPath = (token: string) => `/embed/${token}/tradingview`;
-// The origin a header names ("http://localhost:7421/" → "http://localhost:7421"), or null.
-const originOf = (value: string | null): string | null => {
-  if (!value || value === "null") return null;
-  try {
-    return new URL(value).origin;
-  } catch {
-    return null;
-  }
-};
-
-export function startServer(deps: Deps): Server<WsData> & { embedPort: number | null; embedToken: string } {
+export function startServer(deps: Deps): Server<WsData> {
   const { db, runner } = deps;
-  const embedToken = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex");
-  let embed: Server<undefined> | null = null;
-  const embedInfo = () => (embed ? { port: embed.port as number, token: embedToken } : null);
 
   const origins = (port: number) => [`127.0.0.1:${port}`, `localhost:${port}`];
   // Blocks DNS rebinding (Host) and other websites driving or reading the engine. Mutations and the socket must carry
   // our Origin; any API read that says it comes from another site (a foreign Origin, or Sec-Fetch-Site naming
-  // another site or another port) is refused too, so a web page can't read prices or make the engine spend
-  // provider calls. Reads with neither header (curl, the terminal app, the Mac app) are allowed.
+  // another site or another port) is refused too, so a web page can't read what the engine knows. Reads with neither header (curl, the terminal app, the Mac app) are allowed.
   const guard = (req: Request, port: number, needsOrigin: boolean, api: boolean): Response | null => {
     if (!origins(port).includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
-    // The TradingView page runs third-party code on the chart listener's origin. Anything that origin sends (it
-    // shows as Origin, or as Referer, which its Referrer-Policy: origin cuts to just the origin) is refused.
-    if (embed) {
-      const chart = [`http://127.0.0.1:${embed.port}`, `http://localhost:${embed.port}`];
-      const from = [originOf(req.headers.get("origin")), originOf(req.headers.get("referer"))];
-      if (from.some((o) => o !== null && chart.includes(o))) return fail(403, "Forbidden origin.");
-    }
     const origin = req.headers.get("origin");
     if (api && origin === "null") return fail(403, "Forbidden origin.");
     const ours = origin !== null && origins(port).some((h) => origin === `http://${h}`);
@@ -115,14 +86,13 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     const method = req.method;
     const hit = (m: string, pattern: RegExp) => (method === m ? pathname.match(pattern) : null);
 
-    if (hit("GET", /^\/api\/state$/)) return json({ ...snapshot(db, runner.registry), embed: embedInfo() });
-    if (hit("GET", /^\/api\/summary$/)) return json({ ...summary(db), embed: embedInfo() });
+    if (hit("GET", /^\/api\/state$/)) return json(snapshot(db, runner.registry));
+    if (hit("GET", /^\/api\/summary$/)) return json(summary(db));
 
     if (hit("POST", /^\/api\/spaces$/)) {
       const b = await readBody(req);
       const kind = b.kind;
-      if (kind !== "repo" && kind !== "general" && kind !== "markets") throw new HttpError(400, "kind must be repo, general or markets.");
-      if (kind === "markets" && b.private === false) throw new HttpError(400, MARKETS_PRIVATE);
+      if (kind !== "repo" && kind !== "general") throw new HttpError(400, "kind must be repo or general.");
       return json(
         createSpace(db, {
           name: str(b.name, "name"),
@@ -140,7 +110,6 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       const current = getSpace(db, id);
       if (!current) throw new HttpError(404, "No such space.");
       const b = await readBody(req);
-      if (current.kind === "markets" && b.private === false) throw new HttpError(400, MARKETS_PRIVATE);
       const status = b.status;
       if (status !== undefined && status !== "active" && status !== "archived") {
         throw new HttpError(400, "status must be active or archived.");
@@ -470,24 +439,12 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     const start = await startRoute(db, req, url);
     if (start) return start;
 
-    if (deps.markets) {
-      const res = (await marketsRoute(db, deps.markets, req, url)) ?? (await simpleRoute(db, deps.markets, req, url)) ?? (await investingRoute(db, deps.markets, req, url));
-      if (res) return res;
-    }
     if (deps.repos) {
       const res = await reposRoute(db, deps.repos, req, url);
       if (res) return res;
     }
 
     throw new HttpError(404, "Not found.");
-  };
-
-  const visible = new Set<ServerWebSocket<WsData>>();
-  const setVisible = (ws: ServerWebSocket<WsData>, on: boolean) => {
-    const before = visible.size;
-    if (on) visible.add(ws);
-    else visible.delete(ws);
-    if (visible.size !== before) deps.onViewers?.(visible.size);
   };
 
   const server = Bun.serve<WsData>({
@@ -537,19 +494,8 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
       open: (ws) => {
         ws.subscribe(ws.data.topic);
       },
-      message: (ws, raw) => {
-        let msg: unknown;
-        try {
-          msg = JSON.parse(String(raw));
-        } catch {
-          return;
-        }
-        const m = msg as { type?: unknown; visible?: unknown } | null;
-        if (m?.type === "visibility" && typeof m.visible === "boolean") setVisible(ws, m.visible);
-      },
-      close: (ws) => {
-        setVisible(ws, false);
-      },
+      // Clients only listen.
+      message: () => {},
     },
   });
 
@@ -559,37 +505,9 @@ export function startServer(deps: Deps): Server<WsData> & { embedPort: number | 
     if (e.type === "changed") server.publish("changed", msg);
   });
   const stop = server.stop.bind(server);
-  embed = startEmbed(deps.port ?? config().port, server.port as number, embedToken);
   server.stop = (force?: boolean) => {
     off();
-    embed?.stop(force);
     return stop(force);
   };
-  return Object.assign(server, { embedPort: embed ? (embed.port as number) : null, embedToken });
-}
-
-// TradingView's chart page gets a listener of its own on the next port (any free port when the engine's is
-// random, as in tests). It serves that one page, at a per-launch secret path, and nothing else, so the third-party
-// script runs on an origin with no API behind it; the engine's guard refuses anything that origin (or a page it
-// opens) sends. The dashboard and the Mac app learn the port and path from the engine, never by guessing.
-function startEmbed(requested: number, enginePort: number, token: string): Server<undefined> | null {
-  const port = requested === 0 ? 0 : enginePort + 1;
-  try {
-    const embed: Server<undefined> = Bun.serve({
-      hostname: config().host,
-      port,
-      reusePort: false,
-      fetch(req) {
-        const url = new URL(req.url);
-        const own = [`127.0.0.1:${embed.port}`, `localhost:${embed.port}`];
-        if (!own.includes(req.headers.get("host") ?? "")) return fail(403, "Forbidden host.");
-        if (req.method === "GET" && url.pathname === embedPath(token)) return embedResponse(req, url, enginePort);
-        return fail(404, "Not found.");
-      },
-    });
-    return embed;
-  } catch (e) {
-    console.error(`The chart page couldn't start on port ${port}; symbol pages will show Atrium's chart. ${e instanceof Error ? e.message : String(e)}`);
-    return null;
-  }
+  return server;
 }

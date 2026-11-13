@@ -30,14 +30,13 @@ import {
 } from "./git";
 import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
-import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
 import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
-import { getSpace, isPrivate, type Space } from "./spaces";
-import { appendTaskDetail, getTask, listTasks, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
+import { getSpace, type Space } from "./spaces";
+import { appendTaskDetail, endRemovedFeatureTasks, failRemovedFeatureTask, getTask, listTasks, REMOVED_FEATURE, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { enforceTranscriptCap, openTranscript } from "./storage";
@@ -94,8 +93,6 @@ export const REPO_TOOLS = [
   "Bash(git log*)",
 ];
 
-type Settled = Awaited<ReturnType<MarketsHooks["settle"]>>;
-
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
 
 // The repo as found at task start, so it can be put back after the run.
@@ -109,8 +106,6 @@ export function createRunner(deps: {
   keepAwake: KeepAwake;
   maxConcurrent?: number;
   stopTimeoutMs?: number;
-  // Market context in prompts and the atrium-markets block afterwards; absent, markets spaces run like general ones.
-  markets?: MarketsHooks;
   // Local copies of attached GitHub repos: cloned on demand, marked used, and checked for cleanup once a day.
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
   // Test seam for the Changes view's live refresh: the throttle window and the timer for agents that don't report edits.
@@ -331,6 +326,12 @@ export function createRunner(deps: {
   // Returns why the task went back to waiting when it was resolved again just before starting.
   async function launch(task: Task, agent: string): Promise<TaskWait | void> {
     const space = getSpace(db, task.spaceId)!;
+    // A task from a feature that was removed never runs, whatever its purpose once allowed.
+    if (task.legacyPurpose !== null) {
+      failRemovedFeatureTask(db, task.id);
+      logActivity(db, task.spaceId, "atrium", `Couldn't run: ${task.title}. ${REMOVED_FEATURE}`, { taskId: task.id });
+      return;
+    }
     const adapter = adapters[agent];
     if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
 
@@ -445,7 +446,6 @@ export function createRunner(deps: {
         // Reported once the run ends, when recording finds the folder unreadable too.
       }
     }
-    const markets = space.kind === "markets" && task.kind === "work" ? deps.markets : undefined;
     const unwatch = repo ? diffs.watch(task.id, adapter.id !== "claude") : null;
     const line = (chunk: string) => {
       try {
@@ -465,19 +465,18 @@ export function createRunner(deps: {
     }
     let result: AgentRunResult;
     try {
-      const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : "";
-      const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
+      const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch)];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
       const honest = [...capabilityLines(), OUTCOME_INSTRUCTION];
-      const prompt = buildPrompt(task, space) + context;
+      const prompt = buildPrompt(task, space);
       result = await adapter.run({
         prompt,
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
-        // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
-        allowedTools: task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
-        privateData: isPrivate(space),
-        mode: task.kind === "review" || task.purpose ? "review" : "work",
+        // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
+        allowedTools: task.kind === "review" ? REVIEW_TOOLS : repo && !space.unknownKind ? REPO_TOOLS : BASE_TOOLS,
+        privateData: space.private,
+        mode: task.kind === "review" ? "review" : "work",
         signal: r.signal,
         onChunk: line,
       });
@@ -568,7 +567,6 @@ export function createRunner(deps: {
     }
 
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
-    let settled: Settled | null = null;
     try {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
@@ -601,14 +599,8 @@ export function createRunner(deps: {
         setTaskStatus(db, task.id, "done");
         afterFix(db, task, outcome, report?.lines[0] ?? "");
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`, { taskId: task.id });
-      } else if (result.status === "ok" && (settled = markets ? await settleMarkets(markets, task, space, adapter.id, result.summary) : null)?.done) {
-        // A paper strategy run settled its own orders; there is nothing for Nakul to review.
-        if (settled.lines.length) appendTaskDetail(db, task.id, `\n\nThis run:\n${settled.lines.join("\n")}`);
-        setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
-        setTaskStatus(db, task.id, "done");
-        logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`, { taskId: task.id });
       } else if (result.status === "ok") {
-        const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(settled?.lines ?? [])];
+        const lines = result.summary.trim() ? [result.summary.trim()] : [];
         // Repo runs already count their files in the branch summary.
         const madeText = !repo && made ? madeLine(made.changes, made.display) : null;
         if (madeText) lines.splice(1, 0, madeText);
@@ -772,15 +764,6 @@ export function createRunner(deps: {
       const why = (e as Error).message.trim().replace(/\.$/, "");
       logActivity(db, r.space.id, "atrium", `Couldn't list the files this run made: ${why}. The work itself is saved; open the space's Files tab to see the folder.`, { taskId: r.task.id });
       return null;
-    }
-  }
-
-  // A failure here still leaves the agent's answer for review, with a line saying what didn't happen.
-  async function settleMarkets(markets: MarketsHooks, task: Task, space: Space, agent: string, summary: string): Promise<Settled> {
-    try {
-      return await markets.settle(task, space, agent, summary);
-    } catch (e) {
-      return { done: false, lines: [`Atrium couldn't act on the markets block: ${(e as Error).message}`] };
     }
   }
 
@@ -985,6 +968,7 @@ function sweepTempDirs() {
 
 export async function recoverOnBoot(db: Database): Promise<number> {
   sweepTempDirs();
+  endRemovedFeatureTasks(db);
   const stuck = listTasks(db, { status: ["running"] });
   for (const task of stuck) {
     const path = getSpace(db, task.spaceId)?.repoPath;

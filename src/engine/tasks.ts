@@ -5,8 +5,6 @@ import type { Outcome } from "./outcome";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
-export type TaskPurpose = "digest" | "thesis_draft" | "thesis_check" | "ask";
-
 export type Task = {
   id: string;
   spaceId: string;
@@ -21,11 +19,9 @@ export type Task = {
   kind: "work" | "review" | "fix";
   parentTaskId: string | null;
   approvalId: string | null;
-  // The approved paper strategy this task runs; null for everything else.
-  strategyId: string | null;
-  // What an investing task writes (a digest or thesis write-up) and the instrument it's about; null otherwise.
-  purpose: TaskPurpose | null;
-  subject: string | null;
+  // The purpose an older Atrium gave the task (digest, money, message…); no feature uses one now, so any value means
+  // the task belongs to a feature that was removed and must not run. Null for every task made today.
+  legacyPurpose: string | null;
   branch: string | null;
   // Whether the last finished run did what the title asks, in the agent's own words; null before outcomes existed
   // or while the task hasn't finished.
@@ -51,9 +47,7 @@ type TaskRow = {
   kind: Task["kind"];
   parent_task_id: string | null;
   approval_id: string | null;
-  strategy_id: string | null;
-  purpose: TaskPurpose | null;
-  subject: string | null;
+  purpose?: string | null;
   branch: string | null;
   outcome: Outcome | null;
   outcome_reason: string | null;
@@ -94,9 +88,7 @@ const toTask = (r: TaskRow): Task => ({
   kind: r.kind,
   parentTaskId: r.parent_task_id,
   approvalId: r.approval_id,
-  strategyId: r.strategy_id,
-  purpose: r.purpose ?? null,
-  subject: r.subject ?? null,
+  legacyPurpose: r.purpose ?? null,
   branch: r.branch,
   outcome: r.outcome ?? null,
   outcomeReason: r.outcome_reason ?? null,
@@ -122,16 +114,13 @@ export function createTask(
     kind?: Task["kind"];
     parentTaskId?: string;
     approvalId?: string;
-    strategyId?: string;
     agent?: string;
-    purpose?: TaskPurpose;
-    subject?: string;
   },
 ): Task {
   const id = newId("tsk");
   const now = Date.now();
   db.query(
-    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, ignore_reserve, kind, parent_task_id, approval_id, strategy_id, purpose, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, ignore_reserve, kind, parent_task_id, approval_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.spaceId,
@@ -144,9 +133,6 @@ export function createTask(
     input.kind ?? "work",
     input.parentTaskId ?? null,
     input.approvalId ?? null,
-    input.strategyId ?? null,
-    input.purpose ?? null,
-    input.subject ?? null,
     now,
     now,
   );
@@ -221,4 +207,25 @@ export function reopenForReview(db: Database, id: string): Task {
   }
   bus.emit({ type: "changed" });
   return getTask(db, id)!;
+}
+
+export const REMOVED_FEATURE = "This feature was removed from Atrium, so the task didn't run.";
+
+// Ends a task of a removed feature as failed with a plain note. A waiting task passes through running, the only way
+// the status rules reach failed; nothing runs in between.
+export function failRemovedFeatureTask(db: Database, id: string): void {
+  if (getTask(db, id)?.status === "queued") setTaskStatus(db, id, "running");
+  setTaskStatus(db, id, "failed");
+  // Only a blocked task keeps a reason through setTaskStatus; this one is kept for the note the user reads.
+  db.query("UPDATE tasks SET blocked_reason = ? WHERE id = ?").run(REMOVED_FEATURE, id);
+}
+
+// Tasks an older Atrium made for features that are gone (their `purpose` column is still in the database). One that
+// is waiting or running is ended with a plain note instead of being run; the rows themselves are kept.
+export function endRemovedFeatureTasks(db: Database): number {
+  const cols = db.query("PRAGMA table_info(tasks)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "purpose")) return 0;
+  const ids = (db.query("SELECT id FROM tasks WHERE purpose IS NOT NULL AND status IN ('queued','running')").all() as { id: string }[]).map((r) => r.id);
+  for (const id of ids) failRemovedFeatureTask(db, id);
+  return ids.length;
 }

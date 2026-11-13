@@ -16,7 +16,6 @@ const preview = (over: Partial<SpaceDeletePreview> = {}): SpaceDeletePreview => 
   history: 12,
   folder: { path: "~/Atrium/text-dana", files: 2, bytes: 2048, more: false },
   repo: null,
-  investing: 0,
   refusal: null,
   ...over,
 });
@@ -37,7 +36,6 @@ test("the confirm lists what goes and what stays, plainly", () => {
   ]);
   const clone = spaceDeleteLines(preview({ kind: "repo", folder: null, repo: { path: "~/Projects/app", atriumClone: true } }));
   expect(clone.stays[0]).toBe("The copy Atrium cloned at ~/Projects/app is removed only if everything in it is on GitHub. Otherwise Atrium keeps it and says why.");
-  expect(spaceDeleteLines(preview({ investing: 30 })).goes).toContain("Its holdings, watchlists, alerts and other investing data");
 });
 
 test("the typed name has to match", () => {
@@ -71,15 +69,16 @@ test("a long feed shows five lines under day headings, with more a click away", 
   const now = Date.now();
   const day = 86_400_000;
   s.activity = [
-    ...Array.from({ length: 30 }, (_, i) => ({ id: `al_${i}`, spaceId: ids.atrium, taskId: null, actor: "atrium", message: "Alert: NVDA crossed $140", createdAt: now - i * 1000 })),
+    ...Array.from({ length: 30 }, (_, i) => ({ id: `al_${i}`, spaceId: ids.atrium, taskId: null, actor: "atrium", message: "Cloned a/b into ~/dev", createdAt: now - i * 1000 })),
     ...Array.from({ length: 8 }, (_, i) => ({ id: `t_${i}`, spaceId: ids.jobHunt, taskId: `tsk_${i}`, actor: "claude", message: `Started: Task ${i}`, createdAt: now - day - i * 60_000 })),
     { id: "b", spaceId: ids.jobHunt, taskId: ids.blocked, actor: "atrium", message: "Blocked: Summarize postings. No postings found", createdAt: now - 5000 * 1000 },
+    { id: "p", spaceId: ids.jobHunt, taskId: "tsk_p", actor: "claude", message: "Partly done: Task p. Half.", createdAt: now - 6000 * 1000 },
   ].sort((a, b) => b.createdAt - a.createdAt);
   const html = renderToStaticMarkup(<Activity state={s} />);
   const t = text(html);
-  expect(t).toContain("Alert: NVDA crossed $140 ×30");
+  expect(t).toContain("Cloned a/b into ~/dev ×30");
   expect(t).toContain("Yesterday");
   expect((html.match(/class="group /g) ?? []).length).toBe(5);
-  expect(t).toContain("Show more · 5 earlier");
+  expect(t).toContain("Show more · 6 earlier");
   expect(html).toContain("tone-attention");
 });

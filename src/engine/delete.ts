@@ -25,20 +25,10 @@ export class DeleteRefused extends Error {
 // Every table that points at a space, a task or a run, and what a delete does with it. The test checks this against
 // the live schema, so a new table can't be missed.
 export const HANDLED = {
-  space: [
-    "tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions",
-    "run_files", "rule_events", "market_lists", "market_watchlist", "market_holdings", "market_alerts",
-    "paper_accounts", "paper_fills", "market_strategies", "research_notes", "market_writeups", "market_ideas", "attachments",
-  ],
-  task: ["tasks", "runs", "approvals", "activity", "messages", "run_files", "paper_fills", "market_writeups", "attachments"],
+  space: ["tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions", "run_files", "rule_events", "attachments"],
+  task: ["tasks", "runs", "approvals", "activity", "messages", "run_files", "attachments"],
   run: ["run_files"],
 } as const;
-
-// Investing rows keyed only by space, children before parents.
-const SPACE_DATA = [
-  "market_watchlist", "market_lists", "market_holdings", "market_alerts", "paper_fills", "paper_accounts", "market_strategies",
-  "research_notes", "market_writeups", "market_ideas",
-];
 
 const SPACE_GONE = "That space isn't here anymore. It may have been deleted somewhere else.";
 const TASK_GONE = "That task isn't here anymore. It may have been deleted somewhere else.";
@@ -96,7 +86,7 @@ const brokenLinks = (db: Database) => db.query("PRAGMA foreign_key_check").all()
 const BROKE = "Atrium stopped the delete because it would have left broken links in its records. Nothing was deleted. Check the engine log.";
 
 // Removes the rows of these tasks, their runs and approvals, in an order the foreign keys accept. Rows elsewhere
-// that only mention a task (a text in Messages, a paper fill, a write-up) keep their row with the link cleared.
+// that only mention a task keep their row with the link cleared.
 function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] = []): { transcripts: string[] } {
   if (!tasks.length && !extraApprovals.length) return { transcripts: [] };
   const t = marks(tasks);
@@ -115,8 +105,6 @@ function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] 
   if (tasks.length) {
     legacyUnlinkTasks(db, tasks);
     db.query(`UPDATE approvals SET task_id = NULL WHERE task_id IN (${t})${a ? ` AND id NOT IN (${a})` : ""}`).run(...tasks, ...approvals);
-    db.query(`UPDATE paper_fills SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
-    db.query(`UPDATE market_writeups SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     // Attached files are Nakul's own and stay in the space folder; only the link to the task goes.
     db.query(`UPDATE attachments SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM run_files WHERE task_id IN (${t})`).run(...tasks);
@@ -170,7 +158,7 @@ function folderSize(dir: string): { files: number; bytes: number; more: boolean 
 
 const legacyFolder = (id: string) => join(config().home, "spaces", id);
 
-// Both places a general or markets space can keep files: its visible folder and the hidden one it had before.
+// Both places a general space can keep files: its visible folder and the hidden one it had before.
 const foldersOf = (space: Space): { path: string; root: string }[] => [
   ...(space.folder ? [{ path: space.folder, root: config().filesHome }] : []),
   { path: legacyFolder(space.id), root: join(config().home, "spaces") },
@@ -187,7 +175,6 @@ export type SpaceDeletePreview = {
   folder: { path: string; files: number; bytes: number; more: boolean } | null;
   // A repo space's folder: whether Atrium cloned it (removed only if everything is on GitHub) or Nakul did (never touched).
   repo: { path: string; atriumClone: boolean } | null;
-  investing: number;
   refusal: string | null;
 };
 
@@ -209,7 +196,6 @@ export function spaceDeletePreview(db: Database, id: string, guards: DeleteGuard
     history: count("SELECT COUNT(*) AS n FROM activity WHERE space_id = ?", id),
     folder: space.kind === "repo" ? null : { path: tildePath(space.folder ?? legacyFolder(id)), ...sized },
     repo: space.repoPath ? { path: tildePath(space.repoPath), atriumClone: presentCloneForPath(db, space.repoPath) !== null } : null,
-    investing: SPACE_DATA.reduce((n, table) => n + count(`SELECT COUNT(*) AS n FROM ${table} WHERE space_id = ?`, id), 0),
     refusal: refusal(db, tasks, id, guards),
   };
 }
@@ -239,7 +225,6 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     db.query("DELETE FROM attachments WHERE space_id = ?").run(id);
     db.query("DELETE FROM messages WHERE space_id = ?").run(id);
     db.query("DELETE FROM activity WHERE space_id = ?").run(id);
-    for (const table of SPACE_DATA) db.query(`DELETE FROM ${table} WHERE space_id = ?`).run(id);
     legacyDelete(db, LEGACY.bySpace, "space_id", [id]);
     // Atrium's record of a clone outlives the space, so Storage and boot recovery still know the folder is its own.
     const clone = space.repoPath ? presentCloneForPath(db, space.repoPath) : null;

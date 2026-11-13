@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StartView } from "../../src/dashboard/components/GetStarted";
 import { openDb } from "../../src/engine/db";
 import { doctor, formatDoctor, type Report } from "../../src/engine/doctor";
+import { setSetting } from "../../src/engine/settings";
 import { createSpace } from "../../src/engine/spaces";
 import { getProgress, saveProgress, shouldAutoOpen } from "../../src/engine/start";
 import { claudeBlocks, nextStep, prevStep, STEPS } from "../../src/engine/start-steps";
@@ -75,7 +76,7 @@ test("nothing in the checks opens a credential file or Keychain item", () => {
 });
 
 test("steps run in order, back goes back, and the ends hold", () => {
-  expect(STEPS).toEqual(["welcome", "agents", "tools", "investing", "profile", "done"]);
+  expect(STEPS).toEqual(["welcome", "agents", "tools", "profile", "done"]);
   expect(nextStep("welcome")).toBe("agents");
   expect(nextStep("done")).toBe("done");
   expect(prevStep("tools")).toBe("agents");
@@ -85,15 +86,21 @@ test("steps run in order, back goes back, and the ends hold", () => {
 test("skipping is remembered, except for agents, and progress resumes", () => {
   expect(getProgress(db)).toEqual({ step: "welcome", skipped: [], done: false, dismissed: false });
   saveProgress(db, { step: "tools" }, null);
-  saveProgress(db, { skip: "tools", step: "investing" }, null);
+  saveProgress(db, { skip: "tools", step: "profile" }, null);
   saveProgress(db, { skip: "agents" }, null);
   saveProgress(db, { skip: "tools" }, null);
   db.close();
   // A new connection to the same database, as after closing the app and coming back.
   db = openDb();
-  expect(getProgress(db)).toEqual({ step: "investing", skipped: ["tools"], done: false, dismissed: false });
+  expect(getProgress(db)).toEqual({ step: "profile", skipped: ["tools"], done: false, dismissed: false });
   expect(saveProgress(db, { unskip: "tools" }, null).skipped).toEqual([]);
   expect(() => saveProgress(db, { step: "nowhere" }, null)).toThrow("isn't a step");
+});
+
+test("a stored step or skip from a removed step is ignored, not an error", () => {
+  setSetting(db, "start.step", "investing");
+  setSetting(db, "start.skipped", JSON.stringify(["mail", "tools", "investing"]));
+  expect(getProgress(db)).toMatchObject({ step: "welcome", skipped: ["tools"] });
 });
 
 test("Claude missing blocks Done, and a signed-in Claude lets it finish", async () => {
@@ -149,16 +156,15 @@ const noop = () => {};
 async function view(over: Partial<Report> = {}, step = "agents" as (typeof STEPS)[number]) {
   const report = { ...(await doctor(null)), ...over };
   const html = renderToStaticMarkup(
-    <StartView report={report} progress={{ step, skipped: [], done: false, dismissed: false }} draft={{ name: "", projectsRoot: "" }} message={null} onDraft={noop} onGo={noop} onSkip={noop} onRecheck={noop} onSetupInvesting={noop} onSaveProfile={noop} onFinish={noop} onDismiss={noop} />,
+    <StartView report={report} progress={{ step, skipped: [], done: false, dismissed: false }} draft={{ name: "", projectsRoot: "" }} message={null} onDraft={noop} onGo={noop} onSkip={noop} onRecheck={noop} onSaveProfile={noop} onFinish={noop} onDismiss={noop} />,
   );
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 }
 
 test("the screen shows each step's states, and Next into Done is disabled while Claude is missing", async () => {
-  expect(await view({}, "welcome")).toContain("Step 1 of 6");
+  expect(await view({}, "welcome")).toContain("Step 1 of 5");
   // Optional steps can be skipped.
-  const investing = await view({}, "investing");
-  expect(investing).toMatch(/Skip(?! for now)/);
+  expect(await view({}, "profile")).toMatch(/Skip(?! for now)/);
   const agents = await view({}, "agents");
   expect(agents).toContain("Claude");
   expect(agents).toContain("Required");

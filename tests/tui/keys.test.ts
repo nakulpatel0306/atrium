@@ -50,9 +50,8 @@ test("a chunk of command keys acts once per key", () => {
 
 test("numbers switch tabs; tab and arrows move between Spaces panes", () => {
   expect(play(["2"]).ui.tab).toBe("spaces");
-  expect(play(["3"]).ui.tab).toBe("investing");
-  expect(play(["4"]).ui.tab).toBe("activity");
-  expect(play(["4", "1"]).ui.tab).toBe("home");
+  expect(play(["3"]).ui.tab).toBe("activity");
+  expect(play(["3", "1"]).ui.tab).toBe("home");
   expect(uiActions(play([["", { tab: true }]], spaces).all)).toEqual([{ type: "cycle", dir: 1 }]);
   expect(uiActions(play([["", { tab: true, shift: true }]], spaces).all)).toEqual([{ type: "cycle", dir: -1 }]);
   expect(uiActions(play(["l"], spaces).all)).toEqual([{ type: "column", dir: "right" }]);
@@ -170,7 +169,7 @@ test("the filter box filters live", () => {
   expect(cancelled.ui.filters.tasks).toBe("");
   expect(cancelled.ui.ask).toBeNull();
   expect(play(["/"]).ui.ask).toMatchObject({ purpose: "filter", targetId: "needs" });
-  expect(flashText(play(["/"], { tab: "investing" }).all)[0]).toStartWith("Filter works in lists");
+  expect(flashText(play(["/"], { tab: "spaces", focus: "detail" }).all)[0]).toStartWith("Filter works in lists");
 });
 
 test("space keys", () => {
@@ -265,13 +264,6 @@ test("esc clears the file before leaving detail", () => {
   expect(once.detailFile).toBeNull();
   expect(once.focus).toBe("detail");
   expect(play(["f", esc, esc], start, makeState(), withFiles()).ui.focus).toBe("tasks");
-});
-
-test("Investing: the Ask box asks about the picked symbol, or adds a task when none is listed", () => {
-  const invest: KeyContext = { ...NO_CONTEXT, invest: { spaceId: "spc_inv", keys: ["SHOP.TO", "NVDA"] } };
-  expect(play(["j", " ", "why down?", enter], { tab: "investing" }, makeState(), invest).intents).toEqual([{ type: "investAsk", spaceId: "spc_inv", key: "NVDA", question: "why down?" }]);
-  const empty: KeyContext = { ...NO_CONTEXT, invest: { spaceId: "spc_inv", keys: [] } };
-  expect(play([" ", "weekly check-in", enter], { tab: "investing" }, makeState(), empty).intents).toEqual([{ type: "newTask", spaceId: "spc_inv", text: "weekly check-in", agent: "auto" }]);
 });
 
 test("Activity: enter opens the picked line's space", () => {

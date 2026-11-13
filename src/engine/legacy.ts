@@ -5,11 +5,15 @@ import type { Database } from "bun:sqlite";
 // touches them is a delete the user asks for, which has to clear them or the foreign keys would refuse it.
 export const LEGACY = {
   // Rows keyed by space, children before parents.
-  bySpace: ["mail_actions", "money_transactions", "money_imports", "money_budgets", "money_nudges", "money_accounts"],
+  bySpace: [
+    "mail_actions", "message_actions", "market_watchlist", "market_lists", "market_holdings", "market_alerts", "paper_fills", "paper_accounts",
+    "market_strategies", "research_notes", "market_writeups", "market_ideas", "money_transactions", "money_imports", "money_budgets",
+    "money_nudges", "money_accounts",
+  ],
   // Rows that mention a task and keep their own row when it goes.
-  byTask: ["mail_actions"],
+  byTask: ["mail_actions", "message_actions", "paper_fills", "market_writeups"],
   // Rows that belong to one approval and go with it.
-  byApproval: ["mail_actions"],
+  byApproval: ["mail_actions", "message_actions"],
 } as const;
 
 const present = (db: Database, table: string): boolean => !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);

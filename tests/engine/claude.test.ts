@@ -141,7 +141,7 @@ describe("claudeAdapter", () => {
         `${tool}(**/*.[eE][nN][vV]/**)`,
       ]),
       "Bash(cat *.env*)",
-      // The Keychain CLI, where market data keys live.
+      // The Keychain CLI, which would hand an agent whatever the login keychain holds.
       "Bash(security *)",
       // GitHub is the engine's alone.
       "Bash(gh *)",

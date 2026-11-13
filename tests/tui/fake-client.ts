@@ -3,7 +3,7 @@ import type { Message } from "../../src/engine/messages";
 import type { TaskOutputs } from "../../src/engine/outputs/views";
 import type { State } from "../../src/engine/state";
 import type { SpaceDeletePreview } from "../../src/engine/delete";
-import type { EngineClient, MarketsGlance } from "../../src/tui/client";
+import type { EngineClient } from "../../src/tui/client";
 
 type Call = { method: string; path: string; body?: unknown };
 
@@ -59,22 +59,11 @@ export function fakeClient(initial: State | null, opts: { online?: boolean } = {
       const r = responses.get(path);
       return r?.ok ? (r.data as Record<string, string | null>) : null;
     },
-    async markets(spaceId) {
-      const path = `/api/investing/${spaceId}/glance`;
-      calls.push({ method: "GET", path });
-      const r = responses.get(path);
-      return r?.ok ? (r.data as MarketsGlance) : null;
-    },
     async deletePreview(spaceId) {
       const path = `/api/spaces/${spaceId}/delete-preview`;
       calls.push({ method: "GET", path });
       const r = responses.get(path);
       return r?.ok ? (r.data as SpaceDeletePreview) : null;
-    },
-    async get<T>(path: string) {
-      calls.push({ method: "GET", path });
-      const r = responses.get(path);
-      return r?.ok ? (r.data as T) : null;
     },
     async transcript(runId) {
       const path = `/api/runs/${runId}/transcript`;

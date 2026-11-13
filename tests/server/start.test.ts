@@ -40,7 +40,7 @@ test("GET /api/start gives the checks, the saved place and whether to open on it
 });
 
 test("PUT /api/start moves and skips steps, and Done waits for Claude", async () => {
-  expect(await (await put("/api/start", { skip: "tools", step: "investing" })).json()).toEqual({ step: "investing", skipped: ["tools"], done: false, dismissed: false });
+  expect(await (await put("/api/start", { skip: "tools", step: "profile" })).json()).toEqual({ step: "profile", skipped: ["tools"], done: false, dismissed: false });
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const blocked = await put("/api/start", { done: true });
   expect(blocked.status).toBe(400);

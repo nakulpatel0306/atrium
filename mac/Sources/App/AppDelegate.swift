@@ -25,7 +25,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     notifier.authorize()
     client.onSummary = { [weak self] s in
       NSApp.dockTile.badgeLabel = badgeLabel(s.needsYou)
-      self?.web.setEmbedPort(s.embed?.port)
       status.update(online: true, summary: s)
       guard let self else { return }
       self.notifier.post(newNotes(previous: self.lastSummary, next: s))

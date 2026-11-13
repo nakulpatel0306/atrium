@@ -2,7 +2,7 @@
 import type { AgentChoice } from "../dashboard/agents";
 import { CLEARED, listOf, pick, type View } from "./select";
 
-export const TABS = ["home", "spaces", "investing", "activity"] as const;
+export const TABS = ["home", "spaces", "activity"] as const;
 export type Tab = (typeof TABS)[number];
 
 // Lists whose selection is pinned to a row id: spaces and tasks (Spaces), needs (Home's cards), activity.
@@ -10,7 +10,7 @@ export type ListPane = "spaces" | "tasks" | "needs" | "activity";
 // Where the keys go on the Spaces tab.
 export type Pane = "spaces" | "tasks" | "detail" | "live";
 
-// What the Ask box is for right now. "ask" is the tab's own (new space, new task, symbol ask); the
+// What the Ask box is for right now. "ask" is the tab's own (new space, new task); the
 // rest are the prompts other keys open in the same box.
 export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter";
 export type Ask = { purpose: AskPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null };
@@ -43,8 +43,6 @@ export type Ui = {
   // The made file picked in the task's detail with f, which o and R then act on.
   detailFile: number | null;
   liveScroll: number | null;
-  // Investing: the symbol row.
-  invest: { row: number };
   activityScroll: number;
   // Null while the cursor isn't in the Ask box.
   ask: Ask | null;
@@ -70,11 +68,10 @@ export type Action =
   | { type: "filter"; pane: ListPane; text: string }
   | { type: "flash"; flash: Flash | null }
   | { type: "file"; index: number | null }
-  | { type: "ask"; ask: Ask | null }
-  | { type: "row"; index: number };
+  | { type: "ask"; ask: Ask | null };
 
 // How many lines each scrollable part holds and shows, so scrolling and moving know where the ends are.
-export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number; investRows?: number; activityLines?: number; activity?: number };
+export type Rows = { detail: number; live: number; detailLines?: number; liveLines?: number; activityLines?: number; activity?: number };
 
 const none: Selection = { id: null, index: 0 };
 
@@ -88,7 +85,6 @@ export const initialUi: Ui = {
   detailScroll: 0,
   detailFile: null,
   liveScroll: null,
-  invest: { row: 0 },
   activityScroll: 0,
   ask: null,
   overlay: null,
@@ -158,10 +154,6 @@ export function pin(ui: Ui, view: View): Ui {
   return next;
 }
 
-function moveRow(ui: Ui, to: number, count: number): Ui {
-  return { ...ui, invest: { row: clamp(to, count - 1) } };
-}
-
 export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
   switch (action.type) {
     case "tab":
@@ -177,14 +169,12 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
     case "move": {
       const pane = listPaneOf(ui);
       if (pane) return moveTo(ui, view, pane, (i) => i + action.delta);
-      if (ui.tab === "investing") return moveRow(ui, ui.invest.row + action.delta, rows.investRows ?? 0);
       if (ui.tab === "spaces") return scroll(ui, action.delta, rows);
       return ui;
     }
     case "edge": {
       const pane = listPaneOf(ui);
       if (pane) return moveTo(ui, view, pane, (_, last) => (action.to === "top" ? 0 : last));
-      if (ui.tab === "investing") return moveRow(ui, action.to === "top" ? 0 : Number.MAX_SAFE_INTEGER, rows.investRows ?? 0);
       if (ui.tab !== "spaces") return ui;
       if (ui.focus === "detail") return { ...ui, detailScroll: action.to === "top" ? 0 : detailMax(rows) };
       return { ...ui, liveScroll: action.to === "top" ? 0 : null };
@@ -235,7 +225,5 @@ export function reduce(ui: Ui, action: Action, view: View, rows: Rows): Ui {
       return { ...ui, detailFile: action.index };
     case "ask":
       return { ...ui, ask: action.ask };
-    case "row":
-      return { ...ui, invest: { row: action.index } };
   }
 }

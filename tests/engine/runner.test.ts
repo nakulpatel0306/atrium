@@ -6,11 +6,6 @@ import { join } from "node:path";
 import type { TaskWait } from "../../src/engine/agents/registry";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { getApproval, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
-import { createMarketsHooks } from "../../src/engine/markets/agent";
-import { saveQuotes } from "../../src/engine/markets/cache";
-import { createMarketData } from "../../src/engine/markets/data";
-import { demoProvider } from "../../src/engine/markets/providers/demo";
-import { handleStrategyDecision, proposeStrategy } from "../../src/engine/markets/strategies";
 import * as rules from "../../src/engine/autonomy/rules";
 import { createRule } from "../../src/engine/autonomy/rules";
 import { openDb } from "../../src/engine/db";
@@ -32,7 +27,6 @@ import { tempHome, tempRepo } from "../helpers";
 import { readdirSync } from "node:fs";
 import { config } from "../../src/engine/config";
 import { claudeAdapter } from "../../src/engine/agents/claude";
-import { isPrivate } from "../../src/engine/spaces";
 import { createCloner } from "../../src/engine/repos/clones";
 import { listClones } from "../../src/engine/repos/store";
 import { fakeGitHub, seedRemote } from "../repos-helpers";
@@ -1723,68 +1717,6 @@ test("a failing rule check leaves the result waiting and says so", async () => {
   expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
 });
 
-describe("markets spaces", () => {
-  const IN_SESSION = Date.parse("2026-11-05T15:00:00Z");
-  const noKeys = { get: async () => null, set: async () => {}, remove: async () => {} };
-  let offStrategy: () => void = () => {};
-  afterEach(() => offStrategy());
-
-  function marketsRunner(adapter: AgentAdapter) {
-    setSetting(db, "markets.provider", "demo");
-    const data = createMarketData({ db, keychain: noKeys, now: () => IN_SESSION, providers: { demo: demoProvider({ now: () => IN_SESSION }) } });
-    runner = createRunner({ db, adapters: { claude: adapter }, power: async () => "ac", keepAwake: fakeKeepAwake(), markets: createMarketsHooks(db, { data, now: () => IN_SESSION }) });
-    runner.start();
-    return runner;
-  }
-
-  test("markets strategy run settles without a review", async () => {
-    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "paper" });
-    offStrategy = onApprovalResolved((a, d) => handleStrategyDecision(db, a, d));
-    const s = proposeStrategy(db, space.id, { name: "Momentum", rules: "r", symbols: ["AAPL"], cadence: "open", maxPositionValue: 2000, maxTradesPerDay: 3 }, "claude");
-    resolveApproval(db, s.approvalId!, "approve");
-    saveQuotes(db, [{ key: "AAPL", price: 100, prevClose: 99, at: IN_SESSION, source: "demo", freshness: "demo" }]);
-    const block = '```atrium-markets\n{"orders":[{"symbol":"AAPL","side":"buy","qty":5,"reason":"Above SMA20"}]}\n```\nAnalysis, not advice.';
-    const { adapter, calls } = fakeAdapter(() => ok(block));
-    const task = createTask(db, { spaceId: space.id, title: "Paper strategy: Momentum (9:45 AM ET)", agent: "claude", weight: "light", strategyId: s.id });
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done");
-    expect(listPending(db)).toHaveLength(0);
-    expect(db.query("SELECT COUNT(*) AS n FROM paper_fills").get()).toEqual({ n: 1 });
-    expect(listActivity(db).map((a) => a.message)).toContain("Paper strategy run: 1 filled, 0 refused");
-    // What happened to each order stays with the task, since there's no review to carry it.
-    expect(getTask(db, task.id)!.detail).toMatch(/Filled: buy 5 AAPL @ \$[\d.]+ · Above SMA20/);
-    expect(calls[0]!.prompt).toContain("Market data as of");
-    expect(calls[0]!.systemPrompt).toContain("Analysis, not advice");
-  });
-
-  test("a digest or thesis task gets read-only tools and saves a write-up", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    const { adapter, calls } = fakeAdapter(() => ok("Markets were quiet.\n\nAnalysis, not advice."));
-    const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", weight: "light", purpose: "digest" });
-    const plain = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done" && getTask(db, plain.id)!.status === "review");
-    const digest = calls.find((c) => c.prompt.includes("Daily digest"))!;
-    expect(digest.allowedTools).toEqual(["Read", "Glob", "Grep"]);
-    expect(digest.mode).toBe("review");
-    const other = calls.find((c) => c.prompt.includes("Explain today's move"))!;
-    expect(other.allowedTools).toEqual(["Read", "Edit", "Write", "Glob", "Grep"]);
-  });
-
-  test("markets analysis task ends in review with the label", async () => {
-    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
-    const { adapter, calls } = fakeAdapter(() => ok('Holdings moved with the market.\n\n```atrium-markets\n{"orders":[{"symbol":"AAPL","side":"buy","qty":1,"reason":"x"}]}\n```\nAnalysis, not advice.'));
-    const task = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "review");
-    const a = listPending(db)[0]!;
-    expect(a.detail).toContain("Holdings moved with the market.");
-    expect(a.detail).toContain("Paper orders only run from an approved strategy; ignored 1.");
-    expect(calls[0]!.systemPrompt).toContain("This is a markets space. Atrium never places real trades and you can't either.");
-    expect(calls[0]!.prompt).toContain("Market data as of");
-  });
-});
-
 describe("attached GitHub repos", () => {
   test("a task in a space with no local copy waits while it's cloned, then runs on its branch", async () => {
     const gh = fakeGitHub();
@@ -2043,19 +1975,6 @@ describe("honest outcomes", () => {
   test("engineOnlyClaim", () => {
     for (const t of ["Create a new GitHub repo", "set up the repository", "make a repo for notes"]) expect(engineOnlyClaim(t)).toBe("repo");
     for (const t of ["Summarise notes.md", "Write the repo notes", "Send PR to review"]) expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
-  });
-
-  test("a markets work task settles on the text without the outcome line", async () => {
-    setSetting(db, "markets.provider", "demo");
-    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
-    const seen: string[] = [];
-    const markets = { context: async () => "", settle: async (_t: unknown, _s: unknown, _a: unknown, summary: string) => (seen.push(summary), { done: false, lines: [] }) };
-    const { adapter } = fakeAdapter(() => ok("Quiet day.\n\nAnalysis, not advice.\nOUTCOME: done"));
-    const task = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
-    runner = createRunner({ db, adapters: { claude: adapter }, power: async () => "ac", keepAwake: fakeKeepAwake(), markets: markets as never });
-    runner.start();
-    await waitFor(() => status(task.id) === "review");
-    expect(seen).toEqual(["Quiet day.\n\nAnalysis, not advice."]);
   });
 });
 

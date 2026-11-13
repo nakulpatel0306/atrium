@@ -27,7 +27,6 @@ export type Check = {
 export type Report = {
   agents: Check[];
   github: Check;
-  investing: { spaceId: string | null };
   profile: { name: string | null; suggestedName: string | null; projectsRoot: string };
   hasSpaces: boolean;
 };
@@ -98,7 +97,6 @@ export async function doctor(db: Database | null): Promise<Report> {
   return {
     agents: [claude, codex, gemini],
     github,
-    investing: { spaceId: spaces.find((s) => s.kind === "markets" && s.name === "Investing")?.id ?? null },
     profile: { name: db ? storedName(db) : null, suggestedName: suggestedName(), projectsRoot: tildePath(c.projectsRoot) },
     hasSpaces: spaces.length > 0,
   };
@@ -118,6 +116,5 @@ export function formatDoctor(r: Report): string {
   lines.push("", "Code spaces");
   row(r.github);
   lines.push("", "Your folders", `  Projects folder: ${r.profile.projectsRoot}`);
-  lines.push("", "Investing and money are set up from the dashboard's Get started screen, or with: atrium investing setup");
   return lines.join("\n");
 }

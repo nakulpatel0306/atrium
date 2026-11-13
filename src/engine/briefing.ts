@@ -1,6 +1,5 @@
 import type { Database } from "bun:sqlite";
 import { type ActivityKind, activityKind } from "./activity-groups";
-import { marketsBriefing, type MarketsBriefing } from "./markets/briefing";
 import { plural } from "./text";
 import { userName } from "./profile";
 import { getSetting, setSetting } from "./settings";
@@ -23,7 +22,7 @@ function finishedSince(db: Database, since: number): { tasks: number; spaces: nu
   return { tasks: new Set(done.map((r) => r.task_id ?? r.message)).size, spaces: new Set(done.map((r) => r.space_id)).size };
 }
 
-export function briefing(db: Database, now: number): { greeting: string; summary: string; markets: MarketsBriefing | null } {
+export function briefing(db: Database, now: number): { greeting: string; summary: string } {
   const lastSeen = Number(getSetting(db, "lastSeen") ?? 0);
   const since = finishedSince(db, lastSeen);
   const failed = db
@@ -49,7 +48,7 @@ export function briefing(db: Database, now: number): { greeting: string; summary
   if (byRules.n > 0) parts.push(`${plural(byRules.n, "result")} approved by your rules.`);
   if (couldnt.n > 0) parts.push(`${couldnt.n} couldn't be done; open ${couldnt.n === 1 ? "it" : "them"} to see why.`);
 
-  return { greeting: greetingFor(now, userName(db)), summary: parts.join(" "), markets: marketsBriefing(db, now) };
+  return { greeting: greetingFor(now, userName(db)), summary: parts.join(" ") };
 }
 
 export function markSeen(db: Database, now: number): void {

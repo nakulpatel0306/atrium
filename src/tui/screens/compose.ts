@@ -11,7 +11,6 @@ import type { Rows, Ui } from "../ui";
 import { activityDetailRows, activityLines, activityScreen } from "./activity";
 import { askBox, keyStrip, topBar } from "./chrome";
 import { type HomeData, homeScreen } from "./home";
-import { type InvestData, investingScreen, investKeys } from "./investing";
 import { agentsLines, confirmOver, deleteOver, fullView, helpOver, pickerOver } from "./overlays";
 import { leftWidth, spacesRows, spacesScreen } from "./spaces";
 
@@ -25,9 +24,7 @@ export type Frame = {
   cols: number;
   rows: number;
   ctx: KeyContext;
-  investing: boolean;
   home: HomeData;
-  invest: InvestData;
   detail: DetailLine[];
   live: string[];
   transcript: { title: string; lines: string[] };
@@ -65,7 +62,7 @@ export function fullLines(f: Frame, from = 0, to = Number.MAX_SAFE_INTEGER): Lin
 }
 
 // What scrolling needs to know about this frame.
-export function rowsFor(f: Pick<Frame, "rows" | "cols" | "detail" | "live" | "invest" | "view">): Rows {
+export function rowsFor(f: Pick<Frame, "rows" | "cols" | "detail" | "live" | "view">): Rows {
   const body = bodyRows(f.rows);
   const s = spacesRows(body);
   return {
@@ -73,7 +70,6 @@ export function rowsFor(f: Pick<Frame, "rows" | "cols" | "detail" | "live" | "in
     live: s.live,
     detailLines: f.detail.length,
     liveLines: f.live.length,
-    investRows: investKeys(f.invest).length,
     activity: activityDetailRows(body, f.cols),
     activityLines: f.view.subject === "activity" ? activityLines(f.view, f.cols).length : 0,
   };
@@ -101,8 +97,6 @@ function body(f: Frame): Block {
     }
     case "spaces":
       return spacesScreen(f.view, f.ui, { detail: f.detail, live: f.live, frame: f.frame, now: f.now }, f.cols, rows, BODY_TOP);
-    case "investing":
-      return investingScreen(f.invest, f.ui, f.investing, f.cols, rows, BODY_TOP);
     case "activity":
       return activityScreen(f.view, f.ui, f.cols, rows, BODY_TOP, f.now);
   }

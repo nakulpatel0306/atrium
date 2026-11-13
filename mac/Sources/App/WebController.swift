@@ -7,15 +7,13 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
   let webView: WKWebView
   let port: Int
   var onLoadFailed: (() -> Void)?
-  // The engine's chart listener port, from its summary; nil until reported or when the listener didn't start.
-  private(set) var embedPort: Int?
   private var rulesReady = false
   private var pendingLoad = false
 
   init(port: Int) {
     self.port = port
     let configuration = WKWebViewConfiguration()
-    // Scripts (the dashboard's or TradingView's) can't open windows without a click.
+    // Scripts can't open windows without a click.
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
     webView = WKWebView(frame: .zero, configuration: configuration)
     super.init()
@@ -34,7 +32,7 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
   // Every load is confined by a content rule list; the page waits for it. A compile error is logged and the page
   // still loads, since the dashboard's own CSP applies either way.
   private func compileRules(_ done: @escaping @MainActor () -> Void) {
-    let json = contentRulesJSON(port: port, embedPort: embedPort)
+    let json = contentRulesJSON(port: port)
     WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "atrium-\(port)", encodedContentRuleList: json) { [weak self] list, error in
       Task { @MainActor in
         guard let self else { return }
@@ -45,13 +43,6 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
         done()
       }
     }
-  }
-
-  // The chart listener's port comes from the engine; a new one recompiles the rules so its frame may load.
-  func setEmbedPort(_ next: Int?) {
-    guard next != embedPort else { return }
-    embedPort = next
-    compileRules {}
   }
 
   func load() {
@@ -84,7 +75,7 @@ final class WebController: NSObject, WKNavigationDelegate, WKUIDelegate {
   private func decide(_ action: WKNavigationAction) -> LinkDecision {
     guard let url = action.request.url else { return .cancel }
     let userClick = action.navigationType == .linkActivated && recentUserInput()
-    return linkDecision(url, port: port, userClick: userClick, mainFrame: action.targetFrame?.isMainFrame ?? true, embedPort: embedPort)
+    return linkDecision(url, port: port, userClick: userClick, mainFrame: action.targetFrame?.isMainFrame ?? true)
   }
 
   private func recentUserInput() -> Bool {

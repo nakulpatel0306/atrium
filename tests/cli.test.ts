@@ -81,45 +81,18 @@ test("usage lists tui", async () => {
   } finally {
     console.error = err;
   }
-  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup|doctor|data]"]);
+  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data]"]);
 });
 
-test("investing setup asks the running engine once and says what happened", async () => {
+test("the removed investing command is just an unknown command", async () => {
   const { main } = await import("../src/cli");
-  const seen: { method: string; path: string; origin: string | null }[] = [];
-  let reply = { spaceId: "spc_1", created: true, added: 13 };
-  const server = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    fetch(req) {
-      seen.push({ method: req.method, path: new URL(req.url).pathname, origin: req.headers.get("origin") });
-      return Response.json(reply);
-    },
-  });
-  const port = process.env.ATRIUM_PORT;
-  const argv = process.argv;
-  const live = server.port;
-  process.env.ATRIUM_PORT = String(live);
-  process.argv = [...argv.slice(0, 2), "investing", "setup"];
-  const out: string[] = [];
-  const log = console.log;
-  console.log = (m: string) => void out.push(m);
+  const err = console.error;
+  console.error = () => {};
   try {
-    expect(await main("investing")).toBe(0);
-    reply = { spaceId: "spc_1", created: false, added: 0 };
-    expect(await main("investing")).toBe(0);
+    expect(await main("investing")).toBe(1);
   } finally {
-    console.log = log;
-    process.argv = argv;
-    if (port === undefined) delete process.env.ATRIUM_PORT;
-    else process.env.ATRIUM_PORT = port;
-    server.stop(true);
+    console.error = err;
   }
-  expect(seen).toEqual([
-    { method: "POST", path: "/api/investing/setup", origin: `http://127.0.0.1:${live}` },
-    { method: "POST", path: "/api/investing/setup", origin: `http://127.0.0.1:${live}` },
-  ]);
-  expect(out).toEqual(["Investing space ready. It's empty: import your holdings or add tickers in the dashboard.", "Investing space already set up."]);
 });
 
 test("atrium doctor and atrium data run from the command line", () => {

@@ -216,13 +216,10 @@ test("default cwd is the projects folder, created on first use", async () => {
   expect(seen[0]!.systemPrompt).toContain(projects.replace(homedir(), "~"));
 });
 
-test("markets plans are accepted", async () => {
-  const reply = JSON.stringify({ name: "Stocks", kind: "markets", goal: "watch and paper trade", tasks: [] });
-  const { space } = asSpace(await setupSpace(db, fake(ok(reply)), "watch my stocks", repo.path, root()));
-  expect(space.kind).toBe("markets");
-  expect(space.private).toBe(true);
+test("the old markets kind is no longer a plan", async () => {
+  const reply = JSON.stringify({ name: "Stocks", kind: "markets", goal: "watch", tasks: [] });
+  await expect(setupSpace(db, fake(ok(reply)), "watch my stocks", repo.path, root())).rejects.toThrow(SetupFailed);
 });
-
 describe("new projects and GitHub repos", () => {
   let gh: FakeGitHub;
   beforeEach(() => {

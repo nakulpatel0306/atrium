@@ -27,8 +27,6 @@ import { RepoWork } from "./RepoWork";
 import { WhatItMade } from "./WhatItMade";
 import { TaskAttachments } from "./TaskAttachments";
 import { withoutBlock } from "../../engine/attachment-rules";
-import { AdviceTag } from "./markets/AdviceTag";
-import { InvestPanel } from "./invest/InvestPanel";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -144,17 +142,15 @@ function Header({ space }: { space: Space }) {
             <button
               className="toggle"
               role="switch"
-              aria-checked={space.private || space.kind === "markets"}
-              disabled={busy || space.kind === "markets"}
+              aria-checked={space.private}
+              disabled={busy}
               onClick={() => void save({ private: !space.private })}
             >
               <span className="switch" />
               <Lock />
               Private
             </button>
-            <span className="hint">
-              {space.kind === "markets" ? "Investing spaces stay private: your holdings only go to Claude." : "Private spaces only use Claude"}
-            </span>
+            <span className="hint">Private spaces only use Claude</span>
           </div>
           {confirmArchive ? (
             <>
@@ -321,11 +317,6 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
       </div>
       {open && (
         <div className="detail">
-          {space?.kind === "markets" && (
-            <p className="advice-line">
-              <AdviceTag />
-            </p>
-          )}
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
           {review && <ReviewActions approval={review} outcome={task.outcome} />}
@@ -443,8 +434,6 @@ type Props = {
   // Task to open expanded, from a `?task=` link such as Needs you's "View transcript".
   focusTask: string | null;
   tab?: SpaceTab;
-  // A markets space's open symbol page, from `?symbol=`.
-  symbol?: string | null;
   // Open the focused task on its Changes, from `&view=changes`.
   changes?: boolean;
 };
@@ -465,7 +454,7 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
   );
 }
 
-export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = null, changes = false }: Props) {
+export function SpaceView({ state, space, focusTask, tab = "tasks", changes = false }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
   const [, setTick] = useState(0);
@@ -505,7 +494,6 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", symbol = nul
     <div className="wrap">
       <Header key={space.id} space={space} />
       <SpaceNeeds state={state} spaceId={space.id} />
-      {space.kind === "markets" && <InvestPanel spaceId={space.id} symbol={symbol} />}
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />

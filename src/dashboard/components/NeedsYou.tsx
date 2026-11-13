@@ -9,7 +9,6 @@ import { OutcomeBanner } from "./OutcomeBanner";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
-import { AdviceTag } from "./markets/AdviceTag";
 import { Markdown } from "./Markdown";
 import { WhatItMade } from "./WhatItMade";
 
@@ -22,20 +21,8 @@ const useReview = (approval: Approval, state: State) =>
 function Row({ approval, space, state }: { approval: Approval; space: Space | undefined; state: State }) {
   const [open, setOpen] = useState(false);
   const d = useDecision(approval);
-  const { busy, setBusy, error, setError, decide } = d;
+  const { error } = d;
   const review = useReview(approval, state);
-  const alert = approval.kind === "alert";
-  // An agent's flag isn't one of Nakul's alerts, so there's nothing to turn off.
-  const ownAlert = alert && !/ flagged /.test(approval.title);
-  const turnOff = async () => {
-    setBusy(true);
-    const res = await post(`/api/markets/${approval.spaceId}/alerts/off-from-approval`, { approvalId: approval.id });
-    if (res.ok) await decide("approve");
-    else {
-      setError(res.error);
-      setBusy(false);
-    }
-  };
   const ReviewIcon = review?.fixing ? Wrench : SearchCheck;
   // What the agent said about a result that isn't plainly done; only reviews carry one.
   const task = approval.kind === "review" && approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
@@ -56,7 +43,6 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
             {review.text}
           </span>
         )}
-        {space?.kind === "markets" && <AdviceTag />}
         <div className="acts">
           {approval.taskId && space?.kind === "repo" && approval.kind === "review" && (
             <button className="btn link" onClick={() => navigate(`/space/${space.id}?task=${approval.taskId}&view=changes`)}>
@@ -66,20 +52,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           <button className="btn" data-act="open" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? "Hide" : "View"}
           </button>
-          {alert ? (
-            <>
-              {ownAlert && (
-                <button className="btn link" disabled={busy} onClick={() => void turnOff()}>
-                  Turn off alert
-                </button>
-              )}
-              <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
-                Dismiss
-              </button>
-            </>
-          ) : (
-            <DecideButtons d={d} outcome={outcome} />
-          )}
+          <DecideButtons d={d} outcome={outcome} />
         </div>
       </div>
       {outcome && (
@@ -111,7 +84,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           </div>
         </div>
       )}
-      {!alert && <SendBackNote d={d} />}
+      <SendBackNote d={d} />
       {error && <div className="row-err err">{error}</div>}
     </div>
   );

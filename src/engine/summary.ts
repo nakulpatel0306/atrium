@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { listPending, type AlertTopic } from "./approvals";
+import { listPending } from "./approvals";
 import { listPendingProposals } from "./autonomy/proposals";
 import { taskFiles } from "./outputs/store";
 import { getSetting } from "./settings";
@@ -10,13 +10,11 @@ import { getTask, listTasks } from "./tasks";
 // `outcome` is what a review's agent said when it wasn't plainly done.
 export type Need = {
   id: string;
-  kind: "review" | "question" | "alert" | "suggestion";
+  kind: "review" | "question" | "suggestion";
   title: string;
   spaceName: string;
   path: string;
-  topic: AlertTopic | null;
   files: number;
-  symbol: string | null;
   outcome: "partial" | "couldnt" | "unknown" | null;
 };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
@@ -25,8 +23,6 @@ export type Summary = {
   needs: Need[];
   stopped: Stopped[];
   overnight: boolean;
-  // Pending market alerts by kind; indicator alerts count as price.
-  alerts: { price: number; earnings: number; news: number; flag: number };
 };
 
 const STOPPED_LIMIT = 20;
@@ -46,15 +42,13 @@ export function summary(db: Database): Summary {
       return {
       at: a.createdAt,
       need: ({ ...(a.spaceId === null
-        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", topic: a.topic, files: 0, symbol: null }
+        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", files: 0 }
         : {
             id: a.id,
             kind: a.kind,
             title: a.title,
             spaceName: names.get(a.spaceId)!,
             path: pathFor(a.spaceId, a.taskId),
-            topic: a.topic,
-            symbol: a.kind === "alert" ? a.subject : null,
             files: a.kind === "review" && a.taskId ? taskFiles(db, a.taskId).filter((f) => f.change !== "deleted").length : 0,
           }), ...extra }) as Need,
       };
@@ -64,7 +58,7 @@ export function summary(db: Database): Summary {
     .filter((p) => names.has(p.spaceId))
     .map((p) => ({
       at: p.createdAt,
-      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", topic: null, files: 0, symbol: null, outcome: null } as Need,
+      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", files: 0, outcome: null } as Need,
     }));
   // Stable sort keeps each list's own tie order when two land in the same millisecond.
   const needs = [...approvals, ...suggestions].sort((a, b) => b.at - a.at).map((x) => x.need);
@@ -82,11 +76,5 @@ export function summary(db: Database): Summary {
         path: pathFor(t.spaceId, t.id),
       }),
     );
-  const alerts = { price: 0, earnings: 0, news: 0, flag: 0 };
-  for (const n of needs) {
-    if (n.kind !== "alert") continue;
-    const t = n.topic === "indicator" || !n.topic ? "price" : n.topic;
-    alerts[t]++;
-  }
-  return { needsYou: needs.length, needs, stopped, overnight: getSetting(db, "overnight") === "true", alerts };
+  return { needsYou: needs.length, needs, stopped, overnight: getSetting(db, "overnight") === "true" };
 }

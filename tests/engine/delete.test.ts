@@ -68,17 +68,6 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   recordRunFiles(db, { runId: run, taskId: task, spaceId: space.id, root: "space" }, [{ path: "list.md", change: "created", size: 4 }]);
   const repoApproval = createApproval(db, { spaceId: null, kind: "question", title: "Create repo?", detail: "", alwaysAsk: "create_repo" });
   db.query("INSERT INTO repo_actions (id, kind, status, approval_id, space_id, created_at, updated_at) VALUES (?, 'create', 'done', ?, ?, ?, ?)").run(newId("rpa"), repoApproval.id, space.id, now, now);
-  const list = newId("lst");
-  db.query("INSERT INTO market_lists (id, space_id, name, position, created_at) VALUES (?, ?, 'L', 0, ?)").run(list, space.id, now);
-  db.query("INSERT INTO market_watchlist (list_id, space_id, symbol, exchange, added_at) VALUES (?, ?, 'AAPL', 'US', ?)").run(list, space.id, now);
-  db.query("INSERT INTO market_holdings (id, space_id, account, symbol, exchange, quantity, currency, source, updated_at) VALUES (?, ?, 'TFSA', 'AAPL', 'US', 1, 'USD', 'manual', ?)").run(newId("hld"), space.id, now);
-  db.query("INSERT INTO market_alerts (id, space_id, key, rule, created_at) VALUES (?, ?, 'AAPL', '{}', ?)").run(newId("alr"), space.id, now);
-  db.query("INSERT INTO paper_accounts (space_id, starting_cash, reset_at) VALUES (?, 1000, ?)").run(space.id, now);
-  db.query("INSERT INTO paper_fills (id, space_id, symbol, side, qty, price, quote_at, source, actor, task_id, reasoning, created_at) VALUES (?, ?, 'AAPL', 'buy', 1, 1, 0, 'demo', 'claude', ?, 'r', ?)").run(newId("pf"), space.id, task, now);
-  db.query("INSERT INTO market_strategies (id, space_id, name, rules, symbols, cadence, max_position_value, max_trades_per_day, created_at, updated_at) VALUES (?, ?, 'S', 'r', 'AAPL', 'open', 1, 1, ?, ?)").run(newId("str"), space.id, now, now);
-  db.query("INSERT INTO research_notes (space_id, key, updated_at) VALUES (?, 'AAPL', ?)").run(space.id, now);
-  db.query("INSERT INTO market_writeups (id, space_id, kind, key, for_date, body, task_id, created_at) VALUES (?, ?, 'digest', 'k', 'd', 'b', ?, ?)").run(newId("wu"), space.id, task, now);
-  db.query("INSERT INTO market_ideas (space_id, key, stage, stage_at, created_at) VALUES (?, 'AAPL', 'watching', ?, ?)").run(space.id, now, now);
   ensureSpaceFolder(db, space);
   writeFileSync(join(space.folder!, "list.md"), "eggs");
   return { space, task, review, run, transcript };
@@ -101,7 +90,6 @@ test("deleting a space removes every row about it, its transcripts and its folde
   const preview = spaceDeletePreview(db, gone.space.id);
   expect(preview).toMatchObject({ name: "Text Dana", tasks: 2, runs: 1, refusal: null, repo: null });
   expect(preview.folder).toMatchObject({ files: 1, bytes: 4 });
-  expect(preview.investing).toBeGreaterThan(5);
 
   await deleteSpace(db, gone.space.id, "  Text Dana ");
 
@@ -310,9 +298,6 @@ test("deleting a task removes its runs, review, history, transcript and the file
     expect(readFileSync(join(s.space.folder!, "changed.md"), "utf8")).toBe("old");
     expect(readFileSync(join(outside, "x.md"), "utf8")).toBe("keep");
     expect(listActivity(db, { spaceId: s.space.id }).some((r) => r.taskId === s.task)).toBe(false);
-    // The paper ledger and write-ups keep their rows; only the link to the task goes.
-    expect(count("SELECT COUNT(*) AS n FROM paper_fills WHERE space_id = ? AND task_id IS NULL", s.space.id)).toBe(1);
-    expect(count("SELECT COUNT(*) AS n FROM market_writeups WHERE space_id = ? AND task_id IS NULL", s.space.id)).toBe(1);
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     expect(listSpaces(db).some((x) => x.id === s.space.id)).toBe(true);
   } finally {

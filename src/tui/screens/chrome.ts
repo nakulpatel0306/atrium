@@ -9,7 +9,7 @@ import { width } from "../text";
 import { GLYPH, windowGauge } from "../theme";
 import { TABS, type Ui } from "../ui";
 
-const TAB_TEXT = { home: "Home", spaces: "Spaces", investing: "Investing", activity: "Activity" } as const;
+const TAB_TEXT = { home: "Home", spaces: "Spaces", activity: "Activity" } as const;
 
 // Right side of the top bar: Claude's window, power, overnight, and being offline, shortened to fit.
 function status(state: State, online: boolean, room: number): Line {
@@ -77,11 +77,6 @@ export function askLabels(ui: Ui, view: View, ctx: KeyContext): { title: string;
       return { title: "Filter", placeholder: "Type to narrow the list. Enter keeps it, esc clears it." };
     case "space":
       return { title: "New space · describe it", placeholder: 'Like "keep my job search organized" or "start a new project called…"' };
-  }
-  if (ui.tab === "investing") {
-    const key = ctx.invest?.keys[ui.invest.row];
-    if (key) return { title: `Ask Claude about ${key}`, placeholder: `Like "what changed for ${key} this week?"` };
-    return { title: "Ask Atrium · Investing", placeholder: "Give the Investing space a task…" };
   }
   if (ui.tab === "spaces" && space && space.status !== "archived") {
     const agent = a ? ` · agent ${agentName(a.agent)}${askAgentCycles(ui, view) ? " (tab)" : ""}` : "";

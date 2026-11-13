@@ -61,7 +61,6 @@ test("the delete box shows what goes and what stays", () => {
     history: 7,
     folder: { path: "~/Atrium/text-dana", files: 1, bytes: 120, more: false },
     repo: null,
-    investing: 0,
     refusal: null,
   };
   const { title, lines } = deleteBoxLines({ kind: "delete", spaceId: "spc_old", value: "Text", cursor: 4 }, withArchived(), preview, 64);

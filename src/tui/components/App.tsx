@@ -1,21 +1,18 @@
 import { Box, type Key, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { reviewTarget } from "../../dashboard/summary";
-import type { Alert } from "../../engine/markets/alerts";
-import type { GlanceView, PortfolioView } from "../../engine/markets/views";
 import type { State } from "../../engine/state";
 import type { Click, Hit } from "../canvas";
 import type { EngineClient } from "../client";
 import { type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../detail";
 import { runIntent } from "../effects";
-import { useDeletePreview, useEngineRead, useEngineState, useMarketsGlance, useMessages, useOnline, useOutputs, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
+import { useDeletePreview, useEngineState, useMessages, useOnline, useOutputs, useReviewers, useRunOutput, useTick, useTranscript } from "../hooks";
 import { commandsFor, type Intent, type KeyContext } from "../keys";
 import type { MouseBus, MouseEvent } from "../mouse";
 import { deriveView, type View } from "../select";
 import { clean, wrapLines } from "../text";
 import { type Action, type Flash, initialUi, listPaneOf, pin, reduce, type Ui } from "../ui";
 import { bodyRows, compose, detailWidth, fullCount, rowsFor, transcriptTitle } from "../screens/compose";
-import { investKeys } from "../screens/investing";
 import { Screen } from "./Screen";
 
 const NO_KEY = {} as Key;
@@ -96,16 +93,9 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
 
   // The spinner redraws four times a second with nothing else changed; the view (activity grouping and all) is kept.
   const view = useMemo(() => (state ? deriveView(state, ui) : null), [state, ui]);
-  const investSpace = state?.spaces.find((s) => s.kind === "markets") ?? null;
-  const base = investSpace ? `/api/investing/${encodeURIComponent(investSpace.id)}` : null;
   const tab = ui.tab;
-  const glance = useMarketsGlance(client, investSpace && (tab === "home" || tab === "investing") ? investSpace : null) as GlanceView | null;
-  const portfolio = useEngineRead<PortfolioView>(client, base && tab === "investing" ? `${base}/portfolio` : null);
-  const markets = useEngineRead<{ alerts: Alert[] }>(client, investSpace && tab === "investing" ? `/api/markets/${encodeURIComponent(investSpace.id)}` : null);
-  const invest = { portfolio, glance, alerts: markets?.alerts ?? null };
   const messages = useMessages(client, view && (tab === "spaces" || tab === "home") ? threadOf(view) : null);
   const reviewers = useReviewers(client, view && tab === "spaces" && view.subject === "space" && view.space?.kind === "repo" ? view.space : null);
-  const spaceGlance = useMarketsGlance(client, view && tab === "spaces" && view.subject === "space" && view.space?.kind === "markets" ? view.space : null);
   const outputs = useOutputs(client, view && tab === "spaces" && view.subject === "task" ? (view.task?.id ?? null) : null);
   const madeFiles = outputs?.files ?? [];
   const deletePreview = useDeletePreview(client, ui.overlay?.kind === "delete" ? ui.overlay.spaceId : null);
@@ -117,7 +107,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
   const dWidth = detailWidth(cols);
   const detail: DetailLine[] =
     view && tab === "spaces"
-      ? (view.subject === "task" ? taskDetail(view, messages, outputs, ui.detailFile, dWidth) : spaceDetail(view, reviewers, spaceGlance)).flatMap((l) => wrapStyled(l, dWidth))
+      ? (view.subject === "task" ? taskDetail(view, messages, outputs, ui.detailFile, dWidth) : spaceDetail(view, reviewers)).flatMap((l) => wrapStyled(l, dWidth))
       : [];
   const live = useWrapped(tab === "spaces" ? output : "", dWidth);
   const lastLine = tab === "home" ? (output.trimEnd().split("\n").at(-1) ?? "") : "";
@@ -128,10 +118,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
   const wrappedTranscript = useWrapped(loaded?.ok ? loaded.text : "", cols - 4);
   const transcriptLines = !transcriptRun ? [] : !loaded ? ["Loading the transcript…"] : loaded.ok ? wrappedTranscript : [loaded.error];
 
-  const ctx: KeyContext = {
-    files: madeFiles,
-    invest: investSpace ? { spaceId: investSpace.id, keys: investKeys(invest) } : null,
-  };
+  const ctx: KeyContext = { files: madeFiles };
   const now = Date.now();
   const f = view
     ? {
@@ -141,9 +128,7 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
         cols,
         rows: height,
         ctx,
-        investing: !!investSpace,
-        home: { glance, investing: !!investSpace, lastLine, frame, now, briefing: briefing.current ?? view.state.briefing },
-        invest,
+        home: { lastLine, frame, now, briefing: briefing.current ?? view.state.briefing },
         detail,
         live,
         transcript: {
@@ -242,10 +227,9 @@ export function App({ client, size, mouse }: { client: EngineClient; size?: Size
     const actions: Action[] = [];
     // A click anywhere but the box (or its own keys on the strip) leaves it: a card's key cap then acts, never types.
     if (uiRef.current.ask && !c.ask && !c.strip) actions.push({ type: "ask", ask: null });
-    if (c.tab !== undefined) actions.push({ type: "tab", tab: (["home", "spaces", "investing", "activity"] as const)[c.tab]! });
+    if (c.tab !== undefined) actions.push({ type: "tab", tab: (["home", "spaces", "activity"] as const)[c.tab]! });
     if (c.select) actions.push({ type: "select", pane: c.select.pane, id: c.select.id });
     if (c.focus) actions.push({ type: "focus", pane: c.focus });
-    if (c.row) actions.push({ type: "row", index: c.row.index });
     if (c.ask && !uiRef.current.ask && !uiRef.current.overlay) actions.push({ type: "ask", ask: { purpose: "ask", value: "", cursor: 0, agent: "auto", targetId: null } });
     let cur = uiRef.current;
     for (const a of actions) cur = reduce(cur, a, deriveView(s, cur), rows);

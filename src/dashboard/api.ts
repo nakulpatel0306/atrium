@@ -3,7 +3,6 @@ import type { Approval } from "../engine/approvals";
 import type { Proposal } from "../engine/autonomy/proposals";
 import type { Rule, RuleEventRow } from "../engine/autonomy/rules";
 import type { Message } from "../engine/messages";
-import type { Quote } from "../engine/markets/providers/types";
 import type { State } from "../engine/state";
 
 export type { Message, State };
@@ -14,7 +13,6 @@ export { activeOnly } from "./summary";
 type EngineMessage =
   | { type: "changed" }
   | { type: "run-output"; runId: string; taskId: string; chunk: string }
-  | { type: "quotes"; quotes: Quote[] }
   | { type: "diff-changed"; taskId: string };
 
 // Live output is only for watching; the full record is the transcript, so keep just the tail.
@@ -30,7 +28,6 @@ const outputs = new Map<string, string>();
 const diffVersions = new Map<string, number>();
 const seeded = new Set<string>();
 const listeners = new Set<() => void>();
-const quoteListeners = new Set<(quotes: Quote[]) => void>();
 let socket: WebSocket | null = null;
 
 const notify = () => {
@@ -61,16 +58,10 @@ async function refresh(): Promise<void> {
   }
 }
 
-// The market feed only streams while a dashboard tab is actually visible, so each socket says when it is.
-const sendVisibility = () => {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "visibility", visible: document.visibilityState === "visible" }));
-};
-
 function connect(): void {
   const ws = new WebSocket(`ws://${location.host}/ws`);
   socket = ws;
   ws.onopen = () => {
-    sendVisibility();
     online = true;
     notify();
     void refresh();
@@ -86,9 +77,6 @@ function connect(): void {
     } else if (msg.type === "diff-changed") {
       diffVersions.set(msg.taskId, (diffVersions.get(msg.taskId) ?? 0) + 1);
       notify();
-    } else if (msg.type === "quotes") {
-      // Prices tick often; listeners patch what they show instead of refetching the whole state.
-      for (const fn of [...quoteListeners]) fn(msg.quotes);
     }
   };
   ws.onclose = () => {
@@ -104,7 +92,6 @@ function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   if (!started) {
     started = true;
-    document.addEventListener("visibilitychange", sendVisibility);
     connect();
   }
   return () => listeners.delete(fn);
@@ -112,11 +99,6 @@ function subscribe(fn: () => void): () => void {
 
 export function useEngineState(): State | null {
   return useSyncExternalStore(subscribe, () => state, () => state);
-}
-
-export function onQuotes(fn: (quotes: Quote[]) => void): () => void {
-  quoteListeners.add(fn);
-  return () => quoteListeners.delete(fn);
 }
 
 export function useOnline(): boolean {

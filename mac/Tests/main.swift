@@ -34,7 +34,6 @@ let json = """
   """
 let decoded = try? JSONDecoder().decode(Summary.self, from: Data(json.utf8))
 check(decoded != nil, "decode: summary")
-check(decoded?.alerts == nil && decoded?.needs.first?.topic == nil, "decode: a summary without topic or alerts still decodes")
 check(decoded?.needs.first?.path == "/space/spc_1?task=tsk_1", "decode: need path")
 check(decoded != nil && decoded!.stopped.first!.reason == nil, "decode: null reason")
 
@@ -58,21 +57,6 @@ check(
     == [Note(id: "prp_1", title: "Atrium has a question", body: "Stop asking about docs changes? · atrium", path: "/space/spc_1?task=prp_1")],
   "notes: a new suggestion notifies like a question")
 check(newNotes(previous: sug, next: sug).isEmpty, "notes: a seen suggestion doesn't repeat")
-let alert = summary(needs: [need("apr_7", kind: "alert", title: "AAPL price above $200.00")])
-check(newNotes(previous: summary(), next: alert).first?.title == "Price alert", "notes: price alert title")
-let earnings = summary(needs: [Need(id: "apr_e", kind: "alert", title: "RKLB earnings within 5 days", spaceName: "Investing", path: "/space/spc_2", topic: "earnings")])
-check(newNotes(previous: summary(), next: earnings).first?.title == "Earnings soon", "notes: earnings title")
-let news = summary(needs: [Need(id: "apr_n", kind: "alert", title: "RKLB big news", spaceName: "Investing", path: "/space/spc_2", topic: "news")])
-check(newNotes(previous: summary(), next: news).first?.title == "Big news", "notes: news title")
-let flag = summary(needs: [Need(id: "apr_f", kind: "alert", title: "Claude flagged NOW", spaceName: "Investing", path: "/space/spc_2", topic: "flag")])
-check(newNotes(previous: summary(), next: flag).first?.title == "Flagged by Claude", "notes: flag title")
-let indicator = summary(needs: [Need(id: "apr_i", kind: "alert", title: "AAPL RSI(14) below 30", spaceName: "Investing", path: "/space/spc_2", topic: "indicator")])
-check(newNotes(previous: summary(), next: indicator).first?.title == "Price alert", "notes: indicator alert reads as a price alert")
-let withAlerts = try? JSONDecoder().decode(
-  Summary.self,
-  from: Data(#"{"needsYou":1,"needs":[{"id":"a","kind":"alert","title":"t","spaceName":"s","path":"/","topic":"news"}],"stopped":[],"overnight":false,"alerts":{"price":0,"earnings":0,"news":1,"flag":0}}"#.utf8))
-check(withAlerts?.needs.first?.topic == "news", "decode: need topic")
-check(withAlerts?.alerts == AlertCounts(price: 0, earnings: 0, news: 1, flag: 0), "decode: alert counts")
 let blocked = Stopped(id: "tsk_2", title: "Ship", spaceName: "atrium", status: "blocked", reason: "Claude is signed out", path: "/space/spc_1?task=tsk_2")
 let blockedNotes = newNotes(previous: summary(), next: summary(stopped: [blocked]))
 check(blockedNotes.first?.title == "Blocked" && blockedNotes.first?.body == "Ship · Claude is signed out", "notes: blocked uses reason")
@@ -171,44 +155,8 @@ let filesJson = """
   """
 check((try? JSONDecoder().decode(Summary.self, from: Data(filesJson.utf8)))?.needs.first?.files == 4, "decode: files")
 
-// symbols in alert titles
-check(alertTitle("price", "AMZN") == "AMZN price alert", "alert: price with symbol")
-check(alertTitle("indicator", "AMZN") == "AMZN price alert", "alert: indicator with symbol")
-check(alertTitle(nil, "AMZN") == "AMZN price alert", "alert: no topic with symbol")
-check(alertTitle("earnings", "NOW") == "NOW earnings soon", "alert: earnings with symbol")
-check(alertTitle("news", "RKLB") == "Big news on RKLB", "alert: news with symbol")
-check(alertTitle("flag", "TSLA") == "Claude flagged TSLA", "alert: flag with symbol")
-check(alertTitle("price", nil) == "Price alert", "alert: price without symbol")
-check(alertTitle("earnings", nil) == "Earnings soon", "alert: earnings without symbol")
-let symJson = """
-  {"needsYou":1,"needs":[{"id":"apr_s","kind":"alert","title":"AMZN price above $300.00","spaceName":"Investing","path":"/p","topic":"price","files":0,"symbol":"AMZN"}],"stopped":[],"overnight":false,"embed":{"port":7421,"token":"abc"}}
-  """
-let symDecoded = try? JSONDecoder().decode(Summary.self, from: Data(symJson.utf8))
-check(symDecoded?.needs.first?.symbol == "AMZN", "decode: need symbol")
-check(symDecoded?.embed == Embed(port: 7421, token: "abc"), "decode: embed listener")
-check(decoded?.needs.first?.symbol == nil && decoded?.embed == nil, "decode: older summaries without symbol or embed")
-let alertNeed = Need(id: "apr_s", kind: "alert", title: "AMZN price above $300.00", spaceName: "Investing", path: "/p", topic: "price", files: 0, symbol: "AMZN")
-check(newNotes(previous: summary(), next: summary(needs: [alertNeed])).first?.title == "AMZN price alert", "notes: alert names its symbol")
-
-// TradingView frames: only as subframes, only TradingView's widget hosts or the engine's chart listener
-let tvFrame = URL(string: "https://www.tradingview-widget.com/embed-widget/advanced-chart/")!
-check(isTvFrame(tvFrame), "tv: widget host")
-check(isTvFrame(URL(string: "https://s.tradingview.com/embed-widget/x/")!), "tv: fallback host")
-check(!isTvFrame(URL(string: "http://www.tradingview-widget.com/")!), "tv: http refused")
-check(!isTvFrame(URL(string: "https://www.tradingview.com/chart/")!), "tv: main site is not a frame host")
-check(linkDecision(tvFrame, port: 7420, userClick: false, mainFrame: false) == .allow, "policy: TradingView subframe without a click")
-check(linkDecision(tvFrame, port: 7420, userClick: false, mainFrame: true) == .cancel, "policy: TradingView as main frame without a click")
-check(linkDecision(URL(string: "https://www.tradingview.com/chart/")!, port: 7420, userClick: false, mainFrame: false) == .cancel, "policy: tradingview.com subframe")
-check(linkDecision(URL(string: "https://evil.example/")!, port: 7420, userClick: false, mainFrame: false) == .cancel, "policy: other subframe")
-let chartPage = URL(string: "http://localhost:7421/embed/abc/tradingview?symbol=NASDAQ:AMZN")!
-check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: false, embedPort: 7421) == .allow, "policy: the engine's chart listener as subframe")
-check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: false) == .cancel, "policy: no reported listener, no chart frame")
-check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: false, embedPort: 7422) == .cancel, "policy: a different port isn't the chart listener")
-check(linkDecision(chartPage, port: 7420, userClick: false, mainFrame: true, embedPort: 7421) == .cancel, "policy: the chart listener never as main frame")
-check(linkDecision(URL(string: "http://localhost:7420/embed/tradingview")!, port: 7420, userClick: false, mainFrame: false) == .allow, "policy: own port subframe still internal")
-
-// content rules: block everything, then allow the engine, its chart listener and TradingView
-let rules = contentRulesJSON(port: 7420, embedPort: 7421)
+// content rules: block everything, then allow the engine
+let rules = contentRulesJSON(port: 7420)
 let parsed = (try? JSONSerialization.jsonObject(with: Data(rules.utf8))) as? [[String: Any]]
 check(parsed != nil, "rules: valid JSON")
 let firstRule = parsed?.first
@@ -216,27 +164,25 @@ check(((firstRule?["trigger"] as? [String: Any])?["url-filter"] as? String) == "
 check(((firstRule?["action"] as? [String: Any])?["type"] as? String) == "block", "rules: first rule blocks")
 let filters = (parsed ?? []).compactMap { ($0["trigger"] as? [String: Any])?["url-filter"] as? String }
 check(rules.contains("127\\\\.0\\\\.0\\\\.1:7420"), "rules: engine port")
-check(rules.contains("localhost:7421"), "rules: chart listener port")
-check(rules.contains("tradingview-widget"), "rules: widget host")
+check(!rules.contains("tradingview"), "rules: no third-party hosts")
 check(!filters.contains { $0.contains("|") }, "rules: no alternation")
 check(!rules.contains("\\\\.?"), "rules: no optional dots")
 check(!rules.contains("googleapis"), "rules: no Google")
-check(!contentRulesJSON(port: 7420, embedPort: nil).contains("7421"), "rules: no listener, no listener rule")
 
 // popups: only the dashboard itself opens a page in the app; a frame's popup goes to the browser on a click, or nowhere
 check(popupDecision(URL(string: "about:blank")!, port: 7420, userClick: false, fromDashboard: false) == .cancel, "popup: about:blank from a frame never replaces the dashboard")
 check(popupDecision(URL(string: "http://127.0.0.1:7420/api/state")!, port: 7420, userClick: false, fromDashboard: false) == .cancel, "popup: engine URL from a frame never loads in the main view")
 check(popupDecision(URL(string: "http://127.0.0.1:7420/api/state")!, port: 7420, userClick: true, fromDashboard: false) == .cancel, "popup: engine URL from a frame isn't opened in the browser either")
-check(popupDecision(URL(string: "https://www.tradingview.com/symbols/NASDAQ-AMZN/")!, port: 7420, userClick: true, fromDashboard: false) == .openExternally, "popup: TradingView attribution opens in the browser")
-check(popupDecision(URL(string: "https://www.tradingview.com/symbols/NASDAQ-AMZN/")!, port: 7420, userClick: false, fromDashboard: false) == .cancel, "popup: a frame's popup without a click is dropped")
+check(popupDecision(URL(string: "https://example.com/docs")!, port: 7420, userClick: true, fromDashboard: false) == .openExternally, "popup: a frame's popup opens in the browser on a click")
+check(popupDecision(URL(string: "https://example.com/docs")!, port: 7420, userClick: false, fromDashboard: false) == .cancel, "popup: a frame's popup without a click is dropped")
 check(popupDecision(URL(string: "mailto:a@b.c")!, port: 7420, userClick: true, fromDashboard: false) == .cancel, "popup: a frame can't open mail")
 check(popupDecision(URL(string: "http://127.0.0.1:7420/space/x")!, port: 7420, userClick: true, fromDashboard: true) == .allow, "popup: the dashboard's own target=_blank stays in the app")
 check(popupDecision(URL(string: "https://github.com/x/pull/1")!, port: 7420, userClick: true, fromDashboard: true) == .openExternally, "popup: the dashboard's external link opens the browser")
 check(popupDecision(URL(string: "https://github.com/x/pull/1")!, port: 7420, userClick: false, fromDashboard: true) == .cancel, "popup: the dashboard's script popup without a click is dropped")
 check(popupDecision(URL(string: "file:///etc/passwd")!, port: 7420, userClick: true, fromDashboard: true) == .cancel, "popup: file is dropped")
 check(isDashboardOrigin(scheme: "http", host: "127.0.0.1", port: 7420, enginePort: 7420), "popup: dashboard origin")
-check(!isDashboardOrigin(scheme: "http", host: "localhost", port: 7421, enginePort: 7420), "popup: chart listener isn't the dashboard")
-check(!isDashboardOrigin(scheme: "https", host: "www.tradingview-widget.com", port: 0, enginePort: 7420), "popup: TradingView isn't the dashboard")
+check(!isDashboardOrigin(scheme: "http", host: "localhost", port: 7421, enginePort: 7420), "popup: another port isn't the dashboard")
+check(!isDashboardOrigin(scheme: "https", host: "example.com", port: 0, enginePort: 7420), "popup: another site isn't the dashboard")
 
 // backoff
 check(nextBackoff(0) == 2, "backoff: floor")

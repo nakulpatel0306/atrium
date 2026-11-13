@@ -10,7 +10,7 @@ const run = (actions: Action[], start: Ui = onSpaces) => actions.reduce((ui, a) 
 
 test("Home opens first, and tabs switch", () => {
   expect(initialUi.tab).toBe("home");
-  expect(run([{ type: "tab", tab: "investing" }]).tab).toBe("investing");
+  expect(run([{ type: "tab", tab: "activity" }]).tab).toBe("activity");
 });
 
 test("move and edges stay in range", () => {
@@ -25,11 +25,6 @@ test("on Home and Activity the arrows move through their own list", () => {
   const act = run([{ type: "tab", tab: "activity" }, { type: "move", delta: 1 }], initialUi);
   expect(act.selected.activity.index).toBe(1);
   expect(act.selected.spaces.id).toBeNull();
-});
-
-test("Investing rows stay inside their list", () => {
-  expect(run([{ type: "tab", tab: "investing" }, { type: "edge", to: "bottom" }]).invest.row).toBe(2);
-  expect(run([{ type: "tab", tab: "investing" }, { type: "move", delta: -3 }]).invest.row).toBe(0);
 });
 
 test("changing space resets the task selection and scrolls", () => {

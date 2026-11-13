@@ -90,25 +90,6 @@ test("detail scrolls with j and k", async () => {
   await app.frame((f) => f.includes("detail line 0"));
 });
 
-test("a markets space and its price alert show up and can be answered", async () => {
-  const state = makeState();
-  state.spaces.unshift({ ...state.spaces[0]!, id: "spc_markets", name: "Stocks", kind: "markets", private: true, repoPath: null, goal: "Watch", reviewBy: null });
-  state.approvals.unshift({ ...state.approvals[0]!, id: "apr_alert", spaceId: "spc_markets", kind: "alert", taskId: null, title: "AAPL price above $200.00", createdAt: Date.now() });
-  const client = fakeClient(state);
-  const glance = { portfolio: null, lists: [{ name: "Holdings", rows: [{ key: "AAPL", price: 201, ccy: "USD", dayPct: 1.2, tag: null }] }], earnings: [], advanced: false, paper: null };
-  client.respond("/api/investing/spc_markets/glance", { ok: true, data: glance });
-  const app = await onSpaces(client);
-  await app.frame((f) => f.includes("Stocks") && f.includes("US$201.00") && f.includes("Open the app for the chart."));
-  expect(client.calls).toContainEqual({ method: "GET", path: "/api/investing/spc_markets/glance" });
-  await app.type("1");
-  await app.frame((f) => f.includes("AAPL price above $200.00") && f.includes(" a  Dismiss"));
-  await app.type("r");
-  await app.frame((f) => f.includes("Price alerts are dismissed with a"));
-  await app.type("a");
-  await app.frame(() => client.calls.some((c) => c.method === "POST" && c.path === "/api/approvals/apr_alert"));
-  expect(client.calls).toContainEqual({ method: "POST", path: "/api/approvals/apr_alert", body: { decision: "approve" } });
-});
-
 test("an Atrium-wide repo question shows as Atrium's and approves with a", async () => {
   const state = makeState();
   state.approvals.unshift({

@@ -7,11 +7,11 @@ import { KEY, openApp } from "./harness";
 
 afterEach(() => cleanup());
 
-test("Home: tabs, the briefing, Needs you as cards, Today, the Ask box and the keys", async () => {
+test("Home: tabs, the briefing, Needs you as cards, what is running, the Ask box and the keys", async () => {
   const state = makeState();
   const app = openApp(fakeClient(state));
   const f = await app.frame((f) => f.includes("NEEDS YOU"));
-  for (const s of ["◆ atrium", " 1 Home ", " 2 Spaces ", " 3 Investing ", " 4 Activity ", "41%", "AC", state.briefing.greeting, "NEEDS YOU  1", "TODAY", "RUNNING  1", "Add the status bar", "Ask Atrium", "?  help"]) {
+  for (const s of ["◆ atrium", " 1 Home ", " 2 Spaces ", " 3 Activity ", "41%", "AC", state.briefing.greeting, "NEEDS YOU  1", "RUNNING  1", "Add the status bar", "Ask Atrium", "?  help"]) {
     expect(f).toContain(s);
   }
   // The selected card carries its actions.
@@ -20,15 +20,13 @@ test("Home: tabs, the briefing, Needs you as cards, Today, the Ask box and the k
   expect(f).toContain(" r  Send back");
 });
 
-test("at 80×24 Today folds under the cards and every line fits", async () => {
+test("at 80×24 what is running folds under the cards and every line fits", async () => {
   const app = openApp(fakeClient(makeState()), { columns: 80, rows: 24 });
   const f = await app.frame((f) => f.includes("NEEDS YOU"));
   const lines = f.split("\n");
   expect(lines).toHaveLength(24);
   for (const l of lines) expect(Bun.stringWidth(l)).toBeLessThanOrEqual(80);
-  expect(f).toContain("TODAY");
   expect(f).toContain("RUNNING  ");
-  expect(f).not.toContain("│ TODAY");
 });
 
 test("Spaces: rows carry the one-line status, and Tasks follow the selected space", async () => {
@@ -81,7 +79,7 @@ test("marks the briefing seen once, and keeps the briefing it opened with", asyn
   const app = openApp(client);
   await app.frame((f) => f.includes("1 Home"));
   await new Promise((r) => setTimeout(r, 20));
-  client.push(makeState({ briefing: { greeting: "Good night, Sam.", summary: "Later.", markets: null } }));
+  client.push(makeState({ briefing: { greeting: "Good night, Sam.", summary: "Later." } }));
   client.push(makeState());
   await new Promise((r) => setTimeout(r, 20));
   expect(client.calls.filter((c) => c.method === "POST" && c.path === "/api/seen")).toHaveLength(1);
@@ -96,7 +94,7 @@ test("empty states read plainly", async () => {
   await app.type("2");
   const spaces = await app.frame((f) => f.includes("No spaces yet"));
   expect(spaces).toContain("No spaces yet. Press N and");
-  await app.type("4");
+  await app.type("3");
   const activity = await app.frame((f) => f.includes("No activity yet"));
   expect(activity).toContain("No activity yet. Agent runs and your decisions will show up here.");
 });
@@ -118,7 +116,7 @@ test("engine text can't send escape sequences to the terminal", async () => {
   await app.frame((f) => f.includes("1 Home"));
   await app.type("2", KEY.tab);
   await app.frame((f) => f.includes("TASK  Add the status bar"));
-  await app.type("4");
+  await app.type("3");
   await app.frame((f) => f.includes("finished it"));
   const out = app.frames.join("");
   expect(out).not.toContain("\x1b]");
@@ -131,7 +129,7 @@ test("Activity: day headings, one line per group, a mark for its tone, and its f
   state.activity[0] = { ...state.activity[0]!, createdAt: Date.now() };
   const app = openApp(fakeClient(state));
   await app.frame((f) => f.includes("1 Home"));
-  await app.type("4");
+  await app.type("3");
   const f = await app.frame((f) => f.includes("ACTIVITY"));
   expect(f).toContain("TODAY");
   expect(f).toMatch(/▌ now\s+· Claude · finished Fix login redirect · atrium/);

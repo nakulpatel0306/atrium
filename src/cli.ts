@@ -17,7 +17,7 @@ const root = resolve(import.meta.dir, "..");
 const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|investing setup|doctor|data]";
+const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data]";
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
@@ -167,20 +167,6 @@ function appUninstall(): number {
   return 0;
 }
 
-// Asks the running engine to set up an empty Investing space; it's idempotent, so running it twice is harmless.
-async function investingSetup(): Promise<number> {
-  let res: Response;
-  try {
-    res = await fetch(`${url()}/api/investing/setup`, { method: "POST", headers: { origin: url() }, signal: AbortSignal.timeout(5000) });
-  } catch {
-    return fail(`Atrium isn't running at ${url()}. Start it with: atrium start`);
-  }
-  if (!res.ok) return fail(`Atrium couldn't set up the Investing space (HTTP ${res.status}).`);
-  const r = (await res.json()) as { created: boolean };
-  console.log(r.created ? "Investing space ready. It's empty: import your holdings or add tickers in the dashboard." : "Investing space already set up.");
-  return 0;
-}
-
 function fail(message: string): number {
   console.error(message);
   return 1;
@@ -208,8 +194,6 @@ export async function main(cmd: string | undefined): Promise<number> {
       return install();
     case "uninstall":
       return uninstall();
-    case "investing":
-      return process.argv[3] === "setup" ? investingSetup() : fail(USAGE);
     case "doctor": {
       applyProjectsRootFromFile(config().dbPath);
       const report = await doctor(null);

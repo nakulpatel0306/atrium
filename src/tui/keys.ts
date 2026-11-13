@@ -26,25 +26,24 @@ export type Intent =
   | { type: "deleteSpace"; spaceId: string; name: string }
   | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
-  | { type: "investAsk"; spaceId: string; key: string; question: string };
+
 
 // A file the selected task made, as the keys need it.
 export type MadeFile = { path: string; exists: boolean; root: "space" | "branch" };
 
-// What the fetched Investing view holds, as the keys need it.
+// What the fetched views hold, as the keys need it.
 export type KeyContext = {
   files: MadeFile[];
-  invest: { spaceId: string; keys: string[] } | null;
 };
 
-export const NO_CONTEXT: KeyContext = { files: [], invest: null };
+export const NO_CONTEXT: KeyContext = { files: [] };
 
 export type Command = { kind: "ui"; action: Action } | { kind: "intent"; intent: Intent } | { kind: "quit" };
 
-type Section = "Everywhere" | "Home" | "Spaces" | "Investing" | "Activity";
+type Section = "Everywhere" | "Home" | "Spaces" | "Activity";
 
 export const HELP: { section: Section; keys: string; does: string }[] = [
-  { section: "Everywhere", keys: "1 2 3 4", does: "switch tab" },
+  { section: "Everywhere", keys: "1 2 3", does: "switch tab" },
   { section: "Everywhere", keys: "space or :", does: "type in the Ask box" },
   { section: "Everywhere", keys: "j k ↑ ↓", does: "move or scroll" },
   { section: "Everywhere", keys: "g G", does: "top, bottom" },
@@ -73,12 +72,11 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Spaces", keys: "p e v", does: "private, goal, reviewer" },
   { section: "Spaces", keys: "X D", does: "archive, delete" },
   { section: "Spaces", keys: "ctrl-d/u", does: "half page" },
-  { section: "Investing", keys: "j k", does: "pick a symbol" },
   { section: "Activity", keys: "enter", does: "open its space" },
   { section: "Activity", keys: "ctrl-d/u", does: "scroll its lines" },
 ];
 
-const SECTION: Record<Ui["tab"], Section> = { home: "Home", spaces: "Spaces", investing: "Investing", activity: "Activity" };
+const SECTION: Record<Ui["tab"], Section> = { home: "Home", spaces: "Spaces", activity: "Activity" };
 export const helpFor = (tab: Ui["tab"]) => HELP.filter((h) => h.section === "Everywhere" || h.section === SECTION[tab]);
 
 // One key cap on the strip. `input` is what a click on it presses; none for keys a click can't stand for.
@@ -116,14 +114,12 @@ export function strip(ui: Ui, view: View): StripKey[] {
   const ask = k("space", "ask", " ");
   switch (ui.tab) {
     case "home":
-      return [...lead, k("↵", "open", "\r"), ask, k("1-4", "views", undefined), k("/", "filter"), HELP_KEY, k("q", "quit")];
+      return [...lead, k("↵", "open", "\r"), ask, k("1-3", "views", undefined), k("/", "filter"), HELP_KEY, k("q", "quit")];
     case "spaces":
       if (ui.focus === "spaces") return [...lead, k("↵", "tasks", "\r"), k("n", "new task"), k("N", "new space"), k("e", "goal"), k("X", "archive"), k("D", "delete"), HELP_KEY];
       if (ui.focus === "tasks") return [...lead, k("↵", "detail", "\r"), k("n", "new task"), k("R", "retry"), k("s", "run now"), k(".", "stop"), k("A", "agent"), k("t", "transcript"), HELP_KEY];
       if (ui.focus === "detail") return [k("j k", "scroll", undefined), k("a", "approve"), k("r", "send back"), k("f", "files"), k("t", "transcript"), k("esc", "back", "\x1b"), HELP_KEY];
       return [k("j k", "scroll", undefined), k("g G", "top / follow", undefined), k(".", "stop"), k("esc", "back", "\x1b"), HELP_KEY];
-    case "investing":
-      return [k("↑↓", "pick a symbol", undefined), k("space", "ask about it", " "), k("u", "usage"), HELP_KEY, k("q", "quit")];
     case "activity":
       return [...lead, k("↵", "open space", "\r"), k("/", "filter"), k("ctrl-d", "scroll lines", undefined), HELP_KEY, k("q", "quit")];
   }
@@ -132,7 +128,6 @@ export function strip(ui: Ui, view: View): StripKey[] {
 const REVIEWER_OPTIONS = ["none", "codex", "gemini", "claude"];
 const NO_SPACE = "Pick a space first, or press N to describe a new one.";
 const NO_TASK = "Pick a task in Spaces first.";
-const NO_INVESTING = "There's no Investing space yet. Press space and ask Atrium to set one up, like \"track my investing\".";
 
 const ui = (action: Action): Command => ({ kind: "ui", action });
 const intent = (i: Intent): Command => ({ kind: "intent", intent: i });
@@ -203,7 +198,6 @@ function approve(u: Ui, view: View): Command {
 function sendBack(u: Ui, view: View): Command {
   const approval = approvalOf(u, view);
   if (!approval) return nothingHere(u, view, "Nothing to send back here.");
-  if (approval.kind === "alert") return info("Price alerts are dismissed with a; turn one off on the dashboard.");
   return ask("reply", approval.id);
 }
 
@@ -276,7 +270,7 @@ function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext):
   }
   const onFile = fileKey(input, u, view, ctx.files);
   if (onFile) return onFile;
-  const tab = "1234".indexOf(input);
+  const tab = "123".indexOf(input);
   if (input && tab >= 0) return [ui({ type: "tab", tab: TABS[tab]! })];
   switch (input) {
     case " ":
@@ -390,12 +384,6 @@ function submitAsk(a: Ask, u: Ui, view: View, ctx: KeyContext): Command[] {
       return [intent({ type: "newSpace", text }), leaveAsk];
     case "ask": {
       if (!text) return [empty];
-      if (u.tab === "investing") {
-        if (!ctx.invest) return [leaveAsk, info(NO_INVESTING)];
-        const key = ctx.invest.keys[u.invest.row];
-        if (key) return [intent({ type: "investAsk", spaceId: ctx.invest.spaceId, key, question: text }), leaveAsk];
-        return [intent({ type: "newTask", spaceId: ctx.invest.spaceId, text, agent: "auto" }), leaveAsk];
-      }
       const space = spaceOf(u, view);
       if (u.tab === "spaces" && space && space.status !== "archived") return [intent({ type: "newTask", spaceId: space.id, text, agent: a.agent }), leaveAsk];
       return [intent({ type: "newSpace", text }), leaveAsk];

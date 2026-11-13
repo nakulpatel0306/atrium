@@ -1,5 +1,3 @@
-export { money } from "../engine/markets/labels";
-
 export function relative(ts: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - ts) / 1000));
   if (s < 45) return "just now";

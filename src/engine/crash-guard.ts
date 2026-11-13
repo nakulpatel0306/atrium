@@ -5,9 +5,10 @@
 import type { Database } from "bun:sqlite";
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { logActivity } from "./events";
-import { redact } from "./markets/redact";
 
-const describe = (e: unknown) => redact(e instanceof Error ? (e.stack ?? e.message) : String(e), []);
+// A token in a URL's query string (a clone's, say) must never reach the log.
+const QUERY_SECRET = /\b(token|apikey|key|secret)=([^&\s"']+)/gi;
+const describe = (e: unknown) => (e instanceof Error ? (e.stack ?? e.message) : String(e)).replace(QUERY_SECRET, (_m, name: string) => `${name}=[redacted]`);
 
 // SQLite's corrupt, I/O and disk-full errors (and their extended codes), by code or by their standard words.
 export function isFatalDbError(e: unknown): boolean {

@@ -67,8 +67,6 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
     case "stop":
       // The engine answers with the task as the stop left it, which isn't always stopped.
       return said(await client.post<Task>(`/api/tasks/${enc(intent.taskId)}/stop`), (t) => stopText(taskTitle(intent.taskId), t.status));
-    case "investAsk":
-      return said(await client.post(`/api/investing/${enc(intent.spaceId)}/symbol/${enc(intent.key)}/ask`, { question: intent.question }), () => `Asked Claude about ${intent.key}. The answer lands in the Investing space.`);
     case "setAgent":
       return said(
         await client.patch(`/api/tasks/${enc(intent.taskId)}`, { agent: intent.agent }),

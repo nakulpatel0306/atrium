@@ -1,22 +1,17 @@
-// Home: the briefing, Needs you as cards with their actions on them, and Today beside them (below them under 100
-// columns): the portfolio and what's running.
+// Home: the briefing, Needs you as cards with their actions on them, and what's running beside them (below them under
+// 100 columns).
 import { agentText } from "../../dashboard/agents";
 import { duration, relative } from "../../dashboard/format";
 import { liveStatus } from "../../dashboard/summary";
-import type { GlanceView } from "../../engine/markets/views";
 import { outcomeText } from "../../engine/outcome";
-import { bar, type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
+import { type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
 import { wrapStyled } from "../detail";
 import type { View } from "../select";
 import { oneLine } from "../text";
 import { GLYPH, SPINNER, spaceTone, type Tone } from "../theme";
 import type { Ui } from "../ui";
-import { cad, change, hourText } from "./format";
 
 export type HomeData = {
-  glance: GlanceView | null;
-  // Whether there's an Investing space at all, so Today can say how to get one.
-  investing: boolean;
   // The last line the first running task's agent wrote.
   lastLine: string;
   frame: number;
@@ -68,17 +63,14 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
       });
       continue;
     }
-    const alert = a.kind === "alert";
     cards.push({
       id: a.id,
-      glyph: alert ? GLYPH.notdone : "?",
-      tone: alert ? "warn" : "info",
+      glyph: "?",
+      tone: "info",
       title: a.title,
-      meta: [...owner(a.spaceId), dot, { text: `${alert ? "alert" : "asks you"} · ${relative(a.createdAt, now)}`, color: "faint" }],
+      meta: [...owner(a.spaceId), dot, { text: `asks you · ${relative(a.createdAt, now)}`, color: "faint" }],
       body: wrapStyled([{ text: oneLine(a.detail.split("\n").find((l) => l.trim()) ?? ""), color: "dim" }], inner).slice(0, 2),
-      keys: alert
-        ? [{ key: "a", label: "Dismiss", input: "a", hot: true }, open]
-        : [{ key: "a", label: "Approve", input: "a", hot: true }, { key: "r", label: a.spaceId === null ? "Decline" : "Send back", input: "r" }, open],
+      keys: [{ key: "a", label: "Approve", input: "a", hot: true }, { key: "r", label: a.spaceId === null ? "Decline" : "Send back", input: "r" }, open],
     });
   }
   return cards;
@@ -126,24 +118,7 @@ function needsColumn(view: View, ui: Ui, cols: number, rows: number, now: number
   return { lines: lines.slice(0, rows), hits: hits.filter((h) => h.y < rows) };
 }
 
-type Today = { portfolio: Line[]; running: Line[] };
-
-function today(view: View, d: HomeData, cols: number): Today {
-  const g = d.glance;
-  const p = g?.portfolio;
-  const portfolio: Line[] = !d.investing
-    ? [[{ text: "Portfolio", color: "dim" }], [{ text: "No Investing space yet.", color: "faint" }]]
-    : !g
-      ? [[{ text: "Portfolio", color: "dim" }], [{ text: "Loading…", color: "faint" }]]
-      : !p || p.totalCad === null
-        ? [[{ text: "Portfolio", color: "dim" }], [{ text: "No holdings yet. Import them in the app.", color: "faint" }]]
-        : [
-            [{ text: "Portfolio", color: "dim" }, { text: `  ${p.dayLabel ?? "today"}`, color: "faint" }],
-            [{ text: cad(p.totalCad, 0), bold: true }, { text: "   " }, change(p.dayPct)],
-            ...(p.mix ? [[{ text: p.mix, color: "faint" as const }]] : []),
-          ];
-  const next = g?.earnings[0];
-  if (next) portfolio.push([{ text: `${next.key} earnings ${next.date.slice(5).replace("-", "/")}, ${hourText(next.hour)}`, color: "faint" }]);
+function runningLines(view: View, d: HomeData): Line[] {
   const running = view.state.tasks.filter((t) => t.status === "running");
   const spin = SPINNER[d.frame % SPINNER.length]!;
   const runLines: Line[] = running.length
@@ -157,7 +132,7 @@ function today(view: View, d: HomeData, cols: number): Today {
       })
     : [[{ text: "Nothing running.", color: "faint" }]];
   if (running.length > 2) runLines.push([{ text: `+${running.length - 2} more in Spaces`, color: "faint" }]);
-  return { portfolio, running: runLines };
+  return runLines;
 }
 
 export function homeScreen(view: View, ui: Ui, d: HomeData, cols: number, rows: number): Block {
@@ -169,25 +144,20 @@ export function homeScreen(view: View, ui: Ui, d: HomeData, cols: number, rows: 
   if (wide) {
     const leftW = cols - RIGHT - 3;
     const needs = needsColumn(view, ui, leftW, rows - 2, d.now);
-    const t = today(view, d, RIGHT - 1);
+    const t = runningLines(view, d);
     const right: Line[] = [
-      [label("Today")],
-      [],
-      ...t.portfolio,
-      [],
       [label("Running"), ...(running ? [{ text: `  ${running}`, color: "ok" as const, bold: true }] : [])],
       [],
-      ...t.running,
+      ...t,
     ];
     const divider = Array.from({ length: rows - 2 }, (): Line => [{ text: "│", color: "line" }]);
     const body = columns([{ lines: needs.lines, w: leftW }, { lines: divider, w: 1 }, { lines: right.map((l) => [{ text: " " }, ...l]), w: RIGHT + 2 }], rows - 2, 0);
     return { lines: rowsOf([...top, ...body], cols, rows), hits: shift(needs.hits, 0, 2) };
   }
-  // Under 100 columns Today folds into two lines under the cards.
-  const needs = needsColumn(view, ui, cols, rows - 5, d.now);
-  const t = today(view, d, cols);
-  const glance: Line = [label("Today"), { text: "  " }, ...(t.portfolio[1] ?? [])];
-  const run: Line = [label("Running"), { text: "  " }, ...(t.running[0] ?? []), ...(running ? [{ text: ` · ${t.running[1]?.[0]?.text.trim() ?? ""}`, color: "faint" as const }] : [])];
-  const lines = [...top, ...rowsOf(needs.lines, cols, rows - 5), [{ text: "─".repeat(cols), color: "line" as const }], [{ text: " " }, ...glance], [{ text: " " }, ...run]];
+  // Under 100 columns what's running folds into one line under the cards.
+  const needs = needsColumn(view, ui, cols, rows - 4, d.now);
+  const t = runningLines(view, d);
+  const run: Line = [label("Running"), { text: "  " }, ...(t[0] ?? []), ...(running ? [{ text: ` · ${t[1]?.[0]?.text.trim() ?? ""}`, color: "faint" as const }] : [])];
+  const lines = [...top, ...rowsOf(needs.lines, cols, rows - 4), [{ text: "─".repeat(cols), color: "line" as const }], [{ text: " " }, ...run]];
   return { lines: rowsOf(lines.map((l) => fit(l, cols)), cols, rows), hits: shift(needs.hits, 0, 2) };
 }

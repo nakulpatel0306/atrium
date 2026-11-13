@@ -16,7 +16,6 @@ export function spaceDeleteLines(p: SpaceDeletePreview): { goes: string[]; stays
     goes.push(`Its folder ${p.folder.path} (${what})`);
   }
   if (p.history > 0) goes.push(`Its history: ${plural(p.history, "activity line")}`);
-  if (p.investing > 0) goes.push("Its holdings, watchlists, alerts and other investing data");
 
   const stays: string[] = [];
   if (p.folder) stays.push("Its folder goes to the Trash when macOS allows it. If it can't, Atrium leaves the folder where it is and tells you.");

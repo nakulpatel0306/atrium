@@ -14,7 +14,7 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   // .env names in any case, names ending in .env, and everything inside a folder with such a name.
   ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
-  // The Keychain CLI, where market data keys live.
+  // The Keychain CLI, which would hand an agent whatever the login keychain holds.
   "Bash(security *)",
   // GitHub is the engine's alone: creating repos, pushing, and pointing a repo at another remote.
   "Bash(gh *)",
@@ -46,7 +46,7 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   "Read(~/Library/Contacts/**)",
   // Atrium's DB, transcripts and other spaces' folders; a general-space run keeps its own. "//" anchors at the root.
   ...atriumDenyPaths(cwd).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
-  // A private or investing space's run: the three folders bank exports land in, and no Bash at all unless it's a
+  // A private space's run: the three folders bank exports land in, and no Bash at all unless it's a
   // private repo's test commands.
   ...(privateData ? privateReadRules(cwd) : []),
   ...(privateData && !bash ? ["Bash"] : []),
@@ -56,7 +56,7 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
 export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash?: boolean } = {}): string {
   const reads = opts.privateData ? privateReads(cwd, { bash: opts.bash ?? true }) : null;
   return JSON.stringify({
-    // A private or investing run's file tools refuse anything outside its working directory, in every mode. Without
+    // A private run's file tools refuse anything outside its working directory, in every mode. Without
     // this, -p runs read outside it freely (Claude Code 2.1.257 or later honours it).
     ...(reads && { permissions: { blockReadsOutsideWorkingDirectories: true } }),
     sandbox: {
@@ -119,7 +119,7 @@ function windowUsage(w: any, fallbackResetsAt?: unknown): WindowUsage | undefine
 
 // permissions.blockReadsOutsideWorkingDirectories, which fences a private run's file tools to its folder, arrived in
 // Claude Code 2.1.257 (settings reference: "Requires Claude Code v2.1.257 or later"). An older CLI would ignore it, so
-// a private or investing run refuses to start there.
+// a private run refuses to start there.
 export const MIN_PRIVATE_VERSION = [2, 1, 257] as const;
 export const TOO_OLD = "This space is private, and Claude Code is too old to keep its reads to the space's own folder. Run `claude update`, then retry.";
 

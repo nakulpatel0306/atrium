@@ -92,69 +92,6 @@ test("wrapStyled breaks between words when it can", () => {
   expect(wrapStyled([{ text: "abcdefghij" }], 4).map((l) => l.map((s) => s.text).join(""))).toEqual(["abcd", "efgh", "ij"]);
 });
 
-const MARKETS = "spc_markets";
-function marketsState() {
-  const state = makeState();
-  state.spaces.unshift({ ...state.spaces[0]!, id: MARKETS, name: "Stocks", kind: "markets", private: true, repoPath: null, goal: "Watch and paper trade", reviewBy: null });
-  return state;
-}
-
-test("an alert's detail says how to dismiss it", () => {
-  const state = makeState();
-  state.approvals.unshift({ ...state.approvals[0]!, id: "apr_alert", kind: "alert", taskId: null, title: "AAPL price above $200.00", detail: "AAPL at $200.10 (IEX real-time, 10:42 AM ET).\n\nAnalysis, not advice." });
-  const all = text(approvalDetail(deriveView(state, { ...initialUi }), null));
-  expect(all).toContain("AAPL price above $200.00");
-  expect(all).toContain("a dismiss");
-  expect(all).not.toContain("r send back");
-});
-
-const GLANCE = {
-  portfolio: { totalCad: 48210.55, dayCad: 312.4, dayPct: 0.65, dayLabel: "today", mix: "10 real-time · 4 close of Nov 4" },
-  lists: [
-    {
-      name: "Holdings",
-      rows: [
-        { key: "AMZN", price: 250, ccy: "USD" as const, dayPct: 2.04, tag: null },
-        { key: "XEQT.TO", price: 35, ccy: "CAD" as const, dayPct: 0.29, tag: "close Nov 4" },
-      ],
-    },
-  ],
-  earnings: [{ key: "NOW", date: "2026-11-12", hour: "amc", held: true }],
-  advanced: false,
-  paper: null,
-};
-
-test("a markets space's detail shows the portfolio, each list and the next 30 days of earnings", () => {
-  const view = deriveView(marketsState(), initialUi);
-  const lines = spaceDetail(view, null, GLANCE);
-  const all = text(lines).split("\n");
-  const at = all.findIndex((l) => l.startsWith("Portfolio"));
-  expect(all.slice(at, at + 11)).toEqual([
-    "Portfolio CA$48,211 · +0.7% today (+CA$312)",
-    "10 real-time · 4 close of Nov 4",
-    "",
-    "Holdings",
-    "  AMZN     US$250.00  +2.0%",
-    "  XEQT.TO   CA$35.00  +0.3%  close Nov 4",
-    "",
-    "Earnings in the next 30 days",
-    "  Thu, Nov 12  NOW  after close  · you hold this",
-    "Open the app for the chart.",
-    "",
-  ]);
-  expect(lines[at + 1]![0]!.color).toBe("dim");
-  expect(all.join("\n")).not.toContain("Paper");
-});
-
-test("a markets space with no holdings or earnings says so plainly", () => {
-  const view = deriveView(marketsState(), initialUi);
-  const all = text(spaceDetail(view, null, { ...GLANCE, portfolio: null, earnings: [] }));
-  expect(all).toContain("No holdings yet. Import them in the app.");
-  expect(all).toContain("No earnings in the next 30 days.");
-  const paper = text(spaceDetail(view, null, { ...GLANCE, advanced: true, paper: { dayPnl: 12.3, totalPnl: -4 } }));
-  expect(paper).toContain("Paper +$12.30 today (−$4.00 total)");
-});
-
 test("a repo question's detail says it belongs to Atrium and where to edit it", () => {
   const state = makeState();
   state.approvals = [{ ...state.approvals[0]!, spaceId: null, taskId: null, kind: "question", alwaysAsk: "create_repo", title: 'Create GitHub repo "demo"?', detail: "Name: demo" }];

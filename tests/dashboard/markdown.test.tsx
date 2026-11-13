@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown } from "../../src/dashboard/components/Markdown";
 import { ThreadList } from "../../src/dashboard/components/Thread";
-import { DigestList } from "../../src/dashboard/components/markets/Digest";
 import { summaryLine } from "../../src/dashboard/summary";
 import { plainText, safeUrl } from "../../src/dashboard/markdown";
 
@@ -62,15 +61,6 @@ test("thread messages render as markdown", () => {
   expect(out).not.toContain("**");
   expect(out).toContain("<strong>Approve.</strong>");
 });
-
-test("digests render as markdown and keep the clamp", () => {
-  const d = { id: "w1", kind: "digest", key: null, forDate: "2026-11-05", body: "**SPY** fell 1.2%.\n\n- AAPL up", taskId: null, createdAt: 1 };
-  const out = renderToStaticMarkup(<DigestList digests={[d]} open={false} all={false} onOpen={() => {}} />);
-  expect(out).not.toContain("**");
-  expect(out).toContain("<strong>SPY</strong>");
-  expect(out).toContain('class="md clamp"');
-});
-
 test("summaryLine is the first paragraph as plain text", () => {
   expect(summaryLine("**Done.** Made the list.\n\n- a\n- b")).toBe("Done. Made the list.");
   expect(summaryLine("")).toBe("");
