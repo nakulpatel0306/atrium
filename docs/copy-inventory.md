@@ -19,7 +19,7 @@ this page is the record of the reading pass.
 | --- | --- | --- | --- | --- |
 | Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier" |
 | Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |
-| Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that Atrium can't unsend a text and never touches your repo or GitHub |
+| Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that a repo task's branch stays and Atrium never touches your repo or GitHub |
 | Views | `src/dashboard/components/DeleteTask.tsx` | Delete task…, what goes with it | yes | New in Plan 13 |
 | Views | `src/dashboard/components/StopTask.tsx` | Stop…, the two-step confirm, Keep running | yes | New in Plan 15 |
 | Views | `src/dashboard/components/Toast.tsx` | toast text, Undo, Dismiss | yes | New in Plan 13: Archived / Restored / Deleted lines |
@@ -28,22 +28,18 @@ this page is the record of the reading pass.
 | Views | `src/dashboard/components/Agents.tsx` | agent cards, status lines, reserve | yes | Cards say Claude, not Claude Code; straight quotes around "Run now" |
 | Views | `src/dashboard/components/Avatar.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/CommandBar.tsx` | placeholder, hints, errors | yes | "e.g." became "like" |
-| Investing | `src/dashboard/components/DataBudget.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
 | Views | `src/dashboard/components/FilesTab.tsx` | folder line, file rows, empty states | yes | New in this plan; written to the rules |
 | Views | `src/dashboard/components/Home.tsx` | greeting, briefing, space cards, new-space card | yes | New-space card: "just describe it" became "Describe it in a sentence and Atrium sets it up."; centred, balanced, focus ring; card titles carry a full title |
 | Views | `src/dashboard/components/Logo.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Markdown.tsx` | labels, buttons, empty states, errors | yes | New in this plan |
 | Views | `src/dashboard/components/OutcomeBanner.tsx` | Couldn't do this, Partly done, can't tell banners; Accept anyway / Accept as is | yes | New in Plan 11 |
-| Views | `src/dashboard/components/MessageCard.tsx` | send card: recipient line, number field, Contacts lookup, matches, message box and counter, Via toggle, footnote, Last try failed, Open System Settings | yes | New in Plan 11; copy from the plan |
-| Views | `src/dashboard/components/MessagingSettings.tsx` | Settings › Messages: sending and Contacts status lines, Open System Settings | yes | New in Plan 11 |
-| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state, Plan 14 reminder row (Import now, Dismiss) | yes | Row summary is the first paragraph as plain text (no markdown); detail shows What it made; "View transcript in" became "Open the task in"; full title on hover; Plan 11: outcome banner under the row, "Accept anyway" / "Accept as is" |
+| Views | `src/dashboard/components/NeedsYou.tsx` | row summaries, decision buttons, send-back note, empty state | yes | Row summary is the first paragraph as plain text (no markdown); detail shows What it made; "View transcript in" became "Open the task in"; full title on hover; Plan 11: outcome banner under the row, "Accept anyway" / "Accept as is" |
 | Views | `src/dashboard/components/PreviewPane.tsx` | preview notes, calendar list | yes | New in this plan; written to the rules |
 | Views | `src/dashboard/components/ProjectDraft.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Proposal.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/RepoRemoval.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Views | `src/dashboard/components/SentMessages.tsx` | Texts heading, Sent to / Didn't send / Not sent rows | yes | New in Plan 11 |
 | Views | `src/dashboard/components/Rules.tsx` | rule list, rule detail, undo, empty states | yes | Em dash in the prose warning became a comma |
-| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | "Markets spaces" became "investing spaces"; Plan 10: Finnhub Required, Alpha Vantage Optional, Tiingo Not needed; Alpaca removal row |
+| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | Market data and accounts sections removed with those features |
 | Views | `src/dashboard/components/Sidebar.tsx` | nav labels, footer status | yes | No change needed |
 | Views | `src/dashboard/components/SpaceView.tsx` | tabs, task rows, task detail, not-found page, live column | yes | "Space not found" became "This space isn't here" with what to do; Tasks/Files tabs; "You asked" renders markdown; straight quotes around the parent task; full title on hover |
 | Views | `src/dashboard/components/StatusIcon.tsx` | labels, buttons, empty states, errors | yes | Plan 11: Not done and Partly done labels for finished tasks |
@@ -52,53 +48,11 @@ this page is the record of the reading pass.
 | Views | `src/dashboard/components/Transcript.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/WaitLine.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/WhatItMade.tsx` | summary heading, decided line, file rows, actions | yes | New in this plan; written to the rules |
-| Investing | `src/dashboard/components/markets/AdviceTag.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/Alerts.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/AllocationBars.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
-| Investing | `src/dashboard/components/markets/Digest.tsx` | labels, buttons, empty states, errors | yes | Body renders as markdown; clamp works on any block |
-| Investing | `src/dashboard/components/markets/Freshness.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/Health.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
-| Investing | `src/dashboard/components/markets/Holdings.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/Ideas.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
-| Investing | `src/dashboard/components/markets/ImportDialog.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/MarketsPanel.tsx` | back link | yes | Now AdvancedPanel; "← Back to ideas" |
-| Investing | `src/dashboard/components/invest/AdvancedToggle.tsx` | switch label, hint, error | yes | New in Plan 10; written to the rules |
-| Investing | `src/dashboard/components/invest/AlertsSimple.tsx` | alert rows, status chips, Turn on/off, paused line, hint | yes | New in Plan 10; singular and plural paused line |
-| Investing | `src/dashboard/components/invest/Earnings.tsx` | date headings, time words, EPS line, chips, empty state, source footer | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/invest/InvestPanel.tsx` | tab labels, loading | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/invest/Portfolio.tsx` | hero labels, What moved, left-out line, empty state, import buttons | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/invest/Money.tsx` | ask box, starter questions, privacy line, month, categories, recurring, unusual, Wealthsimple totals, rules link | yes | New in Plan 10 (Money view) |
-| Investing | `src/dashboard/components/invest/MoneyImport.tsx` | file picker, format line, column labels, sign and date choices, import result | yes | New in Plan 10 (Money view); Plan 14: bank and how sure Atrium is, Account picker |
-| Investing | `src/dashboard/components/invest/MoneyRules.tsx` | rule editor labels, buttons, saved line, load error | yes | New in Plan 10 (Money view) |
-| Investing | `src/dashboard/components/invest/MoneyRecap.tsx` | month picker, basis line, Spent / Money in / Left over, Biggest changes, Notable charges, Explain my month, asking line | yes | New in Plan 14; numbers from the engine only |
-| Investing | `src/dashboard/components/invest/MoneyBudgets.tsx` | category rows, Set limit, of CA$N, Save, remove hint | yes | New in Plan 14 |
-| Investing | `src/dashboard/components/invest/MoneySubs.tsx` | totals line, cadence, last and next, flags (price went up, maybe forgotten, new this month), empty state | yes | New in Plan 14; flags are lowercase tags |
-| Investing | `src/dashboard/components/invest/MoneyRoom.tsx` | headline, where it comes from, what to do, Enter your room, Save, Cancel | yes | New in Plan 14 |
-| Investing | `src/dashboard/components/invest/MoneyMonth.tsx` | Show N transactions, transfer tag and its reasons, Mark as transfer / Not a transfer | yes | New in Plan 14 |
-| Investing | `src/dashboard/components/invest/PriceRow.tsx` | no-price and Alpha Vantage lines | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/invest/Sparkline.tsx` | none (aria-hidden) | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/invest/SymbolPage.tsx` | header, actions, alert form, position, earnings, stats, news, note, Ask Claude | yes | New in Plan 10; errors from the engine shown as written |
-| Investing | `src/dashboard/components/invest/SymbolSearch.tsx` | placeholder, results, actions, added line, no-match line | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/invest/TvChart.tsx` | labels, privacy line, offline and failed cards, toggle | yes | New in Plan 10; privacy line shown once |
-| Investing | `src/dashboard/components/invest/TvWidget.tsx` | frame titles | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/invest/Watchlists.tsx` | list chips, new and rename form, list menu, delete confirm, empty state, remove labels | yes | New in Plan 10 |
-| Investing | `src/dashboard/simple.ts` | time words, date headings, money formats | yes | New in Plan 10 |
-| Investing | `src/dashboard/components/markets/Paper.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/PriceChart.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/Research.tsx` | labels, buttons, empty states, errors | yes | Thesis draft and check render as markdown (layout deferred to the investing redesign) |
-| Investing | `src/dashboard/components/markets/Screener.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
-| Investing | `src/dashboard/components/markets/SourceTag.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/Strategies.tsx` | labels, buttons, empty states, errors | yes | No change needed |
-| Investing | `src/dashboard/components/markets/TfsaCard.tsx` | labels, buttons, empty states, errors | deferred | Deferred to the investing redesign; read for outright errors, none found |
-| Investing | `src/dashboard/components/markets/Watchlist.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Shared | `src/dashboard/agents.ts` | agent names, wait reasons | yes | No change needed |
 | Shared | `src/dashboard/api.ts` | client error messages | yes | "Atrium answered with an error (500). Try again." became "Atrium couldn't do that (error 500). Try again, and check the engine log if it keeps happening." |
-| Investing | `src/dashboard/chart-data.ts` | messages | yes | No change needed |
 | Shared | `src/dashboard/files.ts` | action labels, feedback lines | yes | New in this plan; action labels and feedback lines |
 | Shared | `src/dashboard/format.ts` | relative times, sizes | yes | No change needed |
-| Investing | `src/dashboard/investing.ts` | messages | yes | No change needed |
 | Shared | `src/dashboard/markdown.ts` | messages | yes | New in this plan |
-| Investing | `src/dashboard/markets.ts` | messages | yes | No change needed |
 | Shared | `src/dashboard/repos.ts` | messages | yes | No change needed |
 | Shared | `src/dashboard/route.ts` | messages | yes | No change needed |
 | Shared | `src/dashboard/summary.ts` | status text, review lines, briefing lines | yes | summaryLine() for one-line agent text |
@@ -110,9 +64,9 @@ this page is the record of the reading pass.
 | Shared | `src/tui/client.ts` | messages | yes | Error copy matches the dashboard ("Atrium couldn't do that (error 500). Try again…") |
 | Shared | `src/tui/detail.ts` | messages | yes | Plan 15: empty states point at the new layout ("Pick a task on the left", "Press space and describe one") |
 | Shared | `src/tui/edit.ts` | messages | yes | No change needed |
-| Shared | `src/tui/effects.ts` | messages | yes | Plan 15: stop, money ask, explain, budget, import, symbol ask, dismiss reminder, and the text and messaging replies to a new request |
+| Shared | `src/tui/effects.ts` | messages | yes | Plan 15: stop, and the replies to a new request |
 | Shared | `src/tui/hooks.ts` | messages | yes | No change needed |
-| Shared | `src/tui/keys.ts` | help, key strip, flashes | yes | Plan 15: help grouped by tab; key strip labels; Money and Investing flashes |
+| Shared | `src/tui/keys.ts` | help, key strip, flashes | yes | Plan 15: help grouped by tab; key strip labels |
 | Shared | `src/tui/markdown.ts` | messages | yes | No change needed |
 | Shared | `src/tui/select.ts` | messages | yes | No change needed |
 | Shared | `src/tui/text.ts` | messages | yes | No change needed |
@@ -122,11 +76,9 @@ this page is the record of the reading pass.
 | Screens | `src/tui/screens/chrome.ts` | tabs, Ask box titles and suggestions, offline word | yes | New in Plan 15 |
 | Screens | `src/tui/screens/home.ts` | briefing, Needs you cards and their keys, Today, Running | yes | New in Plan 15 |
 | Screens | `src/tui/screens/spaces.ts` | section labels, empty lists, Live | yes | New in Plan 15 (from the Plan 3 panes) |
-| Screens | `src/tui/screens/money.ts` | month, totals, budget marks, subscriptions, TFSA room, answers, empty states | yes | New in Plan 15; no transaction text is shown |
-| Screens | `src/tui/screens/investing.ts` | portfolio, holdings table, watchlists, alerts, earnings | yes | New in Plan 15 |
 | Screens | `src/tui/screens/activity.ts` | feed, Lines | yes | New in Plan 15 (from the Plan 13 pane) |
 | Screens | `src/tui/screens/overlays.ts` | confirms (send, accept, archive, stop, import), delete box, pickers, help, agents and usage | yes | New in Plan 15 (from Confirm, DeleteBox, Picker, Help, AgentsView); buttons in sentence case |
-| Screens | `src/tui/screens/compose.ts`, `src/tui/screens/format.ts` | full view titles, money and dates | yes | New in Plan 15 |
+| Screens | `src/tui/screens/compose.ts` | full view titles | yes | New in Plan 15 |
 | Views | `src/tui/components/App.tsx` | connecting, offline, too small | yes | Plan 15: no change to the words |
 | Views | `src/tui/components/Screen.tsx` | none | yes | New in Plan 15 |
 
@@ -142,9 +94,9 @@ this page is the record of the reading pass.
 | App | `mac/Sources/App/StatusMenu.swift` | messages | yes | Sentence case: "Open at login", "Open notification settings…" |
 | App | `mac/Sources/App/WebController.swift` | messages | yes | No change needed |
 | App | `mac/Sources/App/main.swift` | messages | yes | No change needed |
-| Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made; Plan 10: alert titles name the symbol ("AMZN price alert") |
+| Core | `mac/Sources/Core/Decide.swift` | messages | yes | Review notes say how many files the task made; titles say when a result is only partly done or couldn't be done |
 | Core | `mac/Sources/Core/ContentRules.swift` | none | yes | New in Plan 10 |
-| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files, Need.symbol, Summary.embed; Plan 14: Summary.nudges (titles come from the engine) |
+| Core | `mac/Sources/Core/Model.swift` | messages | yes | Need.files, Need.outcome (titles come from the engine) |
 
 ### Engine messages that reach the UI
 
@@ -153,7 +105,6 @@ this page is the record of the reading pass.
 | Runs | `src/engine/runner.ts` | messages | yes | "Runner error:" became a sentence with a next step; "Atrium couldn't start the run" says what to check; "Repo is on …" says what to do; requeue lines are sentences; em dashes removed; made line added to reviews; kept-files path shown with ~ |
 | Runs | `src/engine/approvals.ts` | messages | yes | No change needed |
 | Delete | `src/engine/delete.ts`, `src/engine/delete-files.ts` | refusals, kept-folder lines | yes | New in Plan 13: every refusal says nothing was deleted and what to do; "Kept <file>: it changed after the task made it."; clone-in-flight and space-busy refusals; "Deleted "X". Its folder … went to the Trash." / "Atrium couldn't move … to the Trash, so it's still there; delete it in Finder if you don't need it." |
-| Messaging | `src/engine/messaging/space.ts` | merge line, merge wait | yes | Plan 13: "Moved the earlier Messages space's texts and history into this one."; "A text is still being drafted in the earlier Messages space. Try again once it's done." |
 | Engine | `src/engine/crash-guard.ts` | restart line | yes | Plan 13: "Atrium restarted after an error. Check engine.log if something looks off." |
 | Runs | `src/engine/handoff.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/atrium-paths.ts` | messages | yes | No change needed |
@@ -180,64 +131,6 @@ this page is the record of the reading pass.
 | Repos | `src/engine/repos/rules.ts` | messages | yes | No change needed |
 | Repos | `src/engine/repos/store.ts` | messages | yes | No change needed |
 | Repos | `src/engine/repos/templates.ts` | messages | yes | No change needed |
-| Investing | `src/engine/money/categories.ts` | rule validation | yes | New in Plan 10 (Money view) |
-| Investing | `src/engine/money/import.ts` | skip reasons, warnings, guessed-layout line | yes | New in Plan 10 (Money view); every warning says what to do; Plan 14: "That doesn't look like an amount. Check the Amount column." |
-| Investing | `src/engine/money/summary.ts` | unusual-charge reasons, ask refusals, facts for Claude | yes | New in Plan 10 (Money view); Plan 14: Explain my month refusals and brief, card-number refusal |
-| Investing | `src/engine/money/recap.ts` | recap sentences, notable reasons, incomplete line, recap facts | yes | New in Plan 14 |
-| Investing | `src/engine/money/room.ts` | room headline, source line, what to do, tie-in | yes | New in Plan 14 |
-| Investing | `src/engine/money/budgets.ts` | budget refusals, heads-up titles and bodies | yes | New in Plan 14 |
-| Investing | `src/engine/money/reminder.ts` | Time to import, accounts line | yes | New in Plan 14 |
-| Investing | `src/engine/money/nudges.ts` | dismiss refusal | yes | New in Plan 14 |
-| Investing | `src/engine/money/transfers.ts` | mark refusal | yes | New in Plan 14 |
-| Investing | `src/engine/money/banks.ts`, `coverage.ts`, `rows.ts`, `subscriptions.ts` | none | yes | New in Plan 14; no user strings |
-| Investing | `src/server/money.ts` | 400, 404 and 413 sentences | yes | New in Plan 10 (Money view) |
-| Investing | `src/engine/markets/advanced.ts` | none | yes | New in Plan 10 |
-| Investing | `src/engine/markets/lists.ts` | list refusals | yes | New in Plan 10; every refusal says what to do |
-| Investing | `src/engine/markets/search.ts` | validation, rate-limit and key notes, typed-symbol notes | yes | New in Plan 10 |
-| Investing | `src/engine/markets/symbol.ts` | ask refusals, refresh notes, stat labels | yes | New in Plan 10 |
-| Investing | `src/engine/markets/tradingview.ts` | coverage sentence | yes | New in Plan 10 |
-| Investing | `src/engine/markets/views.ts` | earnings source line, left-out line | yes | New in Plan 10 |
-| Investing | `src/server/embed.ts` | refusal, attribution | yes | New in Plan 10; TradingView attribution kept as designed |
-| Investing | `src/server/investing-simple.ts` | 404 and 400 sentences | yes | New in Plan 10 |
-| Investing | `src/engine/markets/agent.ts` | messages | yes | Filled/Refused lines use · instead of an em dash; moves say "on Fri, Nov 6" when the market is closed |
-| Investing | `src/engine/markets/alerts.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/backtest.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/briefing.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/budget.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/cache.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/calendar.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/closes.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/csv.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/data.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/edgar.ts` | messages | yes | "Off — add a contact email" became "Off · add a contact email to turn it on" |
-| Investing | `src/engine/markets/eod.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/estimate.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/events.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/feed.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/fx.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/health.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/holdings.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/ideas.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/import.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/indicators.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/instrument.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/jobs.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/keychain.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/labels.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/meta.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/paper.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/performance.ts` | messages | yes | Results end on the last close used, not today |
-| Investing | `src/engine/markets/portfolio.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/redact.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/research.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/schema.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/screen.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/screener.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/seed.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/sourced.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/strategies.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/tfsa.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
-| Investing | `src/engine/markets/watchlist.ts` | messages | yes | Read for outright errors; deeper copy deferred to the investing redesign |
 | Rules | `src/engine/autonomy/facts.ts` | messages | yes | No change needed |
 | Rules | `src/engine/autonomy/kinds.ts` | messages | yes | No change needed |
 | Rules | `src/engine/autonomy/proposals.ts` | messages | yes | No change needed |
@@ -253,8 +146,6 @@ this page is the record of the reading pass.
 | Files | `src/engine/outputs/views.ts` | messages | yes | New in this plan |
 | API errors | `src/server/files.ts` | action labels, feedback lines | yes | New in this plan; errors say what to do |
 | API errors | `src/server/http.ts` | messages | yes | No change needed |
-| API errors | `src/server/investing.ts` | messages | yes | No change needed |
-| API errors | `src/server/markets.ts` | messages | yes | No change needed |
 | API errors | `src/server/repos.ts` | messages | yes | No change needed |
 | API errors | `src/server/server.ts` | messages | yes | No change needed |
 | Runs | `src/cli.ts` | messages | yes | No change needed |
@@ -263,7 +154,7 @@ this page is the record of the reading pass.
 
 | Term | Use | Not |
 | --- | --- | --- |
-| space | A place for one kind of work: a repo, a general folder, or Investing. | project (except a new GitHub project), workspace |
+| space | A place for one kind of work: a repo or a general folder. | project (except a new GitHub project), workspace |
 | task | One thing an agent does in a space. | job, ticket |
 | Needs you | The list of things waiting on you. Always capitalised this way. | inbox, approvals |
 | review | Looking at finished work and approving it or sending it back; also a second agent's check. | approval request |
@@ -280,7 +171,6 @@ this page is the record of the reading pass.
 
 | Where | Exception | Why |
 | --- | --- | --- |
-| `src/tui/**` | Two spaces between hint groups (`j k move  q quit`). | The terminal has no other way to separate groups in one line. |
 | Status tags and kind chips | Lowercase (`queued`, `in review`, `new`, `changed`). | They read as tags, not sentences. |
 | Transcript viewer and live terminal | Agent output shown raw, monospace. | They are the record of what happened. |
 | Table cells | `—` for a value Atrium doesn't have. | A standard empty-cell mark in numeric tables. |

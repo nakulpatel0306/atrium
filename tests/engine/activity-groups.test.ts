@@ -27,11 +27,9 @@ test("kinds come from the engine's own words", () => {
   expect(activityKind("Couldn't do: Groceries. No list.")).toBe("couldnt");
   expect(activityKind("Partly done: Groceries. Half.")).toBe("partial");
   expect(activityKind("Couldn't clone a/b. GitHub said: no")).toBe("failed");
-  expect(activityKind("Didn't send the text to Dana: no number")).toBe("failed");
-  expect(activityKind("Alert: NVDA crossed $140")).toBe("alert");
-  expect(activityKind("Paper buy 2 AAPL @ US$190.00")).toBe("paper");
-  expect(activityKind("Sent via Messages to Dana (+1 555). Atrium can't confirm delivery.")).toBe("sent");
-  expect(activityKind("Drafted a text to Dana: Text Dana")).toBe("drafted");
+  // Lines an older Atrium wrote for features it no longer has read as plain other lines.
+  expect(activityKind("Alert: NVDA crossed $140")).toBe("other");
+  expect(activityKind("Sent via Messages to Dana (+1 555). Atrium can't confirm delivery.")).toBe("other");
   expect(activityKind("The engine restarted, so Groceries is back in the queue.")).toBe("requeued");
   expect(activityKind("Paused: Claude hit its limit. Groceries will run again after that.")).toBe("paused");
   expect(activityKind("Cloned a/b into ~/dev")).toBe("other");
@@ -119,12 +117,12 @@ test("a task still running says so", () => {
 });
 
 test("repeated system lines fold into one with a count", () => {
-  const alerts = Array.from({ length: 40 }, (_, i) => row(at(6, 9, i), "Alert: NVDA crossed $140"));
-  const paper = Array.from({ length: 12 }, (_, i) => row(at(6, 8, i), `Paper buy ${i + 1} AAPL @ US$190.00`, { actor: "claude" }));
-  const groups = groupActivity(feed(...alerts, ...paper, row(at(6, 7), "Cloned a/b into ~/dev")), { now: NOW });
+  const first = Array.from({ length: 40 }, (_, i) => row(at(6, 9, i), "Cloned c/d into ~/dev"));
+  const second = Array.from({ length: 12 }, (_, i) => row(at(6, 8, i), "Cloned e/f into ~/dev", { actor: "claude" }));
+  const groups = groupActivity(feed(...first, ...second, row(at(6, 7), "Cloned a/b into ~/dev")), { now: NOW });
   expect(groups.map((g) => [g.text, g.count, g.tone])).toEqual([
-    ["Alert: NVDA crossed $140 ×40", 40, "attention"],
-    ["12 paper trades", 12, "routine"],
+    ["Cloned c/d into ~/dev ×40", 40, "routine"],
+    ["Cloned e/f into ~/dev ×12", 12, "routine"],
     ["Cloned a/b into ~/dev", 1, "routine"],
   ]);
 });
@@ -134,8 +132,8 @@ test("lines from different days and spaces never merge", () => {
     feed(
       row(at(5, 9), "Started: Groceries", { taskId: "tsk_g" }),
       row(at(6, 9), "Started: Groceries", { taskId: "tsk_g" }),
-      row(at(6, 9, 1), "Alert: NVDA crossed $140", { spaceId: "spc_a" }),
-      row(at(6, 9, 2), "Alert: NVDA crossed $140", { spaceId: "spc_b" }),
+      row(at(6, 9, 1), "Cloned c/d into ~/dev", { spaceId: "spc_a" }),
+      row(at(6, 9, 2), "Cloned c/d into ~/dev", { spaceId: "spc_b" }),
     ),
     { now: NOW },
   );
@@ -166,12 +164,12 @@ test("a rule's approval is always named", () => {
   expect(g!.text).toBe("ran, ready for review, approved by your rule");
 });
 
-test("partly done and sent lines stand alone", () => {
+test("partly done lines stand alone", () => {
   const groups = groupActivity(
-    feed(row(at(6, 9), "Partly done: Groceries. Only half the list.", { taskId: "t" }), row(at(6, 10), "Sent via Messages to Dana (+1 555). Atrium can't confirm delivery.")),
+    feed(row(at(6, 9), "Partly done: Groceries. Only half the list.", { taskId: "t" })),
     { now: NOW },
   );
-  expect(groups.map((g) => g.tone)).toEqual(["notice", "attention"]);
+  expect(groups.map((g) => g.tone)).toEqual(["attention"]);
 });
 
 test("byDay keeps groups in order under their day", () => {
@@ -210,7 +208,6 @@ test("today's failures and lines still waiting on Nakul stay above Show more; ol
       row(at(6, 9), "Blocked: Old job. No disk."),
       row(at(4, 9), "Blocked: Older job. No disk."),
       row(at(3, 9), "Ready for review: Groceries", { taskId: "tsk_g" }),
-      row(at(3, 8), "Alert: NVDA crossed $140"),
       row(at(2, 9), "Ready for review: Laundry", { taskId: "tsk_l" }),
     ),
     { now: NOW, tasks: [{ id: "tsk_g", title: "Groceries", status: "review" }, { id: "tsk_l", title: "Laundry", status: "done" }] },

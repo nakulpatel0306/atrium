@@ -244,9 +244,9 @@ test("approving five repo creations proposes nothing", () => {
   expect((db.query("SELECT COUNT(*) AS n FROM autonomy_proposals").get() as { n: number }).n).toBe(0);
 });
 
-test("five sends propose nothing", () => {
+test("five always-ask approvals propose nothing", () => {
   for (let i = 0; i < 5; i++) {
-    const a = createApproval(db, { spaceId: space.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+    const a = createApproval(db, { spaceId: space.id, kind: "question", title: "Delete the old notes?", detail: "", alwaysAsk: "delete" });
     expect(consider(decide(a, "approve"))).toBeNull();
   }
   expect(listPendingProposals(db)).toEqual([]);

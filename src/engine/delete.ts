@@ -9,7 +9,7 @@ import { fileNow, finishPendingDeletes, notesOf, queueDelete } from "./delete-fi
 import { bus } from "./events";
 import { spaceFolder, tildePath } from "./folders";
 import { presentCloneForPath } from "./repos/store";
-import { getSetting } from "./settings";
+import { legacyDelete, LEGACY, legacyUnlinkTasks } from "./legacy";
 import { getSpace, type Space } from "./spaces";
 import { getTask } from "./tasks";
 
@@ -25,21 +25,10 @@ export class DeleteRefused extends Error {
 // Every table that points at a space, a task or a run, and what a delete does with it. The test checks this against
 // the live schema, so a new table can't be missed.
 export const HANDLED = {
-  space: [
-    "tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions",
-    "message_actions", "run_files", "rule_events", "market_lists", "market_watchlist", "market_holdings", "market_alerts",
-    "paper_accounts", "paper_fills", "market_strategies", "research_notes", "market_writeups", "market_ideas", "money_transactions",
-    "money_imports", "money_budgets", "money_nudges", "money_accounts", "attachments", "mail_actions",
-  ],
-  task: ["tasks", "runs", "approvals", "activity", "messages", "message_actions", "run_files", "paper_fills", "market_writeups", "attachments", "mail_actions"],
+  space: ["tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions", "run_files", "rule_events", "attachments"],
+  task: ["tasks", "runs", "approvals", "activity", "messages", "run_files", "attachments"],
   run: ["run_files"],
 } as const;
-
-// Investing and money rows keyed only by space, children before parents.
-const SPACE_DATA = [
-  "market_watchlist", "market_lists", "market_holdings", "market_alerts", "paper_fills", "paper_accounts", "market_strategies",
-  "research_notes", "market_writeups", "market_ideas", "money_transactions", "money_imports", "money_budgets", "money_nudges", "money_accounts",
-];
 
 const SPACE_GONE = "That space isn't here anymore. It may have been deleted somewhere else.";
 const TASK_GONE = "That task isn't here anymore. It may have been deleted somewhere else.";
@@ -72,22 +61,12 @@ export type DeleteGuards = { cloning?: (spaceId: string) => boolean };
 
 const CLONING = "Atrium is still getting a local copy of this repo. Try again in a minute. Nothing was deleted.";
 
-// What stops a delete: a run in progress, a text on its way, or a repo action or clone mid-run.
+// What stops a delete: a run in progress, or a repo action or clone mid-run.
 function refusal(db: Database, tasks: string[], spaceId: string | null, guards: DeleteGuards = {}): string | null {
   const running = tasks.length
     ? (db.query(`SELECT title FROM tasks WHERE status = 'running' AND id IN (${marks(tasks)}) LIMIT 1`).get(...tasks) as { title: string } | null)
     : null;
   if (running) return `"${running.title}" is running. Wait for it to finish (it shows under Live), then try again. Nothing was deleted.`;
-  const where = [...(spaceId ? ["space_id = ?"] : []), ...(tasks.length ? [`task_id IN (${marks(tasks)})`] : [])];
-  if (where.length) {
-    const params = [...(spaceId ? [spaceId] : []), ...tasks];
-    if (db.query(`SELECT 1 FROM message_actions WHERE status = 'sending' AND (${where.join(" OR ")})`).get(...params)) {
-      return "A text is being sent from here right now. Try again in a minute, once it has gone. Nothing was deleted.";
-    }
-    if (db.query(`SELECT 1 FROM mail_actions WHERE status IN ('sending','saving') AND (${where.join(" OR ")})`).get(...params)) {
-      return "An email or calendar change is being sent from here right now. Try again in a minute, once it has gone. Nothing was deleted.";
-    }
-  }
   if (spaceId && db.query("SELECT 1 FROM repo_actions WHERE status = 'running' AND space_id = ?").get(spaceId)) {
     return "Atrium is working on this space's repo right now. Try again in a minute. Nothing was deleted.";
   }
@@ -107,29 +86,25 @@ const brokenLinks = (db: Database) => db.query("PRAGMA foreign_key_check").all()
 const BROKE = "Atrium stopped the delete because it would have left broken links in its records. Nothing was deleted. Check the engine log.";
 
 // Removes the rows of these tasks, their runs and approvals, in an order the foreign keys accept. Rows elsewhere
-// that only mention a task (a text in Messages, a paper fill, a write-up) keep their row with the link cleared.
+// that only mention a task keep their row with the link cleared.
 function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] = []): { transcripts: string[] } {
   if (!tasks.length && !extraApprovals.length) return { transcripts: [] };
   const t = marks(tasks);
   const runs = tasks.length ? (db.query(`SELECT id, transcript_path FROM runs WHERE task_id IN (${t})`).all(...tasks) as { id: string; transcript_path: string }[]) : [];
-  // An approval in another space (a text waiting in Messages) outlives the task it came from.
+  // An approval in another space, or one that belongs to no space (a repo-wide question), outlives the task it came from.
   const own = tasks.length
     ? idsOf(db, `SELECT a.id FROM approvals a JOIN tasks t ON t.id = a.task_id WHERE a.task_id IN (${t}) AND (a.space_id IS NULL OR a.space_id = t.space_id)`, ...tasks)
     : [];
   const approvals = [...new Set([...own, ...extraApprovals])];
   const a = marks(approvals);
   if (approvals.length) {
-    db.query(`DELETE FROM message_actions WHERE approval_id IN (${a})`).run(...approvals);
-    db.query(`DELETE FROM mail_actions WHERE approval_id IN (${a})`).run(...approvals);
+    legacyDelete(db, LEGACY.byApproval, "approval_id", approvals);
     db.query(`DELETE FROM repo_actions WHERE approval_id IN (${a})`).run(...approvals);
     db.query(`DELETE FROM rule_events WHERE approval_id IN (${a})`).run(...approvals);
   }
   if (tasks.length) {
-    db.query(`UPDATE message_actions SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
-    db.query(`UPDATE mail_actions SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
+    legacyUnlinkTasks(db, tasks);
     db.query(`UPDATE approvals SET task_id = NULL WHERE task_id IN (${t})${a ? ` AND id NOT IN (${a})` : ""}`).run(...tasks, ...approvals);
-    db.query(`UPDATE paper_fills SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
-    db.query(`UPDATE market_writeups SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     // Attached files are Nakul's own and stay in the space folder; only the link to the task goes.
     db.query(`UPDATE attachments SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM run_files WHERE task_id IN (${t})`).run(...tasks);
@@ -183,7 +158,7 @@ function folderSize(dir: string): { files: number; bytes: number; more: boolean 
 
 const legacyFolder = (id: string) => join(config().home, "spaces", id);
 
-// Both places a general or markets space can keep files: its visible folder and the hidden one it had before.
+// Both places a general space can keep files: its visible folder and the hidden one it had before.
 const foldersOf = (space: Space): { path: string; root: string }[] => [
   ...(space.folder ? [{ path: space.folder, root: config().filesHome }] : []),
   { path: legacyFolder(space.id), root: join(config().home, "spaces") },
@@ -198,10 +173,8 @@ export type SpaceDeletePreview = {
   history: number;
   // The visible folder and what's in it now; null for a repo space.
   folder: { path: string; files: number; bytes: number; more: boolean } | null;
-  texts: { sent: number; drafts: number };
   // A repo space's folder: whether Atrium cloned it (removed only if everything is on GitHub) or Nakul did (never touched).
   repo: { path: string; atriumClone: boolean } | null;
-  investing: number;
   refusal: string | null;
 };
 
@@ -222,12 +195,7 @@ export function spaceDeletePreview(db: Database, id: string, guards: DeleteGuard
     runs: count("SELECT COUNT(*) AS n FROM runs r JOIN tasks t ON t.id = r.task_id WHERE t.space_id = ?", id),
     history: count("SELECT COUNT(*) AS n FROM activity WHERE space_id = ?", id),
     folder: space.kind === "repo" ? null : { path: tildePath(space.folder ?? legacyFolder(id)), ...sized },
-    texts: {
-      sent: count("SELECT COUNT(*) AS n FROM message_actions WHERE space_id = ? AND status = 'sent'", id),
-      drafts: count("SELECT COUNT(*) AS n FROM message_actions WHERE space_id = ? AND status = 'draft'", id),
-    },
     repo: space.repoPath ? { path: tildePath(space.repoPath), atriumClone: presentCloneForPath(db, space.repoPath) !== null } : null,
-    investing: SPACE_DATA.reduce((n, table) => n + count(`SELECT COUNT(*) AS n FROM ${table} WHERE space_id = ?`, id), 0),
     refusal: refusal(db, tasks, id, guards),
   };
 }
@@ -243,8 +211,6 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     if (refused) throw new DeleteRefused(409, refused);
     const pin = db.query("SELECT folder_dev AS dev, folder_ino AS ino FROM spaces WHERE id = ?").get(id) as { dev: number | null; ino: number | null };
     const linksBefore = brokenLinks(db);
-    db.query("DELETE FROM message_actions WHERE space_id = ?").run(id);
-    db.query("DELETE FROM mail_actions WHERE space_id = ?").run(id);
     // A new project's approval belongs to no space, so it's found through its repo action.
     const repoApprovals = idsOf(db, "SELECT approval_id AS id FROM repo_actions WHERE space_id = ?", id);
     db.query("DELETE FROM repo_actions WHERE space_id = ?").run(id);
@@ -259,11 +225,10 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     db.query("DELETE FROM attachments WHERE space_id = ?").run(id);
     db.query("DELETE FROM messages WHERE space_id = ?").run(id);
     db.query("DELETE FROM activity WHERE space_id = ?").run(id);
-    for (const table of SPACE_DATA) db.query(`DELETE FROM ${table} WHERE space_id = ?`).run(id);
+    legacyDelete(db, LEGACY.bySpace, "space_id", [id]);
     // Atrium's record of a clone outlives the space, so Storage and boot recovery still know the folder is its own.
     const clone = space.repoPath ? presentCloneForPath(db, space.repoPath) : null;
     db.query("UPDATE repo_clones SET space_id = NULL WHERE space_id = ?").run(id);
-    if (getSetting(db, "messaging.spaceId") === id) db.query("DELETE FROM settings WHERE key = 'messaging.spaceId'").run();
     db.query("DELETE FROM spaces WHERE id = ?").run(id);
     if (brokenLinks(db) > linksBefore) {
       console.error(`Deleting space ${id} would have left broken links: ${JSON.stringify(db.query("PRAGMA foreign_key_check").all())}`);

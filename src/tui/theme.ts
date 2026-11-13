@@ -113,7 +113,6 @@ export const GLYPH = {
   meterEmpty: "▱",
   ellipsis: "…",
   suggestion: "✦",
-  text: "✉",
   ok: "✓",
   bad: "✗",
   // A result the agent said it couldn't or only partly do, and every warning.

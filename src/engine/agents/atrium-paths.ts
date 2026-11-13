@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { config } from "../config";
 
 // Atrium's data folder holds the database, the transcripts and old spaces' folders; the visible files folder
-// (~/Atrium) holds every general and markets space's work. A run may use only its own space folder (the cwd of a
+// (~/Atrium) holds every general space's work. A run may use only its own space folder (the cwd of a
 // Claude general-space run); everything else in both is denied. Listed fresh for each run so new spaces and files
 // are covered; the known files are named even before they exist.
 export function atriumDenyPaths(cwd: string): string[] {

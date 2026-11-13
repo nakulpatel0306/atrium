@@ -12,8 +12,7 @@ import { AttachChips } from "./AttachChips";
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
 type Draft = State["repoActions"][number];
-type Text = State["messageActions"][number];
-type SetupReply = { space: Space; tasks: Task[]; messaging?: true } | { draft: Draft } | { message: Text };
+type SetupReply = { space: Space; tasks: Task[] } | { draft: Draft };
 
 type Props = {
   space: Space | null;
@@ -194,20 +193,6 @@ export function CommandBar({ space, setupRequest }: Props) {
         navigate("/");
         return;
       }
-      // A text with its words is a card in Needs you right away; one without waits for an agent to draft it.
-      if ("message" in res.data) {
-        setMessage({ kind: "info", text: `Drafted a text to ${res.data.message.toName}. It's waiting in Needs you.` });
-        keepMessage.current = space !== null;
-        navigate("/");
-        return;
-      }
-      if (res.data.messaging) {
-        const to = res.data.tasks[0]?.title.replace(/^Draft a text to /, "") ?? "them";
-        setMessage({ kind: "info", text: `Atrium is drafting a text to ${to}. It'll be in Needs you to send.` });
-        keepMessage.current = true;
-        navigate(`/space/${res.data.space.id}`);
-        return;
-      }
       if (attached) {
         setMessage({ kind: "info", text: `${res.data.space.name} is ready. Its first task, "${res.data.tasks[0]?.title}", has your ${attached === 1 ? "file" : `${attached} files`}.` });
         keepMessage.current = true;
@@ -235,7 +220,7 @@ export function CommandBar({ space, setupRequest }: Props) {
   };
 
   const placeholder = setup
-    ? 'Describe something new, like "keep my job search organized" or "start a new project called…"'
+    ? 'Describe something new, like "add dark mode to my site" or "start a new project called…"'
     : `Give ${space!.name} a task…`;
 
   return (

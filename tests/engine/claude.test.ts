@@ -141,7 +141,7 @@ describe("claudeAdapter", () => {
         `${tool}(**/*.[eE][nN][vV]/**)`,
       ]),
       "Bash(cat *.env*)",
-      // The Keychain CLI, where market data keys live.
+      // The Keychain CLI, which would hand an agent whatever the login keychain holds.
       "Bash(security *)",
       // GitHub is the engine's alone.
       "Bash(gh *)",
@@ -338,7 +338,7 @@ test("I4: osascript, shortcuts and open are denied anywhere in a command", async
   }
 });
 
-// ---- Plan 14: private and money runs ----
+// ---- Private runs ----
 import { privateReadRules, privateReads } from "../../src/engine/agents/private-paths";
 import { MIN_PRIVATE_VERSION, TOO_OLD, atLeast } from "../../src/engine/agents/claude";
 import { homedir } from "node:os";
@@ -381,7 +381,7 @@ test("card data: an ordinary run is unchanged", async () => {
   expect(argv.slice(argv.indexOf("--disallowedTools") + 1)).not.toContain("Bash");
 });
 
-test("card data: a money run has no tools at all", async () => {
+test("card data: a private run with no tools allowed has none at all", async () => {
   const argv = await argvOf({ allowedTools: [], privateData: true });
   expect(argv[argv.indexOf("--tools") + 1]).toBe("");
   expect(argv).not.toContain("--allowedTools");

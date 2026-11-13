@@ -1,5 +1,5 @@
-// The Needs you page's keys. Single letters only move, open, approve a review or open its send-back note: nothing
-// here can send a text, and every key is ignored while Nakul is typing.
+// The Needs you page's keys. Single letters only move, open, approve a review or open its send-back note, and every
+// key is ignored while Nakul is typing.
 export type NeedsKey = "next" | "prev" | "open" | "approve" | "sendBack" | "close";
 
 type KeyLike = { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; target: EventTarget | null };
@@ -24,5 +24,5 @@ export function moveFocus(at: number, count: number, key: "next" | "prev"): numb
   return Math.max(0, Math.min(count - 1, at + (key === "next" ? 1 : -1)));
 }
 
-// The control a key presses on the focused row; a row without it (a text, a suggestion) ignores the key.
+// The control a key presses on the focused row; a row without it (a rule suggestion) ignores the key.
 export const ACT: Partial<Record<NeedsKey, string>> = { open: "open", approve: "approve", sendBack: "send-back" };

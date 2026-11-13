@@ -30,26 +30,16 @@ import {
 } from "./git";
 import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
-import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
-import { createInboxHooks, type InboxHooks } from "./mail/agent";
-import { isMasked, maskNumbers } from "./money/import";
-import { remaskTranscript } from "./money/remask";
 import { agentName, plural, sentence } from "./text";
 import { canRun, type PowerSource } from "./power";
 import { verdictOf } from "./verdict";
 import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
-import { getSpace, isPrivate, type Space } from "./spaces";
-import { appendTaskDetail, getTask, listTasks, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
+import { getSpace, type Space } from "./spaces";
+import { closeLegacyApprovals } from "./legacy";
+import { appendTaskDetail, endRemovedFeatureTasks, failRemovedFeatureTask, getTask, listTasks, REMOVED_FEATURE, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
-import { type MessageBlock, parseMessageBlock } from "./messaging/block";
-import { autoLookup } from "./messaging/contacts";
-import { peopleLine } from "./messaging/rules";
-import { draftGroupMessage, draftMessage } from "./messaging/store";
-import { type InboxBlock, parseInboxBlock } from "./mail/block";
-import { KIND_NOUN, namesLine } from "./mail/compose";
-import { BadMail, draftEvent, draftMail, writableCalendars } from "./mail/drafts";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 
 const POWER_CHECK_MS = 60_000;
@@ -84,10 +74,11 @@ const REVIEW_SYSTEM_PROMPT = [
   "Never read, print, or edit .env files, keys, or tokens.",
 ].join("\n");
 
-// Titles that ask for something only the engine can do. An agent saying "done" to one of these, with nothing for
-// the engine to act on, hasn't done it. A send needs a person after the verb ("Text Dana", "Send the text to
-// Dana", "text dana that I'm late"), and a false match marks a good run "couldn't", so a name only counts when
-// what follows reads like a message: "Email Template Redesign" and "Send me a summary" aren't sends.
+// Titles that ask for something an agent's "done" can't have carried out: a text or email to someone (nothing in
+// Atrium can send one) or a new repo (only the engine creates those, after a yes). A send needs a person after the
+// verb ("Text Dana", "Send the text to Dana", "text dana that I'm late"), and a false match marks a good run
+// "couldn't", so a name only counts when what follows reads like a message: "Email Template Redesign" and "Send me
+// a summary" aren't sends.
 const PERSON = "(?:him|her|them|mom|dad|my (?:mom|dad|mother|father|brother|sister|wife|husband|partner|girlfriend|boyfriend|friend|boss|manager|landlord|roommate|team))";
 const NAME = "[A-Z][\\w'-]*";
 const AFTER_NAME = "(?:$|[,:.!?—-]|\\s+(?:that|saying|about|asking|to|and|a|an|the|back|if|when|re|hi|hey|hello|happy|thanks|thank|good|i|i'm|im|we|we're|you|your|tonight|today|tomorrow)\\b)";
@@ -110,10 +101,8 @@ export function engineOnlyClaim(title: string): "message" | "repo" | null {
   return null;
 }
 
-const IGNORED_BLOCK = "The agent suggested sending a text. Atrium doesn't send texts from here; ask Atrium to text them from the command bar if you want that.";
-
 const ENGINE_ONLY: Record<"message" | "repo", string> = {
-  message: "Only Atrium can send messages, and nothing was sent.",
+  message: "Atrium can't send texts or email, and nothing was sent.",
   repo: "Only Atrium can create repos, after your yes, and none was created.",
 };
 
@@ -129,8 +118,6 @@ export const REPO_TOOLS = [
   "Bash(git log*)",
 ];
 
-type Settled = Awaited<ReturnType<MarketsHooks["settle"]>>;
-
 type KeepAwake = { start(): void; stop(): void; active(): boolean };
 
 // The repo as found at task start, so it can be put back after the run.
@@ -144,14 +131,8 @@ export function createRunner(deps: {
   keepAwake: KeepAwake;
   maxConcurrent?: number;
   stopTimeoutMs?: number;
-  // Market context in prompts and the atrium-markets block afterwards; absent, markets spaces run like general ones.
-  markets?: MarketsHooks;
   // Local copies of attached GitHub repos: cloned on demand, marked used, and checked for cleanup once a day.
   repos?: { requestClone(space: Space): void; cloning(spaceId: string): boolean; touch(path: string): void; daily(now: number): void };
-  // Mail and calendar context for Inbox tasks, built by the engine from cached rows; absent, they get none.
-  inbox?: InboxHooks;
-  // Money's once-a-day check (the monthly import reminder and budget heads-ups), from the same minute timer.
-  money?: { daily(now: number): void };
   // Test seam for the Changes view's live refresh: the throttle window and the timer for agents that don't report edits.
   diffWatch?: { windowMs?: number; pollMs?: number };
 }): {
@@ -370,6 +351,12 @@ export function createRunner(deps: {
   // Returns why the task went back to waiting when it was resolved again just before starting.
   async function launch(task: Task, agent: string): Promise<TaskWait | void> {
     const space = getSpace(db, task.spaceId)!;
+    // A task from a feature that was removed never runs, whatever its purpose once allowed.
+    if (task.legacyPurpose !== null) {
+      failRemovedFeatureTask(db, task.id);
+      logActivity(db, task.spaceId, "atrium", `Couldn't run: ${task.title}. ${REMOVED_FEATURE}`, { taskId: task.id });
+      return;
+    }
     const adapter = adapters[agent];
     if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
 
@@ -425,15 +412,13 @@ export function createRunner(deps: {
 
     // Codex and Gemini reads aren't sandboxed like Claude's: away from a repo each run gets an empty folder of
     // its own instead of the space folder, where earlier runs' files collect.
-    // A money question runs in an empty folder too, with no tools: the masked facts in its prompt are all it sees.
-    // An Inbox task too: the engine-built mail context is all it reads, and it has no tools to act with.
-    const scratch = !repo && (agent !== "claude" || task.purpose === "money" || space.kind === "inbox");
+    const scratch = !repo && agent !== "claude";
     let started: { cwd: string; runId: string; transcript: ReturnType<typeof openTranscript>; copied: Copy[] };
     let cwd: string | null = null;
     try {
       cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : ensureSpaceFolder(db, space);
       // An empty folder doesn't have the files Nakul attached, so they're copied in where the task says they are.
-      const copied = scratch && task.purpose !== "money" ? copyAttachments(db, task.id, spaceFolder(space), cwd) : [];
+      const copied = scratch ? copyAttachments(db, task.id, spaceFolder(space), cwd) : [];
       const runId = newId("run");
       const transcript = openTranscript(runId);
       db.query(
@@ -486,12 +471,8 @@ export function createRunner(deps: {
         // Reported once the run ends, when recording finds the folder unreadable too.
       }
     }
-    const markets = space.kind === "markets" && task.kind === "work" ? deps.markets : undefined;
-    const inbox = space.kind === "inbox" && task.kind === "work";
     const unwatch = repo ? diffs.watch(task.id, adapter.id !== "claude") : null;
-    const line = (raw: string) => {
-      // A money run's transcript and live view are masked like everything else it touches.
-      const chunk = task.purpose === "money" ? maskNumbers(raw) : raw;
+    const line = (chunk: string) => {
       try {
         transcript.append(`${chunk}\n`);
       } catch {
@@ -509,31 +490,23 @@ export function createRunner(deps: {
     }
     let result: AgentRunResult;
     try {
-      // An Inbox run gets its own system and capability lines, built around this run's untrusted-block tag.
-      const inboxRun = inbox ? await (deps.inbox ?? createInboxHooks(db, null)).prepare(task, space) : null;
-      const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : inboxRun ? `\n\n${inboxRun.context}` : "";
-      const base = repo ? [REPO_SYSTEM_PROMPT] : inboxRun ? inboxRun.system : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
+      const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch)];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
-      const honest = [...(inboxRun ? inboxRun.capabilities : capabilityLines(db, isMessageTask(task) ? "message" : "task")), OUTCOME_INSTRUCTION];
-      const prompt = buildPrompt(task, space) + context;
-      // Money facts go to Claude only, and only masked: a card or account number left in the prompt stops the run.
-      if (task.purpose === "money" && (adapter.id !== "claude" || !isMasked(prompt))) throw new MoneyGuard();
+      const honest = [...capabilityLines(), OUTCOME_INSTRUCTION];
+      const prompt = buildPrompt(task, space);
       result = await adapter.run({
         prompt,
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
-        // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
-        allowedTools: task.purpose === "money" || space.kind === "inbox" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
-        privateData: isPrivate(space),
-        mode: task.kind === "review" || task.purpose ? "review" : "work",
+        // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
+        allowedTools: task.kind === "review" ? REVIEW_TOOLS : repo && !space.unknownKind ? REPO_TOOLS : BASE_TOOLS,
+        privateData: space.private,
+        mode: task.kind === "review" ? "review" : "work",
         signal: r.signal,
         onChunk: line,
       });
     } catch (e) {
-      result =
-        e instanceof MoneyGuard
-          ? { status: "error", kind: "failed", message: MoneyGuard.text }
-          : { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
+      result = { status: "error", kind: "failed", message: `${adapter.label} couldn't start: ${sentence((e as Error).message)} Check that it's installed and signed in, then retry.` };
     }
     unwatch?.();
     // Whether the run was cut short. An abort that lands after the agent answered (a stop during the commit step)
@@ -541,12 +514,6 @@ export function createRunner(deps: {
     const cutShort = r.signal.aborted;
     // A steer keeps the edits on the task's own branch, where the next run carries on from them.
     const steering = cutShort && result.status !== "ok" && steerRequested.has(task.id) && !stopRequested.has(task.id);
-
-    // Claude's answer to a money question is masked before anything saves it: the task, the review, the write-up.
-    if (task.purpose === "money") result = result.status === "ok" ? { ...result, summary: maskNumbers(result.summary) } : { ...result, message: maskNumbers(result.message) };
-    // Its transcript is masked again as one text once the run ends: a number written across several chunks was only
-    // masked piece by piece on the way in.
-    if (task.purpose === "money") remaskTranscript(transcript.path);
 
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
     // below can block or discard it.
@@ -619,17 +586,12 @@ export function createRunner(deps: {
     // What the agent says it did, with its OUTCOME line taken out of the text people read. A review's verdict is
     // its own last line, so reviews are left alone.
     let outcome: ParsedOutcome = { outcome: "unknown", reason: null, body: "" };
-    // A text the agent asked Atrium to send; it becomes a draft that only Nakul's Send can send.
-    let message: MessageBlock | null = null;
-    // An email or calendar change an Inbox task asked for; likewise only ever a draft.
-    let mailAsk: InboxBlock | null = null;
     if (result.status === "ok" && task.kind !== "review") {
-      ({ outcome, message, mailAsk } = honestOutcome(task, result.summary));
+      outcome = honestOutcome(task, result.summary);
       result = { ...result, summary: outcome.body };
     }
 
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
-    let settled: Settled | null = null;
     try {
       if (getTask(db, task.id)?.status !== "running") {
         // Someone moved the task while it ran; its outcome no longer applies.
@@ -662,33 +624,8 @@ export function createRunner(deps: {
         setTaskStatus(db, task.id, "done");
         afterFix(db, task, outcome, report?.lines[0] ?? "");
         logActivity(db, space.id, adapter.id, `Finished: ${task.title}`, { taskId: task.id });
-      } else if (result.status === "ok" && (settled = markets ? await settleMarkets(markets, task, space, adapter.id, result.summary) : null)?.done) {
-        // A paper strategy run settled its own orders; there is nothing for Nakul to review.
-        if (settled.lines.length) appendTaskDetail(db, task.id, `\n\nThis run:\n${settled.lines.join("\n")}`);
-        setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
-        setTaskStatus(db, task.id, "done");
-        logActivity(db, space.id, adapter.id, settled.activity ?? `Finished: ${task.title}`, { taskId: task.id });
-      } else if (result.status === "ok" && message) {
-        setTaskOutcome(db, task.id, outcome.outcome, outcome.reason);
-        setTaskStatus(db, task.id, "review");
-        if (message.group) {
-          // The chat is never the agent's either: Nakul's own Find on the card picks it.
-          const { action } = draftGroupMessage(db, { spaceId: space.id, taskId: task.id, name: message.group.name, people: message.group.people, text: message.text });
-          logActivity(db, space.id, adapter.id, `Drafted a group text to ${action.toName}: ${task.title}`, { taskId: task.id });
-        } else {
-          // The number is never the agent's: Nakul types it or picks it from his own Contacts lookup.
-          const { action } = draftMessage(db, { spaceId: space.id, taskId: task.id, toName: message.to, text: message.text });
-          logActivity(db, space.id, adapter.id, `Drafted a text to ${message.to}: ${task.title}`, { taskId: task.id });
-          // It catches its own failures; this only guards the engine if one slips past.
-          autoLookup(db, action.id).catch((e) => console.error(`Contacts lookup failed: ${e instanceof Error ? e.message : String(e)}`));
-        }
-      } else if (result.status === "ok" && mailAsk && draftFromInbox(task, space, mailAsk, adapter.id)) {
-        // Drafted: its card is the task's only question, and the user's Send (or Don't send) finishes the task.
       } else if (result.status === "ok") {
-        // Why an Inbox ask couldn't become a draft, told in the review instead.
-        const mailProblem = mailProblemFor.get(task.id);
-        mailProblemFor.delete(task.id);
-        const lines = [...(result.summary.trim() ? [result.summary.trim()] : []), ...(mailProblem ? [mailProblem] : []), ...(settled?.lines ?? [])];
+        const lines = result.summary.trim() ? [result.summary.trim()] : [];
         // Repo runs already count their files in the branch summary.
         const madeText = !repo && made ? madeLine(made.changes, made.display) : null;
         if (madeText) lines.splice(1, 0, madeText);
@@ -802,67 +739,15 @@ export function createRunner(deps: {
     return stoppedByStop.has(taskId) ? "stopped" : "finished";
   }
 
-  // The agent's own word, except that "done" can't stand for a title only the engine could have carried out. A
-  // message block satisfies a send only as far as a draft goes: the task is partly done until Nakul presses Send.
-  function honestOutcome(task: Task, summary: string): { outcome: ParsedOutcome; message: MessageBlock | null; mailAsk: InboxBlock | null } {
+  // The agent's own word, except that "done" can't stand for a title only the engine could have carried out.
+  function honestOutcome(task: Task, summary: string): ParsedOutcome {
     const parsed = parseOutcome(summary);
-    // Only an Inbox task's block counts: the Inbox is where the user asks for an email, and a draft is all it makes.
-    const ask = task.kind === "work" && getSpace(db, task.spaceId)?.kind === "inbox" ? parseInboxBlock(parsed.body) : null;
-    if (ask) return { outcome: { outcome: "partial", reason: "Drafted it. It goes out only when you press Send.", body: ask.body }, message: null, mailAsk: ask };
-    const block = task.kind === "work" ? parseMessageBlock(parsed.body) : null;
-    if (block && isMessageTask(task)) {
-      const who = block.group ? (block.group.name ?? peopleLine(block.group.people)) : block.to;
-      const reason = `Drafted a text to ${who}. It sends only when you press Send.`;
-      return { outcome: { outcome: "partial", reason, body: block.body }, message: block, mailAsk: null };
-    }
-    // Anywhere else a block is ignored (an agent reading a repo or a web page could be talked into writing one)
-    // and the result goes to review as usual, with a note saying what the agent asked for.
-    const body = block ? `${parsed.body}\n\n${IGNORED_BLOCK}` : parsed.body;
     const parent = task.kind === "fix" && task.parentTaskId ? getTask(db, task.parentTaskId) : null;
-    // A repo task's title is about code ("Send button styling"), never a send Atrium would make.
+    // A repo task's title is about code ("Send button styling"), never a send or a repo Atrium would create.
     const claim = getSpace(db, task.spaceId)?.kind === "repo" ? null : engineOnlyClaim((parent ?? task).title);
     // Atrium knows for certain that nothing was sent or created, so this is "couldn't", not "can't tell".
-    if (parsed.outcome === "done" && claim) return { outcome: { ...parsed, body, outcome: "couldnt", reason: ENGINE_ONLY[claim] }, message: null, mailAsk: null };
-    return { outcome: { ...parsed, body }, message: null, mailAsk: null };
-  }
-
-  // An Inbox task's email or calendar block becomes a draft card, with Claude's added people marked. Returns false,
-  // with mailProblem set, when the ask can't be drafted (a thread that's gone, an event someone else organises); the
-  // result then goes to review as usual and says why.
-  function draftFromInbox(task: Task, space: Space, ask: InboxBlock, actor: string): boolean {
-    try {
-      let what: string;
-      if ("email" in ask) {
-        const e = ask.email;
-        const { action } = draftMail(db, { spaceId: space.id, taskId: task.id, kind: e.kind, draftedBy: "claude", threadId: e.threadId, to: e.to, cc: e.cc, subject: e.subject, body: e.text });
-        what = `Drafted ${e.kind === "new" ? "an email" : `a ${KIND_NOUN[e.kind]}`} to ${namesLine(action.to)}`;
-      } else {
-        const e = ask.event;
-        if (e.kind === "event_create") {
-          const calendarId = writableCalendars(db).find((c) => e.calendar && c.title.toLowerCase() === e.calendar.toLowerCase())?.id ?? null;
-          draftEvent(db, { spaceId: space.id, taskId: task.id, kind: e.kind, draftedBy: "claude", calendarId, title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location, attendees: e.attendees });
-          what = `Drafted "${e.title}"`;
-        } else {
-          const { action } = draftEvent(db, { spaceId: space.id, taskId: task.id, kind: e.kind, draftedBy: "claude", eventId: e.eventId, ...(e.kind === "event_move" ? { start: e.start, ...(e.end ? { end: e.end } : {}) } : {}) });
-          what = `Drafted ${e.kind === "event_move" ? "a move" : "a cancellation"} of "${action.event?.title}"`;
-        }
-      }
-      setTaskOutcome(db, task.id, "partial", `${what}. It goes out only when you press Send.`);
-      setTaskStatus(db, task.id, "review");
-      logActivity(db, space.id, actor, `${what}: ${task.title}`, { taskId: task.id });
-      return true;
-    } catch (e) {
-      if (!(e instanceof BadMail)) throw e;
-      mailProblemFor.set(task.id, `Atrium couldn't draft what Claude asked for: ${e.message}`);
-      return false;
-    }
-  }
-  const mailProblemFor = new Map<string, string>();
-
-  // Marked by the engine when it made the task (the setup path), or a task Nakul added in the Messages space;
-  // never anything the agent wrote.
-  function isMessageTask(task: Task): boolean {
-    return task.purpose === "message" || (task.spaceId === getSetting(db, "messaging.spaceId") && getSpace(db, task.spaceId)?.kind === "general");
+    if (parsed.outcome === "done" && claim) return { ...parsed, outcome: "couldnt", reason: ENGINE_ONLY[claim] };
+    return parsed;
   }
 
   // Records the files a run created, changed or deleted. A failure is logged and never changes the task's outcome.
@@ -904,15 +789,6 @@ export function createRunner(deps: {
       const why = (e as Error).message.trim().replace(/\.$/, "");
       logActivity(db, r.space.id, "atrium", `Couldn't list the files this run made: ${why}. The work itself is saved; open the space's Files tab to see the folder.`, { taskId: r.task.id });
       return null;
-    }
-  }
-
-  // A failure here still leaves the agent's answer for review, with a line saying what didn't happen.
-  async function settleMarkets(markets: MarketsHooks, task: Task, space: Space, agent: string, summary: string): Promise<Settled> {
-    try {
-      return await markets.settle(task, space, agent, summary);
-    } catch (e) {
-      return { done: false, lines: [`Atrium couldn't act on the markets block: ${(e as Error).message}`] };
     }
   }
 
@@ -971,19 +847,10 @@ export function createRunner(deps: {
       unsubscribe = bus.on((e) => {
         if (e.type === "changed") kick();
       });
-      const moneyDaily = () => {
-        try {
-          deps.money?.daily(Date.now());
-        } catch (e) {
-          console.error(`Money's daily check failed: ${(e as Error).message}`);
-        }
-      };
       interval = setInterval(() => {
         deps.repos?.daily(Date.now());
-        moneyDaily();
         kick();
       }, POWER_CHECK_MS);
-      moneyDaily();
       kick();
     },
     async stop() {
@@ -1034,10 +901,6 @@ export const STEER_NOTE_MAX = 2000;
 
 export const steerBlock = (note: string) =>
   `Note from you while this was running: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`;
-
-class MoneyGuard extends Error {
-  static text = "Atrium stopped this before sending anything: the money facts weren't fully masked or the agent wasn't Claude. Try again, and check the engine log if it keeps happening.";
-}
 
 function buildPrompt(task: Task, space: Space): string {
   const parts = [`Task: ${task.title}`];
@@ -1130,6 +993,8 @@ function sweepTempDirs() {
 
 export async function recoverOnBoot(db: Database): Promise<number> {
   sweepTempDirs();
+  endRemovedFeatureTasks(db);
+  closeLegacyApprovals(db);
   const stuck = listTasks(db, { status: ["running"] });
   for (const task of stuck) {
     const path = getSpace(db, task.spaceId)?.repoPath;

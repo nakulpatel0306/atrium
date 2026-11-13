@@ -12,14 +12,14 @@ export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 // but not /a/my.env.txt. Seatbelt regexes have no case flag, hence the character classes.
 export const ENV_FILE_PATTERN = "/\\.[eE][nN][vV][^/]*(/|$)|\\.[eE][nN][vV](/|$)";
 
-// Credentials, tokens, shell history, browser and mail data, and Atrium's own database, relative to home.
+// Credentials, tokens, shell history, browser, mail and chat data, and Atrium's own database, relative to home.
 const SECRET_PATHS = [
   ".ssh", ".aws", ".gnupg", ".config/gh", "Library/Keychains", ".netrc", ".npmrc", ".yarnrc", ".yarnrc.yml", ".docker",
   ".kube", ".config/gcloud", ".azure", ".git-credentials", ".config/git/credentials", ".pypirc", ".claude", ".claude.json",
   ".config/op", ".password-store", ".zsh_history", ".bash_history", ".local/share/fish/fish_history",
   "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox", "Library/Safari", "Library/Cookies",
   "Library/Messages", "Library/Mail", "Library/Application Support/Atrium",
-  // Contacts' stores: only the engine looks people up, and only after Nakul asks.
+  // Contacts' stores: personal data an agent has no reason to read.
   "Library/Application Support/AddressBook", "Library/Contacts",
 ];
 
@@ -54,7 +54,7 @@ export interface SeatbeltOptions {
   denyKeychain?: boolean;
 }
 
-// File keychains (login, where Atrium keeps market data keys) are read from ~/Library/Keychains, which SECRET_PATHS
+// File keychains (the login keychain) are read from ~/Library/Keychains, which SECRET_PATHS
 // already denies to every binary, a copied `security` included. These services front the data-protection keychain
 // and the unlock prompt. com.apple.SecurityServer has to stay reachable: TLS certificate checks go through it, and
 // without it Codex can't reach its API (verified: "invalid peer certificate: UnknownIssuer").
@@ -110,9 +110,9 @@ export function seatbeltProfile(opts: SeatbeltOptions): string {
     // LaunchServices and Apple Events start apps (Terminal, Finder) outside the sandbox, which would escape it.
     "(deny lsopen)",
     "(deny appleevent-send)",
-    // The Keychain CLI would hand an agent Atrium's market data keys; agents only ever get prices.
+    // The Keychain CLI would hand an agent whatever the login keychain holds.
     '(deny process-exec (literal "/usr/bin/security"))',
-    // Sending messages and controlling apps belong to the engine alone, after Nakul's own Send.
+    // Driving other apps (Mail, Messages, Terminal) or running Shortcuts would let an agent act outside its sandbox.
     '(deny process-exec (literal "/usr/bin/osascript"))',
     '(deny process-exec (literal "/usr/bin/shortcuts"))',
     '(deny process-exec (literal "/usr/bin/automator"))',

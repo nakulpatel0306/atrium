@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-// What the screen reader should say after something happens off to the side: a text sent, a result approved.
+// What the screen reader should say after something happens off to the side: a task queued, a result approved.
 export type Announcement = { id: number; text: string };
 
 let current: Announcement | null = null;

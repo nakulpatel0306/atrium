@@ -44,10 +44,10 @@ test("atrium opens, moves, and quits cleanly under a pty", async () => {
   expect(ansi.raw).toContain("\x1b[?1049l");
 }, 20_000);
 
-test("at 80×24 it lays out on purpose: Today folds under the cards", async () => {
+test("at 80×24 it lays out on purpose: what is running folds under the cards", async () => {
   const small = await screen({ port, cols: 80, rows: 24, env: ANSI_ENV, steps: [{ wait: 1500 }] });
   expect(small.text).toContain("NEEDS YOU  1");
-  expect(small.text).toContain("TODAY");
+  expect(small.text).toContain("RUNNING");
   expect(small.text).toContain("Ask Atrium");
   expect(small.exitCode).toBe(0);
 }, 20_000);

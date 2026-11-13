@@ -1,6 +1,5 @@
 // What every tab shares: the top bar with the tabs, the Ask box, and the key strip.
 import { agentName } from "../../dashboard/agents";
-import { recipientOf } from "../../engine/messaging/rules";
 import type { State } from "../../engine/state";
 import { type Block, box, edgeWith, fit, type Hit, keycap, type Line, lineWidth } from "../canvas";
 import { cursorParts } from "../edit";
@@ -10,7 +9,7 @@ import { width } from "../text";
 import { GLYPH, windowGauge } from "../theme";
 import { TABS, type Ui } from "../ui";
 
-const TAB_TEXT = { home: "Home", spaces: "Spaces", money: "Money", investing: "Investing", activity: "Activity" } as const;
+const TAB_TEXT = { home: "Home", spaces: "Spaces", activity: "Activity" } as const;
 
 // Right side of the top bar: Claude's window, power, overnight, and being offline, shortened to fit.
 function status(state: State, online: boolean, room: number): Line {
@@ -76,28 +75,14 @@ export function askLabels(ui: Ui, view: View, ctx: KeyContext): { title: string;
       return { title: `Goal · ${view.state.spaces.find((s) => s.id === target)?.name ?? "this space"}`, placeholder: "What this space is for." };
     case "filter":
       return { title: "Filter", placeholder: "Type to narrow the list. Enter keeps it, esc clears it." };
-    case "budget":
-      return { title: `Budget for ${target} · a month`, placeholder: "An amount like 400, or empty for no budget." };
-    case "import":
-      return { title: "Import a CSV · path to the file", placeholder: "~/Downloads/accountactivity.csv, or drag the file in." };
-    case "edit": {
-      const m = view.state.messageActions.find((x) => x.approvalId === target);
-      return { title: `Edit the text to ${m ? recipientOf(m) : "them"}`, placeholder: "The words that get sent." };
-    }
     case "space":
-      return { title: "New space · describe it", placeholder: 'Like "keep my job search organized" or "start a new project called…"' };
-  }
-  if (ui.tab === "money") return ctx.money ? { title: "Ask about your money", placeholder: "Ask anything about your spending, dividends or TFSA." } : { title: "Ask Atrium", placeholder: "Set up an Investing space first, like \"track my investing\"." };
-  if (ui.tab === "investing") {
-    const key = ctx.invest?.keys[ui.invest.row];
-    if (key) return { title: `Ask Claude about ${key}`, placeholder: `Like "what changed for ${key} this week?"` };
-    return { title: "Ask Atrium · Investing", placeholder: "Give the Investing space a task…" };
+      return { title: "New space · describe it", placeholder: 'Like "add dark mode to my site" or "start a new project called…"' };
   }
   if (ui.tab === "spaces" && space && space.status !== "archived") {
     const agent = a ? ` · agent ${agentName(a.agent)}${askAgentCycles(ui, view) ? " (tab)" : ""}` : "";
     return { title: `New task in ${space.name}${agent}`, placeholder: `Give ${space.name} a task…` };
   }
-  return { title: "Ask Atrium", placeholder: 'Describe something new, like "keep my job search organized" or "text mom happy birthday".' };
+  return { title: "Ask Atrium", placeholder: 'Describe something new, like "add dark mode to my site" or "start a new project called…".' };
 }
 
 const FLASH = { ok: { glyph: GLYPH.ok, color: "ok" }, bad: { glyph: GLYPH.bad, color: "bad" }, info: { glyph: "•", color: "info" } } as const;

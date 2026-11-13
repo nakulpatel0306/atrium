@@ -617,26 +617,6 @@ test("/rules serves html", async () => {
   expect(await res.text()).toContain("<title>Atrium</title>");
 });
 
-test("visibility messages count viewers", async () => {
-  server.stop(true);
-  const seen: number[] = [];
-  server = startServer({ db, runner: { kick: () => {} }, setup: (t) => setupImpl(t), port: 0, onViewers: (n) => seen.push(n) });
-  base = `http://127.0.0.1:${server.port}`;
-  origin = base;
-  const a = await openWs({ origin });
-  const b = await openWs({ origin });
-  a.ws.send("not json");
-  a.ws.send(JSON.stringify({ type: "visibility", visible: true }));
-  await Bun.sleep(30);
-  b.ws.send(JSON.stringify({ type: "visibility", visible: "yes" }));
-  b.ws.send(JSON.stringify({ type: "visibility", visible: true }));
-  await Bun.sleep(30);
-  a.ws.close();
-  await Bun.sleep(50);
-  expect(seen).toEqual([1, 2, 1]);
-  b.ws.close();
-});
-
 test("cross-site reads are refused; plain reads still work", async () => {
   expect((await fetch(`${base}/api/state`, { headers: { origin: "http://evil.example" } })).status).toBe(403);
   expect((await fetch(`${base}/api/state`, { headers: { "sec-fetch-site": "cross-site" } })).status).toBe(403);
@@ -699,28 +679,6 @@ test("the state lists archived spaces apart from active ones", async () => {
   const state = await (await fetch(`${base}/api/state`)).json();
   expect(state.spaces.map((s: { id: string }) => s.id)).toEqual([a.id]);
   expect(state.archived.map((s: { id: string }) => s.id)).toEqual([b.id]);
-});
-
-test("restoring an earlier Messages space merges it into the current one", async () => {
-  const { messagesSpace } = await import("../../src/engine/messaging/space");
-  const { draftMessage } = await import("../../src/engine/messaging/store");
-  const old = messagesSpace(db);
-  const { action } = draftMessage(db, { spaceId: old.id, toName: "Dana", text: "Hey" });
-  await patch(`/api/spaces/${old.id}`, { status: "archived" });
-  const current = messagesSpace(db);
-  expect(current.id).not.toBe(old.id);
-  const res = await patch(`/api/spaces/${old.id}`, { status: "active" });
-  expect(res.status).toBe(200);
-  expect((await res.json()).id).toBe(current.id);
-  expect(getSpace(db, old.id)).toBeNull();
-  expect(db.query("SELECT space_id FROM message_actions WHERE id = ?").get(action.id)).toEqual({ space_id: current.id });
-  const state = await (await fetch(`${base}/api/state`)).json();
-  expect(state.spaces.filter((s: { name: string }) => s.name === "Messages")).toHaveLength(1);
-  expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
-  // Any other space restores as usual.
-  const other = createSpace(db, { name: "Messages", kind: "general", goal: "My own list" });
-  await patch(`/api/spaces/${other.id}`, { status: "archived" });
-  expect((await (await patch(`/api/spaces/${other.id}`, { status: "active" })).json()).id).toBe(other.id);
 });
 
 test("DELETE a repo space waits for its clone to land", async () => {

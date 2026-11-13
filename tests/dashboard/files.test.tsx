@@ -125,6 +125,7 @@ const space = (over: Partial<Space> = {}): Space => ({
   color: "#fff",
   repoPath: null,
   private: true,
+  unknownKind: false,
   status: "active",
   reviewBy: null,
   github: null,

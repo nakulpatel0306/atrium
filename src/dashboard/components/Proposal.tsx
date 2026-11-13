@@ -52,7 +52,7 @@ export function ProposalRow({ proposal, space }: { proposal: Proposal; space: Sp
           <p className="role">
             Covers {proposal.label}. If you say yes, Atrium approves these in {space?.name ?? "this space"} on its own from now on. It never merges or
             pushes, each one shows up in Activity, and you can undo any of them or turn the rule off on the Rules page. It
-            still always asks before merging, deploying, deleting, messaging someone new, spending money, or touching secrets.
+            still always asks before merging, deploying, deleting, spending money, or touching secrets.
           </p>
           <ul className="runs evidence">
             {proposal.evidence.map((e) => (

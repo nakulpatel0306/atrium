@@ -134,7 +134,7 @@ nav ul a:hover { color: var(--text); }
 .card { border: 1px solid var(--accent); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
 .card .t { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--dim); }
 .card .t b { color: var(--text); font-weight: 600; }
-.card q { font-style: italic; font-size: 16px; quotes: "“" "”"; }
+.card .what { font-size: 16px; }
 .card .to { font: 12px var(--mono); color: var(--faint); }
 .card .acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip { font: 13px var(--mono); padding: 6px 12px; border-radius: 6px; background: var(--line); color: var(--text); transition: transform .15s, background .2s; }
@@ -148,7 +148,7 @@ nav ul a:hover { color: var(--text); }
 @media (max-width: 860px) { .how-grid { grid-template-columns: 1fr; } }
 
 /* Ways in */
-.ways { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.ways { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .way { border: 1px solid var(--line); border-radius: 16px; padding: 24px; background: var(--raised); display: flex; flex-direction: column; gap: 12px; min-width: 0; transition: border-color .3s, transform .3s; }
 .way:hover { border-color: var(--line2); transform: translateY(-3px); }
 .way p { color: var(--dim); font-size: 15px; }
@@ -158,7 +158,7 @@ nav ul a:hover { color: var(--text); }
 .tty pre { margin: 0; padding: 14px; font: 10.5px/1.5 var(--mono); width: max-content; color: var(--text); }
 @media (max-width: 860px) { .ways { grid-template-columns: 1fr; } .way.term { grid-template-columns: 1fr; } }
 .b { font-weight: 600; } .dim { color: var(--dim); } .faint { color: var(--faint); } .ln { color: var(--line); } .ln2 { color: var(--line2); }
-.ac { color: var(--accent); } .up { color: var(--green); } .warn { color: var(--yellow); } .q { font-style: italic; }
+.ac { color: var(--accent); } .up { color: var(--green); } .warn { color: var(--yellow); }
 .lbl { color: var(--faint); font-weight: 600; letter-spacing: .04em; }
 .tab { background: var(--accent); color: #0d0d0f; font-weight: 600; } .k { background: var(--line); }
 .kh { background: var(--accent); color: #0d0d0f; font-weight: 600; } .c2 { color: var(--blue); }
@@ -169,8 +169,6 @@ nav ul a:hover { color: var(--text); }
 .safe div { background: var(--bg); padding: 28px 24px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .safe .k2 { font: 12px var(--mono); color: var(--accent); letter-spacing: .06em; text-transform: uppercase; }
 .safe p { color: var(--dim); font-size: 15px; }
-.mask { font: 15px var(--mono); color: var(--text); }
-.mask s { text-decoration: none; color: var(--faint); }
 @media (max-width: 960px) { .safe { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .safe { grid-template-columns: 1fr; } }
 
@@ -263,8 +261,6 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .mac h2 svg { width: 14px; height: 14px; }
 .mac p { margin: 0; }
 .m-brief { color: var(--m-dim); margin: 6px 0 0; max-width: 680px; }
-.m-line { color: var(--m-dim); margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
-.m-line svg { width: 14px; height: 14px; color: var(--m-faint); }
 
 /* Buttons and tags */
 .m-btn { border: 1px solid var(--m-line); background: var(--m-raised); color: var(--m-text); border-radius: 5px; padding: 3px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; line-height: 1.45; }
@@ -276,11 +272,9 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .m-btn.big { padding: 6px 12px; font-size: 12.5px; }
 .m-tag { font-size: 11px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--m-line); color: var(--m-dim); white-space: nowrap; line-height: 1.45; }
 .m-tag.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px; }
-.m-tag.advice { color: var(--m-yellow); border-color: color-mix(in srgb, var(--m-yellow) 55%, transparent); }
-.m-tag.info { color: var(--m-blue); border-color: color-mix(in srgb, var(--m-blue) 60%, transparent); }
+.m-tag.warn { color: var(--m-yellow); border-color: color-mix(in srgb, var(--m-yellow) 55%, transparent); }
 .m-tag.ready { color: var(--m-accent); border-color: color-mix(in srgb, var(--m-accent) 50%, var(--m-line)); }
 .m-tag.run { color: var(--m-green); border-color: color-mix(in srgb, var(--m-green) 40%, var(--m-line)); }
-.m-tag.armed { color: var(--m-blue); } .m-tag.fired { color: var(--m-yellow); }
 
 /* Lists and rows */
 .m-list { border: 1px solid var(--m-line); border-radius: 8px; overflow: hidden; }
@@ -310,10 +304,6 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .m-made .add { color: var(--m-green); } .m-made .del { color: var(--m-red); }
 .m-meta { display: flex; gap: 14px; color: var(--m-faint); flex-wrap: wrap; font-size: 11.5px; align-items: center; }
 .m-meta .av { width: 16px; height: 16px; font-size: 9px; }
-.m-rows { display: grid; grid-template-columns: 1fr auto; gap: 3px 16px; font-variant-numeric: tabular-nums; }
-.m-rows .tot { font-weight: 600; border-top: 1px solid var(--m-line2); padding-top: 4px; }
-.m-meter { height: 6px; background: var(--m-line); border-radius: 3px; overflow: hidden; }
-.m-meter i { display: block; height: 100%; background: var(--m-accent); border-radius: 3px; }
 .m-empty { padding: 14px; color: var(--m-faint); background: var(--m-panel); font-size: 12px; }
 
 /* Home: space cards and activity */
@@ -365,106 +355,21 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .m-live .hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--m-line); font-weight: 500; }
 .m-live .hd .s { margin-left: auto; font-size: 11px; color: var(--m-faint); font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-term { margin: 0; padding: 10px 14px; font: 11px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: var(--m-dim); background: var(--m-bg); min-height: 150px; max-height: 220px; overflow: hidden; white-space: pre-wrap; }
-.m-term .ok { color: var(--m-green); } .m-term .c { color: var(--m-faint); }
+.m-term .ok { color: var(--m-green); } .m-term .c { color: var(--m-faint); } .m-term .you { color: var(--m-accent); }
 .m-idle { padding: 18px 14px; color: var(--m-faint); font-size: 12px; }
 .m-files { display: flex; flex-direction: column; }
 .m-files .m-item { font-size: 12.5px; }
 .m-files .m-item svg { width: 14px; height: 14px; color: var(--m-faint); }
 .m-files .sz { color: var(--m-faint); font-size: 11.5px; margin-left: auto; }
 
-/* Messages card */
-.m-msg { display: flex; flex-direction: column; gap: 10px; }
-.m-msg .to { color: var(--m-faint); font-size: 12.5px; }
-.m-msg .to b { color: var(--m-text); font-weight: 600; }
-.m-msg .to .m-mono { color: var(--m-text); font-size: 12px; }
-.m-msg .lbl { font-size: 11.5px; color: var(--m-faint); display: flex; justify-content: space-between; max-width: 460px; }
-.m-msg textarea { width: 100%; max-width: 460px; min-height: 64px; resize: vertical; background: var(--m-bg); border: 1px solid var(--m-line2); border-radius: 6px; color: var(--m-text); font: 13px/1.45 Inter, system-ui, sans-serif; padding: 8px 10px; outline: none; }
-.m-msg textarea:focus { border-color: var(--m-accent); }
-.m-msg .via { display: flex; align-items: center; gap: 10px; color: var(--m-faint); font-size: 12px; flex-wrap: wrap; }
-.m-seg { display: inline-flex; border: 1px solid var(--m-line); border-radius: 6px; overflow: hidden; }
-.m-seg button { background: none; border: 0; padding: 3px 10px; font-size: 12px; color: var(--m-dim); cursor: pointer; }
-.m-seg button + button { border-left: 1px solid var(--m-line); }
-.m-seg button:hover { color: var(--m-text); background: var(--m-hover); }
-.m-seg button[aria-pressed="true"] { background: var(--m-accent); color: #fff; }
-
-/* Investing */
-.m-ihead { display: flex; align-items: center; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
-.m-ptabs { display: inline-flex; padding: 3px; border: 1px solid var(--m-line); border-radius: 8px; background: var(--m-panel); gap: 2px; }
-.m-ptabs button { border: 0; background: none; border-radius: 6px; padding: 5px 12px; font-size: 13px; color: var(--m-dim); cursor: pointer; }
-.m-ptabs button:hover { color: var(--m-text); }
-.m-ptabs button.on { background: var(--m-raised); color: var(--m-text); box-shadow: inset 0 0 0 1px var(--m-line2); }
-.m-stream { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--m-dim); }
-.m-stream svg { width: 14px; height: 14px; color: var(--m-green); }
-.m-pv { margin-top: 22px; }
-.m-pv .l { color: var(--m-dim); font-size: 12.5px; }
-.m-pv .v { font-size: 30px; font-weight: 600; letter-spacing: -.02em; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
-.m-pv .d { font-size: 13px; font-variant-numeric: tabular-nums; }
-.m-pv .g { font-size: 12.5px; color: var(--m-dim); margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.mac .up { color: var(--m-green); } .mac .down { color: var(--m-red); }
-.m-moved { margin-top: 18px; border: 1px solid var(--m-line); border-radius: 8px; padding: 14px 16px; background: var(--m-panel); }
-.m-moved .l { font-weight: 500; color: var(--m-dim); font-size: 12px; margin-bottom: 6px; }
-.m-moved p { max-width: 640px; line-height: 1.6; }
-.m-table { margin-top: 18px; border-top: 1px solid var(--m-line); }
-.m-tr { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) 110px 70px 96px; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--m-line); }
-.m-tr.h { color: var(--m-dim); font-size: 12px; padding-block: 9px; }
-.m-tr.row { cursor: pointer; transition: background .15s; border: 0; border-bottom: 1px solid var(--m-line); background: none; width: 100%; text-align: left; }
-.m-tr.row:hover { background: var(--m-panel); }
-.m-tr .sym { font-weight: 600; }
-.m-tr > span { min-width: 0; }
-.m-tr .nm { display: block; color: var(--m-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-tr .r { text-align: right; font-variant-numeric: tabular-nums; }
-.m-tr .w { color: var(--m-dim); }
-.m-spark { display: block; width: 100%; max-width: 190px; height: 34px; border: 1px solid var(--m-line2); border-radius: 3px; background: #121215; }
-.m-pill { display: inline-block; font-size: 11.5px; padding: 0 6px; border-radius: 4px; margin-top: 3px; font-variant-numeric: tabular-nums; }
-.m-pill.up { background: color-mix(in srgb, var(--m-green) 16%, transparent); }
-.m-pill.down { background: color-mix(in srgb, var(--m-red) 16%, transparent); }
-.m-gain { font-size: 12px; }
-
-/* Symbol page */
-.m-back { border: 0; background: none; color: var(--m-dim); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 0; font-size: 13px; }
-.m-back:hover { color: var(--m-text); }
-.m-sym { display: flex; align-items: baseline; gap: 10px; margin-top: 14px; }
-.m-sym h1 { font-size: 26px; }
-.m-sym .ex { font-size: 10.5px; border: 1px solid var(--m-line2); border-radius: 4px; padding: 0 5px; color: var(--m-dim); align-self: center; }
-.m-sym .full { color: var(--m-dim); font-size: 15px; }
-.m-price { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
-.m-price .v { font-size: 30px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.m-price .m-pill { font-size: 13px; padding: 2px 8px; margin: 0; }
-.m-symacts { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-.m-ctrls { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
-.m-ind { display: inline-flex; border: 1px solid var(--m-line); border-radius: 6px; overflow: hidden; }
-.m-ind button { background: none; border: 0; padding: 3px 10px; font-size: 12px; color: var(--m-dim); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-.m-ind button + button { border-left: 1px solid var(--m-line); }
-.m-ind button i { width: 10px; height: 2px; border-radius: 1px; display: block; }
-.m-ind button[aria-pressed="true"] { background: color-mix(in srgb, var(--m-accent) 75%, #000); color: #fff; }
-.m-chart { margin-top: 10px; border: 1px solid var(--m-line); border-radius: 8px; background: #121215; overflow: hidden; }
-.m-chart svg { display: block; width: 100%; }
-.m-chart text { font: 10.5px Inter, system-ui, sans-serif; fill: var(--m-dim); }
-.m-cap { color: var(--m-faint); font-size: 11.5px; margin-top: 6px; }
-
-/* Watchlists, earnings, alerts, money */
-.m-wl .m-item { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 110px; gap: 12px; }
-.m-ask { display: flex; gap: 8px; margin-top: 6px; }
-.m-ask input { flex: 1; min-width: 0; background: var(--m-panel); border: 1px solid var(--m-line2); border-radius: 6px; color: var(--m-text); font: inherit; padding: 7px 10px; outline: none; }
-.m-ask input:focus { border-color: var(--m-accent); }
-.m-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.m-chips button { border: 1px solid var(--m-line2); background: none; border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--m-text); cursor: pointer; }
-.m-chips button:hover { border-color: var(--m-accent); }
-.m-answer { margin-top: 10px; border: 1px solid var(--m-line); border-radius: 8px; background: var(--m-panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; animation: m-in .22s ease-out; }
-.m-answer .q { color: var(--m-faint); font-size: 12px; }
-.m-small { color: var(--m-faint); font-size: 12px; margin-top: 8px; }
-.m-money { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; margin-top: 18px; }
-.m-money h3 { font-size: 12.5px; font-weight: 600; color: var(--m-dim); margin: 0 0 10px; letter-spacing: 0; }
-.m-month { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--m-dim); }
-.m-month b { color: var(--m-text); font-weight: 600; }
-.m-cat { display: grid; grid-template-columns: 92px minmax(0, 1fr) 84px; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--m-line); font-size: 12.5px; }
-.m-cat .bar { height: 5px; background: var(--m-line); border-radius: 3px; overflow: hidden; }
-.m-cat .bar i { display: block; height: 100%; background: var(--m-accent); border-radius: 3px; transition: width .6s cubic-bezier(.2,.7,.2,1); }
-.m-cat .r { text-align: right; font-variant-numeric: tabular-nums; }
-.m-rec { padding: 8px 0; border-bottom: 1px solid var(--m-line); display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; font-size: 12.5px; }
-.m-rec b { font-weight: 600; }
-.m-rec .r { text-align: right; font-variant-numeric: tabular-nums; }
-.m-rec .s { color: var(--m-faint); font-size: 11.5px; grid-column: 1 / -1; }
+/* Live diff and steering, under the running agent's output */
+.m-diff { border-top: 1px solid var(--m-line); padding: 8px 14px; display: flex; flex-direction: column; gap: 3px; font: 11px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: var(--m-dim); }
+.m-diff .lbl { font: 11px Inter, system-ui, sans-serif; color: var(--m-faint); }
+.m-diff .add { color: var(--m-green); } .m-diff .del { color: var(--m-red); }
+.m-steer { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--m-line); }
+.m-steer input { flex: 1; min-width: 0; background: var(--m-bg); border: 1px solid var(--m-line2); border-radius: 6px; color: var(--m-text); font: inherit; font-size: 12px; padding: 4px 9px; outline: none; }
+.m-steer input:focus { border-color: var(--m-accent); }
+.m-small { color: var(--m-faint); font-size: 12px; }
 
 /* Command bar, floating like the real one */
 .m-cmd { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(600px, calc(100% - 40px)); background: var(--m-raised); border: 1px solid var(--m-line2); border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, .5); z-index: 3; }
@@ -478,9 +383,7 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 
 @media (max-width: 860px) {
   .m-grid { grid-template-columns: 1fr 1fr; }
-  .m-cols, .m-money { grid-template-columns: 1fr; }
-  .m-tr { grid-template-columns: minmax(0, 1fr) 100px 90px; }
-  .m-tr .c-spark, .m-tr .w { display: none; }
+  .m-cols { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   .mac { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: 720px; }
@@ -495,9 +398,8 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
   .m-grid { grid-template-columns: 1fr; }
   .m-item .who { display: none; }
   .m-item .t span { display: none; }
-  .m-head-acts .hint, .m-stream span { display: none; }
+  .m-head-acts .hint { display: none; }
   .m-detail { padding-left: 14px; }
-  .m-cat { grid-template-columns: 80px minmax(0, 1fr) 76px; }
 }
 
 /* Who it's for: a tab per kind of person, each with what they'd ask and what comes back */
@@ -535,7 +437,7 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .soon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .soon { position: relative; overflow: hidden; border: 1px solid var(--line2); border-radius: 18px; padding: 26px 24px 24px; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--raised)), var(--raised) 60%); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .soon::before { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--accent-hi) 10%, transparent) 50%, transparent 70%); transform: translateX(-100%); animation: sheen 6s ease-in-out infinite; pointer-events: none; }
-.soon:nth-child(2)::before { animation-delay: 1.5s; } .soon:nth-child(3)::before { animation-delay: 3s; } .soon:nth-child(4)::before { animation-delay: 4.5s; }
+.soon:nth-child(2)::before { animation-delay: 1.5s; } .soon:nth-child(3)::before { animation-delay: 3s; } .soon:nth-child(4)::before { animation-delay: 4.5s; } .soon:nth-child(5)::before { animation-delay: .75s; } .soon:nth-child(6)::before { animation-delay: 2.25s; }
 @keyframes sheen { 0%, 60% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 .soon .st { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 4px 10px; }
 .soon .st i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-hi); animation: pulse 2s infinite; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-hi) 60%, transparent); }
@@ -606,7 +508,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     <ul>
       <li><a href="#why">Why</a></li>
       <li><a href="#how">How it works</a></li>
-      <li><a href="#uses">Who it's for</a></li>
+      <li><a href="#uses">What it's for</a></li>
       <li><a href="#private">Privacy</a></li>
       <li><a href="#soon">What's next</a></li>
       <li><a href="notes.html">Notes</a></li>
@@ -621,8 +523,8 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   <div class="wrap">
     <div class="hero-copy">
       <svg class="mark-big" viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c2"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c2)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect class="core" x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/><g class="hero-eyes" id="hero-eyes"><rect class="he" x="10.35" y="11.1" width=".8" height="1.3" rx=".4" fill="#0b0b0d"/><rect class="he" x="12.85" y="11.1" width=".8" height="1.3" rx=".4" fill="#0b0b0d"/></g></svg>
-      <h1 class="rise d1">Every thread, in <em>one calm place</em>.</h1>
-      <p class="lede rise d2">Atrium is a command center for the AI agents on my Mac. I say what I want in plain words, an agent does the work, and nothing counts until I say yes.</p>
+      <h1 class="rise d1">Every agent, in <em>one calm place</em>.</h1>
+      <p class="lede rise d2">Atrium is a workbench for the coding agents on my Mac. I say what I want, an agent writes it on its own branch, and nothing is pushed until I say yes.</p>
       <div class="ctas rise d3">
         <a class="btn primary" href="#how">See how it works</a>
         <a class="btn" href="https://github.com/nakulpatel0306/atrium">View the code</a>
@@ -665,14 +567,14 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   <div class="wrap why-grid">
     <div class="side reveal">
       <span class="eyebrow">Why I built it</span>
-      <h2>Too many tabs, not enough of me.</h2>
+      <h2>Too many terminals, not enough of me.</h2>
       <div class="sig"><b>NP</b> Nakul Patel, who built it for himself</div>
-      <div class="threads"><span>Repos</span><span>Side projects</span><span>Job search</span><span>School</span><span>Investing</span><span>Workouts</span><span>Texts</span></div>
+      <div class="threads"><span>Repos</span><span>Side projects</span><span>Claude</span><span>Codex</span><span>Gemini</span><span>Branches</span><span>Pull requests</span></div>
     </div>
     <div class="story" id="story">
-      <p>I run a lot of things at once. A few repos and side projects, a job search, school, investing, and everyday stuff like workouts, meals and texting family.</p>
-      <p>Each one lived somewhere else: a terminal session, a browser tab, my inbox, my head. No single task was hard. Switching between them was, and so was losing track of where each one stood.</p>
-      <p>I wanted to open my Mac and see everything in one place. Hand work to agents while I'm away, and only get pulled in when it actually matters. So I built Atrium.</p>
+      <p>I work on a few repos and side projects at once, and more and more of the code in them is written by agents. Claude in one terminal, Codex in another, a branch I meant to look at in a third.</p>
+      <p>Writing the code stopped being the hard part. Knowing what each agent was doing, whether its work was any good, and what was waiting on me was. I kept losing track of which branch held what.</p>
+      <p>I wanted one place to hand work to agents, watch it happen, and judge it before it lands. Every task on its own branch, and nothing pushed without my yes. So I built Atrium.</p>
     </div>
   </div>
 </section>
@@ -681,25 +583,25 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   <div class="wrap">
     <div class="head reveal">
       <span class="eyebrow">How it works</span>
-      <h2>Ask. Let it work. Say yes.</h2>
-      <p class="lede">Every job follows the same three steps, whether it's a bug fix, a LeetCode set or getting friends together for the weekend.</p>
+      <h2>Ask. Watch it work. Say yes.</h2>
+      <p class="lede">Every task follows the same three steps today. The full loop I'm building is brief, write, verify, review, you. The brief, the test gate and the reviewer are <a href="#soon">coming next</a>.</p>
     </div>
     <div class="how-grid">
       <ol class="steps" id="steps">
-        <li class="on"><div><h3>Ask in plain words</h3><p>Type what you want, like “text Sam and Priya to lock in Saturday's hike” or “keep my job search organized”. Atrium picks the right space and agent.</p></div></li>
-        <li><div><h3>An agent does the work</h3><p>Claude, Codex or Gemini does the job in a locked-down workspace. Code changes go on a separate copy, so your real project isn't touched until you approve.</p></div></li>
-        <li><div><h3>You decide</h3><p>Finished work waits in <b>Needs you</b>. You see exactly what it made and who a text goes to. Nothing is sent or kept until you press yes.</p></div></li>
+        <li class="on"><div><h3>Ask in plain words</h3><p>Type what you want, like “fix the off-by-one in pagination”, and attach a file or a screenshot if it helps. Atrium picks the space and routes the task to Claude, Codex or Gemini.</p></div></li>
+        <li><div><h3>It writes on its own branch</h3><p>The agent works on <code>atrium/&lt;taskId&gt;</code> inside a sandbox. You watch the diff grow while it works, and steer it with a note if it heads the wrong way. Your checkout is never touched.</p></div></li>
+        <li><div><h3>You decide</h3><p>Finished work waits in <b>Needs you</b>, with the agent's own word on how it went: done, partial or couldn't. Approve it, say yes once more, and Atrium pushes the branch and opens the pull request.</p></div></li>
       </ol>
-      <div class="demo reveal" id="demo" aria-label="Example: asking Atrium to text two friends about a plan">
-        <div class="ask"><span class="p">›</span><span id="typed">text Sam and Priya to lock in Saturday's hike</span><span class="caret"></span></div>
+      <div class="demo reveal" id="demo" aria-label="Example: asking Atrium to fix a bug on its own branch">
+        <div class="ask"><span class="p">›</span><span id="typed">fix the off-by-one in pagination</span><span class="caret"></span></div>
         <div class="out">
-        <div class="work" data-s="work"><span class="spin"></span> Claude is writing the plan and finding Sam and Priya in your Contacts…</div>
+        <div class="work" data-s="work"><span class="spin"></span> Claude is on atrium/tsk_7f3a · src/paginate.ts +4 −2 so far…</div>
         <div class="card" data-s="card">
-          <div class="t"><b>✉ 2 texts</b><span>ready to send</span></div>
-          <q>Saturday hike is on! Meet at the Rattlesnake Point trailhead at 9. I can drive two people, reply if you want a seat.</q>
-          <div class="to">to Sam ··42 and Priya ··78 · one text each</div>
-          <div class="acts"><span class="chip go" id="send">Send</span><span class="chip">Edit</span><span class="chip">Skip</span></div>
-          <div class="sent" data-s="sent">✓ Sent to Sam and Priya at 9:41 AM</div>
+          <div class="t"><b>◆ lumen-api</b><span>ready for review</span></div>
+          <p class="what">The last page dropped a row when the total was a multiple of the page size. Fixed, with a test.</p>
+          <div class="to">atrium/tsk_7f3a · src/paginate.ts +4 −2 · tests/paginate.test.ts +19 · agent says: done</div>
+          <div class="acts"><span class="chip go" id="yes">Approve</span><span class="chip">Send back</span><span class="chip">View diff</span></div>
+          <div class="sent" data-s="sent">✓ Kept on atrium/tsk_7f3a. The pull request waits for one more yes.</div>
         </div>
         </div>
       </div>
@@ -710,68 +612,52 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 <section id="uses">
   <div class="wrap">
     <div class="head reveal">
-      <span class="eyebrow">Who it's for</span>
-      <h2>One app, a lot of jobs.</h2>
-      <p class="lede">Each space is like hiring a helper for one part of your life. Tell it the goal in a sentence and Atrium sets it up. Here's what that looks like.</p>
+      <span class="eyebrow">What it's for</span>
+      <h2>One workbench, a lot of jobs.</h2>
+      <p class="lede">Point a space at a repo on your Mac or on GitHub, or make a general space for the work around the code. Here's what that looks like.</p>
     </div>
     <div class="who reveal">
       <div class="who-tabs" role="tablist" aria-label="Ways to use Atrium">
-        <button role="tab" type="button" aria-selected="true" aria-controls="p-life" id="t-life"><i style="background:#d97757"></i>Personal assistant</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-inv" id="t-inv" tabindex="-1"><i style="background:#8b93a7"></i>Finance helper</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-fit" id="t-fit" tabindex="-1"><i style="background:#4cb782"></i>Personal trainer</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-dev" id="t-dev" tabindex="-1"><i style="background:#4ea7fc"></i>Coding partner</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-jobs" id="t-jobs" tabindex="-1"><i style="background:#f2c94c"></i>Career coach</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-student" id="t-student" tabindex="-1"><i style="background:#8ea4a2"></i>Study partner</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-creator" id="t-creator" tabindex="-1"><i style="background:#c792ea"></i>Creative partner</button>
+        <button role="tab" type="button" aria-selected="true" aria-controls="p-fix" id="t-fix"><i style="background:#4ea7fc"></i>Fix a bug</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-review" id="t-review" tabindex="-1"><i style="background:#c792ea"></i>Review a branch</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-new" id="t-new" tabindex="-1"><i style="background:#4cb782"></i>Start a project</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-agents" id="t-agents" tabindex="-1"><i style="background:#d97757"></i>Use more than one agent</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-notes" id="t-notes" tabindex="-1"><i style="background:#f2c94c"></i>The work around code</button>
       </div>
       <div class="who-panels">
-        <article class="who-panel" role="tabpanel" id="p-life" aria-labelledby="t-life" data-demo="go:life">
-          <h3>Your personal assistant.</h3>
-          <p>Hand it the stuff that eats your week. Ask it to get the group together for Saturday and it writes the plan, finds each friend in your Contacts, and lines up one text per person. Nothing goes out until you press Send on each one.</p>
-          <ul class="asks"><li>Text Sam and Priya to lock in Saturday's hike</li><li>Plan a weekend in Montreal under $600</li><li>Find three dentists near work that take my insurance</li></ul>
-          <div class="lands"><span>What you get back</span><p>Two texts ready to go, each showing exactly who it's for and the number it will use.</p></div>
+        <article class="who-panel" role="tabpanel" id="p-fix" aria-labelledby="t-fix" data-demo="go:api:tsk_7f3a">
+          <h3>Fix a bug without touching your checkout.</h3>
+          <p>Describe the bug or paste the error. The agent works on its own <code>atrium/</code> branch in a sandbox while you watch the diff grow. If it heads the wrong way, steer it with a note instead of starting over.</p>
+          <ul class="asks"><li>Fix the off-by-one in pagination</li><li>The upload test fails on CI, here's the log</li><li>Add rate limiting to /v1/search</li></ul>
+          <div class="lands"><span>What you get back</span><p>A diff on its own branch, the agent's own word on whether it's done, and a pull request one yes away.</p></div>
           <button class="btn small" type="button">Try it in the demo →</button>
         </article>
-        <article class="who-panel" role="tabpanel" id="p-inv" aria-labelledby="t-inv" data-demo="go:inv" hidden>
-          <h3>Your finance helper.</h3>
-          <p>See your whole portfolio in Canadian dollars with today's change, real charts for any stock, earnings dates and price alerts. Drop in your bank statements once a month to see where the money went and which subscriptions crept up. It explains, it doesn't tell you what to buy.</p>
-          <ul class="asks"><li>What moved my portfolio today?</li><li>Tell me if NVDA drops below $130</li><li>Where did my money go last month?</li></ul>
-          <div class="lands"><span>What you get back</span><p>A weekly check-in: what moved and why, how spread out you are, and which earnings are coming up.</p></div>
+        <article class="who-panel" role="tabpanel" id="p-review" aria-labelledby="t-review" data-demo="go:web:tsk_aa21" hidden>
+          <h3>Get a second read on a branch.</h3>
+          <p>Ask for a review of a branch, or of what an agent just wrote. Another agent reads the diff against main and tells you what to fix before you merge. A fresh reviewer that checks every diff on its own is coming next.</p>
+          <ul class="asks"><li>Review feature/upload-queue</li><li>What could break if I merge this?</li><li>Check this branch for missing tests</li></ul>
+          <div class="lands"><span>What you get back</span><p>A short list of what to fix before merging, in plain words.</p></div>
           <button class="btn small" type="button">Try it in the demo →</button>
         </article>
-        <article class="who-panel" role="tabpanel" id="p-fit" aria-labelledby="t-fit" data-demo="go:fit" hidden>
-          <h3>Your personal trainer.</h3>
-          <p>Tell it what you ate in plain words and it keeps the count against your goal. It writes your workouts for the week around your schedule, and every Sunday it shows how your protein and training went.</p>
-          <ul class="asks"><li>Burrito bowl for lunch</li><li>Plan four workouts around my Tuesday run</li><li>Build me a half-marathon plan</li></ul>
-          <div class="lands"><span>What you get back</span><p>Today's meals added up, how much is left, and what would close your protein gap.</p></div>
+        <article class="who-panel" role="tabpanel" id="p-new" aria-labelledby="t-new" data-demo="tpl:project" hidden>
+          <h3>Start a new project, repo and all.</h3>
+          <p>Say what you're starting and Atrium sets up a code space with starter tasks. Creating the GitHub repo is an always-ask action: it waits for your yes, and no rule can approve it for you.</p>
+          <ul class="asks"><li>Start a new project called pocket-cli</li><li>Scaffold a bun CLI with tests</li><li>Add a CI workflow</li></ul>
+          <div class="lands"><span>What you get back</span><p>A scaffolded project on its own branch, and a card that asks before the GitHub repo is created.</p></div>
           <button class="btn small" type="button">Try it in the demo →</button>
         </article>
-        <article class="who-panel" role="tabpanel" id="p-dev" aria-labelledby="t-dev" data-demo="go:dev" hidden>
-          <h3>Your coding partner.</h3>
-          <p>Point a space at a project and ask for a review, a bug fix or a new feature. The agent works on a separate copy of your code, so your own work is never touched until you approve. Starting a new project can even create the GitHub repo, once you say yes.</p>
-          <ul class="asks"><li>Review what I pushed yesterday</li><li>Fix the flaky checkout test</li><li>Start a new project called habit-tracker</li></ul>
-          <div class="lands"><span>What you get back</span><p>A review with the one real bug already fixed on its own branch, ready to approve.</p></div>
+        <article class="who-panel" role="tabpanel" id="p-agents" aria-labelledby="t-agents" data-demo="go:web:tsk_c418" hidden>
+          <h3>Use more than one agent.</h3>
+          <p>Claude runs on your Claude subscription. Add Codex or Gemini and Atrium routes code work between them, or you pick one for a task. Private spaces only ever use Claude. Every agent says how it really went: done, partial or couldn't.</p>
+          <ul class="asks"><li>Stop the dark mode flash on first load</li><li>Use Codex for this one</li><li>Bump dependencies</li></ul>
+          <div class="lands"><span>What you get back</span><p>Work from every agent in the same Needs you, labeled with who did it and whether it's really done.</p></div>
           <button class="btn small" type="button">Try it in the demo →</button>
         </article>
-        <article class="who-panel" role="tabpanel" id="p-jobs" aria-labelledby="t-jobs" data-demo="go:jobs" hidden>
-          <h3>Your career coach.</h3>
-          <p>Tailor your resume to each posting, draft follow-ups to recruiters, and keep every application in one place. Add an interview prep space for a daily LeetCode set and a mock interview each week.</p>
-          <ul class="asks"><li>Tailor my resume for this posting</li><li>Give me today's LeetCode set</li><li>Run a mock system design interview</li></ul>
-          <div class="lands"><span>What you get back</span><p>A resume matched to the posting, with every change listed so you can check it in a minute.</p></div>
-          <button class="btn small" type="button">Try it in the demo →</button>
-        </article>
-        <article class="who-panel" role="tabpanel" id="p-student" aria-labelledby="t-student" data-demo="tpl:student" hidden>
-          <h3>Your study partner.</h3>
-          <p>Make one space per course. It turns lectures into flashcards, quizzes you before the midterm, and keeps every due date in one list instead of five different school sites.</p>
-          <ul class="asks"><li>Make flashcards from this week's lecture</li><li>Quiz me on dynamic programming</li><li>What's due this week?</li></ul>
-          <div class="lands"><span>What you get back</span><p>24 flashcards from Tuesday's lecture, with a quiz set for Sunday night.</p></div>
-          <button class="btn small" type="button">Try it in the demo →</button>
-        </article>
-        <article class="who-panel" role="tabpanel" id="p-creator" aria-labelledby="t-creator" data-demo="tpl:creator" hidden>
-          <h3>Your creative partner.</h3>
-          <p>Turn your notes into this week's newsletter, chase an unpaid invoice, and add up your hours. Everything waits as a draft until you've read it.</p>
-          <ul class="asks"><li>Draft Thursday's issue from my notes</li><li>Remind the client about the overdue invoice</li><li>Add up my hours this week</li></ul>
-          <div class="lands"><span>What you get back</span><p>A subject line and an outlined draft, written from the notes you already have.</p></div>
+        <article class="who-panel" role="tabpanel" id="p-notes" aria-labelledby="t-notes" data-demo="go:notes" hidden>
+          <h3>The work around the code.</h3>
+          <p>Not everything is a diff. A general space holds release notes, design docs and plans as plain files in a folder you can open in Finder. Attach a file in the ask bar and the agent works from it.</p>
+          <ul class="asks"><li>Draft the v0.9 release notes from this merge list</li><li>Summarize the auth redesign thread</li><li>Write up the config options</li></ul>
+          <div class="lands"><span>What you get back</span><p>A Markdown file in <code>~/Atrium</code>, kept only when you approve it.</p></div>
           <button class="btn small" type="button">Try it in the demo →</button>
         </article>
       </div>
@@ -797,42 +683,36 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
         <p>The same dashboard at a local address, for a second screen.</p>
         <code>atrium open</code>
       </div>
-      <div class="way reveal">
-        <h3>Texts</h3>
-        <p>Drafts go out through Messages, only after you approve them.</p>
-        <code>always asks first</code>
-      </div>
       <div class="way term reveal">
         <div style="display:flex;flex-direction:column;gap:12px">
           <h3>Terminal</h3>
-          <p>Type <code>atrium</code> in Ghostty or Terminal. Tabs for Home, Spaces, Money and Investing, the keys always on screen, and a box where you just type what you want.</p>
+          <p>Type <code>atrium</code> in Ghostty or Terminal. Tabs for Home, Spaces and Activity, the keys always on screen, and a box where you just type what you want.</p>
         </div>
-        <div class="tty"><pre><span class="ac"> ◆ </span><span class="b">atrium</span>   <span class="tab"> 1 Home </span> <span class="dim"> 2 Spaces </span> <span class="dim"> 3 Money </span> <span class="dim"> 4 Investing </span> <span class="dim"> 5 Activity </span>           <span class="dim">Claude </span><span class="ac">▰▰▰▰</span><span class="ln">▱▱▱▱▱▱</span><span class="dim"> 42%</span><span class="faint">  ·  AC </span>
+        <div class="tty"><pre><span class="ac"> ◆ </span><span class="b">atrium</span>   <span class="tab"> 1 Home </span> <span class="dim"> 2 Spaces </span> <span class="dim"> 3 Activity </span>                                   <span class="dim">Claude </span><span class="ac">▰▰▰▰</span><span class="ln">▱▱▱▱▱▱</span><span class="dim"> 42%</span><span class="faint">  ·  AC </span>
 <span class="ln">────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
                                                                                                             
-<span class="b">  Good morning, Nakul. </span><span class="dim">2 things need you. 1 task is running. Markets open in 2h 10m.</span>                        
+<span class="b">  Good morning. </span><span class="dim">3 things need you. 1 task is running.</span>                                                       
                                                                                                             
-<span class="lbl">  NEEDS YOU</span><span class="ac">  2</span>                                                         <span class="ln">│</span>  <span class="lbl">TODAY</span>                             
+<span class="lbl">  NEEDS YOU</span><span class="ac">  3</span>                                                         <span class="ln">│</span>  <span class="lbl">RUNNING</span><span class="up">  1</span>                        
                                                                        <span class="ln">│</span>                                    
- <span class="ac">╭─</span><span class="ac"> </span><span class="b">✉ Text to Mom</span><span class="ac"> </span><span class="ac">──────────────────────────────────────────────────</span><span class="ac">╮</span>  <span class="ln">│</span>  <span class="dim">Portfolio</span><span class="faint">        sample</span>           
- <span class="ac">│</span> <span class="q">“Happy birthday Mom! Hope today is the best one yet. Love you.”</span>  <span class="ac">│</span>  <span class="ln">│</span>  <span class="b">$48,210.55</span><span class="up">   ▲ 1.24%</span>              
- <span class="ac">│</span> <span class="faint">to </span><span class="dim">Mom</span><span class="faint">  ·  mobile ··12  ·  drafted 2m ago</span>                        <span class="ac">│</span>  <span class="ln">│</span>  <span class="up">▁▂▂▃▂▄▅▄▆▅▇▇</span><span class="faint">  since open</span>          
- <span class="ac">│</span>                                                                  <span class="ac">│</span>  <span class="ln">│</span>  <span class="faint">RKLB earnings Mon, after close</span>    
- <span class="ac">│</span> <span class="kh"> s </span><span class="dim"> Send  </span><span class="k"> e </span><span class="dim"> Edit  </span><span class="k"> x </span><span class="dim"> Skip  </span>                                   <span class="ac">│</span>  <span class="ln">│</span>                                    
- <span class="ac">╰</span><span class="ac">──────────────────────────────────────────────────────────────────</span><span class="ac">╯</span>  <span class="ln">│</span>  <span class="dim">Money · November</span>                  
- <span class="ln">╭─</span><span class="ln"> </span><span class="dim">◆ Cover letter for the Shopify posting</span><span class="ln"> </span><span class="ln">─────────────────────────</span><span class="ln">╮</span>  <span class="ln">│</span>  <span class="b">$1,240</span><span class="faint"> of $3,000 budget</span>           
- <span class="ln">│</span> <span class="c2">Job hunt</span><span class="faint">  ·  Claude  ·  ready for review  ·  1 file</span>              <span class="ln">│</span>  <span class="ln">│</span>  <span class="ac">██████▊</span><span class="ln">░░░░░░░░░░</span><span class="dim"> 41%</span>             
- <span class="ln">╰</span><span class="ln">──────────────────────────────────────────────────────────────────</span><span class="ln">╯</span>  <span class="ln">│</span>                                    
-                                                                       <span class="ln">│</span>  <span class="lbl">RUNNING</span>                           
+ <span class="ac">╭─</span><span class="ac"> </span><span class="ac">◆ </span><span class="b">Fix the off-by-one in pagination</span><span class="ac"> </span><span class="ac">─────────────────────────────</span><span class="ac">╮</span>  <span class="ln">│</span>  <span class="up">⠹ </span><span class="b">Add rate limiting to /v1/search</span> 
+ <span class="ac">│</span> <span class="dim">The last page dropped a row. Fixed, with a test.</span>                 <span class="ac">│</span>  <span class="ln">│</span>  <span class="faint">  Codex · 1m 12s · running</span>        
+ <span class="ac">│</span> <span class="c2">lumen-api</span><span class="faint">  ·  </span><span class="faint">Claude</span><span class="faint">  ·  </span><span class="faint">ready for review</span><span class="faint">  ·  </span><span class="faint">2m ago</span>             <span class="ac">│</span>  <span class="ln">│</span>  <span class="dim">  editing src/routes/search.ts</span>    
+ <span class="ac">│</span>                                                                  <span class="ac">│</span>  <span class="ln">│</span>                                    
+ <span class="ac">│</span> <span class="kh"> a </span><span class="dim"> Approve  </span><span class="k"> r </span><span class="dim"> Send back  </span><span class="k"> ↵ </span><span class="dim"> Open  </span><span class="k"> t </span><span class="dim"> Transcript</span>             <span class="ac">│</span>  <span class="ln">│</span>                                    
+ <span class="ac">╰──────────────────────────────────────────────────────────────────╯</span>  <span class="ln">│</span>                                    
+ <span class="ln">╭─</span><span class="ln"> </span><span class="c2">? </span><span class="dim">Push atrium/tsk_5d10 and open a pull request?</span><span class="ln"> </span><span class="ln">────────────────</span><span class="ln">╮</span>  <span class="ln">│</span>                                    
+ <span class="ln">│</span> <span class="c2">lumen-api</span><span class="faint">  ·  </span><span class="faint">asks you</span><span class="faint">  ·  </span><span class="faint">31m ago</span>                               <span class="ln">│</span>  <span class="ln">│</span>                                    
+ <span class="ln">╰──────────────────────────────────────────────────────────────────╯</span>  <span class="ln">│</span>                                    
+ <span class="ln">╭─</span><span class="ln"> </span><span class="ac">◆ </span><span class="dim">Draft the v0.9 release notes</span><span class="ln"> </span><span class="ln">─────────────────────────────────</span><span class="ln">╮</span>  <span class="ln">│</span>                                    
+ <span class="ln">│</span> <span class="warn">Notes</span><span class="faint">  ·  </span><span class="faint">Claude</span><span class="faint">  ·  </span><span class="faint">ready for review</span><span class="faint">  ·  </span><span class="faint">1h ago</span>                 <span class="ln">│</span>  <span class="ln">│</span>                                    
+ <span class="ln">╰──────────────────────────────────────────────────────────────────╯</span>  <span class="ln">│</span>                                    
                                                                        <span class="ln">│</span>                                    
-                                                                       <span class="ln">│</span>  <span class="ac">⠹ </span><span class="b">Weekly portfolio check-in</span>       
-                                                                       <span class="ln">│</span>  <span class="faint">  Claude · 1m 12s</span>                 
-                                                                       <span class="ln">│</span>  <span class="dim">  Reading your holdings…</span>          
                                                                                                             
 <span class="ln2">╭─</span><span class="ln2"> </span><span class="dim">Ask Atrium</span><span class="ln2"> </span><span class="ln2">─────────────────────────────────────────────────────────────────────────────────────────────</span><span class="ln2">╮</span>
-<span class="ln2">│</span> <span class="ac">› </span><span class="b">text mom happy birthday</span><span class="ac">▌</span>                                                                               <span class="ln2">│</span>
+<span class="ln2">│</span> <span class="ac">› </span><span class="b">review feature/upload-queue</span><span class="ac">▌</span>                                                                           <span class="ln2">│</span>
 <span class="ln2">╰</span><span class="ln2">──────────────────────────────────────────────────────────────────────────────────────────────────────────</span><span class="ln2">╯</span>
- <span class="k"> ↑↓ </span><span class="dim"> move  </span><span class="k"> ↵ </span><span class="dim"> open  </span><span class="k"> 1-5 </span><span class="dim"> views  </span><span class="k"> / </span><span class="dim"> search  </span><span class="k"> ? </span><span class="dim"> help  </span><span class="k"> q </span><span class="dim"> quit  </span>                                         </pre></div>
+ <span class="k"> ↑↓ </span><span class="dim"> move  </span><span class="k"> ↵ </span><span class="dim"> open  </span><span class="k"> space </span><span class="dim"> ask  </span><span class="k"> 1-3 </span><span class="dim"> views  </span><span class="k"> / </span><span class="dim"> filter  </span><span class="k"> ? </span><span class="dim"> help  </span><span class="k"> q </span><span class="dim"> quit  </span>                            </pre></div>
       </div>
     </div>
   </div>
@@ -842,14 +722,14 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   <div class="wrap">
     <div class="head reveal">
       <span class="eyebrow">Private by design</span>
-      <h2>Your data never leaves your Mac.</h2>
-      <p class="lede">No sign-up and no cloud. Atrium runs quietly on your own Mac and uses your own Claude subscription, so there's no company in the middle holding your stuff.</p>
+      <h2>Your code stays on your Mac.</h2>
+      <p class="lede">No sign-up and no Atrium cloud. It runs on your own Mac, uses your own Claude subscription, and only listens on 127.0.0.1, so nothing else on the network can reach it.</p>
     </div>
     <div class="safe reveal">
-      <div><span class="k2">On your Mac</span><h3>Your stuff stays home</h3><p>Spaces, files and history are saved on your Mac, not on a server. To get stock prices, the only thing sent out is the ticker, like AAPL.</p></div>
-      <div><span class="k2">Fenced in</span><h3>Agents can't wander</h3><p>Each agent works inside a locked box with only its own space's folder. It can't open your passwords, use your other apps, or change Atrium.</p></div>
-      <div><span class="k2">You decide</span><h3>Nothing happens without a yes</h3><p>Agents only make drafts. A text is sent, a repo is created, or a change is kept only after you press the button. If an agent couldn't finish, it tells you.</p></div>
-      <div><span class="k2">Masked</span><h3>Card numbers stay hidden</h3><p class="mask">4520 <s>····</s> <s>····</s> 1234 → <s>··</s>1234</p><p>When you import a bank file, card and account numbers are cut down to the last four digits before anything is saved.</p></div>
+      <div><span class="k2">On your Mac</span><h3>Your stuff stays home</h3><p>Spaces, transcripts and files are saved on your Mac. What leaves it is what the agent CLIs send to their own vendors to do the work, plus pushes you said yes to.</p></div>
+      <div><span class="k2">Fenced in</span><h3>Agents can't wander</h3><p>Claude runs in Claude Code's sandbox with pinned settings. Codex and Gemini run in a sandbox-exec profile. None of them can read your keys, .env files or passwords, reach Atrium's API, or drive your other apps.</p></div>
+      <div><span class="k2">You decide</span><h3>Nothing counts without a yes</h3><p>Agents only make drafts. If one couldn't finish, it says so. Rules can approve repeated kinds of work, but never a push, a merge to main, a deploy, a delete, spending, secrets, a new repo or removing a clone.</p></div>
+      <div><span class="k2">Only Atrium pushes</span><h3>Agents never push</h3><p>After your yes, Atrium itself pushes the branch, opens the pull request or creates the repo. Private spaces only ever use Claude.</p></div>
     </div>
   </div>
 </section>
@@ -859,32 +739,44 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     <div class="head reveal">
       <span class="eyebrow">What's coming</span>
       <h2>Atrium isn't finished. Here's what I'm building next.</h2>
-      <p class="lede">Same rules as everything else: it runs on your Mac, and nothing happens without your yes.</p>
+      <p class="lede">The goal is a loop you can trust: brief, write, verify, review, you. Today Atrium does the writing and waits for you. These fill in the rest. None of them are shipped yet.</p>
     </div>
     <div class="soon-grid">
       <article class="soon reveal">
         <span class="st"><i></i>Next up</span>
-        <h3>A visual workspace for code</h3>
-        <p>Watch an agent's changes appear as a live diff while it works, steer it mid-run with a note, and open a pull request from the result in one click.</p>
-        <div class="peek"><b>src/checkout.ts</b> &nbsp;<span class="a">+12</span> <span class="r">−3</span><br><span class="ac">you</span> → "keep the old retry, just add the clock"<br><span class="ac">Codex</span> ↻ adjusting…</div>
+        <h3>A brief before it starts</h3>
+        <p>Type a one-liner and Atrium turns it into a brief: the goal, what done looks like, and a command that checks it. It asks a question only when something is really unclear.</p>
+        <div class="peek"><b>Brief</b> · Fix the off-by-one in pagination<br>done when: the last page has every row<br>check: <span class="ac">bun test tests/paginate.test.ts</span></div>
       </article>
       <article class="soon reveal">
-        <span class="st"><i></i>In the works</span>
-        <h3>Calendar and email</h3>
-        <p>Spaces that can read your calendar and inbox, find a time that works, and draft the reply or the invite. Every send and every event still waits for you.</p>
-        <div class="peek"><b>Sat 9:00</b> Hike · Rattlesnake Point<br><span class="ac">draft</span> invite to Sam, Priya · <b>waiting for your yes</b></div>
+        <span class="st"><i></i>Next up</span>
+        <h3>Your tests as the gate</h3>
+        <p>Atrium runs your typecheck and tests in the task's own worktree. Failures go back to the agent. “Ready” will mean green.</p>
+        <div class="peek"><span class="a">✓</span> typecheck · <span class="a">✓</span> tests<br><b>atrium/tsk_7f3a</b> · ready</div>
+      </article>
+      <article class="soon reveal">
+        <span class="st"><i></i>Next up</span>
+        <h3>A fresh reviewer</h3>
+        <p>Before you see a diff, a clean session reads it against the brief, from a different vendor when one is installed. It looks for scope creep and missed edge cases, not style nits.</p>
+        <div class="peek"><span class="ac">Claude</span> wrote it · <span class="ac">Codex</span> reviewed it<br>1 finding, fixed · waiting for your yes</div>
+      </article>
+      <article class="soon reveal">
+        <span class="st"><i></i>Next up</span>
+        <h3>Budgets and loop detection</h3>
+        <p>Each task gets a time and token cap. If an agent keeps making the same edit or stops making progress, Atrium pauses it and tells you why.</p>
+        <div class="peek"><span class="ac">paused</span> · the same edit three times<br><b>atrium/tsk_81c2</b> · waiting for you</div>
       </article>
       <article class="soon reveal">
         <span class="st later"><i></i>Later</span>
-        <h3>Talk to it</h3>
-        <p>Say what you want out loud and hear what came back, hands free. The same draft-and-wait flow, just spoken.</p>
-        <div class="peek"><span class="ac">“</span>What needs me today?<span class="ac">”</span><br>Two things: a resume to check and a text to send.</div>
+        <h3>Routing and a cost meter</h3>
+        <p>Cheaper models for small jobs, stronger ones for hard tasks and reviews, and a meter that shows what each task cost.</p>
+        <div class="peek"><b>Fix the off-by-one</b> · small task<br>brief: cheap model · write: strong model</div>
       </article>
       <article class="soon reveal">
         <span class="st later"><i></i>Later</span>
-        <h3>The Keeper, everywhere</h3>
-        <p>The little face in the logo moves into the app, the Dock and the terminal, so you can tell at a glance whether an agent is working or something needs you.</p>
-        <div class="peek"><span class="ac">[•‿•]</span> working · Fix the flaky test<br><span class="ac">[•o•]</span> needs you · 1 ready</div>
+        <h3>Learning from the work</h3>
+        <p>A walkthrough of what changed, an “explain this hunk” button, and a short retro after a merge on how you directed the agents.</p>
+        <div class="peek"><b>explain</b> src/paginate.ts:41<br>why <span class="ac">&lt;=</span> and not <span class="ac">&lt;</span>?</div>
       </article>
     </div>
   </div>
@@ -967,8 +859,8 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   const typed = document.getElementById("typed");
   const steps = [...document.querySelectorAll("#steps li")];
   const part = (s) => demo.querySelector(`[data-s="${s}"]`);
-  const sendBtn = document.getElementById("send");
-  const phrase = "text Sam and Priya to lock in Saturday's hike";
+  const yesBtn = document.getElementById("yes");
+  const phrase = "fix the off-by-one in pagination";
   const step = (i) => steps.forEach((li, j) => li.classList.toggle("on", j === i));
   const show = (on) => ["work", "card", "sent"].forEach((s) => part(s).classList.toggle("off", !on.includes(s)));
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -982,7 +874,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       await wait(500);
       step(1); show(["work"]); await wait(1800);
       step(2); show(["card"]); await wait(1600);
-      sendBtn.classList.add("pressed"); await wait(220); sendBtn.classList.remove("pressed");
+      yesBtn.classList.add("pressed"); await wait(220); yesBtn.classList.remove("pressed");
       show(["card", "sent"]); await wait(2600);
     }
     running = false;
@@ -999,161 +891,89 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
     const I = {
       home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-      inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+      tray: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
       activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
       bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
       shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
       plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
       chev: '<path d="m9 18 6-6-6-6"/>',
       lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-      bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
-      list: '<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>',
-      spark: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
-      back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
-      radio: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
-      chart: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/>',
       ready: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/>',
       run: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
       queued: '<circle cx="12" cy="12" r="10" stroke-dasharray="3 3.3"/>',
       done: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
-      msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
       file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
-      upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+      branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
     };
     const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
-    const C = { blue: "#4ea7fc", pink: "#c792ea", green: "#4cb782", yellow: "#f2c94c", orange: "#d97757", aqua: "#8ea4a2", slate: "#8b93a7", accent: "#7c7cf5" };
+    const C = { blue: "#4ea7fc", pink: "#c792ea", green: "#4cb782", yellow: "#f2c94c", aqua: "#8ea4a2", accent: "#7c7cf5" };
     const AG = { claude: ["C", "Claude"], codex: ["X", "Codex"], gemini: ["G", "Gemini"], auto: ["A", "Atrium"] };
     const av = (a, live) => `<span class="av ${a}${live ? " live" : ""}" title="${AG[a][1]}">${AG[a][0]}</span>`;
-    const money = (n, cur = "CA") => `${n < 0 ? "−" : ""}${cur}$${Math.abs(n).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const whole = (n, cur = "CA") => `${n < 0 ? "−" : "+"}${cur}$${Math.abs(Math.round(n)).toLocaleString("en-CA")}`;
-    const pct = (n, d = 1) => `${n < 0 ? "−" : "+"}${Math.abs(n).toFixed(d)}%`;
-    const dir = (n) => (n < 0 ? "down" : "up");
     const hash = (s) => [...s].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0;
-    const rng = (seed) => () => { seed = (seed + 0x6d2b79f5) >>> 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const today = new Date();
-    const dayOut = (k) => { const d = new Date(today); d.setDate(d.getDate() + k); return d; };
-    const short = (d) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
     const sentence = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
+    // Task ids look like the real ones, because each task's branch is named after its id.
+    const tid = () => `tsk_${Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0")}`;
+    // A diff is [file, added, removed, log line it appears at]; the last one drives the live diff.
+    const filesLine = (diff) => diff.map(([f, a, d]) => `${esc(f)} <span class="add">+${a}</span>${d ? ` <span class="del">−${d}</span>` : ""}`).join(" · ");
 
     // Sample spaces. Every task's output is written the way the real agents write theirs.
     const spaces = [
-      { id: "inv", name: "Investing", kind: "markets", color: C.slate, private: true, last: "8m ago", goal: "Long-term TFSA investing: portfolio health, research and ideas.", agents: ["claude"], files: ["digest-nov-6.md", "weekly-check-in.md"], tasks: [
-        { id: "i1", title: "Weekly portfolio check-in", peek: "Up 2.1% this week. Tech is 41% of your holdings.", agent: "claude", status: "ready", when: "8:30 AM", made: () => `
-          <p>Up <b>2.1%</b> this week, about <b>+CA$990</b>. Most of it came from NVDA and RKLB.</p>
-          <ul><li>Tech is <b>41%</b> of your holdings, up from 37% a month ago.</li><li>RKLB reports in 3 days, after the close.</li><li>XEQT and VFV are your steadiest holdings, at 43% of the total together.</li></ul>
-          <p>Analysis, not advice.</p>` },
-        { id: "i2", title: "Daily digest: what moved and why", agent: "claude", status: "done", when: "Yesterday", made: () => `<p>Saved to the space's files as <code>digest-nov-6.md</code>.</p>` },
+      { id: "api", name: "lumen-api", kind: "repo", path: "~/Developer/lumen-api", color: C.blue, private: false, last: "1m ago", goal: "The API for Lumen, a made-up photo app. Small fixes, one branch per task.", agents: ["claude", "codex"], tasks: [
+        { id: "tsk_7f3a", title: "Fix the off-by-one in pagination", peek: "The last page dropped a row. Fixed, with a test.", agent: "claude", status: "ready", outcome: "done", when: "9:12 AM", branch: "atrium/tsk_7f3a",
+          diff: [["src/paginate.ts", 4, 2], ["tests/paginate.test.ts", 19, 0]], made: (t) => `
+          <p>When the total was a multiple of the page size, the last page came back one row short. <code>paginate</code> used <code>&lt;</code> where it needed <code>&lt;=</code>.</p>
+          <ul><li>Fixed the bound and added a test for an exact multiple.</li><li>Ran <code>bun test tests/paginate.test.ts</code>: 9 of 9 pass.</li></ul>
+          <p class="m-mono">${filesLine(t.diff)}</p>` },
+        { id: "tsk_5d10p", title: "Push atrium/tsk_5d10 and open a pull request?", peek: "Return 404 for unknown project ids", agent: "claude", status: "ready", when: "8:40 AM",
+          push: { kind: "pr", branch: "atrium/tsk_5d10", diff: [["src/routes/projects.ts", 11, 3], ["tests/projects.test.ts", 24, 0]] } },
+        { id: "tsk_81c2", title: "Add rate limiting to /v1/search", agent: "codex", status: "run", outcome: "done", when: "Running", branch: "atrium/tsk_81c2", finishIn: 26000,
+          log: ["reading src/routes/search.ts", "no limiter yet, requests go straight to the index", "editing src/middleware/rate-limit.ts", "  token bucket, 30 requests a minute per key", "editing src/routes/search.ts", "$ bun test tests/search.test.ts", "  ✓ 14 of 14 passed", "committed to atrium/tsk_81c2"],
+          diff: [["src/middleware/rate-limit.ts", 38, 0, 3], ["src/routes/search.ts", 6, 1, 5], ["tests/search.test.ts", 22, 0, 6]], made: (t) => `
+          <p>Added a token-bucket limiter, 30 requests a minute per API key, and put it in front of <code>/v1/search</code>. Over the limit, it returns 429 with a <code>Retry-After</code> header.</p>
+          <p class="m-mono">${filesLine(t.diff)}</p>` },
+        { id: "tsk_9b04", title: "Switch logging to the structured logger", agent: "claude", status: "queued", when: "Queued" },
+        { id: "tsk_3e77", title: "Bump dependencies", agent: "codex", status: "done", outcome: "done", when: "Yesterday", branch: "atrium/tsk_3e77", made: () => `<p>Updated 6 packages. Tests pass. Pull request #41 opened after your yes.</p>` },
       ] },
-      { id: "dev", name: "Atrium app", kind: "repo", path: "~/dev/atrium", color: C.blue, private: false, last: "1m ago", goal: "My command center app. Keep it shipping, one small branch at a time.", agents: ["claude", "codex"], files: ["review-nov-7.md"], tasks: [
-        { id: "d1", title: "Review my latest changes", peek: "4 commits since yesterday. One real bug, fixed on its own branch.", agent: "claude", status: "ready", when: "6:12 AM", branch: "atrium/fix-dates", made: () => `
-          <p>Read the <b>4 commits</b> on main since yesterday. All 412 tests pass.</p>
-          <ul><li><code>parseDate</code> drops the time zone on imported files, so late-evening trades land on the wrong day. Fixed on its own branch.</li><li>Two components still import the old theme file. Worth a cleanup, not urgent.</li></ul>
-          <p class="m-mono">src/dates.ts <span class="add">+12</span> <span class="del">−3</span> · tests/dates.test.ts <span class="add">+28</span></p>` },
-        { id: "d2", title: "Fix the flaky checkout test", peek: "The test raced the payment mock. Ran it 50 times, all green.", agent: "codex", status: "run", when: "Running", branch: "atrium/fix-checkout-flake", finishIn: 24000,
-          log: ["$ bun test tests/checkout.test.ts", "  ✗ completes checkout (1 of 6 runs failed)", "reading tests/checkout.test.ts", "the payment mock resolves after the assertion runs", "editing tests/checkout.test.ts", "  await the mock, add a fake clock", "$ bun test tests/checkout.test.ts --rerun-each 50", "  ✓ 50 of 50 passed", "committed to atrium/fix-checkout-flake"],
-          made: () => `
-          <p>The test raced the payment mock. I awaited the mock and added a fake clock, then ran it <b>50 times</b>. All passed.</p>
-          <p class="m-mono">tests/checkout.test.ts <span class="add">+8</span> <span class="del">−2</span></p>` },
-        { id: "d3", title: "Add dark mode to settings", agent: "claude", status: "queued", when: "Queued" },
-        { id: "d4", title: "Bump dependencies", agent: "codex", status: "done", when: "Yesterday", branch: "atrium/deps", made: () => `<p>Updated 6 packages. Tests pass. Merged.</p>` },
+      { id: "web", name: "lumen-web", kind: "repo", path: "example/lumen-web", color: C.green, private: false, last: "8m ago", goal: "Lumen's web app, cloned from GitHub. Fix what users notice first.", agents: ["claude", "codex", "gemini"], tasks: [
+        { id: "tsk_c418", title: "Stop the dark mode flash on first load", peek: "Fixed in Chrome and Safari. Firefox still flashes.", agent: "gemini", status: "ready", outcome: "partial", when: "7:55 AM", branch: "atrium/tsk_c418",
+          diff: [["index.html", 9, 0], ["src/theme.ts", 3, 12]], made: (t) => `
+          <p>Moved the theme check into a small inline script in <code>index.html</code>, so the page knows the theme before it paints.</p>
+          <ul><li>Fixed in Chrome and Safari.</li><li>Firefox still flashes once. I couldn't find why, so this is partial.</li></ul>
+          <p class="m-mono">${filesLine(t.diff)}</p>` },
+        { id: "tsk_aa21", title: "Review feature/upload-queue", agent: "codex", status: "done", outcome: "done", when: "Yesterday", made: () => `
+          <p>Read the branch diff against main. One thing to fix before merging:</p>
+          <ul><li>A failed upload is retried forever. Cap the retries and show the error.</li><li>Smaller: <code>q</code> and <code>qq</code> could use clearer names.</li></ul>` },
+        { id: "tsk_e902", title: "Add an empty state to the gallery", agent: "claude", status: "queued", when: "Queued" },
       ] },
-      { id: "jobs", name: "Job search", kind: "general", color: C.yellow, last: "2h ago", goal: "Land a new-grad software role by spring. Tailor every application.", agents: ["claude"], files: ["resume-shopify.pdf", "tracker.csv", "follow-up-draft.md"], tasks: [
-        { id: "j1", title: "Tailor my resume for the Shopify posting", peek: "Matched 6 of their keywords and moved your Kafka project up.", agent: "claude", status: "ready", when: "9:05 AM", made: () => `
-          <ul><li>Moved the <b>Kafka pipeline</b> project to the top. The posting mentions event streaming twice.</li><li>Reworded two bullets to match their language: “merchant-facing” and “at scale”.</li><li>Cut the oldest internship to keep it to one page.</li></ul>
-          <p>6 of their 9 keywords now appear. Saved as <code>resume-shopify.pdf</code>.</p>` },
-        { id: "j2", title: "Draft a follow-up to the recruiter", agent: "claude", status: "queued", when: "Thursday" },
-        { id: "j3", title: "Update my application tracker", agent: "claude", status: "done", when: "Monday", made: () => `<p>14 applications, 3 interviews, and 1 take-home due Thursday.</p>` },
-      ] },
-      { id: "prep", name: "Interview prep", kind: "general", color: C.pink, last: "Today", goal: "Get offer-ready by January. LeetCode daily, one mock interview a week.", agents: ["claude"], files: ["two-sum-review.md"], tasks: [
-        { id: "p1", title: "Today's LeetCode set", peek: "3 problems picked for your weak spots.", agent: "claude", status: "ready", when: "7:00 AM", made: () => `
-          <p>Picked because you missed two sliding-window problems last week.</p>
-          <ol><li><b>Longest substring without repeating characters</b> · Medium · sliding window</li><li><b>Merge intervals</b> · Medium · sorting</li><li><b>Word ladder</b> · Hard · BFS</li></ol>
-          <p>Hints stay hidden until you ask. Paste a solution and I'll review it.</p>` },
-        { id: "p2", title: "Mock system design: a URL shortener", agent: "claude", status: "queued", when: "Saturday" },
-        { id: "p3", title: "Review my Two Sum solution", agent: "claude", status: "done", when: "Yesterday", made: () => `<p>Correct and O(n). Use a clearer name than <code>m</code> for the map.</p>` },
-      ] },
-      { id: "fit", name: "Fitness", kind: "general", color: C.green, last: "12:40 PM", goal: "2,200 calories and 140 g of protein a day. Lift four times a week.", agents: ["claude"], files: ["meals-nov.csv", "plan-week-45.md"], tasks: [
-        { id: "f1", title: "Log today's meals", peek: "1,410 of 2,200 so far. 790 left.", agent: "claude", status: "ready", when: "12:40 PM", made: () => `
-          <div class="m-rows"><span>Oats with berries</span><span>420</span><span>Burrito bowl</span><span>780</span><span>Protein bar</span><span>210</span><span class="tot">So far</span><span class="tot">1,410</span></div>
-          <p><b>790 left</b> of 2,200 today.</p><div class="m-meter"><i style="width:64%"></i></div>
-          <p>Protein is at 96 g of 140 g. A chicken dinner would close the gap.</p>` },
-        { id: "f2", title: "Plan this week's workouts", agent: "claude", status: "done", when: "Sunday", made: () => `
-          <ul><li><b>Monday</b> · Push: bench 4×6, overhead press 3×8</li><li><b>Tuesday</b> · Easy 5 km run</li><li><b>Thursday</b> · Pull: rows 4×8, pull-ups 3×AMRAP</li><li><b>Saturday</b> · Legs: squats 4×6, RDLs 3×8</li></ul>` },
-        { id: "f3", title: "How's my protein trending?", agent: "claude", status: "queued", when: "Sunday" },
-      ] },
-      { id: "life", name: "Personal", kind: "general", color: C.orange, last: "2m ago", goal: "Plans with friends, texts and everyday errands.", agents: ["claude"], files: [], tasks: [
-        { id: "l1", title: "Send a text to Sam?", peek: "Saturday hike is on! Meet at the Rattlesnake Point trailhead at 9. I can drive two people, reply if you want a seat.", agent: "claude", status: "ready", when: "2m ago", msg: { to: "Sam", num: "+1 416 555 0142", text: "Saturday hike is on! Meet at the Rattlesnake Point trailhead at 9. I can drive two people, reply if you want a seat.", via: "iMessage" } },
-        { id: "l0", title: "Send a text to Priya?", peek: "Saturday hike is on! Meet at the Rattlesnake Point trailhead at 9. I can drive two people, reply if you want a seat.", agent: "claude", status: "ready", when: "2m ago", msg: { to: "Priya", num: "+1 416 555 0178", text: "Saturday hike is on! Meet at the Rattlesnake Point trailhead at 9. I can drive two people, reply if you want a seat.", via: "iMessage" } },
-        { id: "l4", title: "Coordinate Saturday's hike with the crew", agent: "claude", status: "done", when: "2m ago", made: () => `<p>Checked the weather (sunny, 14°C) and picked the Rattlesnake Point trailhead at 9. Drafted one text each for <b>Sam</b> and <b>Priya</b>. They wait in Needs you until you press Send.</p>` },
-        { id: "l2", title: "Plan a weekend in Montreal", peek: "Two days, walkable, under CA$600.", agent: "claude", status: "run", when: "Running", finishIn: 40000,
-          log: ["searching trains Toronto → Montreal for Dec 12", "VIA Rail 7:30 AM, CA$89 each way", "finding hotels near the Plateau under CA$200 a night", "checking what's open Saturday", "writing the plan"],
-          made: () => `
-          <ul><li><b>Friday</b> · 7:30 AM VIA Rail, CA$89. Check in near the Plateau, dinner at a bagel spot on Fairmount.</li><li><b>Saturday</b> · Old Montreal on foot, Jean-Talon Market, Mount Royal lookout at sunset.</li><li><b>Sunday</b> · Brunch, the Biodôme, 5:00 PM train home.</li></ul>
-          <p>About <b>CA$560</b> all in. Nothing is booked until you say so.</p>` },
-        { id: "l3", title: "Compare three dentists near work", agent: "claude", status: "queued", when: "Queued" },
+      { id: "notes", name: "Notes", kind: "general", color: C.yellow, private: true, last: "1h ago", goal: "Release notes, design docs and the other writing around Lumen.", agents: ["claude"], files: ["v0.8-release-notes.md", "auth-redesign.md"], tasks: [
+        { id: "tsk_61f0", title: "Draft the v0.9 release notes", peek: "From the merge list you attached.", agent: "claude", status: "ready", outcome: "done", when: "8:05 AM", made: () => `
+          <p>Grouped the <b>12 merges</b> in the list you attached into Fixes, API changes and Internal.</p>
+          <ul><li>Called out the new 429 on <code>/v1/search</code> under API changes.</li><li>Left out two dependency bumps.</li></ul>
+          <p>Saved as <code>v0.9-release-notes.md</code>.</p>` },
+        { id: "tsk_2b9c", title: "Summarize the auth redesign thread", agent: "claude", status: "done", outcome: "done", when: "Monday", made: () => `<p>Three options and one recommendation: short-lived tokens with refresh. Saved as <code>auth-redesign.md</code>.</p>` },
       ] },
     ];
 
-    const holdings = [
-      { sym: "XEQT.TO", name: "iShares Core Equity ETF Portfolio", cur: "CA", price: 36.42, day: 0.4, w: 24.0, gain: 1412, gp: 13.9, m: 2.1 },
-      { sym: "VFV.TO", name: "Vanguard S&P 500 Index ETF", cur: "CA", price: 158.3, day: 0.6, w: 19.0, gain: 1220, gp: 15.4, m: 3.0 },
-      { sym: "QQQ", name: "Invesco QQQ Trust", cur: "US", price: 512.4, day: -0.3, w: 14.0, gain: 498, gp: 8.0, m: 1.2 },
-      { sym: "NVDA", name: "NVIDIA", cur: "US", price: 146.8, day: 2.4, w: 13.0, gain: 2104, gp: 50.5, m: 6.8 },
-      { sym: "SHOP.TO", name: "Shopify", cur: "CA", price: 151.2, day: -1.3, w: 11.0, gain: 640, gp: 13.7, m: -4.2 },
-      { sym: "AMZN", name: "Amazon", cur: "US", price: 205.12, day: 1.2, w: 10.0, gain: 463, gp: 10.6, m: 1.9 },
-      { sym: "RKLB", name: "Rocket Lab", cur: "US", price: 24.1, day: 5.1, w: 9.0, gain: 1050, gp: 31.9, m: 14.5 },
-    ];
-    const watch = [
-      { sym: "PLTR", name: "Palantir", cur: "US", price: 62.4, day: 3.2, m: 9.1 },
-      { sym: "COST", name: "Costco", cur: "US", price: 912.5, day: -0.4, m: 1.4 },
-      { sym: "TD.TO", name: "TD Bank", cur: "CA", price: 81.15, day: 0.2, m: -1.8 },
-      { sym: "ASML", name: "ASML Holding", cur: "US", price: 702.3, day: -1.1, m: -3.5 },
-    ];
-    const alerts = [
-      { sym: "NVDA", text: "above US$150.00", state: "armed" },
-      { sym: "SHOP.TO", text: "below CA$140.00", state: "armed" },
-      { sym: "RKLB", text: "above US$24.00", state: "fired", when: "2h ago" },
-    ];
-    const earnings = [
-      { sym: "RKLB", k: 3, when: "after the close", held: true },
-      { sym: "SHOP.TO", k: 5, when: "before the open", held: true },
-      { sym: "NVDA", k: 12, when: "after the close", held: true },
-      { sym: "COST", k: 20, when: "after the close", held: false },
-    ];
-    const months = (() => {
-      const cur = new Date(today.getFullYear(), today.getMonth(), 1);
-      const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const name = (d) => d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-      return [
-        { label: name(cur), spent: 2156.93, inc: 1700, cats: [["Rent", 1650, 1], ["Groceries", 164.3, 3], ["Transit", 128, 1], ["Dining", 88.15, 4], ["Bills", 65, 1], ["Health", 44.99, 1], ["Subscriptions", 16.49, 1]] },
-        { label: name(prev), spent: 2758.9, inc: 3400, cats: [["Rent", 1650, 1], ["Groceries", 412.8, 6], ["Dining", 236.45, 9], ["Shopping", 129.99, 1], ["Transit", 128, 2], ["Bills", 123.2, 2], ["Health", 44.99, 1], ["Subscriptions", 33.47, 3]] },
-      ];
-    })();
-    const recurring = [["Rent · e-transfer", 1650, 1], ["Phone bill", 65, 3], ["Hydro", 58.2, 9], ["Gym", 44.99, 8], ["Netflix", 16.49, 5], ["Spotify", 12.99, 6], ["iCloud+", 3.99, 12]];
-    const answers = {
-      "How much did I get in dividends this year?": "CA$412.36 so far in 2026, mostly from XEQT and VFV. That's CA$96 more than all of 2025.",
-      "What did I put into my TFSA in 2026?": "CA$5,500 across 6 deposits. You have about CA$1,500 of room left this year.",
-      "Where did my money go last month?": "CA$2,758.90 last month. Rent was 60% of it. After that came groceries at CA$412.80, dining at CA$236.45 and shopping at CA$129.99. Dining was up CA$58, mostly weekend delivery.",
-      "Any subscriptions I forgot about?": "Three charge you every month: Netflix CA$16.49, Spotify CA$12.99 and iCloud+ CA$3.99. Spotify went up a dollar last month.",
-    };
     const rules = [
-      { id: "texts", name: "Texts always wait for Send", note: "Built in. Atrium never sends a message on its own.", on: true, locked: true },
-      { id: "branch", name: "Code changes stay on their own branch", note: "Built in. Your checkout is never touched.", on: true, locked: true },
-      { id: "priv", name: "Markets spaces stay private", note: "Holdings only go to Claude, never to other agents.", on: true, locked: true },
+      { id: "branch", name: "Code changes stay on their own branch", note: "Built in. Each task gets atrium/<taskId>. Your checkout is never touched.", on: true, locked: true },
+      { id: "ask", name: "Pushes always ask", note: "Built in. So do merging to main, deploys, deletes, spending, secrets, new repos and removing a clone.", on: true, locked: true },
+      { id: "priv", name: "Private spaces only use Claude", note: "Built in. Codex and Gemini never see them.", on: true, locked: true },
+      { id: "deps", name: "Approve dependency bumps in lumen-api", note: "You approved the last 4 without changes. Pushing still asks.", on: false },
       { id: "battery", name: "Heavy work waits when on battery", note: "Long runs start when you plug in.", on: true },
       { id: "night", name: "Run queued work overnight", note: "Keeps the Mac awake while plugged in and work is queued.", on: false },
     ];
     let activity = [
-      { when: "8:30 AM", sp: "inv", who: "Claude", text: "Weekly portfolio check-in · ran, waiting for review", dot: "y" },
-      { when: "7:00 AM", sp: "prep", who: "Claude", text: "Today's LeetCode set · ran, waiting for review", dot: "y" },
-      { when: "6:12 AM", sp: "dev", who: "Claude", text: "Review my latest changes · ran, waiting for review", dot: "y" },
-      { when: "4:02 AM", sp: "inv", who: "Atrium", text: "Alert: RKLB crossed US$24.00", dot: "y" },
-      { when: "Yesterday", sp: "dev", who: "Codex", text: "Bump dependencies · approved and merged", dot: "" },
-      { when: "Yesterday", sp: "fit", who: "Claude", text: "Plan this week's workouts · approved", dot: "" },
+      { when: "9:12 AM", sp: "api", who: "Claude", text: "Fix the off-by-one in pagination · ran, waiting for review", dot: "y" },
+      { when: "8:40 AM", sp: "api", who: "You", text: "Return 404 for unknown project ids · approved", dot: "" },
+      { when: "8:05 AM", sp: "notes", who: "Claude", text: "Draft the v0.9 release notes · ran, waiting for review", dot: "y" },
+      { when: "7:55 AM", sp: "web", who: "Gemini", text: "Stop the dark mode flash on first load · partial, waiting for review", dot: "y" },
+      { when: "Yesterday", sp: "api", who: "Atrium", text: "Pushed atrium/tsk_3e77 and opened pull request #41", dot: "" },
+      { when: "Yesterday", sp: "web", who: "Codex", text: "Review feature/upload-queue · approved", dot: "" },
     ];
 
-    const S = { view: "home", open: null, stab: "tasks", itab: "portfolio", sym: null, range: "6M", ind: { sma20: true, sma50: true, rsi: false }, answer: null, month: 0, tokens: 18.2 };
+    const S = { view: "home", open: null, stab: "tasks", tokens: 18.2, pr: 42 };
     const space = (id) => spaces.find((s) => s.id === id);
     const all = () => spaces.flatMap((s) => s.tasks.map((t) => ({ s, t })));
     const ready = () => all().filter(({ t }) => t.status === "ready");
@@ -1178,7 +998,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 
     // Sidebar and top bar
     function side() {
-      const nav = [["home", "home", "Home"], ["needs", "inbox", "Needs you", ready().length, true], ["activity", "activity", "Activity"], ["agents", "bot", "Agents", running().length], ["rules", "shield", "Rules"]];
+      const nav = [["home", "home", "Home"], ["needs", "tray", "Needs you", ready().length, true], ["activity", "activity", "Activity"], ["agents", "bot", "Agents", running().length], ["rules", "shield", "Rules"]];
       $("m-nav").innerHTML = nav.map(([id, icon, label, n, hot]) => `<button class="m-nav${S.view === id ? " on" : ""}${id === "agents" || id === "rules" ? " hide-sm" : ""}" type="button" data-go="${id}">${ic(icon)}<span class="label">${label}</span><span class="ct${hot && n ? " hot" : ""}">${n || ""}</span></button>`).join("");
       $("m-spaces").innerHTML = spaces.map((s) => {
         const n = s.tasks.filter((t) => t.status === "ready").length;
@@ -1190,21 +1010,22 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     function top() {
       const s = space(S.view);
       const titles = { home: "Home", needs: "Needs you", activity: "Activity", agents: "Agents", rules: "Rules" };
-      let crumbs;
-      if (!s) crumbs = `<b>${titles[S.view]}</b>${S.view === "home" ? ` <span>· ${today.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span>` : ""}`;
-      else if (S.sym && s.id === "inv") crumbs = `<button class="crumb" type="button" data-go="home">Home</button><span class="sep">${ic("chev")}</span><button class="crumb" type="button" data-back>Investing</button><span class="sep">${ic("chev")}</span><b>${esc(S.sym)}</b>`;
-      else crumbs = `<button class="crumb" type="button" data-go="home">Home</button><span class="sep">${ic("chev")}</span><b>${esc(s.name)}</b>`;
+      const crumbs = s
+        ? `<button class="crumb" type="button" data-go="home">Home</button><span class="sep">${ic("chev")}</span><b>${esc(s.name)}</b>`
+        : `<b>${titles[S.view]}</b>${S.view === "home" ? ` <span>· ${today.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span>` : ""}`;
       $("m-top").innerHTML = `${crumbs}<span class="k">⌘K</span>`;
-      $("m-ask").placeholder = s ? `Give ${s.name} a task…` : `Describe something new, like “keep my job search organized”`;
+      $("m-ask").placeholder = s ? `Give ${s.name} a task…` : `Describe something new, like “start a new project called pocket-cli”`;
     }
 
+    // The yes and no for anything waiting on you. Pushes and new repos are always-ask: only Atrium does them, after this yes.
+    function decide(t) {
+      if (t.push) return `<button class="m-btn" type="button" data-act="nopush" data-t="${t.id}">Not now</button><button class="m-btn p" type="button" data-act="push" data-t="${t.id}">${t.push.kind === "repo" ? "Create repo" : "Push and open PR"}</button>`;
+      return `<button class="m-btn" type="button" data-act="back" data-t="${t.id}">Send back</button><button class="m-btn p" type="button" data-act="approve" data-t="${t.id}">${t.outcome === "done" || !t.outcome ? "Approve" : "Accept"}</button>`;
+    }
     // Rows shared by Home and Needs you
     function needRow({ s, t }) {
-      const acts = t.msg
-        ? `<button class="m-btn" type="button" data-act="nosend" data-t="${t.id}">Don't send</button><button class="m-btn p" type="button" data-act="send" data-t="${t.id}">Send</button>`
-        : `<button class="m-btn" type="button" data-open="${s.id}:${t.id}">View</button><button class="m-btn" type="button" data-act="back" data-t="${t.id}">Send back</button><button class="m-btn p" type="button" data-act="approve" data-t="${t.id}">Approve</button>`;
-      const who = t.msg ? `${ic("msg")}<span>Messages</span>` : `<span class="m-sd" style="background:${s.color}"></span><span>${esc(s.name)}</span>`;
-      return `<div class="m-item click need" data-open="${s.id}:${t.id}"><span class="who">${who}</span><span class="t">${esc(t.title)}${t.peek ? `<span>${esc(t.peek)}</span>` : ""}</span><span class="acts">${acts}</span></div>`;
+      const acts = `${t.push ? "" : `<button class="m-btn" type="button" data-open="${s.id}:${t.id}">View</button>`}${decide(t)}`;
+      return `<div class="m-item click need" data-open="${s.id}:${t.id}"><span class="who"><span class="m-sd" style="background:${s.color}"></span><span>${esc(s.name)}</span></span><span class="t">${esc(t.title)}${t.peek ? `<span>${esc(t.peek)}</span>` : ""}</span><span class="acts">${acts}</span></div>`;
     }
     function needsList() {
       const r = ready();
@@ -1234,236 +1055,87 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       return `
         <h1>${greet}</h1>
         <p class="m-brief">${run ? `${run} running now.` : "Nothing is running."} ${r ? `${r} thing${r > 1 ? "s" : ""} need${r > 1 ? "" : "s"} you.` : "Nothing needs you."}</p>
-        <p class="m-line">${ic("chart")}Portfolio +0.9% today (+CA$428) · sample data · RKLB +5.1%</p>
-        <h2>${ic("inbox")}Needs you · ${r}</h2>${needsList()}
+        <h2>${ic("tray")}Needs you · ${r}</h2>${needsList()}
         <h2>Spaces</h2>
         <div class="m-grid">${cards}<button class="m-new" type="button" data-new><b>${ic("plus")}New space</b><span>Describe it in a sentence and Atrium sets it up.</span></button></div>
         <h2>Activity</h2>${activityList(6)}`;
     }
 
     function agentsView() {
-      const rows = [["claude", "Ready", "Signed in with your Claude subscription"], ["codex", "Ready", "Runs code tasks in a sandbox"], ["gemini", "Not set up", "Sign in to the Gemini CLI to use it"]].map(([a, state, note]) => {
+      const rows = [["claude", "Ready", "Your Claude subscription, inside Claude Code's sandbox"], ["codex", "Ready", "Code tasks, inside Atrium's sandbox-exec profile"], ["gemini", "Ready", "Code tasks, inside Atrium's sandbox-exec profile"]].map(([a, state, note]) => {
         const r = running().filter(({ t }) => t.agent === a);
         return `<div class="m-item">${av(a, r.length)}<span class="t">${AG[a][1]}<span>${r.length ? `Working on “${esc(r[0].t.title)}”` : note}</span></span><span class="m-tag${r.length ? " run" : ""}">${r.length ? "Running" : state}</span></div>`;
       }).join("");
-      return `<h1>Agents</h1><p class="m-brief">Each agent runs in a sandbox. It can read and write its space's folder and nothing else.</p><h2>On this Mac</h2><div class="m-list">${rows}</div>`;
+      return `<h1>Agents</h1><p class="m-brief">Atrium routes each task to one of these. None of them can read your keys or .env files, reach Atrium's API, or drive your other apps.</p><h2>On this Mac</h2><div class="m-list">${rows}</div>`;
     }
     function rulesView() {
-      return `<h1>Rules</h1><p class="m-brief">What agents may do without asking. The built-in ones can't be turned off.</p><h2>Rules</h2><div class="m-list">${rules.map((r) => `
+      return `<h1>Rules</h1><p class="m-brief">What agents may do without asking. The built-in ones can't be turned off, and no rule can approve an always-ask action.</p><h2>Rules</h2><div class="m-list">${rules.map((r) => `
         <div class="m-item"><span class="t">${esc(r.name)}<span>${esc(r.note)}</span></span>${r.locked ? `<span class="m-tag">Built in</span>` : `<button class="m-toggle" type="button" role="switch" aria-checked="${r.on}" data-rule="${r.id}" aria-label="${esc(r.name)}"><span class="m-switch"></span></button>`}</div>`).join("")}</div>`;
     }
 
     // Space view
     function head(s) {
       const tags = `<span class="m-tag">${s.kind}</span>${s.path ? `<span class="m-tag mono">${esc(s.path)}</span>` : ""}`;
-      const hint = s.kind === "markets" ? `<span class="hint">Markets spaces stay private: your holdings only go to Claude.</span>` : s.private ? `<span class="hint">Only Claude sees this space.</span>` : "";
+      const hint = s.private ? `<span class="hint">Only Claude works in this space.</span>` : "";
       return `<div class="m-title"><span class="m-sd" style="background:${s.color}"></span><h1>${esc(s.name)}</h1>${tags}
         <div class="m-head-acts"><button class="m-toggle" type="button" role="switch" aria-checked="${!!s.private}" data-priv="${s.id}"><span class="m-switch"></span>${ic("lock")}Private</button>${hint}<button class="m-btn" type="button" data-toast="Archived spaces keep their files. (Not in the demo.)">Archive</button></div></div>
         <p class="m-brief">${esc(s.goal)}</p>`;
     }
     function made(s, t) {
-      if (t.msg) {
-        const m = t.msg;
-        return `<div class="m-msg"><p class="to">To <b>${esc(m.to)}</b> · <span class="m-mono">${esc(m.num)}</span> · found in your Contacts</p>
-          <div><p class="lbl"><span>Message</span><span id="m-count-${t.id}">${m.text.length}/2000</span></p><textarea id="m-text-${t.id}" data-msg="${t.id}" maxlength="2000"${t.status !== "ready" ? " disabled" : ""}>${esc(m.text)}</textarea></div>
-          <div class="via">Via <span class="m-seg">${["iMessage", "SMS"].map((v) => `<button type="button" data-via="${v}" data-t="${t.id}" aria-pressed="${m.via === v}">${v}</button>`).join("")}</span> Sends from Messages on this Mac.</div></div>`;
+      if (t.push && t.status === "ready") {
+        const p = t.push;
+        const what = p.kind === "repo"
+          ? `<p>Creates a GitHub repo named <b>${esc(p.name)}</b> and pushes the first commit.</p>`
+          : `<p>Pushes <code>${esc(p.branch)}</code> to GitHub and opens a pull request against <b>main</b>.</p><p class="m-mono">${filesLine(p.diff)}</p>`;
+        return `<div class="m-made"><span class="lbl">What leaves your Mac</span>${what}<p class="m-small">Atrium does this itself, never the agent. No rule can approve it for you.</p></div>`;
       }
       if (t.status === "run") return `<div class="m-made"><span class="lbl">Working</span><p>${AG[t.agent][1]} is on it. You can close this and do other things.</p></div>`;
       if (t.status === "queued") return `<div class="m-made"><span class="lbl">Queued</span><p>It starts when ${AG[t.agent][1]} is free, or now if you want.</p></div>`;
-      if (!t.made) return `<div class="m-made"><p>${t.skipped ? "Skipped. Nothing was sent." : "Finished and kept."}</p></div>`;
-      return `<div class="m-made"><span class="lbl">What it made${t.revised ? " · revised after your note" : ""}</span>${t.made()}</div>`;
+      if (!t.made) return `<div class="m-made"><p>${t.skipped ? "Not now. Nothing left your Mac." : "Finished and kept."}</p></div>`;
+      return `<div class="m-made"><span class="lbl">What it made${t.revised ? " · revised after your note" : ""}</span>${t.made(t)}</div>`;
     }
     function entry(s, t) {
       const open = S.open === t.id;
       let acts = "";
-      if (t.status === "ready") acts = t.msg
-        ? `<button class="m-btn" type="button" data-act="nosend" data-t="${t.id}">Don't send</button><button class="m-btn p" type="button" data-act="send" data-t="${t.id}">Send</button>`
-        : `<button class="m-btn" type="button" data-act="back" data-t="${t.id}">Send back</button><button class="m-btn p" type="button" data-act="approve" data-t="${t.id}">Approve</button>`;
+      if (t.status === "ready") acts = decide(t);
       if (t.status === "queued") acts = `<button class="m-btn" type="button" data-act="start" data-t="${t.id}">Start now</button>`;
-      const tag = t.status === "ready" ? "" : t.status === "run" ? `<span class="m-tag run">Running</span>` : `<span class="m-tag">${t.when}</span>`;
+      const tag = t.status === "ready" ? (t.push ? `<span class="m-tag warn">Always asks</span>` : "") : t.status === "run" ? `<span class="m-tag run">Running</span>` : `<span class="m-tag">${t.when}</span>`;
+      const said = t.outcome && t.status !== "run" && t.status !== "queued" ? `<span class="m-tag ${t.outcome === "done" ? "run" : "warn"}">Agent says: ${t.outcome}</span>` : "";
       return `<div class="m-entry${t.status === "done" ? " done" : ""}"><div class="m-item click" data-row="${t.id}" aria-expanded="${open}">${st(t.status)}<span class="t">${esc(t.title)}</span>${tag}<span class="acts">${acts}</span></div>
-        ${open ? `<div class="m-detail"><div class="m-meta">${av(t.agent)}<span>${AG[t.agent][1]}</span><span>${esc(t.when)}</span>${t.branch ? `<span class="m-mono">Branch ${esc(t.branch)}</span>` : ""}</div>${made(s, t)}</div>` : ""}</div>`;
+        ${open ? `<div class="m-detail"><div class="m-meta">${av(t.agent)}<span>${AG[t.agent][1]}</span><span>${esc(t.when)}</span>${t.branch ? `<span class="m-mono">Branch ${esc(t.branch)}</span>` : ""}${said}</div>${made(s, t)}</div>` : ""}</div>`;
     }
     function livePanel(s) {
       const r = s.tasks.find((t) => t.status === "run");
       if (!r) return `<div class="m-live"><div class="hd">Live<span class="s">Idle</span></div><p class="m-idle">No agent is working in ${esc(s.name)} right now. Give it a task in the bar below.</p></div>`;
-      return `<div class="m-live"><div class="hd">${av(r.agent, true)}${AG[r.agent][1]}<span class="s">${esc(r.title)}</span></div><pre class="m-term" id="m-term">${termText(r)}</pre></div>`;
+      return `<div class="m-live"><div class="hd">${av(r.agent, true)}${AG[r.agent][1]}<span class="s">${esc(r.branch ?? r.title)}</span></div><pre class="m-term" id="m-term">${termText(r)}</pre>${r.diff ? `<div class="m-diff" id="m-diff">${diffText(r)}</div>` : ""}
+        <form class="m-steer" data-steer="${r.id}"><input id="m-steer" type="text" placeholder="Steer ${AG[r.agent][1]} with a note" aria-label="Steer the running task"><button class="m-btn" type="submit">Send</button></form></div>`;
     }
+    const IDLE_LOG = ["reading the space's files", "thinking it through", "writing it up"];
     function termText(t) {
-      const lines = (t.log || ["reading the space's files", "thinking it through", "writing it up"]).slice(0, t.shown || 1);
-      return lines.map((l) => (l.startsWith("$") ? `<span class="c">${esc(l)}</span>` : l.includes("✓") || l.startsWith("committed") ? `<span class="ok">${esc(l)}</span>` : esc(l))).join("\n");
+      const lines = (t.log || IDLE_LOG).slice(0, t.shown || 1);
+      return lines.map((l) => (l.startsWith("$") ? `<span class="c">${esc(l)}</span>` : l.startsWith("you →") ? `<span class="you">${esc(l)}</span>` : l.includes("✓") || l.startsWith("committed") ? `<span class="ok">${esc(l)}</span>` : esc(l))).join("\n");
     }
-    function generalSpace(s) {
-      const tabs = `<div class="m-tabs" role="tablist">${["tasks", "files"].map((k) => `<button type="button" role="tab" aria-selected="${S.stab === k}" class="${S.stab === k ? "on" : ""}" data-stab="${k}">${sentence(k)}</button>`).join("")}</div>`;
+    // The live diff grows as the agent's output reaches each file.
+    function diffText(t) {
+      const files = t.diff.filter(([, , , at = 0]) => at < (t.shown || 1));
+      return `<span class="lbl">Live diff</span>${files.length ? `<span>${filesLine(files)}</span>` : "<span>No changes yet.</span>"}`;
+    }
+    function spaceView(s) {
+      const kinds = s.kind === "repo" ? ["tasks", "branches"] : ["tasks", "files"];
+      const tabs = `<div class="m-tabs" role="tablist">${kinds.map((k) => `<button type="button" role="tab" aria-selected="${S.stab === k}" class="${S.stab === k ? "on" : ""}" data-stab="${k}">${sentence(k)}</button>`).join("")}</div>`;
+      const branches = s.tasks.filter((t) => t.branch);
       const list = S.stab === "tasks"
         ? `<div class="m-list">${s.tasks.length ? s.tasks.map((t) => entry(s, t)).join("") : `<div class="m-empty">No tasks yet. Give ${esc(s.name)} one in the bar below.</div>`}</div>`
-        : `<div class="m-list m-files">${s.files.length ? s.files.map((f) => `<div class="m-item">${ic("file")}<span class="t m-mono">${esc(f)}</span><span class="sz">~/Atrium/${slug(s.name)}</span></div>`).join("") : `<div class="m-empty">Nothing saved yet. Approved work lands here.</div>`}</div>`;
+        : S.stab === "branches"
+          ? `<div class="m-list m-files">${branches.length ? branches.map((t) => `<div class="m-item">${ic("branch")}<span class="t"><span class="m-mono" style="color:var(--m-text);margin:0">${esc(t.branch)}</span><span>${esc(t.title)}</span></span></div>`).join("") : `<div class="m-empty">No branches yet. Each task gets its own atrium/ branch.</div>`}</div>`
+          : `<div class="m-list m-files">${s.files.length ? s.files.map((f) => `<div class="m-item">${ic("file")}<span class="t m-mono">${esc(f)}</span><span class="sz">~/Atrium/${slug(s.name)}</span></div>`).join("") : `<div class="m-empty">Nothing saved yet. Approved work lands here.</div>`}</div>`;
       return `${head(s)}${tabs}<div class="m-cols"><div>${list}</div>${livePanel(s)}</div>`;
-    }
-
-    // Investing: sparklines, the portfolio table and a symbol page with a real candlestick chart
-    function spark(h) {
-      const r = rng(hash(h.sym + "m")), n = 26, pts = [];
-      let v = 100;
-      for (let i = 0; i < n; i++) { pts.push(v); v += (r() - 0.5) * 2.2 + h.m / n; }
-      pts[n - 1] = 100 + h.m;
-      const lo = Math.min(...pts), hi = Math.max(...pts), y = (p) => 30 - ((p - lo) / (hi - lo || 1)) * 26;
-      const line = pts.map((p, i) => `${((i / (n - 1)) * 190).toFixed(1)},${y(p).toFixed(1)}`).join(" ");
-      const col = h.m >= 0 ? "#4cb782" : "#eb5757", id = `g${hash(h.sym)}`;
-      return `<svg class="m-spark" viewBox="0 0 190 34" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs><polygon points="0,34 ${line} 190,34" fill="url(#${id})"/><polyline points="${line}" fill="none" stroke="${col}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
-    }
-    const priceCell = (h) => `<span class="r"><span>${money(h.price, h.cur)}</span><br><span class="m-pill ${dir(h.day)}">${pct(h.day)}</span></span>`;
-    function portfolio() {
-      const rows = holdings.map((h) => `<button class="m-tr row" type="button" data-sym="${h.sym}"><span><span class="sym">${h.sym}</span><br><span class="nm">${esc(h.name)}</span></span><span class="c-spark">${spark(h)}</span>${priceCell(h)}<span class="r w">${h.w.toFixed(1)}%</span><span class="r ${dir(h.gain)}">${whole(h.gain)}<br><span class="m-gain">${pct(h.gp)}</span></span></button>`).join("");
-      const inv = space("inv");
-      return `
-        <div class="m-pv"><p class="l">Portfolio value</p><p class="v">CA$48,216.40</p><p class="d up">+CA$428.30 (+0.90%) today</p>
-          <p class="g"><span class="m-tag info">Sample data</span><span><span class="up">+CA$7,387 (+18.1%)</span> total gain on CA$40,829 invested</span></p></div>
-        <div class="m-moved"><p class="l">What moved</p><p>A good day for growth names. RKLB rose 5.1% (about +CA$210 on your shares) after a clean launch, and NVDA added 2.4% (about +CA$150). SHOP.TO slipped 1.3% (about −CA$70) with no clear news. XEQT and VFV barely moved, which is what they're for.</p></div>
-        <div class="m-table"><div class="m-tr h"><span>Holding</span><span class="c-spark">1 month</span><span class="r">Price · today</span><span class="r w">Weight</span><span class="r">Gain</span></div>${rows}</div>
-        <h2>Tasks</h2><div class="m-list">${inv.tasks.map((t) => entry(inv, t)).join("")}</div>`;
-    }
-    function watchlists() {
-      return `<h2>Watching · ${watch.length}</h2><div class="m-list m-wl">${watch.map((h) => `<div class="m-item click" data-sym="${h.sym}"><span><b>${h.sym}</b> <span class="nm" style="color:var(--m-dim);font-size:12px">${esc(h.name)}</span></span><span>${spark(h)}</span>${priceCell(h)}</div>`).join("")}</div>
-        <p class="m-small">Open any stock and press Add to list to watch it here.</p>`;
-    }
-    function earningsView() {
-      return `<h2>Coming up</h2><div class="m-list">${earnings.map((e) => { const h = quote(e.sym); return `<div class="m-item click" data-sym="${e.sym}"><span class="who" style="color:var(--m-text);font-size:12.5px">${short(dayOut(e.k))}</span><span class="t"><b>${e.sym}</b> ${esc(h.name)}<span>${e.when}</span></span><span class="m-tag">${e.held ? "You hold it" : "Watching"}</span></div>`; }).join("")}</div>
-        <p class="m-small">Dates come from the market data service, which only ever sees ticker symbols.</p>`;
-    }
-    function alertsView() {
-      return `<h2>${ic("bell")}Alerts · ${alerts.length}</h2><div class="m-list">${alerts.map((a, i) => `<div class="m-item"><span class="t"><b>${a.sym}</b> ${esc(a.text)}${a.when ? `<span>Fired ${a.when}</span>` : ""}</span><span class="m-tag ${a.state}">${sentence(a.state)}</span><span class="acts"><button class="m-btn" type="button" data-act="unalert" data-i="${i}">Remove</button></span></div>`).join("")}</div>
-        <p class="m-small">Alerts check prices every minute while the market is open, and tell you in Needs you.</p>`;
-    }
-    function moneyView() {
-      const m = months[S.month], max = m.cats[0][1];
-      const chips = Object.keys(answers).map((q) => `<button type="button" data-q="${esc(q)}">${esc(q)}</button>`).join("");
-      return `
-        <h2>Ask about my money</h2>
-        <form class="m-ask" id="m-money-form"><input id="m-money-q" type="text" placeholder="Ask anything about your spending, dividends or TFSA." aria-label="Ask about my money"><button class="m-btn p big" type="submit">${ic("spark")}Ask Claude</button></form>
-        <div class="m-chips">${chips}</div>
-        ${S.answer ? `<div class="m-answer"><span class="q">${esc(S.answer.q)}</span>${S.answer.a ? `<p>${esc(S.answer.a)}</p>` : `<p>${st("run")} Claude is reading your summary…</p>`}</div>` : ""}
-        <p class="m-small">Claude reads a short summary of what you import here, plus your holdings. Nothing else leaves this Mac.</p>
-        <div class="m-ihead"><button class="m-btn big" type="button" data-toast="In the app, this opens a file picker. Card numbers are masked before saving.">${ic("upload")}Import a bank, card or Wealthsimple file</button><span class="m-small" style="margin:0">48 bank and card transactions</span></div>
-        <div class="m-money"><div><h3>Spending by category</h3>
-          <div class="m-month"><span class="m-seg">${months.map((x, i) => `<button type="button" data-month="${i}" aria-pressed="${S.month === i}">${x.label.split(" ")[0]}</button>`).join("")}</span><span>Spent <b>${money(m.spent)}</b> · Money in <b>${money(m.inc)}</b></span></div>
-          ${m.cats.map(([c, v, n]) => `<div class="m-cat"><span>${c}</span><span class="bar"><i style="width:${Math.max(2, (v / max) * 100)}%"></i></span><span class="r">${money(v)}</span></div>`).join("")}</div>
-          <div><h3>Recurring charges</h3>${recurring.map(([nm, v, d]) => `<div class="m-rec"><b>${esc(nm)}</b><span class="r">${money(v)} a month</span><span class="s">Next around ${short(new Date(today.getFullYear(), today.getMonth() + 1, d))}</span></div>`).join("")}
-          <h3 style="margin-top:18px">Worth a look</h3><p style="color:var(--m-dim)">Spotify went up from CA$11.99 to CA$12.99 a month.</p></div></div>`;
-    }
-    const quote = (sym) => holdings.find((h) => h.sym === sym) || watch.find((h) => h.sym === sym);
-    function investing(s) {
-      if (S.sym) return symbolPage(quote(S.sym));
-      const tabs = ["portfolio", "watchlists", "earnings", "alerts", "money"];
-      const body = { portfolio, watchlists, earnings: earningsView, alerts: alertsView, money: moneyView }[S.itab]();
-      return `${head(s)}<div class="m-ihead"><div class="m-ptabs" role="tablist">${tabs.map((k) => `<button type="button" role="tab" aria-selected="${S.itab === k}" class="${S.itab === k ? "on" : ""}" data-itab="${k}">${sentence(k)}</button>`).join("")}</div><span class="m-stream">${ic("radio")}<span>Streaming · sample prices</span></span><span class="m-tag advice">Analysis, not advice</span></div>${body}`;
-    }
-    function symbolPage(h) {
-      const held = holdings.includes(h), listed = watch.includes(h) || held;
-      const ranges = ["5D", "1M", "3M", "6M", "1Y"];
-      const inds = [["sma20", "SMA 20", "#d4a941"], ["sma50", "SMA 50", "#4ea7fc"], ["rsi", "RSI 14", "#a78bfa"]];
-      return `<button class="m-back" type="button" data-back>${ic("back")}Back</button>
-        <div class="m-sym"><h1>${h.sym}</h1><span class="ex">${h.cur === "CA" ? "TSX" : "US"}</span><span class="full">${esc(h.name)}</span></div>
-        <div class="m-price"><span class="v">${money(h.price, h.cur)}</span><span class="m-pill ${dir(h.day)}">${pct(h.day, 2)} today</span><span class="m-tag info">Sample data</span></div>
-        <div class="m-symacts"><button class="m-btn big" type="button" data-symact="list"${listed ? " disabled" : ""}>${ic("list")}${listed ? (held ? "In your portfolio" : "On your list") : "Add to list"}</button><button class="m-btn big" type="button" data-symact="alert">${ic("bell")}Set alert</button><button class="m-btn big" type="button" data-symact="ask">${ic("spark")}Ask Claude about this</button></div>
-        <div class="m-ctrls"><span class="m-ind">${ranges.map((r) => `<button type="button" data-range="${r}" aria-pressed="${S.range === r}">${r}</button>`).join("")}</span><span class="m-ind">${inds.map(([k, l, c]) => `<button type="button" data-ind="${k}" aria-pressed="${S.ind[k]}"><i style="background:${c}"></i>${l}</button>`).join("")}</span></div>
-        <div class="m-chart" id="m-chart" data-sym="${h.sym}"></div>
-        <p class="m-cap">Volume below the price: green on up days, red on down days. Hover the chart to read a day.</p>`;
-    }
-
-    // Candles walk backwards from today's price, so the last close always matches the quote above.
-    function series(h, range) {
-      const n = { "5D": 35, "1M": 22, "3M": 64, "6M": 126, "1Y": 250 }[range], intraday = range === "5D";
-      const r = rng(hash(h.sym + range)), drift = (rng(hash(h.sym))() - 0.3) * 0.5 * (n / 126);
-      const vol = h.price * (intraday ? 0.006 : 0.017), bars = [];
-      let c = h.price;
-      for (let i = 0; i < n; i++) {
-        const move = (r() - 0.5) * vol * 2 + (h.price * drift) / n;
-        const o = Math.max(h.price * 0.2, c - move);
-        const hi = Math.max(o, c) + r() * vol * 0.7, lo = Math.min(o, c) - r() * vol * 0.7;
-        bars.push({ o, h: hi, l: lo, c, v: (0.55 + r() * 0.9) * (1 + Math.abs(move) / vol) });
-        c = o + (r() - 0.5) * vol * 0.25;
-      }
-      bars.reverse();
-      const d = new Date(today);
-      const days = [];
-      while (days.length < (intraday ? 5 : n)) { if (d.getDay() % 6) days.unshift(new Date(d)); d.setDate(d.getDate() - 1); }
-      bars.forEach((b, i) => (b.d = intraday ? days[Math.floor(i / 7)] : days[i]));
-      return bars;
-    }
-    const sma = (b, k) => b.map((_, i) => (i < k - 1 ? null : b.slice(i - k + 1, i + 1).reduce((a, x) => a + x.c, 0) / k));
-    function rsi(b, k = 14) {
-      const out = b.map(() => null);
-      let g = 0, l = 0;
-      for (let i = 1; i < b.length; i++) {
-        const ch = b[i].c - b[i - 1].c;
-        if (i <= k) { g += Math.max(ch, 0); l += Math.max(-ch, 0); if (i === k) { g /= k; l /= k; out[i] = 100 - 100 / (1 + g / (l || 1e-9)); } }
-        else { g = (g * (k - 1) + Math.max(ch, 0)) / k; l = (l * (k - 1) + Math.max(-ch, 0)) / k; out[i] = 100 - 100 / (1 + g / (l || 1e-9)); }
-      }
-      return out;
-    }
-    function niceStep(span) { const raw = span / 5, p = 10 ** Math.floor(Math.log10(raw)); return [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw); }
-    let chartState = null;
-    function drawChart() {
-      const el = $("m-chart");
-      if (!el) return;
-      const h = quote(el.dataset.sym), bars = series(h, S.range), n = bars.length;
-      const W = el.clientWidth || 700, padR = 62, plotW = W - padR, cw = plotW / n;
-      const mainTop = 12, mainH = 240, volTop = mainTop + mainH + 8, volH = 52, rsiTop = volTop + volH + 8, rsiH = S.ind.rsi ? 58 : 0;
-      const axisY = (S.ind.rsi ? rsiTop + rsiH : volTop + volH) + 16, H = axisY + 8;
-      const s20 = sma(bars, 20), s50 = sma(bars, 50), rs = rsi(bars);
-      const vals = bars.flatMap((b) => [b.h, b.l]).concat(S.ind.sma20 ? s20.filter(Boolean) : [], S.ind.sma50 ? s50.filter(Boolean) : []);
-      let lo = Math.min(...vals), hi = Math.max(...vals);
-      const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
-      const y = (p) => mainTop + ((hi - p) / (hi - lo)) * mainH, x = (i) => i * cw + cw / 2;
-      const step = niceStep(hi - lo), dec = step < 1 ? 2 : step < 10 ? 1 : 0, out = [];
-      const last = bars[n - 1].c;
-      for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) if (Math.abs(y(t) - y(last)) > 13) out.push(`<line x1="0" x2="${plotW}" y1="${y(t)}" y2="${y(t)}" stroke="#1d1d22"/><text x="${plotW + 8}" y="${y(t) + 3.5}">${t.toFixed(dec)}</text>`);
-      const labels = [];
-      let lastX = -99;
-      bars.forEach((b, i) => {
-        const prev = bars[i - 1];
-        let lab = null;
-        if (S.range === "5D") { if (!prev || prev.d !== b.d) lab = b.d.toLocaleDateString("en-US", { weekday: "short" }); }
-        else if (S.range === "1M") { if (i % 5 === 0) lab = b.d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); }
-        else if (!prev || prev.d.getMonth() !== b.d.getMonth()) lab = b.d.toLocaleDateString("en-US", { month: "short" });
-        if (lab && x(i) > 18 && x(i) - lastX > 44 && x(i) < plotW - 16) { labels.push(`<line x1="${x(i)}" x2="${x(i)}" y1="${mainTop}" y2="${axisY - 12}" stroke="#1d1d22"/><text x="${x(i)}" y="${axisY}" text-anchor="middle">${lab}</text>`); lastX = x(i); }
-      });
-      const vmax = Math.max(...bars.map((b) => b.v)), bw = Math.max(1, cw * 0.62);
-      const candles = bars.map((b, i) => {
-        const col = b.c >= b.o ? "#4cb782" : "#eb5757", top = y(Math.max(b.o, b.c)), bh = Math.max(1, Math.abs(y(b.o) - y(b.c)));
-        const vh = (b.v / vmax) * volH;
-        return `<line x1="${x(i)}" x2="${x(i)}" y1="${y(b.h)}" y2="${y(b.l)}" stroke="${col}" stroke-width="1"/><rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${bh}" fill="${col}"/><rect x="${x(i) - bw / 2}" y="${volTop + volH - vh}" width="${bw}" height="${vh}" fill="${col}" opacity=".45"/>`;
-      }).join("");
-      const path = (arr, top, sy) => arr.map((v, i) => (v == null ? null : `${x(i).toFixed(1)},${sy(v).toFixed(1)}`)).filter(Boolean).join(" ");
-      const lines = (S.ind.sma20 ? `<polyline points="${path(s20, 0, y)}" fill="none" stroke="#d4a941" stroke-width="1.5"/>` : "") + (S.ind.sma50 ? `<polyline points="${path(s50, 0, y)}" fill="none" stroke="#4ea7fc" stroke-width="1.5"/>` : "");
-      const col = h.day >= 0 ? "#4cb782" : "#eb5757";
-      const lastLine = `<line x1="0" x2="${plotW}" y1="${y(last)}" y2="${y(last)}" stroke="${col}" stroke-dasharray="2 3" opacity=".8"/><rect x="${plotW + 2}" y="${y(last) - 9}" width="${padR - 4}" height="18" rx="3" fill="${col}"/><text x="${plotW + 8}" y="${y(last) + 3.5}" style="fill:#0b0b0d;font-weight:600">${last.toFixed(2)}</text>`;
-      let rsiSvg = "";
-      if (S.ind.rsi) {
-        const ry = (v) => rsiTop + ((100 - v) / 100) * rsiH, lastR = rs[n - 1];
-        rsiSvg = `<line x1="0" x2="${W}" y1="${rsiTop - 4}" y2="${rsiTop - 4}" stroke="#26262c"/><line x1="0" x2="${plotW}" y1="${ry(70)}" y2="${ry(70)}" stroke="#34343c" stroke-dasharray="3 3"/><line x1="0" x2="${plotW}" y1="${ry(30)}" y2="${ry(30)}" stroke="#34343c" stroke-dasharray="3 3"/><polyline points="${path(rs, 0, ry)}" fill="none" stroke="#a78bfa" stroke-width="1.5"/><rect x="${plotW + 2}" y="${ry(lastR) - 9}" width="${padR - 4}" height="18" rx="3" fill="#a78bfa"/><text x="${plotW + 8}" y="${ry(lastR) + 3.5}" style="fill:#0b0b0d;font-weight:600">${lastR.toFixed(2)}</text>`;
-      }
-      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="${h.sym} price chart, ${S.range}">${out.join("")}${labels.join("")}<line x1="0" x2="${W}" y1="${volTop - 4}" y2="${volTop - 4}" stroke="#26262c"/><line x1="${plotW}" x2="${plotW}" y1="0" y2="${axisY - 12}" stroke="#26262c"/>${candles}${lines}${lastLine}${rsiSvg}<g id="m-hover" style="pointer-events:none"></g></svg>`;
-      chartState = { bars, x, cw, plotW, mainTop, axisY, h };
-    }
-    function hover(e) {
-      const el = $("m-chart");
-      if (!el || !chartState) return;
-      const g = $("m-hover"), r = el.getBoundingClientRect(), px = e.clientX - r.left;
-      const { bars, x, cw, plotW, mainTop, axisY, h } = chartState;
-      if (px < 0 || px > plotW) { g.innerHTML = ""; return; }
-      const i = Math.min(bars.length - 1, Math.max(0, Math.floor(px / cw))), b = bars[i], up = b.c >= b.o;
-      const date = b.d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const txt = `${date}   O ${b.o.toFixed(2)}   H ${b.h.toFixed(2)}   L ${b.l.toFixed(2)}   C ${b.c.toFixed(2)}`;
-      g.innerHTML = `<line x1="${x(i)}" x2="${x(i)}" y1="${mainTop}" y2="${axisY - 12}" stroke="#868690" stroke-dasharray="3 3"/><rect x="8" y="6" width="${txt.length * 5.9 + 16}" height="20" rx="4" fill="#1a1a1e" stroke="#34343c"/><text x="16" y="20" style="fill:${up ? "#4cb782" : "#eb5757"}">${txt}</text>`;
-      void h;
     }
 
     function view() {
       const s = space(S.view);
-      if (!s) return { home, needs: () => `<h1>Needs you</h1><p class="m-brief">Finished work waits here until you decide. Nothing is sent or kept without a yes.</p><h2>${ic("inbox")}Needs you · ${ready().length}</h2>${needsList()}`, activity: () => `<h1>Activity</h1><p class="m-brief">Everything that ran, and what you decided.</p><h2>Recent</h2>${activityList(14)}`, agents: agentsView, rules: rulesView }[S.view]();
-      return s.kind === "markets" ? investing(s) : generalSpace(s);
+      if (!s) return { home, needs: () => `<h1>Needs you</h1><p class="m-brief">Finished work waits here until you decide. Nothing is kept or pushed without a yes.</p><h2>${ic("tray")}Needs you · ${ready().length}</h2>${needsList()}`, activity: () => `<h1>Activity</h1><p class="m-brief">Everything that ran, and what you decided.</p><h2>Recent</h2>${activityList(14)}`, agents: agentsView, rules: rulesView }[S.view]();
+      return spaceView(s);
     }
     function render(keep) {
       const scroller = $("m-scroll"), y = scroller.scrollTop;
@@ -1474,20 +1146,18 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       if (keep) { v.style.animation = "none"; scroller.scrollTop = y; }
       else { v.style.animation = "none"; void v.offsetWidth; v.style.animation = ""; scroller.scrollTop = 0; }
       if (focus?.id && $(focus.id)) { const f = $(focus.id); f.focus(); try { f.setSelectionRange(focus.a, focus.b); } catch {} }
-      drawChart();
     }
     function go(id, task) {
-      S.view = id; S.sym = null; S.stab = "tasks"; S.answer = null;
+      S.view = id; S.stab = "tasks";
       const s = space(id);
       S.open = task ?? (s ? (s.tasks.find((t) => t.status === "ready") || s.tasks.find((t) => t.status === "run"))?.id ?? null : null);
-      if (s?.kind === "markets" && task) S.itab = "portfolio";
       render(false);
     }
 
     function finish(t, ms) {
       setTimeout(() => {
         if (t.status !== "run") return;
-        t.status = "ready"; t.when = "Just now"; t.shown = 99;
+        t.status = "ready"; t.when = "Just now"; t.shown = 99; t.outcome = t.outcome || "done";
         const s = spaces.find((x) => x.tasks.includes(t));
         S.tokens += 1.1 + (hash(t.id) % 10) / 10;
         log(s.id, AG[t.agent][1], `${t.title} · ran, waiting for review`, "y");
@@ -1495,24 +1165,29 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
         toast(`Ready for review: ${t.title}`);
       }, ms);
     }
-    // Live terminal output for anything running in the open space.
+    // Live output and diff for anything running in the open space.
     setInterval(() => {
-      running().forEach(({ t }) => { const max = (t.log || [0, 0, 0]).length; if ((t.shown || 1) < max) t.shown = (t.shown || 1) + 1; });
-      const term = $("m-term"), s = space(S.view);
-      const r = s?.tasks.find((t) => t.status === "run");
-      if (term && r) term.innerHTML = termText(r);
+      running().forEach(({ t }) => { const max = (t.log || IDLE_LOG).length; if ((t.shown || 1) < max) t.shown = (t.shown || 1) + 1; });
+      const s = space(S.view), r = s?.tasks.find((t) => t.status === "run");
+      if (!r) return;
+      if ($("m-term")) $("m-term").innerHTML = termText(r);
+      if ($("m-diff")) $("m-diff").innerHTML = diffText(r);
     }, 900);
 
-    function act(kind, t, el) {
+    function act(kind, t) {
       const { s } = findTask(t) || {};
       const task = s?.tasks.find((x) => x.id === t);
-      if (kind === "unalert") { alerts.splice(Number(el.dataset.i), 1); toast("Alert removed"); return render(true); }
       if (!task) return;
       if (kind === "approve") {
         task.status = "done";
-        s.files.unshift(`${slug(task.title)}.md`);
         log(s.id, "You", `${task.title} · approved`);
-        toast(s.kind === "repo" ? `Kept on ${task.branch ?? "its branch"}. Open a pull request when you're ready.` : `Kept. Saved to ~/Atrium/${slug(s.name)}`);
+        if (s.kind === "repo" && task.branch) {
+          s.tasks.unshift({ id: `${task.id}p`, title: `Push ${task.branch} and open a pull request?`, peek: task.title, agent: task.agent, status: "ready", when: "Just now", push: { kind: "pr", branch: task.branch, diff: task.diff ?? [] } });
+          toast(`Kept on ${task.branch}. Pushing it still asks you.`);
+        } else {
+          s.files.unshift(`${slug(task.title)}.md`);
+          toast(`Kept. Saved to ~/Atrium/${slug(s.name)}`);
+        }
       }
       if (kind === "back") {
         task.status = "run"; task.revised = true; task.when = "Running"; task.shown = 1;
@@ -1520,16 +1195,25 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
         toast(`Sent back to ${AG[task.agent][1]} with your note`);
         finish(task, 4500);
       }
-      if (kind === "send") {
-        const area = $(`m-text-${task.id}`);
-        if (area) task.msg.text = area.value;
-        task.status = "done"; task.peek = task.msg.text;
-        log(s.id, "Atrium", `Sent a text to ${task.msg.to}`);
-        toast(`Sent to ${task.msg.to} from Messages`);
+      if (kind === "push") {
+        const p = task.push, n = S.pr++;
+        task.status = "done"; task.when = "Just now";
+        if (p.kind === "repo") {
+          task.title = `Created the GitHub repo ${p.name}`;
+          task.made = () => `<p>Created <b>${esc(p.name)}</b> on GitHub and pushed the first commit.</p>`;
+          log(s.id, "Atrium", `Created the GitHub repo ${p.name}`);
+          toast(`Pushed the first commit to the new repo ${p.name}`);
+        } else {
+          task.title = `Pushed ${p.branch} · pull request #${n}`;
+          task.made = () => `<p>Pushed <code>${esc(p.branch)}</code> and opened pull request <b>#${n}</b> against main.</p>`;
+          log(s.id, "Atrium", `Pushed ${p.branch} and opened pull request #${n}`);
+          toast(`Pushed ${p.branch}. Pull request #${n} is open.`);
+        }
       }
-      if (kind === "nosend") { task.status = "done"; task.skipped = true; task.msg = null; task.made = null; log(s.id, "You", `${task.title} · not sent`); toast("Not sent. Nothing left your Mac."); }
+      if (kind === "nopush") { task.status = "done"; task.skipped = true; log(s.id, "You", `${task.title} · not now`); toast("Not pushed. Nothing left your Mac."); }
       if (kind === "start") {
         task.status = "run"; task.when = "Running"; task.shown = 1;
+        if (s.kind === "repo") task.branch = `atrium/${task.id}`;
         task.made = task.made || (() => `<p>Here's a first pass at <b>${esc(task.title.toLowerCase())}</b>, ready for you to look over.</p>`);
         toast(`${AG[task.agent][1]} started “${task.title}”`);
         finish(task, 5000);
@@ -1539,55 +1223,52 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 
     // A plain-words ask becomes a new space with starter tasks, the way the real setup agent does it.
     const TEMPLATES = {
-      student: { test: /study|course|class|exam|midterm|lecture|cert|school|cs \d/i, color: C.aqua, preset: ["CS 341 Algorithms", "Keep up with lectures and be ready for the final in December."], name: (t) => (t.match(/for (?:my |the )?(.+)/i)?.[1] ?? "Studying"), tasks: (n) => [
-        ["Turn this week's lecture into flashcards", () => `<p>Made <b>24 flashcards</b> for ${esc(n)}. Three of them:</p><ul><li>What makes a greedy choice safe? <i>An exchange argument shows it never hurts.</i></li><li>Master theorem, case 2? <i>T(n) = Θ(n^log_b(a) · log n).</i></li><li>When does Dijkstra fail? <i>With negative edge weights.</i></li></ul><p>Approve and I'll quiz you on them every Sunday.</p>`],
-        ["Quiz me before the midterm", null], ["Remind me what's due each week", null]] },
-      creator: { test: /newsletter|blog|post|youtube|content|podcast|write|substack/i, color: C.pink, preset: ["Newsletter", "One issue every Thursday, written from my notes."], name: () => "Newsletter", tasks: () => [
-        ["Draft Thursday's issue from my notes", () => `<p><b>Subject:</b> The week I stopped using a to-do app</p><ol><li>Open: the one-line story from your Tuesday note</li><li>Three links worth your time, with a sentence each</li><li>Close: a question for readers to reply to</li></ol><p>About 650 words. The full draft is in the space's files.</p>`],
-        ["Find three links worth sharing", null], ["Reply to reader questions", null]] },
-      freelance: { test: /client|invoice|freelanc|contract|business/i, color: C.yellow, name: () => "Clients", tasks: () => [
-        ["Draft a reminder for the overdue invoice", () => `<p>“Hi Sam, a quick nudge on invoice #1042 for CA$1,800, which was due last Friday. Happy to resend it if that helps. Thanks!”</p><p>Approve it and copy it into your email. Atrium doesn't send email for you.</p>`],
-        ["Summarize this week's hours", null], ["Draft next month's proposal", null]] },
-      trip: { test: /trip|travel|vacation|visit|weekend in|holiday/i, color: C.blue, name: (t) => `${t.match(/(?:to|in) ([A-Z][\w-]+)/)?.[1] ?? "Weekend"} trip`, tasks: (n) => [
-        ["Draft a day-by-day plan", () => `<p>A first plan for your <b>${esc(n.toLowerCase())}</b>:</p><ul><li><b>Day 1</b> · Arrive, settle in, dinner close to where you're staying</li><li><b>Day 2</b> · The main sights on foot, one booked activity</li><li><b>Day 3</b> · A slow morning, then head home</li></ul><p>Nothing is booked until you say so.</p>`],
-        ["Find places to stay under budget", null], ["Make a packing list", null]] },
-      fitness: { test: /run|marathon|workout|gym|lift|calorie|diet|meal|weight|health/i, color: C.green, name: (t) => sentence(core(t)), tasks: () => [
-        ["Build a 12-week plan", () => `<ul><li><b>Weeks 1–4</b> · Three easy runs and one long run a week</li><li><b>Weeks 5–8</b> · Add one tempo run, long run up to 16 km</li><li><b>Weeks 9–12</b> · Peak at 21 km, then taper</li></ul><p>I'll check in every Sunday and adjust.</p>`],
-        ["Log this week's runs", null], ["Plan meals around long runs", null]] },
+      project: { test: /new project|start (?:a )?project|new repo|scaffold/i, kind: "repo", color: C.pink, example: "Start a new project called pocket-cli", name: (t) => slug(t.match(/called ([\w-]+)/i)?.[1] ?? "new-project"), tasks: (n) => [
+        ["Scaffold the project", (t) => `<p>Set up <b>${esc(n)}</b> with bun and TypeScript: a CLI entry point, one test and a README.</p><p class="m-mono">${filesLine(t.diff)}</p>`, { diff: [["package.json", 14, 0], ["src/cli.ts", 32, 0], ["tests/cli.test.ts", 18, 0], ["README.md", 21, 0]] }],
+        [`Create the GitHub repo ${n}?`, null, { push: { kind: "repo", name: n } }],
+        ["Add a CI workflow", null]] },
+      docs: { test: /notes|docs?\b|release|changelog|write.?up|readme/i, kind: "general", color: C.yellow, example: "Keep the docs for my CLI up to date", name: () => "Docs", tasks: () => [
+        ["Draft a README from the code", () => `<p>A first README: what it does, how to install it, three examples and every flag. Saved as <code>readme-draft.md</code> in this space.</p>`],
+        ["Write up the config options", null], ["Turn this week's merges into a changelog", null]] },
+      learn: { test: /learn|study|understand|get better at|course/i, kind: "general", color: C.aqua, example: "Help me learn Rust by porting a small tool", name: (t) => sentence(core(t)), tasks: () => [
+        ["Make a four-week plan", () => `<ul><li><b>Week 1</b> · Ownership and borrowing, with small exercises</li><li><b>Week 2</b> · Port the argument parsing</li><li><b>Week 3</b> · Errors and tests</li><li><b>Week 4</b> · Finish the port and compare the two</li></ul><p>Notes and exercises go in this space's folder.</p>`],
+        ["Pick a first exercise", null], ["Explain the borrow checker with my own code", null]] },
     };
     function core(text) {
       const c = text.replace(/^(please |can you |could you |help me (to )?|i want to |i'd like to |set up (a )?space (to|for) |keep |plan |start |track )/i, "");
-      const words = c.split(/\s+/).filter((w) => !/^(my|a|an|the|for|to|in|of|me|organized|on|better|more|please|going)$/i.test(w)).slice(0, 3);
+      const words = c.split(/\s+/).filter((w) => !/^(my|a|an|the|for|to|in|of|me|organized|on|better|more|please|going|by)$/i.test(w)).slice(0, 3);
       return words.join(" ") || "New space";
     }
     function newSpace(text, key) {
       const tpl = key ? TEMPLATES[key] : Object.values(TEMPLATES).find((x) => x.test.test(text));
-      const clean = (key ? tpl.preset[1] : text).trim().replace(/[.?!]+$/, "");
+      const clean = (key ? tpl.example : text).trim().replace(/[.?!]+$/, "");
       if (!clean) return;
-      const name = key ? tpl.preset[0] : sentence(tpl ? tpl.name(clean) : core(clean)).slice(0, 28);
+      const name = (tpl ? tpl.name(clean) : sentence(core(clean))).slice(0, 28);
       const existing = spaces.find((s) => s.name === name);
       if (existing) return go(existing.id);
-      const id = `n${spaces.length}${Date.now() % 1000}`;
-      const starter = tpl ? tpl.tasks(name) : [["Draft a plan to start", () => `<p>Here's a plan for <b>${esc(clean.toLowerCase())}</b>:</p><ol><li>Where things stand now, and the goal</li><li>A weekly rhythm, with a check-in every Sunday</li><li>The first three things to do this week</li></ol><p>Approve it and I'll set up the check-ins.</p>`], ["Gather what you already have", null], ["Set up a weekly check-in", null]];
-      const s = { id, name, kind: "general", color: tpl?.color ?? C.accent, last: "Just now", goal: sentence(clean) + ".", agents: ["claude"], files: [], fresh: true, tasks: starter.map(([title, made], i) => ({ id: `${id}${i}`, title, agent: "claude", status: i ? "queued" : "run", when: i ? "Queued" : "Running", made, shown: 1 })) };
+      const id = `n${spaces.length}${Date.now() % 1000}`, kind = tpl?.kind ?? "general";
+      const starter = tpl ? tpl.tasks(name) : [["Draft a plan to start", () => `<p>Here's a plan for <b>${esc(clean.toLowerCase())}</b>:</p><ol><li>Where things stand now, and the goal</li><li>The first three things to do</li><li>What to check before calling it done</li></ol><p>Approve it and I'll save it in this space's folder.</p>`], ["Gather what you already have", null], ["List the open questions", null]];
+      const tasks = starter.map(([title, made, extra = {}], i) => ({ id: tid(), title, agent: "claude", status: extra.push ? "ready" : i ? "queued" : "run", when: extra.push ? "Just now" : i ? "Queued" : "Running", made, shown: 1, ...extra }));
+      if (kind === "repo") tasks[0].branch = `atrium/${tasks[0].id}`;
+      const s = { id, name, kind, path: kind === "repo" ? `~/Developer/${name}` : undefined, color: tpl?.color ?? C.accent, last: "Just now", goal: sentence(clean) + ".", agents: ["claude"], files: [], fresh: true, tasks };
       spaces.push(s);
-      log(id, "Atrium", `Set up ${name} with 3 starter tasks`);
-      toast(`Set up “${name}” with 3 starter tasks`);
-      go(id, `${id}0`);
-      finish(s.tasks[0], 4000);
+      log(id, "Atrium", `Set up ${name} with ${tasks.length} starter tasks`);
+      toast(`Set up “${name}” with ${tasks.length} starter tasks`);
+      go(id, tasks[0].id);
+      finish(tasks[0], 4000);
     }
     function addTask(s, text) {
       const title = sentence(text.trim().replace(/[.]+$/, ""));
       if (!title) return;
-      const agent = s.kind === "repo" ? "codex" : "claude", id = `${s.id}x${Date.now() % 100000}`;
-      const made = s.kind === "repo"
-        ? () => `<p>Done on its own branch. 3 files changed and all tests pass.</p><p class="m-mono">atrium/${slug(title)} <span class="add">+46</span> <span class="del">−9</span></p>`
-        : s.kind === "markets"
-          ? () => `<p>Here's what I found for <b>${esc(title.toLowerCase())}</b>, using only your holdings and public prices.</p><p>Analysis, not advice.</p>`
-          : () => `<p>Here's a first pass at <b>${esc(title.toLowerCase())}</b>, ready for you to look over.</p>`;
-      const t = { id, title: title.slice(0, 70), agent, status: "run", when: "Running", made, shown: 1, branch: s.kind === "repo" ? `atrium/${slug(title)}` : undefined };
+      // Routing in miniature: code work goes to Codex, except in a private space, which only Claude may see.
+      const agent = s.kind === "repo" && !s.private ? "codex" : "claude", id = tid();
+      const t = { id, title: title.slice(0, 70), agent, status: "run", when: "Running", shown: 1 };
+      if (s.kind === "repo") {
+        Object.assign(t, { branch: `atrium/${id}`, log: ["reading the repo", "planning the change", "editing src/index.ts", "editing tests/index.test.ts", "$ bun test", "  ✓ all tests pass", `committed to atrium/${id}`], diff: [["src/index.ts", 31, 6, 2], ["tests/index.test.ts", 15, 0, 3]] });
+        t.made = () => `<p>Done on its own branch. The tests pass.</p><p class="m-mono">${filesLine(t.diff)}</p>`;
+      } else t.made = () => `<p>Here's a first pass at <b>${esc(title.toLowerCase())}</b>, ready for you to look over.</p>`;
       s.tasks.unshift(t);
-      S.open = id; S.stab = "tasks"; S.sym = null; S.itab = "portfolio";
+      S.open = id; S.stab = "tasks";
       toast(`${AG[agent][1]} started “${t.title}”`);
       render(true);
       finish(t, 5000);
@@ -1595,81 +1276,45 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 
     const root = $("mac");
     root.addEventListener("click", (e) => {
-      const el = e.target.closest("[data-go],[data-open],[data-act],[data-row],[data-new],[data-toast],[data-itab],[data-sym],[data-range],[data-ind],[data-symact],[data-back],[data-priv],[data-stab],[data-q],[data-month],[data-via],[data-rule]");
+      const el = e.target.closest("[data-go],[data-open],[data-act],[data-row],[data-new],[data-toast],[data-priv],[data-stab],[data-rule]");
       if (!el || el.disabled) return;
       const d = el.dataset;
-      if (d.act) return act(d.act, d.t, el);
-      if (d.open) { const [sid, tid] = d.open.split(":"); return go(sid, tid); }
+      if (d.act) return act(d.act, d.t);
+      if (d.open) { const [sid, tid_] = d.open.split(":"); return go(sid, tid_); }
       if (d.go) return go(d.go);
       if (d.row) { S.open = S.open === d.row ? null : d.row; return render(true); }
-      if ("new" in d) { const a = $("m-ask"); go("home"); a.value = "Help me study for my AWS certification"; a.focus(); a.select(); return toast("Press Enter, or describe your own"); }
+      if ("new" in d) { const a = $("m-ask"); go("home"); a.value = TEMPLATES.project.example; a.focus(); a.select(); return toast("Press Enter, or describe your own"); }
       if (d.toast) return toast(d.toast);
-      if (d.itab) { S.itab = d.itab; S.answer = null; return render(true); }
-      if (d.sym) { S.view = "inv"; S.sym = d.sym; return render(false); }
-      if ("back" in d) { S.sym = null; return render(false); }
-      if (d.range) { S.range = d.range; return render(true); }
-      if (d.ind) { S.ind[d.ind] = !S.ind[d.ind]; return render(true); }
       if (d.stab) { S.stab = d.stab; return render(true); }
-      if (d.month) { S.month = Number(d.month); return render(true); }
-      if (d.via) { const { t } = findTask(d.t); t.msg.via = d.via; return render(true); }
       if (d.rule) { const r = rules.find((x) => x.id === d.rule); r.on = !r.on; toast(`${r.name}: ${r.on ? "on" : "off"}`); return render(true); }
-      if (d.priv) { const s = space(d.priv); if (s.kind === "markets") return toast("Markets spaces always stay private."); s.private = !s.private; toast(s.private ? `${s.name} is private. Only Claude sees it.` : `${s.name} is no longer private.`); return render(true); }
-      if (d.q) return askMoney(d.q);
-      if (d.symact) {
-        const h = quote(S.sym);
-        if (d.symact === "list") { watch.push(h); toast(`Added ${h.sym} to Watching`); return render(true); }
-        if (d.symact === "alert") { const lvl = Math.ceil((h.price * 1.05) / (h.price > 100 ? 5 : 1)) * (h.price > 100 ? 5 : 1); alerts.unshift({ sym: h.sym, text: `above ${money(lvl, h.cur)}`, state: "armed" }); return toast(`Alert set: ${h.sym} above ${money(lvl, h.cur)}`); }
-        if (d.symact === "ask") {
-          const inv = space("inv"), bars = series(h, "6M"), s50 = sma(bars, 50)[bars.length - 1], above = h.price > s50;
-          const t = { id: `ask${Date.now() % 100000}`, title: `What's going on with ${h.sym}?`, agent: "claude", status: "run", when: "Running", shown: 1, made: () => `<p><b>${h.sym}</b> is ${pct(h.day, 1)} today and ${pct(h.m)} over the past month. It's trading ${above ? "above" : "below"} its 50-day average (${money(s50, h.cur)}), which usually means the trend is ${above ? "still up" : "cooling off"}.</p><p>${holdings.includes(h) ? `It's ${h.w}% of your portfolio.` : "You don't hold it."} Analysis, not advice.</p>` };
-          inv.tasks.unshift(t);
-          finish(t, 4500);
-          return toast("Asked Claude. The answer will land in Needs you.");
-        }
-      }
+      if (d.priv) { const s = space(d.priv); s.private = !s.private; toast(s.private ? `${s.name} is private. Only Claude works in it.` : `${s.name} is no longer private.`); return render(true); }
     });
-    root.addEventListener("input", (e) => {
-      const id = e.target.dataset?.msg;
-      if (!id) return;
-      const { t } = findTask(id);
-      t.msg.text = e.target.value; t.peek = e.target.value;
-      const c = $(`m-count-${id}`);
-      if (c) c.textContent = `${e.target.value.length}/2000`;
-    });
+    // Steering: a note joins the running task's output, and the agent picks it up from there.
     root.addEventListener("submit", (e) => {
-      if (e.target.id !== "m-money-form") return;
+      const id = e.target.dataset?.steer;
+      if (!id) return;
       e.preventDefault();
-      askMoney($("m-money-q").value);
+      const input = $("m-steer"), note = input.value.trim(), { t } = findTask(id) || {};
+      if (!note || t?.status !== "run") return;
+      t.log = t.log || [...IDLE_LOG];
+      t.log.splice(t.shown || 1, 0, `you → ${note}`);
+      t.shown = (t.shown || 1) + 1;
+      input.value = "";
+      $("m-term").innerHTML = termText(t);
+      toast(`Note sent to ${AG[t.agent][1]}`);
     });
-    root.addEventListener("mousemove", hover);
-    root.addEventListener("mouseleave", () => { const g = $("m-hover"); if (g) g.innerHTML = ""; });
-    function askMoney(q) {
-      q = q.trim();
-      if (!q) return;
-      S.answer = { q };
-      render(true);
-      setTimeout(() => {
-        if (S.answer?.q !== q) return;
-        const key = Object.keys(answers).find((k) => k === q) || (/dividend/i.test(q) ? Object.keys(answers)[0] : /tfsa/i.test(q) ? Object.keys(answers)[1] : /subscri|recurring/i.test(q) ? Object.keys(answers)[3] : null);
-        const cat = months[1].cats.find(([c]) => new RegExp(c.replace(/s$/, ""), "i").test(q));
-        S.answer.a = key ? answers[key] : cat ? `${money(cat[1])} on ${cat[0].toLowerCase()} last month, across ${cat[2]} charge${cat[2] > 1 ? "s" : ""}. That's ${Math.round((cat[1] / months[1].spent) * 100)}% of what you spent.` : `You spent ${money(months[1].spent)} last month across 48 transactions. Ask about a category, a store or a month for more detail.`;
-        render(true);
-      }, 1300);
-    }
     $("m-form").addEventListener("submit", (e) => {
       e.preventDefault();
       const a = $("m-ask"), s = space(S.view);
       if (s) addTask(s, a.value); else newSpace(a.value);
       a.value = "";
     });
-    let rz;
-    addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(drawChart, 120); });
     spaces.flatMap((s) => s.tasks).filter((t) => t.finishIn).forEach((t) => finish(t, t.finishIn));
     render(false);
-    return { go, template: (key) => newSpace("", key), symbol: (sym) => { S.view = "inv"; S.sym = sym; render(false); }, tab: (k) => { go("inv"); S.itab = k; render(false); } };
+    return { go, template: (key) => newSpace("", key) };
   })();
 
-  // Who it's for: arrow keys move between tabs, and each panel's button opens the matching space in the demo.
+  // What it's for: arrow keys move between tabs, and each panel's button opens the matching space or task in the demo.
   const whoTabs = [...document.querySelectorAll(".who-tabs [role=tab]")];
   function pick(tab, focus) {
     whoTabs.forEach((t) => {
@@ -1690,8 +1335,8 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     });
   });
   document.querySelectorAll(".who-panel").forEach((panel) => panel.querySelector(".btn").addEventListener("click", () => {
-    const [kind, a] = panel.dataset.demo.split(":");
-    if (kind === "go") app.go(a); else app.template(a);
+    const [kind, a, b] = panel.dataset.demo.split(":");
+    if (kind === "go") app.go(a, b); else app.template(a);
     document.getElementById("try").scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
   }));
 
@@ -1718,13 +1363,13 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     const LINES = {
       try: "This is a live copy of the app. Click around, or type something into the bar.",
       why: "I'm the Keeper. I watch every thread so you don't have to.",
-      how: "Watch: I draft it, then I wait. Nothing goes out without your yes.",
-      uses: "Pick a role, then press Try it. I'll set it up in the demo.",
+      how: "Watch: it works on its own branch, then waits. Nothing is pushed without your yes.",
+      uses: "Pick one, then press Try it. I'll open it in the demo.",
       ways: "Same Atrium in the Mac app, the browser and the terminal.",
-      private: "Your stuff never leaves your Mac. I only see what you hand me.",
+      private: "Your code stays on your Mac until you say push.",
       end: "Want your own Keeper? It's free and open source.",
     };
-    const TIPS = ["Psst. Press Approve on something in the demo.", "Try typing \u201chelp me plan a trip to Lisbon\u201d in the demo.", "I get sleepy if you stop scrolling.", "Every Atrium has one of me in the logo."];
+    const TIPS = ["Psst. Press Approve on something in the demo.", "Try typing \u201cstart a new project called pocket-cli\u201d in the demo.", "I get sleepy if you stop scrolling.", "Every Atrium has one of me in the logo."];
     let tip = 0, sayTimer, moodTimer, sleepTimer, last = "", shown = false;
     const mood = (m, ms) => { k.dataset.k = m; if (m === "happy") dispatchEvent(new Event("keeper:happy")); clearTimeout(moodTimer); if (ms) moodTimer = setTimeout(() => (k.dataset.k = "idle"), ms); };
     const talk = (text, ms = 4200) => { if (!text) return; say.textContent = text; say.classList.add("on"); clearTimeout(sayTimer); sayTimer = setTimeout(() => say.classList.remove("on"), ms); };
@@ -1745,9 +1390,9 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     addEventListener("atrium:demo", (e) => {
       const t = e.detail || "";
       if (/^Ready for review/.test(t)) { mood("needs", 5000); talk("Something's ready for you. Have a look?"); }
-      else if (/started|Set up|Sent back/.test(t)) { mood("working", 4500); talk("On it."); }
-      else if (/^Sent to|^Kept|Added|Alert set/.test(t)) { mood("happy", 2400); talk(["Nice.", "Done. That one's yours now.", "Sent, only because you said so."][Math.floor(Math.random() * 3)]); }
-      else if (/^Not sent|Skipped/.test(t)) { mood("idle"); talk("Fine by me. Nothing went out."); }
+      else if (/started|Set up|Sent back|Note sent/.test(t)) { mood("working", 4500); talk("On it."); }
+      else if (/^Pushed|^Kept/.test(t)) { mood("happy", 2400); talk(["Nice.", "Done. That one's yours now.", "Pushed, only because you said so."][Math.floor(Math.random() * 3)]); }
+      else if (/^Not pushed/.test(t)) { mood("idle"); talk("Fine by me. Nothing went out."); }
     });
     document.getElementById("keeper-btn").addEventListener("click", (e) => {
       awake(); mood("happy", 1600); talk(TIPS[tip++ % TIPS.length]);

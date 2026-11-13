@@ -56,7 +56,7 @@ export function NeedsPage({ state }: { state: State }) {
           Keys: <kbd>j</kbd> <kbd>k</kbd> <kbd>a</kbd> <kbd>s</kbd>
         </p>
       </div>
-      <p className="brief">Reviews, questions and texts waiting on you. A text only goes when you press its Send.</p>
+      <p className="brief">Reviews and questions waiting on you.</p>
       <NeedsList state={state} listRef={list} />
     </div>
   );

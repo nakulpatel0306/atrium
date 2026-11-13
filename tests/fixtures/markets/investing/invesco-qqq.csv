@@ -1,6 +1,0 @@
-Fund Ticker,Security Identifier,Holding Ticker,Shares/Par Value,MarketValue,Weight,Name,Class of Shares,Sector,Date
-QQQ,67066G104,NVDA,1000,1000,9.10,NVIDIA Corp,Common Stock,Information Technology,11/04/2026
-QQQ,594918104,MSFT,1000,1000,8.20,Microsoft Corp,Common Stock,Information Technology,11/04/2026
-QQQ,037833100,AAPL,1000,1000,7.70,Apple Inc,Common Stock,Information Technology,11/04/2026
-QQQ,023135106,AMZN,1000,1000,5.00,Amazon.com Inc,Common Stock,Consumer Discretionary,11/04/2026
-QQQ,OTHER,OTHERS,1000,1000,70.00,Other holdings (fixture),Common Stock,Information Technology,11/04/2026

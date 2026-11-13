@@ -40,7 +40,7 @@ test("GET /api/start gives the checks, the saved place and whether to open on it
 });
 
 test("PUT /api/start moves and skips steps, and Done waits for Claude", async () => {
-  expect(await (await put("/api/start", { skip: "tools", step: "investing" })).json()).toEqual({ step: "investing", skipped: ["tools"], done: false, dismissed: false });
+  expect(await (await put("/api/start", { skip: "tools", step: "profile" })).json()).toEqual({ step: "profile", skipped: ["tools"], done: false, dismissed: false });
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const blocked = await put("/api/start", { done: true });
   expect(blocked.status).toBe(400);
@@ -65,8 +65,8 @@ test("the profile keeps a name and a projects folder in settings, and the curren
   // Folders must be inside the home folder, so the test's home is the temp one.
   process.env.ATRIUM_USER_HOME = home.home;
   const folder = join(home.home, "code");
-  const saved = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder, homeCurrency: "USD" })).json();
-  expect(saved).toMatchObject({ name: "Sam Rivera", projectsRoot: folder, homeCurrency: "CAD" });
+  const saved = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder })).json();
+  expect(saved).toMatchObject({ name: "Sam Rivera", projectsRoot: folder });
   expect(db.query("SELECT value FROM settings WHERE key = 'projects.root'").get()).toEqual({ value: folder });
   const bad = await put("/api/profile", { projectsRoot: "nope" });
   expect(bad.status).toBe(400);

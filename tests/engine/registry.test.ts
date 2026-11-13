@@ -203,14 +203,6 @@ test("explicit codex in a private space waits", async () => {
   });
 });
 
-test("a markets space counts as private whatever its flag says", async () => {
-  const r = await registry();
-  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
-  db.query("UPDATE spaces SET private = 0 WHERE id = ?").run(s.id);
-  expect(resolveFor(r, task(s.id, { agent: "codex" }), s.id)).toMatchObject({ wait: { agent: "codex", kind: "private_space" } });
-  expect(resolveFor(r, task(s.id, { kind: "review" }), s.id)).toEqual({ agent: "claude" });
-});
-
 test("explicit gemini never does repo work", async () => {
   const r = await registry();
   const { space } = repoSpace();
@@ -323,17 +315,4 @@ test("refusal names the reason a free agent can't take a kind of task in a space
   const { space } = repoSpace();
   expect(r.refusal("gemini", "work", getSpace(db, space.id)!)).toMatchObject({ kind: "gemini_repo" });
   expect(r.refusal("gemini", "review", getSpace(db, space.id)!)).toBeNull();
-});
-
-test("card data: a money task in the investing space only ever goes to Claude", async () => {
-  const r = await registry({ claude: LOGGED_OUT });
-  const s = createSpace(db, { name: "Investing", kind: "markets", goal: "" });
-  for (const agent of ["auto", "codex", "gemini"] as const) {
-    for (const kind of ["work", "review"] as const) {
-      const got = resolveFor(r, task(s.id, { agent, kind, purpose: "money" }), s.id);
-      expect(["codex", "gemini"]).not.toContain("agent" in got ? got.agent : "");
-    }
-  }
-  const ready = await registry();
-  expect(resolveFor(ready, task(s.id, { agent: "codex", purpose: "money" }), s.id)).toMatchObject({ wait: { kind: "private_space" } });
 });

@@ -5,7 +5,7 @@ import { dirname, join, sep } from "node:path";
 import { config } from "./config";
 import type { Space } from "./spaces";
 
-// General and markets spaces keep their files in ~/Atrium/<space-slug>/, where Nakul can find them in Finder.
+// General spaces keep their files in ~/Atrium/<space-slug>/, where Nakul can find them in Finder.
 // The folder is chosen once, when the space is made: renaming the space doesn't move it.
 
 const slug = (name: string) =>
@@ -81,7 +81,7 @@ const isEmptyDir = (dir: string) => {
   }
 };
 
-// Boot-time move of general and markets spaces into their visible folders, safe to stop at any point and run
+// Boot-time move of general spaces into their visible folders, safe to stop at any point and run
 // again. The folder is recorded first, so a crash can never lead to a second pick (and a "-2" folder). Then any
 // old folder still on disk is moved into a recorded folder that is missing or empty; one that already has files is
 // left alone rather than merged into.

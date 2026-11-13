@@ -10,9 +10,6 @@ import { setSetting } from "../../src/engine/settings";
 import { createSpace } from "../../src/engine/spaces";
 import { snapshot } from "../../src/engine/state";
 import { createTask, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
-import { saveQuotes } from "../../src/engine/markets/cache";
-import { addHolding } from "../../src/engine/markets/holdings";
-import { placePaperOrder } from "../../src/engine/markets/paper";
 import { tempHome } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -239,57 +236,6 @@ test("undone rule approvals aren't counted", () => {
     if (title === "undone") db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, ap.id);
   }
   expect(briefing(db, now).summary).toBe("Nothing ran since you were last here. 1 result approved by your rules.");
-});
-
-test("the briefing carries paper P&L and the biggest holding moves", () => {
-  const now = Date.parse("2026-11-05T15:00:00Z");
-  expect(briefing(db, now).markets).toBeNull();
-  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
-  saveQuotes(db, [
-    { key: "AAPL", price: 99, prevClose: 100, at: now, source: "demo", freshness: "demo" },
-    { key: "SHOP.TO", price: 104, prevClose: 100, at: now - 3600_000, source: "alphavantage", freshness: "eod" },
-    { key: "KO", price: 100.5, prevClose: 100, at: now, source: "demo", freshness: "demo" },
-  ]);
-  for (const [symbol, exchange] of [["AAPL", "US"], ["SHOP", "TSX"], ["KO", "US"], ["NONE", "US"]] as const) {
-    addHolding(db, s.id, { account: "TFSA", symbol, exchange, name: symbol, quantity: 1, bookValue: null, currency: exchange === "US" ? "USD" : "CAD" });
-  }
-  placePaperOrder(db, { spaceId: s.id, symbol: "AAPL", side: "buy", qty: 10, reasoning: "r", actor: "you" }, { key: "AAPL", price: 100, prevClose: 100, at: now, source: "demo", freshness: "demo" }, now);
-  const m = briefing(db, now).markets!;
-  expect(m.paper!.dayPnl).toBeCloseTo(-10, 6);
-  expect(m.paper!.totalPnl).toBeCloseTo(-10, 6);
-  expect(m.paper!.equity).toBeCloseTo(9_990, 6);
-  expect(m.holdings.map((h) => h.key)).toEqual(["SHOP.TO", "AAPL", "KO"]);
-  expect(m.holdings[0]).toMatchObject({ key: "SHOP.TO", freshness: "eod", asOf: now - 3600_000 });
-  expect(m.holdings[0]!.dayPct).toBeCloseTo(4, 6);
-});
-
-test("the briefing carries the Investing portfolio's day, with the top mover's headline", async () => {
-  const { saveFx } = await import("../../src/engine/markets/fx");
-  const { saveNews } = await import("../../src/engine/markets/events");
-  const { setSetting } = await import("../../src/engine/settings");
-  const now = Date.parse("2026-11-05T15:00:00Z");
-  setSetting(db, "markets.provider", "finnhub");
-  createSpace(db, { name: "Stocks", kind: "markets", goal: "" });
-  const inv = createSpace(db, { name: "Investing", kind: "markets", goal: "" });
-  saveFx(db, [{ date: "2026-11-04", rate: 1.4 }]);
-  saveQuotes(db, [
-    { key: "RKLB", price: 53, prevClose: 50, at: now, source: "finnhub", freshness: "live" },
-    { key: "ATZ.TO", price: 101, prevClose: 100, at: now - 3600_000, source: "alphavantage", freshness: "eod" },
-    // A demo price left over from Demo mode is never counted as real.
-    { key: "SOFI", price: 20, prevClose: 10, at: now, source: "demo", freshness: "demo" },
-  ]);
-  for (const [symbol, exchange, quantity] of [["RKLB", "US", 10], ["ATZ", "TSX", 20], ["SOFI", "US", 5]] as const) {
-    addHolding(db, inv.id, { account: "TFSA", symbol, exchange, name: symbol, quantity, bookValue: null, currency: exchange === "US" ? "USD" : "CAD" });
-  }
-  saveNews(db, [{ key: "RKLB", headline: "Rocket Lab wins a NASA contract for two Neutron launches to the Moon and beyond", source: "Reuters", url: "https://x/1", at: now - 3600_000 }], now);
-  const p = briefing(db, now).markets!.portfolio!;
-  // 10 × 3 × 1.40 + 20 × 1 = 62 on 10 × 50 × 1.40 + 20 × 100 = 2700.
-  expect(p.dayCad).toBeCloseTo(62, 9);
-  expect(p.dayPct).toBeCloseTo((62 / 2700) * 100, 9);
-  expect(p.closes).toBe(1);
-  expect(p.movers[0]).toMatchObject({ key: "RKLB", tag: null });
-  expect(p.headline).toBe("Rocket Lab wins a NASA contract for two Neutron launches to…");
-  expect(p.headline!.length).toBe(60);
 });
 
 test("the briefing says how many couldn't be done", () => {

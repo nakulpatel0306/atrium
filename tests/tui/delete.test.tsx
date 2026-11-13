@@ -60,16 +60,13 @@ test("the delete box shows what goes and what stays", () => {
     runs: 2,
     history: 7,
     folder: { path: "~/Atrium/text-dana", files: 1, bytes: 120, more: false },
-    texts: { sent: 1, drafts: 0 },
     repo: null,
-    investing: 0,
     refusal: null,
   };
   const { title, lines } = deleteBoxLines({ kind: "delete", spaceId: "spc_old", value: "Text", cursor: 4 }, withArchived(), preview, 64);
   const text = lines.map((l) => l.map((s) => s.text).join("")).join("\n");
   expect(title).toBe("Delete Text Dana for good");
   expect(text).toContain("  · 2 tasks, with 2 runs and their transcripts");
-  expect(text.replace(/\n/g, " ")).toContain("Atrium can't unsend a text.");
   expect(text).toContain("Type Text Dana to confirm. This can't be undone.");
   expect(text).toContain("› Text");
 });
@@ -102,16 +99,4 @@ test("D in the app opens the box with the engine's count", async () => {
   expect(client.calls.find((c) => c.method === "DELETE")).toEqual({ method: "DELETE", path: "/api/spaces/spc_old", body: { name: "Text Dana" } });
   await app.frame((f) => f.includes('Deleted "Text Dana". Its folder ~/Atrium/text-dana went'));
   app.unmount();
-});
-
-test("restoring an earlier Messages says it merged, and points X at the current one", async () => {
-  const { runIntent } = await import("../../src/tui/effects");
-  const state = makeState({ archived: [space({ id: "spc_oldmsg", name: "Messages", status: "archived" })] });
-  const client = fakeClient(state);
-  client.respond("/api/spaces/spc_oldmsg", { ok: true, data: { id: "spc_current", name: "Messages" } });
-  expect(await runIntent(client, { type: "restore", spaceId: "spc_oldmsg" }, state)).toEqual({
-    tone: "ok",
-    text: "Moved the earlier Messages into your current one, so there's only one.",
-    spaceId: "spc_current",
-  });
 });

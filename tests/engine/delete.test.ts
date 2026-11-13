@@ -11,7 +11,6 @@ import { finishPendingDeletes, queueDelete } from "../../src/engine/delete-files
 import { listActivity, logActivity } from "../../src/engine/events";
 import { ensureSpaceFolder } from "../../src/engine/folders";
 import { newId } from "../../src/engine/ids";
-import { draftMessage, setMessageStatus } from "../../src/engine/messaging/store";
 import { recordRunFiles } from "../../src/engine/outputs/store";
 import { createCloner } from "../../src/engine/repos/clones";
 import { listClones } from "../../src/engine/repos/store";
@@ -67,27 +66,8 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   db.query("UPDATE approvals SET rule_id = ? WHERE id = ?").run(rule, approval.id);
   db.query("INSERT INTO rule_events (id, space_id, rule_id, approval_id, event, actor, created_at) VALUES (?, ?, ?, ?, 'applied', 'atrium', ?)").run(newId("rle"), space.id, rule, approval.id, now);
   recordRunFiles(db, { runId: run, taskId: task, spaceId: space.id, root: "space" }, [{ path: "list.md", change: "created", size: 4 }]);
-  draftMessage(db, { spaceId: space.id, taskId: task, toName: "Dana", text: "Hey" });
-  const mailApproval = createApproval(db, { spaceId: space.id, taskId: task, kind: "question", title: "Send an email to Dana?", detail: "", alwaysAsk: "send_message" });
-  db.query("INSERT INTO mail_actions (id, approval_id, space_id, task_id, kind, status, drafted_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'new', 'draft', 'claude', ?, ?)").run(newId("mla"), mailApproval.id, space.id, task, now, now);
   const repoApproval = createApproval(db, { spaceId: null, kind: "question", title: "Create repo?", detail: "", alwaysAsk: "create_repo" });
   db.query("INSERT INTO repo_actions (id, kind, status, approval_id, space_id, created_at, updated_at) VALUES (?, 'create', 'done', ?, ?, ?, ?)").run(newId("rpa"), repoApproval.id, space.id, now, now);
-  const list = newId("lst");
-  db.query("INSERT INTO market_lists (id, space_id, name, position, created_at) VALUES (?, ?, 'L', 0, ?)").run(list, space.id, now);
-  db.query("INSERT INTO market_watchlist (list_id, space_id, symbol, exchange, added_at) VALUES (?, ?, 'AAPL', 'US', ?)").run(list, space.id, now);
-  db.query("INSERT INTO market_holdings (id, space_id, account, symbol, exchange, quantity, currency, source, updated_at) VALUES (?, ?, 'TFSA', 'AAPL', 'US', 1, 'USD', 'manual', ?)").run(newId("hld"), space.id, now);
-  db.query("INSERT INTO market_alerts (id, space_id, key, rule, created_at) VALUES (?, ?, 'AAPL', '{}', ?)").run(newId("alr"), space.id, now);
-  db.query("INSERT INTO paper_accounts (space_id, starting_cash, reset_at) VALUES (?, 1000, ?)").run(space.id, now);
-  db.query("INSERT INTO paper_fills (id, space_id, symbol, side, qty, price, quote_at, source, actor, task_id, reasoning, created_at) VALUES (?, ?, 'AAPL', 'buy', 1, 1, 0, 'demo', 'claude', ?, 'r', ?)").run(newId("pf"), space.id, task, now);
-  db.query("INSERT INTO market_strategies (id, space_id, name, rules, symbols, cadence, max_position_value, max_trades_per_day, created_at, updated_at) VALUES (?, ?, 'S', 'r', 'AAPL', 'open', 1, 1, ?, ?)").run(newId("str"), space.id, now, now);
-  db.query("INSERT INTO research_notes (space_id, key, updated_at) VALUES (?, 'AAPL', ?)").run(space.id, now);
-  db.query("INSERT INTO market_writeups (id, space_id, kind, key, for_date, body, task_id, created_at) VALUES (?, ?, 'digest', 'k', 'd', 'b', ?, ?)").run(newId("wu"), space.id, task, now);
-  db.query("INSERT INTO market_ideas (space_id, key, stage, stage_at, created_at) VALUES (?, 'AAPL', 'watching', ?, ?)").run(space.id, now, now);
-  db.query("INSERT INTO money_transactions (id, space_id, source, account, date, description, merchant, amount, kind, fingerprint, imported_at) VALUES (?, ?, 'bank', 'a', 'd', 'x', 'm', 1, 'spend', ?, ?)").run(newId("mt"), space.id, newId("fp"), now);
-  db.query("INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at) VALUES (?, ?, 'a', 'd', 'd', 1, ?)").run(newId("mi"), space.id, now);
-  db.query("INSERT INTO money_budgets (space_id, category, monthly_limit, updated_at) VALUES (?, 'Dining', 100, ?)").run(space.id, now);
-  db.query("INSERT INTO money_accounts (space_id, name, kind, institution, created_at) VALUES (?, 'Everyday', 'chequing', '', ?)").run(space.id, now);
-  db.query("INSERT INTO money_nudges (id, space_id, kind, key, title, body, created_at) VALUES (?, ?, 'import', 'k', 't', 'b', ?)").run(newId("mn"), space.id, now);
   ensureSpaceFolder(db, space);
   writeFileSync(join(space.folder!, "list.md"), "eggs");
   return { space, task, review, run, transcript };
@@ -103,15 +83,13 @@ test("every table that points at a space, task or run is handled", () => {
 test("deleting a space removes every row about it, its transcripts and its folder, and nothing else", async () => {
   const gone = fullSpace("Text Dana");
   const kept = fullSpace("Groceries");
-  setSetting(db, "messaging.spaceId", gone.space.id);
   const before = Object.fromEntries(tables().map((t) => [t, count(`SELECT COUNT(*) AS n FROM ${t}`)]));
   const spaceTables = HANDLED.space.filter((x) => x !== "repo_clones");
   const keptBefore = spaceTables.map((t) => [t, count(`SELECT COUNT(*) AS n FROM ${t} WHERE space_id = ?`, kept.space.id)]);
 
   const preview = spaceDeletePreview(db, gone.space.id);
-  expect(preview).toMatchObject({ name: "Text Dana", tasks: 2, runs: 1, refusal: null, texts: { sent: 0, drafts: 1 }, repo: null });
+  expect(preview).toMatchObject({ name: "Text Dana", tasks: 2, runs: 1, refusal: null, repo: null });
   expect(preview.folder).toMatchObject({ files: 1, bytes: 4 });
-  expect(preview.investing).toBeGreaterThan(5);
 
   await deleteSpace(db, gone.space.id, "  Text Dana ");
 
@@ -127,7 +105,6 @@ test("deleting a space removes every row about it, its transcripts and its folde
   expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
   expect(existsSync(gone.transcript)).toBe(false);
   expect(existsSync(gone.space.folder!)).toBe(false);
-  expect(getSetting(db, "messaging.spaceId")).toBeNull();
   expect(count("SELECT COUNT(*) AS n FROM pending_deletes")).toBe(0);
   // The other space is exactly as it was.
   expect(existsSync(kept.transcript)).toBe(true);
@@ -158,20 +135,6 @@ test("a running task stops the delete and says what to do", async () => {
   expect(err.status).toBe(409);
   expect(getSpace(db, s.space.id)).not.toBeNull();
   expect(count("SELECT COUNT(*) AS n FROM tasks WHERE space_id = ?", s.space.id)).toBe(2);
-});
-
-test("a text being sent stops the delete of the Messages space", async () => {
-  const space = createSpace(db, { name: "Messages", kind: "general", goal: "g" });
-  const { action } = draftMessage(db, { spaceId: space.id, toName: "Dana", text: "Hey", handle: "+15550100134", handleSource: "you" });
-  db.query("UPDATE message_actions SET status = 'sending' WHERE id = ?").run(action.id);
-  const err = await deleteSpace(db, space.id, "Messages").catch((e) => e);
-  expect(err.status).toBe(409);
-  expect(err.message).toBe("A text is being sent from here right now. Try again in a minute, once it has gone. Nothing was deleted.");
-  setMessageStatus(db, action.id, "sent", { sentAt: Date.now() });
-  const preview = spaceDeletePreview(db, space.id);
-  expect(preview.texts).toEqual({ sent: 1, drafts: 0 });
-  await deleteSpace(db, space.id, "Messages");
-  expect(getSpace(db, space.id)).toBeNull();
 });
 
 test("a link inside the folder is removed, never followed", async () => {
@@ -335,22 +298,11 @@ test("deleting a task removes its runs, review, history, transcript and the file
     expect(readFileSync(join(s.space.folder!, "changed.md"), "utf8")).toBe("old");
     expect(readFileSync(join(outside, "x.md"), "utf8")).toBe("keep");
     expect(listActivity(db, { spaceId: s.space.id }).some((r) => r.taskId === s.task)).toBe(false);
-    // The paper ledger and write-ups keep their rows; only the link to the task goes.
-    expect(count("SELECT COUNT(*) AS n FROM paper_fills WHERE space_id = ? AND task_id IS NULL", s.space.id)).toBe(1);
-    expect(count("SELECT COUNT(*) AS n FROM market_writeups WHERE space_id = ? AND task_id IS NULL", s.space.id)).toBe(1);
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     expect(listSpaces(db).some((x) => x.id === s.space.id)).toBe(true);
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }
-});
-
-test("a text drafted in Messages for a deleted task stays, unlinked", async () => {
-  const s = fullSpace("Text Dana");
-  const messages = createSpace(db, { name: "Messages", kind: "general", goal: "g" });
-  const { action } = draftMessage(db, { spaceId: messages.id, taskId: s.task, toName: "Dana", text: "Hey again" });
-  await deleteSpace(db, s.space.id, "Text Dana");
-  expect(db.query("SELECT space_id, task_id FROM message_actions WHERE id = ?").get(action.id)).toEqual({ space_id: messages.id, task_id: null });
 });
 
 test("a running task can't be deleted, nor one whose review is running", async () => {

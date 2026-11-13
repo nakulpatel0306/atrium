@@ -6,11 +6,8 @@ import { type ActivityGroup, type ActivityTone, byDay, groupActivity, leadOf, vi
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
-import { money } from "../engine/markets/labels";
-import { askLine, displayHandle, hasTarget, memberNames, recipientOf } from "../engine/messaging/rules";
 import { outcomeText } from "../engine/outcome";
 import { fileSize, plural } from "../engine/text";
-import type { MarketsGlance } from "./client";
 import { markdownLines } from "./markdown";
 import type { View } from "./select";
 import { clean, width } from "./text";
@@ -35,9 +32,6 @@ export const TONE_COLOR: Record<ActivityTone, Tone | undefined> = { routine: und
 const TONE = { ok: color.ok, waiting: color.warn, bad: color.bad } as const;
 
 const blank: DetailLine = [];
-const signedMoney = (n: number) => `${n >= 0 ? "+" : "−"}${money(Math.abs(n), "USD")}`;
-const signedCad = (n: number) => `${n >= 0 ? "+" : "−"}CA$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
-const signedPct1 = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(1)}%`;
 const plain = (text: string, style: Omit<Styled, "text"> = {}): DetailLine => [{ text, ...style }];
 const muted = (text: string) => plain(text, { color: color.muted });
 const heading = (text: string): DetailLine => plain(text, { bold: true, color: color.accent });
@@ -145,40 +139,6 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   return lines;
 }
 
-function messageLines(m: State["messageActions"][number]): DetailLine[] {
-  const lines: DetailLine[] = [];
-  if (m.lastError) lines.push(blank, plain(`Last try failed: ${m.lastError}`, { color: color.bad }));
-  if (m.group) {
-    const people = memberNames(m.group);
-    lines.push(
-      blank,
-      m.group.chat
-        ? [{ text: "To      ", color: color.muted }, { text: m.group.chat.name ?? "Unnamed group", bold: true }, { text: m.group.chat.name ? "  chat name from Messages" : "  group chat in Messages", color: color.muted }]
-        : [{ text: "To      ", color: color.muted }, { text: recipientOf(m), bold: true }, { text: "  group chat needed", color: color.warn }],
-      [{ text: "Asked   ", color: color.muted }, { text: askLine(m.group) }],
-      [{ text: "People  ", color: color.muted }, { text: people.length ? people.join(", ") : "not known until you find the chat" }],
-      [{ text: "Via     ", color: color.muted }, { text: m.service }],
-      blank,
-      ...block(m.text),
-      blank,
-      muted("Sends to the existing group chat from Messages on this Mac. Atrium can't confirm delivery."),
-      muted(hasTarget(m) ? "a send · r don't send" : "Find the group chat on the dashboard, then a sends it here · r don't send"),
-    );
-    return lines;
-  }
-  lines.push(
-    blank,
-    [{ text: "To   ", color: color.muted }, { text: m.toName, bold: true }, { text: m.handle ? `  ${displayHandle(m.handle)}` : "  number needed", color: m.handle ? undefined : color.warn }],
-    [{ text: "Via  ", color: color.muted }, { text: m.service }],
-    blank,
-    ...block(m.text),
-    blank,
-    muted("Sends from Messages on this Mac. Atrium can't confirm delivery."),
-    muted(m.handle ? "a send · r don't send" : "Pick who this goes to on the dashboard, then a sends it here · r don't send"),
-  );
-  return lines;
-}
-
 export function approvalDetail(view: View, messages: Message[] | null, width = 100): DetailLine[] {
   const approval = view.approval;
   if (!approval) return [muted(view.approvals.length + view.proposals.length ? PICK : "Nothing needs you right now.")];
@@ -186,8 +146,6 @@ export function approvalDetail(view: View, messages: Message[] | null, width = 1
   const review = reviewLine(approval, view.state, messages);
   const owner = approval.spaceId === null ? "Atrium" : (space?.name ?? "Unknown space");
   const lines: DetailLine[] = [muted(owner), plain(approval.title, { bold: true })];
-  const text = approval.alwaysAsk === "send_message" ? view.state.messageActions.find((m) => m.approvalId === approval.id) : undefined;
-  if (text) return [...lines, ...messageLines(text), blank, muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`)];
   const task = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const told = task ? outcomeText(task.outcome, task.outcomeReason) : null;
   if (told) lines.push(plain(told, { color: task?.outcome === "unknown" ? color.muted : color.warn }));
@@ -197,11 +155,7 @@ export function approvalDetail(view: View, messages: Message[] | null, width = 1
   if (approval.alwaysAsk === "create_repo") lines.push(plain("Edit the fields in the dashboard. a approves them as shown."));
   lines.push(
     muted(
-      approval.kind === "alert"
-        ? "a dismiss · turn the alert off or change it on the dashboard"
-        : approval.spaceId === null
-          ? "a approve · r decline"
-          : "a approve · r send back · t transcript · the task in Spaces has its runs",
+      approval.spaceId === null ? "a approve · r decline" : "a approve · r send back · t transcript · the task in Spaces has its runs",
     ),
   );
   return lines;
@@ -218,7 +172,7 @@ export function proposalDetail(view: View): DetailLine[] {
     blank,
     // The dashboard's wording, so both front-ends promise the same thing.
     plain(
-      `If you say yes, Atrium approves these in ${space} on its own from now on. It never merges or pushes, each one shows up in Activity, and you can undo any of them or turn the rule off on the dashboard's Rules page. It still always asks before merging, deploying, deleting, messaging someone new, spending money, or touching secrets.`,
+      `If you say yes, Atrium approves these in ${space} on its own from now on. It never merges or pushes, each one shows up in Activity, and you can undo any of them or turn the rule off on the dashboard's Rules page. It still always asks before merging, deploying, deleting, or touching secrets.`,
       { color: color.muted },
     ),
     blank,
@@ -232,49 +186,7 @@ export function proposalDetail(view: View): DetailLine[] {
 // The engine logs a rule's decision as Atrium's, in these words; it's the only record of it the state carries.
 export const ruleApproved = (row: State["activity"][number]) => row.message.startsWith("Approved by your rule");
 
-const cadWhole = (n: number) => `CA$${Math.round(n).toLocaleString("en-US")}`;
-const priceText = (n: number, ccy: "CAD" | "USD") => `${ccy === "USD" ? "US$" : "CA$"}${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
-const hourText = (h: string | null) => (h === "bmo" ? "before open" : h === "amc" ? "after close" : "time not set");
-
-// The investing glance: the portfolio's value and day, each list with symbols padded and prices right-aligned, and
-// the next 30 days of earnings (the window Atrium fetches).
-function marketsLines(g: MarketsGlance): DetailLine[] {
-  const out: DetailLine[] = [];
-  const p = g.portfolio;
-  if (p && p.totalCad !== null) {
-    const day = p.dayPct !== null && p.dayCad !== null ? ` · ${signedPct1(p.dayPct)} ${p.dayLabel ?? "today"} (${signedCad(p.dayCad)})` : "";
-    out.push(plain(`Portfolio ${cadWhole(p.totalCad)}${day}`));
-    if (p.mix) out.push(muted(p.mix));
-  } else out.push(plain("No holdings yet. Import them in the app."));
-  if (g.paper) out.push(plain(`Paper ${signedMoney(g.paper.dayPnl)} today (${signedMoney(g.paper.totalPnl)} total)`));
-  for (const l of g.lists) {
-    out.push(blank, heading(l.name));
-    if (!l.rows.length) {
-      out.push(muted("  Nothing here yet."));
-      continue;
-    }
-    const sym = Math.max(...l.rows.map((r) => r.key.length));
-    const prices = l.rows.map((r) => (r.price === null ? "no price" : priceText(r.price, r.ccy)));
-    const width = Math.max(...prices.map((x) => x.length));
-    l.rows.forEach((r, i) => {
-      const line: DetailLine = [{ text: `  ${r.key.padEnd(sym)}  ${prices[i]!.padStart(width)}${r.dayPct === null ? "" : `  ${signedPct1(r.dayPct)}`}` }];
-      if (r.tag) line.push({ text: `  ${r.tag}`, color: color.muted });
-      out.push(line);
-    });
-  }
-  out.push(blank, heading("Earnings in the next 30 days"));
-  if (!g.earnings.length) out.push(muted("No earnings in the next 30 days."));
-  for (const e of g.earnings) {
-    const when = dayFmt.format(Date.parse(`${e.date}T12:00:00Z`));
-    const line: DetailLine = [{ text: `  ${when}  ${e.key}  ${hourText(e.hour)}` }];
-    if (e.held) line.push({ text: "  · you hold this", color: color.muted });
-    out.push(line);
-  }
-  return out;
-}
-
-export function spaceDetail(view: View, reviewers: Record<string, string | null> | null, markets: MarketsGlance | null = null): DetailLine[] {
+export function spaceDetail(view: View, reviewers: Record<string, string | null> | null): DetailLine[] {
   const space = view.space;
   if (!space) return [muted(view.spaces.length ? PICK : "No spaces yet. Press space and describe one.")];
   const { state } = view;
@@ -308,11 +220,6 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
         ? plain(`${reason} Reviews will be skipped until you pick another reviewer.`, { color: color.bad })
         : muted(reviewHint(space.reviewBy)),
     );
-  }
-  if (space.kind === "markets") {
-    lines.push(blank);
-    if (markets) lines.push(...marketsLines(markets));
-    lines.push(muted("Open the app for the chart."));
   }
   // Failures and lines waiting on Nakul always show, past the newest few.
   const { visible: groups } = visibleGroups(

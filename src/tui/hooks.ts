@@ -3,7 +3,7 @@ import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import type { SpaceDeletePreview } from "../engine/delete";
-import type { EngineClient, MarketsGlance } from "./client";
+import type { EngineClient } from "./client";
 
 type Space = State["spaces"][number];
 
@@ -52,12 +52,6 @@ export function useReviewers(c: EngineClient, space: Space | null): Record<strin
   return useFetched(space?.id ?? null, space?.updatedAt, () => c.reviewers(space!.id));
 }
 
-// Prices and paper P&L move with every quote, so this is read again on any state push while the space is open.
-export function useMarketsGlance(c: EngineClient, space: Space | null): MarketsGlance | null {
-  const state = useEngineState(c);
-  return useFetched(space?.id ?? null, state, () => c.markets(space!.id));
-}
-
 type Transcript = { ok: true; text: string } | { ok: false; error: string };
 const KEEP_TRANSCRIPTS = 20;
 type RunRef = { id: string; endedAt: number | null };
@@ -91,13 +85,6 @@ export function useTick(ms: number, active: boolean): void {
     const id = setInterval(() => setTick((n) => n + 1), ms);
     return () => clearInterval(id);
   }, [ms, active]);
-}
-
-// An engine read that follows every state push while `path` is set (the Money and Investing views, Home's glance):
-// the same thing the dashboard does while those views are open.
-export function useEngineRead<T>(c: EngineClient, path: string | null): T | null {
-  const state = useEngineState(c);
-  return useFetched(path, state, () => c.get<T>(path!));
 }
 
 // What deleting a space would remove, read once when the delete box opens.

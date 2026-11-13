@@ -1,8 +1,0 @@
-{
-  "count": 3,
-  "result": [
-    { "description": "ARITZIA INC", "displaySymbol": "ATZ.TO", "symbol": "ATZ.TO", "type": "Common Stock" },
-    { "description": "ARITZIA INC", "displaySymbol": "ATZAF", "symbol": "ATZAF", "type": "" },
-    { "description": "ARITZIA INC", "displaySymbol": "2A4.F", "symbol": "2A4.F", "type": "Common Stock" }
-  ]
-}

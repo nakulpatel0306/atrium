@@ -7,7 +7,6 @@ export type ActivityKind =
   | "started"
   | "finished"
   | "ready"
-  | "drafted"
   | "decided"
   | "rule"
   | "skipped"
@@ -18,9 +17,6 @@ export type ActivityKind =
   | "couldnt"
   | "blocked"
   | "failed"
-  | "alert"
-  | "sent"
-  | "paper"
   | "note"
   | "other";
 
@@ -63,9 +59,8 @@ const KINDS: [RegExp, ActivityKind][] = [
   [/^Started: /, "started"],
   [/^Finished: /, "finished"],
   [/^Ready for review: /, "ready"],
-  [/^Drafted a text to /, "drafted"],
   [/^Approved by your rule /, "rule"],
-  [/^(Approved|Rejected|Accepted anyway|Accepted as is|Pressed Send|Chose not to send|Dismissed): /, "decided"],
+  [/^(Approved|Rejected|Accepted anyway|Accepted as is): /, "decided"],
   [/^Skipped: /, "skipped"],
   [/^The engine (stopped|restarted), so /, "requeued"],
   [/^Stopped by you: /, "stopped"],
@@ -73,10 +68,7 @@ const KINDS: [RegExp, ActivityKind][] = [
   [/^Partly done: /, "partial"],
   [/^Couldn't do: /, "couldnt"],
   [/^Blocked: /, "blocked"],
-  [/^(Couldn't |Didn't send|Atrium hit a problem|Discarded the result|Kept the local copy)/, "failed"],
-  [/^Alert: /, "alert"],
-  [/^Sent via Messages to /, "sent"],
-  [/^Paper (buy|sell) /, "paper"],
+  [/^(Couldn't |Atrium hit a problem|Discarded the result|Kept the local copy)/, "failed"],
   [/^(Atrium left |Atrium kept |Kept |Removed the local copy |Removed the new copy )/, "note"],
 ];
 
@@ -89,7 +81,6 @@ const OWN_LINE: Partial<Record<ActivityKind, ActivityTone>> = {
   couldnt: "failure",
   blocked: "failure",
   failed: "failure",
-  sent: "notice",
   note: "notice",
 };
 
@@ -107,8 +98,6 @@ function titleIn(kind: ActivityKind, message: string): string | null {
       return after(/^[^:]+: /).replace(/\. It says .*$/, "");
     case "rule":
       return after(/^Approved by your rule ".*?": /);
-    case "drafted":
-      return after(/^Drafted a text to [^:]+: /);
     case "skipped":
       return message.startsWith("Skipped: you already decided. ") ? after(/^Skipped: you already decided\. /) : null;
     case "stopped":
@@ -142,7 +131,6 @@ export function dayLabel(t: number, now = Date.now()): string {
 
 const PHRASE: Partial<Record<ActivityKind, (message: string) => string>> = {
   ready: () => "ready for review",
-  drafted: () => "drafted a text",
   rule: () => "approved by your rule",
   skipped: () => "review skipped",
   requeued: () => "back in the queue",
@@ -155,13 +143,7 @@ const PHRASE: Partial<Record<ActivityKind, (message: string) => string>> = {
         ? "accepted anyway"
         : m.startsWith("Accepted as is")
           ? "accepted as is"
-          : m.startsWith("Pressed Send")
-            ? "pressed Send"
-            : m.startsWith("Chose not to send")
-              ? "chose not to send"
-              : m.startsWith("Dismissed")
-                ? "dismissed"
-                : "approved",
+          : "approved",
 };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -171,7 +153,7 @@ function taskText(events: ActivityRow[], status: string | undefined, files: numb
   const chrono = [...events].reverse();
   const kinds = chrono.map((e) => activityKind(e.message));
   const starts = kinds.filter((k) => k === "started").length;
-  const ended = kinds.some((k) => k === "finished" || k === "ready" || k === "drafted");
+  const ended = kinds.some((k) => k === "finished" || k === "ready");
   const runs = starts || (ended ? 1 : 0);
   const phrases: string[] = [];
   const last = kinds.at(-1);
@@ -186,9 +168,9 @@ function taskText(events: ActivityRow[], status: string | undefined, files: numb
     if (phrase && phrases.at(-1) !== phrase) phrases.push(phrase);
   });
   let waiting = false;
-  if (status === "review" && (last === "ready" || last === "drafted")) {
+  if (status === "review" && last === "ready") {
     waiting = true;
-    phrases[phrases.length - 1] = last === "ready" ? "waiting for review" : "waiting for you to press Send";
+    phrases[phrases.length - 1] = "waiting for review";
   }
   return { text: phrases.join(", "), waiting };
 }
@@ -227,7 +209,7 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
         built.push(own);
         continue;
       }
-      if (taskKey && kind !== "alert" && kind !== "paper" && kind !== "other") {
+      if (taskKey && kind !== "other") {
         const cur = open.get(taskKey);
         if (cur) cur.events.unshift(r);
         else {
@@ -237,7 +219,7 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
         }
         continue;
       }
-      const foldKey = `fold:${r.spaceId}:${kind === "paper" ? "paper" : r.message}`;
+      const foldKey = `fold:${r.spaceId}:${r.message}`;
       const cur = open.get(foldKey);
       if (cur) cur.events.unshift(r);
       else {
@@ -264,8 +246,8 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
         out.push({ ...base, tone: waiting ? "attention" : "routine", text });
       } else {
         const n = b.events.length;
-        const text = n === 1 ? newest.message : kind === "paper" ? `${n} paper trades` : `${newest.message} ×${n}`;
-        out.push({ ...base, tone: kind === "alert" ? "attention" : "routine", text });
+        const text = n === 1 ? newest.message : `${newest.message} ×${n}`;
+        out.push({ ...base, tone: "routine", text });
       }
     }
   }

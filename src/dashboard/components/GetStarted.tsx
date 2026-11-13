@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Check, Report } from "../../engine/doctor";
 import { claudeBlocks, nextStep, prevStep, STEPS, type Progress, type Step } from "../../engine/start-steps";
-import { post, put } from "../api";
+import { put } from "../api";
 import { navigate } from "../route";
-import { type MailOverview, useMailOverview } from "../mail";
-import { AppleSource, GoogleConnect } from "./MailSources";
 
 export const STEP_TITLES: Record<Step, string> = {
   welcome: "Welcome",
   agents: "Agents",
   tools: "Optional tools",
-  investing: "Investing and money",
-  mail: "Mail and calendar",
   profile: "Your name and projects folder",
   done: "Done",
 };
@@ -46,8 +42,6 @@ export type ProfileDraft = { name: string; projectsRoot: string };
 
 type ViewProps = {
   report: Report;
-  // Mail sources, read separately so a sign-in finishing in the browser shows up here.
-  mail?: MailOverview | null;
   progress: Progress;
   draft: ProfileDraft;
   message: string | null;
@@ -56,7 +50,6 @@ type ViewProps = {
   onGo(step: Step): void;
   onSkip(step: Step): void;
   onRecheck(): void;
-  onSetupInvesting(): void;
   onSaveProfile(): void;
   onFinish(): void;
   onDismiss(): void;
@@ -80,7 +73,7 @@ export function StartView(p: ViewProps) {
       {step === "welcome" && (
         <>
           <p>Atrium is a command center on your Mac for the AI agents you already use. You describe the work, agents do it in the background, and anything that leaves your Mac waits for your yes.</p>
-          <p className="hint">Next: check your agents, pick optional tools, connect mail and calendar if you like, then choose your name and projects folder. Everything except Claude can be skipped, and you can come back to this from Settings.</p>
+          <p className="hint">Next: check your agents, pick optional tools, then choose your name and projects folder. Everything except Claude can be skipped, and you can come back to this from Settings.</p>
         </>
       )}
 
@@ -102,55 +95,6 @@ export function StartView(p: ViewProps) {
           <button className="btn" onClick={p.onRecheck} disabled={p.busy}>
             Check again
           </button>
-          {report.permissions.map((perm) => (
-            <div key={perm.label} className="set-card">
-              <div className="set-title">
-                <b>{perm.label}</b>
-                <span className="tag">Optional</span>
-              </div>
-              <p className="hint">{perm.message} Atrium doesn't ask from this screen.</p>
-            </div>
-          ))}
-        </>
-      )}
-
-      {step === "investing" && (
-        <>
-          <div className="set-card">
-            <div className="set-title">
-              <b>Investing</b>
-              <span className="tag">Optional</span>
-              {report.investing.spaceId && <span className="tag ok">Set up</span>}
-            </div>
-            <p className="hint">Creates an empty, private Investing space. Import your holdings there or add tickers yourself. Add free market-data keys (Finnhub, Alpha Vantage) in Settings; they stay in your Mac's Keychain.</p>
-            {!report.investing.spaceId && (
-              <button className="btn" onClick={p.onSetupInvesting} disabled={p.busy}>
-                Set up investing
-              </button>
-            )}
-          </div>
-          <div className="set-card">
-            <div className="set-title">
-              <b>Money</b>
-              <span className="tag">Optional</span>
-            </div>
-            <p className="hint">{report.money.message} Recognised formats: {report.money.formats.join("; ")}. Money lives in the Investing space, so set that up first.</p>
-          </div>
-        </>
-      )}
-
-      {step === "mail" && (
-        <>
-          <p>Atrium can read your mail and calendar on this Mac, so you can ask things like "when am I free Thursday?" from one place. Each source is optional and only goes to Claude.</p>
-          {p.mail ? (
-            <>
-              <GoogleConnect overview={p.mail} />
-              <AppleSource what="mail" overview={p.mail} />
-              <AppleSource what="calendar" overview={p.mail} />
-            </>
-          ) : (
-            <p className="hint">Checking your accounts…</p>
-          )}
         </>
       )}
 
@@ -170,7 +114,7 @@ export function StartView(p: ViewProps) {
             Projects folder
             <input value={p.draft.projectsRoot} onChange={(e) => p.onDraft({ ...p.draft, projectsRoot: e.target.value })} />
           </label>
-          <p className="hint">New projects and clones go in the projects folder. Amounts are in {report.profile.homeCurrency} for now.</p>
+          <p className="hint">New projects and clones go in the projects folder.</p>
           <button className="btn" type="submit" disabled={p.busy}>
             Save
           </button>
@@ -186,8 +130,6 @@ export function StartView(p: ViewProps) {
               </li>
             ))}
             <li>GitHub CLI: {report.github.state === "ready" ? "ready" : "not set up"}</li>
-            <li>Investing: {report.investing.spaceId ? "set up" : "skipped"}</li>
-            <li>Mail and calendar: {report.mail.sources.some((m) => m.id !== "helper" && m.ready) ? "connected" : "skipped"}</li>
             <li>Projects folder: {report.profile.projectsRoot}</li>
           </ul>
           {progress.skipped.length > 0 && <p className="hint">Skipped: {progress.skipped.map((s) => STEP_TITLES[s]).join(", ")}. Find them again in Settings → Get started.</p>}
@@ -236,7 +178,6 @@ export function GetStarted() {
   const [draft, setDraft] = useState<ProfileDraft>({ name: "", projectsRoot: "" });
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const mail = useMailOverview();
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -261,7 +202,6 @@ export function GetStarted() {
   return (
     <StartView
       report={data.report}
-      mail={mail}
       progress={data.progress}
       draft={draft}
       message={message}
@@ -270,11 +210,6 @@ export function GetStarted() {
       onGo={(step) => void save({ step })}
       onSkip={(step) => void save({ skip: step, step: nextStep(step) })}
       onRecheck={() => void load()}
-      onSetupInvesting={async () => {
-        const res = await post("/api/investing/setup");
-        setMessage(res.ok ? "Investing is set up." : res.error);
-        await load();
-      }}
       onSaveProfile={async () => {
         const res = await put("/api/profile", { name: draft.name, projectsRoot: draft.projectsRoot });
         setMessage(res.ok ? "Saved." : res.error);

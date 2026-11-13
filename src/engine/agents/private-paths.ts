@@ -2,7 +2,7 @@ import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
-// Keeping a private or investing space's Claude run away from bank exports (Downloads, Desktop, Documents, and any
+// Keeping a private space's Claude run away from bank exports (Downloads, Desktop, Documents, and any
 // CSV, OFX or QFX outside its own folder).
 //
 // The main guard isn't here: such runs have no Bash (only a private repo keeps its test commands), and Claude's file

@@ -6,11 +6,6 @@ import { join } from "node:path";
 import type { TaskWait } from "../../src/engine/agents/registry";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { getApproval, listPending, onApprovalResolved, resolveApproval } from "../../src/engine/approvals";
-import { createMarketsHooks } from "../../src/engine/markets/agent";
-import { saveQuotes } from "../../src/engine/markets/cache";
-import { createMarketData } from "../../src/engine/markets/data";
-import { demoProvider } from "../../src/engine/markets/providers/demo";
-import { handleStrategyDecision, proposeStrategy } from "../../src/engine/markets/strategies";
 import * as rules from "../../src/engine/autonomy/rules";
 import { createRule } from "../../src/engine/autonomy/rules";
 import { openDb } from "../../src/engine/db";
@@ -23,7 +18,6 @@ import { bus, listActivity } from "../../src/engine/events";
 import { BASE_TOOLS, createRunner, engineOnlyClaim, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
 import { capabilityLines } from "../../src/engine/capabilities";
 import { OUTCOME_INSTRUCTION, outcomeLabel, outcomeText } from "../../src/engine/outcome";
-import { pendingMessageActions } from "../../src/engine/messaging/store";
 import { getSetting, setSetting } from "../../src/engine/settings";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
 import { spaceFolder } from "../../src/engine/folders";
@@ -33,9 +27,6 @@ import { tempHome, tempRepo } from "../helpers";
 import { readdirSync } from "node:fs";
 import { config } from "../../src/engine/config";
 import { claudeAdapter } from "../../src/engine/agents/claude";
-import { importMoney, isMasked, previewMoney } from "../../src/engine/money/import";
-import { requestExplain, requestMoneyAsk } from "../../src/engine/money/summary";
-import { isPrivate } from "../../src/engine/spaces";
 import { createCloner } from "../../src/engine/repos/clones";
 import { listClones } from "../../src/engine/repos/store";
 import { fakeGitHub, seedRemote } from "../repos-helpers";
@@ -1726,145 +1717,6 @@ test("a failing rule check leaves the result waiting and says so", async () => {
   expect(getApproval(db, approvalFor(t.id)!.id)!.status).toBe("pending");
 });
 
-describe("markets spaces", () => {
-  const IN_SESSION = Date.parse("2026-11-05T15:00:00Z");
-  const noKeys = { get: async () => null, set: async () => {}, remove: async () => {} };
-  let offStrategy: () => void = () => {};
-  afterEach(() => offStrategy());
-
-  function marketsRunner(adapter: AgentAdapter) {
-    setSetting(db, "markets.provider", "demo");
-    const data = createMarketData({ db, keychain: noKeys, now: () => IN_SESSION, providers: { demo: demoProvider({ now: () => IN_SESSION }) } });
-    runner = createRunner({ db, adapters: { claude: adapter }, power: async () => "ac", keepAwake: fakeKeepAwake(), markets: createMarketsHooks(db, { data, now: () => IN_SESSION }) });
-    runner.start();
-    return runner;
-  }
-
-  test("card data: Explain my month sends Claude only the masked recap, and its transcript stays masked", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    const bank = ["Date,Description,Amount", "2026-09-03,LOBLAWS,-80", "2026-10-02,PAYMENT 4111 1111 1111 1111 ON 2026-10-02,-900", "2026-10-05,LOBLAWS,-95"].join("\n");
-    importMoney(db, space.id, previewMoney(bank, { signs: "negative-out", account: "Amex" }));
-    const { adapter, calls } = fakeAdapter((input) => {
-      input.onChunk?.(input.prompt);
-      return ok("You spent more in October.\n\nAnalysis, not advice.");
-    });
-    const task = requestExplain(db, space.id, "2026-10", IN_SESSION);
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done");
-    const prompt = calls[0]!.prompt;
-    expect(prompt).toContain("Recap facts for October 2026");
-    expect(prompt).toContain("Use only the numbers above");
-    expect(prompt).not.toContain("Holdings:");
-    expect(isMasked(prompt)).toBe(true);
-    const { transcriptsDir } = config();
-    const logs = readdirSync(transcriptsDir).map((f) => readFileSync(join(transcriptsDir, f), "utf8")).join("\n");
-    expect(logs).toContain("Recap facts");
-    expect(isMasked(logs)).toBe(true);
-    expect(logs).not.toContain("4111");
-  });
-
-  test("card data: an ordinary money question with imported files and holdings passes the mask check", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money/rbc.csv"), "utf8")));
-    importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money/ws-activity-2026.csv"), "utf8")));
-    const { adapter, calls } = fakeAdapter(() => ok("You spent most on rent.\n\nAnalysis, not advice."));
-    const task = requestMoneyAsk(db, space.id, "Where did my money go last month?");
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done");
-    expect(calls[0]!.prompt).toContain("Money facts");
-    expect(calls[0]!.prompt).not.toContain("Holdings:");
-    expect(isMasked(calls[0]!.prompt)).toBe(true);
-  });
-
-  test("card data: a money question over his four bank files reaches the Claude CLI, tool-less and masked", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    for (const f of ["td-chequing.csv", "td-credit.csv", "amex.csv", "ws-cash.csv"]) importMoney(db, space.id, previewMoney(readFileSync(join(import.meta.dir, "../fixtures/money", f), "utf8")));
-    const dir = mkdtempSync(join(tmpdir(), "atrium-cli-"));
-    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
-    process.env.FAKE_CLAUDE_STDIN = join(dir, "stdin.txt");
-    process.env.FAKE_CLAUDE_TEXT = "Rent was the biggest part.";
-    cleanups.push(() => {
-      delete process.env.FAKE_CLAUDE_ARGV;
-      delete process.env.FAKE_CLAUDE_STDIN;
-      delete process.env.FAKE_CLAUDE_TEXT;
-      rmSync(dir, { recursive: true, force: true });
-    });
-    const task = requestMoneyAsk(db, space.id, "Where did my money go last month?");
-    marketsRunner(claudeAdapter(join(import.meta.dir, "../fixtures/fake-claude.ts")));
-    await waitFor(() => ["done", "failed", "blocked"].includes(getTask(db, task.id)!.status), 15000);
-    expect(getTask(db, task.id)!.status).toBe("done");
-    const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");
-    expect(prompt).toContain("Bank and card: 100 transactions from Aug 1, 2026 to Oct 30, 2026");
-    expect(isMasked(prompt)).toBe(true);
-    const argv = JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")) as string[];
-    expect(argv[argv.indexOf("--tools") + 1]).toBe("");
-  }, 20000);
-
-  test("card data: a money task whose prompt isn't masked never reaches the agent", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    const { adapter, calls } = fakeAdapter();
-    const task = createTask(db, { spaceId: space.id, title: "Ask Claude about my money", detail: "Is 4111 1111 1111 1111 my card?", agent: "claude", weight: "light", purpose: "money" });
-    marketsRunner(adapter);
-    await waitFor(() => ["failed", "blocked"].includes(getTask(db, task.id)!.status));
-    expect(calls).toHaveLength(0);
-    expect(listActivity(db).map((a) => a.message).join("\n")).not.toContain("4111");
-  });
-
-  test("card data: money tasks in an investing space can only go to Claude", () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    expect(isPrivate(space)).toBe(true);
-    expect(() => requestMoneyAsk(db, space.id, "card 4111111111111111?")).toThrow("Leave card and account numbers out of the question.");
-    expect(requestMoneyAsk(db, space.id, "Where did it go?").agent).toBe("claude");
-  });
-
-  test("markets strategy run settles without a review", async () => {
-    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "paper" });
-    offStrategy = onApprovalResolved((a, d) => handleStrategyDecision(db, a, d));
-    const s = proposeStrategy(db, space.id, { name: "Momentum", rules: "r", symbols: ["AAPL"], cadence: "open", maxPositionValue: 2000, maxTradesPerDay: 3 }, "claude");
-    resolveApproval(db, s.approvalId!, "approve");
-    saveQuotes(db, [{ key: "AAPL", price: 100, prevClose: 99, at: IN_SESSION, source: "demo", freshness: "demo" }]);
-    const block = '```atrium-markets\n{"orders":[{"symbol":"AAPL","side":"buy","qty":5,"reason":"Above SMA20"}]}\n```\nAnalysis, not advice.';
-    const { adapter, calls } = fakeAdapter(() => ok(block));
-    const task = createTask(db, { spaceId: space.id, title: "Paper strategy: Momentum (9:45 AM ET)", agent: "claude", weight: "light", strategyId: s.id });
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done");
-    expect(listPending(db)).toHaveLength(0);
-    expect(db.query("SELECT COUNT(*) AS n FROM paper_fills").get()).toEqual({ n: 1 });
-    expect(listActivity(db).map((a) => a.message)).toContain("Paper strategy run: 1 filled, 0 refused");
-    // What happened to each order stays with the task, since there's no review to carry it.
-    expect(getTask(db, task.id)!.detail).toMatch(/Filled: buy 5 AAPL @ \$[\d.]+ · Above SMA20/);
-    expect(calls[0]!.prompt).toContain("Market data as of");
-    expect(calls[0]!.systemPrompt).toContain("Analysis, not advice");
-  });
-
-  test("a digest or thesis task gets read-only tools and saves a write-up", async () => {
-    const space = createSpace(db, { name: "Investing", kind: "markets", goal: "watch" });
-    const { adapter, calls } = fakeAdapter(() => ok("Markets were quiet.\n\nAnalysis, not advice."));
-    const task = createTask(db, { spaceId: space.id, title: "Daily digest: what moved and why", agent: "claude", weight: "light", purpose: "digest" });
-    const plain = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "done" && getTask(db, plain.id)!.status === "review");
-    const digest = calls.find((c) => c.prompt.includes("Daily digest"))!;
-    expect(digest.allowedTools).toEqual(["Read", "Glob", "Grep"]);
-    expect(digest.mode).toBe("review");
-    const other = calls.find((c) => c.prompt.includes("Explain today's move"))!;
-    expect(other.allowedTools).toEqual(["Read", "Edit", "Write", "Glob", "Grep"]);
-  });
-
-  test("markets analysis task ends in review with the label", async () => {
-    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
-    const { adapter, calls } = fakeAdapter(() => ok('Holdings moved with the market.\n\n```atrium-markets\n{"orders":[{"symbol":"AAPL","side":"buy","qty":1,"reason":"x"}]}\n```\nAnalysis, not advice.'));
-    const task = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
-    marketsRunner(adapter);
-    await waitFor(() => getTask(db, task.id)!.status === "review");
-    const a = listPending(db)[0]!;
-    expect(a.detail).toContain("Holdings moved with the market.");
-    expect(a.detail).toContain("Paper orders only run from an approved strategy; ignored 1.");
-    expect(calls[0]!.systemPrompt).toContain("This is a markets space. Atrium never places real trades and you can't either.");
-    expect(calls[0]!.prompt).toContain("Market data as of");
-  });
-});
-
 describe("attached GitHub repos", () => {
   test("a task in a space with no local copy waits while it's cloned, then runs on its branch", async () => {
     const gh = fakeGitHub();
@@ -2067,7 +1919,7 @@ describe("honest outcomes", () => {
     const claude = writesDoc();
     start({ adapter: claude.adapter, extra: { codex: { ...codex.adapter, id: "codex", label: "Codex" } } });
     await waitFor(() => listTasks(db).some((x) => x.parentTaskId === t.id && x.kind === "fix" && x.status === "done"));
-    const lines = capabilityLines(db, "task");
+    const lines = capabilityLines();
     expect(claude.calls).toHaveLength(2);
     for (const call of claude.calls) {
       for (const l of lines) expect(call.systemPrompt).toContain(l);
@@ -2114,14 +1966,15 @@ describe("honest outcomes", () => {
     expect(activity(space.id)).toContain("Ready for review: Answer");
   });
 
-  test("done can't stand for something only Atrium can do", async () => {
+  test("done can't stand for something Atrium can't do or only Atrium can do", async () => {
     const msg = await finish("Send the text to Dana", "Here's the text.\nOUTCOME: done");
-    expect([msg.t.outcome, msg.t.outcomeReason]).toEqual(["couldnt", "Only Atrium can send messages, and nothing was sent."]);
+    expect([msg.t.outcome, msg.t.outcomeReason]).toEqual(["couldnt", "Atrium can't send texts or email, and nothing was sent."]);
     expect(getApproval(db, msg.a.id)!.fingerprint).toBeNull();
     await runner!.stop();
     runner = null;
     const repoTask = await finish("Create a new GitHub repo for the blog", "Made a plan.\nOUTCOME: done");
-    expect(repoTask.t.outcomeReason).toBe("Only Atrium can create repos, after your yes, and none was created.");
+    expect([repoTask.t.outcome, repoTask.t.outcomeReason]).toEqual(["couldnt", "Only Atrium can create repos, after your yes, and none was created."]);
+    expect(getApproval(db, repoTask.a.id)!.fingerprint).toBeNull();
   });
 
   test("engineOnlyClaim", () => {
@@ -2129,101 +1982,9 @@ describe("honest outcomes", () => {
       expect([t, engineOnlyClaim(t)]).toEqual([t, "message"]);
     }
     for (const t of ["Create a new GitHub repo", "set up the repository", "make a repo for notes"]) expect(engineOnlyClaim(t)).toBe("repo");
-    for (const t of ["Draft a text to Dana", "Summarise notes.md", "Write the message copy", "Send PR to review"]) expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
-  });
-
-  test("a markets work task settles on the text without the outcome line", async () => {
-    setSetting(db, "markets.provider", "demo");
-    const space = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
-    const seen: string[] = [];
-    const markets = { context: async () => "", settle: async (_t: unknown, _s: unknown, _a: unknown, summary: string) => (seen.push(summary), { done: false, lines: [] }) };
-    const { adapter } = fakeAdapter(() => ok("Quiet day.\n\nAnalysis, not advice.\nOUTCOME: done"));
-    const task = createTask(db, { spaceId: space.id, title: "Explain today's move", agent: "claude", weight: "light" });
-    runner = createRunner({ db, adapters: { claude: adapter }, power: async () => "ac", keepAwake: fakeKeepAwake(), markets: markets as never });
-    runner.start();
-    await waitFor(() => status(task.id) === "review");
-    expect(seen).toEqual(["Quiet day.\n\nAnalysis, not advice."]);
-  });
-});
-
-describe("message blocks", () => {
-  const block = (to: string, text = "you free sat?") => "Here's a draft.\n\n```atrium-message\n" + JSON.stringify({ to, text }) + "\n```\nOUTCOME: done";
-
-  test("a message block becomes a draft and the task waits on it", async () => {
-    const log = join(home.home, "osa.log");
-    process.env.FAKE_OSASCRIPT_LOG = log;
-    process.env.FAKE_OSASCRIPT_CONTACTS = "[]";
-    cleanups.push(() => {
-      delete process.env.FAKE_OSASCRIPT_LOG;
-      delete process.env.FAKE_OSASCRIPT_CONTACTS;
-    });
-    setSetting(db, "messaging.contactsReady", "true");
-    const s = generalSpace();
-    const t = createTask(db, { spaceId: s.id, title: "Draft a text to Dana", purpose: "message" });
-    start({ adapter: fakeAdapter(() => ok(block("Dana"))).adapter });
-    await waitFor(() => status(t.id) === "review");
-    expect(getTask(db, t.id)).toMatchObject({ outcome: "partial", outcomeReason: "Drafted a text to Dana. It sends only when you press Send." });
-    const pending = listPending(db);
-    expect(pending).toHaveLength(1);
-    expect(pending[0]).toMatchObject({ kind: "question", alwaysAsk: "send_message", taskId: t.id });
-    expect(listActivity(db, { spaceId: s.id }).map((r) => r.message)).toContain("Drafted a text to Dana: Draft a text to Dana");
-    await waitFor(() => existsSync(log) && pendingMessageActions(db)[0]?.candidates !== null);
-    const argv = JSON.parse(readFileSync(log, "utf8").trim().split("\n")[0]!) as string[];
-    expect(argv.slice(argv.indexOf("--") + 1)).toEqual(["Dana"]);
-  });
-
-  test("a group block becomes a group draft with no chat, and nothing reads Messages", async () => {
-    const log = join(home.home, "osa.log");
-    process.env.FAKE_OSASCRIPT_LOG = log;
-    cleanups.push(() => delete process.env.FAKE_OSASCRIPT_LOG);
-    setSetting(db, "messaging.contactsReady", "true");
-    const s = generalSpace();
-    const t = createTask(db, { spaceId: s.id, title: "Draft a group text to Hike crew", purpose: "message" });
-    const reply = "Draft.\n\n```atrium-message\n" + JSON.stringify({ group: "Hike crew", people: ["Sam", "Priya"], text: "lock in sat?", chatId: "iMessage;+;x" }) + "\n```\nOUTCOME: done";
-    start({ adapter: fakeAdapter(() => ok(reply)).adapter });
-    await waitFor(() => status(t.id) === "review");
-    expect(getTask(db, t.id)).toMatchObject({ outcome: "partial", outcomeReason: "Drafted a text to Hike crew. It sends only when you press Send." });
-    expect(pendingMessageActions(db)[0]).toMatchObject({ taskId: t.id, toName: "Hike crew", text: "lock in sat?", group: { name: "Hike crew", people: ["Sam", "Priya"], chat: null } });
-    expect(listPending(db)[0]).toMatchObject({ title: "Send a text to Hike crew?", alwaysAsk: "send_message" });
-    expect(listActivity(db, { spaceId: s.id }).map((r) => r.message)).toContain("Drafted a group text to Hike crew: Draft a group text to Hike crew");
-    await Bun.sleep(50);
-    expect(existsSync(log)).toBe(false);
-  });
-
-  test("a message task's agent-supplied number is ignored", async () => {
-    const s = generalSpace();
-    const a = createTask(db, { spaceId: s.id, title: "Draft one", purpose: "message" });
-    start({ adapter: fakeAdapter(() => ok(block("+1 (555) 010-0134"))).adapter });
-    await waitFor(() => status(a.id) === "review");
-    expect(pendingMessageActions(db)[0]).toMatchObject({ taskId: a.id, toName: "+1 (555) 010-0134", handle: null, handleSource: null });
-  });
-
-  test("a repo task that writes a block still gets a normal review, and no draft", async () => {
-    const path = repo();
-    const s = repoSpace(path);
-    const t = createTask(db, { spaceId: s.id, title: "Add a note" });
-    start({
-      adapter: fakeAdapter((input) => {
-        writeFileSync(join(input.cwd, "note.md"), "hi\n");
-        return ok(block("+15550100134"));
-      }).adapter,
-    });
-    await waitFor(() => status(t.id) === "review");
-    expect(pendingMessageActions(db)).toEqual([]);
-    const a = getApproval(db, approvalFor(t.id)!.id)!;
-    expect(a.kind).toBe("review");
-    expect(a.detail).toContain("The agent suggested sending a text. Atrium doesn't send texts from here");
-    expect(a.detail).toContain("1 commit");
-    expect(getTask(db, t.id)!.outcome).toBe("done");
-  });
-
-  test("a general task outside the Messages space ignores a block too", async () => {
-    const s = generalSpace();
-    const t = createTask(db, { spaceId: s.id, title: "Summarise notes.md" });
-    start({ adapter: fakeAdapter(() => ok(block("Dana"))).adapter });
-    await waitFor(() => status(t.id) === "review");
-    expect(pendingMessageActions(db)).toEqual([]);
-    expect(listPending(db)[0]!.kind).toBe("review");
+    for (const t of ["Draft a text to Dana", "Summarise notes.md", "Write the message copy", "Write the repo notes", "Send PR to review"]) {
+      expect([t, engineOnlyClaim(t)]).toEqual([t, null]);
+    }
   });
 });
 
@@ -2234,10 +1995,10 @@ describe("final review", () => {
     start({ adapter: fakeAdapter(() => ok("Here's the text: hey!\nOUTCOME: done")).adapter });
     await waitFor(() => status(t.id) === "review");
     const task = getTask(db, t.id)!;
-    // What Nakul reads on the card must say nothing was sent, not "the agent didn't say".
+    // What the user reads on the card must say nothing was sent, not "the agent didn't say".
     expect(outcomeText(task.outcome, task.outcomeReason)).toContain("nothing was sent");
     resolveApproval(db, approvalFor(t.id)!.id, "approve");
-    // After he accepts it, the task list must not show a plain done check.
+    // Once accepted, the task list must not show a plain done check.
     expect(outcomeLabel(getTask(db, t.id)!.outcome!)).not.toBeNull();
     expect(listActivity(db, { spaceId: space.id }).map((r) => r.message)).toContain("Accepted anyway: Send the text to Dana. It says it couldn't do this.");
   });
@@ -2262,6 +2023,15 @@ describe("final review", () => {
     const path = repo();
     const s = repoSpace(path);
     const t = createTask(db, { spaceId: s.id, title: "Text Dana's avatar fallback" });
+    start({ adapter: writesDoc().adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(getTask(db, t.id)!.outcome).toBe("done");
+  });
+
+  test("a repo space never applies the engine-only check", async () => {
+    const path = repo();
+    const s = repoSpace(path);
+    const t = createTask(db, { spaceId: s.id, title: "Create a repo layout for the avatar fallback" });
     start({ adapter: writesDoc().adapter });
     await waitFor(() => status(t.id) === "review");
     expect(getTask(db, t.id)!.outcome).toBe("done");

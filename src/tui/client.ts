@@ -3,7 +3,6 @@ import { config } from "../engine/config";
 import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
-import type { GlanceView } from "../engine/markets/views";
 import type { SpaceDeletePreview } from "../engine/delete";
 import { clean, scrub } from "./text";
 
@@ -16,10 +15,7 @@ export type EngineClient = {
   messages(taskId: string): Promise<Message[] | null>;
   outputs(taskId: string): Promise<TaskOutputs | null>;
   reviewers(spaceId: string): Promise<Record<string, string | null> | null>;
-  markets(spaceId: string): Promise<MarketsGlance | null>;
   deletePreview(spaceId: string): Promise<SpaceDeletePreview | null>;
-  // Any other engine read (money, portfolio, the markets view); null when it fails.
-  get<T>(path: string): Promise<T | null>;
   transcript(runId: string): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
   post<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>>;
   patch<T = unknown>(path: string, body: unknown): Promise<PostResult<T>>;
@@ -27,9 +23,6 @@ export type EngineClient = {
   del<T = unknown>(path: string, body?: unknown): Promise<PostResult<T>>;
   close(): void;
 };
-
-// The few investing numbers the terminal shows; charts and the rest stay in the app.
-export type MarketsGlance = GlanceView;
 
 export const engineBase = () => `http://${config().host}:${config().port}`;
 
@@ -243,9 +236,7 @@ export function createClient(opts: { base?: string; backoff?: (attempt: number) 
     messages: (taskId) => read<Message[]>(`/api/tasks/${encodeURIComponent(taskId)}/messages`),
     outputs: (taskId) => read<TaskOutputs>(`/api/tasks/${encodeURIComponent(taskId)}/outputs`),
     reviewers: (spaceId) => read<Record<string, string | null>>(`/api/spaces/${encodeURIComponent(spaceId)}/reviewers`),
-    markets: (spaceId) => read<GlanceView>(`/api/investing/${encodeURIComponent(spaceId)}/glance`),
     deletePreview: (spaceId) => read<SpaceDeletePreview>(`/api/spaces/${encodeURIComponent(spaceId)}/delete-preview`),
-    get: (path) => read(path),
     transcript,
     post: (path, body) => send("POST", path, body),
     patch: (path, body) => send("PATCH", path, body),

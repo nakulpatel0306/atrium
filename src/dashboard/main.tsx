@@ -7,8 +7,6 @@ import { CommandBar } from "./components/CommandBar";
 import { GetStarted } from "./components/GetStarted";
 import { Home } from "./components/Home";
 import { LiveRegion } from "./components/LiveRegion";
-import { SendTray } from "./components/SendTray";
-import { useCancelOnRouteChange } from "./pending-send";
 import { NeedsPage } from "./components/NeedsPage";
 import { Activity } from "./components/Activity";
 import { Logo } from "./components/Logo";
@@ -24,7 +22,6 @@ function App() {
   const online = useOnline();
   const path = usePath();
   const route = parseRoute(path);
-  useCancelOnRouteChange(path);
   const main = useRef<HTMLElement>(null);
   // Marking seen rewrites the briefing to "nothing since you were last here", so keep the one shown on open.
   const briefing = useRef<State["briefing"] | null>(null);
@@ -126,15 +123,14 @@ function App() {
         ) : route.name === "rules" ? (
           <Rules state={state} />
         ) : route.name === "settings" ? (
-          <Settings />
+          <Settings state={state} />
         ) : route.name === "start" ? (
           <GetStarted />
         ) : (
-          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} symbol={route.symbol} money={route.money} changes={route.changes} />
+          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} changes={route.changes} />
         )}
         <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} />
         <Toast />
-        <SendTray />
         <LiveRegion />
       </main>
     </div>

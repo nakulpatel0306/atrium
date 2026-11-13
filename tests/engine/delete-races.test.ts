@@ -14,11 +14,7 @@ import { createCloner } from "../../src/engine/repos/clones";
 import { listClones } from "../../src/engine/repos/store";
 import { createSpace, getSpace, updateSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskStatus } from "../../src/engine/tasks";
-import { messagesSpace, mergeRestoredMessages, messagesMergeWait } from "../../src/engine/messaging/space";
 import { tildePath } from "../../src/engine/folders";
-import { draftMessage } from "../../src/engine/messaging/store";
-import { autoLookup } from "../../src/engine/messaging/contacts";
-import { setSetting } from "../../src/engine/settings";
 import { tempHome } from "../helpers";
 import { fakeGitHub, seedRemote } from "../repos-helpers";
 
@@ -94,23 +90,6 @@ test("R3 deleting a repo space mid-clone doesn't reject the clone job or leave a
   } finally {
     gh.cleanup();
   }
-});
-
-// R4: a Contacts lookup in flight when the task's space is deleted: the catch's logActivity hits the FK and
-// autoLookup rejects; the runner calls it with `void`, so in the engine this is an unhandled rejection.
-test("R4 autoLookup doesn't reject when its draft's space is deleted mid-lookup", async () => {
-  process.env.FAKE_OSASCRIPT_CONTACTS = "[]";
-  const space = createSpace(db, { name: "Text Sam", kind: "general", goal: "g" });
-  const task = createTask(db, { spaceId: space.id, title: "Text Sam" }).id;
-  setTaskStatus(db, task, "running");
-  setTaskStatus(db, task, "review");
-  const { action } = draftMessage(db, { spaceId: space.id, taskId: task, toName: "Sam", text: "Hi" });
-  setSetting(db, "messaging.contactsReady", "true");
-  const pending = autoLookup(db, action.id);
-  await deleteSpace(db, space.id, "Text Sam");
-  let error: unknown = null;
-  await pending.catch((e: unknown) => (error = e));
-  expect(String(error)).toBe("null");
 });
 
 // R5 (control, passes): the folder removal never leaves its root, even for a recorded ".." or the root itself.
@@ -242,16 +221,4 @@ test("a folder Atrium never made, or one swapped in since, is left alone", async
   writeFileSync(join(swapped.folder!, "other.md"), "a different folder now");
   expect((await deleteSpace(db, swapped.id, "Swapped")).message).toContain("it isn't the folder Atrium made for this space");
   expect(existsSync(join(swapped.folder!, "other.md"))).toBe(true);
-});
-
-// W2 (second review): a Messages merge waits while a task in the old space is running.
-test("W2 a Messages merge waits while a task in the old space is running", () => {
-  const old = messagesSpace(db);
-  const task = createTask(db, { spaceId: old.id, title: "Draft a text to Sam" }).id;
-  setTaskStatus(db, task, "running");
-  updateSpace(db, old.id, { status: "archived" });
-  messagesSpace(db);
-  expect(messagesMergeWait(db, old.id)).toBe("A text is still being drafted in the earlier Messages space. Try again once it's done.");
-  const merged = mergeRestoredMessages(db, old.id);
-  expect(merged === null && getSpace(db, old.id) !== null && getTask(db, task)?.spaceId === old.id).toBe(true);
 });

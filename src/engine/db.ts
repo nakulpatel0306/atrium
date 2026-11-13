@@ -4,18 +4,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "./config";
 import { applyProjectsRoot, migrateProjectsRoot } from "./profile";
-import { migrateWatchlists } from "./markets/lists";
-import { MARKETS_SCHEMA } from "./markets/schema";
-import { MAIL_SCHEMA } from "./mail/schema";
-import { remaskMoney } from "./money/remask";
-import { reflowMoney } from "./money/flows";
 import { ALWAYS_ASK } from "./approvals";
+import { LEGACY } from "./legacy";
 
 const schema = () => `
 CREATE TABLE IF NOT EXISTS spaces (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets','inbox')),
+  kind TEXT NOT NULL CHECK (kind IN ('repo','general')),
   goal TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL,
   repo_path TEXT,
@@ -138,7 +134,6 @@ CREATE TABLE IF NOT EXISTS repo_actions (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-${MESSAGE_ACTIONS_DDL("IF NOT EXISTS message_actions")};
 CREATE TABLE IF NOT EXISTS run_files (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id),
@@ -187,12 +182,11 @@ export function openDb(path?: string): Database {
   const db = new Database(path ?? c.dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
-  // Deleted and overwritten money rows are zeroed on disk, not left in free pages. Measured on WAL: no visible cost
-  // (20,000 inserts 14 vs 15 ms; an update and delete of them 8 vs 8 ms).
+  // Deleted and overwritten rows are zeroed on disk, not left in free pages: older databases still hold personal data
+  // from features Atrium no longer has, and a delete must really remove it.
   db.exec("PRAGMA secure_delete = ON");
   db.exec(schema());
-  // When the re-mask rewrote anything, the old text is pushed out of the WAL and the file rebuilt, so no copy of it
-  // is left in the -wal file or in free pages.
+  // A migration that rebuilt a table pushes the old rows out of the WAL and the file, so no copy is left behind.
   if (migrate(db)) {
     db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     db.exec("VACUUM");
@@ -207,21 +201,14 @@ export function openDb(path?: string): Database {
 
 // Columns added after a table first shipped; CREATE TABLE IF NOT EXISTS skips existing tables.
 function migrate(db: Database): boolean {
+  let rebuilt = false;
   const has = (table: string, column: string) =>
     (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
-  // CHECK constraints can't be altered, so a table whose kinds predate markets spaces is rebuilt.
-  rebuildIfMissing(db, "spaces", "'markets'", SPACES_DDL);
-  // And again when the private Inbox space (mail and calendar) joined the kinds.
-  rebuildIfMissing(db, "spaces", "'inbox'", SPACES_DDL);
-  rebuildIfMissing(db, "approvals", "'alert'", APPROVALS_DDL);
+  // CHECK constraints can't be altered, so an approvals table that predates these is rebuilt.
   // Repo approvals belong to no space and must always wait for Nakul, so the table gains both constraints.
-  rebuildIfMissing(db, "approvals", "always_ask", APPROVALS_DDL);
+  rebuilt = rebuildIfMissing(db, "approvals", "always_ask", (n) => APPROVALS_DDL(n, true)) || rebuilt;
   // And no rule may ever be recorded as deciding one.
-  rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", APPROVALS_DDL);
-  // Sending a text joined the kinds only Nakul decides.
-  rebuildIfMissing(db, "approvals", "'send_message'", APPROVALS_DDL);
-  // Group texts: a row can send to a chat id instead of a handle, and a group can be split into one text per person.
-  rebuildIfMissing(db, "message_actions", "chat_id", MESSAGE_ACTIONS_DDL);
+  rebuilt = rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", (n) => APPROVALS_DDL(n, true)) || rebuilt;
   // The GitHub repo ("owner/name") a repo space comes from, so a missing local copy can be cloned.
   if (!has("spaces", "github")) db.exec("ALTER TABLE spaces ADD COLUMN github TEXT");
   // The first commit a create run pushed, so a retry can tell its own commit from someone else's.
@@ -239,7 +226,7 @@ function migrate(db: Database): boolean {
   if (!has("tasks", "parent_task_id")) db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id)");
   // Which agent reviews this space's finished work; NULL means no automatic review.
   if (!has("spaces", "review_by")) db.exec("ALTER TABLE spaces ADD COLUMN review_by TEXT");
-  // The visible folder a general or markets space keeps its files in (see folders.ts).
+  // The visible folder a general space keeps its files in (see folders.ts).
   if (!has("spaces", "folder")) db.exec("ALTER TABLE spaces ADD COLUMN folder TEXT");
   // The approval a review or fix reports to, so a late one can't land on a newer approval.
   if (!has("tasks", "approval_id")) db.exec("ALTER TABLE tasks ADD COLUMN approval_id TEXT REFERENCES approvals(id)");
@@ -255,15 +242,6 @@ function migrate(db: Database): boolean {
   if (!has("approvals", "rule_id")) db.exec("ALTER TABLE approvals ADD COLUMN rule_id TEXT REFERENCES autonomy_rules(id)");
   // When Nakul undid an automatic approval; an undone one is neither evidence nor counted again.
   if (!has("approvals", "undone_at")) db.exec("ALTER TABLE approvals ADD COLUMN undone_at INTEGER");
-  // The paper strategy a task runs for, so its orders can be checked against that strategy's limits.
-  if (!has("tasks", "strategy_id")) db.exec("ALTER TABLE tasks ADD COLUMN strategy_id TEXT");
-  // What an investing task produces (a digest or thesis write-up) and the instrument it's about.
-  if (!has("tasks", "purpose")) db.exec("ALTER TABLE tasks ADD COLUMN purpose TEXT");
-  if (!has("tasks", "subject")) db.exec("ALTER TABLE tasks ADD COLUMN subject TEXT");
-  // Which kind of market alert an approval is, so Needs-you and notifications can group them.
-  if (!has("approvals", "topic")) db.exec("ALTER TABLE approvals ADD COLUMN topic TEXT");
-  // The instrument an alert is about, so the Mac app can name it in a notification.
-  if (!has("approvals", "subject")) db.exec("ALTER TABLE approvals ADD COLUMN subject TEXT");
   // Whether a finished run did what its task asks, from the agent's OUTCOME line; NULL for older or unfinished tasks.
   if (!has("tasks", "outcome")) {
     db.exec("ALTER TABLE tasks ADD COLUMN outcome TEXT CHECK (outcome IS NULL OR outcome IN ('done','partial','couldnt','unknown'))");
@@ -282,138 +260,20 @@ function migrate(db: Database): boolean {
   // The pull request opened from a task's branch, once there is one.
   if (!has("tasks", "pr_url")) db.exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS activity_space ON activity(space_id, created_at)");
-  // Markets tables are created here, before their own added columns are checked.
-  db.exec(MARKETS_SCHEMA);
-  db.exec(MAIL_SCHEMA);
-  // Whether the source filed a message as sent, and the invitation it carries, for installs from before them.
-  if (!has("mail_messages", "sent")) db.exec("ALTER TABLE mail_messages ADD COLUMN sent INTEGER NOT NULL DEFAULT 0");
-  if (!has("mail_messages", "ical_uid")) db.exec("ALTER TABLE mail_messages ADD COLUMN ical_uid TEXT");
-  migrateWatchlists(db);
-  // Ask Claude answers (about a symbol, or about money) are kept as write-ups of their own kinds.
-  rebuildIfMissing(db, "market_writeups", "'money'", WRITEUPS_DDL);
-  // Nakul's own say on whether a money row is a transfer between his accounts: 1 yes, 0 no, NULL for Atrium to tell.
-  if (!has("money_transactions", "transfer")) db.exec("ALTER TABLE money_transactions ADD COLUMN transfer INTEGER");
-  // A statement file covers its whole period, not just the days with activity (Wealthsimple savings issues one a month).
-  if (!has("money_imports", "period_start")) db.exec("ALTER TABLE money_imports ADD COLUMN period_start TEXT");
-  if (!has("money_imports", "period_end")) db.exec("ALTER TABLE money_imports ADD COLUMN period_end TEXT");
-  backfillMoneyImports(db);
-  // The import that added each row, so an import can be undone or moved to another account.
-  if (!has("money_transactions", "import_id")) db.exec("ALTER TABLE money_transactions ADD COLUMN import_id TEXT");
-  db.exec("CREATE INDEX IF NOT EXISTS money_transactions_import ON money_transactions(import_id)");
-  backfillImportIds(db);
-  // Rows stored by the Plan 10 masker go through today's once (and drop their doubled twins).
-  const remasked = remaskMoney(db);
-  // Atrium's own call on card payments, refunds and transfers, stored so the transactions list can say why; worked
-  // out again on every open, so rows from before it and from older rules get today's decision.
-  if (!has("money_transactions", "flow")) db.exec("ALTER TABLE money_transactions ADD COLUMN flow TEXT");
-  reflowMoney(db);
-  // Finnhub's listing name (for TradingView's prefix) and market cap in millions, for the Symbol page.
-  if (!has("instrument_meta", "listing")) db.exec("ALTER TABLE instrument_meta ADD COLUMN listing TEXT");
-  if (!has("instrument_meta", "market_cap")) db.exec("ALTER TABLE instrument_meta ADD COLUMN market_cap REAL");
-  // The holding's book value in CAD from a Wealthsimple holdings export, for an honest CAD gain.
-  if (!has("market_holdings", "book_value_cad")) db.exec("ALTER TABLE market_holdings ADD COLUMN book_value_cad REAL");
-  // The export's account type ("TFSA"), so a renamed account keeps its tax treatment.
-  if (!has("market_holdings", "account_type")) db.exec("ALTER TABLE market_holdings ADD COLUMN account_type TEXT");
-  // The earnings date an alert last fired for, so one date fires once.
-  if (!has("market_alerts", "fired_for")) db.exec("ALTER TABLE market_alerts ADD COLUMN fired_for TEXT");
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");
-  migrateProvider(db);
-  return remasked;
+  return rebuilt;
 }
 
-// Money imported before imports were recorded gets one row per account, from its first to its last transaction, so
-// the recap and the monthly reminder know what those files covered.
-export function backfillMoneyImports(db: Database): void {
-  if (db.query("SELECT 1 FROM money_imports LIMIT 1").get()) return;
-  db.query(
-    `INSERT INTO money_imports (id, space_id, account, first_date, last_date, rows, imported_at)
-     SELECT 'mim_' || lower(hex(randomblob(8))), space_id, account, MIN(date), MAX(date), COUNT(*), MIN(imported_at)
-     FROM money_transactions GROUP BY space_id, account`,
-  ).run();
-}
+const sqlList = (items: readonly string[]) => items.map((k) => `'${k}'`).join(",");
 
-// Rows from before import ids get the import logged with them (same account and time). Rows older than the import
-// log go to their account's backfilled record: the latest one logged at or before them.
-export function backfillImportIds(db: Database): void {
-  db.query(
-    `UPDATE money_transactions AS t SET import_id = COALESCE(
-       (SELECT i.id FROM money_imports i WHERE i.space_id = t.space_id AND i.account = t.account AND i.imported_at = t.imported_at ORDER BY i.rowid LIMIT 1),
-       (SELECT i.id FROM money_imports i WHERE i.space_id = t.space_id AND i.account = t.account AND i.imported_at <= t.imported_at ORDER BY i.imported_at DESC, i.rowid DESC LIMIT 1))
-     WHERE import_id IS NULL`,
-  ).run();
-}
-
-// Alpaca left the default path in Plan 10. A stored choice of it becomes Finnhub once; written directly, since
-// nothing is listening while the database opens.
-export function migrateProvider(db: Database): void {
-  db.query("UPDATE settings SET value = 'finnhub' WHERE key = 'markets.provider' AND value = 'alpaca'").run();
-}
-
-
-// Full current definitions, migrated columns included, used only when rebuilding an older table.
-const WRITEUPS_DDL = (name: string) => `CREATE TABLE ${name} (
-  id TEXT PRIMARY KEY,
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  kind TEXT NOT NULL CHECK (kind IN ('digest','thesis_draft','thesis_check','ask','money')),
-  key TEXT,
-  for_date TEXT NOT NULL,
-  body TEXT NOT NULL,
-  task_id TEXT,
-  created_at INTEGER NOT NULL,
-  UNIQUE (space_id, kind, key, for_date)
-)`;
-const SPACES_DDL = (name: string) => `CREATE TABLE ${name} (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('repo','general','markets','inbox')),
-  goal TEXT NOT NULL DEFAULT '',
-  color TEXT NOT NULL,
-  repo_path TEXT,
-  private INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  review_by TEXT,
-  github TEXT,
-  folder TEXT,
-  folder_dev INTEGER,
-  folder_ino INTEGER
-)`;
-
-// A text Atrium drafted. A person text sends to `handle`; a group text sends to `chat_id`, the existing Messages
-// chat Nakul's own Find picked. `participants` holds names and masked handles, for display only.
-const MESSAGE_ACTIONS_DDL = (name: string) => `CREATE TABLE ${name} (
-  id TEXT PRIMARY KEY,
-  approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id),
-  space_id TEXT NOT NULL REFERENCES spaces(id),
-  task_id TEXT REFERENCES tasks(id),
-  to_name TEXT NOT NULL,
-  handle TEXT,
-  handle_source TEXT CHECK (handle_source IS NULL OR handle_source IN ('contacts','you','agent')),
-  candidates TEXT,
-  service TEXT NOT NULL DEFAULT 'iMessage' CHECK (service IN ('iMessage','SMS')),
-  text TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','rejected','split')),
-  error TEXT,
-  sent_at INTEGER,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'person' CHECK (kind IN ('person','group')),
-  group_name TEXT,
-  people TEXT,
-  chat_id TEXT,
-  chat_name TEXT,
-  participants TEXT,
-  CHECK (status NOT IN ('sending','sent') OR (kind = 'person' AND handle IS NOT NULL) OR (kind = 'group' AND chat_id IS NOT NULL)),
-  CHECK (status != 'split' OR kind = 'group')
-)`;
-
-const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
+// The full current definition, migrated columns included. A rebuild of an older table (`legacy`) still allows the
+// kinds of removed features it may hold; a fresh install's table never does.
+const APPROVALS_DDL = (name: string, legacy = false) => `CREATE TABLE ${name} (
   id TEXT PRIMARY KEY,
   space_id TEXT REFERENCES spaces(id),
   task_id TEXT REFERENCES tasks(id),
-  kind TEXT NOT NULL CHECK (kind IN ('review','question','alert')),
+  kind TEXT NOT NULL CHECK (kind IN (${sqlList(["review", "question", ...(legacy ? LEGACY.approvalKinds : [])])})),
   title TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
@@ -425,9 +285,7 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
   decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule')),
   rule_id TEXT REFERENCES autonomy_rules(id),
   undone_at INTEGER,
-  topic TEXT,
-  subject TEXT,
-  always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${ALWAYS_ASK.map((k) => `'${k}'`).join(",")})),
+  always_ask TEXT CHECK (always_ask IS NULL OR always_ask IN (${sqlList([...ALWAYS_ASK, ...(legacy ? LEGACY.alwaysAsk : [])])})),
   CHECK (space_id IS NOT NULL OR kind = 'question'),
   CHECK (always_ask IS NULL OR fingerprint IS NULL),
   CHECK (always_ask IS NULL OR decided_by = 'you')
@@ -436,9 +294,9 @@ const APPROVALS_DDL = (name: string) => `CREATE TABLE ${name} (
 // SQLite's documented table rebuild: foreign keys off (outside any transaction), copy into a new table,
 // swap names, then check the rebuild left no new dangling references. Ones that were already there (old test
 // fixtures, hand-edited DBs) aren't the rebuild's doing and don't stop the engine starting.
-function rebuildIfMissing(db: Database, table: string, marker: string, ddl: (name: string) => string) {
+function rebuildIfMissing(db: Database, table: string, marker: string, ddl: (name: string) => string): boolean {
   const row = db.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string } | null;
-  if (!row || row.sql.includes(marker)) return;
+  if (!row || row.sql.includes(marker)) return false;
   const before = db.query("PRAGMA foreign_key_check").all().length;
   const columns = (t: string) => (db.query(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
   db.exec("PRAGMA foreign_keys = OFF");
@@ -456,4 +314,5 @@ function rebuildIfMissing(db: Database, table: string, marker: string, ddl: (nam
   }
   const after = db.query("PRAGMA foreign_key_check").all().length;
   if (after > before) throw new Error(`Rebuilding ${table} left ${after - before} broken references.`);
+  return true;
 }

@@ -15,14 +15,10 @@ import { createSpace, listSpaces, type Space } from "./spaces";
 import { createTask, type Task } from "./tasks";
 import { AttachRefused } from "./attachments";
 import { capabilityLines } from "./capabilities";
-import { type GroupAsk, groupAskOf } from "./messaging/block";
-import { nameProblem, peopleLine, textProblem } from "./messaging/rules";
-import { messagesSpace } from "./messaging/space";
-import { draftGroupMessage, draftMessage, type MessageAction } from "./messaging/store";
 
 export type SpacePlan = {
   name: string;
-  kind: "repo" | "general" | "markets";
+  kind: "repo" | "general";
   goal: string;
   repoPath?: string;
   // "owner/name" of an existing GitHub repo to attach; its local copy is cloned when a task needs it.
@@ -33,12 +29,7 @@ export type SpacePlan = {
 
 export type SetupResult =
   | { space: Space; tasks: Task[] }
-  | { draft: RepoAction; approval: Approval }
-  | { message: MessageAction; approval: Approval }
-  | { space: Space; tasks: Task[]; messaging: true };
-
-// `to` is who the card names: the person, or for a group text the group's name (or its people).
-export type MessageRequest = { kind: "message"; to: string; group: GroupAsk | null; text: string | null; about: string };
+  | { draft: RepoAction; approval: Approval };
 
 // Runs inside the transaction that makes a new space and its starter tasks, before anything can start them; returns
 // the tasks as they now stand. The ask bar uses it to hand its attached files to the first task.
@@ -64,20 +55,16 @@ const USER_FIXABLE = new Set(["not_installed", "not_logged_in", "rate_limited"])
 
 const systemBody = (projects: string) => `You set up a new "space" in a personal task dashboard from the user's plain description.
 Reply with a single JSON object and nothing else, shaped like:
-{"name": string (1-40 chars), "kind": "repo" | "general" | "markets", "goal": string, "repoPath"?: string, "private": boolean, "tasks": [{"title": string, "detail"?: string, "weight": "heavy" | "light"}]}
+{"name": string (1-40 chars), "kind": "repo" | "general", "goal": string, "repoPath"?: string, "private": boolean, "tasks": [{"title": string, "detail"?: string, "weight": "heavy" | "light"}]}
 Rules:
 - Return JSON only: no prose, no code fences.
 - Set "private" to true for email, client, and personal work.
 - If the description matches an existing project, look under ${projects} for the repo, then use kind "repo" and set repoPath to its absolute path. Otherwise use kind "general" and omit repoPath.
-- Use kind "markets" for watching stocks, a portfolio, or paper trading; markets spaces are private.
 - If the user wants to start or create a new project or repo, reply instead {"kind":"new_project","name": string (a short repo name using letters, numbers, "-", "." or "_"),"description": string (one line),"visibility":"private"|"public","template":"bun-ts"|"empty"}. Use "private" unless the user says public, and "bun-ts" unless the user asks for an empty repo.
 - If the user names a GitHub repo ("owner/name") with no folder for it under ${projects}, use kind "repo", set "github" to "owner/name" and omit repoPath.
 - Give at most ${MAX_TASKS} starter tasks, with small, concrete titles. Use weight "heavy" for work that edits code or takes a long time and "light" for quick reads and summaries.`;
 
-const MESSAGE_RULE =
-  '- If the user wants to text or message someone, reply instead {"kind":"message","to": "<who, as they said it>", "text"?: "<only if they gave the exact words>", "about"?: "<what the message is for, one line>"}. For a group chat, use "group": "<the chat\'s name, as they said it>" and/or "people": ["<name>", …] instead of "to". Never make a task that sends something.';
-
-const systemPrompt = (db: Database, projectsRoot: string) => [systemBody(tildePath(projectsRoot)), ...capabilityLines(db, "setup"), MESSAGE_RULE].join("\n");
+const systemPrompt = (projectsRoot: string) => [systemBody(tildePath(projectsRoot)), ...capabilityLines()].join("\n");
 
 // Agents wrap JSON in prose or fences, so scan for the first balanced object instead of parsing the whole text.
 function firstJsonObject(text: string): string | null {
@@ -135,15 +122,15 @@ export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot(
   }
   const { name, kind, goal, repoPath, tasks } = obj;
   if (typeof name !== "string" || name.length < 1 || name.length > 40) throw new BadPlan("name must be 1-40 characters.");
-  if (kind !== "repo" && kind !== "general" && kind !== "markets") throw new BadPlan('kind must be "repo", "general" or "markets".');
+  if (kind !== "repo" && kind !== "general") throw new BadPlan('kind must be "repo" or "general".');
   if (typeof goal !== "string") throw new BadPlan("goal must be a string.");
   if (!Array.isArray(tasks) || tasks.length > MAX_TASKS) throw new BadPlan(`tasks must be a list of at most ${MAX_TASKS}.`);
   const plan: SpacePlan = {
     name,
     kind,
     goal,
-    // Private is the safe side: only an explicit false makes a space non-private, and markets spaces always are.
-    private: obj.private !== false || kind === "markets",
+    // Private is the safe side: only an explicit false makes a space non-private.
+    private: obj.private !== false,
     tasks: tasks.map((t) => {
       if (!t || typeof t.title !== "string" || !t.title) throw new BadPlan("Every task needs a title.");
       if (t.weight !== "heavy" && t.weight !== "light") throw new BadPlan('Task weight must be "heavy" or "light".');
@@ -172,7 +159,7 @@ export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot(
 export function parseSetupReply(
   text: string,
   projectsRoot = defaultProjectsRoot(),
-): SpacePlan | { kind: "new_project"; draft: ProjectDraft } | MessageRequest {
+): SpacePlan | { kind: "new_project"; draft: ProjectDraft } {
   const raw = firstJsonObject(text);
   let obj: Record<string, unknown> | null = null;
   try {
@@ -180,7 +167,6 @@ export function parseSetupReply(
   } catch {
     // parseSpacePlan reports it.
   }
-  if (obj?.kind === "message") return parseMessageRequest(obj);
   if (obj?.kind !== "new_project") return parseSpacePlan(text, projectsRoot);
   let name: string;
   try {
@@ -195,45 +181,6 @@ export function parseSetupReply(
     kind: "new_project",
     draft: { name, description, visibility: obj.visibility === "public" ? "public" : "private", template: obj.template === "empty" ? "empty" : "bun-ts" },
   };
-}
-
-const oneLine = (v: unknown, max: number) =>
-  typeof v === "string" ? stripHidden((v.split(/[\r\n\u2028\u2029]/)[0] ?? "").replace(/[\u0000-\u001f\u007f]/g, "")).trim().slice(0, max) : "";
-
-// A message request is reduced to who, the exact words if the user gave them, and what it's for. Nothing else in
-// the reply (a handle, an "approved" flag, a service) is read: those are Nakul's to fill in on the card.
-function parseMessageRequest(obj: Record<string, unknown>): MessageRequest {
-  const text = typeof obj.text === "string" && !textProblem(obj.text) ? obj.text.trim() : null;
-  const group = groupAskOf(obj, false);
-  if (group === "bad") throw new BadPlan("A group text needs the group's name or its people, each in one short line.");
-  if (group) return { kind: "message", to: group.name ?? peopleLine(group.people), group, text, about: oneLine(obj.about, 500) };
-  const to = typeof obj.to === "string" ? obj.to.trim() : "";
-  if (nameProblem(to)) throw new BadPlan("A message needs who it's for, in one short line.");
-  return { kind: "message", to, group: null, text, about: oneLine(obj.about, 500) };
-}
-
-// The block a drafting task ends with, spelled for whom this text is for.
-function blockFor(req: MessageRequest): string {
-  if (!req.group) return `{"to": "${req.to}", "text": "<the text>"}`;
-  return JSON.stringify({ ...(req.group.name ? { group: req.group.name } : {}), ...(req.group.people.length ? { people: req.group.people } : {}), text: "<the text>" });
-}
-
-function setupMessage(db: Database, req: MessageRequest): SetupResult {
-  const space = messagesSpace(db);
-  if (req.text) {
-    const { action, approval } = req.group
-      ? draftGroupMessage(db, { spaceId: space.id, name: req.group.name, people: req.group.people, text: req.text })
-      : draftMessage(db, { spaceId: space.id, toName: req.to, text: req.text });
-    return { message: action, approval };
-  }
-  const detail = [
-    ...(req.about ? [`What it's for: ${req.about}`] : []),
-    `Write the text the user would send to ${req.group ? `the group chat ${req.to}` : req.to}: short, warm and in their voice. You can't send it, and nobody needs you to.`,
-    `End your reply with a fenced block tagged atrium-message holding ${blockFor(req)}, then the OUTCOME line. Atrium shows it to the user and sends it only when they press Send.`,
-  ].join("\n\n");
-  const title = req.group ? `Draft a group text to ${req.to}` : `Draft a text to ${req.to}`;
-  const task = createTask(db, { spaceId: space.id, title, detail, weight: "light", allowOnBattery: true, purpose: "message" });
-  return { space, tasks: [task], messaging: true };
 }
 
 // A folder under the projects root that's already a checkout of this repo is the user's: it's used, never recorded
@@ -263,7 +210,7 @@ export async function setupSpace(
     const result = await adapter.run({
       prompt: description,
       cwd,
-      systemPrompt: systemPrompt(db, projectsRoot),
+      systemPrompt: systemPrompt(projectsRoot),
       allowedTools: ["Read", "Glob"],
       mode: "work",
       onChunk: () => {},
@@ -278,7 +225,6 @@ export async function setupSpace(
       const { action, approval } = draftProject(db, reply.draft);
       return { draft: action, approval };
     }
-    if (reply.kind === "message") return setupMessage(db, reply);
     const plan = reply;
     if (plan.github) {
       let view: Awaited<ReturnType<typeof ghViewRepo>>;

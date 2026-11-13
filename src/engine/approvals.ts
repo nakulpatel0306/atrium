@@ -8,15 +8,12 @@ import { appendTaskDetail, getTask, listTasks, setTaskStatus } from "./tasks";
 export const ALWAYS_ASK = [
   "merge_main",
   "deploy",
-  "first_contact",
   "delete",
   "spend",
   "secrets",
   "create_repo",
   "push",
   "remove_clone",
-  // Every text, email, invite or calendar change Atrium sends as Nakul, to anyone, every time.
-  "send_message",
 ] as const;
 export type AlwaysAsk = (typeof ALWAYS_ASK)[number];
 
@@ -27,7 +24,7 @@ export type Approval = {
   // Null only for Atrium-wide questions, such as creating a GitHub repo.
   spaceId: string | null;
   taskId: string | null;
-  kind: "review" | "question" | "alert";
+  kind: "review" | "question";
   title: string;
   detail: string;
   status: "pending" | "approved" | "rejected";
@@ -39,17 +36,11 @@ export type Approval = {
   decidedBy: "you" | "rule";
   ruleId: string | null;
   undoneAt: number | null;
-  // The kind of market alert; null for everything else.
-  topic: AlertTopic | null;
-  // The instrument an alert or flag is about ("AMZN"); null for everything else.
-  subject: string | null;
   // Set when only Nakul himself may ever decide this; no rule, proposal or auto-approval can.
   alwaysAsk: AlwaysAsk | null;
   createdAt: number;
   resolvedAt: number | null;
 };
-
-export type AlertTopic = "price" | "indicator" | "earnings" | "news" | "flag";
 
 type ApprovalRow = {
   id: string;
@@ -65,8 +56,6 @@ type ApprovalRow = {
   decided_by: Approval["decidedBy"];
   rule_id: string | null;
   undone_at: number | null;
-  topic: AlertTopic | null;
-  subject: string | null;
   always_ask: AlwaysAsk | null;
   created_at: number;
   resolved_at: number | null;
@@ -93,8 +82,6 @@ const toApproval = (r: ApprovalRow): Approval => ({
   decidedBy: r.decided_by,
   ruleId: r.rule_id,
   undoneAt: r.undone_at,
-  topic: r.topic ?? null,
-  subject: r.subject ?? null,
   alwaysAsk: r.always_ask,
   createdAt: r.created_at,
   resolvedAt: r.resolved_at,
@@ -115,15 +102,13 @@ export function createApproval(
     detail: string;
     fingerprint?: string | null;
     alwaysAsk?: AlwaysAsk;
-    topic?: AlertTopic | null;
-    subject?: string | null;
   },
 ): Approval {
   if (input.alwaysAsk && input.fingerprint) throw new Error("An always-ask approval can't carry a fingerprint.");
   if (input.spaceId === null && input.kind !== "question") throw new Error("Only a question can belong to no space.");
   const id = newId("apr");
   db.query(
-    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, always_ask, topic, subject, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO approvals (id, space_id, task_id, kind, title, detail, fingerprint, always_ask, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.spaceId,
@@ -133,8 +118,6 @@ export function createApproval(
     input.detail,
     input.fingerprint ?? null,
     input.alwaysAsk ?? null,
-    input.topic ?? null,
-    input.subject ?? null,
     Date.now(),
   );
   bus.emit({ type: "changed" });
@@ -166,9 +149,10 @@ export function correctBranchHead(db: Database, id: string, from: string, to: st
 }
 
 export function listPending(db: Database): Approval[] {
-  // rowid breaks ties between approvals created in the same millisecond
+  // rowid breaks ties between approvals created in the same millisecond. Alerts, texts and the other kinds an older
+  // database holds from features Atrium no longer has can't be acted on, so they aren't listed.
   const rows = db
-    .query("SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at DESC, rowid DESC")
+    .query(`SELECT * FROM approvals WHERE status = 'pending' AND kind IN ('review','question') AND (always_ask IS NULL OR always_ask IN (${ALWAYS_ASK.map((k) => `'${k}'`).join(",")})) ORDER BY created_at DESC, rowid DESC`)
     .all() as ApprovalRow[];
   return rows.map(toApproval);
 }
@@ -218,13 +202,12 @@ export function resolveApproval(
       }
     }
     if (rule) logActivity(db, a.spaceId, "atrium", `Approved by your rule "${rule.label}": ${a.title}`, { taskId: a.taskId });
-    else if (a.kind === "alert") logActivity(db, a.spaceId, "you", `Dismissed: ${a.title}`, { taskId: a.taskId });
     else logActivity(db, a.spaceId, "you", decisionLine(db, a, decision), { taskId: a.taskId });
     return a;
   });
   const a = resolve();
-  // Listeners act on the decision (a send, a repo push), so they wait until it's committed. Inside a caller's
-  // transaction (the Send route saves Nakul's edits and his yes together) they run once that transaction has
+  // Listeners act on the decision (a repo push), so they wait until it's committed. Inside a caller's transaction
+  // (the new-project route saves the draft's edits and the yes together) they run once that transaction has
   // finished, and only if the decision is still there; a rolled-back yes runs nothing.
   const fire = () => {
     if (db.inTransaction) return queueMicrotask(fire);
@@ -248,25 +231,8 @@ export function resolveApproval(
   return a;
 }
 
-// The note a group text's approval closes with when Nakul sends it as one text per person instead.
-export const SEPARATELY_NOTE = "Sending one text to each person instead.";
-// The note an email's approval closes with when Nakul saves it to his drafts instead of sending it.
-export const SAVED_DRAFT_NOTE = "Saved to drafts instead of sending.";
-// And when he opens it in Mail.app to send from there.
-export const OPENED_IN_MAIL_NOTE = "Opened in Mail for you to send.";
-
 // Accepting a result the agent said it didn't finish is recorded as exactly that.
 function decisionLine(db: Database, a: Approval, decision: "approve" | "reject"): string {
-  if (a.alwaysAsk === "send_message") {
-    // A text or email ("Send a reply to Robin?"), or a calendar change ("Move "Lunch"?").
-    const send = /^Send an? /.test(a.title);
-    const what = a.title.replace(/^Send an? /, "").replace(/\?$/, "");
-    if (decision === "reject" && a.note === SEPARATELY_NOTE) return `Chose to send separately: ${what}`;
-    if (decision === "reject" && a.note === SAVED_DRAFT_NOTE) return `Saved to drafts: ${what}`;
-    if (decision === "reject" && a.note === OPENED_IN_MAIL_NOTE) return `Opened in Mail: ${what}`;
-    if (!send) return decision === "approve" ? `Approved: ${what}` : `Chose not to: ${what}`;
-    return decision === "approve" ? `Pressed Send: ${what}` : `Chose not to send: ${what}`;
-  }
   if (decision === "reject") return `Rejected: ${a.title}`;
   const outcome = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
   if (outcome === "couldnt") return `Accepted anyway: ${a.title}. It says it couldn't do this.`;

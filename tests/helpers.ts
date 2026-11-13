@@ -9,13 +9,10 @@ export function tempHome(): { home: string; cleanup(): void } {
   process.env.ATRIUM_FILES_HOME = join(home, "files");
   // Tests never launch real apps.
   process.env.ATRIUM_OPEN_BIN ??= join(import.meta.dir, "fixtures", "fake-open.ts");
-  // Tests never script Messages or Contacts.
+  // Nor touch the real Keychain.
+  process.env.ATRIUM_SECURITY_BIN ??= join(import.meta.dir, "fixtures", "fake-security.ts");
   // The greeting and own-transfer name never come from the Mac account that happens to run the tests.
   process.env.ATRIUM_MAC_NAME = "";
-  process.env.ATRIUM_OSASCRIPT_BIN ??= join(import.meta.dir, "fixtures", "fake-osascript.ts");
-  // Tests never read Mail or Calendar, and never reach Google: a test that wants Google starts the fake server.
-  process.env.ATRIUM_PIM_BIN ??= join(import.meta.dir, "fixtures", "fake-pim.ts");
-  for (const k of ["AUTH", "TOKEN", "REVOKE", "GMAIL", "CALENDAR"]) process.env[`ATRIUM_GOOGLE_${k}_URL`] ??= "http://127.0.0.1:1";
   return {
     home,
     cleanup: () => {

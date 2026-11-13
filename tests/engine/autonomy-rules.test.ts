@@ -362,10 +362,10 @@ test("applyRule never touches an always-ask approval", () => {
   expect(getApproval(db, repoAsk.id)!.status).toBe("pending");
 });
 
-test("applyRule never decides a send_message approval", () => {
+test("applyRule never decides an always-ask approval", () => {
   const { a, facts } = pending();
   rule();
-  const send = createApproval(db, { spaceId: space.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+  const send = createApproval(db, { spaceId: space.id, kind: "question", title: "Delete the old notes?", detail: "", alwaysAsk: "delete" });
   db.exec("PRAGMA ignore_check_constraints = ON");
   db.query("UPDATE approvals SET kind = 'review', task_id = ?, fingerprint = ? WHERE id = ?").run(a.taskId, FP, send.id);
   db.exec("PRAGMA ignore_check_constraints = OFF");

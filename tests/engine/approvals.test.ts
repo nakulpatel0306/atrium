@@ -63,12 +63,12 @@ test("listPending returns newest first", () => {
 });
 
 test("the always-ask list", () => {
-  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "first_contact", "delete", "spend", "secrets", "create_repo", "push", "remove_clone", "send_message"]);
+  expect([...ALWAYS_ASK]).toEqual(["merge_main", "deploy", "delete", "spend", "secrets", "create_repo", "push", "remove_clone"]);
 });
 
-test("a rule never decides a send_message approval", () => {
-  const s = createSpace(db, { name: "Messages", kind: "general", goal: "texts" });
-  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Send a text to Dana?", detail: "", alwaysAsk: "send_message" });
+test("a rule never decides an always-ask approval", () => {
+  const s = createSpace(db, { name: "Notes", kind: "general", goal: "notes" });
+  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Delete the old notes?", detail: "", alwaysAsk: "delete" });
   expect(() => resolveApproval(db, a.id, "approve", undefined, { id: "rul_x", label: "x" })).toThrow(RULE_NEVER_DECIDES);
   expect(getApproval(db, a.id)!.status).toBe("pending");
 });
@@ -131,9 +131,9 @@ test("reopenForReview only reopens done work tasks", () => {
   expect(getTask(db, review.id)!.status).toBe("done");
 });
 
-test("alert approvals resolve without a task", () => {
-  const s = createSpace(db, { name: "Stocks", kind: "markets", goal: "watch" });
-  const a = createApproval(db, { spaceId: s.id, kind: "alert", title: "AAPL price above $200.00", detail: "d" });
+test("a question resolves without a task, and a broken listener changes nothing", () => {
+  const s = createSpace(db, { name: "Notes", kind: "general", goal: "g" });
+  const a = createApproval(db, { spaceId: s.id, kind: "question", title: "Which folder?", detail: "d" });
   const seen: string[] = [];
   const offBad = onApprovalResolved(() => {
     throw new Error("listener broke");
@@ -150,15 +150,7 @@ test("alert approvals resolve without a task", () => {
     offBad();
   }
   expect(seen).toEqual([`${a.id}:approve`]);
-  expect(listActivity(db)[0]!.message).toBe("Dismissed: AAPL price above $200.00");
-});
-
-test("topic round-trips", () => {
-  const s = createSpace(db, { name: "M", kind: "general", goal: "g" });
-  const a = createApproval(db, { spaceId: s.id, kind: "alert", title: "SPY earnings within 5 days", detail: "d", topic: "earnings" });
-  expect(getApproval(db, a.id)!.topic).toBe("earnings");
-  const b = createApproval(db, { spaceId: s.id, kind: "alert", title: "x", detail: "d" });
-  expect(b.topic).toBeNull();
+  expect(listActivity(db)[0]!.message).toBe("Approved: Which folder?");
 });
 
 test("a spaceless always-ask question waits for Nakul and no rule can decide it", () => {

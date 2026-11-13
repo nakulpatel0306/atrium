@@ -1,7 +1,6 @@
-import { ArrowDown, CandlestickChart, Plus } from "lucide-react";
+import { ArrowDown, Plus } from "lucide-react";
 import { ranAgent } from "../agents";
 import type { State } from "../api";
-import { briefingMarketsLine } from "../markets";
 import { navigate } from "../route";
 import { kindLabel } from "../spaces";
 import { emptyHome, liveStatus, spaceStatus } from "../summary";
@@ -9,6 +8,7 @@ import { Activity } from "./Activity";
 import { Avatar } from "./Avatar";
 import { Logo } from "./Logo";
 import { NeedsYou } from "./NeedsYou";
+import { OldDataNotice } from "./OldData";
 import { StatusIcon } from "./StatusIcon";
 import { Plain, WAIT_ICONS } from "./WaitLine";
 
@@ -102,13 +102,7 @@ export function Home({ state, briefing, onNewSpace }: Props) {
         {briefing.summary}
         <Plain text={liveStatus(state)} />
       </p>
-      {/* Live, unlike the summary above: prices and paper P&L keep moving while the page is open. */}
-      {state.briefing.markets && briefingMarketsLine(state.briefing.markets) && (
-        <p className="brief briefing-markets">
-          <CandlestickChart />
-          {briefingMarketsLine(state.briefing.markets)}
-        </p>
-      )}
+      {state.oldData.present && !state.oldData.dismissed && <OldDataNotice dismissable />}
 
       <NeedsYou state={state} />
 

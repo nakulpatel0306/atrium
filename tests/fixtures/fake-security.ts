@@ -1,66 +1,34 @@
 #!/usr/bin/env bun
-// Stands in for /usr/bin/security: a JSON file plays the Keychain.
+// Stands in for /usr/bin/security: a JSON file of "service/account" → secret plays the Keychain.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
-const store = process.env.FAKE_SECURITY_STORE!;
+const store = process.env.FAKE_SECURITY_STORE;
 const argvLog = process.env.FAKE_SECURITY_ARGV;
 const args = process.argv.slice(2);
-if (argvLog) appendFileSync(argvLog, JSON.stringify({ at: Date.now(), args }) + "\n");
+if (argvLog) appendFileSync(argvLog, JSON.stringify(args) + "\n");
 
-const load = (): Record<string, string> => (existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : {});
-const save = (s: Record<string, string>) => writeFileSync(store, JSON.stringify(s));
-const flag = (list: string[], f: string) => {
-  const i = list.indexOf(f);
-  return i >= 0 ? list[i + 1] : undefined;
+const load = (): Record<string, string> => (store && existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : {});
+const flag = (f: string) => {
+  const i = args.indexOf(f);
+  return i >= 0 ? args[i + 1] : undefined;
 };
 
 // Stands in for a Keychain waiting on an unlock dialog.
 if (process.env.FAKE_SECURITY_HANG) await Bun.sleep(30_000);
+if (process.env.FAKE_SECURITY_FAIL) process.exit(1);
 
-if (process.env.FAKE_SECURITY_FAIL) {
-  const input = args[0] === "-i" ? await Bun.stdin.text() : args.join(" ");
-  process.stderr.write(`security: failed: ${input}`);
-  process.exit(1);
+const [cmd] = args;
+const id = `${flag("-s")}/${flag("-a")}`;
+const items = load();
+if (cmd === "find-generic-password") {
+  if (!(id in items)) process.exit(44);
+  if (args.includes("-w")) process.stdout.write(`${items[id]}\n`);
+  process.exit(0);
 }
-
-function run(list: string[]): number {
-  const [cmd, ...rest] = list;
-  // Fails writes to one account only, to test a two-key save that breaks halfway.
-  if (cmd === "add-generic-password" && process.env.FAKE_SECURITY_FAIL_ACCOUNT === flag(rest, "-a")) return 1;
-  const id = `${flag(rest, "-s")}/${flag(rest, "-a")}`;
-  const s = load();
-  if (cmd === "add-generic-password") {
-    s[id] = flag(rest, "-w") ?? "";
-    save(s);
-    return 0;
-  }
-  if (cmd === "find-generic-password") {
-    if (!(id in s)) {
-      process.stderr.write("security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.\n");
-      return 44;
-    }
-    process.stdout.write(`${s[id]}\n`);
-    return 0;
-  }
-  if (cmd === "delete-generic-password") {
-    if (!(id in s)) return 44;
-    delete s[id];
-    save(s);
-    return 0;
-  }
-  return 1;
+if (cmd === "delete-generic-password") {
+  if (!(id in items)) process.exit(44);
+  delete items[id];
+  writeFileSync(store!, JSON.stringify(items));
+  process.exit(0);
 }
-
-// `-i` reads one command line from stdin; split on spaces, honouring double quotes.
-function split(line: string): string[] {
-  const out: string[] = [];
-  const re = /"((?:[^"\\]|\\.)*)"|(\S+)/g;
-  for (const m of line.matchAll(re)) out.push(m[1] !== undefined ? m[1].replace(/\\(.)/g, "$1") : m[2]!);
-  return out;
-}
-
-if (args[0] === "-i") {
-  const line = (await Bun.stdin.text()).split("\n")[0] ?? "";
-  process.exit(run(split(line)));
-}
-process.exit(run(args));
+process.exit(1);

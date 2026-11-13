@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { put } from "../api";
 import { navigate } from "../route";
 
-type ProfileData = { name: string | null; suggestedName: string | null; projectsRoot: string; homeCurrency: string };
-
-export const CURRENCY_NOTE = "Atrium counts in Canadian dollars for now. Other currencies can't be chosen yet; US holdings are converted to CAD.";
+type ProfileData = { name: string | null; suggestedName: string | null; projectsRoot: string };
 
 // The few things that are about you: kept in Atrium's own data folder, never in the app's code.
 export function Profile() {
@@ -47,17 +45,11 @@ export function Profile() {
           Projects folder
           <input value={root} onChange={(e) => setRoot(e.target.value)} />
         </label>
-        {/* Fixed for now, so it reads as a fact rather than a field. */}
-        <div className="fixed-field">
-          <span>Home currency</span>
-          <b>{p.homeCurrency}</b>
-        </div>
         <button className="btn" type="submit">
           Save
         </button>
         {msg && <span className={`hint${msg.ok ? "" : " bad"}`}>{msg.text}</span>}
       </form>
-      <p className="hint">{CURRENCY_NOTE}</p>
       <button className="btn link" onClick={() => navigate("/start")}>
         Get started
       </button>

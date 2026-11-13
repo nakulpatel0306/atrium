@@ -1,6 +1,0 @@
-transaction_date,transaction_time,account_number,account_type,transaction_type,transaction_sub_type,status,payee,payee_email,amount,currency
-2026-10-01,09:12:44,WK000000000CAD,Chequing,Deposit,Aft,posted,NORTHWIND PAYROLL,,2150.00,CAD
-2026-10-03,18:01:02,WKFAKEACCTCAD,Chequing,Withdrawal,E Transfer,completed,Jane Fakename,jane.fakename@example.com,-40.00,CAD
-2026-10-10,12:00:00,WK000000000CAD,Chequing,Internal Transfer,Source,posted,,,-500.00,CAD
-2026-10-31,23:59:59,WK000000000CAD,Chequing,Interest,,posted,,,3.12,CAD
-2026-11-01,10:00:00,WK000000000CAD,Chequing,Withdrawal,E Transfer,pending,Sam Fakeperson,sam.fakeperson@example.com,-25.00,CAD
