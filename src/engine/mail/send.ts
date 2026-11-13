@@ -44,7 +44,11 @@ export const NOTHING_SENT_COPY = "Something went wrong before it went out, so no
 
 const ref = (a: MailAccount): AccountRef => ({ id: a.id, address: a.address, ref: a.ref });
 // For the engine log: what kind of error, never its message, which can carry a file or attachment name.
-const errorKind = (e: unknown) => (e instanceof Error ? `${e.name}${(e as { code?: unknown }).code ? ` ${String((e as { code?: unknown }).code)}` : ""}` : typeof e);
+const errorKind = (e: unknown) => {
+  if (!(e instanceof Error)) return typeof e;
+  const { code } = e as { code?: unknown };
+  return code ? `${e.name} ${String(code)}` : e.name;
+};
 
 // An error from the source call itself, after which the message may have gone out.
 class Delivery extends Error {

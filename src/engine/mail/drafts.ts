@@ -596,13 +596,12 @@ export function updateEventDraft(db: Database, id: string, patch: EventEdit): Ma
     const cur = draftOrThrow(db, id);
     if (!cur.event || !isEvent(cur.kind)) throw new BadMail("This is an email, not a calendar change.");
     const e = cur.event;
-    const canNotify = (x: EventPlan) => x.attendees.length > 0;
     const plan: EventPlan =
       cur.kind === "event_create"
         ? { ...e, calendarId: patch.calendarId, title: patch.title.trim(), start: patch.start, end: patch.end, allDay: patch.allDay, location: patch.location.trim(), attendees: markAdded(patch.attendees, e.attendees), notify: true }
         : cur.kind === "event_move"
-          ? { ...e, start: patch.start, end: patch.end, notify: canNotify(e) && patch.notify }
-          : { ...e, notify: canNotify(e) && patch.notify };
+          ? { ...e, start: patch.start, end: patch.end, notify: e.attendees.length > 0 && patch.notify }
+          : { ...e, notify: e.attendees.length > 0 && patch.notify };
     const problem = eventProblem(db, cur.kind, plan);
     if (problem) throw new BadMail(problem);
     return write(db, { ...cur, event: plan });

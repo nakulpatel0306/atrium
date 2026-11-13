@@ -8,7 +8,7 @@ type Approval = State["approvals"][number];
 export type MailActionView = State["mailActions"][number];
 export type Press = { label: string; onPress(): void; disabled: boolean };
 
-export const peopleText = (people: { name: string; address: string }[]) => people.map((p) => (p.name ? `${p.name} <${p.address}>` : p.address)).join(", ");
+export const peopleText = (people: { name: string; address: string }[]) => people.map(personLabel).join(", ");
 
 // The one line of what to check before pressing: the engine's notes, then anyone Claude added. Addresses always
 // show, since a name is whatever a sender or Claude chose.
