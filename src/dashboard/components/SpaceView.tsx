@@ -301,7 +301,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
             </span>
           )}
         </button>
-        {stuck && (
+        {stuck && task.legacyPurpose === null && (
           <button className="btn" disabled={busy} onClick={() => void retry()}>
             Retry
           </button>

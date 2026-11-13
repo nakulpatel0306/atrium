@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../src/engine/db";
 import { startServer } from "../../src/server/server";
+import { REMOVED_FEATURE_RETRY } from "../../src/engine/legacy";
 import { tempHome } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
@@ -33,4 +34,14 @@ test("the engine serves an old Investing space as a plain general space and keep
   expect(await renamed.json()).toMatchObject({ name: "Notes", kind: "general" });
   expect(db.query("SELECT COUNT(*) AS n FROM market_holdings").get()).toEqual({ n: 1 });
   for (const gone of ["/api/investing/setup", "/api/markets/spc_inv", "/api/mail/overview"]) expect((await fetch(`${base}${gone}`)).status).toBe(404);
+});
+
+test("retrying a task of a removed feature is refused, and the task stays failed", async () => {
+  const base = `http://127.0.0.1:${server.port}`;
+  db.exec("ALTER TABLE tasks ADD COLUMN purpose TEXT");
+  db.exec("INSERT INTO tasks (id, space_id, title, agent, weight, status, purpose, created_at, updated_at) VALUES ('tsk_old', 'spc_inv', 'Old digest', 'claude', 'light', 'failed', 'digest', 1, 1)");
+  const res = await fetch(`${base}/api/tasks/tsk_old/retry`, { method: "POST", headers: { origin: base } });
+  expect(res.status).toBe(409);
+  expect(await res.json()).toEqual({ error: REMOVED_FEATURE_RETRY });
+  expect(db.query("SELECT status FROM tasks WHERE id = 'tsk_old'").get()).toEqual({ status: "failed" });
 });

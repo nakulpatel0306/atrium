@@ -144,6 +144,20 @@ test("on boot, questions only a removed feature could have asked are closed with
   expect(db.query("SELECT COUNT(*) AS n FROM approvals").get()).toEqual({ n: 4 });
 });
 
+test("a failed task of a removed feature offers no Retry, and a plain failed task does", () => {
+  legacyInstall();
+  const old = legacyTask("spc_ok", "money", "running");
+  setTaskStatus(db, old, "failed");
+  const plain = createTask(db, { spaceId: "spc_ok", title: "Plain work" }).id;
+  setTaskStatus(db, plain, "running");
+  setTaskStatus(db, plain, "failed");
+  const state = snapshot(db);
+  const html = renderToStaticMarkup(<SpaceView state={state} space={state.spaces.find((s) => s.id === "spc_ok")!} focusTask={null} />);
+  const rows = html.split('class="entry"').slice(1);
+  expect(rows.find((r) => r.includes(`task-${old}`))).not.toContain(">Retry<");
+  expect(rows.find((r) => r.includes(`task-${plain}`))).toContain(">Retry<");
+});
+
 test("a database that never had a purpose column boots without touching tasks", async () => {
   const t = createTask(db, { spaceId: createSpaceId(), title: "x" });
   await recoverOnBoot(db);

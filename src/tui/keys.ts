@@ -2,6 +2,7 @@
 import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
+import { REMOVED_FEATURE_RETRY } from "../engine/legacy";
 import type { ReviewerId } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
@@ -322,6 +323,7 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
     case "R":
       if (!task) return [nothingHere(u, view, NO_TASK)];
       if (task.status !== "blocked" && task.status !== "failed") return [info("Retry is for blocked or failed tasks.")];
+      if (task.legacyPurpose !== null) return [info(REMOVED_FEATURE_RETRY)];
       return [intent({ type: "retry", taskId: task.id })];
     case "s":
       if (!task || waitOf(task, view.state)?.kind !== "reserve") return [info("Run now is for tasks waiting on Claude's reserve.")];

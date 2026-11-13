@@ -19,6 +19,7 @@ import { createSpace, getSpace, REVIEWERS, type ReviewerId, updateSpace } from "
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
+import { REMOVED_FEATURE_RETRY } from "../engine/legacy";
 import { createTask, getTask, InvalidTransition, setTaskStatus } from "../engine/tasks";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
@@ -185,6 +186,8 @@ export function startServer(deps: Deps): Server<WsData> {
       if (current.status !== "blocked" && current.status !== "failed") {
         throw new HttpError(409, "This task isn't blocked or failed, so there's nothing to retry.");
       }
+      // The runner would only fail it again.
+      if (current.legacyPurpose !== null) throw new HttpError(409, REMOVED_FEATURE_RETRY);
       const task = setTaskStatus(db, id, "queued");
       runner.kick();
       return json(task);

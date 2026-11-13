@@ -34,6 +34,7 @@ export function legacyUnlinkTasks(db: Database, tasks: string[]): void {
   for (const t of LEGACY.byTask) if (present(db, t)) db.query(`UPDATE ${t} SET task_id = NULL WHERE task_id IN (${marks})`).run(...tasks);
 }
 
+export const REMOVED_FEATURE_RETRY = "This task belongs to a feature Atrium no longer has, so it can't run again.";
 export const REMOVED_FEATURE_QUESTION = "This came from a feature Atrium no longer has, so it was closed.";
 
 // Pending questions an older Atrium asked for a removed feature: paper-strategy proposals, and questions with no task
