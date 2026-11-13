@@ -201,6 +201,18 @@ describe("Google ingest", () => {
     expect(events.find((e) => e.title === "Day off")!.allDay).toBe(true);
   });
 
+  test("a Latin-1 body is decoded in its own charset", async () => {
+    fakes.google.data[SAM]!.threads[0]!.messages[0]!.text = "Le café est prêt.";
+    fakes.google.data[SAM]!.threads[0]!.messages[0]!.charset = "ISO-8859-1";
+    await connect();
+    const s = sync();
+    await s.syncNow();
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    const first = threadMessages(db, lease.id)[0]!;
+    await s.fetchBodies([first.id]);
+    expect(threadMessages(db, lease.id)[0]!.body).toBe("Le café est prêt.");
+  });
+
   test("an unchanged thread isn't fetched again", async () => {
     await connect();
     const s = sync();

@@ -46,7 +46,7 @@ const DEFAULT_COLOR = "#8ba4b0";
 export const MARKETS_PRIVATE = "Markets spaces stay private: your holdings only go to Claude.";
 export const INBOX_PRIVATE = "The Inbox stays private: your mail and calendar only go to Claude.";
 
-// Holdings and the paper account are Nakul's private data, and so are his mail and calendar, so markets and inbox
+// Holdings and the paper account are the user's private data, and so are their mail and calendar, so markets and inbox
 // spaces are private whatever their flag says.
 export const isPrivate = (space: Pick<Space, "kind" | "private">): boolean => space.private || space.kind === "markets" || space.kind === "inbox";
 const alwaysPrivate = (kind: Space["kind"]) => (kind === "markets" ? MARKETS_PRIVATE : kind === "inbox" ? INBOX_PRIVATE : null);

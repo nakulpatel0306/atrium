@@ -19,7 +19,16 @@ type GPart = { mimeType?: string; filename?: string; headers?: GHeader[]; body?:
 type GMessage = { id: string; threadId: string; labelIds?: string[]; snippet?: string; internalDate?: string; payload?: GPart };
 
 const header = (p: GPart | undefined, name: string) => p?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
-const decode = (data: string) => Buffer.from(data, "base64url").toString("utf8");
+// A part's text in its own charset (Content-Type's charset=…); UTF-8 when it names none or one the runtime lacks.
+function decode(data: string, part: GPart): string {
+  const bytes = Buffer.from(data, "base64url");
+  const charset = /charset="?([^";\s]+)/i.exec(header(part, "Content-Type") ?? "")?.[1];
+  try {
+    return new TextDecoder(charset ?? "utf-8").decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
 
 // Gmail's snippet is HTML-escaped.
 const unescape = (s: string) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
@@ -61,8 +70,8 @@ function textParts(p: GPart | undefined): { text: string | null; html: string | 
   let html: string | null = null;
   const walk = (part: GPart | undefined) => {
     if (!part || part.filename) return;
-    if (part.mimeType === "text/plain" && part.body?.data && text === null) text = decode(part.body.data);
-    if (part.mimeType === "text/html" && part.body?.data && html === null) html = decode(part.body.data);
+    if (part.mimeType === "text/plain" && part.body?.data && text === null) text = decode(part.body.data, part);
+    if (part.mimeType === "text/html" && part.body?.data && html === null) html = decode(part.body.data, part);
     part.parts?.forEach(walk);
   };
   walk(p);

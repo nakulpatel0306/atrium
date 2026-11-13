@@ -141,6 +141,17 @@ describe("threading from headers", () => {
     expect(listThreads(db)).toHaveLength(3);
   });
 
+  test("a Message-ID with LIKE wildcards in it only matches itself", () => {
+    const a = apple();
+    ingestMessages(db, a, [
+      msg({ sourceId: "x", messageId: "<CAxyy@mail.example.com>", subject: "Other", from: { name: "", address: "x@example.net" } }),
+      msg({ sourceId: "y", messageId: "<late@x>", references: ["<CAxyy@mail.example.com>"], subject: "Re: Other", from: { name: "", address: "x@example.net" }, date: T0 + 1 }),
+    ]);
+    // A message whose own id differs only where "_" would be a LIKE wildcard joins nothing.
+    ingestMessages(db, a, [msg({ sourceId: "z", messageId: "<CA_yy@mail.example.com>", subject: "Separate", date: T0 + 2 })]);
+    expect(listThreads(db).map((t) => t.subject).sort()).toEqual(["Other", "Separate"]);
+  });
+
   test("Gmail's threadId wins over the headers", () => {
     const g = upsertAccount(db, { address: SAM, name: "", source: "google", ref: null });
     ingestMessages(db, g, [msg({ sourceId: "1", threadKey: "A", messageId: "<root@x>" }), msg({ sourceId: "2", threadKey: "B", messageId: "<r@x>", inReplyTo: "<root@x>" })]);

@@ -5,6 +5,24 @@ export const normalizeAddress = (a: string): string => a.trim().toLowerCase();
 
 export const isAddress = (a: string): boolean => /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/.test(a.trim());
 
+// RFC 2047 encoded words ("=?UTF-8?Q?Ren=C3=A9?=", "=?ISO-8859-1?B?…?="), as raw headers from Mail.app carry them.
+// Whitespace between two encoded words is dropped, as the RFC says; a charset the runtime can't decode stays as is.
+export function decodeWords(text: string): string {
+  return text
+    .replace(/(=\?[^?\s]+\?[bBqQ]\?[^?\s]*\?=)\s+(?==\?)/g, "$1")
+    .replace(/=\?([^?\s]+)\?([bBqQ])\?([^?\s]*)\?=/g, (whole, charset: string, enc: string, data: string) => {
+      try {
+        const bytes =
+          enc.toUpperCase() === "B"
+            ? Buffer.from(data, "base64")
+            : Buffer.from(data.replace(/_/g, " ").replace(/=([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16))), "latin1");
+        return new TextDecoder(charset.split("*")[0]!).decode(bytes);
+      } catch {
+        return whole;
+      }
+    });
+}
+
 // One "Name <a@b>" or bare "a@b". Display names lose their quotes; an unparseable entry keeps its text as the name.
 function parseOne(raw: string): Person | null {
   const s = raw.trim();
@@ -18,8 +36,9 @@ function parseOne(raw: string): Person | null {
 }
 
 // A header's address list, split on commas outside quotes and angle brackets.
-export function parseAddressList(header: string | null | undefined): Person[] {
-  if (!header) return [];
+export function parseAddressList(raw: string | null | undefined): Person[] {
+  if (!raw) return [];
+  const header = decodeWords(raw);
   const out: Person[] = [];
   let cur = "";
   let quoted = false;
@@ -54,5 +73,3 @@ export function normalizeSubject(subject: string): string {
   }
   return s.replace(/\s+/g, " ").toLowerCase();
 }
-
-export const displayName = (p: Person): string => p.name || p.address || "Unknown sender";

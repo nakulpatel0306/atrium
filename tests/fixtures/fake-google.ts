@@ -16,6 +16,8 @@ export type FakeMessageInput = {
   inReplyTo?: string;
   references?: string;
   text?: string;
+  // The text part's charset; its bytes are encoded in it, as Gmail serves them.
+  charset?: "ISO-8859-1";
   html?: string;
   labels?: string[];
   attachments?: { name: string; size: number; data: string }[];
@@ -42,7 +44,13 @@ export function gmailMessage(m: FakeMessageInput, format: "full" | "metadata") {
     ...(m.references ? [{ name: "References", value: m.references }] : []),
   ];
   const parts = [
-    ...(m.text !== undefined ? [{ mimeType: "text/plain", filename: "", body: { data: b64(m.text), size: m.text.length } }] : []),
+    ...(m.text !== undefined
+      ? [
+          m.charset
+            ? { mimeType: "text/plain", filename: "", headers: [{ name: "Content-Type", value: `text/plain; charset=${m.charset}` }], body: { data: Buffer.from(m.text, "latin1").toString("base64url"), size: m.text.length } }
+            : { mimeType: "text/plain", filename: "", body: { data: b64(m.text), size: m.text.length } },
+        ]
+      : []),
     ...(m.html !== undefined ? [{ mimeType: "text/html", filename: "", body: { data: b64(m.html), size: m.html.length } }] : []),
     ...(m.attachments ?? []).map((a, i) => ({ mimeType: "application/octet-stream", filename: a.name, body: { attachmentId: `att${i}`, size: a.size } })),
   ];
