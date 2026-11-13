@@ -28,7 +28,9 @@ import {
   reviewDiff,
 } from "./git";
 import { loopNotes, recordReview, resolvedAgent, roundsLeft, startReview, triageFeedback, wantsTriage } from "./handoff";
-import { briefSections, checksSection } from "./brief";
+import { briefSections, checksSection, gapHints, normalizeBrief } from "./brief";
+import { draftBrief } from "./brief-draft";
+import { withoutBlock } from "./attachment-rules";
 import { changedOutside, outsideSnapshot } from "./checks/attention";
 import { type Check, checksFor, detectChecks } from "./checks/detect";
 import { type GateOutcome, runGate } from "./checks/gate";
@@ -52,7 +54,7 @@ import { type KeptScratch, keepScratch } from "./scratch";
 import { getSetting, setSetting } from "./settings";
 import { getSpace, type Space } from "./spaces";
 import { closeLegacyApprovals } from "./legacy";
-import { appendTaskDetail, endRemovedFeatureTasks, failRemovedFeatureTask, getTask, listTasks, REMOVED_FEATURE, setTaskLoop, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
+import { appendTaskDetail, endRemovedFeatureTasks, failRemovedFeatureTask, getTask, listTasks, REMOVED_FEATURE, setTaskBrief, setTaskLoop, setTaskOutcome, setTaskStatus, type Task } from "./tasks";
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { enforceTranscriptCap, openTranscript } from "./storage";
@@ -260,6 +262,10 @@ export function createRunner(deps: {
         waits.push({ taskId: task.id, agent: task.agent, kind: "reviewing", reason: "Waiting for its review. It comes to you once that's done." });
         continue;
       }
+      if (task.kind === "work" && task.loop?.stage === "brief" && task.loop.questions.length) {
+        waits.push({ taskId: task.id, agent: task.agent, kind: "answers", reason: "Waiting for your answers to its brief's questions, in Needs you." });
+        continue;
+      }
       // A repo space attached from GitHub gets its local copy first; the task waits rather than blocks meanwhile.
       if (deps.repos && space.kind === "repo" && space.github && task.kind !== "review" && (!space.repoPath || !existsSync(space.repoPath))) {
         deps.repos.requestClone(space);
@@ -369,6 +375,57 @@ export function createRunner(deps: {
     run.controller.abort();
   }
 
+  // A task's first stage: the brief's pre-pass, in the background like a run (it holds the space, and Stop stops it).
+  // A pre-pass that can't answer leaves a brief holding the ask, so the writer always starts; only questions wait.
+  function startBrief(task: Task, space: Space) {
+    setTaskStatus(db, task.id, "running");
+    activeSpaces.add(space.id);
+    const controller = new AbortController();
+    const key = `brief:${task.id}`;
+    const done = (async () => {
+      const claude = adapters.claude;
+      const repo = space.kind === "repo" ? space.repoPath : null;
+      const ask = withoutBlock(task.detail).trim() || task.title;
+      const draft = claude
+        ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, signal: controller.signal })
+        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up." };
+      if (getTask(db, task.id)?.status !== "running") return;
+      if (controller.signal.aborted) {
+        if (stopRequested.has(task.id)) stoppedByYou(task, null);
+        else setTaskStatus(db, task.id, "queued");
+        return;
+      }
+      const checks = repo ? await checksAtHead(space, repo) : [];
+      const hints = [...(draft.error ? [`Couldn't draft a full brief: ${sentence(draft.error)} It holds your ask.`] : []), ...gapHints(draft.brief, { repo: repo !== null, checksFound: checks.length > 0 })];
+      const loop = getTask(db, task.id)!.loop!;
+      setTaskBrief(db, task.id, draft.brief);
+      const budget = space.budget ?? SIZE_BUDGETS[draft.brief.size];
+      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, stage: draft.questions.length ? "brief" : "writing" });
+      setTaskStatus(db, task.id, "queued");
+      if (draft.questions.length) logActivity(db, space.id, "claude", `${task.title} has ${plural(draft.questions.length, "question")} before it starts. Answer in Needs you.`, { taskId: task.id });
+    })()
+      .catch(report)
+      .finally(() => {
+        stopRequested.delete(task.id);
+        steerRequested.delete(task.id);
+        active.delete(key);
+        activeSpaces.delete(space.id);
+        kick();
+      });
+    active.set(key, { taskId: task.id, done, controller });
+  }
+
+  // What the gate would run in a repo space now, for the brief's gap hints; empty when it can't be read.
+  async function checksAtHead(space: Space, repo: string): Promise<string[]> {
+    try {
+      const head = await git(repo, ["rev-parse", "--verify", "HEAD^{commit}"]);
+      const found = head.code === 0 ? await detectChecks(repo, head.out.trim()) : [];
+      return checksFor(found, { spaceChecks: space.checks, verify: null }).map((c) => c.command);
+    } catch {
+      return [];
+    }
+  }
+
   // Puts the repo back on the starting branch; returns a block reason if it can't.
   async function leaveRepo(repo: RepoRun): Promise<string | null> {
     try {
@@ -395,6 +452,7 @@ export function createRunner(deps: {
       logActivity(db, task.spaceId, "atrium", `Couldn't run: ${task.title}. ${REMOVED_FEATURE}`, { taskId: task.id });
       return;
     }
+    if (task.kind === "work" && task.loop?.stage === "brief") return startBrief(task, space);
     const adapter = adapters[agent];
     if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
 
@@ -441,8 +499,13 @@ export function createRunner(deps: {
       setTaskLoop(db, task.id, newLoop(space.budget ?? SIZE_BUDGETS[task.brief?.size ?? "medium"]));
     }
     // What config the user's checkout already had outside git, so only what the work adds there is put down to it.
+    // Only before the first turn: one taken later would bless what earlier turns left. If it can't be taken it stays
+    // missing, and every config file outside git then counts as the task's.
     const firstLoop = getTask(db, task.id)?.loop;
-    if (repo && firstLoop && firstLoop.outside === null) setTaskLoop(db, task.id, { ...firstLoop, outside: await outsideSnapshot(repo.path).catch(() => ({})) });
+    if (repo && firstLoop && firstLoop.outside == null && firstLoop.checkedSha == null && firstLoop.usage.ms === 0) {
+      const outside = await outsideSnapshot(repo.path).catch(() => null);
+      if (outside) setTaskLoop(db, task.id, { ...firstLoop, outside });
+    }
     const current = getTask(db, task.id);
     const fresh = getSpace(db, task.spaceId);
     const recheck =
@@ -938,7 +1001,7 @@ export function createRunner(deps: {
     setTaskLoop(db, task.id, { ...loop, stage: "checks", checks: "running" });
     const base = await git(repo.path, ["rev-parse", "--verify", `${repo.start}^{commit}`]);
     if (base.code !== 0) throw new Error(`Couldn't read ${repo.start}: ${base.err.trim()}`);
-    const outside = loop.outside ? await changedOutside(repo.path, loop.outside) : [];
+    const outside = await changedOutside(repo.path, loop.outside ?? null);
     const goal = task.brief?.goal || task.title;
     const gate = await runGate({ repo: repo.path, base: base.out.trim(), head: sha, checks, goal, outside, signal, onLine: line });
     if (gate.results) saveChecks(db, task.id, runId, gate.results);

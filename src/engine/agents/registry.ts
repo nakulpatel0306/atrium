@@ -24,7 +24,8 @@ export type WaitKind =
   | "gemini_repo"
   | "cloning"
   | "busy"
-  | "reviewing";
+  | "reviewing"
+  | "answers";
 // `agent` is the one the task is waiting on; `until` is when the wait ends on its own, if it does.
 export type Wait = { agent: string; kind: WaitKind; reason: string; until?: number };
 export type TaskWait = Wait & { taskId: string };

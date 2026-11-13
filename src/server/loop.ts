@@ -1,13 +1,13 @@
 import type { Database } from "bun:sqlite";
 import type { AgentAdapter } from "../engine/agents/types";
-import { gapHints } from "../engine/brief";
+import { gapHints, normalizeBrief } from "../engine/brief";
 import { draftBrief } from "../engine/brief-draft";
 import { checksFor, detectChecks } from "../engine/checks/detect";
 import { latestChecks } from "../engine/checks/run";
 import { git } from "../engine/git";
 import { type Budget, type LoopState, resumed } from "../engine/loop";
 import { getSpace, type Space } from "../engine/spaces";
-import { appendTaskDetail, getTask, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
+import { appendTaskDetail, getTask, setTaskBrief, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
 import { HttpError, json, readBody, str } from "./http";
 
 const ASK_MAX = 4000;
@@ -88,6 +88,18 @@ export async function loopRoute(db: Database, claude: AgentAdapter | undefined, 
     appendTaskDetail(db, task.id, `\n\nHint from you after a pause: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`);
     setTaskLoop(db, task.id, resumed(task.loop));
     const next = setTaskStatus(db, task.id, "queued");
+    kick();
+    return json(next);
+  }
+
+  // The answers to a brief's questions go with it, and the writer starts. Sending none skips them.
+  const answersM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/answers$/) : null;
+  if (answersM) {
+    const task = getTask(db, answersM[1]!);
+    if (!task?.brief || !task.loop?.questions.length || task.status !== "queued") throw new HttpError(409, "This task has no questions waiting for you.");
+    const answers = normalizeBrief({ answers: (await readBody(req)).answers }).answers.filter((a) => task.loop!.questions.some((q) => q.question === a.question));
+    setTaskBrief(db, task.id, { ...task.brief, answers });
+    const next = setTaskLoop(db, task.id, { ...task.loop, questions: [], stage: "writing" });
     kick();
     return json(next);
   }

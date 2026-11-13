@@ -24,7 +24,7 @@ import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import { findOldData, OLD_DATA_DISMISSED, removeOldData } from "../engine/old-data";
 import { createTask, getTask, InvalidTransition, setTaskLoop, setTaskStatus } from "../engine/tasks";
 import { normalizeBrief } from "../engine/brief";
-import { resumed } from "../engine/loop";
+import { newLoop, resumed, SIZE_BUDGETS } from "../engine/loop";
 import { budgetField, loopRoute } from "./loop";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
@@ -411,10 +411,15 @@ export function startServer(deps: Deps): Server<WsData> {
           detail: withAttachments(text, files),
           weight: space.kind === "repo" ? "heavy" : "light",
           agent,
-          // The brief the user ran from the ask bar; a quick send (⌘↩) has none and runs from the ask alone.
+          // A brief edited first (⌘↩ in the ask bar) is used as is.
           ...(b.brief !== undefined && { brief: normalizeBrief(b.brief, text) }),
         });
         claimAttachments(db, t.id, files);
+        // Otherwise the task starts with drafting its brief, so sending never waits on the pre-pass. Files alone
+        // ask the agent to look at them, with nothing to brief.
+        if (b.brief === undefined && typeof b.text === "string" && b.text.trim()) {
+          return setTaskLoop(db, t.id, { ...newLoop(space.budget ?? SIZE_BUDGETS.medium), stage: "brief" });
+        }
         return t;
       })();
       runner.kick();

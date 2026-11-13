@@ -10,7 +10,8 @@ import { openDb } from "../../src/engine/db";
 import { reviewDiff } from "../../src/engine/git";
 import { createRunner } from "../../src/engine/runner";
 import { createSpace, type ReviewChoice, updateSpace } from "../../src/engine/spaces";
-import { createTask, getTask, listTasks } from "../../src/engine/tasks";
+import { createTask, getTask, listTasks, setTaskLoop } from "../../src/engine/tasks";
+import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { tempHome, tempRepo } from "../helpers";
 
 const FAKE_CHECK = `bun ${join(import.meta.dir, "..", "fixtures", "fake-check.ts")}`;
@@ -498,5 +499,62 @@ describe("review diffs", () => {
     expect(truncated).toBe(true);
     expect(diff).toContain("éééé");
     expect(diff).not.toContain("�");
+  });
+});
+
+describe("the brief as the first stage", () => {
+  const briefed = (questions: unknown[]) =>
+    fake("claude", (input) => {
+      if (input.model === "haiku") return ok(JSON.stringify({ goal: "Show totals on the report", acceptance: ["Totals add up"], size: "small", questions }));
+      writeFileSync(join(input.cwd, "status.txt"), "pass\n");
+      return ok("Done.\nOUTCOME: done");
+    });
+  const queuedWithBrief = (spaceId: string) => {
+    const t = createTask(db, { spaceId, title: "totals on the report", detail: "totals on the report" });
+    setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.medium), stage: "brief" });
+    return t;
+  };
+
+  test("a task sent straight away drafts its brief, then the writer starts from it", async () => {
+    const s = space(repo(), { reviewBy: "off" });
+    const t = queuedWithBrief(s.id);
+    const claude = briefed([]);
+    start({ claude: claude.adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(claude.calls.map((c) => c.model ?? "writer")).toEqual(["haiku", "writer"]);
+    expect(claude.calls[1]!.prompt).toContain("## Goal\nShow totals on the report");
+    const task = getTask(db, t.id)!;
+    expect(task.brief!.size).toBe("small");
+    expect(task.loop!.budget).toEqual(SIZE_BUDGETS.small);
+  });
+
+  test("questions wait for answers, which reach the writer", async () => {
+    const s = space(repo(), { reviewBy: "off" });
+    const t = queuedWithBrief(s.id);
+    const claude = briefed([{ question: "Weekly or monthly?", options: ["Weekly", "Monthly"] }]);
+    const r = start({ claude: claude.adapter });
+    await waitFor(() => (getTask(db, t.id)!.loop?.questions.length ?? 0) > 0 && status(t.id) === "queued");
+    await Bun.sleep(50);
+    expect(claude.calls).toHaveLength(1);
+    const { loopRoute } = await import("../../src/server/loop");
+    const url = `http://127.0.0.1/api/tasks/${t.id}/answers`;
+    const res = await loopRoute(db, undefined, r.kick, new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [{ question: "Weekly or monthly?", answer: "Monthly" }] }) }), new URL(url));
+    expect(res!.status).toBe(200);
+    await waitFor(() => status(t.id) === "review");
+    expect(claude.calls[1]!.prompt).toContain("## Clarified\n- Weekly or monthly? Monthly");
+  });
+
+  test("stopping a task while its brief drafts stops it", async () => {
+    const s = space(repo(), { reviewBy: "off" });
+    const t = queuedWithBrief(s.id);
+    const r = start({
+      claude: fake("claude", async (input) => {
+        if (!input.signal?.aborted) await new Promise((res) => input.signal?.addEventListener("abort", res));
+        return { status: "error", kind: "failed", message: "Stopped" };
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "running");
+    expect(await r.stopTask(t.id)).toBe("stopped");
+    expect(getTask(db, t.id)!.blockedReason).toBe("You stopped this task. Retry to run it again.");
   });
 });
