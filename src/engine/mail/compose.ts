@@ -10,7 +10,7 @@ export type EventKind = "event_create" | "event_move" | "event_cancel";
 export type ActionKind = MailKind | EventKind;
 // added: Claude put this person on the card; they weren't on the thread it answers.
 export type Recipient = Person & { added: boolean };
-export type ReasonKind = "first_time" | "outside_thread" | "attachments" | "other_account" | "many";
+export type ReasonKind = "first_time" | "outside_thread" | "attachments" | "other_account" | "many" | "may_notify";
 // Why a draft needs the user's explicit Send, shown on the card as a note.
 export type Reason = { kind: ReasonKind; text: string };
 

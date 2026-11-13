@@ -40,6 +40,8 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
   const [error, setError] = useState<string | null>(null);
 
   const create = action.kind === "event_create";
+  // Calendar.app has no switch for telling guests; its server may tell them anyway, and the card says so.
+  const mayNotify = action.reasons.some((r) => r.kind === "may_notify");
   const guestsP = parseRecipients(guests);
   const s = fromLocalInput(start);
   const en = fromLocalInput(end);
@@ -140,7 +142,7 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
             {guestsP.problem && <span className="err">{guestsP.problem}</span>}
           </>
         )}
-        {!create && e.attendees.length > 0 && (
+        {!create && e.attendees.length > 0 && !mayNotify && (
           <label className="inline">
             <input type="checkbox" checked={notify} disabled={locked} onChange={(x) => (setNotify(x.target.checked), edited())} />
             Tell its {e.attendees.length === 1 ? "guest" : `${e.attendees.length} guests`} ({namesLine(e.attendees)})
@@ -166,9 +168,11 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
               ? guestsP.people.length
                 ? "Invitations go out from the calendar's own account."
                 : "No one is invited."
-              : notify && e.attendees.length
-                ? "Its guests are told."
-                : "No one is told."}
+              : mayNotify
+                ? "Calendar's server may tell its guests."
+                : notify && e.attendees.length
+                  ? "Its guests are told."
+                  : "No one is told."}
           </p>
         </div>
       </div>

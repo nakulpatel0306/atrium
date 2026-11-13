@@ -206,6 +206,11 @@ function knownPerson(db: Database, address: string, own: Set<string>, now: numbe
     .get(now - YEAR_MS, a, a, a);
 }
 
+// Calendar.app changes go through the calendar's own server (iCloud, Exchange), which may tell guests by itself;
+// Atrium can neither promise that nor stop it.
+export const MAY_NOTIFY_COPY = "Calendar's server may tell its guests about this; Atrium can't stop it or promise it";
+const calendarSource = (db: Database, id: string) => (db.query("SELECT source FROM cal_calendars WHERE id = ?").get(id) as { source: "google" | "apple" } | null)?.source ?? null;
+
 // The spec's "to a certain extent": what makes a draft need a fresh, explicit Send. Each is a note on the card.
 export function explicitReasons(
   db: Database,
@@ -234,6 +239,7 @@ export function explicitReasons(
     if (from && thread && from !== thread) out.push({ kind: "other_account", text: `Sent from ${from}, not ${thread}, where this thread is` });
   }
   if (people.length > MANY_RECIPIENTS) out.push({ kind: "many", text: `Goes to ${people.length} people` });
+  if (a.kind !== "event_create" && a.event?.attendees.length && calendarSource(db, a.event.calendarId) === "apple") out.push({ kind: "may_notify", text: MAY_NOTIFY_COPY });
   return out;
 }
 
@@ -257,7 +263,10 @@ export function actionDetail(db: Database, a: MailAction): string {
     const cal = listCalendars(db).find((c) => c.id === a.event!.calendarId);
     lines.push(`Calendar: ${cal?.title ?? "not picked"}`, `When: ${a.event.allDay ? new Date(a.event.start).toDateString() : `${dayTime(a.event.start)} to ${dayTime(a.event.end)}`}`);
     if (a.event.location) lines.push(`Where: ${a.event.location}`);
-    if (a.event.attendees.length) lines.push(`Guests: ${peopleText(a.event.attendees)}`, a.event.notify ? "Guests are told." : "Guests aren't told.");
+    if (a.event.attendees.length) {
+      const apple = a.kind !== "event_create" && calendarSource(db, a.event.calendarId) === "apple";
+      lines.push(`Guests: ${peopleText(a.event.attendees)}`, apple ? `${MAY_NOTIFY_COPY}.` : a.event.notify ? "Guests are told." : "Guests aren't told.");
+    }
     lines.push("", "On approve, Atrium makes exactly this change through the calendar's own source.");
     return lines.join("\n");
   }
@@ -511,7 +520,8 @@ export function draftEvent(db: Database, input: EventDraftInput): { action: Mail
       allDay: e.all_day === 1,
       location: e.location,
       attendees,
-      notify: attendees.length > 0 && input.notify !== false,
+      // Calendar.app has no switch for telling guests, so nothing here claims either way.
+      notify: attendees.length > 0 && input.notify !== false && calendarSource(db, e.calendar_id) !== "apple",
     };
   }
   const problem = eventProblem(db, input.kind, plan);
@@ -565,12 +575,14 @@ export function updateEventDraft(db: Database, id: string, patch: EventEdit): Ma
     const cur = draftOrThrow(db, id);
     if (!cur.event || !isEvent(cur.kind)) throw new BadMail("This is an email, not a calendar change.");
     const e = cur.event;
+    // Whether the card may promise guests hear (or don't): only where the source has that switch.
+    const canNotify = (x: EventPlan) => x.attendees.length > 0 && calendarSource(db, x.calendarId) !== "apple";
     const plan: EventPlan =
       cur.kind === "event_create"
         ? { ...e, calendarId: patch.calendarId, title: patch.title.trim(), start: patch.start, end: patch.end, allDay: patch.allDay, location: patch.location.trim(), attendees: markAdded(patch.attendees, e.attendees), notify: true }
         : cur.kind === "event_move"
-          ? { ...e, start: patch.start, end: patch.end, notify: e.attendees.length > 0 && patch.notify }
-          : { ...e, notify: e.attendees.length > 0 && patch.notify };
+          ? { ...e, start: patch.start, end: patch.end, notify: canNotify(e) && patch.notify }
+          : { ...e, notify: canNotify(e) && patch.notify };
     const problem = eventProblem(db, cur.kind, plan);
     if (problem) throw new BadMail(problem);
     return write(db, { ...cur, event: plan });

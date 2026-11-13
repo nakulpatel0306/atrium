@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getApproval, onApprovalResolved, resolveApproval, RULE_NEVER_DECIDES } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
@@ -416,6 +416,23 @@ describe("calendar changes", () => {
     await mail.sync.syncNow();
     const dentist = listEvents(db, NOW - 30 * 86_400_000, NOW + 30 * 86_400_000).find((e) => e.title === "Dentist")!;
     expect(mail.actions.rsvp(dentist.id, "accepted", "")).rejects.toThrow(NO_RSVP_COPY);
+  });
+
+  test("moving a Calendar.app event with guests says its server may tell them, and never promises silence", async () => {
+    const data = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
+    data.events["cal-home"].push({ id: "ae-9|2026-11-09T15:00:00Z", icalUid: "dinner@example.org", recurrenceId: null, title: "Dinner", start: new Date(NOW + 86_400_000).toISOString(), end: new Date(NOW + 90_000_000).toISOString(), allDay: false, location: "", attendees: [{ name: "Kit", email: "kit@example.org", status: "accepted" }], organizer: "sam.rivera@example.org", myStatus: "accepted", recurrence: null });
+    writeFileSync(fakes.pimFile, JSON.stringify(data));
+    mail.sync.appleOnNow("mail");
+    mail.sync.appleOnNow("calendar");
+    await mail.sync.syncNow();
+    const dinner = listEvents(db, NOW - 30 * 86_400_000, NOW + 30 * 86_400_000).find((e) => e.title === "Dinner")!;
+    const { action, approval } = draftEvent(db, { spaceId: space(), kind: "event_cancel", draftedBy: "you", eventId: dinner.id, notify: true });
+    expect(action.event!.notify).toBe(false);
+    expect(action.reasons).toContainEqual(expect.objectContaining({ kind: "may_notify" }));
+    expect(approval.detail).toContain("Calendar's server may tell its guests");
+    expect(approval.detail).not.toContain("Guests aren't told.");
+    expect((await pressSend(action)).status).toBe("sent");
+    expect(fakes.pimWrites().map((w) => w.cmd)).toEqual(["cal.delete"]);
   });
 
   test("a Calendar.app calendar takes events without guests, and says plainly it can't invite", async () => {
