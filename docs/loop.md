@@ -39,7 +39,11 @@ What the results mean:
 - **passed**: at least one real check ran and passed, and none failed or couldn't run. The install never counts as a passing check.
 - **failed**: a check failed. Any non-zero exit is a failure, 127 included: whether a tool is installed is asked with `command -v` before anything from the repo runs.
 - **unverified** (`none`): no checks were found, or a check couldn't run (the tool is missing, it timed out, or the install it needed didn't happen). Checks that couldn't run also add an attention note. A registry that needs your login makes the install unverified rather than failed, since checks never get your credentials.
-- **already failing**: when a check fails, Atrium also runs the checks on the commit the task started from (once per commit, cached; a Stop ends it and caches nothing). A check that failed there too and still fails proves nothing about the change: the result is "Unverified: X was already failing before this task", with an attention note. It's never "passed". It doesn't count as the writer's failure or toward loop detection, and the work can still reach you labelled unverified. The writer's prompt and the reviewer's both list these checks, with the end of their output from before the task, so the writer doesn't wander off to fix them and the reviewer can judge whether the change made them worse. A check that passed there and fails now is a real failure; one that failed there and passes now is simply passed.
+- **already failing**: Atrium runs the checks on the commit the task started from, before the writer's first turn (usually while the brief drafts) and again when a check fails. Results are cached for the 32 most recent bases, keyed by the commit, the checks and your dependencies (each lockfile's content and each dependency folder's identity), so a reinstall runs them again; a Stop ends the run and caches nothing. A check that fails there and still fails proves nothing about the change: the result is "Unverified: X was already failing before this task", with an attention note, and never "passed".
+  - The writer's prompt lists these checks from its first turn, with the end of their output from before the task.
+  - If one still fails after a turn, the writer is sent back exactly once ("X still fails as it did before the task. Your goal may need it to pass."), outside loop detection. After that the work goes on to review, unverified.
+  - The reviewer gets each one's output from before the task and from the branch now, to judge whether the change made it worse.
+  - A check that passed there and fails now is a real failure; one that failed there and passes now is simply passed.
 
 The task carries `checks: pending | running | passed | failed | none`, shown as a badge on its row with the output one click away.
 
@@ -79,7 +83,7 @@ The writer and the checks share a codebase, so tampering can't be made impossibl
 - **Python dependencies** are linked read-only (`.venv`) but never installed by the engine.
 - **Private registries.** The engine's install never gets your login, so when a change touches the lockfile of a repo whose packages need one, its checks are unverified ("the registry needs your login") rather than run.
 - **A new failure inside a check that was already failing** isn't caught: in a repo with type debt, one more type error leaves the typecheck failing as before, so the result is unverified, not failed. The reviewer is told which checks were already failing and sees the diff.
-- **A flaky check** can fail on the branch after passing on the base commit, and then reads as a real failure. "The same failure twice" compares output with timings, clock times, sizes, colours and temp paths taken out, so a flaky check that fails the same way twice still pauses.
+- **A flaky check** can fail on the branch after passing on the base commit, and then reads as a real failure. "The same failure twice" compares the last 80 lines of output with bracketed timings, the runner's totals and duration lines, colours and temp paths taken out, so a flaky check that fails the same way twice still pauses. Times and sizes inside assertion text are kept, so a different value is a different failure.
 
 ## The reviewer
 
