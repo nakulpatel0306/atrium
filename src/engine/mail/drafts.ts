@@ -208,23 +208,36 @@ const calendarSource = (db: Database, id: string) => (db.query("SELECT source FR
 // The spec's "to a certain extent": what makes a draft need a fresh, explicit Send. Each is a note on the card.
 export function explicitReasons(
   db: Database,
-  a: Pick<MailAction, "kind" | "accountId" | "threadId" | "threadAccountId" | "to" | "cc" | "attachments" | "event">,
+  a: Pick<MailAction, "kind" | "accountId" | "threadId" | "sourceMessageId" | "threadAccountId" | "to" | "cc" | "attachments" | "event">,
   now = Date.now(),
 ): Reason[] {
   const own = ownAddresses(db);
   const event = isEvent(a.kind);
   const people = event ? (a.event?.attendees ?? []) : [...a.to, ...a.cc];
   const out: Reason[] = [];
-  // People already on the thread being answered are never "first time": replying to them is the everyday case.
-  const row = a.threadId ? (db.query("SELECT participants FROM mail_threads WHERE id = ?").get(a.threadId) as { participants: string } | null) : null;
-  const onThread = new Set([...own, ...parse<Person[]>(row?.participants ?? "[]", []).map((p) => normalizeAddress(p.address))]);
+  // Replying is the everyday case, so on a thread these aren't "first time": the sender of the message answered, and
+  // anyone on a message of this thread the source filed as sent. To and Cc of incoming mail don't count: a sender
+  // writes those, and could otherwise plant an address that reply all then mails with no note.
+  const exempt = new Set(own);
+  if (a.threadId) {
+    if (a.kind === "reply" || a.kind === "reply_all") {
+      const answered = a.sourceMessageId ? (db.query("SELECT from_json FROM mail_messages WHERE id = ?").get(a.sourceMessageId) as { from_json: string } | null) : null;
+      const from = parse<Person>(answered?.from_json ?? "{}", { name: "", address: "" }).address;
+      if (from) exempt.add(normalizeAddress(from));
+    }
+    for (const m of db.query("SELECT to_json, cc_json FROM mail_messages WHERE thread_id = ? AND sent = 1").all(a.threadId) as { to_json: string; cc_json: string }[]) {
+      for (const p of [...parse<Person[]>(m.to_json, []), ...parse<Person[]>(m.cc_json, [])]) exempt.add(normalizeAddress(p.address));
+    }
+  }
   for (const p of people) {
-    if (onThread.has(normalizeAddress(p.address)) || knownPerson(db, p.address, now)) continue;
+    if (exempt.has(normalizeAddress(p.address)) || knownPerson(db, p.address, now)) continue;
     out.push({ kind: "first_time", key: `first_time:${normalizeAddress(p.address)}`, text: `first time ${event ? "inviting" : "emailing"} ${personLabel(p)}` });
   }
   // A forward carries the thread's words to whoever it goes to; anyone who wasn't on that thread is called out, whoever
   // drafted it.
   if (a.kind === "forward" && a.threadId) {
+    const row = db.query("SELECT participants FROM mail_threads WHERE id = ?").get(a.threadId) as { participants: string } | null;
+    const onThread = new Set([...own, ...parse<Person[]>(row?.participants ?? "[]", []).map((p) => normalizeAddress(p.address))]);
     for (const p of people) if (!onThread.has(normalizeAddress(p.address))) out.push({ kind: "outside_thread", key: `outside_thread:${normalizeAddress(p.address)}`, text: `forwards to ${personLabel(p)}, who wasn't on the thread` });
   }
   if (a.attachments.length) out.push({ kind: "attachments", key: `attachments:${a.attachments.length}`, text: a.attachments.length === 1 ? "1 attachment" : `${a.attachments.length} attachments` });

@@ -162,7 +162,7 @@ describe("what needs the explicit Send", () => {
     // A stranger mails you and Cc's an address of their choosing.
     ingestMessages(db, acct, [msg({ sourceId: "s1", messageId: "<win@example.org>", subject: "Win", from: { name: "Promo", address: "promo@example.org" }, cc: [{ name: "", address: "drop@example.net" }], date: NOW - 1000 })]);
     const reasons = (address: string) =>
-      explicitReasons(db, { kind: "new", accountId: acct.id, threadId: null, threadAccountId: null, to: [{ name: "", address, added: true }], cc: [], attachments: [], event: null }, NOW).map((r) => r.kind);
+      explicitReasons(db, { kind: "new", accountId: acct.id, threadId: null, sourceMessageId: null, threadAccountId: null, to: [{ name: "", address, added: true }], cc: [], attachments: [], event: null }, NOW).map((r) => r.kind);
     expect(reasons("drop@example.net")).toEqual(["first_time"]);
     expect(reasons("promo@example.org")).toEqual(["first_time"]);
     // Robin got mail from you on the lease thread, which Gmail filed as sent.
@@ -182,6 +182,20 @@ describe("what needs the explicit Send", () => {
     expect(reply.action.reasons).toEqual([]);
     const forward = draftMail(db, { spaceId: space(), kind: "forward", draftedBy: "you", threadId: kit.id, to: [{ name: "", address: "lee@example.org" }], body: "" });
     expect(forward.action.reasons.map((r) => r.kind)).toEqual(["first_time", "outside_thread"]);
+  });
+
+  test("someone a sender Cc'd is still first time on reply all; the sender isn't", async () => {
+    await connectGoogle();
+    const acct = google();
+    ingestMessages(db, acct, [msg({ sourceId: "k2", threadKey: "gt-kit2", messageId: "<kit-2@example.org>", subject: "Plans", from: { name: "Kit Moreno", address: "kit@example.org" }, cc: [{ name: "", address: "drop@example.net" }], date: NOW - 1000 })]);
+    const thread = listThreads(db).find((t) => t.subject === "Plans")!;
+    const all = draftMail(db, { spaceId: space(), kind: "reply_all", draftedBy: "you", threadId: thread.id, body: "Sounds good" });
+    expect(all.action.cc.map((p) => p.address)).toEqual(["drop@example.net"]);
+    expect(all.action.reasons.map((r) => r.key)).toEqual(["first_time:drop@example.net"]);
+    // Once Sam has written on the thread to drop@, they're no longer new there.
+    ingestMessages(db, acct, [msg({ sourceId: "k3", threadKey: "gt-kit2", messageId: "<kit-3@example.com>", subject: "Re: Plans", from: { name: "Sam", address: SAM }, to: [{ name: "", address: "kit@example.org" }], cc: [{ name: "", address: "drop@example.net" }], sent: true, date: NOW - 500 })]);
+    const later = draftMail(db, { spaceId: space(), kind: "reply_all", draftedBy: "you", threadId: thread.id, body: "Again" });
+    expect(later.action.reasons).toEqual([]);
   });
 
   test("a forward with attachments, another From account, and more than ten people", async () => {
