@@ -27,7 +27,6 @@ test("the engine serves an old Investing space as a plain general space and keep
   const base = `http://127.0.0.1:${server.port}`;
   const state = await (await fetch(`${base}/api/state`)).json();
   expect(state.spaces).toMatchObject([{ id: "spc_inv", name: "Investing", kind: "general", private: true }]);
-  expect(state.embed).toBeUndefined();
   expect((await fetch(`${base}/api/summary`)).status).toBe(200);
   const renamed = await fetch(`${base}/api/spaces/spc_inv`, { method: "PATCH", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ name: "Notes" }) });
   expect(renamed.status).toBe(200);

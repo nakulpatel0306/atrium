@@ -10,7 +10,7 @@ type Run = State["runs"][number];
 type Approval = State["approvals"][number];
 type Proposal = State["proposals"][number];
 
-export type Subject = "space" | "task" | "approval" | "activity";
+type Subject = "space" | "task" | "approval" | "activity";
 
 export type View = {
   state: State;

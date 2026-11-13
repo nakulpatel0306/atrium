@@ -5,7 +5,7 @@ import { isEnvPath } from "./envpath";
 export const MAX_FILES = 10;
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
-export const MAX_NAME = 120;
+const MAX_NAME = 120;
 export const DEFAULT_PROMPT = "Look at the attached files.";
 export const ATTACH_DIR = "Attachments";
 export const REPO_REFUSED = "Attach files in a regular space for now.";

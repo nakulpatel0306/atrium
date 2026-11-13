@@ -87,7 +87,7 @@ export type FilePreview = {
   note: string | null;
 };
 
-export function previewOf(path: string, absPath: string, size: number, bytes: Uint8Array | null): FilePreview {
+function previewOf(path: string, absPath: string, size: number, bytes: Uint8Array | null): FilePreview {
   const kind = kindOf(path, bytes?.subarray(0, 4096));
   const base = { path, absPath, size, kind, text: null, truncated: false, note: null };
   if (kind === "image") return base;

@@ -15,7 +15,7 @@ export const nameProblem = (name: string): string | null =>
 export const HIDDEN_TEXT =
   /[\u0080-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u2028\u2029\u3164\uFE00-\uFE0F\uFEFF\uFFA0\uFFF9-\uFFFB\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu;
 
-export const hasHidden = (s: string): boolean => new RegExp(HIDDEN_TEXT.source, "u").test(s);
+const hasHidden = (s: string): boolean => new RegExp(HIDDEN_TEXT.source, "u").test(s);
 export const stripHidden = (s: string): string => s.replace(new RegExp(HIDDEN_TEXT.source, "gu"), "");
 
 export const descriptionProblem = (text: string): string | null => {

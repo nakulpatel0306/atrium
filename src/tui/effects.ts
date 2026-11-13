@@ -115,10 +115,6 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
     case "restore": {
       const name = state.archived?.find((s) => s.id === intent.spaceId)?.name ?? "the space";
       const res = await client.patch<Space>(`/api/spaces/${enc(intent.spaceId)}`, { status: "active" });
-      // An earlier Messages space joins the current one rather than coming back as a second; X then means that one.
-      if (res.ok && res.data.id && res.data.id !== intent.spaceId) {
-        return { tone: "ok", text: `Moved the earlier ${name} into your current one, so there's only one.`, spaceId: res.data.id };
-      }
       return said(res, () => `Restored ${name}. Press X to archive it again.`);
     }
     case "deleteSpace": {

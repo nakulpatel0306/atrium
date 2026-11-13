@@ -12,7 +12,7 @@ export const PROJECTS_KEY = "projects.root";
 
 let macName: string | null | undefined;
 // The Mac account's full name. ATRIUM_MAC_NAME replaces it (empty for none) so tests and demos never read the real one.
-export function macFullName(): string | null {
+function macFullName(): string | null {
   const env = process.env.ATRIUM_MAC_NAME;
   if (env !== undefined) return env.trim() || null;
   if (macName === undefined) {

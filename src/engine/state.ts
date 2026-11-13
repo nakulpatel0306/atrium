@@ -36,9 +36,6 @@ export type AgentInfo = {
 };
 
 export type State = {
-  // Where the TradingView chart page is served this launch (the server fills it in), or null when its listener
-  // didn't start. The token is part of the page's path, so nothing else on that port can stand in for it.
-  embed?: { port: number; token: string } | null;
   spaces: Space[];
   // Archived spaces, most recently archived first, for the list that restores or deletes them.
   archived: Space[];

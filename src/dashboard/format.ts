@@ -32,4 +32,3 @@ export function duration(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-export const signedPct = (n: number, digits = 2) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(digits)}%`;
