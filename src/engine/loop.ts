@@ -1,6 +1,7 @@
 // Where a coding task is in the loop (write, checks, review, you), and the rules that move it on or pause it.
 // Shared by the engine and the dashboard, so it imports nothing but types.
 import type { BriefQuestion, TaskSize } from "./brief";
+import type { Session } from "./sessions";
 
 export type Stage = "brief" | "writing" | "checks" | "review" | "ready" | "paused";
 export type ChecksState = "pending" | "running" | "passed" | "failed" | "none";
@@ -74,6 +75,11 @@ export type LoopState = {
   // The next run explains what's wrong instead of trying again; its answer lands in `explanation`.
   explain: boolean;
   explanation: string | null;
+  // The writer's Claude session, kept between turns while its prompt cache is warm (sessions.ts); null when there is
+  // none to resume.
+  session: Session | null;
+  // What the writer's last finished turn said it did, for the progress note a fresh session starts with.
+  said: string | null;
   // Set once the user stepped in after a pause, so the writer goes on with the strong tier's model (tiers.ts).
   escalated: boolean;
 };
@@ -119,6 +125,8 @@ export function newLoop(budget: Budget): LoopState {
     explain: false,
     explanation: null,
     escalated: false,
+    session: null,
+    said: null,
   };
 }
 

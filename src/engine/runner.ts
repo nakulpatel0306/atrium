@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clock, createRegistry, type Registry, type TaskWait } from "./agents/registry";
-import type { AgentAdapter, AgentRunResult } from "./agents/types";
+import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./agents/types";
 import { createApproval, getApproval } from "./approvals";
 import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
@@ -37,6 +37,7 @@ import { failingAtBase, type GateOutcome, runGate } from "./checks/gate";
 import { failureReport, saveChecks } from "./checks/run";
 import {
   applyTriage,
+  compact,
   failureSignature,
   type LoopState,
   newLoop,
@@ -60,6 +61,7 @@ import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome
 import { enforceTranscriptCap, openTranscript } from "./storage";
 import { type Tier, tierModel, tierRun } from "./tiers";
 import { recordUsage, runModels, withModels } from "./usage";
+import { planSession, progressNote, type Session } from "./sessions";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -638,34 +640,63 @@ export function createRunner(deps: {
     const watch = task.kind === "work" && !explaining ? toolWatch() : null;
     let result: AgentRunResult;
     // Claude's model for this job; other agents keep their own.
-    const tier = adapter.id === "claude" ? tierRun(db, tierFor(task, explaining)) : {};
+    const tierName = tierFor(task, explaining);
+    const tier = adapter.id === "claude" ? tierRun(db, tierName) : {};
     const asked = tier.model;
+    // A Claude writer keeps its session between turns, except in a private space, whose work is never left in
+    // Claude Code's own session files.
+    const writing = task.kind === "work" && !explaining && repo !== null;
+    const added = shown.detail.slice(shown.loop?.session?.detail ?? shown.detail.length).trim();
+    let plan =
+      writing && adapter.id === "claude" && !space.private
+        ? planSession(shown.loop?.session ?? null, { now: Date.now(), tier: tierName, fresh: !!added || !!shown.loop?.feedback })
+        : null;
+    if (plan && !plan.resume && plan.why === "context") {
+      logActivity(db, space.id, "atrium", `${task.title}: the last session held ${compact(shown.loop!.session!.context)} tokens of context, so this turn starts a fresh one with a progress note.`, { taskId: task.id });
+    }
     try {
       const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch)];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
       const honest = [...capabilityLines(), OUTCOME_INSTRUCTION];
       const readOnly = task.kind === "review" || explaining;
-      // Reading the checks takes a moment, in which a stop can land before the agent has started.
-      if (r.signal.aborted) throw new StoppedEarly();
-      result = await adapter.run({
-        prompt: explaining ? explainPrompt(task, repo ? await branchContext(repo) : null) : buildPrompt(shown, space, gate ? gate.map((c) => c.command) : null),
-        cwd: r.cwd,
-        systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
-        // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
-        // An explanation reads only: no Bash at all, with the branch's history and diff already in its prompt.
-        allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
-        privateData: space.private,
-        mode: readOnly ? "review" : "work",
-        ...tier,
-        signal: r.signal,
-        onChunk: line,
-        ...(watch && {
-          onTool: (name: string, input: unknown) => {
-            const stuck = watch(name, input);
-            if (stuck) requestPause(task.id, { kind: "loop", diagnosis: stuck });
-          },
-        }),
-      });
+      const checks = gate ? gate.map((c) => c.command) : null;
+      const coldPrompt = async () =>
+        explaining ? explainPrompt(task, repo ? await branchContext(repo) : null) : buildPrompt(shown, space, checks, writing && repo && hadTurn(shown) ? await progressFor(repo, shown) : null);
+      const run = (prompt: string, session: AgentRunInput["session"]) => {
+        // Reading the checks and the branch takes a moment, in which a stop can land before the agent has started.
+        if (r.signal.aborted) throw new StoppedEarly();
+        return adapter.run({
+          prompt,
+          cwd: r.cwd,
+          systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
+          // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
+          // An explanation reads only: no Bash at all, with the branch's history and diff already in its prompt.
+          allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
+          privateData: space.private,
+          mode: readOnly ? "review" : "work",
+          ...tier,
+          ...(session && { session }),
+          signal: r.signal,
+          onChunk: line,
+          ...(watch && {
+            onTool: (name: string, input: unknown) => {
+              const stuck = watch(name, input);
+              if (stuck) requestPause(task.id, { kind: "loop", diagnosis: stuck });
+            },
+          }),
+        });
+      };
+      let warm: AgentRunResult | null = null;
+      if (plan?.resume) {
+        warm = await run(resumePrompt(added, shown.loop?.feedback ?? null), { id: plan.session.id, resume: true });
+        // A session Claude Code no longer has (cleared, or from another machine) is started again from the brief.
+        if (warm.status === "error" && warm.kind === "failed" && !r.signal.aborted) {
+          line("— Couldn't resume the last session, so this turn starts a fresh one —");
+          plan = planSession(null, { now: Date.now(), tier: tierName, fresh: true });
+          warm = null;
+        }
+      }
+      result = warm ?? (await run(await coldPrompt(), plan && !plan.resume ? { id: plan.id, resume: false } : undefined));
     } catch (e) {
       result =
         e instanceof StoppedEarly
@@ -683,7 +714,7 @@ export function createRunner(deps: {
     // below can block or discard it.
     if (result.usage) registry.recordUsage(adapter.id, result.usage);
     if (result.status === "ok") {
-      const models = runModels(result, asked ?? null);
+      const models = runModels(result, asked ?? null, plan?.resume ? plan.session.models : undefined);
       result = withModels(result, models);
       recordUsage(db, { taskId: task.id, spaceId: space.id, agent: adapter.id, purpose: task.kind === "review" ? "review" : explaining ? "explain" : "write", models });
     }
@@ -759,6 +790,8 @@ export function createRunner(deps: {
     }
     // The loop's own count of the turn, kept whatever happens to the task next.
     if (task.kind === "work") countTurn(task.id, result, Date.now() - turnStart);
+    // Only a turn that finished leaves a session worth resuming; one cut short or failed starts fresh next time.
+    if (plan) keepSession(task.id, result.status === "ok" && !cutShort ? { id: plan.resume ? plan.session.id : plan.id, endedAt: Date.now(), models: result.models ?? [], context: result.contextTokens ?? 0, tier: tierName, detail: shown.detail.length } : null);
 
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
     try {
@@ -788,6 +821,10 @@ export function createRunner(deps: {
       } else if (result.status === "ok") {
         // Answers to the last review's findings come out of the summary and onto the findings themselves.
         const answered = task.kind === "work" ? triageAnswers(task.id, outcome.body) : outcome.body;
+        if (task.kind === "work") {
+          const loop = getTask(db, task.id)!.loop;
+          if (loop) setTaskLoop(db, task.id, { ...loop, said: answered.trim().slice(0, SAID_MAX) || null });
+        }
         const lines = answered.trim() ? [answered.trim()] : [];
         // Repo runs already count their files in the branch summary.
         const madeText = !repo && made ? madeLine(made.changes, made.display) : null;
@@ -994,6 +1031,23 @@ export function createRunner(deps: {
     const tokens = result.status === "ok" ? weightedTokens(result) : 0;
     const unreported = loop.usage.unreported || (result.status === "ok" && tokens === 0);
     setTaskLoop(db, taskId, { ...loop, usage: { tokens: loop.usage.tokens + tokens, ms: loop.usage.ms + ms, unreported } });
+  }
+
+  function keepSession(taskId: string, session: Session | null) {
+    const loop = getTask(db, taskId)?.loop;
+    if (loop) setTaskLoop(db, taskId, { ...loop, session });
+  }
+
+  // What a fresh session is told about earlier turns, read from the branch; none before the first commit.
+  async function progressFor(repo: RepoRun, task: Task): Promise<string | null> {
+    try {
+      const log = await git(repo.path, ["log", "--format=%s", "--no-decorate", "-n", "20", `${repo.start}..${repo.branch}`]);
+      const commits = log.code === 0 ? log.out.split("\n").filter(Boolean) : [];
+      const files = commits.length ? (await branchFiles(repo.path, repo.start, repo.branch)).map((f) => f.path).slice(0, 30) : [];
+      return progressNote({ commits, files, summary: task.loop?.said ?? null });
+    } catch {
+      return null;
+    }
   }
 
   // When this turn answered review findings, its TRIAGE lines go onto them; returns the summary without them.
@@ -1204,6 +1258,9 @@ function readyLine(task: Task): string {
 
 class StoppedEarly extends Error {}
 
+// Whether a writer turn already finished on this task, so a fresh session has progress to be told about.
+const hadTurn = (task: Task): boolean => task.loop !== null && (task.loop.said !== null || task.loop.checkedSha !== null);
+
 // Which tier's Claude model a run uses: review judges and an explanation only reads, and a writer the user had to
 // unstick after a pause goes on with the strong model.
 function tierFor(task: Task, explaining: boolean): Tier {
@@ -1218,6 +1275,8 @@ const gateTools = (checks: Check[]): string[] =>
   checks.filter((c) => !c.install && !/[$\n`]/.test(c.command) && !c.command.startsWith("-")).map((c) => `Bash(${c.command}*)`);
 
 const EXPLAIN_DIFF_CAP = 20 * 1024;
+// How much of the writer's last summary a fresh session's progress note carries.
+const SAID_MAX = 2000;
 
 // The branch's commits and diff for an explanation, which reads files but runs no commands. Capped, and .env files
 // are left out, as for a reviewer.
@@ -1252,16 +1311,24 @@ export const steerBlock = (note: string) =>
   `Note from you while this was running: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`;
 
 // A writer turn: the brief as sections when there is one, what was asked, what will check it, and what the last
-// turn left to deal with (failing checks or review findings).
-function buildPrompt(task: Task, space: Space, checks: string[] | null): string {
+// turn left to deal with (failing checks or review findings). Stable parts come first and what changes from turn to
+// turn last, so a fresh session still finds most of its prompt in the cache; the fenced excerpts take a new marker
+// each time, so they come after everything that doesn't change.
+function buildPrompt(task: Task, space: Space, checks: string[] | null, progress: string | null = null): string {
   const parts = [`Task: ${task.title}`];
   if (task.brief) parts.push(...briefSections(task.brief, checks));
   else if (checks) parts.push(checksSection(checks));
-  if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
-  if (task.loop?.feedback) parts.push(task.loop.feedback);
-  if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
   if (space.goal.trim()) parts.push(`Space goal: ${space.goal.trim()}`);
+  if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
+  if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
+  if (progress) parts.push(progress);
+  if (task.loop?.feedback) parts.push(task.loop.feedback);
   return parts.join("\n\n");
+}
+
+// A turn in a resumed session, which already holds the brief and everything before: only what's new.
+function resumePrompt(added: string, feedback: string | null): string {
+  return ["This continues your work on the task in this session.", ...(added ? [added] : []), ...(feedback ? [feedback] : [])].join("\n\n");
 }
 
 function explainPrompt(task: Task, branch: string | null): string {

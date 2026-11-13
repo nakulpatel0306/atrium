@@ -4,6 +4,7 @@ import { newId } from "./ids";
 import { type Brief, normalizeBrief } from "./brief";
 import { type LoopState, newLoop, SIZE_BUDGETS } from "./loop";
 import type { Outcome } from "./outcome";
+import { storedSession } from "./sessions";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
@@ -103,12 +104,16 @@ const toTask = (r: TaskRow): Task => ({
   outcomeReason: r.outcome_reason ?? null,
   prUrl: r.pr_url ?? null,
   brief: r.brief ? normalizeBrief(JSON.parse(r.brief)) : null,
-  // Over the defaults, so a row from an older engine, missing a field the gate reads, reads as that field's
-  // strictest value rather than as undefined.
-  loop: r.loop ? { ...newLoop(SIZE_BUDGETS.medium), ...(JSON.parse(r.loop) as Partial<LoopState>) } : null,
+  loop: r.loop ? readLoop(JSON.parse(r.loop) as Partial<LoopState>) : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
+
+// Over the defaults, so a row from an older engine, missing a field the gate reads, reads as that field's strictest
+// value rather than as undefined. A session is read field by field, and anything off starts the next turn cold.
+function readLoop(stored: Partial<LoopState>): LoopState {
+  return { ...newLoop(SIZE_BUDGETS.medium), ...stored, session: storedSession(stored.session) };
+}
 
 export function getTask(db: Database, id: string): Task | null {
   const row = db.query("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | null;
