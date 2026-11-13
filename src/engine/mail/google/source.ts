@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { config } from "../../config";
 import { parseAddressList, parseIds, parsePerson } from "../addresses";
 import { MailProblem, type AccountRef, type AttendeeStatus, type MailSource, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
-import type { GoogleAuth } from "./oauth";
+import { type GoogleAuth, signedOutCopy } from "./oauth";
 import { safeFileName } from "../files";
 import { canonicalRecurrence } from "../recurrence";
 
@@ -127,12 +127,12 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
         throw new MailProblem("offline", "Atrium couldn't reach Google. Check the Mac is online; it tries again on the next sync.");
       }
       if (res.status === 401 && !force) continue;
-      if (res.status === 401) throw new MailProblem("signed_out", `Google signed Atrium out of ${account.address}. Connect it again in Settings → Accounts.`);
+      if (res.status === 401) throw new MailProblem("signed_out", signedOutCopy(account.address));
       if (res.status === 403) throw new MailProblem("other", `Google refused access to ${account.address}'s mail or calendar. Connect it again and allow every permission it asks for.`);
       if (!res.ok) throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
       return (await res.json()) as T;
     }
-    throw new MailProblem("signed_out", `Google signed Atrium out of ${account.address}.`);
+    throw new MailProblem("signed_out", signedOutCopy(account.address));
   }
   const gmail = (path: string) => `${config().google.gmailUrl}/gmail/v1/users/me${path}`;
   const cal = (path: string) => `${config().google.calendarUrl}/calendar/v3${path}`;

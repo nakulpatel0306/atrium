@@ -163,3 +163,11 @@ test("each socket counts as a connected client, which is what drives the sync ti
   ws.close();
   while (clients.at(-1) !== 0) await Bun.sleep(5);
 });
+
+test("the Google guide is served as plain text and tells the user to publish the app", async () => {
+  const r = await fetch(`${base}/api/mail/guide`);
+  expect(r.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  const text = await r.text();
+  expect(text).toContain("Publish app");
+  expect(text).toContain("Advanced");
+});

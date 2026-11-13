@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { recordSaved, removeSaved } from "../../../src/engine/mail/files";
 import { openDb } from "../../../src/engine/db";
 import { appleAccounts, appleSource } from "../../../src/engine/mail/apple";
-import { createGoogleAuth, mailKeychain, type GoogleAuth } from "../../../src/engine/mail/google/oauth";
+import { createGoogleAuth, mailKeychain, signedOutCopy, type GoogleAuth } from "../../../src/engine/mail/google/oauth";
 import { googleSource } from "../../../src/engine/mail/google/source";
 import { getAccount, listAccounts, listCalendars, listEvents, listThreads, pruneMail, removeAccount, threadMessages } from "../../../src/engine/mail/store";
 import { createMailSync } from "../../../src/engine/mail/sync";
@@ -117,13 +117,14 @@ describe("Google sign-in (PKCE on a loopback redirect)", () => {
     fakes.google.revokeAccount(SAM);
     fakes.google.expireAccessTokens();
     await expect(createGoogleAuth({ db, keychain: mailKeychain(FAKE_SECURITY) }).accessToken(account.id)).rejects.toThrow(
-      `Google signed Atrium out of ${SAM}. Connect it again in Settings → Accounts.`,
+      signedOutCopy(SAM),
     );
     const fresh = createGoogleAuth({ db, keychain: mailKeychain(FAKE_SECURITY) });
     await createMailSync({ db, google: googleSource(fresh), apple: appleSource(), appleAccounts, now: () => NOW }).syncNow();
     const after = getAccount(db, account.id)!;
     expect(after.status).toBe("signed_out");
-    expect(after.lastError).toBe(`Google signed Atrium out of ${SAM}. Connect it again in Settings → Accounts.`);
+    expect(after.lastError).toBe(signedOutCopy(SAM));
+    expect(after.lastError).toContain("every 7 days: press Publish app");
   });
 
   test("disconnect revokes with Google and removes the Keychain item", async () => {

@@ -13,7 +13,10 @@ mail. It takes about five minutes, once. Everything is optional: Apple Mail and 
 1. Open **Google Auth Platform** (or **APIs & Services › OAuth consent screen**).
 2. Choose **External**, give the app a name, and use your own address for the support and developer contact.
 3. Under **Audience**, add your own Google address (and any other account you'll connect) as a **test user**.
-   The app can stay in testing: it's only for you.
+4. Still under **Audience**, press **Publish app** and confirm, so the status reads **In production**.
+
+   This matters: Google ends sign-ins after 7 days for an app left in **Testing**, so Atrium would be signed out every
+   week. Publishing doesn't make the app public or send it for review. It stays unverified and only you use it.
 
 ## 3. Create the client
 
@@ -23,8 +26,14 @@ mail. It takes about five minutes, once. Everything is optional: Apple Mail and 
 ## 4. Connect
 
 In Atrium, open **Settings › Accounts** (or the **Mail and calendar** step of Get started), paste the client ID and
-secret, and press **Connect Google**. Your browser opens Google's sign-in; choose the account and allow access.
-Google may warn that the app isn't verified, since it's your own: choose **Continue**.
+secret, and press **Connect Google**. Your browser opens Google's sign-in; choose the account.
+
+Google then shows a screen saying it **hasn't verified this app**. That's expected: the app is your own, made in your
+own project, and Google only verifies apps that other people use. Press **Advanced**, then **Go to (your app's
+name)**, and allow the access it asks for.
+
+If Atrium later says Google signed it out and mentions Testing, go back to step 2.4 and publish the app, then
+connect again.
 
 Atrium asks for:
 

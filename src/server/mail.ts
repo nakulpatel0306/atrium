@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { config } from "../engine/config";
 import { logActivity } from "../engine/events";
 import type { Mail } from "../engine/mail";
@@ -28,6 +29,7 @@ import { KeychainError } from "../engine/markets/keychain";
 import { HttpError, json, readBody } from "./http";
 
 const DAY_MS = 86_400_000;
+const GUIDE = join(import.meta.dir, "..", "..", "docs", "google-setup.md");
 // System Settings panes for the two Apple permissions; opened only when the user presses the button.
 const PANES = {
   automation: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
@@ -77,6 +79,11 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
   const hit = (m: string, pattern: RegExp) => (method === m ? pathname.match(pattern) : null);
 
   if (hit("GET", /^\/api\/mail$/)) return json(mailOverview(db, mail));
+
+  // The Google setup guide from docs/, as plain text, so Get started and Settings can link to it.
+  if (hit("GET", /^\/api\/mail\/guide$/)) {
+    return new Response(Bun.file(GUIDE), { headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
+  }
 
   if (hit("POST", /^\/api\/mail\/setup$/)) return json({ spaceId: inboxSpace(db).id });
 

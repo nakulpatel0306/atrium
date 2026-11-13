@@ -38,7 +38,9 @@ const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
 const random = (n: number) => b64url(crypto.getRandomValues(new Uint8Array(n)));
 const sameText = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
-export const signedOutCopy = (address: string) => `Google signed Atrium out of ${address}. Connect it again in Settings → Accounts.`;
+// Google ends sign-ins after 7 days for an app left in Testing, which is the usual cause; a revoke reads the same.
+export const signedOutCopy = (address: string) =>
+  `Google signed Atrium out of ${address}. If your Google Cloud app is still in Testing, Google does this every 7 days: press Publish app under Google Auth Platform › Audience, then connect again in Settings → Accounts.`;
 const OFFLINE = "Atrium couldn't reach Google. Check the Mac is online; it tries again on the next sync.";
 
 // The page the browser lands on. Fixed text only: nothing from the request is echoed back.

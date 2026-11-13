@@ -36,10 +36,18 @@ export function GoogleConnect({ overview }: { overview: MailOverview }) {
         <ol>
           <li>Open console.cloud.google.com, create a project, and turn on the Gmail API and the Google Calendar API.</li>
           <li>Under Google Auth Platform, set up the consent screen as External, and add your own address as a test user.</li>
+          <li>
+            Still under Google Auth Platform, open Audience and press Publish app, so it says In production. Left in Testing, Google signs Atrium out every 7 days.
+          </li>
           <li>Under Clients, create an OAuth client of type Desktop app.</li>
           <li>Paste its client ID below, and its client secret if it shows one. Then press Connect Google and sign in.</li>
+          <li>Google will say the app isn't verified. It's your own app, so press Advanced, then Go to (your app's name), and allow access.</li>
         </ol>
-        <p className="hint">The full guide is docs/google-setup.md in the Atrium folder.</p>
+        <p className="hint">
+          <a href="/api/mail/guide" target="_blank" rel="noreferrer">
+            Open the full guide
+          </a>
+        </p>
       </details>
       <form
         className="mk-form"
