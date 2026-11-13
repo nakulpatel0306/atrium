@@ -59,6 +59,7 @@ import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 import { type Tier, tierModel, tierRun } from "./tiers";
+import { recordUsage, runModels, withModels } from "./usage";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -393,7 +394,8 @@ export function createRunner(deps: {
       const warm = repo ? warmBase(space, repo, controller.signal) : Promise.resolve();
       const draft = claude
         ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, model: tierModel(db, "cheap") || undefined, signal: controller.signal })
-        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null };
+        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null, models: [] };
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "brief", models: draft.models });
       await warm;
       if (getTask(db, task.id)?.status !== "running") return;
       if (controller.signal.aborted) {
@@ -635,6 +637,9 @@ export function createRunner(deps: {
     const shown = firstTurn ? await withBaseFailures(task, repo!, gate!, r.signal) : task;
     const watch = task.kind === "work" && !explaining ? toolWatch() : null;
     let result: AgentRunResult;
+    // Claude's model for this job; other agents keep their own.
+    const tier = adapter.id === "claude" ? tierRun(db, tierFor(task, explaining)) : {};
+    const asked = tier.model;
     try {
       const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch)];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
@@ -651,7 +656,7 @@ export function createRunner(deps: {
         allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
         privateData: space.private,
         mode: readOnly ? "review" : "work",
-        ...(adapter.id === "claude" && tierRun(db, tierFor(task, explaining))),
+        ...tier,
         signal: r.signal,
         onChunk: line,
         ...(watch && {
@@ -677,6 +682,11 @@ export function createRunner(deps: {
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
     // below can block or discard it.
     if (result.usage) registry.recordUsage(adapter.id, result.usage);
+    if (result.status === "ok") {
+      const models = runModels(result, asked ?? null);
+      result = withModels(result, models);
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: adapter.id, purpose: task.kind === "review" ? "review" : explaining ? "explain" : "write", models });
+    }
     if (result.status === "error" && result.kind === "rate_limited") {
       registry.setLimited(adapter.id, result.retryAfter ?? Date.now() + 30 * 60_000);
     }

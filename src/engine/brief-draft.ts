@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentAdapter } from "./agents/types";
+import type { AgentAdapter, ModelTokens } from "./agents/types";
 import { type Brief, type BriefQuestion, normalizeBrief, normalizeQuestions } from "./brief";
+import { runModels } from "./usage";
 
 // The pre-pass is meant to feel instant next to the task itself: the cheap tier's model, a few reads, then an answer.
 const BRIEF_TURNS = 6;
@@ -31,14 +32,16 @@ function prompt(ask: string, repo: boolean): string {
 
 // `suggestedVerify` is the pre-pass's own idea of a check command. The gate never takes it from the pre-pass, which
 // reads a repo that may be written to mislead it: the brief's verify stays "auto" until the user accepts it.
-export type DraftResult = { brief: Brief; questions: BriefQuestion[]; error: string | null; suggestedVerify: string | null };
+// `models` is what the pre-pass itself used, for the cost meter.
+export type DraftResult = { brief: Brief; questions: BriefQuestion[]; error: string | null; suggestedVerify: string | null; models: ModelTokens[] };
 
 // Never fails: a pre-pass that can't answer still leaves a brief holding the ask itself, and the task runs as is.
 export async function draftBrief(
   adapter: AgentAdapter,
   input: { ask: string; repoPath: string | null; privateData: boolean; model?: string; signal?: AbortSignal },
 ): Promise<DraftResult> {
-  const fallback = (error: string): DraftResult => ({ brief: normalizeBrief({}, input.ask), questions: [], error, suggestedVerify: null });
+  let models: ModelTokens[] = [];
+  const fallback = (error: string): DraftResult => ({ brief: normalizeBrief({}, input.ask), questions: [], error, suggestedVerify: null, models });
   const repo = input.repoPath !== null;
   // Away from a repo there's nothing to read, so it gets an empty folder and no tools.
   const cwd = input.repoPath ?? mkdtempSync(join(tmpdir(), "atrium-run-"));
@@ -57,11 +60,12 @@ export async function draftBrief(
       onChunk() {},
     });
     if (result.status !== "ok") return fallback(timeout.aborted ? "The brief took too long to draft." : result.message);
+    models = runModels(result, input.model ?? null);
     const parsed = parseJson(result.summary);
     if (!parsed) return fallback("The brief came back in a shape Atrium couldn't read.");
     const drafted = normalizeBrief(parsed, input.ask);
     const suggestedVerify = drafted.verify === "auto" ? null : drafted.verify;
-    return { brief: { ...drafted, verify: "auto" }, questions: normalizeQuestions(parsed.questions), error: null, suggestedVerify };
+    return { brief: { ...drafted, verify: "auto" }, questions: normalizeQuestions(parsed.questions), error: null, suggestedVerify, models };
   } catch (e) {
     return fallback((e as Error).message);
   } finally {

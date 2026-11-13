@@ -9,6 +9,7 @@ import { type Budget, type LoopState, resumed } from "../engine/loop";
 import { getSpace, type Space } from "../engine/spaces";
 import { appendTaskDetail, getTask, setTaskBrief, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
 import { tierModel } from "../engine/tiers";
+import { recordUsage } from "../engine/usage";
 import { HttpError, json, readBody, str } from "./http";
 
 const ASK_MAX = 4000;
@@ -60,7 +61,9 @@ export async function loopRoute(db: Database, claude: AgentAdapter | undefined, 
       draftBrief(claude, { ask, repoPath: repo, privateData: space.private, model: tierModel(db, "cheap") || undefined, signal: req.signal }),
       spaceChecks(space),
     ]);
-    return json({ ...draft, checks, hints: gapHints(draft.brief, { repo: space.kind === "repo", checksFound: checks.length > 0 }) });
+    recordUsage(db, { taskId: null, spaceId: space.id, agent: "claude", purpose: "brief", models: draft.models });
+    const { models: _, ...reply } = draft;
+    return json({ ...reply, checks, hints: gapHints(draft.brief, { repo: space.kind === "repo", checksFound: checks.length > 0 }) });
   }
 
   const checksM = method === "GET" ? pathname.match(/^\/api\/tasks\/([^/]+)\/checks$/) : null;
