@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runGate } from "../../src/engine/checks/gate";
 import { judge, runChecks } from "../../src/engine/checks/run";
@@ -139,5 +140,49 @@ describe("checks that were already failing", () => {
     expect([worse.verdict, worse.preexisting]).toEqual(["failed", []]);
     const meant = await gate(failingBase((p) => writeFileSync(join(p, "other.txt"), "x")), FAKE_CHECK, "Fix the failing tests");
     expect([meant.verdict, meant.preexisting]).toEqual(["failed", []]);
+  });
+});
+
+describe("fail-closed edges", () => {
+  test("the install can't write through a dependency folder linked to the user's own", async () => {
+    const { installProfile } = await import("../../src/engine/checks/sandbox");
+    const theirs = tempRepoPath();
+    mkdirSync(join(theirs, "node_modules"));
+    const tree = tempRepoPath();
+    symlinkSync(join(theirs, "node_modules"), join(tree, "node_modules"));
+    const tmp = mkdtempSync(join(tmpdir(), "atrium-agent-"));
+    cleanups.push(() => rmSync(tmp, { recursive: true, force: true }));
+    const write = Bun.spawnSync(["/usr/bin/sandbox-exec", "-p", installProfile(tree, tmp), "/bin/sh", "-c", "echo x > node_modules/planted"], { cwd: tree });
+    expect(write.exitCode).not.toBe(0);
+    expect(existsSync(join(theirs, "node_modules", "planted"))).toBe(false);
+  });
+
+  test("the outside snapshot reads only regular files, never hangs on a FIFO, and counts oversized or unsnapshotted config as changed", async () => {
+    const { changedOutside, outsideSnapshot } = await import("../../src/engine/checks/attention");
+    const path = tempRepoPath();
+    writeFileSync(join(path, ".gitignore"), ".npmrc\nbunfig.toml\n.yarnrc\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-qm", "ignore");
+    Bun.spawnSync(["mkfifo", join(path, ".npmrc")]);
+    symlinkSync("/etc/hosts", join(path, "bunfig.toml"));
+    writeFileSync(join(path, ".yarnrc"), "x".repeat(2 * 1024 * 1024));
+    // git doesn't list a FIFO at all, so it's never opened; the link is recorded as a link, never followed.
+    const snap = await outsideSnapshot(path);
+    expect(snap).toEqual({ "bunfig.toml": "link", ".yarnrc": "oversize" });
+    expect(await changedOutside(path, snap)).toEqual([".yarnrc"]);
+    expect((await changedOutside(path, null)).sort()).toEqual([".yarnrc", "bunfig.toml"]);
+  });
+
+  test("a stored loop missing fields reads with the defaults, the outside snapshot missing", async () => {
+    const { openDb } = await import("../../src/engine/db");
+    const { createSpace } = await import("../../src/engine/spaces");
+    const { createTask, getTask } = await import("../../src/engine/tasks");
+    const db = openDb();
+    const s = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: "/tmp/x" });
+    const t = createTask(db, { spaceId: s.id, title: "Fix" });
+    db.query("UPDATE tasks SET loop = ? WHERE id = ?").run(JSON.stringify({ stage: "writing", checks: "passed" }), t.id);
+    const loop = getTask(db, t.id)!.loop!;
+    expect([loop.checks, loop.outside, loop.attention, loop.preexisting, loop.unverified]).toEqual(["passed", null, [], [], null]);
+    db.close();
   });
 });

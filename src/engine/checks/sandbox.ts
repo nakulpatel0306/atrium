@@ -1,5 +1,6 @@
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { config } from "../config";
 import { DEPENDENCY_DIRS, SANDBOX_EXEC, codexStateDir, seatbeltProfile, subpath } from "../agents/seatbelt";
 
@@ -31,8 +32,14 @@ export function checkProfile(cwd: string, writable: string[]): string {
 // The engine's install from the lockfile, the one run that writes the dependency folders: it writes there and in
 // its temp folder (where the package manager's cache is pointed) and nowhere else in the worktree, reaches the
 // package registry, and keeps the agent profile's shut loopback, port 22 and unreadable credentials (~/.npmrc too).
+// A dependency folder that resolves outside the tree (a link to the user's own) is never opened for writing.
 export function installProfile(cwd: string, tmp: string): string {
-  return [agentProfile(cwd, [tmp]), `(allow file-write* ${DEPENDENCY_DIRS.map((d) => subpath(join(cwd, d))).join(" ")})`].join("\n");
+  const tree = existsSync(cwd) ? realpathSync(cwd) : cwd;
+  const own = DEPENDENCY_DIRS.map((d) => join(cwd, d)).filter((p) => {
+    const real = existsSync(p) ? realpathSync(p) : join(tree, basename(p));
+    return real === tree || real.startsWith(`${tree}/`);
+  });
+  return [agentProfile(cwd, [tmp]), ...(own.length ? [`(allow file-write* ${own.map(subpath).join(" ")})`] : [])].join("\n");
 }
 
 export function wrapCheck(argv: string[], profile: string, sandboxExec: string = SANDBOX_EXEC): string[] {

@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { bus } from "./events";
 import { newId } from "./ids";
 import { type Brief, normalizeBrief } from "./brief";
-import type { LoopState } from "./loop";
+import { type LoopState, newLoop, SIZE_BUDGETS } from "./loop";
 import type { Outcome } from "./outcome";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
@@ -103,7 +103,9 @@ const toTask = (r: TaskRow): Task => ({
   outcomeReason: r.outcome_reason ?? null,
   prUrl: r.pr_url ?? null,
   brief: r.brief ? normalizeBrief(JSON.parse(r.brief)) : null,
-  loop: r.loop ? (JSON.parse(r.loop) as LoopState) : null,
+  // Over the defaults, so a row from an older engine, missing a field the gate reads, reads as that field's
+  // strictest value rather than as undefined.
+  loop: r.loop ? { ...newLoop(SIZE_BUDGETS.medium), ...(JSON.parse(r.loop) as Partial<LoopState>) } : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -201,6 +203,13 @@ export function setTaskOutcome(db: Database, id: string, outcome: Outcome, reaso
 
 export function setTaskLoop(db: Database, id: string, loop: LoopState | null): Task {
   const res = db.query("UPDATE tasks SET loop = ?, updated_at = ? WHERE id = ?").run(loop ? JSON.stringify(loop) : null, Date.now(), id);
+  if (res.changes === 0) throw new Error(`No task with id ${id}`);
+  bus.emit({ type: "changed" });
+  return getTask(db, id)!;
+}
+
+export function setTaskBrief(db: Database, id: string, brief: Brief): Task {
+  const res = db.query("UPDATE tasks SET brief = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(brief), Date.now(), id);
   if (res.changes === 0) throw new Error(`No task with id ${id}`);
   bus.emit({ type: "changed" });
   return getTask(db, id)!;

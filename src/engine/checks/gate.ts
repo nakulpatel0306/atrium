@@ -18,8 +18,8 @@ export type GateOutcome = {
 };
 
 // Runs `checks` on `sha` in a checkout of its own that's deleted afterwards. The dependency folders are the
-// user's, linked in read-only (no check may write them); with `install`, node_modules is instead a private copy
-// (an APFS clone where it can be) that the engine installs the change's lockfile into. Either way nothing the
+// user's, linked in read-only (no check may write them); with `install`, they're instead private copies (APFS
+// clones where they can be) that the engine installs the change's lockfile into. Either way nothing the
 // checks or the install do outlives the run or reaches the user's checkout.
 async function runInTree(repo: string, sha: string, checks: Check[], opts: { install: Check | null; signal?: AbortSignal; onLine?: (l: string) => void }): Promise<CheckResult[]> {
   const dir = mkdtempSync(join(tmpdir(), "atrium-checks-"));
@@ -29,7 +29,8 @@ async function runInTree(repo: string, sha: string, checks: Check[], opts: { ins
     for (const d of DEPENDENCY_DIRS) {
       const theirs = join(repo, d);
       if (!existsSync(theirs)) continue;
-      if (opts.install && d === "node_modules") Bun.spawnSync(["/bin/cp", "-c", "-R", theirs, join(tree, d)]);
+      // An install may write every dependency folder in the tree, so each is a real copy then, never a link.
+      if (opts.install) Bun.spawnSync(["/bin/cp", "-c", "-R", theirs, join(tree, d)]);
       else symlinkSync(theirs, join(tree, d));
     }
     return await runChecks(tree, opts.install ? [opts.install, ...checks] : checks, { signal: opts.signal, onLine: opts.onLine });
