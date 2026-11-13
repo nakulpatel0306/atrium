@@ -46,9 +46,9 @@ describe("addresses", () => {
   });
   test("an encoded display name can't add a person or change the address", () => {
     const b = (t: string) => `=?UTF-8?B?${Buffer.from(t).toString("base64")}?=`;
-    expect(parseAddressList(`${b("Sam <evil@x.com>")} <sam@example.com>`)).toEqual([{ name: "Sam evil@x.com", address: "sam@example.com" }]);
-    expect(parseAddressList(`${b("a@x.com, b@y.com")} <robin@example.net>`)).toEqual([{ name: "a@x.com b@y.com", address: "robin@example.net" }]);
-    expect(parseAddressList(`=?UTF-8?Q?=22Kit=22_=3Ckit=40evil=2Ecom=3E?= <kit@example.org>`)).toEqual([{ name: "Kit kit@evil.com", address: "kit@example.org" }]);
+    expect(parseAddressList(`${b("Sam <evil@example.net>")} <sam@example.com>`)).toEqual([{ name: "Sam evil@example.net", address: "sam@example.com" }]);
+    expect(parseAddressList(`${b("a@example.com, b@example.org")} <robin@example.net>`)).toEqual([{ name: "a@example.com b@example.org", address: "robin@example.net" }]);
+    expect(parseAddressList(`=?UTF-8?Q?=22Kit=22_=3Ckit=40example=2Ecom=3E?= <kit@example.org>`)).toEqual([{ name: "Kit kit@example.com", address: "kit@example.org" }]);
     // Ordinary encoded names still read normally.
     expect(parseAddressList("=?UTF-8?Q?Ren=C3=A9e?= Moreno <kit@example.org>")).toEqual([{ name: "Renée Moreno", address: "kit@example.org" }]);
   });
