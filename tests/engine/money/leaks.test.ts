@@ -101,7 +101,8 @@ test("F6 money tasks run with Read/Glob/Grep and Claude's answer is saved withou
   const src = readFileSync(join(W, "src/engine/runner.ts"), "utf8");
   // allowedTools for any task with a purpose (money included) is REVIEW_TOOLS = Read, Glob, Grep.
   const toolsLine = src.split("\n").find((l) => l.includes("allowedTools:"))!;
-  const moneyGetsNoTools = /purpose\s*===\s*"money"\s*\?\s*\[\]/.test(toolsLine);
+  // Money may share its empty tool list with other tool-less kinds (Inbox tasks), but must lead to [] itself.
+  const moneyGetsNoTools = /purpose\s*===\s*"money"(\s*\|\|\s*[\w.]+\s*===\s*"\w+")*\s*\?\s*\[\]/.test(toolsLine);
   const agent = readFileSync(join(W, "src/engine/markets/agent.ts"), "utf8");
   const writeupMasked = /saveWriteup\([\s\S]{0,400}maskNumbers/.test(agent) || /maskNumbers\(summary/.test(agent);
   expect({ moneyGetsNoTools, writeupMasked }).toEqual({ moneyGetsNoTools: true, writeupMasked: true });

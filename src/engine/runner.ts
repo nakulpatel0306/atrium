@@ -31,7 +31,7 @@ import {
 import { afterFix, afterReview, afterWork, fixFailed, resolvedAgent } from "./handoff";
 import { newId } from "./ids";
 import { MARKETS_SYSTEM_LINES, type MarketsHooks } from "./markets/agent";
-import { INBOX_SYSTEM_LINES, type InboxHooks } from "./mail/agent";
+import { createInboxHooks, type InboxHooks } from "./mail/agent";
 import { isMasked, maskNumbers } from "./money/import";
 import { remaskTranscript } from "./money/remask";
 import { agentName, plural, sentence } from "./text";
@@ -506,14 +506,12 @@ export function createRunner(deps: {
     }
     let result: AgentRunResult;
     try {
-      const context = markets
-        ? `\n\n${await markets.context(task, space, adapter.id)}`
-        : inbox && deps.inbox
-          ? `\n\n${await deps.inbox.context(task, space)}`
-          : "";
-      const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : []), ...(inbox ? INBOX_SYSTEM_LINES : [])];
+      // An Inbox run gets its own system and capability lines, built around this run's untrusted-block tag.
+      const inboxRun = inbox ? await (deps.inbox ?? createInboxHooks(db, null)).prepare(task, space) : null;
+      const context = markets ? `\n\n${await markets.context(task, space, adapter.id)}` : inboxRun ? `\n\n${inboxRun.context}` : "";
+      const base = repo ? [REPO_SYSTEM_PROMPT] : inboxRun ? inboxRun.system : [generalSystemPrompt(r.scratch), ...(markets ? MARKETS_SYSTEM_LINES : [])];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
-      const honest = [...capabilityLines(db, isMessageTask(task) ? "message" : "task"), OUTCOME_INSTRUCTION];
+      const honest = [...(inboxRun ? inboxRun.capabilities : capabilityLines(db, isMessageTask(task) ? "message" : "task")), OUTCOME_INSTRUCTION];
       const prompt = buildPrompt(task, space) + context;
       // Money facts go to Claude only, and only masked: a card or account number left in the prompt stops the run.
       if (task.purpose === "money" && (adapter.id !== "claude" || !isMasked(prompt))) throw new MoneyGuard();
@@ -522,7 +520,7 @@ export function createRunner(deps: {
         cwd: r.cwd,
         systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
         // Reviews and investing write-ups (digest, thesis draft, thesis check) only read: their output is the summary.
-        allowedTools: task.purpose === "money" ? [] : space.kind === "inbox" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
+        allowedTools: task.purpose === "money" || space.kind === "inbox" ? [] : task.kind === "review" || task.purpose ? REVIEW_TOOLS : repo ? REPO_TOOLS : BASE_TOOLS,
         privateData: isPrivate(space),
         mode: task.kind === "review" || task.purpose ? "review" : "work",
         signal: r.signal,
