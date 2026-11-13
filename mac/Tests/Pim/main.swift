@@ -52,5 +52,14 @@ let listed: [(box: String, id: String, date: Int)] = [("INBOX", "1", 5), ("INBOX
 check(newestFirst(listed, limit: 3).map(\.id) == ["2", "4", "3"], "newest: sorted by date, ties in listed order, cut to the limit")
 check(newestFirst(listed, limit: 0).isEmpty, "newest: a zero limit keeps none")
 
+// writes
+check(parseInput(Data("{\"account\":\"a\"}".utf8))?["account"] as? String == "a", "input: an object")
+check(parseInput(Data("[1]".utf8)) == nil, "input: not an object")
+let people = peopleLists([["name": "Robin\nVale", "address": "robin@example.net"], ["name": "No address"]])
+check(people.names == ["Robin Vale"] && people.addresses == ["robin@example.net"], "people: one line names, no address dropped")
+let split = splitEventId("ABC:123|2026-11-12T15:00:00Z")
+check(split?.event == "ABC:123" && split?.occurrence == isoFormatter.date(from: "2026-11-12T15:00:00Z"), "event ids: id and occurrence")
+check(splitEventId("ABC")?.occurrence == nil && splitEventId("") == nil, "event ids: plain id, empty refused")
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

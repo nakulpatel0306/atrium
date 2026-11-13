@@ -5,7 +5,8 @@ import EventKit
 import Foundation
 
 // atrium-pim: the engine's only window into Mail.app (AppleScript, run here with arguments passed as Apple event
-// parameters, never spliced into script text) and Calendar.app (EventKit). One subcommand per call, one JSON
+// parameters, never spliced into script text) and Calendar.app (EventKit). It reads, and after the user's own Send
+// it sends, saves drafts and makes calendar changes; write commands take their JSON on stdin. One subcommand per call, one JSON
 // document on stdout. The interface is pinned in src/engine/mail/pim.ts; tests use tests/fixtures/fake-pim.ts.
 // Everything it reads is someone else's text and goes to the engine as plain data.
 
@@ -91,6 +92,42 @@ let mailScript = """
     end tell
     return outPath
   end saveAttachment
+
+  -- One email, sent or saved to Drafts. With a reply id it answers that message, so Mail sets In-Reply-To and
+  -- References; its recipients and words are then replaced by exactly the card's.
+  on composeMessage(acctId, fromAddr, toNames, toAddrs, ccNames, ccAddrs, subj, body, replyBox, replyId, attPaths, doSend)
+    tell application "Mail"
+      if replyId is not "" then
+        set orig to my findMessage(acctId, replyBox, replyId)
+        set m to reply orig opening window false without reply to all
+        delete every to recipient of m
+        delete every cc recipient of m
+        delete every bcc recipient of m
+        set subject of m to subj
+        set content of m to body
+      else
+        set m to make new outgoing message with properties {subject:subj, content:body, visible:false}
+      end if
+      set sender of m to fromAddr
+      tell m
+        repeat with i from 1 to count of toAddrs
+          make new to recipient at end of to recipients with properties {name:(item i of toNames), address:(item i of toAddrs)}
+        end repeat
+        repeat with i from 1 to count of ccAddrs
+          make new cc recipient at end of cc recipients with properties {name:(item i of ccNames), address:(item i of ccAddrs)}
+        end repeat
+        repeat with p in attPaths
+          make new attachment with properties {file name:(POSIX file (p as text))} at after the last paragraph
+        end repeat
+      end tell
+      if doSend then
+        send m
+      else
+        save m
+      end if
+    end tell
+    return true
+  end composeMessage
   """
 
 func runHandler(_ name: String, _ args: [NSAppleEventDescriptor]) throws -> NSAppleEventDescriptor {
@@ -195,6 +232,96 @@ func mailAttachment(_ args: PimArgs) throws -> Any {
   let path = URL(fileURLWithPath: dir).appendingPathComponent(safeName(name)).path
   _ = try runHandler("saveAttachment", [ref.account, ref.mailbox, ref.id, name, path].map { NSAppleEventDescriptor(string: $0) })
   return ["path": path]
+}
+
+// MARK: Writes. Each reads one JSON document on stdin (see pim.ts), so nothing of the message is in argv.
+
+func readInput() throws -> [String: Any] {
+  guard let input = parseInput(FileHandle.standardInput.readDataToEndOfFile()) else { throw PimError(kind: "bad_args", message: "This command reads a JSON object on stdin.") }
+  return input
+}
+
+func stringList(_ values: [String]) -> NSAppleEventDescriptor {
+  let list = NSAppleEventDescriptor.list()
+  for (i, v) in values.enumerated() { list.insert(NSAppleEventDescriptor(string: v), at: i + 1) }
+  return list
+}
+
+func mailCompose(send: Bool) throws -> Any {
+  let input = try readInput()
+  guard let account = input["account"] as? String, let from = input["from"] as? String, let subject = input["subject"] as? String, let text = input["text"] as? String else {
+    throw PimError(kind: "bad_args", message: "mail.send needs account, from, subject and text.")
+  }
+  let to = peopleLists(input["to"])
+  let cc = peopleLists(input["cc"])
+  if to.addresses.isEmpty { throw PimError(kind: "bad_args", message: "mail.send needs at least one to address.") }
+  var replyBox = ""
+  var replyId = ""
+  if let raw = input["replyTo"] as? String {
+    guard let ref = decodeMessageId(raw), ref.account == account else { throw PimError(kind: "bad_args", message: "That reply id isn't one of this account's messages.") }
+    replyBox = ref.mailbox
+    replyId = ref.id
+  }
+  let attachments = (input["attachments"] as? [String]) ?? []
+  _ = try runHandler("composeMessage", [
+    NSAppleEventDescriptor(string: account), NSAppleEventDescriptor(string: from),
+    stringList(to.names), stringList(to.addresses), stringList(cc.names), stringList(cc.addresses),
+    NSAppleEventDescriptor(string: subject), NSAppleEventDescriptor(string: text),
+    NSAppleEventDescriptor(string: replyBox), NSAppleEventDescriptor(string: replyId),
+    stringList(attachments), NSAppleEventDescriptor(boolean: send),
+  ])
+  return ["ok": true]
+}
+
+// The event a write names: one occurrence when the id carries its date, else the event itself.
+func findEvent(_ id: String) throws -> EKEvent {
+  let store = eventStore()
+  guard let parts = splitEventId(id) else { throw PimError(kind: "bad_args", message: "That event id isn't one atrium-pim made.") }
+  if let occurrence = parts.occurrence {
+    let around = store.predicateForEvents(withStart: occurrence.addingTimeInterval(-86_400), end: occurrence.addingTimeInterval(86_400), calendars: nil)
+    if let e = store.events(matching: around).first(where: { $0.eventIdentifier == parts.event && ($0.occurrenceDate ?? $0.startDate) == occurrence }) { return e }
+  }
+  guard let e = store.event(withIdentifier: parts.event) else { throw PimError(kind: "not_found", message: "That event isn't in Calendar anymore.") }
+  return e
+}
+
+func calCreate() throws -> Any {
+  try requireCalendar()
+  let input = try readInput()
+  let store = eventStore()
+  guard let id = input["calendar"] as? String, let cal = store.calendar(withIdentifier: id), let title = input["title"] as? String,
+    let start = (input["start"] as? String).flatMap(isoFormatter.date), let end = (input["end"] as? String).flatMap(isoFormatter.date)
+  else { throw PimError(kind: "bad_args", message: "cal.create needs calendar, title, start and end.") }
+  let e = EKEvent(eventStore: store)
+  e.calendar = cal
+  e.title = title
+  e.startDate = start
+  e.endDate = end
+  e.isAllDay = (input["allDay"] as? Bool) ?? false
+  if let location = input["location"] as? String, !location.isEmpty { e.location = location }
+  try store.save(e, span: .thisEvent, commit: true)
+  return ["event": ["id": e.eventIdentifier ?? ""]]
+}
+
+func calUpdate() throws -> Any {
+  try requireCalendar()
+  let input = try readInput()
+  guard let id = input["id"] as? String, let start = (input["start"] as? String).flatMap(isoFormatter.date), let end = (input["end"] as? String).flatMap(isoFormatter.date) else {
+    throw PimError(kind: "bad_args", message: "cal.update needs id, start and end.")
+  }
+  let e = try findEvent(id)
+  e.startDate = start
+  e.endDate = end
+  try eventStore().save(e, span: .thisEvent, commit: true)
+  return ["ok": true]
+}
+
+func calDelete() throws -> Any {
+  try requireCalendar()
+  let input = try readInput()
+  guard let id = input["id"] as? String else { throw PimError(kind: "bad_args", message: "cal.delete needs id.") }
+  try eventStore().remove(try findEvent(id), span: .thisEvent, commit: true)
+  return ["ok": true]
 }
 
 // Whether Atrium may send Apple events to Mail, asking only when `ask` is set. Mail must be running to be asked.
@@ -335,6 +462,11 @@ func run(_ argv: [String]) throws -> Any {
   case "mail.attachment": return try mailAttachment(args)
   case "cal.calendars": return try calCalendars()
   case "cal.events": return try calEvents(args)
+  case "mail.send": return try mailCompose(send: true)
+  case "mail.draft": return try mailCompose(send: false)
+  case "cal.create": return try calCreate()
+  case "cal.update": return try calUpdate()
+  case "cal.delete": return try calDelete()
   default: throw PimError(kind: "bad_args", message: "Unknown command \(args.command).")
   }
 }
