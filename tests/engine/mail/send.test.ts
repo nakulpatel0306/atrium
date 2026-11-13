@@ -130,6 +130,14 @@ describe("replies", () => {
 });
 
 describe("what needs the explicit Send", () => {
+  test("Claude's drafts meet the recipient rules when they're made, not only at Send", async () => {
+    await connectGoogle();
+    expect(() => draftMail(db, { spaceId: space(), kind: "new", draftedBy: "claude", subject: "Hi", body: "Hello" })).toThrow("Add who this goes to first.");
+    const many = Array.from({ length: 51 }, (_, i) => ({ name: "", address: `p${i}@example.org` }));
+    expect(() => draftMail(db, { spaceId: space(), kind: "new", draftedBy: "claude", to: many, subject: "Hi", body: "Hello" })).toThrow("at most 50 people");
+    expect(pendingMailActions(db)).toEqual([]);
+  });
+
   test("titles and notes name the address, so a borrowed name can't pass as the real person", async () => {
     await connectGoogle();
     const { action, approval } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "claude", threadId: lease().id, to: [{ name: "Robin Vale", address: "robin.vale@attacker.example" }], body: "Looping in." });

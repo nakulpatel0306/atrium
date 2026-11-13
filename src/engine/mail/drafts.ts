@@ -420,6 +420,12 @@ export function draftMail(db: Database, input: MailDraftInput): { action: MailAc
       attachments: input.kind === "forward" ? parse<{ name: string; size: number }[]>(m.attachments, []).map((x, index) => ({ name: x.name, size: x.size, index })) : [],
     });
   }
+  // Claude's draft must already be one that could go out, so the review says why when it can't; the user's own
+  // card may start empty and is checked at Send.
+  if (claude) {
+    const problem = recipientsProblem(f.to, f.cc);
+    if (problem) throw new BadMail(problem);
+  }
   return insert(db, f);
 }
 
