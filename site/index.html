@@ -587,13 +587,13 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     <div class="head reveal">
       <span class="eyebrow">How it works</span>
       <h2>Brief, write, verify, review, you.</h2>
-      <p class="lede">Every coding task runs the same loop. You only see work that passed Atrium's own checks and a fresh reviewer, and you can skip the brief with ⌘↩ when you already know what you want.</p>
+      <p class="lede">Every coding task runs the same loop. Work reaches you after Atrium's own checks and a fresh reviewer, labelled when either couldn't vouch for it. Enter starts the task at once; ⌘↩ lets you edit the brief first.</p>
     </div>
     <div class="how-grid">
       <ol class="steps" id="steps">
-        <li class="on"><div><h3>Ask, then glance at the brief</h3><p>Type what you want, like “fix the off-by-one in pagination”. A quick pass turns it into a brief: the goal, what done looks like, how it's checked. Edit anything, then Run.</p></div></li>
-        <li><div><h3>It writes, Atrium checks</h3><p>The agent works on <code>atrium/&lt;taskId&gt;</code> inside a sandbox. Atrium runs your typecheck and tests itself and sends failures back. Then a fresh session, from another vendor when one is installed, reviews the diff against the brief.</p></div></li>
-        <li><div><h3>You decide</h3><p>Only then does the work wait in <b>Needs you</b>, with the checks, the review findings and how each was fixed. Approve it, say yes once more, and Atrium pushes the branch and opens the pull request.</p></div></li>
+        <li class="on"><div><h3>Ask, and it starts</h3><p>Type what you want, like “fix the off-by-one in pagination”, and press Enter. A quick first pass turns it into a brief on the task: the goal, what done looks like, what to look at. A question only comes back when the ask is really unclear.</p></div></li>
+        <li><div><h3>It writes, Atrium checks</h3><p>The agent works on <code>atrium/&lt;taskId&gt;</code> inside a sandbox. Atrium runs your typecheck and tests itself and sends failures back. Then a fresh session, from another vendor when one can work in the space, reviews the diff against the brief.</p></div></li>
+        <li><div><h3>You decide</h3><p>Then the work waits in <b>Needs you</b>, with the checks, the review findings and how each was fixed. Approve it, say yes once more, and Atrium pushes the branch and opens the pull request.</p></div></li>
       </ol>
       <div class="demo reveal" id="demo" aria-label="Example: asking Atrium to fix a bug on its own branch">
         <div class="ask"><span class="p">›</span><span id="typed">fix the off-by-one in pagination</span><span class="caret"></span></div>
@@ -748,7 +748,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       <article class="soon reveal">
         <span class="st shipped"><i></i>Shipped</span>
         <h3>A brief before it starts</h3>
-        <p>Type a one-liner and a quick, read-only pass turns it into a brief you can edit: the goal, what done looks like, and how it's checked. It asks a question only when something is really unclear, and ⌘↩ skips it.</p>
+        <p>Press Enter and the task starts; a quick, read-only first pass turns the one-liner into a brief: the goal, what done looks like, what to look at. It asks only when something is really unclear, and ⌘↩ lets you edit the brief before it runs.</p>
         <div class="peek"><b>Brief</b> · Fix the off-by-one in pagination<br>done when: the last page has every row<br>check: <span class="ac">bun test tests/paginate.test.ts</span></div>
       </article>
       <article class="soon reveal">

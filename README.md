@@ -23,11 +23,11 @@ Site: <https://nakulpatel0306.github.io/atrium/>
 
 Every coding task runs the same loop: **brief → write → verify → review → you.**
 
-- **Brief.** Press Enter and a quick, read-only pass turns your one-liner into a brief you can edit: the goal, acceptance criteria, how it's checked, scope and files to look at first. It asks at most two questions, only when the ask is really ambiguous. ⌘↩ skips it and sends the ask as it is.
+- **Brief.** Press Enter and the task starts. Its first stage is a quick, read-only pass that turns your one-liner into a brief: the goal, acceptance criteria, scope and files to look at first, shown on the task. If the ask is really ambiguous it asks at most two questions, answered with a tap in **Needs you**. ⌘↩ shows the brief first, to edit before it runs.
 - **Write.** The agent works on its own branch, with the brief as its task spec.
-- **Verify.** Atrium finds your typecheck, lint and test commands (package.json, Makefile, pyproject, Cargo, go.mod, CLAUDE.md/AGENTS.md, or your own list) and runs them itself, sandboxed, after every turn. Failures go back to the agent. The agent's own "tests pass" never counts.
-- **Review.** A fresh session reads only the diff and the brief, from another vendor when one is installed, else a new Claude session. The writer fixes or answers each finding, for at most two rounds.
-- **You.** Only then does the work wait in **Needs you**, with the checks, the findings and how each was resolved. Anything the change did to the checks themselves (edited their config, dropped or skipped tests) is called out, and no rule approves it for you.
+- **Verify.** Atrium finds your typecheck, lint and test commands (package.json, Makefile, pyproject, Cargo, go.mod, CLAUDE.md/AGENTS.md, or your own list) and runs them itself after every turn, sandboxed, in a checkout of their own that never touches yours. Failures go back to the agent. The agent's own "tests pass" never counts, and a check that couldn't run is never "passed".
+- **Review.** A fresh session reads only the diff and the brief, from another vendor when one is installed and allowed in the space, else a new Claude session. The writer fixes or answers each finding, for at most two rounds.
+- **You.** Then the work waits in **Needs you**, with the checks, the findings and how each was resolved, and plainly labelled when the checks couldn't prove anything or the review didn't happen. Anything the change did to the checks themselves (edited their config, dropped or skipped tests, silenced a checker) is called out, and no rule approves it for you.
 
 Each task has a token and time budget. An agent that repeats itself or stops making progress is paused with a one-line diagnosis: give it a hint, or ask it to explain the problem. The details, and what the checks can and can't prove, are in [docs/loop.md](docs/loop.md).
 

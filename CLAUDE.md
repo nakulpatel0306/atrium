@@ -15,7 +15,7 @@ Local bun/TypeScript engine that runs AI agents for one user on macOS, focused o
 - Heavy tasks run only on AC power unless the task has `allowOnBattery`. Light tasks run anytime.
 - Transcript storage cap: 200 MB total, oldest deleted first. Each transcript is capped at 5 MB (truncated with a marker line).
 - Commits use your own configured git identity. No `Co-Authored-By` trailers, no "Generated with" footers.
-- Coding tasks run the loop (docs/loop.md): brief → write → verify → review → you. The engine runs checks itself, never trusting an agent's word, under the check profile in `src/engine/checks/sandbox.ts`, which agents never run under. Check commands come from the task's base commit; anything a change does to the checks themselves becomes an attention note that no rule may approve past. Keep to the gate threat model in docs/loop.md: close a tampering route or flag it, nothing more.
+- Coding tasks run the loop (docs/loop.md): brief → write → verify → review → you. The engine runs checks itself, never trusting an agent's word, under the check profile in `src/engine/checks/sandbox.ts`, which agents never run under. Checks run in a checkout of their own, with command definitions from the task's base commit; known ways a change can alter what the checks mean are closed or become attention notes that no rule may approve past, and docs/loop.md lists the ones that stay open. Keep to the gate threat model there: close a tampering route or flag it, nothing more.
 - UI principle: **user-friendly but detailed.** Every list row shows a one-line summary, and clicking it opens the full detail (transcript, diff summary, timestamps). Errors are written in plain language with what to do next.
 
 ## Tests

@@ -14,7 +14,7 @@ A **space** is a place for one kind of work. There are two kinds: `repo` (a git 
 
 ## The loop
 
-A coding task runs brief → write → verify → review → you. The engine drafts a brief with a small read-only Claude pass, runs the repo's own checks in the task's checkout after each writer turn (in a sandbox profile of their own), feeds failures back, sends passing work to a fresh reviewer as a child task, and only then creates the approval. Budgets and loop detection pause a stuck task. See [the loop](loop.md).
+A coding task runs brief → write → verify → review → you. Its first stage drafts a brief with a small read-only Claude pass. After each writer turn the engine runs the repo's own checks in a checkout of their own (under a sandbox profile of their own), feeds failures back, sends passing work to a fresh reviewer as a child task, and then creates the approval. Budgets and loop detection pause a stuck task. See [the loop](loop.md).
 
 ## Agents
 
