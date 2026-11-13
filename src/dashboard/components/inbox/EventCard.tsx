@@ -63,7 +63,7 @@ export function EventCard({ approval, action, folded = false }: { approval: Appr
   const approve = () => {
     if (!ready || locked) return;
     const name = create ? (guestsP.people.length ? namesLine(guestsP.people) : `"${title.trim()}"`) : `"${e.title}"`;
-    startSend(action.id, name, { calendarId, title, start: s, end: en, allDay: e.allDay, location, attendees: guestsP.people, notify, seen: action.reasons.map((r) => r.text) }, `/api/mail/actions/${action.id}/send`);
+    startSend(action.id, name, { calendarId, title, start: s, end: en, allDay: e.allDay, location, attendees: guestsP.people, notify, seen: action.reasons.map((r) => r.key) }, `/api/mail/actions/${action.id}/send`);
   };
   const decline = async () => {
     setBusy(true);

@@ -89,7 +89,7 @@ export function MailCard({ approval, action, folded = false }: { approval: Appro
   const send = () => {
     if (!canSend) return;
     setError(null);
-    startSend(action.id, namesLine(toP.people), { ...fields(), seen: action.reasons.map((r) => r.text) }, `/api/mail/actions/${action.id}/send`);
+    startSend(action.id, namesLine(toP.people), { ...fields(), seen: action.reasons.map((r) => r.key) }, `/api/mail/actions/${action.id}/send`);
   };
   const saveDraft = async () => {
     setBusy("save");

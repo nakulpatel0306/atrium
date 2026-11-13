@@ -223,23 +223,23 @@ export function explicitReasons(
   const out: Reason[] = [];
   for (const p of people) {
     if (own.has(normalizeAddress(p.address)) || knownPerson(db, p.address, own, now)) continue;
-    out.push({ kind: "first_time", text: `First time ${event ? "inviting" : "emailing"} ${personLabel(p)}` });
+    out.push({ kind: "first_time", key: `first_time:${normalizeAddress(p.address)}`, text: `First time ${event ? "inviting" : "emailing"} ${personLabel(p)}` });
   }
   // A forward carries the thread's words to whoever it goes to; anyone who wasn't on that thread is called out, whoever
   // drafted it.
   if (a.kind === "forward" && a.threadId) {
     const row = db.query("SELECT participants FROM mail_threads WHERE id = ?").get(a.threadId) as { participants: string } | null;
     const onThread = new Set([...own, ...parse<Person[]>(row?.participants ?? "[]", []).map((p) => normalizeAddress(p.address))]);
-    for (const p of people) if (!onThread.has(normalizeAddress(p.address))) out.push({ kind: "outside_thread", text: `Forwards this thread to ${personLabel(p)}, who wasn't on it` });
+    for (const p of people) if (!onThread.has(normalizeAddress(p.address))) out.push({ kind: "outside_thread", key: `outside_thread:${normalizeAddress(p.address)}`, text: `Forwards this thread to ${personLabel(p)}, who wasn't on it` });
   }
-  if (a.attachments.length) out.push({ kind: "attachments", text: a.attachments.length === 1 ? "Has an attachment" : `Has ${a.attachments.length} attachments` });
+  if (a.attachments.length) out.push({ kind: "attachments", key: `attachments:${a.attachments.length}`, text: a.attachments.length === 1 ? "Has an attachment" : `Has ${a.attachments.length} attachments` });
   if (!event && a.threadAccountId && a.accountId) {
     const from = getAccount(db, a.accountId)?.address;
     const thread = getAccount(db, a.threadAccountId)?.address;
-    if (from && thread && from !== thread) out.push({ kind: "other_account", text: `Sent from ${from}, not ${thread}, where this thread is` });
+    if (from && thread && from !== thread) out.push({ kind: "other_account", key: `other_account:${from}`, text: `Sent from ${from}, not ${thread}, where this thread is` });
   }
-  if (people.length > MANY_RECIPIENTS) out.push({ kind: "many", text: `Goes to ${people.length} people` });
-  if (a.kind !== "event_create" && a.event?.attendees.length && calendarSource(db, a.event.calendarId) === "apple") out.push({ kind: "may_notify", text: MAY_NOTIFY_COPY });
+  if (people.length > MANY_RECIPIENTS) out.push({ kind: "many", key: `many:${people.length}`, text: `Goes to ${people.length} people` });
+  if (a.kind !== "event_create" && a.event?.attendees.length && calendarSource(db, a.event.calendarId) === "apple") out.push({ kind: "may_notify", key: "may_notify", text: MAY_NOTIFY_COPY });
   return out;
 }
 

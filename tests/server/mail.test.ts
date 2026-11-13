@@ -226,9 +226,9 @@ describe("drafts and sends", () => {
     const to = [...draft.to, { name: "Kit Moreno", address: "kit@example.org" }];
     const first = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: [] });
     expect(first.status).toBe(409);
-    expect(await errorOf(first)).toBe("Check the card before sending: First time emailing Kit Moreno. Then press Send again.");
+    expect(await errorOf(first)).toBe("Check the card before sending: First time emailing Kit Moreno <kit@example.org>. Then press Send again.");
     expect(sends()).toEqual([]);
-    const second = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: ["First time emailing Kit Moreno"] });
+    const second = await send("POST", `/api/mail/actions/${draft.id}/send`, { accountId: draft.accountId, to, cc: [], subject: "", body: "Adding Kit.", seen: ["first_time:kit@example.org"] });
     expect(second.status).toBe(200);
     await mail.actions.settle();
     expect(sends()[0]!.raw).toContain("To: robin@example.net, \"Kit Moreno\" <kit@example.org>");

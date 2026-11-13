@@ -21,7 +21,7 @@ const draft = (over: Partial<Draft> = {}): Draft => ({
     { name: "Robin Vale", address: "robin@example.net", added: false },
     { name: "Kit Moreno", address: "kit@example.org", added: true },
   ],
-  cc: [], attachments: [], event: null, reasons: [{ kind: "first_time", text: "First time emailing Kit Moreno" }], lastError: null, ...over,
+  cc: [], attachments: [], event: null, reasons: [{ kind: "first_time", key: "first_time:kit@example.org", text: "First time emailing Kit Moreno <kit@example.org>" }], lastError: null, ...over,
 });
 
 let calls: { url: string; body: unknown }[] = [];
@@ -75,8 +75,8 @@ test("the card shows every person, who Claude added, why it needs your Send, and
   const card = render(<MailCard approval={approval("apr_1", "Send a reply to Robin Vale and Kit Moreno?")} action={draft()} />);
   const text = card.textContent!;
   expect(text).toContain("Needs your Send");
-  expect(text).toContain("First time emailing Kit Moreno");
-  expect(card.querySelector(".mail-notes")!.textContent).toContain("Added by Claude Kit Moreno");
+  expect(text).toContain("First time emailing Kit Moreno <kit@example.org>");
+  expect(card.querySelector(".mail-notes")!.textContent).toContain("Added by Claude Kit Moreno <kit@example.org>");
   expect((card.querySelectorAll("input")[0] as HTMLInputElement).value).toBe("Robin Vale <robin@example.net>, Kit Moreno <kit@example.org>");
   expect(card.querySelector(".mail-quoted-out pre")!.textContent).toContain("> Can we sign Thursday?");
   // A reply keeps the thread's subject.
@@ -87,7 +87,7 @@ test("Send waits in the tray for five seconds with Undo, then posts the card's f
   const card = render(<MailCard approval={approval("apr_1", "Send a reply?")} action={draft()} />);
   const tray = render(<SendTray />);
   click(button(card, "Send"));
-  expect(tray.textContent).toContain("Sending to Robin Vale and Kit Moreno in 5s…");
+  expect(tray.textContent).toContain("Sending to Robin Vale <robin@example.net> and Kit Moreno <kit@example.org> in 5s…");
   click(button(tray, "Undo"));
   await wait(SEND_DELAY_MS * 2);
   expect(calls).toEqual([]);
@@ -105,7 +105,7 @@ test("Send waits in the tray for five seconds with Undo, then posts the card's f
         cc: [],
         subject: "Re: Lease renewal",
         body: "Thursday works.",
-        seen: ["First time emailing Kit Moreno"],
+        seen: ["first_time:kit@example.org"],
       },
     },
   ]);
@@ -120,11 +120,11 @@ test("a forward lists the attachments that go with it", () => {
 test("an invite card names its button for what it does, and goes through the same tray", async () => {
   const start = new Date("2026-11-13T12:00").getTime();
   const event = { calendarId: "cal_1", eventId: null, title: "Lunch with Priya", start, end: start + 3600_000, allDay: false, location: "", attendees: [{ name: "Priya", address: "priya@example.org", added: true }], notify: true };
-  const card = render(<EventCard approval={approval("apr_1", 'Create "Lunch with Priya" and invite Priya?')} action={draft({ kind: "event_create", event, quoted: "", to: [], reasons: [{ kind: "first_time", text: "First time inviting Priya" }] })} />);
-  expect(card.textContent).toContain("Added by Claude Priya");
+  const card = render(<EventCard approval={approval("apr_1", 'Create "Lunch with Priya" and invite Priya?')} action={draft({ kind: "event_create", event, quoted: "", to: [], reasons: [{ kind: "first_time", key: "first_time:priya@example.org", text: "First time inviting Priya <priya@example.org>" }] })} />);
+  expect(card.textContent).toContain("Added by Claude Priya <priya@example.org>");
   click(button(card, "Create and invite"));
   await wait(SEND_DELAY_MS);
-  expect(calls[0]).toMatchObject({ url: "/api/mail/actions/mla_1/send", body: { title: "Lunch with Priya", start, end: start + 3600_000, attendees: [{ name: "Priya", address: "priya@example.org" }], seen: ["First time inviting Priya"] } });
+  expect(calls[0]).toMatchObject({ url: "/api/mail/actions/mla_1/send", body: { title: "Lunch with Priya", start, end: start + 3600_000, attendees: [{ name: "Priya", address: "priya@example.org" }], seen: ["first_time:priya@example.org"] } });
 });
 
 test("a cancel card names the event's day and time", () => {

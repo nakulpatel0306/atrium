@@ -241,14 +241,14 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     const action = getMailAction(db, sendM[1]!);
     if (!action) throw new HttpError(404, "That draft isn't there anymore.");
     const b = await readBody(req);
-    if (!Array.isArray(b.seen) || b.seen.some((x) => typeof x !== "string")) throw new HttpError(400, "seen must list the notes the card showed.");
+    if (!Array.isArray(b.seen) || b.seen.some((x) => typeof x !== "string")) throw new HttpError(400, "seen must list the keys of the notes the card showed.");
     const seen = new Set(b.seen as string[]);
     // His edits and his yes land together, so what goes out is what he saw when he pressed Send. A note the card
     // didn't show yet (his edit added someone new) keeps the edit but not the yes: he sees the note, then sends.
     const outcome = guardedMail(() =>
       db.transaction(() => {
         const next = isEvent(action.kind) ? updateEventDraft(db, action.id, eventEdit(b)) : updateMailDraft(db, action.id, mailEdit(b));
-        const fresh = next.reasons.filter((r) => !seen.has(r.text));
+        const fresh = next.reasons.filter((r) => !seen.has(r.key));
         if (fresh.length) return { fresh };
         resolveApproval(db, next.approvalId, "approve");
         return { fresh: [] };

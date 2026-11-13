@@ -11,8 +11,9 @@ export type ActionKind = MailKind | EventKind;
 // added: Claude put this person on the card; they weren't on the thread it answers.
 export type Recipient = Person & { added: boolean };
 export type ReasonKind = "first_time" | "outside_thread" | "attachments" | "other_account" | "many" | "may_notify";
-// Why a draft needs the user's explicit Send, shown on the card as a note.
-export type Reason = { kind: ReasonKind; text: string };
+// Why a draft needs the user's explicit Send, shown on the card as a note. key names what it's about (the kind and
+// the address), so the fresh-Send check compares people, not wording.
+export type Reason = { kind: ReasonKind; key: string; text: string };
 
 export const isEvent = (k: ActionKind): k is EventKind => k.startsWith("event_");
 
@@ -104,9 +105,11 @@ export function markAdded(people: Person[], before: Recipient[]): Recipient[] {
   return uniquePeople(people).map((p) => ({ ...p, added: added.has(p.address) }));
 }
 
-export const personLabel = (p: Person): string => p.name || p.address;
+// A person as the card and notes name them: always with the address, since a name is whatever the sender or Claude
+// chose.
+export const personLabel = (p: Person): string => (p.name && p.name !== p.address ? `${p.name} <${p.address}>` : p.address);
 
-// "Robin Vale", "Robin Vale and Kit", "Robin Vale and 3 others".
+// "robin@example.net", "Robin Vale <robin@example.net> and kit@example.org", "… and 3 others".
 export function namesLine(people: Person[]): string {
   if (!people.length) return "no one yet";
   const first = personLabel(people[0]!);

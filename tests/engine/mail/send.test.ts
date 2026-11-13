@@ -121,15 +121,22 @@ describe("replies", () => {
       { name: "", address: "robin@example.net", added: false },
       { name: "Kit Moreno", address: "kit@example.org", added: true },
     ]);
-    expect(action.reasons).toEqual([{ kind: "first_time", text: "First time emailing Kit Moreno" }]);
+    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:kit@example.org", text: "First time emailing Kit Moreno <kit@example.org>" }]);
     // The user's edits keep Kit marked; someone the user types isn't.
     const edited = updateMailDraft(db, action.id, { accountId: google().id, to: [...action.to, { name: "", address: "lee@example.org" }], cc: [], subject: "", body: "Looping in Kit and Lee." });
     expect(edited.to.map((p) => [p.address, p.added])).toEqual([["robin@example.net", false], ["kit@example.org", true], ["lee@example.org", false]]);
-    expect(edited.reasons.map((r) => r.text)).toEqual(["First time emailing Kit Moreno", "First time emailing lee@example.org"]);
+    expect(edited.reasons.map((r) => r.text)).toEqual(["First time emailing Kit Moreno <kit@example.org>", "First time emailing lee@example.org"]);
   });
 });
 
 describe("what needs the explicit Send", () => {
+  test("titles and notes name the address, so a borrowed name can't pass as the real person", async () => {
+    await connectGoogle();
+    const { action, approval } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "claude", threadId: lease().id, to: [{ name: "Robin Vale", address: "robin.vale@attacker.example" }], body: "Looping in." });
+    expect(approval.title).toBe("Send a reply to robin@example.net and Robin Vale <robin.vale@attacker.example>?");
+    expect(action.reasons).toEqual([{ kind: "first_time", key: "first_time:robin.vale@attacker.example", text: "First time emailing Robin Vale <robin.vale@attacker.example>" }]);
+  });
+
   test("only people you've written to count as known; being on someone else's email doesn't", async () => {
     await connectGoogle();
     const acct = google();
@@ -150,7 +157,7 @@ describe("what needs the explicit Send", () => {
     const { action } = draftMail(db, { spaceId: space(), kind: "forward", draftedBy: "you", threadId: lease().id, to: [{ name: "Robin Vale", address: "robin@example.net" }], body: "" });
     expect(action.subject).toBe("Fwd: Re: Lease renewal");
     expect(action.attachments).toEqual([{ name: "lease.pdf", size: 15, index: 0 }]);
-    expect(action.reasons).toEqual([{ kind: "attachments", text: "Has an attachment" }]);
+    expect(action.reasons).toEqual([{ kind: "attachments", key: "attachments:1", text: "Has an attachment" }]);
     expect(action.inReplyTo).toBeNull();
 
     const many = Array.from({ length: 11 }, (_, i) => ({ name: "", address: `p${i}@example.org` }));
@@ -182,7 +189,7 @@ describe("what needs the explicit Send", () => {
   test("forwarding to anyone who wasn't on the thread needs the explicit Send, whoever drafted it", async () => {
     await connectGoogle();
     const kit = { name: "Kit Moreno", address: "kit@example.org" };
-    const note = { kind: "outside_thread" as const, text: "Forwards this thread to Kit Moreno, who wasn't on it" };
+    const note = { kind: "outside_thread" as const, key: "outside_thread:kit@example.org", text: "Forwards this thread to Kit Moreno <kit@example.org>, who wasn't on it" };
     for (const draftedBy of ["you", "claude"] as const) {
       const { action, approval } = draftMail(db, { spaceId: space(), kind: "forward", draftedBy, threadId: lease().id, to: [kit], body: "" });
       expect(action.reasons).toContainEqual(note);
@@ -388,9 +395,9 @@ describe("calendar changes", () => {
     expect(quiet.approval.title).toBe('Create "Focus"?');
     await pressSend(quiet.action);
     const lunch = draftEvent(db, { spaceId: space(), kind: "event_create", draftedBy: "claude", calendarId: cal, title: "Lunch with Priya", start: NOW + 3 * hour, end: NOW + 4 * hour, location: "Cafe", attendees: [{ name: "Priya", address: "priya@example.org" }] });
-    expect(lunch.approval.title).toBe('Create "Lunch with Priya" and invite Priya?');
+    expect(lunch.approval.title).toBe('Create "Lunch with Priya" and invite Priya <priya@example.org>?');
     expect(lunch.action.event!.attendees).toEqual([{ name: "Priya", address: "priya@example.org", added: true }]);
-    expect(lunch.action.reasons).toEqual([{ kind: "first_time", text: "First time inviting Priya" }]);
+    expect(lunch.action.reasons).toEqual([{ kind: "first_time", key: "first_time:priya@example.org", text: "First time inviting Priya <priya@example.org>" }]);
     await pressSend(lunch.action);
     const posts = fakes.google.writes.filter((w) => w.method === "POST" && w.path.includes("/events"));
     expect(posts.map((p) => p.sendUpdates)).toEqual(["none", "all"]);
