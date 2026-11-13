@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DEPENDENCY_DIRS } from "../agents/seatbelt";
@@ -77,17 +76,15 @@ const lstatOrNull = (p: string) => {
 const BASE_CACHE = 32;
 const baseRuns = new Map<string, CheckResult[]>();
 
-// The user's dependencies as they stand: each lockfile's content, and each dependency folder's identity and time.
+// The user's dependencies as they stand, by each lockfile's and dependency folder's identity (inode, size, time):
+// enough to notice a reinstall, and nothing is read, so a FIFO or a huge file in their place can't stall the engine.
 function depsFingerprint(repo: string): string {
-  const locks = LOCKFILES.flatMap((l) => {
-    const p = join(repo, l);
-    return existsSync(p) ? [`${l}:${createHash("sha256").update(readFileSync(p)).digest("hex")}`] : [];
-  });
-  const dirs = DEPENDENCY_DIRS.flatMap((d) => {
-    const st = lstatOrNull(join(repo, d));
-    return st ? [`${d}:${st.ino}:${st.mtimeMs}`] : [];
-  });
-  return [...locks, ...dirs].join("|");
+  return [...LOCKFILES, ...DEPENDENCY_DIRS]
+    .flatMap((name) => {
+      const st = lstatOrNull(join(repo, name));
+      return st ? [`${name}:${st.ino}:${st.size}:${st.mtimeMs}`] : [];
+    })
+    .join("|");
 }
 
 export async function baseResults(repo: string, base: string, checks: Check[], signal?: AbortSignal): Promise<CheckResult[] | null> {
