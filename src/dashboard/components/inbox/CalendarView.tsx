@@ -2,8 +2,8 @@ import { CalendarPlus, ChevronLeft, ChevronRight, MapPin, Repeat } from "lucide-
 import { useMemo, useState } from "react";
 import { post, useEngineState } from "../../api";
 import { clock } from "../../format";
-import { announce } from "../../live";
 import { DraftCard } from "./DraftCard";
+import { Rsvp } from "./Rsvp";
 import { addDays, agenda, type EventView, type MailOverview, overlaps, placeDay, startOfDay, startOfWeek, useEvents } from "../../mail";
 
 const HOUR_PX = 40;
@@ -12,37 +12,6 @@ const STATUS: Record<string, string> = { accepted: "Going", declined: "Declined"
 function when(e: EventView): string {
   if (e.allDay) return "All day";
   return `${clock(e.start)} – ${clock(e.end)}`;
-}
-
-const ANSWERS = [
-  { id: "accepted", label: "Going" },
-  { id: "tentative", label: "Maybe" },
-  { id: "declined", label: "Not going" },
-] as const;
-
-// The user's own answer to an invitation, sent at once: it's his action, like answering in Calendar.
-function Rsvp({ e }: { e: EventView }) {
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const answer = async (id: (typeof ANSWERS)[number]["id"], label: string) => {
-    setBusy(true);
-    const res = await post(`/api/mail/events/${encodeURIComponent(e.id)}/rsvp`, { answer: id, note });
-    setBusy(false);
-    setError(res.ok ? null : res.error);
-    if (res.ok) announce(`Answered ${e.title || "the invitation"}: ${label}.`);
-  };
-  return (
-    <div className="cal-rsvp" role="group" aria-label={`Answer ${e.title || "this invitation"}`}>
-      {ANSWERS.map((a) => (
-        <button key={a.id} className="btn" aria-pressed={e.myStatus === a.id} disabled={busy} onClick={() => void answer(a.id, a.label)}>
-          {a.label}
-        </button>
-      ))}
-      <input className="mk-input cal-note" value={note} maxLength={500} placeholder="Note (optional)" aria-label="Note to the organizer" onChange={(x) => setNote(x.target.value)} />
-      {error && <span className="err">{error}</span>}
-    </div>
-  );
 }
 
 // Move or cancel opens a card first; nothing changes until its own button and Undo window.

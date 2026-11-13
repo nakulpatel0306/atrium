@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openDb } from "../../src/engine/db";
 import { mailKeychain } from "../../src/engine/mail/google/oauth";
-import { listAccounts, listCalendars, listEvents, listThreads, replaceEvents, threadMessages } from "../../src/engine/mail/store";
+import { ingestMessages, listAccounts, listCalendars, listEvents, listThreads, replaceEvents, threadMessages } from "../../src/engine/mail/store";
 import { createMail, type Mail } from "../../src/engine/mail";
 import type { MailOverview } from "../../src/server/mail";
 import { getSpace } from "../../src/engine/spaces";
@@ -242,6 +242,17 @@ describe("drafts and sends", () => {
     const r = await send("POST", "/api/mail/event-drafts", { kind: "event_cancel", eventId: weekly.id });
     expect(r.status).toBe(400);
     expect(await errorOf(r)).toContain("repeating event");
+  });
+
+  test("an invitation email's thread carries its event, so it can be answered right there", async () => {
+    await connectGoogle();
+    const acct = listAccounts(db)[0]!;
+    ingestMessages(db, acct, [{ sourceId: "inv-1", threadKey: "gt-invite", messageId: "<inv@example.org>", inReplyTo: null, references: [], subject: "Invitation: Planning with Kit @ Tue Nov 3", from: { name: "Kit Moreno", address: "kit@example.org" }, to: [{ name: "", address: SAM }], cc: [], date: T0, snippet: "", unread: true, labels: ["INBOX"], attachments: [] }]);
+    const thread = listThreads(db).find((t) => t.subject.startsWith("Invitation:"))!;
+    const detail = await get<{ invite: { id: string; title: string; myStatus: string } | null }>(`/api/mail/threads/${thread.id}`);
+    expect(detail.invite).toMatchObject({ title: "Planning with Kit", myStatus: "accepted" });
+    const lease = listThreads(db).find((t) => t.subject === "Lease renewal")!;
+    expect((await get<{ invite: unknown }>(`/api/mail/threads/${lease.id}`)).invite).toBeNull();
   });
 
   test("Save as draft and RSVP are the user's own presses", async () => {

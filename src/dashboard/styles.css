@@ -6070,3 +6070,16 @@ code {
     gap: 3px;
   }
 }
+.thread-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.thread-invite .cal-rsvp {
+  padding-left: 0;
+}

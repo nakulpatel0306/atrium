@@ -653,3 +653,19 @@ export function listEvents(db: Database, from: number, to: number): EventView[] 
   }
   return out;
 }
+
+// The invitation a thread is about, so it can be answered from the thread: an upcoming event the user is invited to,
+// organised by someone who wrote on the thread, whose title the thread's subject carries ("Invitation: Lunch @ Fri").
+export function inviteForThread(db: Database, threadId: string): EventView | null {
+  const thread = db.query("SELECT subject, (SELECT MIN(date) FROM mail_messages WHERE thread_id = mail_threads.id) AS first FROM mail_threads WHERE id = ?").get(threadId) as { subject: string; first: number | null } | null;
+  if (!thread?.first) return null;
+  const senders = new Set((db.query("SELECT from_json FROM mail_messages WHERE thread_id = ?").all(threadId) as { from_json: string }[]).map((r) => json<Person>(r.from_json, { name: "", address: "" }).address).filter(Boolean));
+  const own = new Set((db.query("SELECT DISTINCT address FROM mail_accounts").all() as { address: string }[]).map((r) => r.address));
+  const subject = thread.subject.toLowerCase();
+  return (
+    // An invitation is sent before its event, so events from the thread's first message on are candidates.
+    listEvents(db, thread.first - 86_400_000, thread.first + 365 * 86_400_000).find(
+      (e) => e.myStatus !== null && !!e.organizer && senders.has(e.organizer) && !own.has(e.organizer) && e.title.trim().length > 0 && subject.includes(e.title.toLowerCase()),
+    ) ?? null
+  );
+}

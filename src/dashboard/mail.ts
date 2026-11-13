@@ -4,7 +4,7 @@ import type { MailOverview } from "../server/mail";
 import { useEngineState, useFetched } from "./api";
 
 export type { EventView, MailOverview, MessageView, ThreadView };
-export type ThreadDetail = { thread: ThreadView; messages: MessageView[]; loading: boolean; problem: string | null };
+export type ThreadDetail = { thread: ThreadView; messages: MessageView[]; loading: boolean; problem: string | null; invite: EventView | null };
 export type InboxFilter = "all" | "unread" | "needs_reply";
 
 // Everything here is read again on each engine change, so a finished sync shows up without a reload.

@@ -4,6 +4,7 @@ import type { MailKind } from "../../../engine/mail/compose";
 import { post, useEngineState } from "../../api";
 import { announce } from "../../live";
 import { DraftCard } from "./DraftCard";
+import { Rsvp } from "./Rsvp";
 import { absolute, bytes } from "../../format";
 import { type MessageView, personName, splitQuoted, useThread } from "../../mail";
 
@@ -129,7 +130,7 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
     if (detail?.thread.id === id) head.current?.focus();
   }, [detail?.thread.id, id]);
   if (!detail) return <div className="thread-none">Loading the thread…</div>;
-  const { thread, messages, loading, problem } = detail;
+  const { thread, messages, loading, problem, invite } = detail;
   return (
     <div className="thread">
       <button className="btn link thread-back" onClick={onBack}>
@@ -142,6 +143,14 @@ export function ThreadView({ id, onBack }: { id: string; onBack(): void }) {
       <p className="faint thread-meta">
         <span className="acct-dot" style={{ background: thread.account.color }} aria-hidden /> {thread.account.address} · {messages.length === 1 ? "1 message" : `${messages.length} messages`}
       </p>
+      {invite && (
+        <div className="thread-invite">
+          <span className="faint">
+            Invitation: {invite.title} · {new Date(invite.start).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+          </span>
+          <Rsvp e={invite} />
+        </div>
+      )}
       {(problem || retryError) && !loading && (
         <p className="err thread-problem" role="alert">
           {retryError ?? problem}{" "}

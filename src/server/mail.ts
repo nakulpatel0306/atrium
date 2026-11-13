@@ -12,6 +12,7 @@ import { inboxSpace, inboxSpaceId } from "../engine/mail/space";
 import {
   getAccount,
   getThreadView,
+  inviteForThread,
   listAccounts,
   listCalendars,
   listEvents,
@@ -176,7 +177,7 @@ export async function mailRoute(db: Database, mail: Mail, req: Request, url: URL
     if (!thread) throw new HttpError(404, "That thread isn't in the Inbox anymore.");
     // A read only: what's cached, and whether bodies are still on their way. Opening the thread fetches them.
     const messages = threadMessages(db, thread.id);
-    return json({ thread, messages, ...mail.sync.bodyState(messages.map((m) => m.id)) });
+    return json({ thread, messages, invite: inviteForThread(db, thread.id), ...mail.sync.bodyState(messages.map((m) => m.id)) });
   }
 
   const openM = hit("POST", /^\/api\/mail\/threads\/([^/]+)\/open$/);
