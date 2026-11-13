@@ -130,6 +130,10 @@ try {
   process.exit(1);
 }
 
+// Texts and emails a stopped engine left mid-send, settled before anything awaits: the port is bound (it's the lock),
+// but no request can run until this synchronous code yields, so no new Send can start in between.
+recoverMessageActions(db);
+recoverMailActions(db);
 await recoverOnBoot(db);
 // Before the runner starts, so no run works in a folder that is being moved.
 for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);
@@ -137,8 +141,6 @@ recoverRepoActions(db);
 recoverRemovals(db);
 // Files a delete queued but didn't get to remove before the engine stopped; their rows are already gone.
 void finishPendingDeletes(db).catch((e) => console.error("Couldn't finish removing deleted files:", e));
-recoverMessageActions(db);
-recoverMailActions(db);
 runner.start();
 repos.daily(Date.now());
 void feed.start();

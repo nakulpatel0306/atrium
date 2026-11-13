@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { type Approval, getApproval, isOwnYes, OPENED_IN_MAIL_NOTE, resolveApproval, SAVED_DRAFT_NOTE } from "../approvals";
 import { config } from "../config";
@@ -375,13 +375,19 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
   };
 }
 
+const DAY_MS = 86_400_000;
 const ANSWER_WORD: Record<Rsvp, string> = { accepted: "going", tentative: "maybe", declined: "not going" };
 
 // Never sends. A send cut off mid-way may or may not have gone out, so it comes back as a draft that says so; a yes
 // that never reached the source comes back as a draft too, since nothing resends on its own.
 export function recoverMailActions(db: Database): number {
-  // Forwarded attachments saved for a send that never finished; each send makes its own again.
-  rmSync(join(config().home, "mail-outgoing"), { recursive: true, force: true });
+  // Forwarded attachments saved for a send or an Open in Mail. A day-old folder is done with; a newer one may still be
+  // attached to a message open in Mail. A symlink is removed, never followed.
+  const outgoing = join(config().home, "mail-outgoing");
+  for (const name of existsSync(outgoing) ? readdirSync(outgoing) : []) {
+    const path = join(outgoing, name);
+    if (Date.now() - lstatSync(path).mtimeMs > DAY_MS) rmSync(path, { recursive: true, force: true });
+  }
   const rows = db
     .query(
       `SELECT m.id, m.status, a.status AS decided FROM mail_actions m JOIN approvals a ON a.id = m.approval_id

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getApproval, onApprovalResolved, resolveApproval, RULE_NEVER_DECIDES } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
@@ -411,11 +411,16 @@ describe("errors", () => {
     const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
     db.query("UPDATE approvals SET status = 'approved', decided_by = 'you' WHERE id = ?").run(action.approvalId);
     db.query("UPDATE mail_actions SET status = 'sending' WHERE id = ?").run(action.id);
-    const leftover = join(home.home, "mail-outgoing", action.id);
-    mkdirSync(leftover, { recursive: true });
-    writeFileSync(join(leftover, "lease.pdf"), "x");
+    // Yesterday's forwarded files go; today's may still be attached to a message open in Mail.
+    const old = join(home.home, "mail-outgoing", action.id);
+    const fresh = join(home.home, "mail-outgoing", "mla_fresh");
+    for (const dir of [old, fresh]) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "lease.pdf"), "x");
+    }
+    utimesSync(old, new Date(Date.now() - 2 * 86_400_000), new Date(Date.now() - 2 * 86_400_000));
     expect(recoverMailActions(db)).toBe(1);
-    expect(existsSync(join(home.home, "mail-outgoing"))).toBe(false);
+    expect([existsSync(old), existsSync(fresh)]).toEqual([false, true]);
     expect(getMailAction(db, action.id)!.status).toBe("failed");
     expect(pendingMailActions(db)[0]!.error).toBe(STOPPED_COPY);
     expect(sends()).toEqual([]);
