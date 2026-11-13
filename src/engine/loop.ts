@@ -1,8 +1,8 @@
 // Where a coding task is in the loop (write, checks, review, you), and the rules that move it on or pause it.
 // Shared by the engine and the dashboard, so it imports nothing but types.
-import type { TaskSize } from "./brief";
+import type { BriefQuestion, TaskSize } from "./brief";
 
-export type Stage = "writing" | "checks" | "review" | "ready" | "paused";
+export type Stage = "brief" | "writing" | "checks" | "review" | "ready" | "paused";
 export type ChecksState = "pending" | "running" | "passed" | "failed" | "none";
 export type Severity = "high" | "medium" | "low";
 
@@ -47,8 +47,17 @@ export type LoopState = {
   // The writer's last summary and branch lines, kept for the approval made once the loop is done.
   report: string[];
   noChanges: boolean;
-  // Why the checks didn't run when they could have (a change to how dependencies install); null otherwise.
+  // Why the result is unverified though checks exist (they couldn't run, or the change edits how dependencies
+  // install); null otherwise.
   unverified: string | null;
+  // Checks that failed the same way on the base commit, which don't count against the task.
+  preexisting: string[];
+  // Config files outside git as the task found them, by content hash (checks/attention.ts outsideSnapshot); null
+  // until the first repo turn takes it.
+  outside: Record<string, string> | null;
+  // What the brief's pre-pass asked and what it noticed, while the brief stage waits for answers.
+  questions: BriefQuestion[];
+  hints: string[];
   // Things the change does to the checks themselves (edits their config, drops or skips tests): shown on the
   // result, put to the reviewer, and never approved by a rule.
   attention: string[];
@@ -90,6 +99,10 @@ export function newLoop(budget: Budget): LoopState {
     report: [],
     noChanges: false,
     unverified: null,
+    preexisting: [],
+    outside: null,
+    questions: [],
+    hints: [],
     attention: [],
     usage: { tokens: 0, ms: 0, unreported: false },
     budget,
@@ -214,8 +227,8 @@ export function resolutionText(f: Finding): string {
 }
 
 // The stage the strip shows, from the task's status and its loop.
-export function shownStage(status: string, loop: LoopState | null, hasBrief: boolean): Stage | "brief" {
-  if (!loop) return status === "review" || status === "done" ? "ready" : hasBrief && status === "queued" ? "brief" : "writing";
+export function shownStage(status: string, loop: LoopState | null): Stage {
+  if (!loop) return status === "review" || status === "done" ? "ready" : "writing";
   if (status === "review" || status === "done") return "ready";
   if (loop.paused) return "paused";
   return loop.stage;

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchDiff, branchFiles, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, prepareBranch, pushBranch, remoteUrl, repoReady, restoreTree, returnToBranch, showBlob, untrackedFile, workingDiff } from "../../src/engine/git";
+import { addCheckTree, branchDiff, branchFiles, branchSummary, changedFiles, commitAll, gitSettingsFingerprint, headRef, outsideGit, prepareBranch, pushBranch, remoteUrl, removeCheckTree, repoReady, returnToBranch, showBlob, untrackedFile, workingDiff } from "../../src/engine/git";
 import { fingerprintOf } from "../../src/engine/autonomy/kinds";
 import { PLAIN_DOCS, tempRepo } from "../helpers";
 
@@ -509,16 +509,34 @@ describe("commitAll", () => {
   });
 });
 
-describe("restoreTree", () => {
-  test("drops what checks left behind and keeps the commit", async () => {
+describe("check trees", () => {
+  test("a check tree is the commit alone, and removing it leaves the repo as it was", async () => {
     const path = repo();
-    writeFileSync(join(path, "README.md"), "changed by a check\n");
-    mkdirSync(join(path, "coverage"));
-    writeFileSync(join(path, "coverage", "out.json"), "{}");
-    await restoreTree(path);
-    expect(readFileSync(join(path, "README.md"), "utf8")).toBe("# fixture\n");
-    expect(existsSync(join(path, "coverage"))).toBe(false);
+    writeFileSync(join(path, "ignored.local"), "x");
+    writeFileSync(join(path, ".gitignore"), "*.local\n");
+    git(path, "add", ".gitignore");
+    git(path, "commit", "-m", "ignore");
+    const dir = join(mkdtempSync(join(tmpdir(), "atrium-checks-")), "tree");
+    await addCheckTree(path, git(path, "rev-parse", "HEAD"), dir);
+    expect(existsSync(join(dir, "README.md"))).toBe(true);
+    expect(existsSync(join(dir, "ignored.local"))).toBe(false);
+    writeFileSync(join(dir, "made-by-a-check.txt"), "x");
+    await removeCheckTree(path, dir);
+    expect(existsSync(dir)).toBe(false);
+    expect(git(path, "worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("worktree "))).toHaveLength(1);
     expect(git(path, "status", "--porcelain")).toBe("");
+  });
+
+  test("outsideGit lists untracked and ignored files, never the dependency folders", async () => {
+    const path = repo();
+    writeFileSync(join(path, ".gitignore"), "*.local\nnode_modules\n");
+    git(path, "add", ".gitignore");
+    git(path, "commit", "-m", "ignore");
+    writeFileSync(join(path, ".NPMRC"), "x");
+    writeFileSync(join(path, "a.local"), "x");
+    mkdirSync(join(path, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(path, "node_modules", "pkg", "index.js"), "");
+    expect((await outsideGit(path)).sort()).toEqual([".NPMRC", "a.local"]);
   });
 });
 

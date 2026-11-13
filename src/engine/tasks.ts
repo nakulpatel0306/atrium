@@ -72,7 +72,7 @@ export class InvalidTransition extends Error {
 }
 
 // A review task finishes straight to done (its parent's approval covers it), and is cancelled to done from any
-// unfinished state once Nakul decides on the parent. A work task waits in the queue while its review runs, and
+// unfinished state once the user decides on the parent. A work task waits in the queue while its review runs, and
 // goes from there to waiting for him.
 const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   queued: ["running", "blocked", "review", "done"],

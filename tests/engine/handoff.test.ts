@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from "../../src/engine/agents/types";
 import { getApproval, listPending, resolveApproval } from "../../src/engine/approvals";
@@ -363,37 +363,81 @@ describe("changes to the checks themselves", () => {
     expect(approval(t.id)!.detail).toContain("Unverified: this change edits how dependencies install, so Atrium didn't install or run the checks.");
   });
 
-  for (const [label, setup] of [
-    ["an untracked .NPMRC", (cwd: string) => writeFileSync(join(cwd, ".NPMRC"), "registry=https://registry.example.com/\n")],
-    [
-      "an ignored bunfig.toml",
-      (cwd: string) => {
-        writeFileSync(join(cwd, ".gitignore"), "bunfig.toml\n");
-        writeFileSync(join(cwd, "bunfig.toml"), "[install]\nregistry = \"https://registry.example.com/\"\n");
-      },
-    ],
-  ] as const) {
-    test(`${label} the writer leaves in the tree blocks the install the same way`, async () => {
-      const path = repo();
-      writeFileSync(join(path, "bun.lock"), "{}\n");
-      git(path, "add", "-A");
-      git(path, "commit", "-m", "lock");
-      const s = space(path, { reviewBy: "off" });
-      const t = createTask(db, { spaceId: s.id, title: "Add totals" });
-      start({
-        claude: fake("claude", (input) => {
-          setup(input.cwd);
-          writeFileSync(join(input.cwd, "package.json"), '{"dependencies":{"left-pad":"1"}}\n');
-          return ok("Done.\nOUTCOME: done");
-        }).adapter,
-      });
-      await waitFor(() => status(t.id) === "review");
-      const loop = getTask(db, t.id)!.loop!;
-      expect(loop.checks).toBe("none");
-      expect(loop.attention[0]).toMatch(/^This change edits how dependencies install: (\.NPMRC|bunfig\.toml)\.$/);
-      expect(db.query("SELECT COUNT(*) AS n FROM checks WHERE task_id = ?").get(t.id)).toEqual({ n: 0 });
+  test("an untracked .NPMRC the writer leaves is committed, so it blocks the install the same way", async () => {
+    const path = repo();
+    writeFileSync(join(path, "bun.lock"), "{}\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "lock");
+    const s = space(path, { reviewBy: "off" });
+    const t = createTask(db, { spaceId: s.id, title: "Add totals" });
+    start({
+      claude: fake("claude", (input) => {
+        writeFileSync(join(input.cwd, ".NPMRC"), "registry=https://registry.example.com/\n");
+        writeFileSync(join(input.cwd, "package.json"), '{"dependencies":{"left-pad":"1"}}\n');
+        return ok("Done.\nOUTCOME: done");
+      }).adapter,
     });
-  }
+    await waitFor(() => status(t.id) === "review");
+    const loop = getTask(db, t.id)!.loop!;
+    expect(loop.checks).toBe("none");
+    expect(loop.attention[0]).toBe("This change edits how dependencies install: .NPMRC.");
+    expect(db.query("SELECT COUNT(*) AS n FROM checks WHERE task_id = ?").get(t.id)).toEqual({ n: 0 });
+  });
+
+  test("a dependency the writer adds is installed only for its checks: the user's node_modules is untouched, after a send-back too", async () => {
+    const path = repo();
+    writeFileSync(join(path, ".gitignore"), "node_modules\n");
+    writeFileSync(join(path, "package.json"), '{ "name": "demo" }\n');
+    mkdirSync(join(path, "local-pkg"));
+    writeFileSync(join(path, "local-pkg", "package.json"), '{ "name": "local-pkg", "version": "1.0.0" }\n');
+    Bun.spawnSync(["bun", "install"], { cwd: path });
+    mkdirSync(join(path, "node_modules"), { recursive: true });
+    writeFileSync(join(path, "node_modules", "theirs.txt"), "the user's own");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "base");
+    const before = readdirSync(join(path, "node_modules")).sort();
+    const s = space(path, { reviewBy: "off", checks: "test -e node_modules/local-pkg/package.json" });
+    const t = createTask(db, { spaceId: s.id, title: "Use local-pkg" });
+    start({
+      claude: fake("claude", (input) => {
+        writeFileSync(join(input.cwd, "package.json"), '{ "name": "demo", "dependencies": { "local-pkg": "file:./local-pkg" } }\n');
+        Bun.spawnSync(["bun", "install", "--lockfile-only"], { cwd: input.cwd });
+        return ok("Added it.\nOUTCOME: done");
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "review");
+    expect(getTask(db, t.id)!.loop!.checks).toBe("passed");
+    expect(readdirSync(join(path, "node_modules")).sort()).toEqual(before);
+    resolveApproval(db, approval(t.id)!.id, "reject", "Not yet");
+    await runner!.stop();
+    runner = null;
+    expect(readdirSync(join(path, "node_modules")).sort()).toEqual(before);
+    expect(existsSync(join(path, "node_modules", "local-pkg"))).toBe(false);
+  });
+
+  test("ignored config the writer leaves is named, while checks run without it; config that was already there isn't", async () => {
+    const path = repo();
+    writeFileSync(join(path, ".gitignore"), "bunfig.toml\n.npmrc\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-m", "ignore");
+    // The user's own, from before the task.
+    writeFileSync(join(path, ".npmrc"), "registry=https://registry.example.com/\n");
+    const s = space(path, { reviewBy: "off" });
+    const t = createTask(db, { spaceId: s.id, title: "Add totals" });
+    start({
+      claude: fake("claude", (input) => {
+        writeFileSync(join(input.cwd, "bunfig.toml"), "[test]\npreload = ['./pass.ts']\n");
+        writeFileSync(join(input.cwd, "status.txt"), "pass\n");
+        return ok("Done.\nOUTCOME: done");
+      }).adapter,
+    });
+    await waitFor(() => status(t.id) === "review");
+    const loop = getTask(db, t.id)!.loop!;
+    expect(loop.checks).toBe("passed");
+    expect(loop.attention).toEqual([
+      "This change leaves config outside git in your checkout: bunfig.toml. Atrium's checks don't see it, but your own commands there will.",
+    ]);
+  });
 
   test("a note on the checks keeps a matching rule from approving it", async () => {
     const s = space(repo(), { checks: null });

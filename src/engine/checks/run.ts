@@ -5,6 +5,7 @@ import { newId } from "../ids";
 import { runAgentProcess } from "../agents/process";
 import { SANDBOX_EXEC, seatbeltFailure, withPrivateTmp } from "../agents/seatbelt";
 import type { Check } from "./detect";
+import { failureSignature } from "../loop";
 import { checkProfile, installProfile, wrapCheck } from "./sandbox";
 
 export type CheckStatus = "passed" | "failed" | "timeout" | "missing" | "skipped";
@@ -16,9 +17,9 @@ const OUTPUT_CAP = 16 * 1024;
 const FEEDBACK_LINES = 60;
 const FEEDBACK_CHARS = 4000;
 
-// The project's own commands, in the checks' own sandbox (see sandbox.ts): writes only in the repo and a private
-// temp folder, no credentials, no internet, no Atrium API. The environment is built from scratch so nothing from
-// the engine's (tokens, keys) reaches a test.
+// The project's own commands, in the checks' own sandbox (see sandbox.ts): writes only in the check tree and a
+// private temp folder, no credentials, no internet, no Atrium API. The environment is built from scratch so nothing
+// from the engine's (tokens, keys) reaches a test.
 export async function runChecks(
   cwd: string,
   checks: Check[],
@@ -30,8 +31,8 @@ export async function runChecks(
   for (const check of ordered) {
     if (opts.signal?.aborted) break;
     // Nothing runs on dependencies that didn't install, and a full test run is wasted on code that doesn't typecheck.
-    const broken = (r: CheckResult) => r.status === "failed" || r.status === "timeout";
-    if (results.some((r) => r.install && broken(r)) || (check.kind === "full" && results.some(broken))) {
+    const broken = (r: CheckResult) => r.status !== "passed";
+    if (results.some((r) => r.install && broken(r)) || (check.kind === "full" && results.some((r) => r.status === "failed"))) {
       results.push({ ...check, status: "skipped", exitCode: null, output: "", durationMs: 0 });
       continue;
     }
@@ -54,6 +55,13 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
     output += `${line}\n`;
     if (output.length > OUTPUT_CAP * 2) output = output.slice(-OUTPUT_CAP);
   };
+  // Whether the tool is there at all is asked before anything from the repo runs: an exit code is the repo's to
+  // choose (a test can exit 127), so it never decides that a check couldn't run.
+  const tool = firstWord(check.command);
+  const env = (tmp: string, files: string) => (check.install ? installEnv(tmp) : checkEnv(cwd, tmp, files, check.node ?? false));
+  if (tool && !hasTool(tool, env("/tmp", "/tmp").PATH ?? "")) {
+    return { ...check, status: "missing", exitCode: null, output: `${tool} isn't installed on this Mac, or isn't on the PATH checks get.`, durationMs: 0 };
+  }
   const proc = await withPrivateTmp((tmp) => {
     const files = join(tmp, "check-files");
     mkdirSync(files);
@@ -65,7 +73,7 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
     return runAgentProcess(wrapCheck(["/bin/sh", "-c", `exec 2>&1\n${check.command}`], profile, opts.sandboxExec ?? SANDBOX_EXEC), {
       cwd,
       stdin: "",
-      env: check.install ? installEnv(tmp) : checkEnv(cwd, tmp, files, check.node ?? false),
+      env: env(tmp, files),
       signal,
       abortGraceMs: 2000,
       onLine: add,
@@ -77,8 +85,6 @@ async function runOne(cwd: string, check: Check, opts: { signal?: AbortSignal; t
     return { ...check, status: "missing", exitCode: null, output: "Atrium couldn't start the sandbox for this check.", durationMs };
   }
   if (timeout.aborted) return { ...check, status: "timeout", exitCode: null, output: tail, durationMs };
-  // 127 is the shell's "command not found": the tool isn't installed here, which says nothing about the code.
-  if (proc.exitCode === 127) return { ...check, status: "missing", exitCode: 127, output: tail, durationMs };
   return { ...check, status: proc.exitCode === 0 ? "passed" : "failed", exitCode: proc.exitCode, output: tail, durationMs };
 }
 
@@ -123,21 +129,57 @@ function installEnv(tmp: string): Record<string, string> {
   };
 }
 
-export type ChecksOutcome = "passed" | "failed" | "none";
-
-// Missing and skipped checks prove nothing either way; with no check that ran, the result is unverified.
-export function outcomeOf(results: CheckResult[]): ChecksOutcome {
-  if (results.some((r) => r.status === "failed" || r.status === "timeout")) return "failed";
-  return results.some((r) => r.status === "passed") ? "passed" : "none";
+// The command's program, past any VAR=value assignments in front of it.
+function firstWord(command: string): string | null {
+  const words = command.trim().split(/\s+/);
+  const word = words.find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
+  return word ? word.replace(/^["']|["']$/g, "") : null;
 }
+
+// `command -v` only looks the name up; nothing it finds is run.
+function hasTool(tool: string, path: string): boolean {
+  return Bun.spawnSync(["/bin/sh", "-c", 'command -v -- "$1" >/dev/null', "sh", tool], { env: { PATH: path } }).exitCode === 0;
+}
+
+const REGISTRY_LOGIN = /\b(E?401|E?403|ENEEDAUTH|unauthori[sz]ed|authentication (required|failed)|requires? (a )?login)\b/i;
+
+export type Judgement = {
+  verdict: "passed" | "failed" | "none";
+  // Why the result is unverified when checks exist but didn't all run; null otherwise.
+  unverified: string | null;
+  // Checks that couldn't run, which no rule may approve past.
+  attention: string[];
+};
+
+// What a turn's results prove. A check that couldn't run (a missing tool, a timeout, one skipped because the
+// install didn't happen) proves nothing, so the result is never "passed" with it; the install itself is never
+// counted as a passing check. `preexisting` are checks that failed the same way on the base commit.
+export function judge(results: CheckResult[], preexisting: Set<string> = new Set()): Judgement {
+  const install = results.find((r) => r.install);
+  const loginNeeded = install?.status === "failed" && REGISTRY_LOGIN.test(install.output);
+  const failed = results.filter((r) => r.status === "failed" && !preexisting.has(r.name) && !(r.install && loginNeeded));
+  if (failed.length) return { verdict: "failed", unverified: null, attention: [] };
+  if (loginNeeded) {
+    const why = "Unverified: Atrium couldn't install the dependencies because the registry needs your login, which checks never get.";
+    return { verdict: "none", unverified: why, attention: [] };
+  }
+  const unrun = results.filter((r) => !r.install && (r.status === "missing" || r.status === "timeout" || r.status === "skipped"));
+  if (unrun.length) {
+    const names = unrun.map((r) => r.name).join(", ");
+    return { verdict: "none", unverified: `Unverified: ${names} couldn't run.`, attention: unrun.map((r) => `${r.name} couldn't run (${STATUS_WORD[r.status]}), so it proves nothing.`) };
+  }
+  return { verdict: results.some((r) => !r.install && r.status === "passed") ? "passed" : "none", unverified: null, attention: [] };
+}
+
+export const signatureOf = (r: CheckResult) => failureSignature([{ name: r.name, output: r.output }]);
 
 // The short report the writer gets after a failing turn.
 export function failureReport(results: CheckResult[]): string {
-  const failed = results.filter((r) => r.status === "failed" || r.status === "timeout");
+  const failed = results.filter((r) => r.status === "failed");
   const parts = failed.map((r) => {
     let tail = r.output.trimEnd().split("\n").slice(-FEEDBACK_LINES).join("\n");
     if (tail.length > FEEDBACK_CHARS) tail = tail.slice(-FEEDBACK_CHARS);
-    const what = r.status === "timeout" ? "timed out" : `failed (exit ${r.exitCode})`;
+    const what = `failed (exit ${r.exitCode})`;
     return `\`${r.command}\` ${what}. The end of its output:\n\`\`\`\n${tail}\n\`\`\``;
   });
   return parts.join("\n\n");

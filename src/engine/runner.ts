@@ -24,16 +24,15 @@ import {
   prepareBranch,
   remoteUrl,
   repoReady,
-  restoreTree,
   returnToBranch,
   reviewDiff,
-  touchedPaths,
 } from "./git";
 import { loopNotes, recordReview, resolvedAgent, roundsLeft, startReview, triageFeedback, wantsTriage } from "./handoff";
 import { briefSections, checksSection } from "./brief";
-import { type Check, checksFor, detectChecks, installFor, LOCKFILES, touchesInstallConfig } from "./checks/detect";
-import { checkAttention } from "./checks/attention";
-import { type CheckResult, failureReport, outcomeOf, runChecks, saveChecks } from "./checks/run";
+import { changedOutside, outsideSnapshot } from "./checks/attention";
+import { type Check, checksFor, detectChecks } from "./checks/detect";
+import { type GateOutcome, runGate } from "./checks/gate";
+import { failureReport, saveChecks } from "./checks/run";
 import {
   applyTriage,
   failureSignature,
@@ -273,7 +272,7 @@ export function createRunner(deps: {
       }
       const pick = resolveFor(task, space);
       if ("wait" in pick) {
-        // A reviewer the space shuts out would wait forever, so the review is skipped and the work goes on to Nakul.
+        // A reviewer the space shuts out would wait forever, so the review is skipped and the work goes on to the user.
         const refused = task.kind === "review" ? registry.refusal(task.agent, task.kind, space) : null;
         if (refused) skipReview(task, refused.reason);
         else waits.push({ taskId: task.id, ...pick.wait });
@@ -440,6 +439,9 @@ export function createRunner(deps: {
     if (task.kind === "work" && !task.loop && getTask(db, task.id)?.status === "queued") {
       setTaskLoop(db, task.id, newLoop(space.budget ?? SIZE_BUDGETS[task.brief?.size ?? "medium"]));
     }
+    // What config the user's checkout already had outside git, so only what the work adds there is put down to it.
+    const firstLoop = getTask(db, task.id)?.loop;
+    if (repo && firstLoop && firstLoop.outside === null) setTaskLoop(db, task.id, { ...firstLoop, outside: await outsideSnapshot(repo.path).catch(() => ({})) });
     const current = getTask(db, task.id);
     const fresh = getSpace(db, task.spaceId);
     const recheck =
@@ -853,8 +855,8 @@ export function createRunner(deps: {
     }
   }
 
-  // One of Nakul's rules may decide in his place, on code only once the loop found it clean (see cleanLoop);
-  // anything that goes wrong here leaves the item waiting for him.
+  // One of the user's rules may decide in their place, on code only once the loop found it clean (see cleanLoop);
+  // anything that goes wrong here leaves the item waiting for them.
   async function considerRule(approvalId: string, opts: { filesKept?: number } = {}) {
     const a = getApproval(db, approvalId);
     if (a?.status !== "pending" || !a.fingerprint || !a.taskId || !a.spaceId) return;
@@ -869,7 +871,7 @@ export function createRunner(deps: {
     }
   }
 
-  // The loop is done: the work waits for Nakul, carrying what the checks and reviews found.
+  // The loop is done: the work waits for the user, carrying what the checks and reviews found.
   async function ready(task: Task, space: Space, lines: string[], filesKept = 0) {
     if (task.loop) setTaskLoop(db, task.id, { ...task.loop, stage: "ready", feedback: null });
     const facts = await factsFor(db, getTask(db, task.id)!, space, filesKept);
@@ -926,49 +928,35 @@ export function createRunner(deps: {
     const loop = getTask(db, task.id)!.loop!;
     const ahead = await git(repo.path, ["rev-list", "--count", `${repo.start}..${repo.branch}`]);
     if (ahead.code !== 0) throw new Error(`Couldn't count the commits on ${repo.branch}: ${ahead.err.trim()}`);
-    if (Number(ahead.out.trim()) === 0) return { verdict: "none", results: null, sha: null, noChanges: true, attention: [], unverified: null };
+    if (Number(ahead.out.trim()) === 0) return { verdict: "none", results: null, sha: null, noChanges: true, attention: [], unverified: null, preexisting: [] };
     const sha = (await headRef(repo.path)).sha;
     if (sha === loop.checkedSha) {
       const verdict = loop.checks === "failed" ? "failed" : loop.checks === "passed" ? "passed" : "none";
-      return { verdict, results: null, sha, noChanges: false, attention: loop.attention, unverified: loop.unverified };
-    }
-    // Committed and not: an ignored .npmrc in the tree changes the checks as much as a committed one.
-    const changed = await touchedPaths(repo.path, repo.start, sha);
-    const attention = [...new Set(checks.flatMap((c) => c.notes ?? [])), ...(await checkAttention(repo.path, repo.start, sha, changed, checks))];
-    // Installing would run the agent's own install instructions, so a change to them leaves the result to Nakul.
-    const installConfig = touchesInstallConfig(changed);
-    if (installConfig.length) {
-      return {
-        verdict: "none",
-        results: [],
-        sha,
-        noChanges: false,
-        attention: [`This change edits how dependencies install: ${installConfig.join(", ")}.`, ...attention],
-        unverified: "Unverified: this change edits how dependencies install, so Atrium didn't install or run the checks.",
-      };
+      return { verdict, results: null, sha, noChanges: false, attention: loop.attention, unverified: loop.unverified, preexisting: loop.preexisting };
     }
     setTaskLoop(db, task.id, { ...loop, stage: "checks", checks: "running" });
-    // A change to the manifest or lockfile gets the engine's own install first; agents can't write node_modules.
-    const install = installFor(changed, LOCKFILES.filter((f) => existsSync(join(repo.path, f))));
-    const results = await runChecks(repo.path, install ? [install, ...checks] : checks, { signal, onLine: line });
-    await restoreTree(repo.path);
-    saveChecks(db, task.id, runId, results);
-    return { verdict: outcomeOf(results), results, sha, noChanges: false, attention, unverified: null };
+    const base = await git(repo.path, ["rev-parse", "--verify", `${repo.start}^{commit}`]);
+    if (base.code !== 0) throw new Error(`Couldn't read ${repo.start}: ${base.err.trim()}`);
+    const outside = loop.outside ? await changedOutside(repo.path, loop.outside) : [];
+    const goal = task.brief?.goal || task.title;
+    const gate = await runGate({ repo: repo.path, base: base.out.trim(), head: sha, checks, goal, outside, signal, onLine: line });
+    if (gate.results) saveChecks(db, task.id, runId, gate.results);
+    return { ...gate, sha, noChanges: false };
   }
 
   // A repo turn that finished: failing checks go back to the writer (or pause it), passing work goes to review or
-  // on to Nakul.
+  // on to the user.
   async function afterTurn(task: Task, space: Space, repo: RepoRun, gate: Gate | null, lines: string[]) {
     const before = task.loop!;
     let loop: LoopState = { ...before, report: lines, feedback: null };
-    if (gate?.noChanges) loop = { ...loop, noChanges: true, checks: "none", attention: [], unverified: null };
+    if (gate?.noChanges) loop = { ...loop, noChanges: true, checks: "none", attention: [], unverified: null, preexisting: [] };
     else if (gate) {
-      const passing = gate.results ? gate.results.filter((c) => c.status === "passed").map((c) => c.name) : before.passing;
-      loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified };
+      const passing = gate.results ? gate.results.filter((c) => c.status === "passed" && !c.install).map((c) => c.name) : before.passing;
+      loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified, preexisting: gate.preexisting };
     }
     const writer = agentName(resolvedAgent(db, task));
     if (loop.checks === "failed") {
-      const failed = (gate?.results ?? []).filter((c) => c.status === "failed" || c.status === "timeout");
+      const failed = (gate?.results ?? []).filter((c) => c.status === "failed" && !gate!.preexisting.includes(c.name));
       // A turn that changed nothing repeats the last failure, which is the same failure twice.
       const sig = failed.length ? failureSignature(failed) : before.failSig;
       const newlyPassing = loop.passing.some((n) => !before.passing.includes(n));
@@ -1008,7 +996,7 @@ export function createRunner(deps: {
   }
 
   // A review round that finished, failed or was skipped: the findings go back to the writer while rounds remain,
-  // otherwise the work goes on to Nakul.
+  // otherwise the work goes on to the user.
   async function reviewEnded(review: Task, reviewer: string, result: AgentRunResult) {
     const recorded = recordReview(db, review, reviewer, result);
     if (!recorded) return;
@@ -1111,12 +1099,13 @@ async function branchContext(repo: RepoRun): Promise<string | null> {
 }
 
 // What Atrium's checks made of one turn. `results` is null when they didn't run again (nothing changed).
-type Gate = { verdict: "passed" | "failed" | "none"; results: CheckResult[] | null; sha: string | null; noChanges: boolean; attention: string[]; unverified: string | null };
+type Gate = GateOutcome & { sha: string | null; noChanges: boolean };
 
-// A rule may approve code only when the loop found nothing for Nakul to look at: no check edits or dropped tests,
-// no review that asked for changes, and a review (unless the space turned it off) that approved it first time.
+// A rule may approve code only when the loop found nothing to look at: no attention notes, no checks that couldn't
+// run or were already failing, no review that asked for changes, and a review (unless the space turned it off)
+// that approved it first time.
 function cleanLoop(loop: LoopState | null, space: Space): boolean {
-  if (!loop || loop.attention.length || loop.triaged || loop.checks === "failed") return false;
+  if (!loop || loop.attention.length || loop.unverified || loop.preexisting.length || loop.triaged || loop.checks === "failed") return false;
   return space.reviewBy === "off" || (loop.reviews.length === 1 && loop.reviews[0]!.verdict === "approve");
 }
 
@@ -1213,11 +1202,11 @@ async function settingsUnchanged(path: string, expected: string | null): Promise
   }
 }
 
-// Scratch and per-run temp folders a crashed engine never removed. A day is far longer than any run lasts.
+// Scratch, per-run temp and check-tree folders a crashed engine never removed. A day is far longer than any run lasts.
 function sweepTempDirs() {
   const dir = tmpdir();
   for (const name of readdirSync(dir)) {
-    if (!/^atrium-(run|agent)-/.test(name)) continue;
+    if (!/^atrium-(run|agent|checks)-/.test(name)) continue;
     const path = join(dir, name);
     try {
       const st = lstatSync(path);

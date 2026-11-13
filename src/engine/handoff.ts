@@ -105,6 +105,7 @@ export function loopNotes(loop: LoopState, space: Space): string[] {
   else if (loop.checks === "passed") lines.push(`Checks: passed (${loop.passing.join(", ")}). Atrium ran them itself.`);
   else if (loop.checks === "none") lines.push(loop.unverified ?? "Unverified: no checks found. Add a check command in this space's settings or in the brief.");
   if (loop.noChanges) return lines;
+  if (loop.preexisting.length) lines.push(`Already failing before this task, the same way: ${loop.preexisting.join(", ")}. That doesn't count against it.`);
   if (loop.attention.length) lines.push(`Look closely:\n${loop.attention.map((n) => `- ${n}`).join("\n")}`);
   if (space.reviewBy === "off" && !loop.reviews.length) lines.push("Review: off for this space.");
   loop.reviews.forEach((r, i) => {

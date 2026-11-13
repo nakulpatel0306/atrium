@@ -4,12 +4,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { codexStateDir, seatbeltProfile } from "../../src/engine/agents/seatbelt";
-import { touchedPaths } from "../../src/engine/git";
-import { checkAttention } from "../../src/engine/checks/attention";
+import { branchFiles } from "../../src/engine/git";
+import { changedOutside, checkAttention, outsideSnapshot } from "../../src/engine/checks/attention";
 import { checkProfile, installProfile } from "../../src/engine/checks/sandbox";
 import { checksFor, detectChecks, hintsFrom, installFor, overrideChecks, touchesInstallConfig } from "../../src/engine/checks/detect";
 import { sandboxSettings } from "../../src/engine/agents/claude";
-import { failureReport, latestChecks, outcomeOf, runChecks, saveChecks } from "../../src/engine/checks/run";
+import { failureReport, judge, latestChecks, runChecks, saveChecks } from "../../src/engine/checks/run";
 import { openDb } from "../../src/engine/db";
 import { createSpace } from "../../src/engine/spaces";
 import { createTask } from "../../src/engine/tasks";
@@ -126,7 +126,7 @@ describe("running checks", () => {
     ]);
     expect(results.map((r) => r.status)).toEqual(["passed", "failed"]);
     expect(results[1]!.output).toContain("expected 2, got 3");
-    expect(outcomeOf(results)).toBe("failed");
+    expect(judge(results).verdict).toBe("failed");
     expect(failureReport(results)).toContain("`echo 'expected 2, got 3' >&2; exit 1` failed (exit 1)");
   });
 
@@ -141,13 +141,15 @@ describe("running checks", () => {
   test("a tool that isn't installed couldn't run, which leaves the result unverified", async () => {
     const results = await runChecks(dir(), [{ name: "Lint", command: "no-such-tool-here --check", kind: "fast" }]);
     expect(results[0]!.status).toBe("missing");
-    expect(outcomeOf(results)).toBe("none");
+    expect(judge(results)).toEqual({ verdict: "none", unverified: "Unverified: Lint couldn't run.", attention: ["Lint couldn't run (couldn't run), so it proves nothing."] });
   });
 
   test("a check that runs too long is stopped", async () => {
     const results = await runChecks(dir(), [{ name: "Tests", command: "sleep 30", kind: "full" }], { timeoutMs: 300 });
     expect(results[0]!.status).toBe("timeout");
-    expect(outcomeOf(results)).toBe("failed");
+    // A check that never finished proves nothing either way.
+    expect(judge(results).verdict).toBe("none");
+    expect(judge(results).unverified).toBe("Unverified: Tests couldn't run.");
   });
 
   test("checks write in the repo but nowhere else, and see none of the engine's secrets", async () => {
@@ -237,6 +239,8 @@ describe("the checks' own sandbox", () => {
 });
 
 describe("changes to the checks themselves", () => {
+  const committed = async (r: { path: string; base: string; head: string }) => (await branchFiles(r.path, r.base, r.head)).map((f) => f.path);
+
   function branchWith(base: Record<string, string>, change: (path: string) => void): { path: string; base: string; head: string } {
     const { path, sha } = repoWith(base);
     const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: path }).stdout.toString().trim();
@@ -253,24 +257,58 @@ describe("changes to the checks themselves", () => {
       writeFileSync(join(p, "vitest.config.ts"), "export default {}");
       writeFileSync(join(p, "src/a.ts"), "export const a = 1;");
     });
-    const notes = await checkAttention(r.path, r.base, r.head, await touchedPaths(r.path, r.base, r.head), [{ name: "Tests", command: "./scripts/ci.sh", kind: "full" }]);
+    const notes = await checkAttention(r.path, r.base, r.head, await committed(r), [], [{ name: "Tests", command: "./scripts/ci.sh", kind: "full" }]);
     expect(notes).toEqual(["This change edits how checks run: package.json, vitest.config.ts."]);
   });
 
-  test("touched paths cover the branch's commits and the tree: untracked and ignored files, never the dependency folders", async () => {
-    const r = branchWith({ ".gitignore": "*.local\nnode_modules\n", "src/a.ts": "" }, (p) => writeFileSync(join(p, "src/a.ts"), "export const a = 1;"));
-    writeFileSync(join(r.path, ".NPMRC"), "registry=https://registry.example.com/\n");
-    writeFileSync(join(r.path, "bunfig.local"), "x");
-    mkdirSync(join(r.path, "node_modules", "pkg"), { recursive: true });
-    writeFileSync(join(r.path, "node_modules", "pkg", "index.js"), "");
-    expect((await touchedPaths(r.path, r.base, r.head)).sort()).toEqual([".NPMRC", "bunfig.local", "src/a.ts"]);
+  test("config the user already had outside git isn't put down to the task; new or changed config is", async () => {
+    const r = branchWith({ ".gitignore": "*.local\n.npmrc\nbunfig.toml\n", "src/a.ts": "" }, () => {});
+    writeFileSync(join(r.path, ".npmrc"), "registry=https://registry.example.com/\n");
+    writeFileSync(join(r.path, "bunfig.toml"), "[test]\n");
+    writeFileSync(join(r.path, "notes.local"), "x");
+    const snap = await outsideSnapshot(r.path);
+    expect(Object.keys(snap).sort()).toEqual([".npmrc", "bunfig.toml"]);
+    expect(await changedOutside(r.path, snap)).toEqual([]);
+    writeFileSync(join(r.path, "bunfig.toml"), "[test]\npreload = ['./x.ts']\n");
+    writeFileSync(join(r.path, ".YARNRC.yml"), "x");
+    expect((await changedOutside(r.path, snap)).sort()).toEqual([".YARNRC.yml", "bunfig.toml"]);
+    expect(await checkAttention(r.path, r.base, r.head, [], ["bunfig.toml"], [])).toEqual([
+      "This change leaves config outside git in your checkout: bunfig.toml. Atrium's checks don't see it, but your own commands there will.",
+    ]);
   });
+
+  test("config reached through extends, and scripts a Makefile recipe calls, count as check config", async () => {
+    const r = branchWith(
+      {
+        "tsconfig.json": '{ // base\n  "extends": "./config/base",\n  "include": ["src"],\n}',
+        "config/base.json": '{ "extends": "./strict.json" }',
+        "config/strict.json": '{ "compilerOptions": { "strict": true } }',
+        Makefile: "test:\n\tsh run-tests.sh\n",
+        "run-tests.sh": "bun test\n",
+      },
+      (p) => {
+        writeFileSync(join(p, "config/strict.json"), '{ "compilerOptions": { "strict": false } }');
+        writeFileSync(join(p, "run-tests.sh"), "exit 0\n");
+      },
+    );
+    const checks = await detectChecks(r.path, r.base);
+    expect(await checkAttention(r.path, r.base, r.head, await committed(r), [], checks)).toEqual(["This change edits how checks run: config/strict.json, run-tests.sh."]);
+  });
+
+  test("silencing a checker in place is named", async () => {
+    const r = branchWith({ "src/a.ts": "export const a = 1;\n", "app.py": "x = 1\n" }, (p) => {
+      writeFileSync(join(p, "src/a.ts"), "// @ts-nocheck\nexport const a: number = 'no';\n// eslint-disable-next-line\n");
+      writeFileSync(join(p, "app.py"), "x = 1  # type: ignore\n");
+    });
+    expect(await checkAttention(r.path, r.base, r.head, await committed(r), [], [])).toEqual(["This change silences a checker in place (# type: ignore, @ts-nocheck, eslint-disable)."]);
+  });
+
 
   test("path classifiers fold case, as APFS does", async () => {
     expect(touchesInstallConfig([".NPMRC", "BunFig.Toml"])).toEqual([".NPMRC", "BunFig.Toml"]);
     expect(installFor(["Package.JSON"], ["bun.lock"])).not.toBeNull();
     const r = branchWith({ "src/a.ts": "" }, (p) => writeFileSync(join(p, "MAKEFILE"), "test:\n\ttrue\n"));
-    expect(await checkAttention(r.path, r.base, r.head, await touchedPaths(r.path, r.base, r.head), [])).toEqual(["This change edits how checks run: MAKEFILE."]);
+    expect(await checkAttention(r.path, r.base, r.head, await committed(r), [], [])).toEqual(["This change edits how checks run: MAKEFILE."]);
   });
 
   test("removed test files and newly skipped tests are named; a plain code change says nothing", async () => {
@@ -278,12 +316,12 @@ describe("changes to the checks themselves", () => {
       rmSync(join(p, "tests/a.test.ts"));
       writeFileSync(join(p, "tests/b.test.ts"), "test.skip('b', () => {})");
     });
-    expect(await checkAttention(r.path, r.base, r.head, await touchedPaths(r.path, r.base, r.head), [])).toEqual([
+    expect(await checkAttention(r.path, r.base, r.head, await committed(r), [], [])).toEqual([
       "This change removes test files: 2 before, 1 now.",
       "This change marks tests as skipped.",
     ]);
     const plain = branchWith({ "src/a.ts": "" }, (p) => writeFileSync(join(p, "src/a.ts"), "export const a = 2;"));
-    expect(await checkAttention(plain.path, plain.base, plain.head, await touchedPaths(plain.path, plain.base, plain.head), [])).toEqual([]);
+    expect(await checkAttention(plain.path, plain.base, plain.head, await committed(plain), [], [])).toEqual([]);
   });
 });
 

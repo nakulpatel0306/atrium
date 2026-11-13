@@ -56,9 +56,7 @@ export async function headRef(path: string): Promise<{ branch: string | null; sh
   return { branch: name.out.trim() || null, sha: sha.out.trim() };
 }
 
-// A fix task passes its parent's id with `existing`: it adds to the branch under review, and a branch that's
-// gone means there is nothing left to fix, so it is never recreated.
-export async function prepareBranch(path: string, taskId: string, opts: { existing?: boolean } = {}): Promise<string> {
+export async function prepareBranch(path: string, taskId: string): Promise<string> {
   if (isProtected(taskId)) throw new Error("Refusing to work on main");
   const branch = `atrium/${taskId}`;
   const valid = await git(path, ["check-ref-format", "--branch", branch]);
@@ -70,7 +68,6 @@ export async function prepareBranch(path: string, taskId: string, opts: { existi
   // A retry after a send-back reuses the existing branch. Plain checkout (never --force)
   // fails rather than overwrite local changes.
   const exists = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
-  if (opts.existing && exists.code !== 0) throw new Error(`${branch} no longer exists, so there's no work left to fix.`);
   const res = await git(path, exists.code === 0 ? ["checkout", branch] : ["checkout", "-b", branch]);
   if (res.code !== 0) throw new Error(`Couldn't switch to ${branch}: ${res.err.trim()}`);
   return branch;
@@ -489,29 +486,20 @@ export async function branchSha(path: string, branch: string): Promise<string | 
 
 const PATCH_READ_CAP = 256 * 1024;
 
-// The text a change adds, and how many bytes it adds and removes, read from a zero-context diff. A diff too big to
-// read in full reports more bytes than the cap, which is all a caller deciding "small enough?" needs.
-// Every path a task's work touched: committed on the branch since `base`, and whatever is in the working tree
-// beyond that, untracked and ignored files included, since checks run in the tree and an ignored .npmrc changes
-// them as much as a committed one. The dependency folders are left out: agents can't write them, and listing an
-// installed node_modules would take long.
-export async function touchedPaths(path: string, base: string, head: string): Promise<string[]> {
-  const committed = (await branchFiles(path, base, head)).map((f) => f.path);
+// Files in the working tree that git doesn't track: untracked and ignored ones, never the dependency folders
+// (agents can't write them, and listing an installed node_modules would take long).
+export async function outsideGit(path: string): Promise<string[]> {
   const exclude = ["node_modules", ".venv"].flatMap((d) => [`:(exclude,glob)${d}/**`, `:(exclude,glob)**/${d}/**`]);
   const res = await git(path, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "--ignored=traditional", "--untracked-files=all", "--", ".", ...exclude]);
   if (res.code !== 0) throw new Error(`Couldn't read git status: ${firstLine(res.err)}`);
-  // Each record is "XY path", with a rename's old path as the next record.
-  const fields = res.out.split("\0");
-  const tree: string[] = [];
-  for (let i = 0; i < fields.length; i++) {
-    const rec = fields[i]!;
-    if (rec.length < 4) continue;
-    tree.push(rec.slice(3));
-    if (rec[0] === "R" || rec[0] === "C") i++;
-  }
-  return [...new Set([...committed, ...tree])];
+  return res.out
+    .split("\0")
+    .filter((rec) => rec.startsWith("?? ") || rec.startsWith("!! "))
+    .map((rec) => rec.slice(3));
 }
 
+// The text a change adds, and how many bytes it adds and removes, read from a zero-context diff. A diff too big to
+// read in full reports more bytes than the cap, which is all a caller deciding "small enough?" needs.
 export async function changedText(path: string, base: string, sha: string): Promise<{ added: string[]; bytes: number }> {
   const res = await gitCapped(
     path,
@@ -564,20 +552,20 @@ export function branchHeadSync(path: string, branch: string): string | null {
   }
 }
 
-// Puts the tree back to its last commit after Atrium's checks ran in it, so build output and caches they left
-// can't block switching back to the user's branch. Everything the agent did is committed by then. Attributes come
-// from the empty tree, so no checkout filter runs, whatever a check wrote into .gitattributes.
-export async function restoreTree(path: string): Promise<void> {
-  const status = await git(path, [...STAGE_FLAGS, "status", "--porcelain"]);
-  if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
-  if (status.out.trim() === "") return;
+// A detached checkout of `sha` in a folder of its own, where Atrium's checks run, so nothing they or the engine's
+// install do reaches the user's checkout. Attributes come from the empty tree, so no checkout filter runs.
+export async function addCheckTree(path: string, sha: string, dir: string): Promise<void> {
   const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
   if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
-  const flags = [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`];
-  for (const args of [["checkout", "--", "."], ["clean", "-fdq"]]) {
-    const res = await git(path, [...flags, ...args]);
-    if (res.code !== 0) throw new Error(`Couldn't tidy up after the checks: ${res.err.trim()}`);
-  }
+  const res = await git(path, [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`, "worktree", "add", "--detach", "--quiet", dir, sha]);
+  if (res.code !== 0) throw new Error(`Couldn't check out ${sha.slice(0, 8)} for the checks: ${res.err.trim()}`);
+}
+
+// Removes the folder and git's record of it, whatever the checks left there.
+export async function removeCheckTree(path: string, dir: string): Promise<void> {
+  const res = await git(path, ["worktree", "remove", "--force", dir]);
+  if (res.code !== 0) rmSync(dir, { recursive: true, force: true });
+  await git(path, ["worktree", "prune"]);
 }
 
 const CHANGES_CAP = 200 * 1024;

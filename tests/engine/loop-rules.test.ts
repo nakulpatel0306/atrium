@@ -93,9 +93,9 @@ describe("loop rules", () => {
 
   test("the stage strip reads status and loop together", () => {
     const loop = newLoop(SIZE_BUDGETS.medium);
-    expect(shownStage("queued", null, true)).toBe("brief");
-    expect(shownStage("running", { ...loop, stage: "checks" }, true)).toBe("checks");
-    expect(shownStage("blocked", { ...loop, paused: { kind: "loop", diagnosis: "x" } }, false)).toBe("paused");
-    expect(shownStage("review", loop, false)).toBe("ready");
+    expect(shownStage("queued", { ...loop, stage: "brief" })).toBe("brief");
+    expect(shownStage("running", { ...loop, stage: "checks" })).toBe("checks");
+    expect(shownStage("blocked", { ...loop, paused: { kind: "loop", diagnosis: "x" } })).toBe("paused");
+    expect(shownStage("review", loop)).toBe("ready");
   });
 });
