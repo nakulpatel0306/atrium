@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 const DASH = resolve(import.meta.dir, "../../src/dashboard");
 const CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; frame-src http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'self'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'";
 
 test("index.html carries the CSP and loads no Google Fonts", () => {
   const html = readFileSync(join(DASH, "index.html"), "utf8");
@@ -27,9 +27,9 @@ test("Inter is self-hosted", () => {
   expect(existsSync(join(DASH, "assets/fonts/LICENSE-Inter.txt"))).toBe(true);
 });
 
-// Loopback URLs (and ones built from the page's own location) are fine. Libraries carry documentation links in their error messages and the fallback chart's attribution link; none is
+// Loopback URLs (and ones built from the page's own location) are fine. Libraries carry documentation links in their error messages; none is
 // loaded. Anything else in the bundle would be new external content.
-const LIBRARY_LINKS = /^https?:\/\/(react\.dev|reactjs\.org|github\.com|developer\.mozilla\.org|bugs\.webkit\.org|www\.apache\.org|www\.w3\.org|www\.tradingview\.com\/\?utm_medium=lwc-link)/;
+const LIBRARY_LINKS = /^https?:\/\/(react\.dev|reactjs\.org|github\.com|developer\.mozilla\.org|bugs\.webkit\.org|www\.apache\.org|www\.w3\.org)/;
 
 test("the bundle has no inline script and loads nothing external", async () => {
   const out = mkdtempSync(join(tmpdir(), "atrium-bundle-"));
