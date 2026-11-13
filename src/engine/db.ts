@@ -163,6 +163,20 @@ CREATE TABLE IF NOT EXISTS attachments (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS attachments_task ON attachments(task_id);
+-- What Atrium's own checks found after a writer turn: one row per command, with the tail of its output.
+CREATE TABLE IF NOT EXISTS checks (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  run_id TEXT REFERENCES runs(id),
+  name TEXT NOT NULL,
+  command TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('passed','failed','timeout','missing','skipped')),
+  exit_code INTEGER,
+  output TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS checks_task ON checks(task_id, created_at);
 CREATE TABLE IF NOT EXISTS rule_events (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
@@ -259,6 +273,14 @@ function migrate(db: Database): boolean {
   if (!has("runs", "remote_url")) db.exec("ALTER TABLE runs ADD COLUMN remote_url TEXT");
   // The pull request opened from a task's branch, once there is one.
   if (!has("tasks", "pr_url")) db.exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT");
+  // The structured brief a task was started with (JSON, see brief.ts); NULL for a one-line ask.
+  if (!has("tasks", "brief")) db.exec("ALTER TABLE tasks ADD COLUMN brief TEXT");
+  // Where a coding task is in the loop: checks, review rounds, budget and pause (JSON, see loop.ts).
+  if (!has("tasks", "loop")) db.exec("ALTER TABLE tasks ADD COLUMN loop TEXT");
+  // A space's own check commands, one per line, in place of the ones Atrium detects.
+  if (!has("spaces", "checks")) db.exec("ALTER TABLE spaces ADD COLUMN checks TEXT");
+  // A space's budget for each task (JSON: tokens, minutes), in place of the defaults by task size.
+  if (!has("spaces", "budget")) db.exec("ALTER TABLE spaces ADD COLUMN budget TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS activity_space ON activity(space_id, created_at)");
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");

@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { bus } from "./events";
 import { newId } from "./ids";
+import { type Brief, normalizeBrief } from "./brief";
+import type { LoopState } from "./loop";
 import type { Outcome } from "./outcome";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
@@ -29,6 +31,10 @@ export type Task = {
   outcomeReason: string | null;
   // The pull request opened from this task's branch; null until one is.
   prUrl: string | null;
+  // The structured brief it was started with; null for a one-line ask sent straight away.
+  brief: Brief | null;
+  // Where a coding task is in the loop; null before its first turn and for work outside a repo.
+  loop: LoopState | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -52,6 +58,8 @@ type TaskRow = {
   outcome: Outcome | null;
   outcome_reason: string | null;
   pr_url: string | null;
+  brief: string | null;
+  loop: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -63,10 +71,11 @@ export class InvalidTransition extends Error {
   }
 }
 
-// A review or fix task finishes straight to done (its parent's approval covers it), and is
-// cancelled to done from any unfinished state once Nakul decides on the parent.
+// A review task finishes straight to done (its parent's approval covers it), and is cancelled to done from any
+// unfinished state once Nakul decides on the parent. A work task waits in the queue while its review runs, and
+// goes from there to waiting for him.
 const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
-  queued: ["running", "blocked", "done"],
+  queued: ["running", "blocked", "review", "done"],
   running: ["review", "failed", "blocked", "queued", "done"],
   review: ["done", "queued"],
   blocked: ["queued", "done"],
@@ -93,6 +102,8 @@ const toTask = (r: TaskRow): Task => ({
   outcome: r.outcome ?? null,
   outcomeReason: r.outcome_reason ?? null,
   prUrl: r.pr_url ?? null,
+  brief: r.brief ? normalizeBrief(JSON.parse(r.brief)) : null,
+  loop: r.loop ? (JSON.parse(r.loop) as LoopState) : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -115,12 +126,13 @@ export function createTask(
     parentTaskId?: string;
     approvalId?: string;
     agent?: string;
+    brief?: Brief;
   },
 ): Task {
   const id = newId("tsk");
   const now = Date.now();
   db.query(
-    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, ignore_reserve, kind, parent_task_id, approval_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO tasks (id, space_id, title, detail, agent, weight, allow_on_battery, ignore_reserve, kind, parent_task_id, approval_id, brief, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     input.spaceId,
@@ -133,6 +145,7 @@ export function createTask(
     input.kind ?? "work",
     input.parentTaskId ?? null,
     input.approvalId ?? null,
+    input.brief ? JSON.stringify(input.brief) : null,
     now,
     now,
   );
@@ -181,6 +194,13 @@ export function setTaskStatus(
 // Not tied to status: a result Nakul accepts stays labelled with what the agent said about it.
 export function setTaskOutcome(db: Database, id: string, outcome: Outcome, reason: string | null): Task {
   const res = db.query("UPDATE tasks SET outcome = ?, outcome_reason = ?, updated_at = ? WHERE id = ?").run(outcome, reason, Date.now(), id);
+  if (res.changes === 0) throw new Error(`No task with id ${id}`);
+  bus.emit({ type: "changed" });
+  return getTask(db, id)!;
+}
+
+export function setTaskLoop(db: Database, id: string, loop: LoopState | null): Task {
+  const res = db.query("UPDATE tasks SET loop = ?, updated_at = ? WHERE id = ?").run(loop ? JSON.stringify(loop) : null, Date.now(), id);
   if (res.changes === 0) throw new Error(`No task with id ${id}`);
   bus.emit({ type: "changed" });
   return getTask(db, id)!;
