@@ -479,26 +479,16 @@ export function upsertCalendar(db: Database, source: SourceKind, cal: SourceCale
 }
 
 // An Apple calendar that is the same calendar Google already reads directly is read once, through Google. It's
-// recognised two ways, so it doesn't rest on what the user named the account in Calendar.app:
-// - by name: the address Calendar.app gives is a Google-preferred account's address, or a Google calendar's own id;
-// - by content: with `calendarId`, most of its stored events (iCalUID and occurrence) are in a direct Google calendar.
+// recognised by name, so it doesn't rest on what the user named the account in Calendar.app: the address Calendar.app
+// gives is a Google-preferred account's address, or a Google calendar's own id. Matching by shared events is left to
+// the event-level dedupe: a whole calendar hidden for sharing invites would take its own events with it.
 // A Google account the user hid still counts: hiding it mustn't bring its calendars back by the other road.
 const DIRECT_GOOGLE = "SELECT c.id FROM cal_calendars c JOIN mail_accounts a ON a.id = c.account_id WHERE c.source = 'google' AND a.preferred = 1";
-const SAME_EVENT_SHARE = 0.8;
-export function calendarShadowed(db: Database, accountAddress: string | null, calendarId?: string): boolean {
-  if (accountAddress) {
-    const a = normalizeAddress(accountAddress);
-    if (db.query("SELECT 1 FROM mail_accounts WHERE address = ? AND source = 'google' AND preferred = 1").get(a)) return true;
-    if (db.query(`SELECT 1 FROM cal_calendars WHERE lower(source_id) = ? AND id IN (${DIRECT_GOOGLE})`).get(a)) return true;
-  }
-  if (!calendarId) return false;
-  const r = db
-    .query(
-      `SELECT COUNT(*) AS total, SUM(EXISTS (SELECT 1 FROM cal_events g WHERE g.calendar_id IN (${DIRECT_GOOGLE}) AND g.ical_uid = e.ical_uid AND g.recurrence_id = e.recurrence_id)) AS same
-       FROM cal_events e WHERE e.calendar_id = ?`,
-    )
-    .get(calendarId) as { total: number; same: number | null };
-  return r.total > 0 && (r.same ?? 0) >= r.total * SAME_EVENT_SHARE;
+export function calendarShadowed(db: Database, accountAddress: string | null): boolean {
+  if (!accountAddress) return false;
+  const a = normalizeAddress(accountAddress);
+  if (db.query("SELECT 1 FROM mail_accounts WHERE address = ? AND source = 'google' AND preferred = 1").get(a)) return true;
+  return !!db.query(`SELECT 1 FROM cal_calendars WHERE lower(source_id) = ? AND id IN (${DIRECT_GOOGLE})`).get(a);
 }
 
 // The window's events for one calendar, replacing what was stored for that window.
@@ -565,7 +555,7 @@ export function listCalendars(db: Database): CalendarView[] {
         ? "Its account reads through Mail.app now."
         : r.source === "google" && r.account_enabled !== 1
           ? "Its account is hidden."
-          : r.source === "apple" && calendarShadowed(db, r.account_address, r.id)
+          : r.source === "apple" && calendarShadowed(db, r.account_address)
             ? "Google reads this calendar directly."
             : null,
   }));

@@ -125,6 +125,16 @@ describe("Apple Mail details", () => {
     expect(listThreads(db).map((t) => t.subject)).not.toContain("Trip plan");
   });
 
+  test("an empty account list from Mail.app removes nothing", async () => {
+    const s = appleSync();
+    s.appleOnNow("mail");
+    await s.syncNow();
+    const data = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
+    writeFileSync(fakes.pimFile, JSON.stringify({ ...data, accounts: [] }));
+    await s.syncNow();
+    expect(listThreads(db).map((t) => t.subject)).toContain("Trip plan");
+  });
+
   test("the listing has no snippets; a fetched body supplies one, and encoded sender names are decoded", async () => {
     const data = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
     data.messages["acct-icloud"][0].from = "=?UTF-8?Q?Ren=C3=A9e?= Moreno <kit@example.org>";

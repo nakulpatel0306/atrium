@@ -132,6 +132,14 @@ describe("Google sign-in (PKCE on a loopback redirect)", () => {
     expect(stored()).not.toContain("Atrium/google.client.secret");
   });
 
+  test("a Keychain failure while starting stops the listener and leaves no flow pending", async () => {
+    const keychain = mailKeychain(FAKE_SECURITY);
+    const broken = createGoogleAuth({ db, keychain: { ...keychain, set: () => Promise.reject(new Error("Keychain is locked.")) } });
+    await expect(broken.start({ clientId: CLIENT_ID, clientSecret: "s3cret-one" })).rejects.toThrow("Keychain is locked.");
+    await Bun.sleep(100);
+    expect(broken.pending()).toBe(false);
+  });
+
   test("a client Google doesn't know is named as such, not as a sign-out", async () => {
     const flow = await auth.start({ clientId: "unknown-client.apps.googleusercontent.com" });
     await approveInBrowser(flow.url);
@@ -293,12 +301,12 @@ describe("Google and Apple together", () => {
     expect(events).toContain("Dentist");
   });
 
-  test("a recurring Google event that Calendar.app also has, under an account name with no address, shows once", async () => {
+  test("a recurring Google event that Calendar.app also has shows once, and that calendar's own events still show", async () => {
     // Two weekly instances, written by Google in the event's own offset and by Calendar.app in UTC.
     const at = (days: number) => T0 + days * 86_400_000;
     const offset = (ms: number) => new Date(ms - 5 * 3600_000).toISOString().replace("Z", "-05:00").replace(".000", "");
     fakes.google.data[SAM]!.events[SAM]!.push(
-      ...[1, 8].map((d) => ({
+      ...[1, 8, 15, 22].map((d) => ({
         id: `standup_${d}`,
         iCalUID: "weekly@example.com",
         recurringEventId: "standup",
@@ -310,11 +318,15 @@ describe("Google and Apple together", () => {
     );
     const pim = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
     pim.calendars = [{ id: "cal-work", title: "Work", color: "#d9825b", writable: true, source: "Work", account: null }];
+    const appleEvent = (id: string, icalUid: string, title: string, start: number, recurrenceId: string | null) => ({
+      id, icalUid, recurrenceId, title, start: new Date(start).toISOString(), end: new Date(start + 900_000).toISOString(),
+      allDay: false, location: "", attendees: [], organizer: null, myStatus: null, recurrence: recurrenceId ? "repeats" : null,
+    });
     pim.events = {
-      "cal-work": [1, 8].map((d) => ({
-        id: `w${d}`, icalUid: "weekly@example.com", recurrenceId: new Date(at(d)).toISOString(), title: "Weekly standup",
-        start: new Date(at(d)).toISOString(), end: new Date(at(d) + 900_000).toISOString(), allDay: false, location: "", attendees: [], organizer: null, myStatus: null, recurrence: "repeats",
-      })),
+      "cal-work": [
+        ...[1, 8, 15, 22].map((d) => appleEvent(`w${d}`, "weekly@example.com", "Weekly standup", at(d), new Date(at(d)).toISOString())),
+        appleEvent("own", "review@example.com", "Design review", at(2), null),
+      ],
     };
     writeFileSync(fakes.pimFile, JSON.stringify(pim));
     await connect();
@@ -325,8 +337,11 @@ describe("Google and Apple together", () => {
     expect(standups.map((e) => [e.start, e.calendar.source])).toEqual([
       [at(1), "google"],
       [at(8), "google"],
+      [at(15), "google"],
+      [at(22), "google"],
     ]);
-    // Recognised by its events, though Calendar.app only calls the account "Work".
-    expect(listCalendars(db).find((c) => c.title === "Work")!.hidden).toBe("Google reads this calendar directly.");
+    // Sharing events with Google doesn't hide the calendar, so the event only it has still shows.
+    expect(listCalendars(db).find((c) => c.title === "Work")!.hidden).toBeFalsy();
+    expect(listEvents(db, NOW - 30 * 86_400_000, NOW + 90 * 86_400_000).filter((e) => e.title === "Design review")).toHaveLength(1);
   });
 });

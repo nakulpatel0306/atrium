@@ -170,16 +170,7 @@ export function createGoogleAuth(deps: { db: Database; keychain?: Keychain; fetc
       const timer = setTimeout(() => finish({ ok: false, error: "The Google sign-in timed out. Press Connect Google to try again." }), FLOW_TIMEOUT_MS);
       const current = { server, finish };
       flow = current;
-      try {
-        // A secret belongs to its client: a new client ID without one clears the old one rather than reuse it.
-        const secret = input.clientSecret?.trim();
-        if (secret) await keychain.set(SECRET_ACCOUNT, toHex(secret));
-        else if (getSetting(db, CLIENT_ID_KEY) !== clientId) await keychain.remove(SECRET_ACCOUNT);
-        setSetting(db, CLIENT_ID_KEY, clientId);
-      } catch (e) {
-        finish({ ok: false, error: e instanceof Error ? e.message : String(e) });
-        throw e;
-      }
+      // Attached before the Keychain step, so a failure there still stops the listener and clears the flow.
       void done.then((r) => {
         // Let the browser get its page before the listener goes.
         clearTimeout(timer);
@@ -191,6 +182,16 @@ export function createGoogleAuth(deps: { db: Database; keychain?: Keychain; fetc
         }, 50);
         if (r.ok) deps.onConnected?.(r.account);
       });
+      try {
+        // A secret belongs to its client: a new client ID without one clears the old one rather than reuse it.
+        const secret = input.clientSecret?.trim();
+        if (secret) await keychain.set(SECRET_ACCOUNT, toHex(secret));
+        else if (getSetting(db, CLIENT_ID_KEY) !== clientId) await keychain.remove(SECRET_ACCOUNT);
+        setSetting(db, CLIENT_ID_KEY, clientId);
+      } catch (e) {
+        finish({ ok: false, error: e instanceof Error ? e.message : String(e) });
+        throw e;
+      }
       const params = new URLSearchParams({
         client_id: clientId,
         redirect_uri: redirect,

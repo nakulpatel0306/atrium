@@ -45,7 +45,7 @@ export const PIM_COPY = {
     "Atrium isn't allowed to read Mail yet. Open System Settings › Privacy & Security › Automation, turn on Mail under Atrium's engine (it may be listed as bun or atrium-pim), then press Sync.",
   calendar_denied:
     "Atrium isn't allowed to read your calendars yet. Open System Settings › Privacy & Security › Calendars, turn on Atrium's engine (it may be listed as bun or atrium-pim), then press Sync.",
-  timeout: "Mail or Calendar didn't answer within a minute. If macOS is asking for permission, answer that dialog, then press Sync.",
+  timeout: "Mail or Calendar didn't answer in time. If macOS is asking for permission, answer that dialog, then press Sync.",
   not_running: "Mail isn't open, so Atrium couldn't read it. Open Mail, then press Sync.",
   other: "Mail or Calendar didn't answer, and Atrium couldn't tell why. Check that both open normally, then press Sync.",
 } as const;

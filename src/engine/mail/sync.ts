@@ -88,9 +88,10 @@ export function createMailSync(deps: {
     try {
       const found = await deps.appleAccounts();
       for (const a of found) upsertAccount(db, { address: a.address, name: a.name, source: "apple", ref: a.ref });
-      // An account removed from Mail.app goes here too, with its cached mail, rather than failing every sync.
+      // An account removed from Mail.app goes here too, with its cached mail, rather than failing every sync. An empty
+      // answer is what Mail can give while it starts up, so it never prunes; a last account is removed in Settings.
       const refs = new Set(found.map((a) => a.ref));
-      for (const a of listAccounts(db)) if (a.source === "apple" && !refs.has(a.ref)) removeAccount(db, a.id);
+      if (refs.size > 0) for (const a of listAccounts(db)) if (a.source === "apple" && !refs.has(a.ref)) removeAccount(db, a.id);
       write(db, PROBLEM_KEYS.mail, null);
     } catch (e) {
       write(db, PROBLEM_KEYS.mail, message(e));
