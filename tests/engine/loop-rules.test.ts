@@ -54,13 +54,18 @@ describe("loop rules", () => {
     expect(overBudget({ ...loop, usage: { tokens: 0, ms: 21 * 60_000, unreported: false } })).toContain("20 minutes");
   });
 
-  test("the same failure reads the same even when timings and temp paths differ", () => {
-    const a = failureSignature([{ name: "Tests", output: "1 fail [12.3ms]\n/private/var/folders/x/T/a.ts:3 expected 2" }]);
-    const b = failureSignature([{ name: "Tests", output: "1 fail [80ms]\n/private/var/folders/y/T/a.ts:3 expected 2" }]);
-    const c = failureSignature([{ name: "Tests", output: "2 fail [80ms]\nexpected 2" }]);
-    expect(a).toBe(b);
-    expect(a).not.toBe(c);
+  test("the same failure reads the same however its timings, clock, colours and temp paths came out", () => {
+    // bun prints the failing test's time on some runs and not others.
+    const timed = "\x1b[31m(fail)\x1b[0m clamp > keeps the upper bound [0.41ms]\nexpected 10, got 12\n/private/var/folders/x/T/a.ts:3\n 0 pass\n 1 fail\nRan 1 test across 1 file. [12.00ms]";
+    const untimed = "(fail) clamp > keeps the upper bound\nexpected 10, got 12\n/private/var/folders/y/T/a.ts:3\n 0 pass\n 1 fail\nRan 1 test across 1 file. [80ms]";
+    const sig = (output: string, exitCode = 1) => failureSignature([{ name: "Tests", exitCode, output }]);
+    expect(sig(timed)).toBe(sig(untimed));
+    expect(sig("at 10:42:07 took 3.2s, 41 MB\nfail")).toBe(sig("at 09:01:55 took 12s, 38 MB\nfail"));
+    // A different failure, or the same text with another exit code, isn't the same.
+    expect(sig(untimed.replace("got 12", "got 11"))).not.toBe(sig(untimed));
+    expect(sig(untimed, 2)).not.toBe(sig(untimed));
   });
+
 
   test("tool watch catches a call repeated in a row and an edit made again and again", () => {
     const watch = toolWatch();

@@ -43,8 +43,8 @@ function branch(files: Record<string, string>, change: (path: string) => void, s
   return { path: r.path, base, head: git(r.path, "rev-parse", "HEAD") };
 }
 
-const gate = (r: { path: string; base: string; head: string }, command: string, goal = "Add totals") =>
-  runGate({ repo: r.path, base: r.base, head: r.head, checks: [{ name: "Tests", command, kind: "full" }], goal, outside: [] });
+const gate = (r: { path: string; base: string; head: string }, command: string, signal?: AbortSignal) =>
+  runGate({ repo: r.path, base: r.base, head: r.head, checks: [{ name: "Tests", command, kind: "full" }], outside: [], signal });
 
 describe("what passing means", () => {
   test("a test that exits 127 fails: an exit code never says a tool is missing", async () => {
@@ -61,7 +61,7 @@ describe("what passing means", () => {
       { name: "Tests", command: "no-such-runner --all", kind: "full" },
     ]);
     expect(results.map((r) => r.status)).toEqual(["passed", "missing"]);
-    expect(judge(results)).toEqual({ verdict: "none", unverified: "Unverified: Tests couldn't run.", attention: ["Tests couldn't run (couldn't run), so it proves nothing."] });
+    expect(judge(results)).toEqual({ verdict: "none", unverified: "Unverified: Tests couldn't run.", attention: ["Tests couldn't run (its tool isn't installed here), so it proves nothing."] });
   });
 
   test("the install never counts as a passing check, and a registry that needs a login leaves it unverified", () => {
@@ -127,19 +127,64 @@ describe("where the checks run", () => {
 });
 
 describe("checks that were already failing", () => {
+  // The bug's own test fails on the base commit, as it does before any fix.
   const failingBase = (change: (p: string) => void) => branch({ "status.txt": "wrong\n" }, change);
 
-  test("a check failing the same way on the base commit doesn't count against the task", async () => {
-    const out = await gate(failingBase((p) => writeFileSync(join(p, "other.txt"), "x")), FAKE_CHECK);
-    expect(out.preexisting).toEqual(["Tests"]);
+  test("a change that leaves the base's failing test failing is never passed: it's unverified, with a note", async () => {
+    // The noop probe: only a comment changes, and the test the task should fix still fails.
+    const out = await gate(failingBase((p) => writeFileSync(join(p, "notes.txt"), "// tidy\n")), FAKE_CHECK);
     expect(out.verdict).toBe("none");
+    expect(out.unverified).toBe("Unverified: Tests was already failing before this task.");
+    expect(out.attention).toContain("Tests was already failing before this task and still fails, so it proves nothing about this change.");
+    expect(out.alreadyFailing.map((f) => f.name)).toEqual(["Tests"]);
+    expect(out.alreadyFailing[0]!.excerpt).toContain('expected "pass", got "wrong"');
   });
 
-  test("a check that now fails differently, or that the task is meant to fix, still counts", async () => {
-    const worse = await gate(failingBase((p) => writeFileSync(join(p, "status.txt"), "worse\n")), FAKE_CHECK);
-    expect([worse.verdict, worse.preexisting]).toEqual(["failed", []]);
-    const meant = await gate(failingBase((p) => writeFileSync(join(p, "other.txt"), "x")), FAKE_CHECK, "Fix the failing tests");
-    expect([meant.verdict, meant.preexisting]).toEqual(["failed", []]);
+  test("a check that passed on the base commit and fails now is a real failure, whatever its output", async () => {
+    const r = branch({ "status.txt": "pass\n" }, (p) => writeFileSync(join(p, "status.txt"), "wrong\n"));
+    const out = await gate(r, FAKE_CHECK);
+    expect([out.verdict, out.alreadyFailing]).toEqual(["failed", []]);
+  });
+
+  test("a check that failed on the base commit and passes now is simply passed", async () => {
+    const out = await gate(failingBase((p) => writeFileSync(join(p, "status.txt"), "pass\n")), FAKE_CHECK);
+    expect([out.verdict, out.alreadyFailing]).toEqual(["passed", []]);
+  });
+
+  test("type debt on the base commit never skips the tests, so what the change breaks is still found", async () => {
+    // The tsdebt probe: 35 type errors already, one more added, and the tests broken.
+    const debt = Array.from({ length: 35 }, (_, i) => `src/old${i}.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.`).join("\n");
+    const r = branch({ "errors.txt": `${debt}\n`, "status.txt": "pass\n" }, (p) => {
+      writeFileSync(join(p, "errors.txt"), `src/aa.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.\n${debt}\n`);
+      writeFileSync(join(p, "status.txt"), "wrong\n");
+    });
+    const out = await runGate({
+      repo: r.path,
+      base: r.base,
+      head: r.head,
+      checks: [
+        { name: "Typecheck", command: "cat errors.txt; exit 2", kind: "fast" },
+        { name: "Tests", command: FAKE_CHECK, kind: "full" },
+      ],
+      outside: [],
+    });
+    expect(out.results!.map((c) => [c.name, c.status])).toEqual([["Typecheck", "failed"], ["Tests", "failed"]]);
+    expect(out.verdict).toBe("failed");
+    expect(out.alreadyFailing.map((f) => f.name)).toEqual(["Typecheck"]);
+  });
+
+  test("a Stop during the base run ends it at once and leaves nothing cached", async () => {
+    const r = branch({ "status.txt": "pass\n" }, (p) => writeFileSync(join(p, "new.txt"), "x"));
+    // Fails at once on the branch; on the base commit it would run for half a minute.
+    const command = "if [ -e new.txt ]; then exit 1; else sleep 30; fi";
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 400);
+    const started = Date.now();
+    await gate(r, command, stop.signal);
+    expect(Date.now() - started).toBeLessThan(8000);
+    // A later gate runs the base again, rather than reading a cut-short result.
+    const again = await gate(r, command.replace("sleep 30", "exit 1"));
+    expect(again.alreadyFailing.map((f) => f.name)).toEqual(["Tests"]);
   });
 });
 
@@ -159,6 +204,22 @@ describe("fail-closed edges", () => {
       expect(readdirSync(outside)).toEqual([]);
     });
   }
+
+  test("a dependency copy that fails leaves the result unverified, never installs into half a copy", async () => {
+    const r = branch(
+      { ".gitignore": "node_modules\n", "package.json": '{ "name": "demo" }\n', "bun.lock": "{}\n" },
+      (p) => writeFileSync(join(p, "package.json"), '{ "name": "demo", "version": "1.0.1" }\n'),
+      (p) => {
+        mkdirSync(join(p, "node_modules", "locked"), { recursive: true });
+        writeFileSync(join(p, "node_modules", "locked", "x"), "x");
+        Bun.spawnSync(["chmod", "000", join(p, "node_modules", "locked")]);
+      },
+    );
+    cleanups.push(() => Bun.spawnSync(["chmod", "-R", "755", join(r.path, "node_modules")]));
+    const out = await gate(r, "true");
+    expect(out.verdict).toBe("none");
+    expect(out.unverified).toBe("Unverified: Atrium couldn't copy node_modules for the install, so it didn't install or run the checks.");
+  });
 
   test("the install can't write through a dependency folder linked to the user's own", async () => {
     const { installProfile } = await import("../../src/engine/checks/sandbox");
@@ -199,7 +260,7 @@ describe("fail-closed edges", () => {
     const t = createTask(db, { spaceId: s.id, title: "Fix" });
     db.query("UPDATE tasks SET loop = ? WHERE id = ?").run(JSON.stringify({ stage: "writing", checks: "passed" }), t.id);
     const loop = getTask(db, t.id)!.loop!;
-    expect([loop.checks, loop.outside, loop.attention, loop.preexisting, loop.unverified]).toEqual(["passed", null, [], [], null]);
+    expect([loop.checks, loop.outside, loop.attention, loop.alreadyFailing, loop.unverified]).toEqual(["passed", null, [], [], null]);
     db.close();
   });
 });

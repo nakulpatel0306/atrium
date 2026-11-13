@@ -35,7 +35,7 @@ export function StageStrip({ task }: { task: Task }) {
 
 const CHECK_WORD: Record<CheckRow["status"], string> = { passed: "passed", failed: "failed", timeout: "timed out", missing: "couldn't run", skipped: "skipped" };
 
-function CheckOutput({ taskId, version, preexisting }: { taskId: string; version: unknown; preexisting: string[] }) {
+function CheckOutput({ taskId, version, alreadyFailing }: { taskId: string; version: unknown; alreadyFailing: string[] }) {
   const rows = useFetched<CheckRow[]>(`/api/tasks/${taskId}/checks`, version);
   if (!rows) return <p className="hint">Loading the check output…</p>;
   if (!rows.length) return <p className="hint">No checks have run yet.</p>;
@@ -43,8 +43,8 @@ function CheckOutput({ taskId, version, preexisting }: { taskId: string; version
     <ul className="check-rows">
       {rows.map((r) => (
         <li key={r.id}>
-          {preexisting.includes(r.name) ? (
-            <span className="tag wait">already failing before this task</span>
+          {alreadyFailing.includes(r.name) && r.status === "failed" ? (
+            <span className="tag wait">still failing, as before this task</span>
           ) : (
             <span className={`tag${r.status === "failed" || r.status === "timeout" ? " bad" : ""}`}>{CHECK_WORD[r.status]}</span>
           )}
@@ -223,7 +223,7 @@ export function LoopPanel({ task, repo, showChecks }: { task: Task; repo: boolea
           </button>
         </div>
       )}
-      {checksOpen && <CheckOutput taskId={task.id} version={task.updatedAt} preexisting={loop?.preexisting ?? []} />}
+      {checksOpen && <CheckOutput taskId={task.id} version={task.updatedAt} alreadyFailing={(loop?.alreadyFailing ?? []).map((f) => f.name)} />}
       {loop?.reviews.map((r, i) => (
         <div className="review-round" key={i}>
           <b>

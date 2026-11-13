@@ -5,7 +5,6 @@ import { newId } from "../ids";
 import { runAgentProcess } from "../agents/process";
 import { SANDBOX_EXEC, seatbeltFailure, withPrivateTmp } from "../agents/seatbelt";
 import type { Check } from "./detect";
-import { failureSignature } from "../loop";
 import { checkProfile, installProfile, wrapCheck } from "./sandbox";
 
 export type CheckStatus = "passed" | "failed" | "timeout" | "missing" | "skipped";
@@ -26,13 +25,13 @@ export async function runChecks(
   opts: { signal?: AbortSignal; timeoutMs?: number; onLine?: (line: string) => void; sandboxExec?: string } = {},
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
-  // The engine's install first, then fast checks, then the full test run.
+  // The engine's install first, then fast checks, then the full test run. Every check runs whatever the others
+  // said: a typecheck that was already failing must not hide what the tests would find.
   const ordered = [...checks.filter((c) => c.kind === "fast"), ...checks.filter((c) => c.kind === "full")];
   for (const check of ordered) {
     if (opts.signal?.aborted) break;
-    // Nothing runs on dependencies that didn't install, and a full test run is wasted on code that doesn't typecheck.
-    const broken = (r: CheckResult) => r.status !== "passed";
-    if (results.some((r) => r.install && broken(r)) || (check.kind === "full" && results.some((r) => r.status === "failed"))) {
+    // Nothing runs on dependencies that didn't install.
+    if (results.some((r) => r.install && r.status !== "passed")) {
       results.push({ ...check, status: "skipped", exitCode: null, output: "", durationMs: 0 });
       continue;
     }
@@ -151,27 +150,39 @@ export type Judgement = {
   attention: string[];
 };
 
+const UNRUN: Partial<Record<CheckStatus, string>> = { missing: "its tool isn't installed here", timeout: "it timed out", skipped: "the install it needed didn't happen" };
+
 // What a turn's results prove. A check that couldn't run (a missing tool, a timeout, one skipped because the
 // install didn't happen) proves nothing, so the result is never "passed" with it; the install itself is never
-// counted as a passing check. `preexisting` are checks that failed the same way on the base commit.
-export function judge(results: CheckResult[], preexisting: Set<string> = new Set()): Judgement {
+// counted as a passing check. `alreadyFailing` are checks that failed on the base commit too: one that still fails
+// proves nothing about this change either, so it can't fail the task and can't pass it.
+export function judge(results: CheckResult[], alreadyFailing: Set<string> = new Set()): Judgement {
   const install = results.find((r) => r.install);
   const loginNeeded = install?.status === "failed" && REGISTRY_LOGIN.test(install.output);
-  const failed = results.filter((r) => r.status === "failed" && !preexisting.has(r.name) && !(r.install && loginNeeded));
+  const failed = results.filter((r) => r.status === "failed" && !alreadyFailing.has(r.name) && !(r.install && loginNeeded));
   if (failed.length) return { verdict: "failed", unverified: null, attention: [] };
   if (loginNeeded) {
     const why = "Unverified: Atrium couldn't install the dependencies because the registry needs your login, which checks never get.";
     return { verdict: "none", unverified: why, attention: [] };
   }
-  const unrun = results.filter((r) => !r.install && (r.status === "missing" || r.status === "timeout" || r.status === "skipped"));
-  if (unrun.length) {
-    const names = unrun.map((r) => r.name).join(", ");
-    return { verdict: "none", unverified: `Unverified: ${names} couldn't run.`, attention: unrun.map((r) => `${r.name} couldn't run (${STATUS_WORD[r.status]}), so it proves nothing.`) };
+  const unrun = results.filter((r) => !r.install && UNRUN[r.status]);
+  const stale = results.filter((r) => r.status === "failed" && alreadyFailing.has(r.name));
+  if (unrun.length || stale.length) {
+    const why = [
+      ...(unrun.length ? [`${unrun.map((r) => r.name).join(", ")} couldn't run`] : []),
+      ...(stale.length ? [`${stale.map((r) => r.name).join(", ")} ${stale.length === 1 ? "was" : "were"} already failing before this task`] : []),
+    ];
+    const attention = [
+      ...unrun.map((r) => `${r.name} couldn't run (${UNRUN[r.status]}), so it proves nothing.`),
+      ...stale.map((r) => `${r.name} was already failing before this task and still fails, so it proves nothing about this change.`),
+    ];
+    return { verdict: "none", unverified: `Unverified: ${why.join("; ")}.`, attention };
   }
   return { verdict: results.some((r) => !r.install && r.status === "passed") ? "passed" : "none", unverified: null, attention: [] };
 }
 
-export const signatureOf = (r: CheckResult) => failureSignature([{ name: r.name, output: r.output }]);
+// The end of a check's output, for telling the writer and the reviewer what was already failing.
+export const excerptOf = (r: CheckResult, lines = 15) => r.output.trimEnd().split("\n").slice(-lines).join("\n").slice(-1500);
 
 // The short report the writer gets after a failing turn.
 export function failureReport(results: CheckResult[]): string {

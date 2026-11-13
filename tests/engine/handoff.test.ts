@@ -33,9 +33,13 @@ afterEach(async () => {
   while (cleanups.length) cleanups.pop()!();
 });
 
+// The fake check passes on the base commit, so a failure is the writer's; "already failing" tests set their own base.
 function repo() {
   const r = tempRepo();
   cleanups.push(r.cleanup);
+  writeFileSync(join(r.path, "status.txt"), "pass\n");
+  git(r.path, "add", "-A");
+  git(r.path, "commit", "-qm", "passing base");
   return r.path;
 }
 
@@ -65,6 +69,8 @@ function writer(statuses: string[], summary = "Changed it.\nOUTCOME: done") {
   return fake("claude", (input, n) => {
     if (input.mode === "review") return ok("Looks fine.\nVERDICT: approve");
     writeFileSync(join(input.cwd, "status.txt"), `${statuses[Math.min(n, statuses.length) - 1]}\n`);
+    // Something changes every turn, whatever the status, so there's always a commit to check.
+    writeFileSync(join(input.cwd, "work.txt"), `turn ${n}\n`);
     return ok(summary);
   });
 }
@@ -111,7 +117,7 @@ describe("checks", () => {
     const reviewer = codex.calls[0]!;
     expect(reviewer.mode).toBe("review");
     expect(reviewer.prompt).toContain("## Acceptance criteria\n- Totals add up");
-    expect(reviewer.prompt).toContain("+pass");
+    expect(reviewer.prompt).toContain("+turn 1");
     expect(reviewer.prompt).toContain("FINDING <high|medium|low> <file>:<line>");
     expect(reviewer.prompt).not.toContain("Changed it.");
     const detail = approval(t.id)!.detail;
@@ -342,7 +348,7 @@ describe("changes to the checks themselves", () => {
     const codex = fake("codex", () => ok("VERDICT: approve"));
     start({ claude: claude.adapter, codex: codex.adapter });
     await waitFor(() => status(t.id) === "review");
-    expect(codex.calls[0]!.prompt).toContain("## Look closely\nAtrium noticed this change touches its own checks.");
+    expect(codex.calls[0]!.prompt).toContain("## Look closely\nAtrium noticed these about this change and its checks.");
     expect(codex.calls[0]!.prompt).toContain("This change edits how checks run: package.json.");
     expect(approval(t.id)!.detail).toContain("Look closely:\n- This change edits how checks run: package.json.");
   });
@@ -430,7 +436,7 @@ describe("changes to the checks themselves", () => {
     start({
       claude: fake("claude", (input) => {
         writeFileSync(join(input.cwd, "bunfig.toml"), "[test]\npreload = ['./pass.ts']\n");
-        writeFileSync(join(input.cwd, "status.txt"), "pass\n");
+        writeFileSync(join(input.cwd, "totals.ts"), "export const total = 1;\n");
         return ok("Done.\nOUTCOME: done");
       }).adapter,
     });
@@ -574,5 +580,60 @@ describe("the brief as the first stage", () => {
     await waitFor(() => status(t.id) === "running");
     expect(await r.stopTask(t.id)).toBe("stopped");
     expect(getTask(db, t.id)!.blockedReason).toBe("You stopped this task. Retry to run it again.");
+  });
+});
+
+describe("checks already failing before the task", () => {
+  // The bug's own test fails on the base commit.
+  function failingRepo() {
+    const path = repo();
+    writeFileSync(join(path, "status.txt"), "wrong\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-qm", "the bug");
+    return path;
+  }
+
+  test("a change that leaves the bug's test failing is unverified, the reviewer is told, and it never reads as passed", async () => {
+    const s = space(failingRepo());
+    const t = createTask(db, { spaceId: s.id, title: "Make clamp respect the upper bound" });
+    const claude = fake("claude", (input) => {
+      if (input.mode === "review") return ok("VERDICT: approve");
+      writeFileSync(join(input.cwd, "notes.txt"), "// tidy\n");
+      return ok("Done.\nOUTCOME: done");
+    });
+    const codex = fake("codex", () => ok("VERDICT: approve"));
+    start({ claude: claude.adapter, codex: codex.adapter });
+    await waitFor(() => status(t.id) === "review");
+    const loop = getTask(db, t.id)!.loop!;
+    expect(loop.checks).toBe("none");
+    expect(loop.unverified).toBe(`Unverified: ${FAKE_CHECK} was already failing before this task.`);
+    // Not sent back to the writer as its own failure, and not a loop.
+    expect(claude.calls.filter((c) => c.mode === "work")).toHaveLength(1);
+    const detail = approval(t.id)!.detail;
+    expect(detail).toContain(`Unverified: ${FAKE_CHECK} was already failing before this task.`);
+    expect(detail).not.toContain("Checks: passed");
+    expect(codex.calls[0]!.prompt).toContain("## Already failing before this task");
+    expect(codex.calls[0]!.prompt).toContain('expected "pass", got "wrong"');
+  });
+
+  test("the writer is told what was already failing, and that it may run the checks only as plain single commands", async () => {
+    const s = space(failingRepo(), { reviewBy: "off", checks: `test ! -e broken.txt\n${FAKE_CHECK}` });
+    const t = createTask(db, { spaceId: s.id, title: "Add totals" });
+    let turn = 0;
+    const claude = fake("claude", (input) => {
+      turn++;
+      // The first turn breaks the fast check, a real failure; the second fixes it and leaves the old one alone.
+      if (turn === 1) writeFileSync(join(input.cwd, "broken.txt"), "x\n");
+      else Bun.spawnSync(["rm", "-f", "broken.txt"], { cwd: input.cwd });
+      writeFileSync(join(input.cwd, "work.txt"), `turn ${turn}\n`);
+      return ok("Done.\nOUTCOME: done");
+    });
+    start({ claude: claude.adapter });
+    await waitFor(() => status(t.id) === "review");
+    expect(claude.calls[0]!.prompt).toContain("only exactly as written, one command per call");
+    expect(claude.calls).toHaveLength(2);
+    expect(claude.calls[1]!.prompt).toContain("## Atrium's checks failed after your last turn");
+    expect(claude.calls[1]!.prompt).toContain("## Already failing before this task\nLeave them alone unless the brief asks for them");
+    expect(getTask(db, t.id)!.loop!.alreadyFailing.map((f) => f.name)).toEqual([FAKE_CHECK]);
   });
 });

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, readlink } from "node:fs/promises";
 import { basename, dirname, join, normalize } from "node:path";
 import { changedText, fileAt, outsideGit, treeEntries } from "../git";
+import { DEPENDENCY_DIRS } from "../agents/seatbelt";
 import { type Check, touchesInstallConfig } from "./detect";
 
 // Files that decide how a project's checks run: manifests and lockfiles, build files, test runner and linter
@@ -83,8 +84,10 @@ const unsure = (v: string) => v === OVERSIZE || v === SPECIAL || v.startsWith(LI
 
 // Config files outside git (ignored, or untracked) as they are now, by content hash. Taken when a task starts, so
 // files that were already there unchanged are never put down to the task. Only regular files are read, and only up
-// to a cap: an agent can leave a FIFO or a link that would hang or mislead a read. A link is recorded by its
-// target, never followed; a link, a special file or an oversized file counts as changed every time.
+// to a cap: an agent can leave a link that would mislead a read. A link is recorded by its target, never followed;
+// a link, an oversized file or a special one counts as changed every time. git doesn't list FIFOs or devices, so a
+// special file only turns up here if one replaced a listed file meanwhile; checks never read the user's checkout,
+// so none of them can change a result.
 export async function outsideSnapshot(repo: string): Promise<Record<string, string>> {
   const snap: Record<string, string> = {};
   for (const path of (await outsideGit(repo)).filter((p) => isConfig(p))) {
@@ -116,6 +119,9 @@ export async function checkAttention(repo: string, base: string, head: string, c
   const config = committed.filter((p) => isConfig(p, extra));
   const notes: string[] = [];
   if (config.length) notes.push(`This change edits how checks run: ${list(config)}.`);
+  // Checks never use a committed dependency folder, but the branch would carry it into the user's repo.
+  const deps = committed.filter((p) => p.toLowerCase().split("/").some((part) => DEPENDENCY_DIRS.includes(part)));
+  if (deps.length) notes.push(`This change commits files into a dependency folder: ${list(deps)}.`);
   if (outside.length) notes.push(`This change leaves config outside git in your checkout: ${list(outside)}. Atrium's checks don't see it, but your own commands there will.`);
   const tests = (paths: string[]) => paths.filter((p) => TEST_FILE.test(p)).length;
   const [before, after] = [tests(baseTree), tests((await treeEntries(repo, head)).map((e) => e.path))];

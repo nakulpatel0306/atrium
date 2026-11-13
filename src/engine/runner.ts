@@ -27,7 +27,7 @@ import {
   returnToBranch,
   reviewDiff,
 } from "./git";
-import { loopNotes, recordReview, resolvedAgent, roundsLeft, startReview, triageFeedback, wantsTriage } from "./handoff";
+import { alreadyFailingSection, loopNotes, recordReview, resolvedAgent, roundsLeft, startReview, triageFeedback, wantsTriage } from "./handoff";
 import { briefSections, checksSection, gapHints, normalizeBrief } from "./brief";
 import { draftBrief } from "./brief-draft";
 import { withoutBlock } from "./attachment-rules";
@@ -272,7 +272,8 @@ export function createRunner(deps: {
         waits.push({ taskId: task.id, agent: task.agent, kind: "cloning", reason: `Getting a local copy of ${space.github} from GitHub…` });
         continue;
       }
-      const check = canRun(task, source);
+      // The brief's pre-pass is a short read-only call, so it runs on battery; the writer after it waits for power.
+      const check = task.loop?.stage === "brief" ? ({ ok: true } as const) : canRun(task, source);
       if (!check.ok) {
         waits.push({ taskId: task.id, agent: task.agent, kind: "power", reason: check.reason });
         continue;
@@ -991,18 +992,17 @@ export function createRunner(deps: {
     const loop = getTask(db, task.id)!.loop!;
     const ahead = await git(repo.path, ["rev-list", "--count", `${repo.start}..${repo.branch}`]);
     if (ahead.code !== 0) throw new Error(`Couldn't count the commits on ${repo.branch}: ${ahead.err.trim()}`);
-    if (Number(ahead.out.trim()) === 0) return { verdict: "none", results: null, sha: null, noChanges: true, attention: [], unverified: null, preexisting: [] };
+    if (Number(ahead.out.trim()) === 0) return { verdict: "none", results: null, sha: null, noChanges: true, attention: [], unverified: null, alreadyFailing: [] };
     const sha = (await headRef(repo.path)).sha;
     if (sha === loop.checkedSha) {
       const verdict = loop.checks === "failed" ? "failed" : loop.checks === "passed" ? "passed" : "none";
-      return { verdict, results: null, sha, noChanges: false, attention: loop.attention, unverified: loop.unverified, preexisting: loop.preexisting };
+      return { verdict, results: null, sha, noChanges: false, attention: loop.attention, unverified: loop.unverified, alreadyFailing: loop.alreadyFailing };
     }
     setTaskLoop(db, task.id, { ...loop, stage: "checks", checks: "running" });
     const base = await git(repo.path, ["rev-parse", "--verify", `${repo.start}^{commit}`]);
     if (base.code !== 0) throw new Error(`Couldn't read ${repo.start}: ${base.err.trim()}`);
     const outside = await changedOutside(repo.path, loop.outside ?? null);
-    const goal = task.brief?.goal || task.title;
-    const gate = await runGate({ repo: repo.path, base: base.out.trim(), head: sha, checks, goal, outside, signal, onLine: line });
+    const gate = await runGate({ repo: repo.path, base: base.out.trim(), head: sha, checks, outside, signal, onLine: line });
     if (gate.results) saveChecks(db, task.id, runId, gate.results);
     return { ...gate, sha, noChanges: false };
   }
@@ -1012,14 +1012,16 @@ export function createRunner(deps: {
   async function afterTurn(task: Task, space: Space, repo: RepoRun, gate: Gate | null, lines: string[]) {
     const before = task.loop!;
     let loop: LoopState = { ...before, report: lines, feedback: null };
-    if (gate?.noChanges) loop = { ...loop, noChanges: true, checks: "none", attention: [], unverified: null, preexisting: [] };
+    if (gate?.noChanges) loop = { ...loop, noChanges: true, checks: "none", attention: [], unverified: null, alreadyFailing: [] };
     else if (gate) {
       const passing = gate.results ? gate.results.filter((c) => c.status === "passed" && !c.install).map((c) => c.name) : before.passing;
-      loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified, preexisting: gate.preexisting };
+      loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified, alreadyFailing: gate.alreadyFailing };
     }
     const writer = agentName(resolvedAgent(db, task));
     if (loop.checks === "failed") {
-      const failed = (gate?.results ?? []).filter((c) => c.status === "failed" && !gate!.preexisting.includes(c.name));
+      // A check that was already failing before the task neither counts as this turn's failure nor trips loop detection.
+      const stale = new Set(loop.alreadyFailing.map((f) => f.name));
+      const failed = (gate?.results ?? []).filter((c) => c.status === "failed" && !stale.has(c.name));
       // A turn that changed nothing repeats the last failure, which is the same failure twice.
       const sig = failed.length ? failureSignature(failed) : before.failSig;
       const newlyPassing = loop.passing.some((n) => !before.passing.includes(n));
@@ -1173,7 +1175,7 @@ type Gate = GateOutcome & { sha: string | null; noChanges: boolean };
 // run or were already failing, no review that asked for changes, and a review (unless the space turned it off)
 // that approved it first time.
 function cleanLoop(loop: LoopState | null, space: Space): boolean {
-  if (!loop || loop.attention.length || loop.unverified || loop.preexisting.length || loop.triaged || loop.checks === "failed") return false;
+  if (!loop || loop.attention.length || loop.unverified || loop.alreadyFailing.length || loop.triaged || loop.checks === "failed") return false;
   return space.reviewBy === "off" || (loop.reviews.length === 1 && loop.reviews[0]!.verdict === "approve");
 }
 
@@ -1193,6 +1195,7 @@ function buildPrompt(task: Task, space: Space, checks: string[] | null): string 
   else if (checks) parts.push(checksSection(checks));
   if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
   if (task.loop?.feedback) parts.push(task.loop.feedback);
+  if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
   if (space.goal.trim()) parts.push(`Space goal: ${space.goal.trim()}`);
   return parts.join("\n\n");
 }

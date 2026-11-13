@@ -130,18 +130,18 @@ describe("running checks", () => {
     expect(failureReport(results)).toContain("`echo 'expected 2, got 3' >&2; exit 1` failed (exit 1)");
   });
 
-  test("a failing fast check skips the full test run", async () => {
+  test("a failing fast check never skips the full test run", async () => {
     const results = await runChecks(dir(), [
-      { name: "Tests", command: "echo ran > ran.txt", kind: "full" },
+      { name: "Tests", command: "echo ran", kind: "full" },
       { name: "Typecheck", command: "exit 2", kind: "fast" },
     ]);
-    expect(results.map((r) => [r.name, r.status])).toEqual([["Typecheck", "failed"], ["Tests", "skipped"]]);
+    expect(results.map((r) => [r.name, r.status])).toEqual([["Typecheck", "failed"], ["Tests", "passed"]]);
   });
 
   test("a tool that isn't installed couldn't run, which leaves the result unverified", async () => {
     const results = await runChecks(dir(), [{ name: "Lint", command: "no-such-tool-here --check", kind: "fast" }]);
     expect(results[0]!.status).toBe("missing");
-    expect(judge(results)).toEqual({ verdict: "none", unverified: "Unverified: Lint couldn't run.", attention: ["Lint couldn't run (couldn't run), so it proves nothing."] });
+    expect(judge(results)).toEqual({ verdict: "none", unverified: "Unverified: Lint couldn't run.", attention: ["Lint couldn't run (its tool isn't installed here), so it proves nothing."] });
   });
 
   test("a check that runs too long is stopped", async () => {
@@ -293,6 +293,16 @@ describe("changes to the checks themselves", () => {
     );
     const checks = await detectChecks(r.path, r.base);
     expect(await checkAttention(r.path, r.base, r.head, await committed(r), [], checks)).toEqual(["This change edits how checks run: config/strict.json, run-tests.sh."]);
+  });
+
+  test("committing into a dependency folder is named", async () => {
+    const r = branchWith({ "src/a.ts": "" }, (p) => {
+      mkdirSync(join(p, "packages", "x", "node_modules", "dep"), { recursive: true });
+      writeFileSync(join(p, "packages", "x", "node_modules", "dep", "index.js"), "module.exports = 1;");
+      // Forced, as a global ignore of node_modules would otherwise keep it out of the commit.
+      Bun.spawnSync(["git", "add", "-f", "packages"], { cwd: p });
+    });
+    expect(await checkAttention(r.path, r.base, r.head, await committed(r), [], [])).toEqual(["This change commits files into a dependency folder: packages/x/node_modules/dep/index.js."]);
   });
 
   test("silencing a checker in place is named", async () => {

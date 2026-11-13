@@ -92,6 +92,11 @@ export function briefSections(brief: Brief, checks: string[] | null): string[] {
 
 export function checksSection(checks: string[]): string {
   return checks.length
-    ? `## How it's checked\nAfter your turn Atrium runs these itself and sends you anything that fails, even ones you can't run yourself:\n${bullets(checks.map((c) => `\`${c}\``))}`
+    ? [
+        "## How it's checked",
+        "After your turn Atrium runs these itself, in a checkout of their own, and sends you anything that fails:",
+        bullets(checks.map((c) => `\`${c}\``)),
+        "You may run them yourself to check your work, but only exactly as written, one command per call: pipes, redirects, `&&`, `;` or extra commands around them are refused. You don't have to run them; Atrium does either way.",
+      ].join("\n")
     : "## How it's checked\nThis repo has no checks Atrium can run, so say in your summary how you checked your work.";
 }

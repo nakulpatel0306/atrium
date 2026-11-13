@@ -2203,3 +2203,15 @@ describe("live changes", () => {
     expect(n).toBe(after);
   });
 });
+
+test("on battery a heavy task drafts its brief, then its writer waits for power", async () => {
+  const path = repo();
+  const s = repoSpace(path);
+  const t = createTask(db, { spaceId: s.id, title: "Add totals", detail: "Add totals" });
+  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.medium), stage: "brief" });
+  const { adapter, calls } = fakeAdapter((input) => ok(input.model === "haiku" ? JSON.stringify({ goal: "Add totals" }) : "Did it."));
+  start({ adapter, power: async () => "battery" });
+  await waitFor(() => getTask(db, t.id)!.loop!.stage === "writing" && waits().some((w) => w.taskId === t.id && w.kind === "power"));
+  expect(calls.map((c) => c.model)).toEqual(["haiku"]);
+  expect(getTask(db, t.id)!.brief!.goal).toBe("Add totals");
+});
