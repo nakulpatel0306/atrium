@@ -14,7 +14,7 @@ export type Pane = "spaces" | "tasks" | "detail" | "live";
 // rest are the prompts other keys open in the same box.
 export type AskPurpose = "ask" | "space" | "reply" | "goal" | "filter" | "answer";
 // Answers so far to a brief's questions, while they're being given one at a time.
-export type Answering = { step: number; answers: { question: string; answer: string }[] };
+export type Answering = { step: number; answers: { question: string; answer: string }[]; shape?: "single" | "proposed" };
 export type Ask = { purpose: AskPurpose; value: string; cursor: number; agent: AgentChoice; targetId: string | null; answering?: Answering };
 
 export type Overlay =

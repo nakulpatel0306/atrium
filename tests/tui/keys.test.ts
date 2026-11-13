@@ -8,6 +8,7 @@ import { deriveView } from "../../src/tui/select";
 import { initialUi, type Overlay, pin, reduce, type Ui } from "../../src/tui/ui";
 import { ids, makeState, task } from "./fixtures";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
+import { proposeShape } from "../../src/engine/shape";
 import { key } from "./key";
 
 const rows = { detail: 20, live: 10, investRows: 2 };
@@ -338,4 +339,45 @@ test("the asking card and the question box show the questions and numbered answe
   expect(shown).toContain("1 Weekly");
   expect(shown).toContain("3 Type an answer");
   expect(shown).toContain("4 Leave it to the agent");
+});
+
+// A queued task whose pre-pass proposed a split, which waits for a yes, with one question of its brief too.
+function shaped(): State {
+  const state = makeState();
+  const shape = proposeShape({ kind: "split", reason: "two pieces", parts: [{ title: "A", goal: "a", files: ["a.ts"] }, { title: "B", goal: "b", files: ["b.ts"] }] }, { size: "medium", checksFound: true });
+  state.tasks.push(
+    task({ id: "tsk_shape", title: "Totals", status: "queued", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "brief", shape, questions: [{ question: "Weekly?", options: ["Yes", "No"] }] } }),
+  );
+  return state;
+}
+
+test("the terminal app answers a costlier shape with the questions, in the same step", () => {
+  const state = shaped();
+  const home = { selected: { ...initialUi.selected, needs: { id: "tsk_shape", index: 0 } } };
+  const yes = play(["a", "1", "1"], home, state);
+  expect(yes.intents).toEqual([{ type: "answerBrief", taskId: "tsk_shape", title: "Totals", answers: [{ question: "Weekly?", answer: "Yes" }], shape: "split" }]);
+  const one = play(["a", "1", "2"], home, state);
+  expect(one.intents).toEqual([{ type: "answerBrief", taskId: "tsk_shape", title: "Totals", answers: [{ question: "Weekly?", answer: "Yes" }], shape: "single" }]);
+});
+
+test("the shape step reads as a question with two answers, and the detail shows the shape and its parts", async () => {
+  const { answerOver } = await import("../../src/tui/screens/overlays");
+  const { taskDetail } = await import("../../src/tui/detail");
+  const state = shaped();
+  const text = (lines: { text: string }[][]) => lines.map((l) => l.map((s) => s.text).join("")).join("\n");
+  const box = text(answerOver(Array.from({ length: 20 }, () => []), { kind: "answer", taskId: "tsk_shape", index: 0, step: 1, answers: [] }, state, 100, 0).lines);
+  expect(box).toContain("2/2 · Split into 2 tasks: two pieces.");
+  expect(box).toContain("1 Yes, split into tasks");
+  expect(box).toContain("2 One writer instead");
+  // A parent whose parts are ready: each one read-only, and where to decide.
+  const parent = state.tasks.find((t) => t.id === "tsk_shape")!;
+  parent.loop = { ...parent.loop!, stage: "pick", questions: [], fanout: { kind: "split", children: ["tsk_a"], scores: {}, judgeNote: null } };
+  state.tasks.push(task({ id: "tsk_a", title: "Part A", status: "done", parentTaskId: "tsk_shape", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", role: "part" } }));
+  state.spend.tasks.tsk_shape = { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 90, input: 100 };
+  const ui = { ...initialUi, tab: "spaces" as const, focus: "tasks" as const, selected: { ...initialUi.selected, tasks: { id: "tsk_shape", index: 3 } } };
+  const shown = text(taskDetail(deriveView(state, ui), null));
+  expect(shown).toContain("Shape: Split into 2 tasks: two pieces");
+  expect(shown).toContain("Cost: 412k weighted tokens · ~$1.84 est. at list prices · 90% from cache");
+  expect(shown).toContain("ready Part A");
+  expect(shown).toContain("Open their pull requests or merge them on the dashboard.");
 });
