@@ -68,13 +68,13 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
         <input value={brief.goal} onChange={(e) => set("goal", e.target.value)} />
       </label>
       <label>
-        {repo ? "Acceptance criteria" : "Done when"} <span className="hint">one per line</span>
+        <span>{repo ? "Acceptance criteria" : "Done when"} <span className="hint">one per line</span></span>
         <textarea rows={2} value={brief.acceptance.join("\n")} onChange={(e) => set("acceptance", lines(e.target.value))} />
       </label>
       {repo && (
         <>
           <label>
-            Check with <span className="hint">a command, or auto for {draft.checks.length ? draft.checks.join(", ") : "what Atrium finds"}</span>
+            <span>Check with <span className="hint">a command, or auto for {draft.checks.length ? draft.checks.join(", ") : "what Atrium finds"}</span></span>
             <input className="mono" value={brief.verify} onChange={(e) => set("verify", e.target.value.trim() || "auto")} />
           </label>
           <div className="brief-row">
@@ -94,11 +94,11 @@ export function BriefCard({ draft, repo, busy, onRun, onDiscard }: Props) {
             </label>
           </div>
           <label>
-            Not in scope <span className="hint">one per line</span>
+            <span>Not in scope <span className="hint">one per line</span></span>
             <textarea rows={1} value={brief.nonGoals.join("\n")} onChange={(e) => set("nonGoals", lines(e.target.value))} />
           </label>
           <label>
-            Look at first <span className="hint">one file per line</span>
+            <span>Look at first <span className="hint">one file per line</span></span>
             <textarea className="mono" rows={1} value={brief.lookFirst.join("\n")} onChange={(e) => set("lookFirst", lines(e.target.value))} />
           </label>
         </>
