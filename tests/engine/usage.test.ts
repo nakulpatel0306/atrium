@@ -8,6 +8,8 @@ import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { claudeSince, recordUsage, spaceSpend, spendWindows, taskSpend, turnModels } from "../../src/engine/usage";
 import { createRegistry } from "../../src/engine/agents/registry";
 import { snapshot } from "../../src/engine/state";
+import { Database } from "bun:sqlite";
+import { createSpace } from "../../src/engine/spaces";
 import { tempHome } from "../helpers";
 import { fake, loopHarness, ok, waitFor, writer } from "./loop-harness";
 
@@ -156,17 +158,48 @@ test("the plan gauge shows Claude's own reading with when it was taken, and what
   expect(snapshot(h.db).plan).toMatchObject({ fiveHour: null, sevenDay: null });
 });
 
-test("an older database gains the usage ledger, and its tasks show no spend", () => {
+test("an older database gains the usage ledger: its tasks show no spend, and new runs are logged", () => {
   const t = tempHome();
   const path = join(t.home, "atrium.db");
-  const first = openDb(path);
-  first.exec("INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_old', 'Old', 'general', '#fff', 1, 1)");
-  first.exec("INSERT INTO tasks (id, space_id, title, agent, weight, created_at, updated_at) VALUES ('tsk_old', 'spc_old', 'Kept', 'auto', 'light', 1, 1)");
-  first.exec("DROP TABLE usage_log");
-  first.close();
+  // The shape of an install from before the ledger, with a task and a run of its own.
+  const old = new Database(path);
+  old.exec(`CREATE TABLE spaces (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', color TEXT NOT NULL,
+    repo_path TEXT, private INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE tasks (
+    id TEXT PRIMARY KEY, space_id TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued', blocked_reason TEXT, agent TEXT NOT NULL, weight TEXT NOT NULL,
+    allow_on_battery INTEGER NOT NULL DEFAULT 0, branch TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE runs (
+    id TEXT PRIMARY KEY, task_id TEXT NOT NULL, agent TEXT NOT NULL, started_at INTEGER NOT NULL, ended_at INTEGER,
+    exit_code INTEGER, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, transcript_path TEXT NOT NULL);
+  INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_old', 'Old', 'repo', '#fff', 1, 1);
+  INSERT INTO tasks (id, space_id, title, agent, weight, status, created_at, updated_at) VALUES ('tsk_old', 'spc_old', 'Kept', 'claude', 'heavy', 'done', 1, 1);
+  INSERT INTO runs (id, task_id, agent, started_at, input_tokens, output_tokens, transcript_path) VALUES ('run_old', 'tsk_old', 'claude', 1, 10, 20, '/nowhere')`);
+  old.close();
   const db = openDb(path);
   expect(taskSpend(db)).toEqual({});
   expect(getTask(db, "tsk_old")?.title).toBe("Kept");
+  recordUsage(db, { taskId: "tsk_old", spaceId: "spc_old", agent: "claude", purpose: "write", models: [tokens("claude-sonnet-5-5", 100)] });
+  expect(taskSpend(db).tsk_old?.weighted).toBe(100);
+  // Jobs are checked in code, not by the table, so a later one needs no rebuild.
+  expect(() => recordUsage(db, { taskId: null, spaceId: null, agent: "claude", purpose: "guess" as never, models: [tokens("m", 1)] })).toThrow("Unknown usage purpose");
+  db.exec("INSERT INTO usage_log (id, agent, purpose, created_at) VALUES ('use_x', 'claude', 'walkthrough', 1)");
   db.close();
+  openDb(path).close();
   t.cleanup();
+});
+
+test("a fan-out's parent counts every part or attempt, and each child keeps its own", () => {
+  const s = createSpace(h.db, { name: "App", kind: "repo", goal: "", repoPath: "/tmp/x" });
+  const parent = createTask(h.db, { spaceId: s.id, title: "Totals" });
+  const part = createTask(h.db, { spaceId: s.id, title: "Part", parentTaskId: parent.id });
+  const review = createTask(h.db, { spaceId: s.id, title: "Review: Part", kind: "review", parentTaskId: part.id });
+  recordUsage(h.db, { taskId: parent.id, spaceId: s.id, agent: "claude", purpose: "judge", models: [tokens("claude-opus-5-5", 10)] });
+  recordUsage(h.db, { taskId: part.id, spaceId: s.id, agent: "claude", purpose: "write", models: [tokens("claude-sonnet-5-5", 100)] });
+  recordUsage(h.db, { taskId: review.id, spaceId: s.id, agent: "claude", purpose: "review", models: [tokens("claude-opus-5-5", 1000)] });
+  const spend = taskSpend(h.db);
+  expect(spend[part.id]!.weighted).toBe(1100);
+  expect(spend[parent.id]!.weighted).toBe(1110);
 });

@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRunInput } from "../../src/engine/agents/types";
 import { listPending } from "../../src/engine/approvals";
-import { childrenOf, childState, FanoutRefused, mergeParts, pickAttempt } from "../../src/engine/fanout";
+import { childrenOf, childState, discardFanout, FanoutRefused, mergeParts, pickAttempt } from "../../src/engine/fanout";
 import { asksBeforeStarting } from "../../src/engine/needs";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { normalizeBrief } from "../../src/engine/brief";
@@ -127,6 +127,8 @@ describe("split", () => {
     expect(git(path, "show", `atrium/${t.id}:api.txt`)).toBe("api.txt");
     expect(git(path, "show", `atrium/${t.id}:docs.txt`)).toBe("docs.txt");
     expect(git(path, "branch", "--show-current")).toBe("main");
+    // The merge holds the parts' commits, so their own branches went.
+    for (const p of parts) expect(git(path, "branch", "--list", p.branch!)).toBe("");
     // The merge went through Atrium's own checks, with no writer turn in between.
     const parent = h.task(t.id);
     expect(parent.loop!.checks).toBe("passed");
@@ -180,6 +182,8 @@ describe("best of N", () => {
     h.runner!.kick();
     await waitFor(() => h.status(t.id) === "review");
     expect(git(path, "rev-parse", `atrium/${t.id}`)).toBe(head);
+    // The kept commit reads as the task's own, not as "attempt 2 of 3".
+    expect(git(path, "log", "-1", "--format=%s", `atrium/${t.id}`)).toBe("Speed up totals");
     for (const a of attempts) expect(git(path, "branch", "--list", a.branch!)).toBe("");
     // The checks ran on that commit already, so their result carries over without another run.
     expect(h.task(t.id).loop!.checks).toBe("passed");
@@ -196,6 +200,9 @@ describe("best of N", () => {
     h.start({ claude: claude.adapter });
     await waitFor(() => h.status(t.id) === "blocked", 15000);
     expect(h.task(t.id).blockedReason).toContain("None of the 2 attempts passed Atrium's checks");
+    // Nothing needs the attempts' branches any more.
+    const path = getSpace(h.db, s.id)!.repoPath!;
+    await waitFor(() => git(path, "branch", "--list", "atrium/*").split("\n").filter(Boolean).length === 0);
     expect(claude.calls.some((c) => c.prompt.includes("Several attempts"))).toBe(false);
   });
 });
@@ -244,3 +251,25 @@ describe("a base that already fails a check", () => {
     expect(claude.calls.some((c) => c.prompt.includes("## Still failing"))).toBe(false);
   });
 });
+
+test("a fan-out waiting on a stuck part can still be set aside: its children end and their branches go", async () => {
+  const path = h.repo();
+  const s = h.space(path);
+  const t = chosen(s.id, "Totals everywhere", { kind: "split", parts: PARTS });
+  // The first part's agent fails outright, so that part is blocked and the parent keeps waiting on it.
+  const claude = fake("claude", (input) => {
+    if (input.mode === "work" && input.prompt.includes("Serve totals")) {
+      writeFileSync(join(input.cwd, "api.txt"), "half\n");
+      return { status: "error", kind: "failed", message: "Claude Code exited with code 1" };
+    }
+    if (input.mode === "work") writeFileSync(join(input.cwd, "docs.txt"), "docs\n");
+    return ok(input.mode === "review" ? "Fine.\nVERDICT: approve" : "Did my part.\nOUTCOME: done");
+  });
+  h.start({ claude: claude.adapter });
+  await waitFor(() => childrenOf(h.db, h.task(t.id)).map(childState).join() === "stuck,ready", 20000);
+  expect(h.task(t.id).loop!.stage).toBe("parts");
+  await discardFanout(h.db, t.id, getSpace(h.db, s.id)!);
+  expect(h.status(t.id)).toBe("done");
+  expect(childrenOf(h.db, h.task(t.id)).map((c) => c.status)).toEqual(["done", "done"]);
+  expect(git(path, "branch", "--list", "atrium/*")).toBe("");
+}, 40000);

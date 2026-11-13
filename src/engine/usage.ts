@@ -5,7 +5,8 @@ import { newId } from "./ids";
 import { weightedTokens } from "./loop";
 
 // Every run's tokens, by model and job, so a task, a space and the plan window can each say what they used.
-export type Purpose = "brief" | "write" | "scout" | "review" | "explain" | "judge";
+export const PURPOSES = ["brief", "write", "scout", "review", "explain", "judge"] as const;
+export type Purpose = (typeof PURPOSES)[number];
 
 const sum = (rows: ModelTokens[]): Omit<ModelTokens, "model"> =>
   rows.reduce(
@@ -62,6 +63,7 @@ export function withModels<R extends Extract<AgentRunResult, { status: "ok" }>>(
 }
 
 export function recordUsage(db: Database, row: { taskId: string | null; spaceId: string | null; agent: string; purpose: Purpose; models: ModelTokens[]; at?: number }): void {
+  if (!PURPOSES.includes(row.purpose)) throw new Error(`Unknown usage purpose: ${row.purpose}`);
   const at = row.at ?? Date.now();
   const insert = db.query(
     "INSERT INTO usage_log (id, task_id, space_id, agent, model, purpose, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, weighted, cost_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -80,7 +82,10 @@ const SPEND_COLUMNS = `COALESCE(SUM(weighted), 0) AS weighted, COALESCE(SUM(cost
 const toSpend = (r: SpendRow | null): Spend =>
   r ? { weighted: r.weighted ?? 0, usd: r.usd ?? 0, unpriced: r.unpriced ?? 0, cacheRead: r.cache_read ?? 0, input: r.input ?? 0 } : NO_SPEND;
 
-// Each task's own spend plus its reviews', by task. A split's parts and a best-of-N's attempts keep their own.
+const add = (a: Spend, b: Spend): Spend => ({ weighted: a.weighted + b.weighted, usd: a.usd + b.usd, unpriced: a.unpriced + b.unpriced, cacheRead: a.cacheRead + b.cacheRead, input: a.input + b.input });
+
+// Each task's own spend plus its reviews', by task. A split's or a best-of-N's parent also counts every part or
+// attempt (each still shows its own), so the whole fan-out's cost shows in one place.
 export function taskSpend(db: Database): Record<string, Spend> {
   const rows = db
     .query(
@@ -88,7 +93,14 @@ export function taskSpend(db: Database): Record<string, Spend> {
        FROM usage_log u JOIN tasks t ON t.id = u.task_id GROUP BY 1`,
     )
     .all() as (SpendRow & { id: string })[];
-  return Object.fromEntries(rows.map((r) => [r.id, toSpend(r)]));
+  const own = new Map(rows.map((r) => [r.id, toSpend(r)]));
+  const out = new Map(own);
+  const children = db.query("SELECT id, parent_task_id AS parent FROM tasks WHERE kind = 'work' AND parent_task_id IS NOT NULL").all() as { id: string; parent: string }[];
+  for (const c of children) {
+    const spent = own.get(c.id);
+    if (spent) out.set(c.parent, add(out.get(c.parent) ?? NO_SPEND, spent));
+  }
+  return Object.fromEntries(out);
 }
 
 // Midnight today and the Monday that starts this week, local time.

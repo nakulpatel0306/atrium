@@ -63,7 +63,7 @@ import { type Tier, tierModel, tierRun } from "./tiers";
 import { recordUsage, runModels, withModels } from "./usage";
 import { planSession, progressNote, type Session } from "./sessions";
 import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./shape";
-import { childrenOf, childState, fanIn, fanOut, judgePrompt, parseScores } from "./fanout";
+import { childrenOf, childState, deleteChildBranches, fanIn, fanOut, judgePrompt, parseScores } from "./fanout";
 import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
 
 const POWER_CHECK_MS = 60_000;
@@ -647,7 +647,9 @@ export function createRunner(deps: {
       const left = repo ? await leaveRepo(repo) : null;
       return block(task, left ?? `Atrium couldn't start the run: ${sentence((e as Error).message)} Check that the Atrium folder isn't full or read-only, then retry.`);
     }
-    logActivity(db, space.id, agent, `Started: ${task.title}`, { taskId: task.id });
+    // A branch the engine put together runs no agent, only the checks and review.
+    if (current?.loop?.adopted) logActivity(db, space.id, "atrium", `Checking ${task.title}'s ${current.loop.fanout?.kind === "best_of_n" ? "picked attempt" : "merged branch"}.`, { taskId: task.id });
+    else logActivity(db, space.id, agent, `Started: ${task.title}`, { taskId: task.id });
 
     activeSpaces.add(space.id);
     const controller = new AbortController();
@@ -831,7 +833,9 @@ export function createRunner(deps: {
       // Before settleRepo switches branches, so the repo always goes back clean. Skipped when git settings
       // changed: staging can run filter drivers from config the agent planted, and settleRepo reports the tampering.
       if (repo && (await settingsUnchanged(repo.path, repo.fingerprint))) {
-        const message = steering ? `WIP (steered): ${task.title}` : stopped ? `WIP (stopped): ${task.title}` : task.title;
+        // An attempt's commit carries its parent's title: the one picked becomes the task's own branch.
+        const title = task.loop?.role === "attempt" && task.parentTaskId ? (getTask(db, task.parentTaskId)?.title ?? task.title) : task.title;
+        const message = steering ? `WIP (steered): ${title}` : stopped ? `WIP (stopped): ${title}` : title;
         let committed = false;
         try {
           committed = (await commitAll(repo.path, message, repo.fingerprint)).committed;
@@ -1132,10 +1136,16 @@ export function createRunner(deps: {
     settleChild(task);
   }
 
-  // A child finished one way or another; its parent may now move on.
+  // A child finished one way or another; its parent may now move on. When no attempt survived, their branches go.
   function settleChild(task: Task) {
     if (!task.loop?.role || !task.parentTaskId) return;
-    if (fanIn(db, task.parentTaskId)) kick();
+    // Read before fanIn, which clears the fan-out of a parent none of whose attempts survived.
+    const parent = getTask(db, task.parentTaskId);
+    const children = parent ? childrenOf(db, parent) : [];
+    const moved = fanIn(db, task.parentTaskId);
+    const space = parent ? getSpace(db, parent.spaceId) : null;
+    if (moved === "blocked" && space) void deleteChildBranches(children, space).catch(report);
+    if (moved) kick();
   }
 
   // An attempt that fails Atrium's gate is dropped rather than sent back: the others are its retries.
@@ -1336,7 +1346,7 @@ export function createRunner(deps: {
       loop = { ...loop, stage: "review", reviewedSha: gate?.sha ?? null };
       startReview(db, setTaskLoop(db, task.id, loop), space, diff);
       setTaskStatus(db, task.id, "queued");
-      const checked = loop.checks === "passed" ? "passed its checks" : "has no checks to run";
+      const checked = loop.checks === "passed" ? "passed its checks" : loop.unverified ? "is unverified" : "has no checks to run";
       logActivity(db, space.id, "atrium", `${task.title} ${checked}. Sent it for review.`, { taskId: task.id });
       return;
     }

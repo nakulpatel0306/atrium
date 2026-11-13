@@ -75,7 +75,7 @@ export function fanIn(db: Database, parentId: string): "pick" | "judge" | "block
   if (loop.fanout.kind === "split") {
     if (!states.every((s) => s === "ready")) return null;
     setTaskLoop(db, parent.id, { ...loop, stage: "pick" });
-    logActivity(db, parent.spaceId, "atrium", `All ${states.length} parts of ${parent.title} are ready. Open their pull requests or merge them into one branch, in Needs you.`, { taskId: parent.id });
+    logActivity(db, parent.spaceId, "atrium", `${states.length === 2 ? "Both" : `All ${states.length}`} parts of ${parent.title} are ready. Open their pull requests or merge them into one branch, in Needs you.`, { taskId: parent.id });
     return "pick";
   }
   if (states.includes("running")) return null;
@@ -175,8 +175,10 @@ export async function mergeParts(db: Database, parentId: string, space: Space): 
     throw new FanoutRefused(`"${part.title}" changes the same lines as a part before it, so Atrium can't merge them on its own. Open their pull requests instead, or merge them yourself.`);
   }
   await createBranchAt(space.repoPath!, `atrium/${parent.id}`, merged.sha);
+  // The merge commits hold every part's commits, so their own branches have nothing left to keep.
+  await deleteChildBranches(parts, space);
   adopt(db, parent, { said: `Merged ${plural(parts.length, "part")}: ${parts.map((p) => p.title).join("; ")}.` });
-  logActivity(db, space.id, "you", `Merged the ${plural(parts.length, "part")} of ${parent.title} into atrium/${parent.id}. Atrium checks the merge next.`, { taskId: parent.id });
+  logActivity(db, space.id, "you", `Merged the ${plural(parts.length, "part")} of ${parent.title} into atrium/${parent.id} and deleted their branches. Atrium checks the merge next.`, { taskId: parent.id });
 }
 
 // The user's pick: that attempt's branch becomes the task's, with its checks' results, and the others are deleted.
@@ -221,12 +223,26 @@ export async function restartAs(db: Database, taskId: string, shape: Shape, spac
 }
 
 // Ends a fan-out the user doesn't want: the parent is done, and the children's branches stay where they are.
-export function discardFanout(db: Database, parentId: string): void {
+// Ends a fan-out the user doesn't want, at any point once no child is running (the route stops one that is): every
+// child that hasn't finished is ended, their branches are deleted, and the parent is done.
+export async function discardFanout(db: Database, parentId: string, space: Space): Promise<void> {
   const parent = getTask(db, parentId);
-  if (!parent?.loop?.fanout || parent.status !== "queued" || parent.loop.stage !== "pick") throw new FanoutRefused("This task has nothing waiting for you.");
+  if (!parent?.loop?.fanout || parent.status !== "queued" || (parent.loop.stage !== "pick" && parent.loop.stage !== "parts")) throw new FanoutRefused("This task has nothing to set aside.");
+  const children = childrenOf(db, parent);
+  if (children.some((c) => c.status === "running")) throw new FanoutRefused("One of its parts is still stopping. Try again in a moment.");
+  for (const c of children) if (c.status !== "done") setTaskStatus(db, c.id, "done");
+  await deleteChildBranches(children, space);
   setTaskLoop(db, parent.id, { ...parent.loop, stage: "ready" });
   setTaskStatus(db, parent.id, "done");
-  logActivity(db, parent.spaceId, "you", `Set aside: ${parent.title}. Its branches are still in the repo.`, { taskId: parent.id });
+  const what = parent.loop.fanout.kind === "split" ? "parts" : "attempts";
+  logActivity(db, parent.spaceId, "you", `Set aside: ${parent.title}. Its ${what}' branches were deleted.`, { taskId: parent.id });
+}
+
+// Children's branches once their fan-out is over and nothing needs them: the work is in the parent's branch, or the
+// user turned it down. A branch someone has checked out is left alone.
+export async function deleteChildBranches(children: Task[], space: Space): Promise<void> {
+  if (!space.repoPath) return;
+  for (const c of children) if (c.branch) await deleteAtriumBranch(space.repoPath, c.branch);
 }
 
 // What a part's pull request says: what it did and what the loop found, as an approval would have.

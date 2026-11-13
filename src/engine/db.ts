@@ -184,7 +184,8 @@ CREATE TABLE IF NOT EXISTS usage_log (
   space_id TEXT REFERENCES spaces(id),
   agent TEXT NOT NULL,
   model TEXT,
-  purpose TEXT NOT NULL CHECK (purpose IN ('brief','write','scout','review','explain','judge')),
+  -- Checked in code (usage.ts), so a new job never needs this table rebuilt.
+  purpose TEXT NOT NULL,
   input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0,
   cache_read_tokens INTEGER NOT NULL DEFAULT 0,

@@ -186,6 +186,8 @@ export function Fanout({ task, state }: { task: Task; state: State }) {
   if (!fanout) return null;
   const children = fanout.children.map((id) => state.tasks.find((t) => t.id === id)).filter((t): t is Task => !!t);
   const deciding = task.status === "queued" && task.loop?.stage === "pick";
+  // Still waiting on its children, which may be stuck: it can always be ended.
+  const waiting = task.status === "queued" && task.loop?.stage === "parts";
   const act = async (path: string, body: unknown) => {
     setBusy(true);
     setError(null);
@@ -214,7 +216,7 @@ export function Fanout({ task, state }: { task: Task; state: State }) {
             <li key={c.id}>
               <span className={`tag${childState(c) === "stuck" || childState(c) === "dropped" ? " bad" : childState(c) === "ready" ? " good" : ""}`}>{CHILD_STATE_TEXT[childState(c)]}</span>
               <a href={`#task-${c.id}`}>{split ? c.title : `Attempt ${i + 1}`}</a>
-              <span className="hint">{c.branch ?? ""}</span>
+              <span className="hint">{childState(c) === "stuck" ? (c.blockedReason ?? "Stopped.") : (c.branch ?? "")}</span>
               {c.prUrl && (
                 <a href={c.prUrl} target="_blank" rel="noreferrer">
                   pull request
@@ -265,9 +267,9 @@ export function Fanout({ task, state }: { task: Task; state: State }) {
         </div>
       )}
       {!split && deciding && <p className="hint">{fanout.judgeNote ?? "Scored against the brief by the strong model. The scores are advice; you pick."}</p>}
-      {deciding && (
+      {(deciding || waiting) && (
         <div className="acts">
-          {split && (
+          {split && deciding && (
             <>
               <button type="button" className="btn p" disabled={busy} onClick={() => void openPrs()}>
                 <GitPullRequest />
@@ -279,8 +281,14 @@ export function Fanout({ task, state }: { task: Task; state: State }) {
               </button>
             </>
           )}
-          <button type="button" className="btn" disabled={busy} onClick={() => void act(split ? "parts" : "pick", split ? { action: "discard" } : { attempt: null })}>
-            {split ? "Set them aside" : "None of these"}
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            title={`Ends the ${split ? "parts" : "attempts"}${waiting ? ", stopping one that's running," : ""} and deletes their branches.`}
+            onClick={() => void act(split ? "parts" : "pick", split ? { action: "discard" } : { attempt: null })}
+          >
+            {waiting ? "Stop and set aside" : split ? "Set them aside" : "None of these"}
           </button>
         </div>
       )}

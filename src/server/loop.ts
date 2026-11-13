@@ -66,6 +66,13 @@ export async function shapeFor(db: Database, task: Task, kind: unknown, mixVendo
   }
 }
 
+// Setting a fan-out aside stops a child that's running first, so the parent can always be ended.
+async function stopAndDiscard(db: Database, parent: Task, space: Space, stop: (taskId: string) => Promise<string>): Promise<void> {
+  const running = childrenOf(db, parent).find((c) => c.status === "running");
+  if (running && (await stop(running.id)) === "timeout") throw new FanoutRefused("One of its parts is still stopping. Try again in a moment.");
+  await discardFanout(db, parent.id, space);
+}
+
 // Each part's pull request, pushed only at its commit the user saw (`shas`, by task). A part that already has one is
 // skipped, so a retry after a failure opens only the rest. Once all are open the parent is done.
 async function openPartPrs(db: Database, parent: Task, space: Space, shas: unknown): Promise<{ opened: { taskId: string; url: string }[]; failed: { taskId: string; error: string }[] }> {
@@ -224,7 +231,7 @@ export async function loopRoute(
     const b = await readBody(req);
     try {
       if (b.action === "merge") await mergeParts(db, task.id, space);
-      else if (b.action === "discard") discardFanout(db, task.id);
+      else if (b.action === "discard") await stopAndDiscard(db, task, space, stop);
       else if (b.action === "prs") return json(await openPartPrs(db, task, space, b.shas));
       else throw new HttpError(400, "action must be merge, prs or discard.");
     } catch (e) {
@@ -243,7 +250,7 @@ export async function loopRoute(
     if (!task || space?.kind !== "repo" || !space.repoPath) throw new HttpError(404, "No such task in a repo space.");
     const b = await readBody(req);
     try {
-      if (b.attempt === null) discardFanout(db, task.id);
+      if (b.attempt === null) await stopAndDiscard(db, task, space, stop);
       else await pickAttempt(db, task.id, str(b.attempt, "attempt"), space);
     } catch (e) {
       if (e instanceof FanoutRefused) throw new HttpError(409, e.message);
