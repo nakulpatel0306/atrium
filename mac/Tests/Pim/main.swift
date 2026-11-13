@@ -47,5 +47,10 @@ check(hexColor(1, 0.5, 0) == "#ff8000", "json: colour")
 check(mailto(URL(string: "mailto:Sam@Example.com")) == "sam@example.com", "json: mailto")
 check(mailto(URL(string: "https://example.com")) == nil, "json: not mailto")
 
+// newest first
+let listed: [(box: String, id: String, date: Int)] = [("INBOX", "1", 5), ("INBOX", "2", 9), ("Inbox", "3", 7), ("INBOX", "4", 9)]
+check(newestFirst(listed, limit: 3).map(\.id) == ["2", "4", "3"], "newest: sorted by date, ties in listed order, cut to the limit")
+check(newestFirst(listed, limit: 0).isEmpty, "newest: a zero limit keeps none")
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

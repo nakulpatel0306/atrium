@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../../src/engine/db";
 import { appleAccounts, appleSource } from "../../../src/engine/mail/apple";
@@ -99,6 +100,66 @@ describe("Apple ingest through the helper", () => {
     s.appleOff("mail");
     expect(listAccounts(db)).toEqual([]);
     expect(listThreads(db)).toEqual([]);
+  });
+});
+
+describe("Apple Mail details", () => {
+  test("a helper answering without its list gets the plain copy, not a JavaScript error", async () => {
+    process.env.FAKE_PIM_MODE = "malformed";
+    const s = appleSync();
+    s.appleOnNow("mail");
+    await s.syncNow();
+    expect(appleProblem(db, "mail")).toBe(PIM_COPY.other);
+  });
+
+  test("an account removed from Mail.app is removed here too, with its mail", async () => {
+    const s = appleSync();
+    s.appleOnNow("mail");
+    await s.syncNow();
+    expect(listThreads(db).map((t) => t.subject)).toContain("Trip plan");
+    const data = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
+    data.accounts = data.accounts.filter((a: { id: string }) => a.id !== "acct-icloud");
+    writeFileSync(fakes.pimFile, JSON.stringify(data));
+    await s.syncNow();
+    expect(listAccounts(db).map((a) => a.address)).toEqual(["sam@example.com"]);
+    expect(listThreads(db).map((t) => t.subject)).not.toContain("Trip plan");
+  });
+
+  test("the listing has no snippets; a fetched body supplies one, and encoded sender names are decoded", async () => {
+    const data = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
+    data.messages["acct-icloud"][0].from = "=?UTF-8?Q?Ren=C3=A9e?= Moreno <kit@example.org>";
+    data.messages["acct-icloud"][0].subject = "=?ISO-8859-1?Q?Caf=E9?= plan";
+    writeFileSync(fakes.pimFile, JSON.stringify(data));
+    const s = appleSync();
+    s.appleOnNow("mail");
+    await s.syncNow();
+    const trip = listThreads(db).find((t) => t.subject === "Café plan")!;
+    const first = threadMessages(db, trip.id)[0]!;
+    expect(first.from.name).toBe("Renée Moreno");
+    expect(first.snippet).toBe("");
+    await s.fetchBodies([first.id]);
+    expect(threadMessages(db, trip.id)[0]!.snippet).toBe("Train at 9?");
+  });
+
+  test("Sent keeps its own limit however busy the Inbox is", async () => {
+    const data = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
+    const at = (i: number) => new Date(T0 + i * 60_000).toISOString();
+    data.messages["acct-icloud"] = [
+      ...Array.from({ length: 5 }, (_, i) => ({ id: `in${i}`, messageId: `<in${i}@x>`, inReplyTo: null, references: null, subject: `In ${i}`, from: "Kit <kit@example.org>", to: "sam.rivera@example.org", cc: "", date: at(10 + i), read: true, snippet: "x", attachments: [] })),
+      { id: "out", mailbox: "Sent", messageId: "<out@x>", inReplyTo: null, references: null, subject: "Out", from: "Sam <sam.rivera@example.org>", to: "kit@example.org", cc: "", date: at(0), read: true, snippet: "x", attachments: [] },
+    ];
+    writeFileSync(fakes.pimFile, JSON.stringify(data));
+    process.env.FAKE_PIM_INBOX_LIMIT = "3";
+    try {
+      const s = appleSync();
+      s.appleOnNow("mail");
+      await s.syncNow();
+      const subjects = listThreads(db).map((t) => t.subject);
+      expect(subjects).toContain("Out");
+      expect(subjects.filter((x) => x.startsWith("In ")).sort()).toEqual(["In 2", "In 3", "In 4"]);
+    } finally {
+      delete process.env.FAKE_PIM_INBOX_LIMIT;
+    }
   });
 });
 

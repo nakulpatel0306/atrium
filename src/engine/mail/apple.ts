@@ -1,7 +1,7 @@
-import { parseAddressList, parseIds, parsePerson } from "./addresses";
-import { runPim } from "./pim";
+import { decodeWords, parseAddressList, parseIds, parsePerson } from "./addresses";
+import { PIM_COPY, runPim } from "./pim";
 import { canonicalRecurrence } from "./recurrence";
-import type { AttendeeStatus, MailSource, SourceAccount, SourceEvent } from "./types";
+import { MailProblem, type AttendeeStatus, type MailSource, type SourceAccount, type SourceEvent } from "./types";
 
 type PimAccount = { id: string; name: string; addresses: string[]; fullName: string };
 type PimMessage = {
@@ -26,12 +26,21 @@ type PimEvent = Omit<SourceEvent, "sourceId" | "start" | "end" | "attendees" | "
   attendees: { name: string; email: string; status: AttendeeStatus | null }[];
 };
 
-const MESSAGE_LIMIT = 500;
+const LISTING_TIMEOUT_MS = 180_000;
+
+// The helper's answer, checked to have the list it promised: an older or broken helper gets the plain copy, not a
+// JavaScript error shown to the user.
+async function list<T>(key: string, args: string[], timeoutMs?: number): Promise<T[]> {
+  const r = await runPim<Record<string, unknown>>(args, { timeoutMs });
+  const v = r?.[key];
+  if (!Array.isArray(v)) throw new MailProblem("other", PIM_COPY.other);
+  return v as T[];
+}
 
 // Every account Mail.app has, one per account, named by its first address.
 export async function appleAccounts(): Promise<SourceAccount[]> {
-  const r = await runPim<{ accounts: PimAccount[] }>(["mail.accounts"]);
-  return r.accounts.filter((a) => a.addresses.length).map((a) => ({ address: a.addresses[0]!, name: a.fullName || a.name, ref: a.id }));
+  const accounts = await list<PimAccount>("accounts", ["mail.accounts"]);
+  return accounts.filter((a) => a.addresses.length).map((a) => ({ address: a.addresses[0]!, name: a.fullName || a.name, ref: a.id }));
 }
 
 // Mail.app and Calendar.app, through the helper. Threads are built by the engine from each message's headers.
@@ -41,14 +50,15 @@ export function appleSource(): MailSource {
 
     async messages(account, since) {
       if (!account.ref) return { messages: [], versions: {} };
-      const r = await runPim<{ messages: PimMessage[] }>(["mail.messages", "--account", account.ref, "--since", new Date(since).toISOString(), "--limit", String(MESSAGE_LIMIT)]);
+      // Headers only, so it can run longer than a body fetch; the helper caps Inbox and Sent separately.
+      const messages = await list<PimMessage>("messages", ["mail.messages", "--account", account.ref, "--since", new Date(since).toISOString()], LISTING_TIMEOUT_MS);
       return {
-        messages: r.messages.map((m) => ({
+        messages: messages.map((m) => ({
           sourceId: m.id,
           messageId: parseIds(m.messageId)[0] ?? null,
           inReplyTo: parseIds(m.inReplyTo)[0] ?? null,
           references: parseIds(m.references),
-          subject: m.subject,
+          subject: decodeWords(m.subject),
           from: parsePerson(m.from),
           to: parseAddressList(m.to),
           cc: parseAddressList(m.cc),
@@ -63,23 +73,28 @@ export function appleSource(): MailSource {
     },
 
     async body(_account, sourceId) {
-      const r = await runPim<{ message: { text: string | null; html: string | null; attachments: { name: string; size: number }[] } }>(["mail.message", "--id", sourceId]);
-      return { text: r.message.text, html: r.message.html, attachments: r.message.attachments.map((a) => ({ ...a, ref: a.name })) };
+      const r = await runPim<{ message?: { text?: unknown; html?: unknown; attachments?: unknown } }>(["mail.message", "--id", sourceId]);
+      const m = r?.message;
+      if (!m || !Array.isArray(m.attachments)) throw new MailProblem("other", PIM_COPY.other);
+      const text = typeof m.text === "string" ? m.text : null;
+      const html = typeof m.html === "string" ? m.html : null;
+      return { text, html, attachments: (m.attachments as { name: string; size: number }[]).map((a) => ({ ...a, ref: a.name })) };
     },
 
     async attachment(_account, sourceId, att, dir) {
-      const r = await runPim<{ path: string }>(["mail.attachment", "--id", sourceId, "--name", att.ref, "--out", dir]);
+      const r = await runPim<{ path?: unknown }>(["mail.attachment", "--id", sourceId, "--name", att.ref, "--out", dir]);
+      if (typeof r?.path !== "string") throw new MailProblem("other", PIM_COPY.other);
       return r.path;
     },
 
     async calendars() {
-      const r = await runPim<{ calendars: { id: string; title: string; color: string; writable: boolean; source: string; account: string | null }[] }>(["cal.calendars"]);
-      return r.calendars.map((c) => ({ sourceId: c.id, title: c.title, color: c.color, writable: c.writable, accountAddress: c.account }));
+      const calendars = await list<{ id: string; title: string; color: string; writable: boolean; source: string; account: string | null }>("calendars", ["cal.calendars"]);
+      return calendars.map((c) => ({ sourceId: c.id, title: c.title, color: c.color, writable: c.writable, accountAddress: c.account }));
     },
 
     async events(_account, calendar, from, to) {
-      const r = await runPim<{ events: PimEvent[] }>(["cal.events", "--calendar", calendar.sourceId, "--from", new Date(from).toISOString(), "--to", new Date(to).toISOString()]);
-      return r.events.map((e) => ({
+      const events = await list<PimEvent>("events", ["cal.events", "--calendar", calendar.sourceId, "--from", new Date(from).toISOString(), "--to", new Date(to).toISOString()]);
+      return events.map((e) => ({
         sourceId: e.id,
         icalUid: e.icalUid,
         recurrenceId: canonicalRecurrence(e.recurrenceId),

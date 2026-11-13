@@ -10,8 +10,11 @@ import Foundation
 // Everything it reads is someone else's text and goes to the engine as plain data.
 
 let mailBundle = "com.apple.mail"
-let messageLimitDefault = 500
-let snippetChars = 200
+// The newest messages kept from each kind of mailbox, counted separately so a busy Inbox never crowds out Sent.
+let inboxNames: Set<String> = ["INBOX", "Inbox"]
+let sentNames: Set<String> = ["Sent", "Sent Messages", "Sent Items", "Sent Mail"]
+let inboxLimit = 300
+let sentLimit = 200
 
 // MARK: Mail through AppleScript
 
@@ -26,43 +29,36 @@ let mailScript = """
     return out
   end listAccounts
 
-  on listMessages(acctId, daysBack, maxCount)
-    set cutoff to (current date) - (daysBack * days)
-    set out to {}
+  on mailboxNames(acctId)
     tell application "Mail"
-      set a to first account whose id is acctId
-      set boxes to {}
-      repeat with b in (every mailbox of a)
-        set n to name of b
-        if n is in {"INBOX", "Inbox", "Sent", "Sent Messages", "Sent Items", "Sent Mail"} then set end of boxes to b
-      end repeat
-      repeat with b in boxes
-        set msgs to (messages of b whose date sent > cutoff)
-        repeat with m in msgs
-          if (count of out) ≥ maxCount then exit repeat
-          set atts to {}
-          repeat with x in mail attachments of m
-            try
-              set end of atts to {name of x as text, file size of x}
-            on error
-              set end of atts to {name of x as text, 0}
-            end try
-          end repeat
-          set snip to ""
-          try
-            set c to content of m
-            if length of c > 200 then
-              set snip to text 1 thru 200 of c
-            else
-              set snip to c
-            end if
-          end try
-          set end of out to {id of m as text, name of b as text, all headers of m, subject of m, date sent of m, read status of m, atts, snip}
-        end repeat
-      end repeat
+      return name of every mailbox of (first account whose id is acctId)
     end tell
-    return out
-  end listMessages
+  end mailboxNames
+
+  -- Ids and sent dates of one mailbox's messages in the window, fetched as two lists in one Apple event each.
+  on listIds(acctId, boxName, daysBack)
+    set cutoff to (current date) - (daysBack * days)
+    tell application "Mail"
+      set b to first mailbox of (first account whose id is acctId) whose name is boxName
+      return {id, date sent} of (messages of b whose date sent > cutoff)
+    end tell
+  end listIds
+
+  -- One message's headers and attachment names. Never its content: on IMAP and Exchange that downloads the message.
+  on messageHeaders(acctId, boxName, msgId)
+    set m to findMessage(acctId, boxName, msgId)
+    tell application "Mail"
+      set atts to {}
+      repeat with x in mail attachments of m
+        try
+          set end of atts to {name of x as text, file size of x}
+        on error
+          set end of atts to {name of x as text, 0}
+        end try
+      end repeat
+      return {subject of m, all headers of m, date sent of m, read status of m, atts}
+    end tell
+  end messageHeaders
 
   on findMessage(acctId, boxName, msgId)
     tell application "Mail"
@@ -144,26 +140,40 @@ func mailMessages(_ args: PimArgs) throws -> Any {
   guard let account = args.flags["account"], let sinceText = args.flags["since"], let since = isoFormatter.date(from: sinceText) else {
     throw PimError(kind: "bad_args", message: "mail.messages needs --account and --since.")
   }
-  let limit = Int(args.flags["limit"] ?? "") ?? messageLimitDefault
   let days = max(1, Int(ceil(Date().timeIntervalSince(since) / 86_400)))
-  let list = try runHandler("listMessages", [NSAppleEventDescriptor(string: account), NSAppleEventDescriptor(int32: Int32(days)), NSAppleEventDescriptor(int32: Int32(limit))])
-  let messages: [[String: Any]] = items(list).map { m in
-    let headers = parseHeaders(m.atIndex(3)?.stringValue ?? "")
-    let date = m.atIndex(5)?.dateValue ?? Date(timeIntervalSince1970: 0)
-    return [
-      "id": encodeMessageId(account: account, mailbox: m.atIndex(2)?.stringValue ?? "", id: m.atIndex(1)?.stringValue ?? ""),
-      "messageId": headers["message-id"] as Any,
-      "inReplyTo": headers["in-reply-to"] as Any,
-      "references": headers["references"] as Any,
-      "subject": m.atIndex(4)?.stringValue ?? headers["subject"] ?? "",
-      "from": headers["from"] ?? "",
-      "to": headers["to"] ?? "",
-      "cc": headers["cc"] ?? "",
-      "date": iso(date),
-      "read": m.atIndex(6)?.booleanValue ?? true,
-      "snippet": String((m.atIndex(8)?.stringValue ?? "").prefix(snippetChars)),
-      "attachments": m.atIndex(7).map(attachmentsOf) ?? [],
-    ]
+  let accountArg = NSAppleEventDescriptor(string: account)
+  let boxes = items(try runHandler("mailboxNames", [accountArg])).compactMap { $0.stringValue }
+  var messages: [[String: Any]] = []
+  for (names, limit) in [(inboxNames, inboxLimit), (sentNames, sentLimit)] {
+    // Every matching mailbox's ids and dates, newest first, cut to this kind's limit before any message is read.
+    var found: [(box: String, id: String, date: Date)] = []
+    for box in boxes where names.contains(box) {
+      let pair = try runHandler("listIds", [accountArg, NSAppleEventDescriptor(string: box), NSAppleEventDescriptor(int32: Int32(days))])
+      let ids = pair.atIndex(1).map(items) ?? []
+      let dates = pair.atIndex(2).map(items) ?? []
+      for (i, d) in zip(ids, dates) {
+        guard let id = i.stringValue, let date = d.dateValue, date >= since else { continue }
+        found.append((box, id, date))
+      }
+    }
+    for f in newestFirst(found, limit: limit) {
+      let m = try runHandler("messageHeaders", [account, f.box, f.id].map { NSAppleEventDescriptor(string: $0) })
+      let headers = parseHeaders(m.atIndex(2)?.stringValue ?? "")
+      messages.append([
+        "id": encodeMessageId(account: account, mailbox: f.box, id: f.id),
+        "messageId": headers["message-id"] as Any,
+        "inReplyTo": headers["in-reply-to"] as Any,
+        "references": headers["references"] as Any,
+        "subject": m.atIndex(1)?.stringValue ?? headers["subject"] ?? "",
+        "from": headers["from"] ?? "",
+        "to": headers["to"] ?? "",
+        "cc": headers["cc"] ?? "",
+        "date": iso(m.atIndex(3)?.dateValue ?? f.date),
+        "read": m.atIndex(4)?.booleanValue ?? true,
+        "snippet": "",
+        "attachments": m.atIndex(5).map(attachmentsOf) ?? [],
+      ])
+    }
   }
   return ["messages": messages]
 }

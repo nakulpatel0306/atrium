@@ -109,3 +109,8 @@ func mailto(_ url: URL?) -> String? {
   guard let s = url?.absoluteString, s.lowercased().hasPrefix("mailto:") else { return nil }
   return String(s.dropFirst(7)).removingPercentEncoding?.lowercased()
 }
+
+// The newest `limit` of a mailbox's messages, by sent date; ties keep their listed order.
+func newestFirst<T>(_ found: [(box: String, id: String, date: T)], limit: Int) -> [(box: String, id: String, date: T)] where T: Comparable {
+  Array(found.enumerated().sorted { $0.element.date != $1.element.date ? $0.element.date > $1.element.date : $0.offset < $1.offset }.map(\.element).prefix(limit))
+}

@@ -13,13 +13,16 @@ import { MailProblem, type MailProblemKind } from "./types";
 //     → {"ok": true}  Asks macOS for the permission (the prompt the dashboard announced first).
 //   atrium-pim mail.accounts
 //     → {"accounts": [{"id": string, "name": string, "addresses": [string], "fullName": string}]}
-//   atrium-pim mail.messages --account <id> --since <ISO 8601> [--limit <n>]
+//   atrium-pim mail.messages --account <id> --since <ISO 8601>
 //     → {"messages": [{"id": string, "messageId": string|null, "inReplyTo": string|null, "references": string|null,
 //         "subject": string, "from": string, "to": string, "cc": string, "date": ISO, "read": bool,
-//         "snippet": string, "attachments": [{"name": string, "size": number}]}]}
-//     Inbox and Sent of that account, newest first. id is opaque: pass it back to mail.message and mail.attachment.
-//     from/to/cc are raw header text ("Name <a@b>, c@d"), parsed by the engine.
+//         "snippet": "", "attachments": [{"name": string, "size": number}]}]}
+//     Headers only, never content: the newest 300 of the account's Inbox and the newest 200 of its Sent, each cut
+//     separately. snippet is always empty (the engine takes it from the body once fetched). id is opaque: pass it
+//     back to mail.message and mail.attachment. from/to/cc are raw header text ("Name <a@b>", RFC 2047 words
+//     included), decoded by the engine.
 //   atrium-pim mail.message --id <id>
+//     The body is read here only.
 //     → {"message": {"text": string|null, "html": string|null, "attachments": [{"name": string, "size": number}]}}
 //   atrium-pim mail.attachment --id <id> --name <name> --out <dir>
 //     → {"path": string}

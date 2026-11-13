@@ -198,8 +198,10 @@ export function threadKeyFor(db: Database, accountId: string, own: string, m: So
     const root = db.query("SELECT thread_key FROM mail_threads WHERE account_id = ? AND thread_key = ?").get(accountId, m.messageId) as { thread_key: string } | null;
     if (root) return root.thread_key;
     const child = db
-      .query("SELECT t.thread_key FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id WHERE m.account_id = ? AND (m.in_reply_to = ? OR m.refs LIKE ?) LIMIT 1")
-      .get(accountId, m.messageId, `%${JSON.stringify(m.messageId)}%`) as { thread_key: string } | null;
+      .query(
+        "SELECT t.thread_key FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id WHERE m.account_id = ? AND (m.in_reply_to = ? OR EXISTS (SELECT 1 FROM json_each(m.refs) WHERE value = ?)) LIMIT 1",
+      )
+      .get(accountId, m.messageId, m.messageId) as { thread_key: string } | null;
     if (child) return child.thread_key;
   }
   if (refs.length) return m.references[0] ?? m.inReplyTo!;
@@ -317,6 +319,14 @@ function refreshThread(db: Database, threadId: string, own: string) {
     reply ? 1 : 0,
     threadId,
   );
+}
+
+// A message listed without a snippet gets one from its body, and its thread's summary is worked out again.
+export function fillSnippet(db: Database, messageId: string, body: string): void {
+  const row = db.query("SELECT m.thread_id, m.snippet, a.address FROM mail_messages m JOIN mail_accounts a ON a.id = m.account_id WHERE m.id = ?").get(messageId) as { thread_id: string; snippet: string; address: string } | null;
+  if (!row || row.snippet) return;
+  db.query("UPDATE mail_messages SET snippet = ? WHERE id = ?").run(body.replace(/\s+/g, " ").trim().slice(0, 200), messageId);
+  refreshThread(db, row.thread_id, row.address);
 }
 
 export const threadVersion = (db: Database, accountId: string, threadKey: string): string | null =>

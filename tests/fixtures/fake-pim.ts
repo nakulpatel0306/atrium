@@ -4,7 +4,7 @@
 //   {"accounts": [...], "messages": {"<account id>": [...]}, "bodies": {"<message id>": {...}},
 //    "calendars": [...], "events": {"<calendar id>": [...]}}
 // in the shapes src/engine/mail/pim.ts documents. FAKE_PIM_MODE: "ok" (default), "mail_denied", "calendar_denied",
-// "hang". FAKE_PIM_LOG, if set, gets each call's argv as a JSON line.
+// "hang", "malformed" (answers {} to everything). FAKE_PIM_LOG, if set, gets each call's argv as a JSON line.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -26,6 +26,8 @@ const fail = (kind: string, message: string) => {
 };
 
 if (mode === "hang") await Bun.sleep(300_000);
+// An older or broken helper: valid JSON without the list it should have.
+if (mode === "malformed") out({});
 const cmd = argv[0] ?? "";
 const mailCmd = cmd.startsWith("mail.") || (cmd === "allow" && argv[1] === "mail");
 const calCmd = cmd.startsWith("cal.") || (cmd === "allow" && argv[1] === "calendar");
@@ -41,11 +43,17 @@ switch (cmd) {
     break;
   case "mail.accounts":
     out({ accounts: data.accounts ?? [] });
+
     break;
   case "mail.messages": {
     const since = Date.parse(flag("--since") ?? "1970-01-01");
-    const msgs = (data.messages?.[flag("--account") ?? ""] ?? []) as { date: string }[];
-    out({ messages: msgs.filter((m) => Date.parse(m.date) >= since) });
+    // Like the helper: headers only (no snippet), newest first, Inbox and Sent capped separately. A message whose
+    // "mailbox" is "Sent" counts toward Sent; anything else is Inbox.
+    const msgs = (data.messages?.[flag("--account") ?? ""] ?? []) as { date: string; mailbox?: string }[];
+    const recent = msgs.filter((m) => Date.parse(m.date) >= since).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    const sent = recent.filter((m) => m.mailbox === "Sent").slice(0, Number(process.env.FAKE_PIM_SENT_LIMIT ?? 200));
+    const inbox = recent.filter((m) => m.mailbox !== "Sent").slice(0, Number(process.env.FAKE_PIM_INBOX_LIMIT ?? 300));
+    out({ messages: [...inbox, ...sent].map(({ mailbox: _, ...m }) => ({ ...m, snippet: "" })) });
     break;
   }
   case "mail.message": {

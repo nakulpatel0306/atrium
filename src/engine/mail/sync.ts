@@ -12,7 +12,9 @@ import {
   listAccounts,
   markAccount,
   messageSource,
+  fillSnippet,
   pruneMail,
+  removeAccount,
   removeSourceAccounts,
   replaceEvents,
   threadVersion,
@@ -86,6 +88,9 @@ export function createMailSync(deps: {
     try {
       const found = await deps.appleAccounts();
       for (const a of found) upsertAccount(db, { address: a.address, name: a.name, source: "apple", ref: a.ref });
+      // An account removed from Mail.app goes here too, with its cached mail, rather than failing every sync.
+      const refs = new Set(found.map((a) => a.ref));
+      for (const a of listAccounts(db)) if (a.source === "apple" && !refs.has(a.ref)) removeAccount(db, a.id);
       write(db, PROBLEM_KEYS.mail, null);
     } catch (e) {
       write(db, PROBLEM_KEYS.mail, message(e));
@@ -183,7 +188,10 @@ export function createMailSync(deps: {
     try {
       await withSource(id, async (source, account, msg) => {
         const body = await source.body(account, msg.sourceId);
-        cacheBody(db, id, bodyText(body), now());
+        const text = bodyText(body);
+        cacheBody(db, id, text, now());
+        // Mail.app's listing carries no snippet (reading content there is slow), so the body supplies it.
+        fillSnippet(db, id, text);
         if (body.attachments.length) {
           db.query("UPDATE mail_messages SET attachments = ?, has_attachments = 1 WHERE id = ?").run(JSON.stringify(body.attachments), id);
         }
