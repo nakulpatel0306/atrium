@@ -3,7 +3,8 @@
 import { AGENT_IDS, agentName } from "../../dashboard/agents";
 import { type SpaceDeletePreview, spaceDeleteLines } from "../../dashboard/deletion";
 import { bytes, clock, tokens } from "../../dashboard/format";
-import { AGENT_ROLES, agentStatus, runOutcome } from "../../dashboard/summary";
+import { AGENT_ROLES, agentStatus, reviewerName, runOutcome } from "../../dashboard/summary";
+import type { ReviewChoice } from "../../engine/spaces";
 import type { State } from "../../engine/state";
 import { type Block, box, type Hit, keyRow, type Line, rowsOf, splice } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
@@ -93,7 +94,7 @@ export function pickerOver(base: Line[], p: Extract<Overlay, { kind: "picker" }>
     const mark = i === p.index;
     return [
       { text: mark ? `${GLYPH.pointer} ` : "  ", color: "accent" },
-      { text: id === "none" ? "No one" : agentName(id), bold: mark },
+      { text: p.purpose === "reviewer" ? reviewerName(id as ReviewChoice) : agentName(id), bold: mark },
       { text: p.purpose === "reviewer" && reviewers?.[id] ? " (can't work here)" : "", color: "bad" },
     ];
   });

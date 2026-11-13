@@ -182,7 +182,7 @@ test("space keys", () => {
   expect(play(["p"], spaces).intents).toEqual([{ type: "private", spaceId: ids.atrium, on: true }]);
   expect(play(["e"], spaces).ui.ask).toMatchObject({ purpose: "goal", value: "Ship the terminal app", targetId: ids.atrium });
   expect(flashText(play(["v"], inJobHunt).all)).toEqual(["Reviews are for repo spaces."]);
-  expect(play(["v"], spaces).ui.overlay).toMatchObject({ kind: "picker", purpose: "reviewer", options: ["none", "codex", "gemini", "claude"], index: 1 });
+  expect(play(["v"], spaces).ui.overlay).toMatchObject({ kind: "picker", purpose: "reviewer", options: ["auto", "codex", "gemini", "claude", "off"], index: 1 });
   const confirm = play(["X"], spaces);
   expect(confirm.ui.overlay).toEqual({ kind: "confirm", purpose: "archive", targetId: ids.atrium });
   const yes = play(["y"], { overlay: confirm.ui.overlay });

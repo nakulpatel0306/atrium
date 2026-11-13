@@ -91,7 +91,12 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       return space(intent.spaceId, { goal: intent.goal }, "Goal saved.");
     case "reviewer": {
       const name = spaceName(intent.spaceId);
-      const ok = intent.reviewBy ? `${agentName(intent.reviewBy)} reviews finished work in ${name}.` : `No automatic review in ${name}.`;
+      const ok =
+        intent.reviewBy === "off"
+          ? `No review in ${name}: finished code comes to you once its checks pass.`
+          : intent.reviewBy === "auto"
+            ? `A fresh agent reviews finished code in ${name}.`
+            : `${agentName(intent.reviewBy)} reviews finished code in ${name}.`;
       return space(intent.spaceId, { reviewBy: intent.reviewBy }, ok);
     }
     case "answer": {

@@ -3,7 +3,7 @@ import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
-import type { ReviewerId } from "../engine/spaces";
+import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
 import { type Action, type Ask, type AskPurpose, listPaneOf, type ListPane, type Overlay, TABS, type Ui } from "./ui";
@@ -21,7 +21,7 @@ export type Intent =
   | { type: "reserve"; value: 0.25 | 0.5 | 0.75 }
   | { type: "private"; spaceId: string; on: boolean }
   | { type: "goal"; spaceId: string; goal: string }
-  | { type: "reviewer"; spaceId: string; reviewBy: ReviewerId | null }
+  | { type: "reviewer"; spaceId: string; reviewBy: ReviewChoice }
   | { type: "archive"; spaceId: string }
   | { type: "restore"; spaceId: string }
   | { type: "deleteSpace"; spaceId: string; name: string }
@@ -126,7 +126,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
   }
 }
 
-const REVIEWER_OPTIONS = ["none", "codex", "gemini", "claude"];
+const REVIEWER_OPTIONS: string[] = [...REVIEW_CHOICES];
 const NO_SPACE = "Pick a space first, or press N to describe a new one.";
 const NO_TASK = "Pick a task in Spaces first.";
 
@@ -349,7 +349,7 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
       if (!space) return [info(NO_SPACE)];
       // Reviews read the branch diff, so only repo spaces have anything to review.
       if (space.kind !== "repo") return [info("Reviews are for repo spaces.")];
-      return [open({ kind: "picker", purpose: "reviewer", targetId: space.id, options: REVIEWER_OPTIONS, index: Math.max(0, REVIEWER_OPTIONS.indexOf(space.reviewBy ?? "none")) })];
+      return [open({ kind: "picker", purpose: "reviewer", targetId: space.id, options: REVIEWER_OPTIONS, index: Math.max(0, REVIEWER_OPTIONS.indexOf(space.reviewBy)) })];
     case "X":
       if (!space) return [info(NO_SPACE)];
       // Restoring is undone by archiving again, so it needs no confirm.
@@ -428,7 +428,7 @@ function pickerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "p
   if (!key.return) return [];
   const choice = overlay.options[overlay.index]!;
   if (overlay.purpose === "agent") return [intent({ type: "setAgent", taskId: overlay.targetId, agent: choice as AgentChoice }), close];
-  return [intent({ type: "reviewer", spaceId: overlay.targetId, reviewBy: choice === "none" ? null : (choice as ReviewerId) }), close];
+  return [intent({ type: "reviewer", spaceId: overlay.targetId, reviewBy: choice as ReviewChoice }), close];
 }
 
 const RESERVE_STEPS = [0.25, 0.5, 0.75] as const;

@@ -42,7 +42,7 @@ export const bodyRows = (rows: number) => rows - CHROME_ROWS;
 // The full text of the Needs you item picked on Home.
 export function needsLines(view: View, messages: Message[] | null, cols: number): DetailLine[] {
   const w = cols - 4;
-  const lines = view.proposal ? proposalDetail(view) : approvalDetail(view, messages, w);
+  const lines = view.proposal ? proposalDetail(view) : approvalDetail(view, w);
   return lines.flatMap((l) => wrapStyled(l, w));
 }
 

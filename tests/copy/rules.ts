@@ -13,7 +13,8 @@ export function check(s: S, swift: boolean): string[] {
   const rules: string[] = [];
   // Punctuation alone ("...", ". ") is code: a git range, a separator.
   if (!/[A-Za-z]/.test(t)) return rules;
-  if (t.includes("...")) rules.push("no-ascii-ellipsis");
+  // Go's `./...` package pattern is part of a command, not trailing copy.
+  if (t.replace(/\.\/\.\.\./g, "").includes("...")) rules.push("no-ascii-ellipsis");
   if (/[.!?] {2,}\S/.test(t) || (!s.file.startsWith("src/tui/") && /\w {2,}\w/.test(t))) rules.push("one-space-after-stop");
   // Allowed when the message goes on past its first sentence ("Something went wrong in Atrium. Check the engine log.").
   if (ERROR_START.test(t) && !/[.!?] \S/.test(t)) rules.push("no-error-prefix");
