@@ -1,5 +1,6 @@
 import { parseAddressList, parseIds, parsePerson } from "./addresses";
 import { runPim } from "./pim";
+import { canonicalRecurrence } from "./recurrence";
 import type { AttendeeStatus, MailSource, SourceAccount, SourceEvent } from "./types";
 
 type PimAccount = { id: string; name: string; addresses: string[]; fullName: string };
@@ -81,7 +82,7 @@ export function appleSource(): MailSource {
       return r.events.map((e) => ({
         sourceId: e.id,
         icalUid: e.icalUid,
-        recurrenceId: e.recurrenceId,
+        recurrenceId: canonicalRecurrence(e.recurrenceId),
         title: e.title,
         start: Date.parse(e.start),
         end: Date.parse(e.end),

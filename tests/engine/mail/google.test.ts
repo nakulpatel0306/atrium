@@ -7,7 +7,7 @@ import { openDb } from "../../../src/engine/db";
 import { appleAccounts, appleSource } from "../../../src/engine/mail/apple";
 import { createGoogleAuth, mailKeychain, type GoogleAuth } from "../../../src/engine/mail/google/oauth";
 import { googleSource } from "../../../src/engine/mail/google/source";
-import { getAccount, listAccounts, listEvents, listThreads, pruneMail, removeAccount, threadMessages } from "../../../src/engine/mail/store";
+import { getAccount, listAccounts, listCalendars, listEvents, listThreads, pruneMail, removeAccount, threadMessages } from "../../../src/engine/mail/store";
 import { createMailSync } from "../../../src/engine/mail/sync";
 import { tempHome } from "../../helpers";
 import { approveInBrowser, CLIENT_ID, FAKE_SECURITY, useFakes } from "./fakes";
@@ -242,5 +242,42 @@ describe("Google and Apple together", () => {
     const events = listEvents(db, NOW - 30 * 86_400_000, NOW + 90 * 86_400_000).map((e) => e.title);
     expect(events.filter((t) => t === "Planning with Kit")).toHaveLength(1);
     expect(events).toContain("Dentist");
+  });
+
+  test("a recurring Google event that Calendar.app also has, under an account name with no address, shows once", async () => {
+    // Two weekly instances, written by Google in the event's own offset and by Calendar.app in UTC.
+    const at = (days: number) => T0 + days * 86_400_000;
+    const offset = (ms: number) => new Date(ms - 5 * 3600_000).toISOString().replace("Z", "-05:00").replace(".000", "");
+    fakes.google.data[SAM]!.events[SAM]!.push(
+      ...[1, 8].map((d) => ({
+        id: `standup_${d}`,
+        iCalUID: "weekly@example.com",
+        recurringEventId: "standup",
+        summary: "Weekly standup",
+        originalStartTime: { dateTime: offset(at(d)) },
+        start: { dateTime: offset(at(d)) },
+        end: { dateTime: offset(at(d) + 900_000) },
+      })),
+    );
+    const pim = JSON.parse(readFileSync(fakes.pimFile, "utf8"));
+    pim.calendars = [{ id: "cal-work", title: "Work", color: "#d9825b", writable: true, source: "Work", account: null }];
+    pim.events = {
+      "cal-work": [1, 8].map((d) => ({
+        id: `w${d}`, icalUid: "weekly@example.com", recurrenceId: new Date(at(d)).toISOString(), title: "Weekly standup",
+        start: new Date(at(d)).toISOString(), end: new Date(at(d) + 900_000).toISOString(), allDay: false, location: "", attendees: [], organizer: null, myStatus: null, recurrence: "repeats",
+      })),
+    };
+    writeFileSync(fakes.pimFile, JSON.stringify(pim));
+    await connect();
+    const s = sync();
+    s.appleOnNow("calendar");
+    await s.syncNow();
+    const standups = listEvents(db, NOW - 30 * 86_400_000, NOW + 90 * 86_400_000).filter((e) => e.title === "Weekly standup");
+    expect(standups.map((e) => [e.start, e.calendar.source])).toEqual([
+      [at(1), "google"],
+      [at(8), "google"],
+    ]);
+    // Recognised by its events, though Calendar.app only calls the account "Work".
+    expect(listCalendars(db).find((c) => c.title === "Work")!.hidden).toBe("Google reads this calendar directly.");
   });
 });

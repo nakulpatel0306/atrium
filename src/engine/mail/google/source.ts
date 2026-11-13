@@ -5,6 +5,7 @@ import { parseAddressList, parseIds, parsePerson } from "../addresses";
 import { MailProblem, type AccountRef, type AttendeeStatus, type MailSource, type SourceAttachment, type SourceEvent, type SourceMessage } from "../types";
 import type { GoogleAuth } from "./oauth";
 import { safeFileName } from "../files";
+import { canonicalRecurrence } from "../recurrence";
 
 const HTTP_TIMEOUT_MS = 20_000;
 const MAX_THREAD_PAGES = 5;
@@ -99,7 +100,7 @@ export function toSourceEvent(e: GEvent): SourceEvent {
   return {
     sourceId: e.id,
     icalUid: e.iCalUID ?? e.id,
-    recurrenceId: e.originalStartTime ? (e.originalStartTime.dateTime ?? e.originalStartTime.date ?? null) : null,
+    recurrenceId: canonicalRecurrence(e.originalStartTime?.dateTime ?? e.originalStartTime?.date),
     title: e.summary ?? "",
     start: timeOf(e.start),
     end: timeOf(e.end),
