@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { getApproval, onApprovalResolved, resolveApproval, RULE_NEVER_DECIDES } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { createMail, type Mail } from "../../../src/engine/mail";
-import { draftEvent, draftMail, getMailAction, type MailAction, pendingMailActions, updateMailDraft } from "../../../src/engine/mail/drafts";
+import { draftEvent, draftMail, explicitReasons, getMailAction, type MailAction, pendingMailActions, updateMailDraft } from "../../../src/engine/mail/drafts";
 import { mailKeychain } from "../../../src/engine/mail/google/oauth";
 import { PIM_COPY } from "../../../src/engine/mail/pim";
 import { createMailActions, recoverMailActions, STOPPED_COPY } from "../../../src/engine/mail/send";
@@ -130,6 +130,19 @@ describe("replies", () => {
 });
 
 describe("what needs the explicit Send", () => {
+  test("only people you've written to count as known; being on someone else's email doesn't", async () => {
+    await connectGoogle();
+    const acct = google();
+    // A stranger mails you and Cc's an address of their choosing.
+    ingestMessages(db, acct, [msg({ sourceId: "s1", messageId: "<win@spam.example>", subject: "Win", from: { name: "Promo", address: "promo@spam.example" }, cc: [{ name: "", address: "drop@attacker.example" }], date: NOW - 1000 })]);
+    const reasons = (address: string) =>
+      explicitReasons(db, { kind: "new", accountId: acct.id, threadId: null, threadAccountId: null, to: [{ name: "", address, added: true }], cc: [], attachments: [], event: null }, NOW).map((r) => r.kind);
+    expect(reasons("drop@attacker.example")).toEqual(["first_time"]);
+    expect(reasons("promo@spam.example")).toEqual(["first_time"]);
+    // Robin got mail from you on the lease thread.
+    expect(reasons("robin@example.net")).toEqual([]);
+  });
+
   test("a forward with attachments, another From account, and more than ten people", async () => {
     await connectGoogle();
     await openLease();

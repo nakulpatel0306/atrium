@@ -179,13 +179,23 @@ export const ownAddresses = (db: Database): Set<string> =>
 
 const YEAR_MS = 365 * 86_400_000;
 
-// Someone the user has a thread with in the last year, or has sent to through Atrium.
-function knownPerson(db: Database, address: string, now: number): boolean {
+// Someone the user has written to in the last year: on To or Cc of a message from one of his own addresses, or of an
+// Atrium send. Being on someone else's email doesn't count, so a stranger can't make an address look known by Cc'ing
+// it. Only the cached window is searched, so this errs toward showing the note.
+function knownPerson(db: Database, address: string, own: Set<string>, now: number): boolean {
   const a = normalizeAddress(address);
-  const thread = db
-    .query("SELECT 1 FROM mail_threads t, json_each(t.participants) p WHERE lower(json_extract(p.value, '$.address')) = ? AND t.last_at >= ? LIMIT 1")
-    .get(a, now - YEAR_MS);
-  if (thread) return true;
+  const mine = [...own];
+  if (mine.length) {
+    const marks = mine.map(() => "?").join(", ");
+    const wrote = db
+      .query(
+        `SELECT 1 FROM mail_messages m WHERE m.date >= ? AND lower(json_extract(m.from_json, '$.address')) IN (${marks}) AND (
+           EXISTS (SELECT 1 FROM json_each(m.to_json) p WHERE lower(json_extract(p.value, '$.address')) = ?)
+           OR EXISTS (SELECT 1 FROM json_each(m.cc_json) p WHERE lower(json_extract(p.value, '$.address')) = ?)) LIMIT 1`,
+      )
+      .get(now - YEAR_MS, ...mine, a, a);
+    if (wrote) return true;
+  }
   return !!db
     .query(
       `SELECT 1 FROM mail_actions m WHERE m.status = 'sent' AND m.sent_at >= ? AND (
@@ -207,7 +217,7 @@ export function explicitReasons(
   const people = event ? (a.event?.attendees ?? []) : [...a.to, ...a.cc];
   const out: Reason[] = [];
   for (const p of people) {
-    if (own.has(normalizeAddress(p.address)) || knownPerson(db, p.address, now)) continue;
+    if (own.has(normalizeAddress(p.address)) || knownPerson(db, p.address, own, now)) continue;
     out.push({ kind: "first_time", text: `First time ${event ? "inviting" : "emailing"} ${personLabel(p)}` });
   }
   // A forward carries the thread's words to whoever it goes to; anyone who wasn't on that thread is called out, whoever
