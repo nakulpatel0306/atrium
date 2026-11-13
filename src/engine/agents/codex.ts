@@ -67,6 +67,7 @@ export function codexAdapter(bin: string = config().codexBin, sandboxExec: strin
             input.onChunk(lastMessage);
           } else if (item?.type === "command_execution") {
             input.onChunk(`→ bash ${shortCommand(item.command)}`.trimEnd());
+            input.onTool?.("bash", { command: item.command });
           }
         } else if (msg.type === "turn.completed") {
           // Cached input is a subset of input_tokens, not extra, so only the two totals are reported.

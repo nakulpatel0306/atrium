@@ -167,6 +167,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
               input.onChunk(block.text);
             } else if (block.type === "tool_use") {
               input.onChunk(`→ ${block.name} ${shortInput(block.input)}`.trimEnd());
+              input.onTool?.(String(block.name), block.input);
             }
           }
         } else if (msg.type === "rate_limit_event") {
@@ -198,6 +199,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           "--strict-mcp-config", "--no-session-persistence",
           "--output-format", "stream-json", "--verbose",
           "--permission-mode", "dontAsk",
+          ...(input.model ? ["--model", input.model] : []),
+          ...(input.maxTurns ? ["--max-turns", String(input.maxTurns)] : []),
           "--append-system-prompt", input.systemPrompt,
           // No tools at all ("--tools ''") rather than an empty allow list, which the variadic flag can't express.
           ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : ["--tools", ""]),

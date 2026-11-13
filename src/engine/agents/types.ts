@@ -9,7 +9,12 @@ export interface AgentRunInput {
   // bank export (CSV, OFX, QFX) outside its own folder.
   privateData?: boolean;
   onChunk(text: string): void;
+  // Every tool call with its full input, for spotting an agent stuck repeating itself. Display goes through onChunk.
+  onTool?(name: string, input: unknown): void;
   signal?: AbortSignal;
+  // A quick, cheap side job (the brief pre-pass): a smaller model and a cap on turns. Only Claude takes them.
+  model?: string;
+  maxTurns?: number;
 }
 
 // Subscription window usage as the CLI reports it; resetsAt is epoch ms.
