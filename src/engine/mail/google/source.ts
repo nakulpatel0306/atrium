@@ -11,7 +11,8 @@ import { canonicalRecurrence } from "../recurrence";
 const HTTP_TIMEOUT_MS = 20_000;
 const WRITE_TIMEOUT_MS = 60_000;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const UNSURE_COPY = "Google didn't answer, so Atrium can't tell whether this went through. Check Gmail or Google Calendar before trying again.";
+const UNSURE_COPY = "This may have gone out: Google's answer didn't say. Check Gmail's Sent mail or Google Calendar before sending it again.";
+const NOT_CONNECTED = new Set(["ConnectionRefused", "FailedToOpenSocket", "ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH"]);
 const MAX_THREAD_PAGES = 5;
 const MAX_EVENT_PAGES = 10;
 const PARALLEL = 5;
@@ -152,8 +153,10 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
           body: write?.body !== undefined ? JSON.stringify(write.body) : undefined,
           signal: AbortSignal.timeout(write ? WRITE_TIMEOUT_MS : HTTP_TIMEOUT_MS),
         });
-      } catch {
-        if (write) throw new MailProblem("unsure", UNSURE_COPY);
+      } catch (e) {
+        // Not connected at all means nothing was sent; anything after connecting (a timeout) may have been.
+        if (write && !NOT_CONNECTED.has(String((e as { code?: unknown }).code))) throw new MailProblem("unsure", UNSURE_COPY);
+        if (write) throw new MailProblem("offline", "Atrium couldn't reach Google, so nothing went out. Check the Mac is online, then try again.");
         throw new MailProblem("offline", "Atrium couldn't reach Google. Check the Mac is online; it tries again on the next sync.");
       }
       if (res.status === 401 && !force) continue;
@@ -164,7 +167,13 @@ export function googleSource(auth: GoogleAuth, deps: { fetch?: typeof fetch } = 
       if (!res.ok) throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
       if (res.status === 204) return undefined as T;
       const text = await res.text();
-      return (text ? JSON.parse(text) : undefined) as T;
+      try {
+        return (text ? JSON.parse(text) : undefined) as T;
+      } catch {
+        // Google said yes in a form Atrium can't read: a write may well have gone through.
+        if (write) throw new MailProblem("unsure", UNSURE_COPY);
+        throw new MailProblem("other", "Google didn't answer properly. Atrium tries again on the next sync.");
+      }
     }
     throw new MailProblem("signed_out", signedOutCopy(account.address));
   }

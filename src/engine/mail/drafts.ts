@@ -52,7 +52,8 @@ export type EventPlan = {
   notify: boolean;
 };
 
-export type MailStatus = "draft" | "sending" | "sent" | "failed" | "rejected" | "saving" | "saved";
+// unsure: the source may have sent it; the user checks his Sent mail before sending again, and no card comes back.
+export type MailStatus = "draft" | "sending" | "sent" | "failed" | "unsure" | "rejected" | "saving" | "saved";
 export type ForwardedAttachment = { name: string; size: number; index: number };
 
 export type MailAction = {
@@ -571,11 +572,12 @@ export function updateEventDraft(db: Database, id: string, patch: EventEdit): Ma
 const MOVES: Record<MailStatus, MailStatus[]> = {
   // Straight to failed only when the executor refuses to send at all.
   draft: ["sending", "rejected", "failed", "saving"],
-  sending: ["sent", "failed"],
+  sending: ["sent", "failed", "unsure"],
   // Saving to Gmail or Mail.app drafts: done, or back to a draft when the source couldn't.
   saving: ["saved", "draft"],
   sent: [],
   failed: [],
+  unsure: [],
   rejected: [],
   saved: [],
 };

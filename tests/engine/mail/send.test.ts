@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { getApproval, onApprovalResolved, resolveApproval, RULE_NEVER_DECIDES } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { createMail, type Mail } from "../../../src/engine/mail";
-import { NO_GUESTS_COPY, NO_RSVP_COPY } from "../../../src/engine/mail/apple";
 import { draftEvent, draftMail, getMailAction, type MailAction, pendingMailActions, updateMailDraft } from "../../../src/engine/mail/drafts";
 import { mailKeychain } from "../../../src/engine/mail/google/oauth";
 import { PIM_COPY } from "../../../src/engine/mail/pim";
-import { recoverMailActions, STOPPED_COPY } from "../../../src/engine/mail/send";
+import { createMailActions, recoverMailActions, STOPPED_COPY } from "../../../src/engine/mail/send";
+import { googleSource } from "../../../src/engine/mail/google/source";
+import { appleSource, NO_GUESTS_COPY, NO_RSVP_COPY } from "../../../src/engine/mail/apple";
 import { inboxSpace } from "../../../src/engine/mail/space";
 import { ingestMessages, listAccounts, listCalendars, listEvents, listThreads, setPreferred, threadMessages, upsertAccount } from "../../../src/engine/mail/store";
 import { createTask, getTask } from "../../../src/engine/tasks";
@@ -236,17 +239,66 @@ describe("crossovers", () => {
 });
 
 describe("errors", () => {
-  test("a server error is unsure, and the card comes back as a draft that says so", async () => {
+  test("a send the source accepted stays sent, whatever goes wrong after it", async () => {
+    await connectGoogle();
+    const google = googleSource(mail.auth);
+    // Gmail takes it, then the copy for the thread can't be stored.
+    const breaking = { ...google, send: async (acct: Parameters<typeof google.send>[0], m: Parameters<typeof google.send>[1]) => {
+      const r = await google.send(acct, m);
+      db.exec("DROP TABLE mail_bodies");
+      return r;
+    } };
+    unhook();
+    const actions = createMailActions({ db, google: breaking, apple: appleSource() });
+    unhook = onApprovalResolved(actions.onDecision);
+    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
+    resolveApproval(db, action.approvalId, "approve");
+    await actions.settle();
+    expect(sends()).toHaveLength(1);
+    expect(getMailAction(db, action.id)).toMatchObject({ status: "sent", error: null });
+    expect(pendingMailActions(db)).toEqual([]);
+  });
+
+  test("an answer Gmail gave that can't be read is unsure: no redraft, and it says to check Sent", async () => {
+    await connectGoogle();
+    const google = googleSource(mail.auth, { fetch: (async (url: string, init?: RequestInit) => (init?.method === "POST" ? new Response("<html>gateway</html>", { status: 200 }) : fetch(url, init))) as typeof fetch });
+    unhook();
+    const actions = createMailActions({ db, google, apple: appleSource() });
+    unhook = onApprovalResolved(actions.onDecision);
+    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
+    resolveApproval(db, action.approvalId, "approve");
+    await actions.settle();
+    const after = getMailAction(db, action.id)!;
+    expect(after.status).toBe("unsure");
+    expect(after.error).toContain("may have gone out");
+    expect(after.error).toContain("Check");
+    expect(pendingMailActions(db)).toEqual([]);
+  });
+
+  test("Google not reachable at all is offline: nothing went out, and the card comes back", async () => {
+    await connectGoogle();
+    const google = googleSource(mail.auth, { fetch: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") throw Object.assign(new Error("Unable to connect."), { code: "ConnectionRefused" });
+      return fetch(url, init);
+    }) as typeof fetch });
+    unhook();
+    const actions = createMailActions({ db, google, apple: appleSource() });
+    unhook = onApprovalResolved(actions.onDecision);
+    const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
+    resolveApproval(db, action.approvalId, "approve");
+    await actions.settle();
+    expect(getMailAction(db, action.id)!.status).toBe("failed");
+    expect(pendingMailActions(db)[0]!.error).toContain("nothing went out");
+  });
+
+  test("a server error is unsure: the card doesn't come back, so nothing invites a second send", async () => {
     await connectGoogle();
     fakes.google.failWrites = 503;
     const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
-    const failed = await pressSend(action);
-    expect(failed.status).toBe("failed");
-    expect(failed.error).toContain("can't tell whether this went through");
-    const again = pendingMailActions(db);
-    expect(again).toHaveLength(1);
-    expect(again[0]!.error).toBe(failed.error);
-    expect(again[0]!.body).toBe("Hi");
+    const unsure = await pressSend(action);
+    expect(unsure.status).toBe("unsure");
+    expect(unsure.error).toContain("may have gone out");
+    expect(pendingMailActions(db)).toEqual([]);
   });
 
   test("a refused send says nothing went out; signed out says to connect again", async () => {
@@ -276,7 +328,11 @@ describe("errors", () => {
     const { action } = draftMail(db, { spaceId: space(), kind: "reply", draftedBy: "you", threadId: lease().id, body: "Hi" });
     db.query("UPDATE approvals SET status = 'approved', decided_by = 'you' WHERE id = ?").run(action.approvalId);
     db.query("UPDATE mail_actions SET status = 'sending' WHERE id = ?").run(action.id);
+    const leftover = join(home.home, "mail-outgoing", action.id);
+    mkdirSync(leftover, { recursive: true });
+    writeFileSync(join(leftover, "lease.pdf"), "x");
     expect(recoverMailActions(db)).toBe(1);
+    expect(existsSync(join(home.home, "mail-outgoing"))).toBe(false);
     expect(getMailAction(db, action.id)!.status).toBe("failed");
     expect(pendingMailActions(db)[0]!.error).toBe(STOPPED_COPY);
     expect(sends()).toEqual([]);

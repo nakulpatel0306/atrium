@@ -67,7 +67,7 @@ export const PIM_COPY = {
 } as const;
 
 // A write that timed out may still have gone through.
-export const PIM_UNSURE_COPY = "Mail or Calendar didn't answer in time, so Atrium can't tell whether this went through. Check Mail's Sent mailbox or Calendar before trying again.";
+export const PIM_UNSURE_COPY = "This may have gone out: Mail or Calendar didn't answer in time. Check Mail's Sent mailbox or Calendar before sending it again.";
 
 const KINDS: Record<string, MailProblemKind> = { automation_denied: "automation_denied", calendar_denied: "calendar_denied", not_running: "other" };
 

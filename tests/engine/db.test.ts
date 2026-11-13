@@ -536,6 +536,25 @@ test("an older database without attachments gains the table, and its tasks read 
   t.cleanup();
 });
 
+test("a drafts table from before the unsure status gains it and keeps its rows", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  openDb(path).close();
+  const old = new Database(path);
+  const sql = (old.query("SELECT sql FROM sqlite_master WHERE name = 'mail_actions'").get() as { sql: string }).sql;
+  old.exec("DROP TABLE mail_actions");
+  old.exec(sql.replace("'failed','unsure',", "'failed',"));
+  old.exec("INSERT INTO approvals (id, kind, title, detail, created_at) VALUES ('apr_1', 'question', 'Send an email?', '', 1)");
+  old.exec("INSERT INTO mail_actions (id, approval_id, space_id, kind, status, drafted_by, created_at, updated_at) VALUES ('mla_1', 'apr_1', 'spc_1', 'new', 'draft', 'you', 1, 1)");
+  expect(() => old.exec("UPDATE mail_actions SET status = 'unsure'")).toThrow();
+  old.close();
+  const db = openDb(path);
+  db.exec("UPDATE mail_actions SET status = 'unsure' WHERE id = 'mla_1'");
+  expect(db.query("SELECT id, status FROM mail_actions").all()).toEqual([{ id: "mla_1", status: "unsure" }]);
+  db.close();
+  t.cleanup();
+});
+
 test("a database from Phase A mail gains the drafts table and keeps its mail", () => {
   const t = tempHome();
   const path = join(t.home, "atrium.db");

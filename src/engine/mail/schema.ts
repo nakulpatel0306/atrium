@@ -4,6 +4,47 @@
 // One row per (address, source): the same address reachable through Google and through Mail.app has two rows, and
 // exactly one of them is preferred. Only the preferred row is synced and shown; the other is kept so switching back
 // is one click.
+// Drafted emails and calendar changes waiting on the user's own Send (or Approve), and what became of them. Each has
+// an always-ask approval; nothing here is ever sent by a rule, an agent or the engine on its own.
+export const MAIL_ACTIONS_DDL = (name: string) => `
+CREATE TABLE ${name} (
+  id TEXT PRIMARY KEY,
+  approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id),
+  space_id TEXT NOT NULL,
+  task_id TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('reply','reply_all','forward','new','event_create','event_move','event_cancel')),
+  -- unsure: the source may have sent it (no answer, or one Atrium couldn't read); the user checks before sending again.
+  status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','unsure','rejected','saving','saved')),
+  drafted_by TEXT NOT NULL CHECK (drafted_by IN ('you','claude')),
+  -- The From account row; NULL for calendar changes.
+  account_id TEXT,
+  -- The thread and message replied to or forwarded, and the thread's account when drafted.
+  thread_id TEXT,
+  source_message_id TEXT,
+  thread_account_id TEXT,
+  -- Threading the engine sets: Gmail's threadId (for a reply from the thread's own Google account) and the headers.
+  gmail_thread_id TEXT,
+  in_reply_to TEXT,
+  refs TEXT NOT NULL DEFAULT '[]',
+  subject TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  -- The quoted original (reply) or forwarded message, added below the body on send. Shown, not edited.
+  quoted TEXT NOT NULL DEFAULT '',
+  -- JSON [{name, address, added}]; added marks a recipient Claude put there beyond the thread's own people.
+  to_json TEXT NOT NULL DEFAULT '[]',
+  cc_json TEXT NOT NULL DEFAULT '[]',
+  -- JSON [{name, size, index}]: the forwarded message's attachments, by their index on it.
+  attachments TEXT NOT NULL DEFAULT '[]',
+  -- JSON, calendar changes only: {calendarId, eventId, title, start, end, allDay, location, attendees, notify}.
+  event_json TEXT,
+  -- JSON [{kind, text}]: why this needs the user's explicit Send (a new person, attachments, another account, many people).
+  reasons TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  sent_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+
 export const MAIL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS mail_accounts (
   id TEXT PRIMARY KEY,
@@ -119,43 +160,6 @@ CREATE TABLE IF NOT EXISTS cal_events (
 );
 CREATE INDEX IF NOT EXISTS cal_events_start ON cal_events(start_at);
 CREATE INDEX IF NOT EXISTS cal_events_uid ON cal_events(ical_uid, recurrence_id);
--- Drafted emails and calendar changes waiting on the user's own Send (or Approve), and what became of them. Each has
--- an always-ask approval; nothing here is ever sent by a rule, an agent or the engine on its own.
-CREATE TABLE IF NOT EXISTS mail_actions (
-  id TEXT PRIMARY KEY,
-  approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id),
-  space_id TEXT NOT NULL,
-  task_id TEXT,
-  kind TEXT NOT NULL CHECK (kind IN ('reply','reply_all','forward','new','event_create','event_move','event_cancel')),
-  status TEXT NOT NULL CHECK (status IN ('draft','sending','sent','failed','rejected','saving','saved')),
-  drafted_by TEXT NOT NULL CHECK (drafted_by IN ('you','claude')),
-  -- The From account row; NULL for calendar changes.
-  account_id TEXT,
-  -- The thread and message replied to or forwarded, and the thread's account when drafted.
-  thread_id TEXT,
-  source_message_id TEXT,
-  thread_account_id TEXT,
-  -- Threading the engine sets: Gmail's threadId (for a reply from the thread's own Google account) and the headers.
-  gmail_thread_id TEXT,
-  in_reply_to TEXT,
-  refs TEXT NOT NULL DEFAULT '[]',
-  subject TEXT NOT NULL DEFAULT '',
-  body TEXT NOT NULL DEFAULT '',
-  -- The quoted original (reply) or forwarded message, added below the body on send. Shown, not edited.
-  quoted TEXT NOT NULL DEFAULT '',
-  -- JSON [{name, address, added}]; added marks a recipient Claude put there beyond the thread's own people.
-  to_json TEXT NOT NULL DEFAULT '[]',
-  cc_json TEXT NOT NULL DEFAULT '[]',
-  -- JSON [{name, size, index}]: the forwarded message's attachments, by their index on it.
-  attachments TEXT NOT NULL DEFAULT '[]',
-  -- JSON, calendar changes only: {calendarId, eventId, title, start, end, allDay, location, attendees, notify}.
-  event_json TEXT,
-  -- JSON [{kind, text}]: why this needs the user's explicit Send (a new person, attachments, another account, many people).
-  reasons TEXT NOT NULL DEFAULT '[]',
-  error TEXT,
-  sent_at INTEGER,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
+${MAIL_ACTIONS_DDL("IF NOT EXISTS mail_actions")};
 CREATE INDEX IF NOT EXISTS mail_actions_thread ON mail_actions(thread_id);
 `;

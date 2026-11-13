@@ -24,7 +24,7 @@ import { inboxSpaceId } from "./space";
 import { newMessageId } from "./mime";
 import { addSentCopy, getAccount, listAccounts, type MailAccount } from "./store";
 import type { MailSync } from "./sync";
-import { type AccountRef, MailProblem, type MailSource, type Outgoing, type Rsvp, type SourceAttachment } from "./types";
+import { type AccountRef, MailProblem, type MailSource, type Outgoing, type Rsvp, type Sent, type SourceAttachment } from "./types";
 
 // The only path from a mail or calendar draft to the outside world: the user's own Send (or Approve) on its card,
 // through the account's preferred source, at most once per draft. Modelled on messaging/send.ts.
@@ -35,8 +35,20 @@ export const NOT_STARTED_COPY = "Atrium stopped before sending this, so nothing 
 export const SAVE_STOPPED_COPY = "Atrium stopped while saving this to your drafts. Check your drafts before saving it again.";
 export const NOTE_COPY = "Keep the note to 500 characters, with no hidden characters.";
 
+export const UNSURE_COPY = "This may have gone out. Check your Sent mail or calendar before sending it again.";
+export const NOTHING_SENT_COPY = "Something went wrong before it went out, so nothing was sent. Check the card, then press Send again.";
+
 const ref = (a: MailAccount): AccountRef => ({ id: a.id, address: a.address, ref: a.ref });
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// For the engine log: what kind of error, never its message, which can carry a file or attachment name.
+const errorKind = (e: unknown) => (e instanceof Error ? `${e.name}${(e as { code?: unknown }).code ? ` ${String((e as { code?: unknown }).code)}` : ""}` : typeof e);
+
+// An error from the source call itself, after which the message may have gone out.
+class Delivery extends Error {
+  constructor(override readonly cause: unknown) {
+    super("delivery");
+    this.name = "Delivery";
+  }
+}
 const people = (rs: Recipient[]) => rs.map(({ name, address }) => ({ name, address }));
 
 export type MailActions = ReturnType<typeof createMailActions>;
@@ -90,12 +102,27 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
     return { dir, files };
   }
 
-  async function sendEmail(a: MailAction): Promise<string> {
+  // Threading for the row that sends. The thread's own row has it stored; after a source switch the same message is
+  // found again under the new row by its Message-ID, so a reply still threads.
+  function threading(a: MailAction, account: MailAccount): { threadKey: string | null; replyTo: string | null } {
+    if (a.kind === "forward") return { threadKey: null, replyTo: null };
+    if (account.id === a.threadAccountId) {
+      const answered = a.sourceMessageId ? (db.query("SELECT source_id FROM mail_messages WHERE id = ?").get(a.sourceMessageId) as { source_id: string } | null) : null;
+      return { threadKey: account.source === "google" ? a.gmailThreadId : null, replyTo: account.source === "apple" ? (answered?.source_id ?? null) : null };
+    }
+    const same = a.inReplyTo
+      ? (db.query("SELECT m.source_id, t.thread_key FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id WHERE m.account_id = ? AND m.message_id = ? LIMIT 1").get(account.id, a.inReplyTo) as { source_id: string; thread_key: string } | null)
+      : null;
+    if (!same) return { threadKey: null, replyTo: null };
+    return { threadKey: account.source === "google" ? same.thread_key : null, replyTo: account.source === "apple" ? same.source_id : null };
+  }
+
+  // Hands the email to the source. Returns once the source has taken it, with what to record afterwards; anything
+  // the source call itself throws comes back wrapped in Delivery, since by then it may have gone out.
+  async function sendEmail(a: MailAction): Promise<{ line: string; record(): void }> {
     const account = sendingAccount(a.accountId);
     const source = sourceOf(account.source);
-    // Gmail's threadId and Mail.app's reply both need the thread's own account row; otherwise the headers thread it.
-    const sameRow = account.id === a.threadAccountId;
-    const answered = a.sourceMessageId && sameRow && a.kind !== "forward" ? (db.query("SELECT source_id FROM mail_messages WHERE id = ?").get(a.sourceMessageId) as { source_id: string } | null) : null;
+    const { threadKey, replyTo } = threading(a, account);
     const { dir, files } = await forwardedFiles(a);
     try {
       const out: Outgoing = {
@@ -107,56 +134,69 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
         messageId: newMessageId(account.address),
         inReplyTo: a.inReplyTo,
         references: a.references,
-        threadKey: account.source === "google" && sameRow ? a.gmailThreadId : null,
-        replyToSourceId: account.source === "apple" ? (answered?.source_id ?? null) : null,
+        threadKey,
+        replyToSourceId: replyTo,
         attachments: files,
       };
-      const sent = await source.send(ref(account), out);
-      const at = now();
-      const copy = addSentCopy(db, account, a.id, {
-        sourceId: sent.sourceId ?? `atrium-sent:${a.id}`,
-        threadKey: sent.threadKey ?? undefined,
-        messageId: account.source === "google" ? out.messageId : null,
-        inReplyTo: out.inReplyTo,
-        references: out.references,
-        subject: out.subject,
-        from: out.from,
-        to: out.to,
-        cc: out.cc,
-        date: at,
-        snippet: a.body.replace(/\s+/g, " ").trim().slice(0, 200),
-        unread: false,
-        labels: [],
-        attachments: files.map((f, i) => ({ name: f.name, size: a.attachments[i]?.size ?? 0, ref: f.name })),
-      });
-      cacheBody(db, copy, out.text, at);
-      return account.address;
+      let sent: Sent;
+      try {
+        sent = await source.send(ref(account), out);
+      } catch (e) {
+        throw new Delivery(e);
+      }
+      const record = () => {
+        const at = now();
+        const copy = addSentCopy(db, account, a.id, {
+          sourceId: sent.sourceId ?? `atrium-sent:${a.id}`,
+          threadKey: sent.threadKey ?? undefined,
+          messageId: account.source === "google" ? out.messageId : null,
+          inReplyTo: out.inReplyTo,
+          references: out.references,
+          subject: out.subject,
+          from: out.from,
+          to: out.to,
+          cc: out.cc,
+          date: at,
+          snippet: a.body.replace(/\s+/g, " ").trim().slice(0, 200),
+          unread: false,
+          labels: [],
+          attachments: files.map((f, i) => ({ name: f.name, size: a.attachments[i]?.size ?? 0, ref: f.name })),
+        });
+        cacheBody(db, copy, out.text, at);
+      };
+      return { line: `Sent ${what(a)} from ${account.address}.`, record };
     } finally {
       if (dir) rmSync(dir, { recursive: true, force: true });
     }
   }
 
-  async function applyEvent(a: MailAction): Promise<void> {
+  async function applyEvent(a: MailAction): Promise<{ line: string; record(): void }> {
     const e = a.event!;
     if (!writableCalendars(db).some((c) => c.id === e.calendarId)) throw new MailProblem("other", "That calendar isn't available to Atrium anymore. Pick another one, then approve again.");
     const cal = db.query("SELECT source, source_id, account_id FROM cal_calendars WHERE id = ?").get(e.calendarId) as { source: "google" | "apple"; source_id: string; account_id: string | null };
     const holder = cal.account_id ? getAccount(db, cal.account_id) : null;
     const account = holder ? ref(holder) : null;
     const source = sourceOf(cal.source);
+    const deliver = async (fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (e) {
+        throw new Delivery(e);
+      }
+    };
     if (a.kind === "event_create") {
-      await source.createEvent(account, cal.source_id, { title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location, attendees: people(e.attendees) }, e.attendees.length > 0);
-      void deps.sync?.syncNow();
-      return;
+      await deliver(() => source.createEvent(account, cal.source_id, { title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location, attendees: people(e.attendees) }, e.attendees.length > 0));
+      return { line: `Created "${e.title}"${e.attendees.length ? ` and invited ${namesLine(e.attendees)}` : ""}.`, record: () => void deps.sync?.syncNow() };
     }
     const stored = db.query("SELECT source_id FROM cal_events WHERE id = ?").get(e.eventId ?? "") as { source_id: string } | null;
     if (!stored) throw new MailProblem("other", "That event isn't in the calendar anymore. Sync, then try again.");
+    const told = e.notify ? " and told its guests" : "";
     if (a.kind === "event_move") {
-      await source.moveEvent(account, cal.source_id, stored.source_id, e.start, e.end, e.notify);
-      db.query("UPDATE cal_events SET start_at = ?, end_at = ? WHERE id = ?").run(e.start, e.end, e.eventId);
-    } else {
-      await source.cancelEvent(account, cal.source_id, stored.source_id, e.notify);
-      db.query("DELETE FROM cal_events WHERE id = ?").run(e.eventId);
+      await deliver(() => source.moveEvent(account, cal.source_id, stored.source_id, e.start, e.end, e.notify));
+      return { line: `Moved "${e.title}"${told}.`, record: () => void db.query("UPDATE cal_events SET start_at = ?, end_at = ? WHERE id = ?").run(e.start, e.end, e.eventId) };
     }
+    await deliver(() => source.cancelEvent(account, cal.source_id, stored.source_id, e.notify));
+    return { line: `Cancelled "${e.title}"${told}.`, record: () => void db.query("DELETE FROM cal_events WHERE id = ?").run(e.eventId) };
   }
 
   const what = (a: MailAction) => (isEvent(a.kind) ? `"${a.event?.title}"` : `the ${KIND_NOUN[a.kind]} to ${namesLine(a.to)}`);
@@ -178,31 +218,43 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
     } catch {
       return getMailAction(db, a.id)!;
     }
+    let done: { line: string; record(): void };
     try {
-      let line: string;
-      if (isEvent(a.kind)) {
-        await applyEvent(a);
-        const e = a.event!;
-        line =
-          a.kind === "event_create"
-            ? `Created "${e.title}"${e.attendees.length ? ` and invited ${namesLine(e.attendees)}` : ""}.`
-            : `${a.kind === "event_move" ? "Moved" : "Cancelled"} "${e.title}"${e.notify ? " and told its guests" : ""}.`;
-      } else {
-        const from = await sendEmail(a);
-        line = `Sent ${what(a)} from ${from}.`;
-      }
-      const sent = setMailStatus(db, a.id, "sent", { sentAt: now() });
-      logActivity(db, a.spaceId, "atrium", line, { taskId: a.taskId });
-      finishTask(a.taskId, "done", line);
-      return sent;
+      done = isEvent(a.kind) ? await applyEvent(a) : await sendEmail(a);
     } catch (e) {
-      const problem = e instanceof MailProblem || e instanceof BadMail ? e.message : "Something went wrong before it went out. Check the card, then press Send again.";
-      if (!(e instanceof MailProblem || e instanceof BadMail)) console.error(`Mail send ${a.id} failed: ${message(e)}`);
-      const failed = setMailStatus(db, a.id, "failed", { error: problem });
-      logActivity(db, a.spaceId, "atrium", `Couldn't send ${what(a)}: ${problem}`, { taskId: a.taskId });
-      redraftMail(db, failed, problem);
-      return failed;
+      return failedSend(a, e);
     }
+    // The source took it: it's sent, whatever happens to the bookkeeping after this.
+    const sent = setMailStatus(db, a.id, "sent", { sentAt: now() });
+    try {
+      done.record();
+    } catch (e) {
+      console.error(`Mail send ${a.id}: went out, but its record in Atrium failed (${errorKind(e)}).`);
+    }
+    logActivity(db, a.spaceId, "atrium", done.line, { taskId: a.taskId });
+    finishTask(a.taskId, "done", done.line);
+    return sent;
+  }
+
+  // Before the source call, or a source that says plainly it didn't send: the card comes back with the reason. A
+  // source call that may have gone through is "unsure": no card comes back, so nothing invites a second send.
+  function failedSend(a: MailAction, e: unknown): MailAction {
+    const inner = e instanceof Delivery ? e.cause : e;
+    const plain = inner instanceof MailProblem || inner instanceof BadMail;
+    const unsure = e instanceof Delivery && (!plain || (inner instanceof MailProblem && inner.kind === "unsure"));
+    if (!plain) console.error(`Mail send ${a.id} failed (${errorKind(inner)}).`);
+    if (unsure) {
+      const copy = inner instanceof MailProblem ? inner.message : UNSURE_COPY;
+      const left = setMailStatus(db, a.id, "unsure", { error: copy });
+      logActivity(db, a.spaceId, "atrium", `Not sure whether ${what(a)} went out: ${copy}`, { taskId: a.taskId });
+      finishTask(a.taskId, "couldnt", copy);
+      return left;
+    }
+    const problem = plain ? (inner as Error).message : NOTHING_SENT_COPY;
+    const failed = setMailStatus(db, a.id, "failed", { error: problem });
+    logActivity(db, a.spaceId, "atrium", `Couldn't send ${what(a)}: ${problem}`, { taskId: a.taskId });
+    redraftMail(db, failed, problem);
+    return failed;
   }
 
   function reject(id: string): void {
@@ -219,7 +271,7 @@ export function createMailActions(deps: { db: Database; google: MailSource; appl
       const action = mailActionForApproval(db, a.id);
       if (action?.status !== "draft") return;
       if (d === "reject") return reject(action.id);
-      track(`send:${action.id}`, () => send(action.id)).catch((e) => console.error(`Sending ${action.id} failed: ${message(e)}`));
+      track(`send:${action.id}`, () => send(action.id)).catch((e) => console.error(`Sending ${action.id} failed (${errorKind(e)}).`));
     },
 
     send,
@@ -289,6 +341,8 @@ const ANSWER_WORD: Record<Rsvp, string> = { accepted: "going", tentative: "maybe
 // Never sends. A send cut off mid-way may or may not have gone out, so it comes back as a draft that says so; a yes
 // that never reached the source comes back as a draft too, since nothing resends on its own.
 export function recoverMailActions(db: Database): number {
+  // Forwarded attachments saved for a send that never finished; each send makes its own again.
+  rmSync(join(config().home, "mail-outgoing"), { recursive: true, force: true });
   const rows = db
     .query(
       `SELECT m.id, m.status, a.status AS decided FROM mail_actions m JOIN approvals a ON a.id = m.approval_id
