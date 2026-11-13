@@ -60,7 +60,7 @@ Don't move or delete the folder after `atrium install`: the login service points
 
 ## First run
 
-Open the app (or run `atrium open`). On a fresh install, **Get started** walks you through five short steps: a welcome, your agents (Claude Code is required, Codex and Gemini are optional), the GitHub CLI, your name and projects folder, and a last check. You can skip everything except Claude and come back from **Settings → Get started**.
+Open the app (or run `atrium open`). On a fresh install, **Get started** walks you through five short steps: a welcome, your agents (Claude Code is required, Codex and Gemini are optional), the GitHub CLI, your name and projects folder, and Done. You can skip everything except Claude and come back from **Settings → Get started**.
 
 From a terminal, `atrium doctor` shows the same checks, with the install and sign-in command for anything missing.
 
