@@ -287,6 +287,8 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .m-item .t span { color: var(--m-faint); margin-left: 6px; font-size: 12px; }
 .m-item .acts { display: flex; gap: 6px; flex: none; }
 .m-item.click { cursor: pointer; }
+/* A push or new-repo card says exactly what will leave the Mac, so its title wraps instead of being cut off. */
+.m-item.tall { flex-wrap: wrap; } .m-item.tall .t { white-space: normal; flex-basis: 12rem; }
 .m-item .st { width: 15px; height: 15px; flex: none; display: grid; place-items: center; }
 .m-item .st svg { width: 15px; height: 15px; }
 .st.ready { color: var(--m-accent); } .st.run { color: var(--m-green); } .st.queued { color: var(--m-faint); } .st.done { color: var(--m-faint); }
@@ -433,7 +435,7 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 }
 
 
-/* What's coming */
+/* The loop: shipped and next */
 .soon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .soon { position: relative; overflow: hidden; border: 1px solid var(--line2); border-radius: 18px; padding: 26px 24px 24px; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--raised)), var(--raised) 60%); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .soon::before { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--accent-hi) 10%, transparent) 50%, transparent 70%); transform: translateX(-100%); animation: sheen 6s ease-in-out infinite; pointer-events: none; }
@@ -442,6 +444,7 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .soon .st { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-hi); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 4px 10px; }
 .soon .st i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-hi); animation: pulse 2s infinite; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-hi) 60%, transparent); }
 .soon .st.later { color: var(--dim); border-color: var(--line2); } .soon .st.later i { background: var(--faint); animation: none; }
+.soon .st.shipped { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); } .soon .st.shipped i { background: var(--green); animation: none; }
 .soon h3 { font-size: 22px; }
 .soon p { color: var(--dim); font-size: 15px; }
 .soon .peek { margin-top: 6px; border: 1px dashed var(--line2); border-radius: 10px; padding: 10px 12px; font: 12.5px/1.6 var(--mono); color: var(--faint); background: color-mix(in srgb, var(--bg) 60%, transparent); overflow-x: auto; }
@@ -583,14 +586,14 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   <div class="wrap">
     <div class="head reveal">
       <span class="eyebrow">How it works</span>
-      <h2>Ask. Watch it work. Say yes.</h2>
-      <p class="lede">Every task follows the same three steps today. The full loop I'm building is brief, write, verify, review, you. The brief, the test gate and the reviewer are <a href="#soon">coming next</a>.</p>
+      <h2>Brief, write, verify, review, you.</h2>
+      <p class="lede">Every coding task runs the same loop. You only see work that passed Atrium's own checks and a fresh reviewer, and you can skip the brief with ⌘↩ when you already know what you want.</p>
     </div>
     <div class="how-grid">
       <ol class="steps" id="steps">
-        <li class="on"><div><h3>Ask in plain words</h3><p>Type what you want, like “fix the off-by-one in pagination”, and attach a file or a screenshot if it helps. Atrium picks the space and routes the task to Claude, Codex or Gemini.</p></div></li>
-        <li><div><h3>It writes on its own branch</h3><p>The agent works on <code>atrium/&lt;taskId&gt;</code> inside a sandbox. You watch the diff grow while it works, and steer it with a note if it heads the wrong way. Your checkout is never touched.</p></div></li>
-        <li><div><h3>You decide</h3><p>Finished work waits in <b>Needs you</b>, with the agent's own word on how it went: done, partial or couldn't. Approve it, say yes once more, and Atrium pushes the branch and opens the pull request.</p></div></li>
+        <li class="on"><div><h3>Ask, then glance at the brief</h3><p>Type what you want, like “fix the off-by-one in pagination”. A quick pass turns it into a brief: the goal, what done looks like, how it's checked. Edit anything, then Run.</p></div></li>
+        <li><div><h3>It writes, Atrium checks</h3><p>The agent works on <code>atrium/&lt;taskId&gt;</code> inside a sandbox. Atrium runs your typecheck and tests itself and sends failures back. Then a fresh session, from another vendor when one is installed, reviews the diff against the brief.</p></div></li>
+        <li><div><h3>You decide</h3><p>Only then does the work wait in <b>Needs you</b>, with the checks, the review findings and how each was fixed. Approve it, say yes once more, and Atrium pushes the branch and opens the pull request.</p></div></li>
       </ol>
       <div class="demo reveal" id="demo" aria-label="Example: asking Atrium to fix a bug on its own branch">
         <div class="ask"><span class="p">›</span><span id="typed">fix the off-by-one in pagination</span><span class="caret"></span></div>
@@ -599,7 +602,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
         <div class="card" data-s="card">
           <div class="t"><b>◆ lumen-api</b><span>ready for review</span></div>
           <p class="what">The last page dropped a row when the total was a multiple of the page size. Fixed, with a test.</p>
-          <div class="to">atrium/tsk_7f3a · src/paginate.ts +4 −2 · tests/paginate.test.ts +19 · agent says: done</div>
+          <div class="to">atrium/tsk_7f3a · src/paginate.ts +4 −2 · tests/paginate.test.ts +19 · checks passed · reviewed by Codex</div>
           <div class="acts"><span class="chip go" id="yes">Approve</span><span class="chip">Send back</span><span class="chip">View diff</span></div>
           <div class="sent" data-s="sent">✓ Kept on atrium/tsk_7f3a. The pull request waits for one more yes.</div>
         </div>
@@ -634,7 +637,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
         </article>
         <article class="who-panel" role="tabpanel" id="p-review" aria-labelledby="t-review" data-demo="go:web:tsk_aa21" hidden>
           <h3>Get a second read on a branch.</h3>
-          <p>Ask for a review of a branch, or of what an agent just wrote. Another agent reads the diff against main and tells you what to fix before you merge. A fresh reviewer that checks every diff on its own is coming next.</p>
+          <p>Ask for a review of a branch, or of what an agent just wrote. Another agent reads the diff against main and tells you what to fix before you merge. Work an agent writes in Atrium gets a fresh reviewer on its own, before it reaches you.</p>
           <ul class="asks"><li>Review feature/upload-queue</li><li>What could break if I merge this?</li><li>Check this branch for missing tests</li></ul>
           <div class="lands"><span>What you get back</span><p>A short list of what to fix before merging, in plain words.</p></div>
           <button class="btn small" type="button">Try it in the demo →</button>
@@ -737,33 +740,33 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 <section id="soon" style="padding-top: 0">
   <div class="wrap">
     <div class="head reveal">
-      <span class="eyebrow">What's coming</span>
-      <h2>Atrium isn't finished. Here's what I'm building next.</h2>
-      <p class="lede">The goal is a loop you can trust: brief, write, verify, review, you. Today Atrium does the writing and waits for you. These fill in the rest. None of them are shipped yet.</p>
+      <span class="eyebrow">The loop</span>
+      <h2>What makes it a loop you can trust, and what's next.</h2>
+      <p class="lede">Brief, write, verify, review, you. These four are shipped; the two at the end are what I'm building next.</p>
     </div>
     <div class="soon-grid">
       <article class="soon reveal">
-        <span class="st"><i></i>Next up</span>
+        <span class="st shipped"><i></i>Shipped</span>
         <h3>A brief before it starts</h3>
-        <p>Type a one-liner and Atrium turns it into a brief: the goal, what done looks like, and a command that checks it. It asks a question only when something is really unclear.</p>
+        <p>Type a one-liner and a quick, read-only pass turns it into a brief you can edit: the goal, what done looks like, and how it's checked. It asks a question only when something is really unclear, and ⌘↩ skips it.</p>
         <div class="peek"><b>Brief</b> · Fix the off-by-one in pagination<br>done when: the last page has every row<br>check: <span class="ac">bun test tests/paginate.test.ts</span></div>
       </article>
       <article class="soon reveal">
-        <span class="st"><i></i>Next up</span>
+        <span class="st shipped"><i></i>Shipped</span>
         <h3>Your tests as the gate</h3>
-        <p>Atrium runs your typecheck and tests in the task's own worktree. Failures go back to the agent. “Ready” will mean green.</p>
+        <p>Atrium finds your typecheck, lint and test commands and runs them itself, sandboxed, after every turn. Failures go back to the agent. “Ready” means green, or plainly labelled unverified.</p>
         <div class="peek"><span class="a">✓</span> typecheck · <span class="a">✓</span> tests<br><b>atrium/tsk_7f3a</b> · ready</div>
       </article>
       <article class="soon reveal">
-        <span class="st"><i></i>Next up</span>
+        <span class="st shipped"><i></i>Shipped</span>
         <h3>A fresh reviewer</h3>
-        <p>Before you see a diff, a clean session reads it against the brief, from a different vendor when one is installed. It looks for scope creep and missed edge cases, not style nits.</p>
+        <p>Before you see a diff, a clean session reads it against the brief, from a different vendor when one is installed. It looks for scope creep and missed edge cases, not style nits, and the writer answers each finding.</p>
         <div class="peek"><span class="ac">Claude</span> wrote it · <span class="ac">Codex</span> reviewed it<br>1 finding, fixed · waiting for your yes</div>
       </article>
       <article class="soon reveal">
-        <span class="st"><i></i>Next up</span>
+        <span class="st shipped"><i></i>Shipped</span>
         <h3>Budgets and loop detection</h3>
-        <p>Each task gets a time and token cap. If an agent keeps making the same edit or stops making progress, Atrium pauses it and tells you why.</p>
+        <p>Each task gets a time and token cap. If an agent keeps making the same edit or stops making progress, Atrium pauses it and tells you why. Give it a hint, or ask it to explain the problem.</p>
         <div class="peek"><span class="ac">paused</span> · the same edit three times<br><b>atrium/tsk_81c2</b> · waiting for you</div>
       </article>
       <article class="soon reveal">
@@ -1101,7 +1104,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       if (t.status === "queued") acts = `<button class="m-btn" type="button" data-act="start" data-t="${t.id}">Start now</button>`;
       const tag = t.status === "ready" ? (t.push ? `<span class="m-tag warn">Always asks</span>` : "") : t.status === "run" ? `<span class="m-tag run">Running</span>` : `<span class="m-tag">${t.when}</span>`;
       const said = t.outcome && t.status !== "run" && t.status !== "queued" ? `<span class="m-tag ${t.outcome === "done" ? "run" : "warn"}">Agent says: ${t.outcome}</span>` : "";
-      return `<div class="m-entry${t.status === "done" ? " done" : ""}"><div class="m-item click" data-row="${t.id}" aria-expanded="${open}">${st(t.status)}<span class="t">${esc(t.title)}</span>${tag}<span class="acts">${acts}</span></div>
+      return `<div class="m-entry${t.status === "done" ? " done" : ""}"><div class="m-item click${t.push && t.status === "ready" ? " tall" : ""}" data-row="${t.id}" aria-expanded="${open}">${st(t.status)}<span class="t">${esc(t.title)}</span>${tag}<span class="acts">${acts}</span></div>
         ${open ? `<div class="m-detail"><div class="m-meta">${av(t.agent)}<span>${AG[t.agent][1]}</span><span>${esc(t.when)}</span>${t.branch ? `<span class="m-mono">Branch ${esc(t.branch)}</span>` : ""}${said}</div>${made(s, t)}</div>` : ""}</div>`;
     }
     function livePanel(s) {
