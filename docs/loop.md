@@ -13,7 +13,7 @@ Why this shape: in studies of agent failures, about 44% come from the task spec 
 - **Check with**: `auto` for the checks Atrium finds, or a command you chose.
 - **Scope** and **not in scope**, **look at first** (files), and a **size** (small, medium, large) that sets the default budget.
 
-The brief, its one-line gap hints ("No way to check this is done: add a test command or acceptance check") and any questions show on the task. The pre-pass asks at most two questions, and only when the ask could reasonably mean two different things. When it does, the task waits in **Needs you** for one-tap answers (or a few words), which travel with the brief; **Start** sends what's answered. Otherwise the writer starts as soon as the brief is ready.
+The brief, its one-line gap hints ("No way to check this is done: add a test command or acceptance check") and any questions show on the task. The pre-pass asks at most two questions, and only when the ask could reasonably mean two different things. When it does, the task waits in **Needs you** for one-tap answers (or a few words), which travel with the brief; **Start** sends what's answered. The terminal app answers them too: `a` on the card, a number for each listed answer. Every needs-you count (the dashboard, the terminal app, the Mac app's badge, `atrium status`) includes these tasks, from one definition in `src/engine/needs.ts`. Otherwise the writer starts as soon as the brief is ready.
 
 **⌘↩** is "brief first": the draft appears under the ask to edit before anything runs. Esc cancels a draft still on its way, or discards the card; ⌘↩ in the card runs it.
 
@@ -76,6 +76,7 @@ The writer and the checks share a codebase, so tampering can't be made impossibl
 - **Nested dependency folders** in a monorepo (`packages/x/node_modules`) are protected from Claude's file tools everywhere, but from shell commands and Codex only at the repo root. Checks link and copy only the root ones.
 - **Rust and Go checks** run under the same profile with their caches pointed at the temp folder; a toolchain that insists on writing to its home folder fails, which shows as a failing check, not a pass.
 - **Python dependencies** are linked read-only (`.venv`) but never installed by the engine.
+- **Private registries.** The engine's install never gets your login, so when a change touches the lockfile of a repo whose packages need one, its checks are unverified ("the registry needs your login") rather than run.
 - **"Already failing" uses the output's shape**, with timings and temp paths taken out. A flaky check can read as newly failing, and the task's goal is matched by words ("fix", "failing", "tests"), not understood.
 
 ## The reviewer
