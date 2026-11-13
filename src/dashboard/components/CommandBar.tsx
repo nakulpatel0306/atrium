@@ -8,6 +8,8 @@ import { announce } from "../live";
 import { navigate } from "../route";
 import { AgentPicker } from "./AgentPicker";
 import { AttachChips } from "./AttachChips";
+import { BriefCard, type Draft as BriefDraft } from "./BriefCard";
+import type { Brief } from "../../engine/brief";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -33,6 +35,8 @@ export function CommandBar({ space, setupRequest }: Props) {
   const [agent, setAgent] = useState<AgentChoice>("auto");
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
+  // The brief drafted from the ask, shown under it until it's run or discarded.
+  const [draft, setDraft] = useState<BriefDraft | null>(null);
   // Files already saved in a space, so a retry after a failed send doesn't save them a second time.
   const uploaded = useRef(new Map<File, { spaceId: string; id: string }>());
   // Set when a message must survive the navigation that follows it.
@@ -70,6 +74,7 @@ export function CommandBar({ space, setupRequest }: Props) {
     if (busy) return;
     setText("");
     setMessage(null);
+    setDraft(null);
   }, [space?.id]);
 
   // Chips make the bar taller, so pages leave more room at the bottom while there are any.
@@ -168,7 +173,8 @@ export function CommandBar({ space, setupRequest }: Props) {
     return files.map((f) => uploaded.current.get(f)!.id);
   };
 
-  const submit = async () => {
+  // Enter in a space drafts a brief first; ⌘↩ (`quick`) sends the ask as it is, as fast as before briefs existed.
+  const submit = async (quick = false) => {
     const value = text.trim();
     if (busy) return;
     if (setup) {
@@ -205,18 +211,34 @@ export function CommandBar({ space, setupRequest }: Props) {
     } else {
       if (!value && !files.length) return;
       if (files.length && repo) return setMessage({ kind: "error", text: `${REPO_REFUSED} Remove the files to send this here.` });
-      const attachments = files.length ? await upload(space!.id) : [];
-      if (!attachments) return;
-      setMessage({ kind: "busy", text: "Adding the task…" });
-      const res = await post<{ task: Task }>("/api/command", { text: value, spaceId: space!.id, agent, ...(attachments.length && { attachments }) });
-      if (!res.ok) return setMessage({ kind: "error", text: res.error });
-      setText("");
-      setFiles([]);
-      uploaded.current.clear();
-      const by = agent === "auto" ? "" : ` for ${agentName(agent)}`;
-      const carrying = attachments.length ? ` with ${plural(attachments.length, "file")}` : "";
-      setMessage({ kind: "info", text: `Queued "${res.data.task.title}" in ${space!.name}${carrying}${by}.` });
+      // Files alone ask the agent to look at them; there's nothing to brief.
+      if (!quick && value) return draftBrief(value);
+      await send(value);
     }
+  };
+
+  const draftBrief = async (value: string) => {
+    setMessage({ kind: "busy", text: "Drafting a brief… ⌘↩ sends the ask as it is." });
+    const res = await post<BriefDraft>("/api/brief", { spaceId: space!.id, text: value });
+    if (!res.ok) return setMessage({ kind: "error", text: `${res.error} ⌘↩ sends the ask as it is.` });
+    setMessage(null);
+    setDraft(res.data);
+  };
+
+  const send = async (value: string, brief?: Brief) => {
+    const attachments = files.length ? await upload(space!.id) : [];
+    if (!attachments) return;
+    setMessage({ kind: "busy", text: "Adding the task…" });
+    const res = await post<{ task: Task }>("/api/command", { text: value, spaceId: space!.id, agent, ...(attachments.length && { attachments }), ...(brief && { brief }) });
+    if (!res.ok) return setMessage({ kind: "error", text: res.error });
+    setText("");
+    setDraft(null);
+    setFiles([]);
+    uploaded.current.clear();
+    const by = agent === "auto" ? "" : ` for ${agentName(agent)}`;
+    const carrying = attachments.length ? ` with ${plural(attachments.length, "file")}` : "";
+    setMessage({ kind: "info", text: `Queued "${res.data.task.title}" in ${space!.name}${carrying}${by}.` });
+    input.current?.focus();
   };
 
   const placeholder = setup
@@ -234,6 +256,18 @@ export function CommandBar({ space, setupRequest }: Props) {
         </div>
       )}
       <div className="cmd">
+        {draft && !setup && (
+          <BriefCard
+            draft={draft}
+            repo={repo}
+            busy={busy}
+            onRun={(brief) => void send(text.trim(), brief)}
+            onDiscard={() => {
+              setDraft(null);
+              input.current?.focus();
+            }}
+          />
+        )}
         <AttachChips files={files} onRemove={remove} disabled={busy} />
         <form
           onSubmit={(e) => {
@@ -250,9 +284,17 @@ export function CommandBar({ space, setupRequest }: Props) {
             placeholder={placeholder}
             onChange={(e) => {
               setText(e.target.value);
+              // A brief is for the ask it was drafted from.
+              setDraft(null);
               if (message?.kind !== "busy") setMessage(null);
             }}
-            onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") e.currentTarget.blur();
+              else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void submit(true);
+              }
+            }}
           />
           <button
             type="button"
