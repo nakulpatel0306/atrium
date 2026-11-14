@@ -44,7 +44,7 @@ type Deps = {
   db: Database;
   runner: {
     kick(): void;
-    stopTask?(taskId: string): Promise<StopOutcome>;
+    stopTask?(taskId: string, why?: string): Promise<StopOutcome>;
     steerTask?(taskId: string, note: string): Promise<SteerOutcome>;
     steerPending?(taskId: string): boolean;
     outputSeq?(runId: string): number | null;
@@ -483,7 +483,7 @@ export function startServer(deps: Deps): Server<WsData> {
       return new Response(text, { headers });
     }
 
-    const loop = await loopRoute(db, runner.registry?.adapters.claude, runner.kick, async (id) => (await runner.stopTask?.(id)) ?? "not-running", req, url);
+    const loop = await loopRoute(db, runner.registry?.adapters.claude, runner.kick, async (id, why) => (await runner.stopTask?.(id, why)) ?? "not-running", req, url);
     if (loop) return loop;
     const files = await filesRoute(db, req, url);
     if (files) return files;

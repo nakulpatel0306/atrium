@@ -73,7 +73,10 @@ if (mode === "rate_limited_text") {
   process.exit(1);
 }
 if (mode === "slow") {
-  out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Starting a long job." }] } });
+  // A step's usage repeats on each of its lines, as Claude Code's do; its output count is a floor until it finishes.
+  const step = { id: "msg_slow_1", model: "claude-haiku-5-5", role: "assistant", usage: { input_tokens: 3, output_tokens: 8, cache_read_input_tokens: 9000, cache_creation_input_tokens: 400, cache_creation: { ephemeral_1h_input_tokens: 400, ephemeral_5m_input_tokens: 0 } } };
+  out({ type: "assistant", message: { ...step, content: [{ type: "text", text: "Starting a long job." }] } });
+  out({ type: "assistant", message: { ...step, content: [{ type: "text", text: "Still going." }] } });
   await Bun.sleep(30_000);
   result("Finished the long job.");
   process.exit(0);

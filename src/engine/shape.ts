@@ -72,7 +72,8 @@ function parts(v: unknown, max: number): SplitPart[] {
 // repo root itself, or a backslash.
 export function partPath(p: string): string | null {
   if (!p || /^[/~]/.test(p) || /[*?[\]{}\\]/.test(p)) return null;
-  const segs = p.split("/").filter((s) => s !== "" && s !== ".");
+  // APFS treats a name and its NFC form as one file, so they compare as one.
+  const segs = p.normalize("NFC").split("/").filter((s) => s !== "" && s !== ".");
   if (!segs.length || segs.includes("..")) return null;
   return segs.join("/").toLowerCase();
 }

@@ -67,9 +67,9 @@ export async function shapeFor(db: Database, task: Task, kind: unknown, mixVendo
 }
 
 // Setting a fan-out aside stops a child that's running first, so the parent can always be ended.
-async function stopAndDiscard(db: Database, parent: Task, space: Space, stop: (taskId: string) => Promise<string>): Promise<void> {
+async function stopAndDiscard(db: Database, parent: Task, space: Space, stop: (taskId: string, why: string) => Promise<string>): Promise<void> {
   const running = childrenOf(db, parent).find((c) => c.status === "running");
-  if (running && (await stop(running.id)) === "timeout") throw new FanoutRefused("One of its parts is still stopping. Try again in a moment.");
+  if (running && (await stop(running.id, `Stopped to set aside ${parent.title}.`)) === "timeout") throw new FanoutRefused("One of its parts is still stopping. Try again in a moment.");
   await discardFanout(db, parent.id, space);
 }
 
@@ -113,7 +113,7 @@ export async function loopRoute(
   db: Database,
   claude: AgentAdapter | undefined,
   kick: () => void,
-  stop: (taskId: string) => Promise<string>,
+  stop: (taskId: string, why: string) => Promise<string>,
   req: Request,
   url: URL,
 ): Promise<Response | null> {
@@ -207,9 +207,13 @@ export async function loopRoute(
     if (!costlier(b.kind as ShapeKind) || !switchOpen(task)) throw new HttpError(409, "This task has already started, so its shape can't change.");
     const shape = await shapeFor(db, task, b.kind, b.mixVendors);
     if (task.status === "running") {
-      const outcome = await stop(task.id);
+      const outcome = await stop(task.id, "Stopped to start over from the brief as another shape.");
       if (outcome === "timeout") throw new HttpError(409, "Its writer is still stopping. Try again in a moment.");
     }
+    // The writer may have finished just before the stop landed and moved the task on (to review, say); then its work
+    // stands and there's nothing to switch.
+    const now = getTask(db, task.id);
+    if (!now || !switchOpen(now)) throw new HttpError(409, "It finished before it could be stopped, so its work stands. Send it back if you want another shape.");
     const space = getSpace(db, task.spaceId)!;
     try {
       await restartAs(db, task.id, shape, space);

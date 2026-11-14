@@ -164,6 +164,28 @@ function modelTotals(raw: unknown): ModelTokens[] | undefined {
   }));
 }
 
+// A run's steps added up by model.
+function stepTotals(steps: ModelTokens[]): ModelTokens[] {
+  const by = new Map<string, ModelTokens>();
+  for (const s of steps) {
+    const t = by.get(s.model);
+    by.set(
+      s.model,
+      t
+        ? {
+            model: s.model,
+            inputTokens: t.inputTokens + s.inputTokens,
+            outputTokens: t.outputTokens + s.outputTokens,
+            cacheReadTokens: t.cacheReadTokens + s.cacheReadTokens,
+            cacheWriteTokens: t.cacheWriteTokens + s.cacheWriteTokens,
+            cacheWrite1hTokens: (t.cacheWrite1hTokens ?? 0) + (s.cacheWrite1hTokens ?? 0),
+          }
+        : s,
+    );
+  }
+  return [...by.values()];
+}
+
 async function cliVersion(bin: string, signal?: AbortSignal): Promise<number[] | null> {
   let line = "";
   const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => void (line ||= l) });
@@ -190,6 +212,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       let limitRejected = false;
       let usage: AgentUsage | undefined;
       let contextTokens: number | undefined;
+      // Each step's usage by message id (a step's lines repeat it), for a run that ends without a result.
+      const steps = new Map<string, ModelTokens>();
       let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number; models?: ModelTokens[] } | undefined;
 
       const handle = (line: string) => {
@@ -202,7 +226,19 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
         if (msg.type === "assistant") {
           // The main agent's own step (not a subagent's): what it read in is the context it now holds.
           const u = msg.message?.usage;
-          if (u && !msg.parent_tool_use_id) contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+          if (u && !msg.parent_tool_use_id) {
+            contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+            if (typeof msg.message?.id === "string") {
+              steps.set(msg.message.id, {
+                model: String(msg.message.model ?? input.model ?? ""),
+                inputTokens: u.input_tokens ?? 0,
+                outputTokens: u.output_tokens ?? 0,
+                cacheReadTokens: u.cache_read_input_tokens ?? 0,
+                cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+                cacheWrite1hTokens: u.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+              });
+            }
+          }
           for (const block of msg.message?.content ?? []) {
             if (block.type === "text" && block.text) {
               input.onChunk(block.text);
@@ -265,8 +301,9 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Claude Code isn't installed, or `claude` isn't on your PATH. Install it, then retry." };
       const { stderr, exitCode } = proc;
 
+      const spent = stepTotals([...steps.values()]);
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
-      if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped" };
+      if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped", ...(spent.length && { models: spent }) };
 
       // Warning-style statuses ("allowed_warning") only count if the run actually failed.
       const succeeded = exitCode === 0 && final !== undefined && !final.isError;

@@ -260,15 +260,21 @@ describe("claudeAdapter", () => {
     expect(argv).not.toContain("--help");
   });
 
-  test("abort kills the run and reports it as stopped", async () => {
+  test("abort kills the run and reports it as stopped, with what its steps had used", async () => {
     process.env.FAKE_CLAUDE_MODE = "slow";
     const controller = new AbortController();
     const chunks: string[] = [];
     const started = Date.now();
     const running = claudeAdapter(FAKE).run({ ...input(chunks), signal: controller.signal });
-    while (!chunks.length) await Bun.sleep(10);
+    while (chunks.length < 2) await Bun.sleep(10);
     controller.abort();
-    expect(await running).toEqual({ status: "error", kind: "failed", message: "Stopped" });
+    // The step's lines repeat its usage, so it's counted once.
+    expect(await running).toEqual({
+      status: "error",
+      kind: "failed",
+      message: "Stopped",
+      models: [{ model: "claude-haiku-5-5", inputTokens: 3, outputTokens: 8, cacheReadTokens: 9000, cacheWriteTokens: 400, cacheWrite1hTokens: 400 }],
+    });
     expect(Date.now() - started).toBeLessThan(5000);
   });
 

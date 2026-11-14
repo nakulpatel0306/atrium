@@ -91,6 +91,9 @@ export type LoopState = {
   session: Session | null;
   // What the writer's last finished turn said it did, for the progress note a fresh session starts with.
   said: string | null;
+  // The task branch's commit when Atrium last committed to it, so the engine only deletes a branch nobody has added
+  // to since.
+  headSha: string | null;
   // How the work runs (shape.ts); null for one writer, as before shapes existed.
   shape: Shape | null;
   // A part of a split or an attempt of a best-of-N, which reports to its parent instead of to the user.
@@ -146,6 +149,7 @@ export function newLoop(budget: Budget): LoopState {
     escalated: false,
     session: null,
     said: null,
+    headSha: null,
     shape: null,
     role: null,
     fanout: null,

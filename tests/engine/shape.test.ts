@@ -35,6 +35,8 @@ describe("the pre-pass's proposal", () => {
     expect(split(["./src/api/totals.ts"], ["SRC/API/"]).reason).toBe("Two of the parts touch the same files, so one writer does it.");
     expect(split(["src/./api/totals.ts"], ["docs/totals.md"]).kind).toBe("split");
     expect(partPath("src//api/./x.ts/")).toBe("src/api/x.ts");
+    // APFS treats a name and its NFC form as one file.
+    expect(split(["src/cafe\u0301.ts"], ["src/caf\u00e9.ts"]).reason).toBe("Two of the parts touch the same files, so one writer does it.");
   });
 
   test("a small task never splits or tries attempts, and says so plainly", () => {

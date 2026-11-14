@@ -3,11 +3,11 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRunInput } from "../../src/engine/agents/types";
 import { listPending } from "../../src/engine/approvals";
-import { childrenOf, childState, discardFanout, FanoutRefused, mergeParts, pickAttempt } from "../../src/engine/fanout";
+import { childrenOf, childState, discardFanout, FanoutRefused, mergeParts, pickAttempt, restartAs } from "../../src/engine/fanout";
 import { asksBeforeStarting } from "../../src/engine/needs";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { normalizeBrief } from "../../src/engine/brief";
-import { chooseShape, proposeShape, type ShapeKind } from "../../src/engine/shape";
+import { chooseShape, proposeShape, runNow, type ShapeKind } from "../../src/engine/shape";
 import { getSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskLoop } from "../../src/engine/tasks";
 import { updateSpace } from "../../src/engine/spaces";
@@ -273,3 +273,64 @@ test("a fan-out waiting on a stuck part can still be set aside: its children end
   expect(childrenOf(h.db, h.task(t.id)).map((c) => c.status)).toEqual(["done", "done"]);
   expect(git(path, "branch", "--list", "atrium/*")).toBe("");
 }, 40000);
+
+describe("ending a fan-out leaves the user's own work", () => {
+  test("a branch with a commit Atrium didn't make is kept, and the activity says so", async () => {
+    const path = h.repo();
+    const s = h.space(path);
+    const t = chosen(s.id, "Speed up totals", { kind: "best_of_n", attempts: 2 });
+    const claude = claudeFor({}, (input, n) => writeFileSync(join(input.cwd, "work.txt"), `attempt ${n}\n`), "SCORE 1 6 fine\nSCORE 2 9 cleaner");
+    h.start({ claude: claude.adapter });
+    await waitFor(() => h.task(t.id).loop?.stage === "pick", 20000);
+    const [first, second] = childrenOf(h.db, h.task(t.id));
+    // The user adds a commit of their own on the second attempt's branch.
+    git(path, "checkout", "-q", second!.branch!);
+    writeFileSync(join(path, "mine.txt"), "mine\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-qm", "my own change");
+    git(path, "checkout", "-q", "main");
+    await pickAttempt(h.db, t.id, first!.id, getSpace(h.db, s.id)!);
+    expect(git(path, "branch", "--list", first!.branch!)).toBe("");
+    expect(git(path, "branch", "--list", second!.branch!)).toContain(second!.branch!);
+    const said = (h.db.query("SELECT message FROM activity ORDER BY created_at DESC, rowid DESC LIMIT 1").get() as { message: string }).message;
+    expect(said).toContain(`Kept ${second!.branch}: it has commits Atrium didn't make`);
+    expect(said).not.toContain("deleted");
+  }, 30000);
+
+  test("starting over as another shape changes the task first, and keeps a branch the user added to", async () => {
+    const path = h.repo();
+    const s = h.space(path);
+    const shape = runNow(proposeShape({ kind: "split", reason: "two pieces", parts: PARTS }, { size: "medium", checksFound: true }));
+    const t = createTask(h.db, { spaceId: s.id, title: "Totals.", brief: normalizeBrief({ goal: "Totals", size: "medium" }) });
+    git(path, "branch", `atrium/${t.id}`);
+    const tip = git(path, "rev-parse", `atrium/${t.id}`);
+    // Atrium last left the branch one commit back; the user has added one since.
+    setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.medium), shape, said: "Did some.", headSha: "0".repeat(40) });
+    h.db.query("UPDATE tasks SET branch = ?, status = 'blocked' WHERE id = ?").run(`atrium/${t.id}`, t.id);
+    await restartAs(h.db, t.id, chooseShape(shape, "split", { size: "medium", checksFound: true }, "Totals"), getSpace(h.db, s.id)!);
+    expect(h.task(t.id)).toMatchObject({ status: "queued", loop: { said: null, shape: { kind: "split", approved: true } } });
+    expect(git(path, "rev-parse", `atrium/${t.id}`)).toBe(tip);
+    const said = (h.db.query("SELECT message FROM activity ORDER BY created_at DESC, rowid DESC LIMIT 1").get() as { message: string }).message;
+    expect(said).toBe(`Started "Totals." over as 2 parts, from its brief. Kept atrium/${t.id}: it has commits Atrium didn't make, or git wouldn't delete it. Remove it before merging or picking.`);
+  });
+});
+
+test("a switch whose writer finished before the stop landed is refused, and the task is left as it is", async () => {
+  const path = h.repo();
+  const s = h.space(path);
+  const shape = runNow(proposeShape({ kind: "split", reason: "two pieces", parts: PARTS }, { size: "medium", checksFound: true }));
+  const t = createTask(h.db, { spaceId: s.id, title: "Totals", brief: normalizeBrief({ goal: "Totals", size: "medium" }) });
+  setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.medium), shape, said: "Did it." });
+  h.db.query("UPDATE tasks SET status = 'running' WHERE id = ?").run(t.id);
+  const { loopRoute } = await import("../../src/server/loop");
+  // The stop comes back "finished": the writer answered first and the task moved on to review.
+  const stop = async (id: string) => {
+    h.db.query("UPDATE tasks SET status = 'review' WHERE id = ?").run(id);
+    setTaskLoop(h.db, id, { ...getTask(h.db, id)!.loop!, stage: "ready" });
+    return "finished";
+  };
+  const url = `http://127.0.0.1/api/tasks/${t.id}/shape`;
+  const call = loopRoute(h.db, undefined, () => {}, stop, new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "split" }) }), new URL(url));
+  await expect(call).rejects.toMatchObject({ status: 409, message: "It finished before it could be stopped, so its work stands. Send it back if you want another shape." });
+  expect(h.task(t.id)).toMatchObject({ status: "review", loop: { said: "Did it.", shape: { kind: "single" } } });
+});

@@ -176,9 +176,9 @@ export async function mergeParts(db: Database, parentId: string, space: Space): 
   }
   await createBranchAt(space.repoPath!, `atrium/${parent.id}`, merged.sha);
   // The merge commits hold every part's commits, so their own branches have nothing left to keep.
-  await deleteChildBranches(parts, space);
+  const cleaned = await deleteChildBranches(parts, space);
   adopt(db, parent, { said: `Merged ${plural(parts.length, "part")}: ${parts.map((p) => p.title).join("; ")}.` });
-  logActivity(db, space.id, "you", `Merged the ${plural(parts.length, "part")} of ${parent.title} into atrium/${parent.id} and deleted their branches. Atrium checks the merge next.`, { taskId: parent.id });
+  logActivity(db, space.id, "you", `Merged the ${plural(parts.length, "part")} of "${parent.title}" into atrium/${parent.id}. Atrium checks the merge next.${cleaned.kept.length ? ` ${keptNote(cleaned.kept)}` : ""}`, { taskId: parent.id });
 }
 
 // The user's pick: that attempt's branch becomes the task's, with its checks' results, and the others are deleted.
@@ -203,9 +203,9 @@ export async function pickAttempt(db: Database, parentId: string, childId: strin
     outside: l.outside,
     said: l.said,
   });
-  for (const a of attempts) if (a.branch) await deleteAtriumBranch(space.repoPath!, a.branch);
+  const cleaned = await deleteChildBranches(attempts, space);
   const n = attempts.indexOf(picked) + 1;
-  logActivity(db, space.id, "you", `Picked attempt ${n} of ${parent.title}; the other attempts' branches were deleted.`, { taskId: parent.id });
+  logActivity(db, space.id, "you", `Picked attempt ${n} for "${parent.title}"; its commit is now atrium/${parent.id}.${cleaned.kept.length ? ` ${keptNote(cleaned.kept)}` : ""}`, { taskId: parent.id });
 }
 
 // The user's switch to a costlier shape the task was running without: its writer has stopped, its branch is removed
@@ -213,16 +213,18 @@ export async function pickAttempt(db: Database, parentId: string, childId: strin
 export async function restartAs(db: Database, taskId: string, shape: Shape, space: Space): Promise<void> {
   const task = getTask(db, taskId);
   if (!task?.loop || task.loop.fanout || task.loop.role || !["queued", "blocked"].includes(task.status)) throw new FanoutRefused("This task can't start over as another shape now.");
-  if (task.branch && space.repoPath && (await branchSha(space.repoPath, task.branch)) && !(await deleteAtriumBranch(space.repoPath, task.branch))) {
-    throw new FanoutRefused(`Couldn't remove ${task.branch}, the writer's branch so far. Switch your checkout off it, then try again.`);
-  }
+  // The task's own state changes first, in one step, so nothing that runs while git works below sees the old loop.
   const loop = task.loop;
   setTaskLoop(db, task.id, { ...newLoop(loop.budget), hints: loop.hints, suggestedVerify: loop.suggestedVerify, shape });
   if (task.status === "blocked") setTaskStatus(db, task.id, "queued");
-  logActivity(db, task.spaceId, "you", `Started ${task.title} over as ${shape.kind === "split" ? `${plural(shape.parts.length, "part")}` : `the best of ${shape.attempts} attempts`}, from its brief.`, { taskId: task.id });
+  const as = shape.kind === "split" ? plural(shape.parts.length, "part") : `the best of ${shape.attempts} attempts`;
+  // The branch has to be free for the merge or pick that ends the fan-out; one git won't delete stays, and says so.
+  const tip = task.branch && space.repoPath ? await branchSha(space.repoPath, task.branch) : null;
+  const removed = !tip || (tip === loop.headSha && (await deleteAtriumBranch(space.repoPath!, task.branch!)));
+  const branchNote = removed ? "" : ` Kept ${task.branch}: it has commits Atrium didn't make, or git wouldn't delete it. Remove it before merging or picking.`;
+  logActivity(db, task.spaceId, "you", `Started "${task.title}" over as ${as}, from its brief.${branchNote}`, { taskId: task.id });
 }
 
-// Ends a fan-out the user doesn't want: the parent is done, and the children's branches stay where they are.
 // Ends a fan-out the user doesn't want, at any point once no child is running (the route stops one that is): every
 // child that hasn't finished is ended, their branches are deleted, and the parent is done.
 export async function discardFanout(db: Database, parentId: string, space: Space): Promise<void> {
@@ -231,19 +233,32 @@ export async function discardFanout(db: Database, parentId: string, space: Space
   const children = childrenOf(db, parent);
   if (children.some((c) => c.status === "running")) throw new FanoutRefused("One of its parts is still stopping. Try again in a moment.");
   for (const c of children) if (c.status !== "done") setTaskStatus(db, c.id, "done");
-  await deleteChildBranches(children, space);
   setTaskLoop(db, parent.id, { ...parent.loop, stage: "ready" });
   setTaskStatus(db, parent.id, "done");
+  const cleaned = await deleteChildBranches(childrenOf(db, parent), space);
   const what = parent.loop.fanout.kind === "split" ? "parts" : "attempts";
-  logActivity(db, parent.spaceId, "you", `Set aside: ${parent.title}. Its ${what}' branches were deleted.`, { taskId: parent.id });
+  const gone = cleaned.deleted.length ? ` Its ${what}' branches were deleted.` : "";
+  logActivity(db, parent.spaceId, "you", `Set aside: "${parent.title}".${gone}${cleaned.kept.length ? ` ${keptNote(cleaned.kept)}` : ""}`, { taskId: parent.id });
 }
 
 // Children's branches once their fan-out is over and nothing needs them: the work is in the parent's branch, or the
-// user turned it down. A branch someone has checked out is left alone.
-export async function deleteChildBranches(children: Task[], space: Space): Promise<void> {
-  if (!space.repoPath) return;
-  for (const c of children) if (c.branch) await deleteAtriumBranch(space.repoPath, c.branch);
+// user turned it down. Only a branch still at the commit Atrium last made on it goes; one with commits the user
+// added, or one git won't delete (checked out somewhere), is kept and reported.
+export async function deleteChildBranches(children: Task[], space: Space): Promise<{ deleted: string[]; kept: string[] }> {
+  const out = { deleted: [] as string[], kept: [] as string[] };
+  if (!space.repoPath) return out;
+  for (const c of children) {
+    if (!c.branch) continue;
+    const tip = await branchSha(space.repoPath, c.branch);
+    if (!tip) continue;
+    if (tip === c.loop?.headSha && (await deleteAtriumBranch(space.repoPath, c.branch))) out.deleted.push(c.branch);
+    else out.kept.push(c.branch);
+  }
+  return out;
 }
+
+export const keptNote = (kept: string[]): string =>
+  `Kept ${kept.join(", ")}: ${kept.length === 1 ? "it has" : "they have"} commits Atrium didn't make, or git wouldn't delete ${kept.length === 1 ? "it" : "them"}.`;
 
 // What a part's pull request says: what it did and what the loop found, as an approval would have.
 export function partBody(part: Task, parent: Task, space: Space): string {

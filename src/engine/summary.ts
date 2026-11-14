@@ -63,8 +63,9 @@ export function summary(db: Database): Summary {
       need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", files: 0, outcome: null } as Need,
     }));
   // Tasks whose brief asks something before the writer starts; answered on the task or in Needs you.
-  const asking = listTasks(db, { status: ["queued"] })
-    .filter((t) => asksBeforeStarting(t) && names.has(t.spaceId))
+  const all = listTasks(db);
+  const asking = all
+    .filter((t) => asksBeforeStarting(t, all) && names.has(t.spaceId))
     .map((t) => ({
       at: t.updatedAt,
       need: { id: t.id, kind: "question", title: `${t.title}: ${askLine(t)}`, spaceName: names.get(t.spaceId)!, path: pathFor(t.spaceId, t.id), files: 0, outcome: null } as Need,

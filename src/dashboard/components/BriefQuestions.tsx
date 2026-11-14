@@ -8,7 +8,7 @@ type Task = State["tasks"][number];
 type Space = State["spaces"][number];
 
 // Tasks whose brief asked something, waiting for the answers before the writer starts.
-export const askingTasks = (state: State, spaceId?: string): Task[] => state.tasks.filter((t) => asksBeforeStarting(t) && (!spaceId || t.spaceId === spaceId));
+export const askingTasks = (state: State, spaceId?: string): Task[] => state.tasks.filter((t) => asksBeforeStarting(t, state.tasks) && (!spaceId || t.spaceId === spaceId));
 
 // A brief's questions, one tap or a few words each. Start sends what's answered; the writer starts either way.
 export function BriefQuestions({ task }: { task: Task }) {
@@ -63,7 +63,7 @@ export function QuestionsRow({ task, space, state }: { task: Task; space: Space 
         </span>
         <MessageCircleQuestion />
       </div>
-      <div className="detail">{task.loop?.stage === "pick" ? <Fanout task={task} state={state} /> : <BriefQuestions task={task} />}</div>
+      <div className="detail">{task.loop?.stage === "pick" || task.loop?.stage === "parts" ? <Fanout task={task} state={state} /> : <BriefQuestions task={task} />}</div>
     </div>
   );
 }

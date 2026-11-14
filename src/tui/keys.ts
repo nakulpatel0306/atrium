@@ -255,7 +255,7 @@ function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
   const asking = pinned(u, "needs", view.askingTask);
   if (asking) {
     // Picking between parts or attempts needs their diffs side by side, which the dashboard shows.
-    if (input === "a") return [askSteps(asking).length ? answering(asking) : info("Its parts or attempts are ready: decide on the dashboard, where they're side by side.")];
+    if (input === "a") return [askSteps(asking).length ? answering(asking) : info("Its parts or attempts wait on you: decide on the dashboard, where they're side by side.")];
     if (input === "r") return [info("This task is asking before it starts: a answers it.")];
     if (key.return) {
       return [

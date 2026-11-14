@@ -64,6 +64,9 @@ export type AgentRunResult =
       retryAfter?: number;
       // A limit hit still reports how much of the window is used.
       usage?: AgentUsage;
+      // What the run had used when it ended without a result (a stop, a crash), from its own steps: input and cache
+      // exact, output a floor, since steps report output before it's finished.
+      models?: ModelTokens[];
     };
 
 export type AgentStatus = { installed: boolean; loggedIn: boolean | null; detail: string };

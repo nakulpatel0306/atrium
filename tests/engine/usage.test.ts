@@ -105,6 +105,23 @@ describe("the ledger", () => {
     expect(cacheShare(spend)).toBeCloseTo(9000 / (1000 + 9000 + 100 + 500 + 300));
   });
 
+  test("a run that's stopped still logs what its steps had used", async () => {
+    const path = h.repo();
+    const s = h.space(path);
+    const t = createTask(h.db, { spaceId: s.id, title: "Long job" });
+    const claude = fake("claude", (input) =>
+      new Promise((resolve) =>
+        input.signal!.addEventListener("abort", () =>
+          resolve({ status: "error", kind: "failed", message: "Stopped", models: [tokens("claude-haiku-5-5", 3, 8, 9000, 400)] }),
+        ),
+      ),
+    );
+    const r = h.start({ claude: claude.adapter });
+    await waitFor(() => claude.calls.length === 1);
+    expect(await r.stopTask(t.id)).toBe("stopped");
+    expect(h.db.query("SELECT purpose, input_tokens AS input, cache_read_tokens AS cached FROM usage_log").all()).toEqual([{ purpose: "write", input: 3, cached: 9000 }]);
+  });
+
   test("an agent with no list price counts its tokens, with the dollars marked as unknown", async () => {
     const path = h.repo();
     const s = h.space(path);

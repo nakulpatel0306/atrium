@@ -72,7 +72,7 @@ export function deriveView(raw: State, ui: Ui): View {
   const tasks = orderedTasks(spaceTasks).filter((t) => matches(ui.filters.tasks, t.title));
   const approvals = state.approvals.filter((a) => matches(ui.filters.needs, a.title, a.spaceId ? names.get(a.spaceId) : "Atrium"));
   const proposals = state.proposals.filter((p) => matches(ui.filters.needs, p.label, names.get(p.spaceId)));
-  const asking = state.tasks.filter((t) => asksBeforeStarting(t) && matches(ui.filters.needs, t.title, names.get(t.spaceId)));
+  const asking = state.tasks.filter((t) => asksBeforeStarting(t, state.tasks) && matches(ui.filters.needs, t.title, names.get(t.spaceId)));
   const needs = pick<Approval | Proposal | Task>([...asking, ...proposals, ...approvals], ui.selected.needs).item;
   const activity = groupActivity(state.activity, { tasks: state.tasks, files: state.activityFiles }).filter((g) =>
     matches(ui.filters.activity, g.text, g.title, ...g.events.map((e) => e.message)),

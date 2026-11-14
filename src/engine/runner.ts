@@ -16,6 +16,7 @@ import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from ".
 import { madeLine, recordRunFiles } from "./outputs/store";
 import {
   branchFiles,
+  branchSha,
   branchSummary,
   commitAll,
   git,
@@ -63,7 +64,7 @@ import { type Tier, tierModel, tierRun } from "./tiers";
 import { recordUsage, runModels, withModels } from "./usage";
 import { planSession, progressNote, type Session } from "./sessions";
 import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./shape";
-import { childrenOf, childState, deleteChildBranches, fanIn, fanOut, judgePrompt, parseScores } from "./fanout";
+import { childrenOf, childState, deleteChildBranches, fanIn, fanOut, judgePrompt, keptNote, parseScores } from "./fanout";
 import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
 
 const POWER_CHECK_MS = 60_000;
@@ -176,7 +177,7 @@ export function createRunner(deps: {
   start(): void;
   stop(): Promise<void>;
   kick(): void;
-  stopTask(taskId: string): Promise<StopOutcome>;
+  stopTask(taskId: string, why?: string): Promise<StopOutcome>;
   steerTask(taskId: string, note: string): Promise<SteerOutcome>;
   steerPending(taskId: string): boolean;
   outputSeq(runId: string): number | null;
@@ -190,6 +191,8 @@ export function createRunner(deps: {
   // Tasks Nakul asked to stop, so their aborted run ends blocked with his word rather than back in the queue; and the
   // ones whose run did end that way, so stopTask can say so.
   const stopRequested = new Set<string>();
+  // What a stop that's part of something else should say in place of "You stopped this task", by task.
+  const stopWhy = new Map<string, string>();
   const stoppedByStop = new Set<string>();
   // The same for a steer: the note Nakul sent, by task, and the tasks whose run did end that way. A steered task's
   // next run opens its transcript with the note (steerMarkers).
@@ -648,7 +651,7 @@ export function createRunner(deps: {
       return block(task, left ?? `Atrium couldn't start the run: ${sentence((e as Error).message)} Check that the Atrium folder isn't full or read-only, then retry.`);
     }
     // A branch the engine put together runs no agent, only the checks and review.
-    if (current?.loop?.adopted) logActivity(db, space.id, "atrium", `Checking ${task.title}'s ${current.loop.fanout?.kind === "best_of_n" ? "picked attempt" : "merged branch"}.`, { taskId: task.id });
+    if (current?.loop?.adopted) logActivity(db, space.id, "atrium", `Checking the ${current.loop.fanout?.kind === "best_of_n" ? "picked attempt" : "merged branch"} of "${task.title}".`, { taskId: task.id });
     else logActivity(db, space.id, agent, `Started: ${task.title}`, { taskId: task.id });
 
     activeSpaces.add(space.id);
@@ -811,10 +814,14 @@ export function createRunner(deps: {
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
     // below can block or discard it.
     if (result.usage) registry.recordUsage(adapter.id, result.usage);
+    const purpose = task.kind === "review" ? "review" : explaining ? "explain" : "write";
     if (result.status === "ok") {
       const models = runModels(result, asked ?? null, plan?.resume ? plan.session.models : undefined);
       result = withModels(result, models);
-      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: adapter.id, purpose: task.kind === "review" ? "review" : explaining ? "explain" : "write", models });
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: adapter.id, purpose, models });
+    } else if (result.models?.length) {
+      // A run that ended without a result (a stop, say) still spent tokens; its own steps say how many.
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: adapter.id, purpose, models: result.models });
     }
     if (result.status === "error" && result.kind === "rate_limited") {
       registry.setLimited(adapter.id, result.retryAfter ?? Date.now() + 30 * 60_000);
@@ -840,6 +847,9 @@ export function createRunner(deps: {
         try {
           committed = (await commitAll(repo.path, message, repo.fingerprint)).committed;
           if (stopped && committed) saved = repo.branch;
+          const tip = await branchSha(repo.path, repo.branch);
+          const now = getTask(db, task.id)?.loop;
+          if (now && tip) setTaskLoop(db, task.id, { ...now, headSha: tip });
         } catch (e) {
           commitError = `${sentence((e as Error).message)} The changes are still uncommitted on ${repo.branch} in ${repo.path}. Commit or stash them on that branch, switch back to ${repo.start}, then retry.`;
         }
@@ -964,12 +974,16 @@ export function createRunner(deps: {
     }
   }
 
-  // Blocked rather than failed or queued: nothing went wrong, and Retry is how he runs it again.
+  // Blocked rather than failed or queued: nothing went wrong, and Retry is how he runs it again. A stop that's part of
+  // something else (starting over as another shape, setting parts aside) says that instead, since its saved edits are
+  // about to go.
   function stoppedByYou(task: Task, saved: string | null) {
-    const reason = `You stopped this task. ${saved ? savedNote(task, saved) : "Retry to run it again."}`;
+    const why = stopWhy.get(task.id);
+    stopWhy.delete(task.id);
+    const reason = why ?? `You stopped this task. ${saved ? savedNote(task, saved) : "Retry to run it again."}`;
     setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
     stoppedByStop.add(task.id);
-    logActivity(db, task.spaceId, "you", `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
+    logActivity(db, task.spaceId, "you", why ? `Stopped: ${task.title}. ${why}` : `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
     if (task.kind === "review") void reviewEnded(task, resolvedAgent(db, task), { status: "error", kind: "failed", message: "You stopped the review." }).catch(report);
   }
 
@@ -1013,9 +1027,10 @@ export function createRunner(deps: {
   // Aborting kills the agent's process group (see runAgentProcess, which escalates to SIGKILL); execute then saves
   // its edits, puts the repo back and marks the task. Says what actually happened: stopped; finished (the agent had
   // already answered, so its result stands); or timeout (still winding down; it's marked stopped when it ends).
-  async function stopTask(taskId: string): Promise<StopOutcome> {
+  async function stopTask(taskId: string, why?: string): Promise<StopOutcome> {
     const run = [...active.values()].find((r) => r.taskId === taskId);
     if (!run) return "not-running";
+    if (why) stopWhy.set(taskId, why);
     stoppedByStop.delete(taskId);
     stopRequested.add(taskId);
     run.controller.abort();
@@ -1026,6 +1041,8 @@ export function createRunner(deps: {
     ]);
     clearTimeout(timer);
     if (!settled) return "timeout";
+    // Its run finished before the stop could land, so nothing used the note.
+    stopWhy.delete(taskId);
     // `has`, not `delete`: a second stop of the same run waits on the same promise and must hear the same answer.
     return stoppedByStop.has(taskId) ? "stopped" : "finished";
   }
@@ -1144,7 +1161,11 @@ export function createRunner(deps: {
     const children = parent ? childrenOf(db, parent) : [];
     const moved = fanIn(db, task.parentTaskId);
     const space = parent ? getSpace(db, parent.spaceId) : null;
-    if (moved === "blocked" && space) void deleteChildBranches(children, space).catch(report);
+    if (moved === "blocked" && parent && space) {
+      void deleteChildBranches(children, space)
+        .then((r) => r.kept.length && logActivity(db, space.id, "atrium", keptNote(r.kept), { taskId: parent.id }))
+        .catch(report);
+    }
     if (moved) kick();
   }
 
