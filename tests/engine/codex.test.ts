@@ -55,6 +55,8 @@ describe("codexAdapter", () => {
       const flags = [
         "exec", "-", "-C", dir, "--sandbox", "danger-full-access", "--json", "--ephemeral",
         "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "-c", 'approval_policy="never"',
+        // Codex's subagent feature is off; docs/loop.md says what that does and doesn't remove.
+        "--disable", "multi_agent",
       ];
       await codexAdapter(FAKE).run(input([], { cwd: dir }));
       expect(JSON.parse(readFileSync(process.env.FAKE_CODEX_ARGV, "utf8"))).toEqual(flags);
