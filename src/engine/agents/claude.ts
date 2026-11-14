@@ -38,7 +38,8 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   "Write(**/.git/**)",
   // Atrium's checks run tools from these, so only the engine installs into them.
   ...DEPENDENCY_DIRS.flatMap((d) => [`Edit(**/${d}/**)`, `Write(**/${d}/**)`]),
-  // Project settings in .claude are loaded by later runs (--setting-sources project), so an agent could widen its own permissions.
+  // Nothing in .claude is read as settings (see the run's flags), but a repo's .claude still holds what Claude Code
+  // reads in other ways, and what the user's own sessions in it would load, so agents leave it alone.
   "Edit(**/.claude/**)",
   "Write(**/.claude/**)",
   // The OS sandbox covers Bash and its children, not Claude's own Read tool.
@@ -64,6 +65,9 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash
     // A private run's file tools refuse anything outside its working directory, in every mode. Without
     // this, -p runs read outside it freely (Claude Code 2.1.257 or later honours it).
     ...(reads && { permissions: { blockReadsOutsideWorkingDirectories: true } }),
+    // Hooks run outside the sandbox. No settings file is loaded (see --setting-sources), and this keeps any other
+    // source of hooks shut too.
+    disableAllHooks: true,
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
@@ -235,7 +239,11 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       const proc = await runAgentProcess(
         [
           bin, "-p",
-          "--setting-sources", "project,local",
+          // No settings files at all, the user's included: a repo's own .claude/settings.json could otherwise run hooks
+          // and an apiKeyHelper outside the sandbox, set env (ANTHROPIC_BASE_URL) for the CLI, or bring plugins. Only
+          // Atrium's pinned --settings apply. The repo's CLAUDE.md still loads, through --add-dir and the env below.
+          "--setting-sources", "",
+          "--add-dir", input.cwd,
           "--settings", sandboxSettings(input.cwd, { privateData: input.privateData, bash: usesBash(input.allowedTools) }),
           "--strict-mcp-config", ...sessionArgs(input.session),
           "--output-format", "stream-json", "--verbose",
@@ -252,7 +260,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : []),
           "--disallowedTools", ...denyRules(input.cwd, input.privateData, usesBash(input.allowedTools)), ...(input.allowedTools.length ? [] : ["mcp__*"]),
         ],
-        { cwd: input.cwd, stdin: input.prompt, env: agentEnv(process.env), signal: input.signal, onLine: handle },
+        { cwd: input.cwd, stdin: input.prompt, env: { ...agentEnv(process.env), CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" }, signal: input.signal, onLine: handle },
       );
       if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Claude Code isn't installed, or `claude` isn't on your PATH. Install it, then retry." };
       const { stderr, exitCode } = proc;

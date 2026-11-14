@@ -242,7 +242,11 @@ describe("claudeAdapter", () => {
       // Atrium's DB, transcripts and other spaces' folders. "//" anchors the rule at the filesystem root.
       ...atriumDenyPaths(process.cwd()).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
     ]);
-    expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
+    // No settings file is read, the repo's own .claude/settings.json included: its hooks, apiKeyHelper and env would
+    // run or apply outside Atrium's pinned settings. The repo's CLAUDE.md still loads through --add-dir.
+    expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("");
+    expect(argv[argv.indexOf("--add-dir") + 1]).toBe(process.cwd());
+    expect(JSON.parse(argv[argv.indexOf("--settings") + 1]!).disableAllHooks).toBe(true);
     // dontAsk makes allowedTools a strict allowlist; acceptEdits would auto-approve unlisted Edit/Write.
     expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
   });
@@ -319,6 +323,8 @@ describe("claudeAdapter", () => {
       expect(names).not.toContain("SSH_AUTH_SOCK");
       expect(names).not.toContain("GH_TOKEN");
       expect(names).toContain("PATH");
+      // The repo's CLAUDE.md loads from the --add-dir folder without project settings.
+      expect(names).toContain("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
     } finally {
       delete process.env.FAKE_CLAUDE_ENV;
       for (const [k, v] of [["SSH_AUTH_SOCK", saved.sock], ["GH_TOKEN", saved.token]] as const) {
@@ -428,7 +434,8 @@ const argvOf = async (over: Partial<AgentRunInput>) => {
 test("card data: a private run has no Bash, reads only its own folder, and keeps the pinned settings", async () => {
   const argv = await argvOf({ allowedTools: ["Read", "Edit", "Write", "Glob", "Grep"], privateData: true });
   const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]!);
-  expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
+  expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("");
+  expect(settings.disableAllHooks).toBe(true);
   expect(settings.permissions).toEqual({ blockReadsOutsideWorkingDirectories: true });
   expect(settings.permissions.additionalDirectories).toBeUndefined();
   const allowed = argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--disallowedTools"));
