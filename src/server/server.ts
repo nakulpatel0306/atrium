@@ -25,7 +25,8 @@ import { findOldData, OLD_DATA_DISMISSED, removeOldData } from "../engine/old-da
 import { createTask, getTask, InvalidTransition, setTaskLoop, setTaskStatus } from "../engine/tasks";
 import { normalizeBrief } from "../engine/brief";
 import { newLoop, resumed, SIZE_BUDGETS } from "../engine/loop";
-import { budgetField, loopRoute } from "./loop";
+import { budgetField, cardShape, loopRoute } from "./loop";
+import { setTierModel, type Tier, TIERS, tierModel, validModel } from "../engine/tiers";
 import { fail, HttpError, isBool, isString, json, opt, readBody, str } from "./http";
 import { FileRefused } from "../engine/outputs/files";
 import { filesRoute } from "./files";
@@ -43,7 +44,7 @@ type Deps = {
   db: Database;
   runner: {
     kick(): void;
-    stopTask?(taskId: string): Promise<StopOutcome>;
+    stopTask?(taskId: string, why?: string): Promise<StopOutcome>;
     steerTask?(taskId: string, note: string): Promise<SteerOutcome>;
     steerPending?(taskId: string): boolean;
     outputSeq?(runId: string): number | null;
@@ -62,6 +63,18 @@ const agentField = (v: unknown): string | undefined => {
   return v;
 };
 const RESERVE_STEPS = [0.25, 0.5, 0.75];
+
+// Models for the Claude tiers as sent: a tier name to a model name, "" for Claude Code's own default.
+function tiersField(v: unknown): [Tier, string][] {
+  if (v === undefined) return [];
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new HttpError(400, "tiers must name a model for cheap, default or strong.");
+  return Object.entries(v as Record<string, unknown>).map(([tier, model]) => {
+    if (!TIERS.includes(tier as Tier) || typeof model !== "string" || !validModel(model.trim())) {
+      throw new HttpError(400, "Each tier takes a Claude model name, such as haiku, sonnet or opus, or nothing for the default.");
+    }
+    return [tier as Tier, model.trim()];
+  });
+}
 
 // "changed" sockets (the Mac app) skip run output, which only the dashboard's live transcript needs.
 export type WsData = { topic: "engine" | "changed" };
@@ -401,6 +414,9 @@ export function startServer(deps: Deps): Server<WsData> {
       const space = getSpace(db, str(b.spaceId, "spaceId"));
       if (!space) throw new HttpError(404, "No such space.");
       const agent = agentField(b.agent);
+      // A brief-first card carries the draft's shape and the one left chosen on it.
+      const brief = b.brief !== undefined ? normalizeBrief(b.brief, typeof b.text === "string" ? b.text : "") : null;
+      const shape = brief ? await cardShape(space, brief, b.shapeDraft, b.shape, b.mixVendors) : null;
       const task = db.transaction(() => {
         const files = checkAttachments(db, space, b.attachments);
         // Files alone are a request too: the agent is asked to look at them.
@@ -415,6 +431,7 @@ export function startServer(deps: Deps): Server<WsData> {
           ...(b.brief !== undefined && { brief: normalizeBrief(b.brief, text) }),
         });
         claimAttachments(db, t.id, files);
+        if (shape) return setTaskLoop(db, t.id, { ...newLoop(space.budget ?? SIZE_BUDGETS[brief!.size]), shape });
         // Otherwise the task starts with drafting its brief, so sending never waits on the pre-pass. Files alone
         // ask the agent to look at them, with nothing to brief.
         if (b.brief === undefined && typeof b.text === "string" && b.text.trim()) {
@@ -428,8 +445,8 @@ export function startServer(deps: Deps): Server<WsData> {
 
     if (hit("POST", /^\/api\/settings$/)) {
       const b = await readBody(req);
-      if (b.overnight === undefined && b.claudeReserve === undefined) {
-        throw new HttpError(400, "Send overnight or claudeReserve.");
+      if (b.overnight === undefined && b.claudeReserve === undefined && b.tiers === undefined) {
+        throw new HttpError(400, "Send overnight, claudeReserve or tiers.");
       }
       if (b.overnight !== undefined && typeof b.overnight !== "boolean") {
         throw new HttpError(400, "overnight must be true or false.");
@@ -437,10 +454,12 @@ export function startServer(deps: Deps): Server<WsData> {
       if (b.claudeReserve !== undefined && !RESERVE_STEPS.includes(b.claudeReserve as number)) {
         throw new HttpError(400, "claudeReserve must be 0.25, 0.5, or 0.75.");
       }
+      const tiers = tiersField(b.tiers);
       if (b.overnight !== undefined) setSetting(db, "overnight", String(b.overnight));
+      for (const [tier, model] of tiers) setTierModel(db, tier, model);
       if (b.claudeReserve !== undefined) setSetting(db, "usage.claude.reserve", String(b.claudeReserve));
       runner.kick();
-      return json({ overnight: b.overnight, claudeReserve: b.claudeReserve });
+      return json({ overnight: b.overnight, claudeReserve: b.claudeReserve, tiers: Object.fromEntries(TIERS.map((t) => [t, tierModel(db, t)])) });
     }
 
     if (hit("POST", /^\/api\/seen$/)) {
@@ -464,7 +483,7 @@ export function startServer(deps: Deps): Server<WsData> {
       return new Response(text, { headers });
     }
 
-    const loop = await loopRoute(db, runner.registry?.adapters.claude, runner.kick, req, url);
+    const loop = await loopRoute(db, runner.registry?.adapters.claude, runner.kick, async (id, why) => (await runner.stopTask?.(id, why)) ?? "not-running", req, url);
     if (loop) return loop;
     const files = await filesRoute(db, req, url);
     if (files) return files;

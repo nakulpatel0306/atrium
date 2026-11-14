@@ -13,6 +13,9 @@ import { BadDraft, type ProjectDraft, projectPath } from "./repos/names";
 import { getClone, pendingRepoActions } from "./repos/store";
 import { join } from "node:path";
 import { type Task, listTasks } from "./tasks";
+import type { Spend } from "./cost";
+import { claudeSince, spaceSpend, spendWindows, taskSpend, totalSince } from "./usage";
+import { type Tier, TIER_DEFAULTS, TIER_JOBS, TIERS, tierModel } from "./tiers";
 import { hasOldData, OLD_DATA_DISMISSED } from "./old-data";
 import { type Attachment, claimedAttachments } from "./attachments";
 
@@ -66,6 +69,14 @@ export type State = {
   // The last five-hour reading while its window is still open; null when unknown or already reset.
   claudeWindow: { utilization: number; resetsAt: number; reserve: number } | null;
   disk: ReturnType<typeof atriumDiskUsage>;
+  // Weighted tokens and estimated dollars: each task's (its reviews included), each space's today and this week, and
+  // the totals for both.
+  spend: { tasks: Record<string, Spend>; spaces: Record<string, { today: Spend; week: Spend }>; today: Spend; week: Spend };
+  // The plan-limit gauge: Claude's own reading of its windows, when it was taken, and what Atrium ran in the
+  // five-hour window. Claude reports the windows only during a run, so use elsewhere shows up at the next one.
+  plan: { fiveHour: PlanWindow | null; sevenDay: PlanWindow | null; atrium: Spend; reserve: number };
+  // The model each Claude tier runs on ("" is Claude Code's own default), with the stock default and its jobs.
+  tiers: Record<Tier, { model: string; stock: string; jobs: string }>;
   // Pending new-project drafts and clone removals, for the forms in Needs you.
   repoActions: RepoActionView[];
   // Whether removed features left data behind (see old-data.ts), and whether Home's notice about it was put off.
@@ -112,6 +123,29 @@ function filesByTask(db: Database, activity: ActivityRow[]): Record<string, numb
     .query(`SELECT task_id, COUNT(DISTINCT root || ':' || path) AS n FROM run_files WHERE change != 'deleted' AND task_id IN (${ids.map(() => "?").join(",")}) GROUP BY task_id`)
     .all(...ids) as { task_id: string; n: number }[];
   return Object.fromEntries(rows.map((r) => [r.task_id, r.n]));
+}
+
+export type PlanWindow = { utilization: number; resetsAt: number; seenAt: number | null };
+
+const FIVE_HOURS = 5 * 3600_000;
+
+function planWindow(db: Database, key: string, now: number): PlanWindow | null {
+  const raw = getSetting(db, key);
+  if (!raw) return null;
+  try {
+    const w = JSON.parse(raw) as Partial<PlanWindow>;
+    if (typeof w.utilization !== "number" || typeof w.resetsAt !== "number" || w.resetsAt <= now) return null;
+    return { utilization: w.utilization, resetsAt: w.resetsAt, seenAt: typeof w.seenAt === "number" ? w.seenAt : null };
+  } catch {
+    return null;
+  }
+}
+
+function planGauge(db: Database, now: number, reserve: number): State["plan"] {
+  const fiveHour = planWindow(db, "usage.claude.fiveHour", now);
+  // The window started five hours before it resets; with no reading, the last five hours stand in for it.
+  const since = (fiveHour?.resetsAt ?? now) - FIVE_HOURS;
+  return { fiveHour, sevenDay: planWindow(db, "usage.claude.sevenDay", now), atrium: claudeSince(db, since), reserve };
 }
 
 export function snapshot(db: Database, registry?: Registry): State {
@@ -174,9 +208,12 @@ export function snapshot(db: Database, registry?: Registry): State {
     agents,
     claudeWindow:
       window && window.resetsAt > now
-        ? { ...window, reserve }
+        ? { utilization: window.utilization, resetsAt: window.resetsAt, reserve }
         : null,
     disk: atriumDiskUsage(),
+    spend: { tasks: taskSpend(db), spaces: spaceSpend(db, now), today: totalSince(db, spendWindows(now).today), week: totalSince(db, spendWindows(now).week) },
+    plan: planGauge(db, now, reserve),
+    tiers: Object.fromEntries(TIERS.map((t) => [t, { model: tierModel(db, t), stock: TIER_DEFAULTS[t], jobs: TIER_JOBS[t] }])) as State["tiers"],
     repoActions: repoActionViews(db),
     oldData: { present: hasOldData(db), dismissed: getSetting(db, OLD_DATA_DISMISSED) === "1" },
   };

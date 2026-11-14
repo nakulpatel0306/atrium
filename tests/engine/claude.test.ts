@@ -26,7 +26,62 @@ describe("claudeAdapter", () => {
     const r = await claudeAdapter(FAKE).run(input(chunks));
     expect(chunks).toContain("Looking at the repo.");
     expect(chunks).toContain("→ Read /repo/README.md");
-    expect(r).toEqual({ status: "ok", summary: "All done.", inputTokens: 120, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    expect(r).toEqual({ status: "ok", summary: "All done.", inputTokens: 120, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0, contextTokens: 15 });
+  });
+
+  test("per-model totals, subagents included, and the main agent's context come back with the result", async () => {
+    // modelUsage as Claude Code 2.1.323 sends it, extra keys included.
+    process.env.FAKE_CLAUDE_MODEL_USAGE = JSON.stringify({
+      "claude-sonnet-5-5": {
+        inputTokens: 120, outputTokens: 45, cacheReadInputTokens: 900, cacheCreationInputTokens: 30, webSearchRequests: 0, costUSD: 0.0046,
+        contextWindow: 1000000, maxOutputTokens: 128000, thinkingTokens: 12, cacheCreationEphemeral5mInputTokens: 0, cacheCreationEphemeral1hInputTokens: 30,
+        canonicalModel: "claude-sonnet-5-5", provider: "firstParty", costBasis: "list",
+      },
+      "claude-haiku-5-5": { inputTokens: 400, outputTokens: 80, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: "free" },
+    });
+    process.env.FAKE_CLAUDE_CONTEXT = "42000";
+    try {
+      const r = await claudeAdapter(FAKE).run(input([]));
+      expect(r).toMatchObject({
+        status: "ok",
+        contextTokens: 42015,
+        models: [
+          { model: "claude-sonnet-5-5", inputTokens: 120, outputTokens: 45, cacheReadTokens: 900, cacheWriteTokens: 30, cacheWrite1hTokens: 30, costUSD: 0.0046 },
+          // A cost that isn't a number is left out, so the estimate falls back to list prices.
+          { model: "claude-haiku-5-5", inputTokens: 400, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0 },
+        ],
+      });
+    } finally {
+      delete process.env.FAKE_CLAUDE_MODEL_USAGE;
+      delete process.env.FAKE_CLAUDE_CONTEXT;
+    }
+  });
+
+  test("a kept session starts under its id or resumes it, the tier's fallback model passes through, and only allowed tools exist", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
+    process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
+    const id = "0b0e7c1a-3c1d-4c5e-9f00-2a1b3c4d5e6f";
+    const argv = async (extra: Partial<AgentRunInput>) => {
+      expect((await claudeAdapter(FAKE).run({ ...input(), ...extra })).status).toBe("ok");
+      return JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")) as string[];
+    };
+    try {
+      const fresh = await argv({ session: { id, resume: false } });
+      expect(fresh[fresh.indexOf("--session-id") + 1]).toBe(id);
+      expect(fresh).not.toContain("--no-session-persistence");
+      const warm = await argv({ session: { id, resume: true }, model: "opus", fallbackModel: "sonnet" });
+      expect(warm[warm.indexOf("--resume") + 1]).toBe(id);
+      expect(warm[warm.indexOf("--fallback-model") + 1]).toBe("sonnet");
+      // Only the allowed built-in tools exist in the run, so Agent, EnterWorktree, Monitor and the rest aren't there
+      // to spawn a second writer or run a command outside the Bash rules.
+      const tools = await argv({ allowedTools: ["Read", "Edit", "Bash(bun test*)", "Bash(git status*)"] });
+      expect(tools[tools.indexOf("--tools") + 1]).toBe("Read,Edit,Bash");
+      expect(tools).not.toContain("--agents");
+      await expect(claudeAdapter(FAKE).run({ ...input(), session: { id: "--dangerously-skip-permissions", resume: true } })).rejects.toThrow("Invalid session id");
+      await expect(claudeAdapter(FAKE).run({ ...input(), model: "--x" })).rejects.toThrow("Invalid model");
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
   });
 
   test("cache reads and writes are reported apart from fresh input, which is most of what Claude Code reads", async () => {
@@ -187,7 +242,11 @@ describe("claudeAdapter", () => {
       // Atrium's DB, transcripts and other spaces' folders. "//" anchors the rule at the filesystem root.
       ...atriumDenyPaths(process.cwd()).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
     ]);
-    expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
+    // No settings file is read, the repo's own .claude/settings.json included: its hooks, apiKeyHelper and env would
+    // run or apply outside Atrium's pinned settings. The repo's CLAUDE.md still loads through --add-dir.
+    expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("");
+    expect(argv[argv.indexOf("--add-dir") + 1]).toBe(process.cwd());
+    expect(JSON.parse(argv[argv.indexOf("--settings") + 1]!).disableAllHooks).toBe(true);
     // dontAsk makes allowedTools a strict allowlist; acceptEdits would auto-approve unlisted Edit/Write.
     expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
   });
@@ -201,15 +260,21 @@ describe("claudeAdapter", () => {
     expect(argv).not.toContain("--help");
   });
 
-  test("abort kills the run and reports it as stopped", async () => {
+  test("abort kills the run and reports it as stopped, with what its steps had used", async () => {
     process.env.FAKE_CLAUDE_MODE = "slow";
     const controller = new AbortController();
     const chunks: string[] = [];
     const started = Date.now();
     const running = claudeAdapter(FAKE).run({ ...input(chunks), signal: controller.signal });
-    while (!chunks.length) await Bun.sleep(10);
+    while (chunks.length < 2) await Bun.sleep(10);
     controller.abort();
-    expect(await running).toEqual({ status: "error", kind: "failed", message: "Stopped" });
+    // The step's lines repeat its usage, so it's counted once.
+    expect(await running).toEqual({
+      status: "error",
+      kind: "failed",
+      message: "Stopped",
+      models: [{ model: "claude-haiku-5-5", inputTokens: 3, outputTokens: 8, cacheReadTokens: 9000, cacheWriteTokens: 400, cacheWrite1hTokens: 400 }],
+    });
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
@@ -264,6 +329,8 @@ describe("claudeAdapter", () => {
       expect(names).not.toContain("SSH_AUTH_SOCK");
       expect(names).not.toContain("GH_TOKEN");
       expect(names).toContain("PATH");
+      // The repo's CLAUDE.md loads from the --add-dir folder without project settings.
+      expect(names).toContain("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
     } finally {
       delete process.env.FAKE_CLAUDE_ENV;
       for (const [k, v] of [["SSH_AUTH_SOCK", saved.sock], ["GH_TOKEN", saved.token]] as const) {
@@ -373,7 +440,8 @@ const argvOf = async (over: Partial<AgentRunInput>) => {
 test("card data: a private run has no Bash, reads only its own folder, and keeps the pinned settings", async () => {
   const argv = await argvOf({ allowedTools: ["Read", "Edit", "Write", "Glob", "Grep"], privateData: true });
   const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]!);
-  expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("project,local");
+  expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("");
+  expect(settings.disableAllHooks).toBe(true);
   expect(settings.permissions).toEqual({ blockReadsOutsideWorkingDirectories: true });
   expect(settings.permissions.additionalDirectories).toBeUndefined();
   const allowed = argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--disallowedTools"));

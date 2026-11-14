@@ -6,7 +6,10 @@ import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { agentEnv, DEPENDENCY_DIRS } from "./seatbelt";
 import { shortCommand } from "./short";
-import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, WindowUsage } from "./types";
+import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, ModelTokens, WindowUsage } from "./types";
+
+// "Bash(bun test*)" is the Bash tool with a rule; --tools takes only the tool names.
+const builtinTools = (allowed: string[]): string[] => [...new Set(allowed.map((t) => t.replace(/\(.*$/, "")))];
 
 const usesBash = (tools: string[]) => tools.some((t) => t === "Bash" || t.startsWith("Bash("));
 
@@ -35,7 +38,8 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   "Write(**/.git/**)",
   // Atrium's checks run tools from these, so only the engine installs into them.
   ...DEPENDENCY_DIRS.flatMap((d) => [`Edit(**/${d}/**)`, `Write(**/${d}/**)`]),
-  // Project settings in .claude are loaded by later runs (--setting-sources project), so an agent could widen its own permissions.
+  // Nothing in .claude is read as settings (see the run's flags), but a repo's .claude still holds what Claude Code
+  // reads in other ways, and what the user's own sessions in it would load, so agents leave it alone.
   "Edit(**/.claude/**)",
   "Write(**/.claude/**)",
   // The OS sandbox covers Bash and its children, not Claude's own Read tool.
@@ -61,6 +65,9 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash
     // A private run's file tools refuse anything outside its working directory, in every mode. Without
     // this, -p runs read outside it freely (Claude Code 2.1.257 or later honours it).
     ...(reads && { permissions: { blockReadsOutsideWorkingDirectories: true } }),
+    // Hooks run outside the sandbox. No settings file is loaded (see --setting-sources), and this keeps any other
+    // source of hooks shut too.
+    disableAllHooks: true,
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
@@ -132,6 +139,53 @@ export function atLeast(v: number[], min: readonly number[]): boolean {
   return true;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// A kept session is started under Atrium's own id, so it's known before the run, or resumed from it. Without one
+// the CLI keeps nothing on disk.
+function sessionArgs(session: AgentRunInput["session"]): string[] {
+  if (!session) return ["--no-session-persistence"];
+  if (!UUID.test(session.id)) throw new Error(`Invalid session id: ${session.id}`);
+  return session.resume ? ["--resume", session.id] : ["--session-id", session.id];
+}
+
+// The result's per-model totals, subagents included, keyed by the model names Claude Code reports.
+function modelTotals(raw: unknown): ModelTokens[] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  return Object.entries(raw as Record<string, Record<string, unknown>>).map(([model, u]) => ({
+    model,
+    inputTokens: n(u?.inputTokens),
+    outputTokens: n(u?.outputTokens),
+    cacheReadTokens: n(u?.cacheReadInputTokens),
+    cacheWriteTokens: n(u?.cacheCreationInputTokens),
+    cacheWrite1hTokens: n(u?.cacheCreationEphemeral1hInputTokens),
+    ...(typeof u?.costUSD === "number" && Number.isFinite(u.costUSD) && u.costUSD >= 0 && { costUSD: u.costUSD }),
+  }));
+}
+
+// A run's steps added up by model.
+function stepTotals(steps: ModelTokens[]): ModelTokens[] {
+  const by = new Map<string, ModelTokens>();
+  for (const s of steps) {
+    const t = by.get(s.model);
+    by.set(
+      s.model,
+      t
+        ? {
+            model: s.model,
+            inputTokens: t.inputTokens + s.inputTokens,
+            outputTokens: t.outputTokens + s.outputTokens,
+            cacheReadTokens: t.cacheReadTokens + s.cacheReadTokens,
+            cacheWriteTokens: t.cacheWriteTokens + s.cacheWriteTokens,
+            cacheWrite1hTokens: (t.cacheWrite1hTokens ?? 0) + (s.cacheWrite1hTokens ?? 0),
+          }
+        : s,
+    );
+  }
+  return [...by.values()];
+}
+
 async function cliVersion(bin: string, signal?: AbortSignal): Promise<number[] | null> {
   let line = "";
   const proc = await runAgentProcess([bin, "--version"], { cwd: process.cwd(), stdin: "", signal, onLine: (l) => void (line ||= l) });
@@ -147,6 +201,7 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       // The variadic --allowedTools would swallow a flag-looking entry as another option.
       const flagLike = input.allowedTools.find((t) => t.startsWith("-"));
       if (flagLike) throw new Error(`Invalid allowedTools entry: ${flagLike}`);
+      for (const m of [input.model, input.fallbackModel]) if (m?.startsWith("-")) throw new Error(`Invalid model: ${m}`);
       // Fail closed: a version Atrium can't read counts as too old.
       if (input.privateData) {
         const v = await cliVersion(bin, input.signal);
@@ -156,7 +211,10 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       let limitResetsAt: number | undefined;
       let limitRejected = false;
       let usage: AgentUsage | undefined;
-      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number } | undefined;
+      let contextTokens: number | undefined;
+      // Each step's usage by message id (a step's lines repeat it), for a run that ends without a result.
+      const steps = new Map<string, ModelTokens>();
+      let final: { result: string; isError: boolean; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number; models?: ModelTokens[] } | undefined;
 
       const handle = (line: string) => {
         let msg: any;
@@ -166,6 +224,21 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           return;
         }
         if (msg.type === "assistant") {
+          // The main agent's own step (not a subagent's): what it read in is the context it now holds.
+          const u = msg.message?.usage;
+          if (u && !msg.parent_tool_use_id) {
+            contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+            if (typeof msg.message?.id === "string") {
+              steps.set(msg.message.id, {
+                model: String(msg.message.model ?? input.model ?? ""),
+                inputTokens: u.input_tokens ?? 0,
+                outputTokens: u.output_tokens ?? 0,
+                cacheReadTokens: u.cache_read_input_tokens ?? 0,
+                cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+                cacheWrite1hTokens: u.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+              });
+            }
+          }
           for (const block of msg.message?.content ?? []) {
             if (block.type === "text" && block.text) {
               input.onChunk(block.text);
@@ -193,6 +266,8 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
             outputTokens: msg.usage?.output_tokens ?? 0,
             cacheReadTokens: msg.usage?.cache_read_input_tokens ?? 0,
             cacheWriteTokens: msg.usage?.cache_creation_input_tokens ?? 0,
+            cacheWrite1hTokens: msg.usage?.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+            models: modelTotals(msg.modelUsage),
           };
         }
       };
@@ -200,25 +275,35 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
       const proc = await runAgentProcess(
         [
           bin, "-p",
-          "--setting-sources", "project,local",
+          // No settings files at all, the user's included: a repo's own .claude/settings.json could otherwise run hooks
+          // and an apiKeyHelper outside the sandbox, set env (ANTHROPIC_BASE_URL) for the CLI, or bring plugins. Only
+          // Atrium's pinned --settings apply. The repo's CLAUDE.md still loads, through --add-dir and the env below.
+          "--setting-sources", "",
+          "--add-dir", input.cwd,
           "--settings", sandboxSettings(input.cwd, { privateData: input.privateData, bash: usesBash(input.allowedTools) }),
-          "--strict-mcp-config", "--no-session-persistence",
+          "--strict-mcp-config", ...sessionArgs(input.session),
           "--output-format", "stream-json", "--verbose",
           "--permission-mode", "dontAsk",
           ...(input.model ? ["--model", input.model] : []),
+          ...(input.fallbackModel ? ["--fallback-model", input.fallbackModel] : []),
           ...(input.maxTurns ? ["--max-turns", String(input.maxTurns)] : []),
           "--append-system-prompt", input.systemPrompt,
-          // No tools at all ("--tools ''") rather than an empty allow list, which the variadic flag can't express.
-          ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : ["--tools", ""]),
+          // Only the built-in tools Atrium allows exist in the run at all. Without --tools, dontAsk still lets an agent
+          // use tools no rule names (Agent, EnterWorktree, Monitor, CronCreate…: a second writer, a worktree, a command
+          // outside the Bash rules), and Claude Code removes the others for its subagents too. No tools at all is
+          // "--tools ''", since an empty allow list can't be expressed with the variadic flag.
+          "--tools", builtinTools(input.allowedTools).join(","),
+          ...(input.allowedTools.length ? ["--allowedTools", ...input.allowedTools] : []),
           "--disallowedTools", ...denyRules(input.cwd, input.privateData, usesBash(input.allowedTools)), ...(input.allowedTools.length ? [] : ["mcp__*"]),
         ],
-        { cwd: input.cwd, stdin: input.prompt, env: agentEnv(process.env), signal: input.signal, onLine: handle },
+        { cwd: input.cwd, stdin: input.prompt, env: { ...agentEnv(process.env), CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" }, signal: input.signal, onLine: handle },
       );
       if (proc.notInstalled) return { status: "error", kind: "not_installed", message: "Claude Code isn't installed, or `claude` isn't on your PATH. Install it, then retry." };
       const { stderr, exitCode } = proc;
 
+      const spent = stepTotals([...steps.values()]);
       // A stop is the engine's doing, not the task's, so it must not read as a failure or a limit.
-      if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped" };
+      if (proc.aborted) return { status: "error", kind: "failed", message: "Stopped", ...(spent.length && { models: spent }) };
 
       // Warning-style statuses ("allowed_warning") only count if the run actually failed.
       const succeeded = exitCode === 0 && final !== undefined && !final.isError;
@@ -240,7 +325,10 @@ export function claudeAdapter(bin: string = config().claudeBin): AgentAdapter {
           outputTokens: final.outputTokens,
           cacheReadTokens: final.cacheReadTokens,
           cacheWriteTokens: final.cacheWriteTokens,
+          ...(final.cacheWrite1hTokens > 0 && { cacheWrite1hTokens: final.cacheWrite1hTokens }),
           ...(usage && { usage }),
+          ...(final.models && { models: final.models }),
+          ...(contextTokens !== undefined && { contextTokens }),
         };
       }
       return classify(`${final?.result ?? ""}\n${stderr}`, stderr, exitCode);

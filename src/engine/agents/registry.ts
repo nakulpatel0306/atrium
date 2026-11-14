@@ -25,7 +25,9 @@ export type WaitKind =
   | "cloning"
   | "busy"
   | "reviewing"
-  | "answers";
+  | "answers"
+  | "parts"
+  | "pick";
 // `agent` is the one the task is waiting on; `until` is when the wait ends on its own, if it does.
 export type Wait = { agent: string; kind: WaitKind; reason: string; until?: number };
 export type TaskWait = Wait & { taskId: string };
@@ -200,8 +202,10 @@ export function createRegistry(db: Database, adapters: Record<string, AgentAdapt
     },
     limitedUntil,
     setLimited: (id, until) => setSetting(db, `agent.${id}.limitedUntil`, String(until)),
+    // Stamped with when it was seen: the CLI reports the windows only while it runs, so the reading ages.
     recordUsage(id, usage) {
-      if (usage.fiveHour) setSetting(db, `usage.${id}.fiveHour`, JSON.stringify(usage.fiveHour));
+      if (usage.fiveHour) setSetting(db, `usage.${id}.fiveHour`, JSON.stringify({ ...usage.fiveHour, seenAt: Date.now() }));
+      if (usage.sevenDay) setSetting(db, `usage.${id}.sevenDay`, JSON.stringify({ ...usage.sevenDay, seenAt: Date.now() }));
     },
     inReserve,
     resolve,

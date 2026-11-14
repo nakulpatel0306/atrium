@@ -126,7 +126,9 @@ test("engine text can't send escape sequences to the terminal", async () => {
 
 test("Activity: day headings, one line per group, a mark for its tone, and its full lines beside it", async () => {
   const state = makeState();
+  // Timed from now rather than from when the fixtures loaded, so a slow run of the suite can't age the second line.
   state.activity[0] = { ...state.activity[0]!, createdAt: Date.now() };
+  state.activity[1] = { ...state.activity[1]!, createdAt: Date.now() - 15 * 60_000 };
   const app = openApp(fakeClient(state));
   await app.frame((f) => f.includes("1 Home"));
   await app.type("3");

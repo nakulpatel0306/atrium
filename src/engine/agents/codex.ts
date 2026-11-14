@@ -33,6 +33,10 @@ export function codexArgv(bin: string, input: AgentRunInput, tmp: string, sandbo
     bin, "exec", "-", "-C", input.cwd, "--sandbox", "danger-full-access",
     "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
     "-c", 'approval_policy="never"',
+    // One writer per branch: Codex's subagent feature is on by default. Turning it off is all codex-cli 0.147 offers.
+    // Its spawn_agent tool still shows in the model's list, but every spawn failed in the probes with it off; and any
+    // subagent would run in this same seatbelt.
+    "--disable", "multi_agent",
   ];
   return wrapInSeatbelt(argv, {
     cwd: input.cwd,

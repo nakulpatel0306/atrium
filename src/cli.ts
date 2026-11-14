@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { needsYouCount } from "./engine/needs";
+import { spendText } from "./engine/cost";
+import { compact } from "./engine/loop";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -61,6 +63,9 @@ export function statusLine(state: State | null, url: string): string {
   const needs = needsYouCount(state);
   const parts = [`running at ${url}`, `${n} ${n === 1 ? "space" : "spaces"}`];
   parts.push(needs > 0 ? `${needs} needs you` : "nothing needs you");
+  // An engine from before the cost meter sends no spend.
+  const today = state.spend?.today;
+  if (today?.weighted) parts.push(`today ${compact(today.weighted)} weighted tokens, ${spendText(today)}`);
   return parts.join(" · ");
 }
 

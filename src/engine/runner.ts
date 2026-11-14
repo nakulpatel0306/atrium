@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clock, createRegistry, type Registry, type TaskWait } from "./agents/registry";
-import type { AgentAdapter, AgentRunResult } from "./agents/types";
+import type { AgentAdapter, AgentRunInput, AgentRunResult } from "./agents/types";
 import { createApproval, getApproval } from "./approvals";
 import { factsFor, folderState } from "./autonomy/facts";
 import { fingerprintOf } from "./autonomy/kinds";
@@ -16,6 +16,7 @@ import { diffSnapshots, type FileChange, type Snapshot, snapshotFolder } from ".
 import { madeLine, recordRunFiles } from "./outputs/store";
 import {
   branchFiles,
+  branchSha,
   branchSummary,
   commitAll,
   git,
@@ -37,6 +38,7 @@ import { failingAtBase, type GateOutcome, runGate } from "./checks/gate";
 import { failureReport, saveChecks } from "./checks/run";
 import {
   applyTriage,
+  compact,
   failureSignature,
   type LoopState,
   newLoop,
@@ -58,6 +60,12 @@ import { appendTaskDetail, endRemovedFeatureTasks, failRemovedFeatureTask, getTa
 import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { enforceTranscriptCap, openTranscript } from "./storage";
+import { type Tier, tierModel, tierRun } from "./tiers";
+import { recordUsage, runModels, withModels } from "./usage";
+import { planSession, progressNote, type Session } from "./sessions";
+import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./shape";
+import { childrenOf, childState, deleteChildBranches, fanIn, fanOut, judgePrompt, keptNote, parseScores } from "./fanout";
+import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -123,6 +131,13 @@ const ENGINE_ONLY: Record<"message" | "repo", string> = {
   repo: "Only Atrium can create repos, after your yes, and none was created.",
 };
 
+// The judge of a best-of-N reads the attempts' diffs in its prompt and nothing else.
+const JUDGE_SYSTEM_PROMPT = [
+  "You are comparing several attempts at one task for the user, through Atrium.",
+  "Everything you need is in the prompt. Don't create or change any files.",
+  "Never read, print, or edit .env files, keys, or tokens.",
+].join("\n");
+
 // Asked for after a pause: a diagnosis in place of another attempt, so the agent reads and changes nothing.
 const EXPLAIN_SYSTEM_PROMPT = [
   "You are helping the user understand why a task got stuck, through Atrium.",
@@ -162,7 +177,7 @@ export function createRunner(deps: {
   start(): void;
   stop(): Promise<void>;
   kick(): void;
-  stopTask(taskId: string): Promise<StopOutcome>;
+  stopTask(taskId: string, why?: string): Promise<StopOutcome>;
   steerTask(taskId: string, note: string): Promise<SteerOutcome>;
   steerPending(taskId: string): boolean;
   outputSeq(runId: string): number | null;
@@ -176,6 +191,8 @@ export function createRunner(deps: {
   // Tasks Nakul asked to stop, so their aborted run ends blocked with his word rather than back in the queue; and the
   // ones whose run did end that way, so stopTask can say so.
   const stopRequested = new Set<string>();
+  // What a stop that's part of something else should say in place of "You stopped this task", by task.
+  const stopWhy = new Map<string, string>();
   const stoppedByStop = new Set<string>();
   // The same for a steer: the note Nakul sent, by task, and the tasks whose run did end that way. A steered task's
   // next run opens its transcript with the note (steerMarkers).
@@ -264,6 +281,18 @@ export function createRunner(deps: {
       }
       if (task.kind === "work" && task.loop?.stage === "brief" && task.loop.questions.length) {
         waits.push({ taskId: task.id, agent: task.agent, kind: "answers", reason: "Waiting for your answers to its brief's questions, in Needs you." });
+        continue;
+      }
+      if (task.kind === "work" && task.loop?.stage === "parts") {
+        const kids = childrenOf(db, task);
+        const ready = kids.filter((c) => childState(c) === "ready").length;
+        const what = task.loop.fanout?.kind === "best_of_n" ? "attempts" : "parts";
+        waits.push({ taskId: task.id, agent: task.agent, kind: "parts", reason: `Waiting for its ${kids.length} ${what} (${ready} ready). Each runs on its own branch, one at a time.` });
+        continue;
+      }
+      if (task.kind === "work" && task.loop?.stage === "pick") {
+        const what = task.loop.fanout?.kind === "best_of_n" ? "Pick one of its attempts" : "Open its parts' pull requests or merge them into one branch";
+        waits.push({ taskId: task.id, agent: task.agent, kind: "pick", reason: `${what}, in Needs you.` });
         continue;
       }
       // A repo space attached from GitHub gets its local copy first; the task waits rather than blocks meanwhile.
@@ -359,6 +388,7 @@ export function createRunner(deps: {
     const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
     setTaskStatus(db, task.id, "blocked", { blockedReason: full });
     logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`, { taskId: task.id });
+    settleChild(getTask(db, task.id) ?? task);
     if (task.kind === "review") void reviewEnded(task, resolvedAgent(db, task), { status: "error", kind: "failed", message: reason }).catch(report);
   }
 
@@ -391,8 +421,9 @@ export function createRunner(deps: {
       // told what already fails without waiting for them.
       const warm = repo ? warmBase(space, repo, controller.signal) : Promise.resolve();
       const draft = claude
-        ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, signal: controller.signal })
-        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null };
+        ? await draftBrief(claude, { ask, repoPath: repo, privateData: space.private, model: tierModel(db, "cheap") || undefined, signal: controller.signal })
+        : { brief: normalizeBrief({}, ask), questions: [], error: "Claude isn't set up.", suggestedVerify: null, models: [], shape: null };
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "brief", models: draft.models });
       await warm;
       if (getTask(db, task.id)?.status !== "running") return;
       if (controller.signal.aborted) {
@@ -405,14 +436,70 @@ export function createRunner(deps: {
       const loop = getTask(db, task.id)!.loop!;
       setTaskBrief(db, task.id, draft.brief);
       const budget = space.budget ?? SIZE_BUDGETS[draft.brief.size];
-      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, suggestedVerify: draft.suggestedVerify, stage: draft.questions.length ? "brief" : "writing" });
+      // The pre-pass's shape is a proposal. Enter runs at once: a shape that costs more runs as one writer meanwhile,
+      // and stays on the task as a suggestion the user can switch to.
+      const proposed = repo ? proposeShape(draft.shape, { size: draft.brief.size, checksFound: checks.length > 0 }) : null;
+      const shape = proposed && runNow(proposed);
+      setTaskLoop(db, task.id, { ...loop, budget, hints, questions: draft.questions, suggestedVerify: draft.suggestedVerify, shape, stage: draft.questions.length ? "brief" : "writing" });
       setTaskStatus(db, task.id, "queued");
       if (draft.questions.length) logActivity(db, space.id, "claude", `${task.title} has ${plural(draft.questions.length, "question")} before it starts. Answer in Needs you.`, { taskId: task.id });
+      const offer = shape && suggestion(shape, draft.brief.size);
+      if (shape && offer) logActivity(db, space.id, "claude", `${task.title}: ${suggestionLine(shape, offer)}. It runs as one writer; switch on the task if you'd rather.`, { taskId: task.id });
     })()
       .catch(report)
       .finally(() => {
         stopRequested.delete(task.id);
         steerRequested.delete(task.id);
+        active.delete(key);
+        activeSpaces.delete(space.id);
+        kick();
+      });
+    active.set(key, { taskId: task.id, done, controller });
+  }
+
+  // After the attempts of a best-of-N: the strong tier scores the survivors against the brief, in the background like
+  // the brief stage. Its scores are advice next to each attempt; the user picks. A judge that can't answer leaves
+  // the attempts to pick from without scores.
+  function startJudge(task: Task, space: Space) {
+    setTaskStatus(db, task.id, "running");
+    activeSpaces.add(space.id);
+    const controller = new AbortController();
+    const key = `judge:${task.id}`;
+    const done = (async () => {
+      const claude = adapters.claude;
+      const cwd = mkdtempSync(join(tmpdir(), "atrium-run-"));
+      let scores: Record<string, { score: number; comment: string }> = {};
+      let note: string | null = null;
+      try {
+        const { prompt, ids } = await judgePrompt(db, task, space.repoPath!);
+        const result: AgentRunResult = claude
+          ? await claude.run({ prompt, cwd, systemPrompt: JUDGE_SYSTEM_PROMPT, allowedTools: [], mode: "review", privateData: space.private, ...tierRun(db, "strong"), signal: controller.signal, onChunk() {} })
+          : { status: "error", kind: "not_installed", message: "Claude isn't set up." };
+        if (result.usage) registry.recordUsage("claude", result.usage);
+        if (result.status === "ok") {
+          recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "judge", models: runModels(result, tierModel(db, "strong") || null) });
+          scores = parseScores(result.summary, ids);
+          if (!Object.keys(scores).length) note = "The judge's answer had no scores Atrium could read.";
+        } else note = `The judge didn't run: ${sentence(result.message)}`;
+      } catch (e) {
+        note = `The judge didn't run: ${sentence((e as Error).message)}`;
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+      if (getTask(db, task.id)?.status !== "running") return;
+      const loop = getTask(db, task.id)!.loop!;
+      if (controller.signal.aborted) {
+        if (stopRequested.has(task.id)) stoppedByYou(task, null);
+        else setTaskStatus(db, task.id, "queued");
+        return;
+      }
+      setTaskLoop(db, task.id, { ...loop, stage: "pick", fanout: { ...loop.fanout!, scores, judgeNote: note } });
+      setTaskStatus(db, task.id, "queued");
+      logActivity(db, space.id, "claude", `Scored the attempts at ${task.title}. Pick one in Needs you.`, { taskId: task.id });
+    })()
+      .catch(report)
+      .finally(() => {
+        stopRequested.delete(task.id);
         active.delete(key);
         activeSpaces.delete(space.id);
         kick();
@@ -472,6 +559,12 @@ export function createRunner(deps: {
       return;
     }
     if (task.kind === "work" && task.loop?.stage === "brief") return startBrief(task, space);
+    if (task.kind === "work" && task.loop?.stage === "judge") return startJudge(task, space);
+    // Fans out only on the user's yes, and never from a task that is itself a part or an attempt.
+    if (task.kind === "work" && task.loop?.shape && costlier(task.loop.shape.kind) && task.loop.shape.approved && !task.loop.fanout && !task.loop.role && space.kind === "repo") {
+      fanOut(db, task as Task & { loop: LoopState }, space, attemptAgents(task, space));
+      return;
+    }
     const adapter = adapters[agent];
     if (!adapter) return block(task, `No agent called "${agent}" is set up. Pick another agent and requeue.`);
 
@@ -557,7 +650,9 @@ export function createRunner(deps: {
       const left = repo ? await leaveRepo(repo) : null;
       return block(task, left ?? `Atrium couldn't start the run: ${sentence((e as Error).message)} Check that the Atrium folder isn't full or read-only, then retry.`);
     }
-    logActivity(db, space.id, agent, `Started: ${task.title}`, { taskId: task.id });
+    // A branch the engine put together runs no agent, only the checks and review.
+    if (current?.loop?.adopted) logActivity(db, space.id, "atrium", `Checking the ${current.loop.fanout?.kind === "best_of_n" ? "picked attempt" : "merged branch"} of "${task.title}".`, { taskId: task.id });
+    else logActivity(db, space.id, agent, `Started: ${task.title}`, { taskId: task.id });
 
     activeSpaces.add(space.id);
     const controller = new AbortController();
@@ -634,31 +729,75 @@ export function createRunner(deps: {
     const shown = firstTurn ? await withBaseFailures(task, repo!, gate!, r.signal) : task;
     const watch = task.kind === "work" && !explaining ? toolWatch() : null;
     let result: AgentRunResult;
+    // Claude's model for this job; other agents keep their own.
+    const tierName = tierFor(task, explaining);
+    const tier = adapter.id === "claude" ? tierRun(db, tierName) : {};
+    const asked = tier.model;
+    // A Claude writer keeps its session between turns, except in a private space, whose work is never left in
+    // Claude Code's own session files.
+    const writing = task.kind === "work" && !explaining && repo !== null;
+    const added = shown.detail.slice(shown.loop?.session?.detail ?? shown.detail.length).trim();
+    const adopted = writing && !!shown.loop?.adopted;
+    let plan =
+      writing && !adopted && adapter.id === "claude" && !space.private
+        ? planSession(shown.loop?.session ?? null, { now: Date.now(), tier: tierName, fresh: !!added || !!shown.loop?.feedback })
+        : null;
+    // Scouts run before the first writer turn only, as Atrium's own read-only sessions for any writer. Claude Code's
+    // subagents can't be limited to a read-only scout (dontAsk lets a writer spawn any agent type), so writers get no
+    // Agent tool at all.
+    const scoutQuestions = writing && !adopted && shown.loop?.shape?.kind === "scouts" && !hadTurn(shown) ? shown.loop.shape.scouts : [];
+    const scouted = scoutQuestions.length ? await runScouts(task, space, repo!, scoutQuestions, r.signal) : null;
+    if (plan && !plan.resume && plan.why === "context") {
+      logActivity(db, space.id, "atrium", `${task.title}: the last session held ${compact(shown.loop!.session!.context)} tokens of context, so this turn starts a fresh one with a progress note.`, { taskId: task.id });
+    }
     try {
       const base = repo ? [REPO_SYSTEM_PROMPT] : [generalSystemPrompt(r.scratch)];
       // The outcome line comes last, so it's the final thing the agent reads before it starts.
       const honest = [...capabilityLines(), OUTCOME_INSTRUCTION];
       const readOnly = task.kind === "review" || explaining;
-      // Reading the checks takes a moment, in which a stop can land before the agent has started.
-      if (r.signal.aborted) throw new StoppedEarly();
-      result = await adapter.run({
-        prompt: explaining ? explainPrompt(task, repo ? await branchContext(repo) : null) : buildPrompt(shown, space, gate ? gate.map((c) => c.command) : null),
-        cwd: r.cwd,
-        systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
-        // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
-        // An explanation reads only: no Bash at all, with the branch's history and diff already in its prompt.
-        allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
-        privateData: space.private,
-        mode: readOnly ? "review" : "work",
-        signal: r.signal,
-        onChunk: line,
-        ...(watch && {
-          onTool: (name: string, input: unknown) => {
-            const stuck = watch(name, input);
-            if (stuck) requestPause(task.id, { kind: "loop", diagnosis: stuck });
-          },
-        }),
-      });
+      const checks = gate ? gate.map((c) => c.command) : null;
+      const coldPrompt = async () =>
+        explaining
+          ? explainPrompt(task, repo ? await branchContext(repo) : null)
+          : buildPrompt(shown, space, checks, writing && repo && hadTurn(shown) ? await progressFor(repo, shown) : null, scouted);
+      const run = (prompt: string, session: AgentRunInput["session"]) => {
+        // Reading the checks and the branch takes a moment, in which a stop can land before the agent has started.
+        if (r.signal.aborted) throw new StoppedEarly();
+        return adapter.run({
+          prompt,
+          cwd: r.cwd,
+          systemPrompt: task.kind === "review" ? REVIEW_SYSTEM_PROMPT : explaining ? EXPLAIN_SYSTEM_PROMPT : [...base, ...honest].join("\n"),
+          // A review only reads. A space of a kind that no longer exists never gets more than the base tools.
+          // An explanation reads only: no Bash at all, with the branch's history and diff already in its prompt.
+          allowedTools: readOnly ? REVIEW_TOOLS : repo && !space.unknownKind ? [...REPO_TOOLS, ...gateTools(gate ?? [])] : BASE_TOOLS,
+          privateData: space.private,
+          mode: readOnly ? "review" : "work",
+          ...tier,
+          ...(session && { session }),
+          signal: r.signal,
+          onChunk: line,
+          ...(watch && {
+            onTool: (name: string, input: unknown) => {
+              const stuck = watch(name, input);
+              if (stuck) requestPause(task.id, { kind: "loop", diagnosis: stuck });
+            },
+          }),
+        });
+      };
+      let warm: AgentRunResult | null = null;
+      // A branch the engine put together (merged parts, a picked attempt) goes straight to the checks and review.
+      if (adopted) warm = { status: "ok", summary: `${shown.loop!.said ?? "Atrium put this branch together."}\nOUTCOME: done`, inputTokens: 0, outputTokens: 0 };
+      else if (plan?.resume) {
+        warm = await run(resumePrompt(added, shown.loop?.feedback ?? null), { id: plan.session.id, resume: true });
+        // A session Claude Code no longer has (cleared, or from another machine) is started again from the brief. Any
+        // other failure stands, so a crash or a missing sandbox isn't run a second time.
+        if (warm.status === "error" && warm.kind === "failed" && !r.signal.aborted && /no conversation found/i.test(warm.message)) {
+          line("— Couldn't resume the last session, so this turn starts a fresh one —");
+          plan = planSession(null, { now: Date.now(), tier: tierName, fresh: true });
+          warm = null;
+        }
+      }
+      result = warm ?? (await run(await coldPrompt(), plan && !plan.resume ? { id: plan.id, resume: false } : undefined));
     } catch (e) {
       result =
         e instanceof StoppedEarly
@@ -675,6 +814,15 @@ export function createRunner(deps: {
     // Usage and limits are the account's, whatever became of the task, so they're recorded before anything
     // below can block or discard it.
     if (result.usage) registry.recordUsage(adapter.id, result.usage);
+    const purpose = task.kind === "review" ? "review" : explaining ? "explain" : "write";
+    if (result.status === "ok") {
+      const models = runModels(result, asked ?? null, plan?.resume ? plan.session.models : undefined);
+      result = withModels(result, models);
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: adapter.id, purpose, models });
+    } else if (result.models?.length) {
+      // A run that ended without a result (a stop, say) still spent tokens; its own steps say how many.
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: adapter.id, purpose, models: result.models });
+    }
     if (result.status === "error" && result.kind === "rate_limited") {
       registry.setLimited(adapter.id, result.retryAfter ?? Date.now() + 30 * 60_000);
     }
@@ -692,11 +840,16 @@ export function createRunner(deps: {
       // Before settleRepo switches branches, so the repo always goes back clean. Skipped when git settings
       // changed: staging can run filter drivers from config the agent planted, and settleRepo reports the tampering.
       if (repo && (await settingsUnchanged(repo.path, repo.fingerprint))) {
-        const message = steering ? `WIP (steered): ${task.title}` : stopped ? `WIP (stopped): ${task.title}` : task.title;
+        // An attempt's commit carries its parent's title: the one picked becomes the task's own branch.
+        const title = task.loop?.role === "attempt" && task.parentTaskId ? (getTask(db, task.parentTaskId)?.title ?? task.title) : task.title;
+        const message = steering ? `WIP (steered): ${title}` : stopped ? `WIP (stopped): ${title}` : title;
         let committed = false;
         try {
           committed = (await commitAll(repo.path, message, repo.fingerprint)).committed;
           if (stopped && committed) saved = repo.branch;
+          const tip = await branchSha(repo.path, repo.branch);
+          const now = getTask(db, task.id)?.loop;
+          if (now && tip) setTaskLoop(db, task.id, { ...now, headSha: tip });
         } catch (e) {
           commitError = `${sentence((e as Error).message)} The changes are still uncommitted on ${repo.branch} in ${repo.path}. Commit or stash them on that branch, switch back to ${repo.start}, then retry.`;
         }
@@ -746,7 +899,12 @@ export function createRunner(deps: {
       result = { ...result, summary: outcome.body };
     }
     // The loop's own count of the turn, kept whatever happens to the task next.
-    if (task.kind === "work") countTurn(task.id, result, Date.now() - turnStart);
+    if (adopted) {
+      const loop = getTask(db, task.id)?.loop;
+      if (loop) setTaskLoop(db, task.id, { ...loop, adopted: false });
+    } else if (task.kind === "work") countTurn(task.id, result, Date.now() - turnStart);
+    // Only a turn that finished leaves a session worth resuming; one cut short or failed starts fresh next time.
+    if (plan) keepSession(task.id, result.status === "ok" && !cutShort ? { id: plan.resume ? plan.session.id : plan.id, endedAt: Date.now(), models: result.models ?? [], context: result.contextTokens ?? 0, tier: tierName, detail: shown.detail.length } : null);
 
     if (result.status === "ok" || result.kind !== "rate_limited") limitHits.delete(task.id);
     try {
@@ -776,6 +934,10 @@ export function createRunner(deps: {
       } else if (result.status === "ok") {
         // Answers to the last review's findings come out of the summary and onto the findings themselves.
         const answered = task.kind === "work" ? triageAnswers(task.id, outcome.body) : outcome.body;
+        if (task.kind === "work") {
+          const loop = getTask(db, task.id)!.loop;
+          if (loop) setTaskLoop(db, task.id, { ...loop, said: answered.trim().slice(0, SAID_MAX) || null });
+        }
         const lines = answered.trim() ? [answered.trim()] : [];
         // Repo runs already count their files in the branch summary.
         const madeText = !repo && made ? madeLine(made.changes, made.display) : null;
@@ -812,12 +974,16 @@ export function createRunner(deps: {
     }
   }
 
-  // Blocked rather than failed or queued: nothing went wrong, and Retry is how he runs it again.
+  // Blocked rather than failed or queued: nothing went wrong, and Retry is how he runs it again. A stop that's part of
+  // something else (starting over as another shape, setting parts aside) says that instead, since its saved edits are
+  // about to go.
   function stoppedByYou(task: Task, saved: string | null) {
-    const reason = `You stopped this task. ${saved ? savedNote(task, saved) : "Retry to run it again."}`;
+    const why = stopWhy.get(task.id);
+    stopWhy.delete(task.id);
+    const reason = why ?? `You stopped this task. ${saved ? savedNote(task, saved) : "Retry to run it again."}`;
     setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
     stoppedByStop.add(task.id);
-    logActivity(db, task.spaceId, "you", `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
+    logActivity(db, task.spaceId, "you", why ? `Stopped: ${task.title}. ${why}` : `Stopped by you: ${task.title}.${saved ? ` ${savedNote(task, saved)}` : ""}`, { taskId: task.id });
     if (task.kind === "review") void reviewEnded(task, resolvedAgent(db, task), { status: "error", kind: "failed", message: "You stopped the review." }).catch(report);
   }
 
@@ -861,9 +1027,10 @@ export function createRunner(deps: {
   // Aborting kills the agent's process group (see runAgentProcess, which escalates to SIGKILL); execute then saves
   // its edits, puts the repo back and marks the task. Says what actually happened: stopped; finished (the agent had
   // already answered, so its result stands); or timeout (still winding down; it's marked stopped when it ends).
-  async function stopTask(taskId: string): Promise<StopOutcome> {
+  async function stopTask(taskId: string, why?: string): Promise<StopOutcome> {
     const run = [...active.values()].find((r) => r.taskId === taskId);
     if (!run) return "not-running";
+    if (why) stopWhy.set(taskId, why);
     stoppedByStop.delete(taskId);
     stopRequested.add(taskId);
     run.controller.abort();
@@ -874,6 +1041,8 @@ export function createRunner(deps: {
     ]);
     clearTimeout(timer);
     if (!settled) return "timeout";
+    // Its run finished before the stop could land, so nothing used the note.
+    stopWhy.delete(taskId);
     // `has`, not `delete`: a second stop of the same run waits on the same promise and must hear the same answer.
     return stoppedByStop.has(taskId) ? "stopped" : "finished";
   }
@@ -959,6 +1128,7 @@ export function createRunner(deps: {
 
   // The loop is done: the work waits for the user, carrying what the checks and reviews found.
   async function ready(task: Task, space: Space, lines: string[], filesKept = 0) {
+    if (task.loop?.role) return childReady(task, space, lines);
     if (task.loop) setTaskLoop(db, task.id, { ...task.loop, stage: "ready", feedback: null });
     const facts = await factsFor(db, getTask(db, task.id)!, space, filesKept);
     setTaskStatus(db, task.id, "review");
@@ -975,6 +1145,44 @@ export function createRunner(deps: {
     await considerRule(approval.id, { filesKept });
   }
 
+  // A part or attempt whose loop is done reports to its parent, which decides with the user; it makes no approval.
+  function childReady(task: Task, space: Space, lines: string[]) {
+    setTaskLoop(db, task.id, { ...task.loop!, stage: "ready", feedback: null, report: lines });
+    setTaskStatus(db, task.id, "done");
+    logActivity(db, space.id, resolvedAgent(db, task), `Ready: ${task.title}. It waits with the rest of ${getTask(db, task.parentTaskId!)?.title ?? "its task"}.`, { taskId: task.id });
+    settleChild(task);
+  }
+
+  // A child finished one way or another; its parent may now move on. When no attempt survived, their branches go.
+  function settleChild(task: Task) {
+    if (!task.loop?.role || !task.parentTaskId) return;
+    // Read before fanIn, which clears the fan-out of a parent none of whose attempts survived.
+    const parent = getTask(db, task.parentTaskId);
+    const children = parent ? childrenOf(db, parent) : [];
+    const moved = fanIn(db, task.parentTaskId);
+    const space = parent ? getSpace(db, parent.spaceId) : null;
+    if (moved === "blocked" && parent && space) {
+      void deleteChildBranches(children, space)
+        .then((r) => r.kept.length && logActivity(db, space.id, "atrium", keptNote(r.kept), { taskId: parent.id }))
+        .catch(report);
+    }
+    if (moved) kick();
+  }
+
+  // An attempt that fails Atrium's gate is dropped rather than sent back: the others are its retries.
+  function dropAttempt(task: Task, why: string) {
+    block(task, `Dropped: ${why}`);
+  }
+
+  // Which agent runs each attempt: the task's own, or for the second, Codex, when the user asked for another vendor
+  // and Codex can work in this space.
+  function attemptAgents(task: Task, space: Space): string[] {
+    const shape = task.loop!.shape!;
+    if (shape.kind !== "best_of_n") return [];
+    const codex = shape.mixVendors && adapters.codex && !registry.refusal("codex", "work", space) ? "codex" : null;
+    return Array.from({ length: shape.attempts }, (_, i) => (i === 1 && codex ? codex : task.agent));
+  }
+
   // Adds a turn's tokens and time to the loop's count. A finished run that reported no tokens makes the count a floor.
   function countTurn(taskId: string, result: AgentRunResult, ms: number) {
     const loop = getTask(db, taskId)?.loop;
@@ -982,6 +1190,55 @@ export function createRunner(deps: {
     const tokens = result.status === "ok" ? weightedTokens(result) : 0;
     const unreported = loop.usage.unreported || (result.status === "ok" && tokens === 0);
     setTaskLoop(db, taskId, { ...loop, usage: { tokens: loop.usage.tokens + tokens, ms: loop.usage.ms + ms, unreported } });
+  }
+
+  // Atrium's own scouts: a short read-only Claude session per question, on the cheap tier, before the writer's first
+  // turn. One that can't answer is left out; the writer still starts.
+  async function runScouts(task: Task, space: Space, repo: RepoRun, questions: string[], signal: AbortSignal): Promise<string | null> {
+    const claude = adapters.claude;
+    if (!claude) return null;
+    const found: { question: string; answer: string }[] = [];
+    for (const question of questions) {
+      if (signal.aborted) break;
+      const res = await claude
+        .run({
+          prompt: scoutPrompt(task.brief?.goal || task.title, question),
+          cwd: repo.path,
+          systemPrompt: scoutSystemPrompt,
+          allowedTools: SCOUT_TOOLS,
+          mode: "review",
+          privateData: space.private,
+          ...tierRun(db, "cheap"),
+          maxTurns: SCOUT_TURNS,
+          signal,
+          onChunk() {},
+        })
+        .catch((e: Error): AgentRunResult => ({ status: "error", kind: "failed", message: e.message }));
+      if (res.usage) registry.recordUsage("claude", res.usage);
+      if (res.status !== "ok") continue;
+      const models = runModels(res, tierModel(db, "cheap") || null);
+      recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "scout", models });
+      countTurn(task.id, withModels(res, models), 0);
+      found.push({ question, answer: res.summary.trim() });
+    }
+    return found.length ? scoutFindings(found) : null;
+  }
+
+  function keepSession(taskId: string, session: Session | null) {
+    const loop = getTask(db, taskId)?.loop;
+    if (loop) setTaskLoop(db, taskId, { ...loop, session });
+  }
+
+  // What a fresh session is told about earlier turns, read from the branch; none before the first commit.
+  async function progressFor(repo: RepoRun, task: Task): Promise<string | null> {
+    try {
+      const log = await git(repo.path, ["log", "--format=%s", "--no-decorate", "-n", "20", `${repo.start}..${repo.branch}`]);
+      const commits = log.code === 0 ? log.out.split("\n").filter(Boolean) : [];
+      const files = commits.length ? (await branchFiles(repo.path, repo.start, repo.branch)).map((f) => f.path).slice(0, 30) : [];
+      return progressNote({ commits, files, summary: task.loop?.said ?? null });
+    } catch {
+      return null;
+    }
   }
 
   // When this turn answered review findings, its TRIAGE lines go onto them; returns the summary without them.
@@ -1053,6 +1310,18 @@ export function createRunner(deps: {
       loop = { ...loop, noChanges: false, checks: gate.verdict, checkedSha: gate.sha, passing, attention: gate.attention, unverified: gate.unverified, alreadyFailing: gate.alreadyFailing };
     }
     const writer = agentName(resolvedAgent(db, task));
+    // An attempt gets one turn and Atrium's checks. It survives when nothing fails that passed before the task: its
+    // checks pass, or the only ones failing already failed on the base commit, which leaves it unverified, labelled
+    // so, rather than dropped. A new failure, or checks that couldn't run, drops it.
+    if (loop.role === "attempt") {
+      setTaskLoop(db, task.id, loop);
+      const stale = new Set(loop.alreadyFailing.map((f) => f.name));
+      if (loop.checks === "failed") return dropAttempt(task, `its checks failed (${(gate?.results ?? []).filter((c) => c.status === "failed" && !stale.has(c.name)).map((c) => c.name).join(", ")}).`);
+      if (loop.noChanges) return dropAttempt(task, "it made no changes.");
+      const onlyStale = stale.size > 0 && (gate?.results ?? []).every((c) => c.status === "passed" || (c.status === "failed" && stale.has(c.name)));
+      if (loop.checks !== "passed" && !onlyStale) return dropAttempt(task, loop.unverified ?? "its checks couldn't prove it works.");
+      return ready(getTask(db, task.id)!, space, [...lines, ...loopNotes(loop, space)]);
+    }
     if (loop.checks === "failed") {
       // A check that was already failing before the task neither counts as this turn's failure nor trips loop detection.
       const stale = new Set(loop.alreadyFailing.map((f) => f.name));
@@ -1083,7 +1352,9 @@ export function createRunner(deps: {
     loop = { ...loop, stalled: 0, failSig: null };
     // A check that already failed before the task and still fails sends the writer back once, outside loop
     // detection: the task's goal may be exactly to make it pass. After that the result goes on, unverified.
-    if (loop.alreadyFailing.length && gate?.results && !loop.staleRetried && !overBudget(loop)) {
+    // Not for a split's part: another part may be the one whose goal is that check, and the merged branch's gate
+    // decides.
+    if (loop.alreadyFailing.length && gate?.results && !loop.staleRetried && loop.role !== "part" && !overBudget(loop)) {
       const still = loop.alreadyFailing.map((f) => `\`${f.name}\` still fails as it did before the task. Your goal may need it to pass.`).join("\n");
       setTaskLoop(db, task.id, { ...loop, stage: "writing", staleRetried: true, feedback: `## Still failing\n${still}` });
       setTaskStatus(db, task.id, "queued");
@@ -1096,7 +1367,7 @@ export function createRunner(deps: {
       loop = { ...loop, stage: "review", reviewedSha: gate?.sha ?? null };
       startReview(db, setTaskLoop(db, task.id, loop), space, diff);
       setTaskStatus(db, task.id, "queued");
-      const checked = loop.checks === "passed" ? "passed its checks" : "has no checks to run";
+      const checked = loop.checks === "passed" ? "passed its checks" : loop.unverified ? "is unverified" : "has no checks to run";
       logActivity(db, space.id, "atrium", `${task.title} ${checked}. Sent it for review.`, { taskId: task.id });
       return;
     }
@@ -1192,12 +1463,25 @@ function readyLine(task: Task): string {
 
 class StoppedEarly extends Error {}
 
+// Whether a writer turn already finished on this task, so a fresh session has progress to be told about.
+const hadTurn = (task: Task): boolean => task.loop !== null && (task.loop.said !== null || task.loop.checkedSha !== null);
+
+// Which tier's Claude model a run uses: review judges and an explanation only reads, and a writer the user had to
+// unstick after a pause goes on with the strong model.
+function tierFor(task: Task, explaining: boolean): Tier {
+  if (task.kind === "review") return "strong";
+  if (explaining) return "cheap";
+  return task.loop?.escalated ? "strong" : "default";
+}
+
 // The gate's own commands, so the writer can run what will judge it (inside its sandbox, like any of its commands).
 // One that needs Atrium's base copies (a pinned Makefile) or isn't a single plain command line is left to the gate.
 const gateTools = (checks: Check[]): string[] =>
   checks.filter((c) => !c.install && !/[$\n`]/.test(c.command) && !c.command.startsWith("-")).map((c) => `Bash(${c.command}*)`);
 
 const EXPLAIN_DIFF_CAP = 20 * 1024;
+// How much of the writer's last summary a fresh session's progress note carries.
+const SAID_MAX = 2000;
 
 // The branch's commits and diff for an explanation, which reads files but runs no commands. Capped, and .env files
 // are left out, as for a reviewer.
@@ -1232,16 +1516,25 @@ export const steerBlock = (note: string) =>
   `Note from you while this was running: ${note}\nThe changes made so far are already on this branch. Continue from them; don't start over.`;
 
 // A writer turn: the brief as sections when there is one, what was asked, what will check it, and what the last
-// turn left to deal with (failing checks or review findings).
-function buildPrompt(task: Task, space: Space, checks: string[] | null): string {
+// turn left to deal with (failing checks or review findings). Stable parts come first and what changes from turn to
+// turn last, so a fresh session still finds most of its prompt in the cache; the fenced excerpts take a new marker
+// each time, so they come after everything that doesn't change.
+function buildPrompt(task: Task, space: Space, checks: string[] | null, progress: string | null = null, scouts: string | null = null): string {
   const parts = [`Task: ${task.title}`];
   if (task.brief) parts.push(...briefSections(task.brief, checks));
   else if (checks) parts.push(checksSection(checks));
-  if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
-  if (task.loop?.feedback) parts.push(task.loop.feedback);
-  if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
   if (space.goal.trim()) parts.push(`Space goal: ${space.goal.trim()}`);
+  if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
+  if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
+  if (scouts) parts.push(scouts);
+  if (progress) parts.push(progress);
+  if (task.loop?.feedback) parts.push(task.loop.feedback);
   return parts.join("\n\n");
+}
+
+// A turn in a resumed session, which already holds the brief and everything before: only what's new.
+function resumePrompt(added: string, feedback: string | null): string {
+  return ["This continues your work on the task in this session.", ...(added ? [added] : []), ...(feedback ? [feedback] : [])].join("\n\n");
 }
 
 function explainPrompt(task: Task, branch: string | null): string {

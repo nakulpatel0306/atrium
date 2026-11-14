@@ -8,6 +8,7 @@ import { deriveView } from "../../src/tui/select";
 import { initialUi, type Overlay, pin, reduce, type Ui } from "../../src/tui/ui";
 import { ids, makeState, task } from "./fixtures";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
+import { proposeShape, runNow } from "../../src/engine/shape";
 import { key } from "./key";
 
 const rows = { detail: 20, live: 10, investRows: 2 };
@@ -338,4 +339,33 @@ test("the asking card and the question box show the questions and numbered answe
   expect(shown).toContain("1 Weekly");
   expect(shown).toContain("3 Type an answer");
   expect(shown).toContain("4 Leave it to the agent");
+});
+
+// A task running as one writer while its pre-pass suggested a split.
+function shaped(): State {
+  const state = makeState();
+  const shape = runNow(proposeShape({ kind: "split", reason: "two pieces", parts: [{ title: "A", goal: "a", files: ["a.ts"] }, { title: "B", goal: "b", files: ["b.ts"] }] }, { size: "medium", checksFound: true }));
+  state.tasks.push(task({ id: "tsk_shape", title: "Totals", status: "running", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "writing", shape } }));
+  return state;
+}
+
+test("the detail shows the suggested shape while the task runs as one writer, and a parent's parts read-only", async () => {
+  const { taskDetail } = await import("../../src/tui/detail");
+  const state = shaped();
+  const text = (lines: { text: string }[][]) => lines.map((l) => l.map((s) => s.text).join("")).join("\n");
+  const ui = { ...initialUi, tab: "spaces" as const, focus: "tasks" as const, selected: { ...initialUi.selected, tasks: { id: "tsk_shape", index: 3 } } };
+  const running = text(taskDetail(deriveView(state, ui), null));
+  expect(running).toContain("Shape: Single writer");
+  expect(running).toContain("Could run as 2 parts: two pieces. Switch on the dashboard, which stops the writer and starts over.");
+  // A parent whose parts are ready: each one read-only, and where to decide.
+  const parent = state.tasks.find((t) => t.id === "tsk_shape")!;
+  parent.status = "queued";
+  parent.loop = { ...parent.loop!, stage: "pick", shape: { ...parent.loop!.shape!, kind: "split", approved: true }, fanout: { kind: "split", children: ["tsk_a"], scores: {}, judgeNote: null } };
+  state.tasks.push(task({ id: "tsk_a", title: "Part A", status: "done", parentTaskId: "tsk_shape", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", role: "part" } }));
+  state.spend.tasks.tsk_shape = { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 90, input: 100 };
+  const shown = text(taskDetail(deriveView(state, ui), null));
+  expect(shown).toContain("Shape: Split into 2 tasks: two pieces");
+  expect(shown).toContain("Cost: 412k weighted tokens · ~$1.84 est. at list prices · 90% from cache");
+  expect(shown).toContain("ready Part A");
+  expect(shown).toContain("Open their pull requests or merge them on the dashboard.");
 });

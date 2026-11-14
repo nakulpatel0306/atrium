@@ -3,6 +3,7 @@ import type { Database } from "bun:sqlite";
 import { createApproval } from "../../src/engine/approvals";
 import { openDb } from "../../src/engine/db";
 import { setSetting } from "../../src/engine/settings";
+import { proposeShape, runNow } from "../../src/engine/shape";
 import { createSpace, updateSpace } from "../../src/engine/spaces";
 import { summary } from "../../src/engine/summary";
 import { recordRunFiles } from "../../src/engine/outputs/store";
@@ -154,6 +155,36 @@ test("a task asking before it starts counts toward the badge and opens on its ta
   const sum = summary(db);
   expect(sum.needsYou).toBe(1);
   expect(sum.needs[0]).toEqual({ id: t.id, kind: "question", title: "Add totals: Weekly or monthly?", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null });
+});
+
+test("a split waiting on a part that stopped asks too, through the one definition", async () => {
+  const { needsYouCount } = await import("../../src/engine/needs");
+  const { snapshot } = await import("../../src/engine/state");
+  const s = createSpace(db, { name: "atrium", kind: "repo", goal: "g", repoPath: "/tmp/x" });
+  const parent = createTask(db, { spaceId: s.id, title: "Totals" });
+  setTaskLoop(db, parent.id, { ...newLoop(SIZE_BUDGETS.small), stage: "parts", fanout: { kind: "split", children: [], scores: {}, judgeNote: null } });
+  const part = createTask(db, { spaceId: s.id, title: "Part A", parentTaskId: parent.id });
+  setTaskLoop(db, part.id, { ...newLoop(SIZE_BUDGETS.small), role: "part" });
+  // While the part runs, the parent asks nothing.
+  expect(summary(db).needsYou).toBe(0);
+  db.query("UPDATE tasks SET status = 'blocked', blocked_reason = 'Paused' WHERE id = ?").run(part.id);
+  const sum = summary(db);
+  expect(sum.needsYou).toBe(1);
+  expect(sum.needs[0]!.title).toBe("Totals: one of its parts stopped: give it a hint, retry it, or set the parts aside");
+  expect(needsYouCount(snapshot(db))).toBe(1);
+});
+
+test("parts waiting for a decision count like questions; a suggested shape doesn't", () => {
+  const s = createSpace(db, { name: "atrium", kind: "repo", goal: "g", repoPath: "/tmp/x" });
+  const shaped = createTask(db, { spaceId: s.id, title: "Totals" });
+  const parts = [{ title: "A", goal: "a", files: ["a.ts"] }, { title: "B", goal: "b", files: ["b.ts"] }];
+  const shape = proposeShape({ kind: "split", reason: "two pieces", parts }, { size: "medium", checksFound: true });
+  setTaskLoop(db, shaped.id, { ...newLoop(SIZE_BUDGETS.small), stage: "writing", shape: runNow(shape) });
+  const picking = createTask(db, { spaceId: s.id, title: "Speed" });
+  setTaskLoop(db, picking.id, { ...newLoop(SIZE_BUDGETS.small), stage: "pick", fanout: { kind: "best_of_n", children: [], scores: {}, judgeNote: null } });
+  const sum = summary(db);
+  expect(sum.needsYou).toBe(1);
+  expect(sum.needs.map((n) => n.title)).toEqual(["Speed: pick one of its attempts"]);
 });
 
 test("every needs-you counter uses the one definition", async () => {

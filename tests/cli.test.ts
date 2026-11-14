@@ -41,6 +41,8 @@ test("statusLine is plain language", () => {
   const state = { spaces: [{}, {}], approvals: [{}], proposals: [], tasks: [] } as unknown as State;
   expect(statusLine(state, "http://127.0.0.1:7420")).toBe("running at http://127.0.0.1:7420 · 2 spaces · 1 needs you");
   expect(statusLine(null, "http://127.0.0.1:7420")).toBe("not running");
+  const spent = { ...state, spend: { today: { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 0, input: 0 } } } as unknown as State;
+  expect(statusLine(spent, "http://127.0.0.1:7420")).toBe("running at http://127.0.0.1:7420 · 2 spaces · 1 needs you · today 412k weighted tokens, ~$1.84 est.");
 });
 
 test("trimLog keeps only the last bytes of an oversized log", () => {

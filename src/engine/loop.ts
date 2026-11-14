@@ -1,8 +1,20 @@
 // Where a coding task is in the loop (write, checks, review, you), and the rules that move it on or pause it.
 // Shared by the engine and the dashboard, so it imports nothing but types.
 import type { BriefQuestion, TaskSize } from "./brief";
+import type { Session } from "./sessions";
+import type { Shape } from "./shape";
 
-export type Stage = "brief" | "writing" | "checks" | "review" | "ready" | "paused";
+// A task that fanned out: its parts (a split) or attempts (best-of-N), and what the judge made of the attempts.
+export type Fanout = {
+  kind: "split" | "best_of_n";
+  children: string[];
+  scores: Record<string, { score: number; comment: string }>;
+  // Why the judge didn't score the attempts, when it didn't.
+  judgeNote: string | null;
+};
+
+// A split's or a best-of-N's parent waits on its children ("parts"), its judge ("judge") and then the user ("pick").
+export type Stage = "brief" | "writing" | "checks" | "review" | "ready" | "paused" | "parts" | "judge" | "pick";
 export type ChecksState = "pending" | "running" | "passed" | "failed" | "none";
 export type Severity = "high" | "medium" | "low";
 
@@ -74,6 +86,24 @@ export type LoopState = {
   // The next run explains what's wrong instead of trying again; its answer lands in `explanation`.
   explain: boolean;
   explanation: string | null;
+  // The writer's Claude session, kept between turns while its prompt cache is warm (sessions.ts); null when there is
+  // none to resume.
+  session: Session | null;
+  // What the writer's last finished turn said it did, for the progress note a fresh session starts with.
+  said: string | null;
+  // The task branch's commit when Atrium last committed to it, so the engine only deletes a branch nobody has added
+  // to since.
+  headSha: string | null;
+  // How the work runs (shape.ts); null for one writer, as before shapes existed.
+  shape: Shape | null;
+  // A part of a split or an attempt of a best-of-N, which reports to its parent instead of to the user.
+  role: "part" | "attempt" | null;
+  fanout: Fanout | null;
+  // The branch was put together by the engine (a merge of the parts, or the attempt the user picked), so the next
+  // turn runs the checks and review on it without a writer.
+  adopted: boolean;
+  // Set once the user stepped in after a pause, so the writer goes on with the strong tier's model (tiers.ts).
+  escalated: boolean;
 };
 
 export const MAX_REVIEW_ROUNDS = 2;
@@ -116,12 +146,21 @@ export function newLoop(budget: Budget): LoopState {
     paused: null,
     explain: false,
     explanation: null,
+    escalated: false,
+    session: null,
+    said: null,
+    headSha: null,
+    shape: null,
+    role: null,
+    fanout: null,
+    adopted: false,
   };
 }
 
-// Back to writing after the user steps in: the counters that judge "stuck" and the budget start over.
+// Back to writing after the user steps in: the counters that judge "stuck" and the budget start over, and a loop
+// that was paused goes on with the strong model.
 export function resumed(loop: LoopState): LoopState {
-  return { ...loop, stage: "writing", paused: null, explain: false, stalled: 0, failSig: null, usage: { tokens: 0, ms: 0, unreported: false } };
+  return { ...loop, stage: "writing", paused: null, escalated: loop.escalated || loop.paused !== null, explain: false, stalled: 0, failSig: null, usage: { tokens: 0, ms: 0, unreported: false } };
 }
 
 export function overBudget(loop: LoopState): string | null {

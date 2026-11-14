@@ -8,6 +8,10 @@ import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { REVIEW_CHOICES } from "../../engine/spaces";
 import { ChecksBadge, LoopPanel } from "./LoopPanel";
+import { CostChip } from "./Shape";
+import { followsText } from "../../engine/shape";
+import { spendText } from "../../engine/cost";
+import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ReviewActions } from "./Decision";
@@ -121,7 +125,7 @@ function LoopSettings({ space }: { space: Space }) {
   );
 }
 
-function Header({ space }: { space: Space }) {
+function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"][string] | undefined }) {
   const [editing, setEditing] = useState(false);
   const [goal, setGoal] = useState(space.goal);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -163,6 +167,11 @@ function Header({ space }: { space: Space }) {
         {space.repoPath && (
           <span className="tag mono path" title={space.repoPath}>
             {space.repoPath}
+          </span>
+        )}
+        {spend && (
+          <span className="tag cost" title="Weighted tokens, with an estimate at Anthropic's list prices. A subscription doesn't bill per token.">
+            today {compact(spend.today.weighted)} · {spendText(spend.today)} · this week {compact(spend.week.weighted)} · {spendText(spend.week)}
           </span>
         )}
         <div className="head-acts">
@@ -350,6 +359,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
             }}
           />
         )}
+        {task.kind === "work" && <CostChip spend={state.spend.tasks[task.id]} />}
         <StopTask task={task} />
         <Avatar agent={ranAgent(task, state.runs)} live={task.status === "running"} title={agent} />
       </div>
@@ -362,11 +372,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
           {parent && (
             <p className="follows">
               <CornerDownRight />
-              {task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "{parent.title}"
+              {followsText(task)} "{parent.title}"
             </p>
           )}
           {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
-            <LoopPanel key={String(showChecks)} task={task} repo={space?.kind === "repo"} showChecks={showChecks} />
+            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} />
           )}
           <section className="asked">
             <h4>You asked</h4>
@@ -533,7 +543,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
 
   return (
     <div className="wrap">
-      <Header key={space.id} space={space} />
+      <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
       <SpaceNeeds state={state} spaceId={space.id} />
       <div className="cols">
         <div>

@@ -1,6 +1,6 @@
 # The loop
 
-Every coding task in Atrium runs the same loop: **brief → write → verify → review → you.** A result reaches you once Atrium's own checks and a fresh reviewer have been at it, with what each found attached. When the checks couldn't prove anything, or the review didn't happen, it still reaches you, labelled as such. Everything here works with only the Claude CLI installed; Codex and Gemini only widen the choice of reviewer.
+Every coding task in Atrium runs the same loop: **brief → write → verify → review → you.** A result reaches you once Atrium's own checks and a fresh reviewer have been at it, with what each found attached. When the checks couldn't prove anything, or the review didn't happen, it still reaches you, labelled as such. Everything here works with only the Claude CLI installed; Codex and Gemini only widen the choice of agents.
 
 Why this shape: in studies of agent failures, about 44% come from the task spec (agents ignoring it, repeating steps, not knowing when they're done) and about 24% from weak or missing verification. When maintainers reviewed agent pull requests that had passed a benchmark's tests, roughly half were still not mergeable. A clean-context reviewer finds real problems that the agent which wrote the code stopped seeing. So the levers are a better brief, a check the agent can't fake, and an independent read for mergeability, not more agents.
 
@@ -41,7 +41,7 @@ What the results mean:
 - **unverified** (`none`): no checks were found, or a check couldn't run (the tool is missing, it timed out, or the install it needed didn't happen). Checks that couldn't run also add an attention note. A registry that needs your login makes the install unverified rather than failed, since checks never get your credentials.
 - **already failing**: Atrium runs the checks on the commit the task started from, before the writer's first turn (usually while the brief drafts) and again when a check fails. Results are cached for the 32 most recent bases, keyed by the commit, the checks and your dependencies (each lockfile's content and each dependency folder's identity), so a reinstall runs them again; a Stop ends the run and caches nothing. A check that fails there and still fails proves nothing about the change: the result is "Unverified: X was already failing before this task", with an attention note, and never "passed".
   - The writer's prompt lists these checks from its first turn, with the end of their output from before the task.
-  - If one still fails after a turn, the writer is sent back exactly once ("X still fails as it did before the task. Your goal may need it to pass."), outside loop detection. After that the work goes on to review, unverified.
+  - If one still fails after a turn, the writer is sent back exactly once ("X still fails as it did before the task. Your goal may need it to pass."), outside loop detection. After that the work goes on to review, unverified. A split's part isn't sent back, and a best-of-N attempt whose only failures are these survives, unverified (see Shapes).
   - The reviewer gets each one's output from before the task and from the branch now, to judge whether the change made it worse.
   - A check that passed there and fails now is a real failure; one that failed there and passes now is simply passed.
 
@@ -69,10 +69,13 @@ The writer and the checks share a codebase, so tampering can't be made impossibl
      - Classification folds case, as APFS does. Config outside git counts only when it's new or changed since the task started (by content hash, regular files only). A link, an oversized file, or a missing snapshot always counts. git doesn't list FIFOs or devices, so those aren't seen at all; checks never read your checkout, so they can't affect a result.
      - Files committed into a dependency folder add a note: the checks never use them, but the branch would carry them into your repo.
      - A note blocks automatic approval by any rule, is put to the reviewer to scrutinise, and is shown on the result. Checks that couldn't run or were already failing add notes of their own, so the same holds for them.
+- **What a model produces is a proposal.** The pre-pass's shape, the judge's scores and the scouts' answers never widen what runs, raise a budget, or set a command the gate trusts. A costlier shape runs only on the user's click; a merged or picked branch goes through the gate like any turn (a picked attempt's results carry over only because they ran on that same commit). Scout questions and answers, the judge's diffs, a progress note's commits, file names and summary, and check output reach a prompt fenced with a per-run marker and labelled untrusted. A Claude run has only the built-in tools Atrium allows it (`--tools`), so no Claude writer can start a subagent, a worktree or a scheduled job (Codex: see Known limits). And it reads no settings file (`--setting-sources ''`, with `disableAllHooks` in Atrium's pinned settings): measured on 2.1.323, a repo's own `.claude/settings.json` otherwise ran its SessionStart hook and its `apiKeyHelper` command outside the sandbox and took over the CLI's auth, though it couldn't add permissions to an untrusted folder. The repo's CLAUDE.md still loads, through `--add-dir` on the run's own folder. `--strict-mcp-config` keeps a repo's `.mcp.json` from starting servers.
 - **The reviewer and you are the final judges.**
 
 ### Known limits of the gate
 
+- **A merge of parts** combines changes each checked on its own; the merged branch is checked again before anything reaches you, but a conflict git resolves cleanly can still combine badly. The review reads the merged diff.
+- **Codex's subagents.** codex-cli 0.147 has subagents on by default (`spawn_agent`). Atrium runs Codex with `--disable multi_agent`, the only switch it offers, but measured on 0.147 the tool still appears in the model's list; every spawn failed with it off ("collab spawn failed"), and a run without it once created a file through one. Any subagent runs inside Codex's same seatbelt, so it can't reach more than the writer, but it would be a second writer on the branch if a Codex update made spawning work.
 - **Editing the tests themselves.** A writer can weaken an assertion without dropping a file or adding a skip. The reviewer is told to judge against the brief, and you see the diff.
 - **Repo code the checks call.** Tests, source and helpers are the writer's to change; only the command definitions are pinned. A script a Makefile recipe builds at run time, or names through a variable, isn't seen.
 - **Commands from `CLAUDE.md`/`AGENTS.md` and space settings** are run as written, so a `make lint` named there runs the checkout's Makefile, not a base copy. Editing those notes is itself flagged.
@@ -109,10 +112,77 @@ Atrium pauses a task with a one-line diagnosis when:
 
 A paused task offers two ways on: **Give it a hint**, which carries on from the branch with your note, and **Explain the problem instead**, a read-only run (no edits, no commands; the branch's commits and diff are handed to it) that says what's going wrong rather than trying again.
 
+## Shapes: one writer, scouts, a split or best-of-N
+
+Most coding is sequential, and the evidence on multi-agent systems is that they help breadth-first, parallel work and hurt the rest: in Google's controlled study, multi-agent setups gained 81% on parallelisable tasks and lost 39–70% on sequential ones, and independent agents amplified errors 17×. Anthropic and Cognition both keep writes single-threaded. So one writer is the default, and other shapes are proposals the user can see and change.
+
+The brief's pre-pass, in the same call, also proposes a shape with a one-line reason:
+
+- **single**: one writer. Sequential or single-module work.
+- **scouts**: broad read-only exploration first, then one writer.
+- **split**: independent parts that touch disjoint files and have their own tests.
+- **best_of_n**: uncertain work that the repo's checks can judge.
+
+The engine reads the proposal as untrusted and checks it against the task before showing it:
+
+- Fan-out is capped by size, after Anthropic's effort scaling: small tasks never fan out, medium up to 4, large up to 5 (best-of-N at most 3 attempts).
+- A split needs at least two parts, each naming files inside the repo: no absolute or home path, no glob, no `..`, not the repo root itself. Paths are compared as they resolve (`./`, `.` segments and trailing slashes dropped, case folded), and no file, or folder holding one, may be in two parts. Too many parts turn the split down rather than dropping one.
+- Best-of-N needs checks Atrium can run and isn't for small tasks.
+- Anything else becomes one writer, with the engine's reason ("Two of the parts touch the same files, so one writer does it.").
+
+The task shows the reason ("Single writer: sequential change in one module") and, until the writer starts, a one-click change among the shapes the task can take; the ones it can't take say why. Enter always runs at once: **single** and **scouts** run as proposed, and a proposed **split** or **best_of_n**, which cost more, runs as one writer meanwhile, with the proposal on the task as a suggestion and its estimate (the space's recent tasks times the fan-out, or each run's budget as the ceiling): "Could run as 2 parts: … (est. ~$0.04) · Split instead". Nothing waits in **Needs you** for a shape alone. Clicking the suggestion stops the writer, starts the task over from the brief as that shape and then removes the writer's branch (only if it's still where Atrium left it); it's offered until the task reaches review, and a writer that finished before the stop landed keeps its result. The ⌘↩ card offers the same choice before anything runs, and leaving a costlier shape chosen there is the click. Only a user's choice approves a shape: a stored `approved` must be a literal `true`, a shape that reads oddly is no shape, and a task that is itself a part or an attempt never fans out.
+
+### Scouts
+
+Before the writer's first turn, Atrium runs one short read-only Claude session per scout question (Read, Glob, Grep; the cheap tier; a turn cap; an answer of about 1,500 words), for any writer. The question reaches the scout fenced, since the pre-pass wrote it, and each answer (capped at 8 KB) reaches the writer fenced as untrusted. Scouts' tokens count toward the task's budget.
+
+Claude Code's own subagents aren't used. Measured on Claude Code 2.1.323: in `dontAsk` mode a run may use tools no allow rule names, so a writer allowed only `Agent(atrium-scout)` still spawned a `general-purpose` subagent that wrote into the checkout, a second writer on the branch. The same run could also create a worktree and branch (EnterWorktree), run a command outside the Bash rules (Monitor) and schedule a prompt (CronCreate). So every Claude run passes `--tools` with exactly the built-in tools Atrium allows it; the CLI then removes every other tool, for its subagents as well ("Agent is disabled for this session, in subagents as well as here"). The session's deny rules did hold for subagents (a subagent's `Read .env` was refused), but with no Agent tool there are none.
+
+### Split
+
+Each part becomes a task of its own, linked to the parent: its own brief (the part's goal, its files as the scope and the files to read first, the other parts out of scope, the parent's check command), its own branch `atrium/<partId>`, and the whole loop, review included, except the one-time send-back over a check that was already failing on the base commit: another part may be the one whose goal is that check, so a part with only such failures goes on, unverified, and the merged branch's gate decides. Parts run one at a time in the space's checkout, as all tasks do, so there is never more than one writer on a branch or in a checkout. A part that's ready makes no approval of its own; the parent shows each part's progress and, once all are ready, asks once:
+
+- **Open pull requests**: each part's branch is pushed at the commit its pull request card shows and a pull request opened, exactly as **Push and open PR** does for one task (the click is the yes for each). A part that already has one is skipped on a retry.
+- **Merge into one branch**: the parts' branches are merged in order onto where they started, in memory (`git merge-tree`, attributes from the empty tree, so no merge driver a repo names runs), into `atrium/<parentId>`. When the repo signs its commits (`commit.gpgsign`), the merge commits are signed too, with the signing programs pinned as for any engine commit, and a signature that fails stops the merge instead of leaving unsigned commits. The parts' branches are then deleted, since the merge holds their commits. Only if the repo's git settings are what they were when the parts ran. Parts that changed the same lines aren't merged; open their pull requests instead. The merged branch then goes through the gate and the review like any turn, with no writer; a failing check goes to a writer on that branch.
+- **Set them aside**: every part ends and the parent is done. This is offered while the parent still waits on its parts too ("Stop and set aside", stopping a part that's running), so a parent with a stuck part can always be ended; a split with a part that stopped also shows in **Needs you**.
+
+Whenever a fan-out ends, a part's or attempt's branch is deleted only if it's still at the commit Atrium last made on it. One the user added to, or one git won't delete, is kept, and the activity names it.
+
+### Best-of-N
+
+Two or three attempts run as tasks of their own on their own branches, optionally one on Codex when the user asks and Codex can work in the space. Each gets one writer turn and Atrium's checks. An attempt survives when nothing fails that passed on the base commit: its checks pass, or the only checks failing were already failing before the task, which makes it an unverified survivor, labelled so. One with a new failure, checks that couldn't run, or no changes is dropped, not sent back (the other attempts are its retries, as in the Agentless-style rejection behind Anthropic's parallel test-time compute results). When more than one survives, a judge on the strong tier reads the brief and each survivor's diff (fenced, untrusted, no tools) and writes a score and a comment per attempt. Its scores are advice beside each attempt; the user picks. The picked attempt's commit becomes `atrium/<parentId>`, with its check results carried over (they ran on that very commit), the other attempts' branches are deleted, and the parent goes on to review and the user. When none survives, the parent stops and says so, and the attempts' branches are deleted; so are they after "None of these", which ends the fan-out like "Set them aside". The kept commit is titled with the task's own title, not the attempt's.
+
+## Model tiers
+
+One table in `src/engine/tiers.ts`, changeable under Agents:
+
+- **cheap** (`haiku`): the brief and its shape, scouts, and "Explain the problem instead".
+- **default** (empty: whatever model Claude Code is set to): writing.
+- **strong** (`opus`, falling back to `sonnet` when it isn't on the plan): a Claude reviewer, a writer the user had to unstick after a pause (a hint or a retry of a paused task), and the best-of-N judge.
+
+The defaults work on a plain Claude subscription. Codex and Gemini keep their own models. This follows the evidence that cheap models are enough for exploration and summaries and that the strongest model pays off on review and hard debugging (Anthropic's advisor results; Cognition's capability routing).
+
+## Cost
+
+Every run is logged with its tokens by model (`usage_log`): Claude's per-model totals, subagents included, or the run's own counts for other agents. Budgets count the same tokens. Each task shows its weighted tokens (Phase 1's weighting, which budgets keep using) and an estimate in dollars, labelled as an estimate (a subscription doesn't bill per token). The estimate is Claude Code's own per-model `costUSD` (its list-price figure, a resumed session's share taken as what its running total grew by); only when a run doesn't report one is it worked out from list prices, with each cache write priced by the cache it went to (1.25× input for five minutes, 2× for an hour; Claude Code 2.1.323 wrote every run to the one-hour cache). A model with neither counts its tokens and says the dollars cover only part of the work. A run that's stopped reports no result, so its tokens come from its own steps: input and cache exact, output a floor. A split's or best-of-N's parent counts all its parts or attempts, and each child shows its own. Each space shows today and this week; Agents and the terminal app show both for everything, and `atrium status` today's.
+
+The plan gauge builds on the Claude reserve: the five-hour (and seven-day) window as Claude last reported it and when, and what Atrium ran on Claude in that window. Claude reports the windows only during a run, so use in other Claude apps shows up at Atrium's next run, and Atrium can't see the plan's exact quota; the gauge says both.
+
+## Sessions and the cache
+
+Prompt caching makes reading cached context cost about a tenth of fresh input, but only a stable prefix hits it and only while it lasts. Claude Code writes the cache with a one-hour lifetime: every run measured on 2.1.323 wrote one-hour cache entries and none of five minutes, and a resumed turn read 98–99% of its input from the cache. So:
+
+- **Warm resume.** A Claude writer's session is kept (`--session-id`, then `--resume`). A turn that starts within 55 minutes of the last (the hour, less a margin so a resume doesn't land just after the cache expired), on the same tier, with something new to say (failing checks, findings, a hint) resumes it, and its prompt is only what's new. The share of what the agents read from the cache shows on the task's cost chip. Resumed sessions report running totals, so each turn counts only what grew. A private space keeps no session at all, so its work never lands in Claude Code's own session files. A session the CLI no longer has ("No conversation found") is started again from the brief in the same turn; any other failure stands.
+- **Fresh sessions with a progress note.** Past the window, or once the writer held 100k tokens of context, the next turn starts a fresh session from the brief plus a progress note built from the branch: its commits, the files changed, and the last turn's own summary, each fenced as untrusted, since the writer chose them.
+- **A stable prefix.** The writer's prompt puts the brief, the checks, the space's goal and what was asked first, and what changes from turn to turn (scouts' answers, the progress note, failing checks or findings) last.
+- **Batched asks.** A task's questions and its shape decision arrive in one Needs you item, and a split's parts ask once, together, so a human pause costs one cache miss rather than several.
+
 ## Where it lives
 
 - `src/engine/brief.ts`, `brief-draft.ts`: the brief and its pre-pass.
 - `src/engine/checks/`: detection (`detect.ts`), the sandboxed runs and what they prove (`run.ts`, `sandbox.ts`), the check checkout, base results and install (`gate.ts`), and the attention notes (`attention.ts`).
 - `src/engine/loop.ts`: loop state, budgets and loop detection.
 - `src/engine/handoff.ts`: the reviewer's prompt and rounds.
-- `src/engine/runner.ts`: the brief stage, the turn, the gate and the hand-offs between stages.
+- `src/engine/runner.ts`: the brief stage, the turn, the gate, the judge and the hand-offs between stages.
+- `src/engine/shape.ts`: the shapes, their checks and the fan-out cap; `fanout.ts`: parts, attempts, merging and picking; `scouts.ts`: Atrium's read-only scout sessions.
+- `src/engine/tiers.ts`: the model tiers; `usage.ts`, `cost.ts`: the ledger and list prices; `sessions.ts`: resume, the context limit and the progress note.

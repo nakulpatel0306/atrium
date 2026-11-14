@@ -138,7 +138,17 @@ export function reviewLine(approval: Approval, state: State): Review | null {
 
 export const reviewerName = (choice: Space["reviewBy"]) => (choice === "off" ? "Off" : agentName(choice));
 
-export const STAGE_TEXT: Record<Stage | "brief", string> = { brief: "Brief", writing: "Writing", checks: "Checks", review: "Review", ready: "Ready", paused: "Paused" };
+export const STAGE_TEXT: Record<Stage, string> = {
+  brief: "Brief",
+  writing: "Writing",
+  checks: "Checks",
+  review: "Review",
+  ready: "Ready",
+  paused: "Paused",
+  parts: "Parts",
+  judge: "Judging",
+  pick: "Your pick",
+};
 
 // Things the change does to the checks themselves, which every card shows before anything else.
 export const attentionText = (loop: Loop | null | undefined): string | null => (loop?.attention.length ? `Look closely: ${loop.attention.join(" ")}` : null);

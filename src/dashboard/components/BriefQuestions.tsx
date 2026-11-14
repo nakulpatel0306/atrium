@@ -1,13 +1,14 @@
 import { MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
-import { asksBeforeStarting } from "../../engine/needs";
+import { askLine, asksBeforeStarting } from "../../engine/needs";
 import { post, type State } from "../api";
+import { Fanout } from "./Shape";
 
 type Task = State["tasks"][number];
 type Space = State["spaces"][number];
 
 // Tasks whose brief asked something, waiting for the answers before the writer starts.
-export const askingTasks = (state: State, spaceId?: string): Task[] => state.tasks.filter((t) => asksBeforeStarting(t) && (!spaceId || t.spaceId === spaceId));
+export const askingTasks = (state: State, spaceId?: string): Task[] => state.tasks.filter((t) => asksBeforeStarting(t, state.tasks) && (!spaceId || t.spaceId === spaceId));
 
 // A brief's questions, one tap or a few words each. Start sends what's answered; the writer starts either way.
 export function BriefQuestions({ task }: { task: Task }) {
@@ -50,7 +51,7 @@ export function BriefQuestions({ task }: { task: Task }) {
 }
 
 // The Needs you row for a task asking before it starts.
-export function QuestionsRow({ task, space }: { task: Task; space: Space | undefined }) {
+export function QuestionsRow({ task, space, state }: { task: Task; space: Space | undefined; state: State }) {
   return (
     <div className="entry">
       <div className="item">
@@ -58,13 +59,11 @@ export function QuestionsRow({ task, space }: { task: Task; space: Space | undef
         <span className="who">{space?.name ?? "Unknown space"}</span>
         <span className="t" title={task.title}>
           {task.title}
-          <span>has a question before it starts</span>
+          <span>{task.loop?.questions.length ? "has a question before it starts" : askLine(task)}</span>
         </span>
         <MessageCircleQuestion />
       </div>
-      <div className="detail">
-        <BriefQuestions task={task} />
-      </div>
+      <div className="detail">{task.loop?.stage === "pick" || task.loop?.stage === "parts" ? <Fanout task={task} state={state} /> : <BriefQuestions task={task} />}</div>
     </div>
   );
 }

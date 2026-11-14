@@ -124,6 +124,18 @@ export function makeState(over: Partial<State> = {}): State {
     claudeWindow: { utilization: 0.41, resetsAt: now + 2 * 60 * min, reserve: 0.5 },
     disk: { totalBytes: 12 * 1024 * 1024, transcriptsBytes: 10 * 1024 * 1024, dbBytes: 2 * 1024 * 1024 },
     repoActions: [],
+    spend: {
+      tasks: { [ids.review]: { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 3_600_000, input: 4_000_000 } },
+      spaces: { [ids.atrium]: { today: { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 3_600_000, input: 4_000_000 }, week: { weighted: 1_900_000, usd: 7.5, unpriced: 0, cacheRead: 0, input: 0 } } },
+      today: { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 3_600_000, input: 4_000_000 },
+      week: { weighted: 1_900_000, usd: 7.5, unpriced: 0, cacheRead: 0, input: 0 },
+    },
+    plan: { fiveHour: { utilization: 0.41, resetsAt: now + 2 * 60 * min, seenAt: now - 4 * min }, sevenDay: null, atrium: { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 0, input: 0 }, reserve: 0.5 },
+    tiers: {
+      cheap: { model: "haiku", stock: "haiku", jobs: "Briefs and the workflow it picks, scouts, explanations" },
+      default: { model: "", stock: "", jobs: "Writing" },
+      strong: { model: "opus", stock: "opus", jobs: "Review, a writer after a pause, judging attempts" },
+    },
     oldData: { present: false, dismissed: false },
     ...over,
   };

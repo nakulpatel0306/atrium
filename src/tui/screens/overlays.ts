@@ -1,6 +1,8 @@
 // Boxes drawn over a tab (help, confirms, pickers, the delete box) and the full views that take the body's place
 // (transcript, agents and usage, a Needs you item's full text).
 import { AGENT_IDS, agentName } from "../../dashboard/agents";
+import { spendText } from "../../engine/cost";
+import { compact as compactTokens } from "../../engine/loop";
 import { type SpaceDeletePreview, spaceDeleteLines } from "../../dashboard/deletion";
 import { bytes, clock, tokens } from "../../dashboard/format";
 import { AGENT_ROLES, agentStatus, reviewerName, runOutcome } from "../../dashboard/summary";
@@ -9,7 +11,7 @@ import type { State } from "../../engine/state";
 import { type Block, box, type Hit, keyRow, type Line, rowsOf, splice } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
 import { cursorParts } from "../edit";
-import { answerChoices, helpFor } from "../keys";
+import { askSteps, helpFor } from "../keys";
 import { truncate, width } from "../text";
 import { GLYPH, windowGauge } from "../theme";
 import type { Overlay, Ui } from "../ui";
@@ -91,10 +93,11 @@ export function deleteOver(base: Line[], o: Extract<Overlay, { kind: "delete" }>
 // A task's question, its answers numbered for one key each.
 export function answerOver(base: Line[], o: Extract<Overlay, { kind: "answer" }>, state: State, cols: number, y0: number): Block {
   const task = state.tasks.find((t) => t.id === o.taskId);
-  const question = task?.loop?.questions[o.step];
-  const total = task?.loop?.questions.length ?? 1;
+  const steps = task ? askSteps(task) : [];
+  const question = steps[o.step];
+  const total = steps.length || 1;
   const lines: Line[] = question
-    ? answerChoices(question.options).map((choice, i) => {
+    ? question.choices.map((choice, i) => {
         const mark = i === o.index;
         return [{ text: mark ? `${GLYPH.pointer} ` : "  ", color: "accent" }, { text: `${i + 1} `, color: "faint" }, { text: choice, bold: mark }];
       })
@@ -188,7 +191,10 @@ export function agentsLines(state: State): DetailLine[] {
           }),
           { text: "used  ([ ] to change; Run now on a task skips this)", color: "faint" },
         ],
-        [{ text: "Estimated from Claude's own limit reports; Atrium can't see your exact quota.", color: "faint" }],
+        [{ text: `Atrium ran ${compactTokens(state.plan.atrium.weighted)} weighted tokens on Claude in this window (${spendText(state.plan.atrium)}).`, color: "faint" }],
+        [{ text: "Claude reports its windows only while Atrium runs it, so use elsewhere shows up at the next run; Atrium can't see your exact quota.", color: "faint" }],
+        [{ text: `Spent today ${compactTokens(state.spend.today.weighted)} weighted tokens, ${spendText(state.spend.today)}; this week ${compactTokens(state.spend.week.weighted)}, ${spendText(state.spend.week)}.`, color: "faint" }],
+        [{ text: `Models: cheap ${state.tiers.cheap.model || "default"} · writing ${state.tiers.default.model || "your default"} · strong ${state.tiers.strong.model || "default"} (change them on the dashboard)`, color: "faint" }],
       );
     }
     const runs = state.runs.filter((r) => r.agent === id).slice(0, RECENT_RUNS);

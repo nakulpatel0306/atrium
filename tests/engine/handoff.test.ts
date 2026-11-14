@@ -274,7 +274,7 @@ describe("pauses", () => {
 
     const { loopRoute } = await import("../../src/server/loop");
     const call = (path: string, body: unknown = {}) =>
-      loopRoute(db, undefined, r.kick, new Request(`http://127.0.0.1/api/tasks/${t.id}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), new URL(`http://127.0.0.1/api/tasks/${t.id}/${path}`));
+      loopRoute(db, undefined, r.kick, r.stopTask, new Request(`http://127.0.0.1/api/tasks/${t.id}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), new URL(`http://127.0.0.1/api/tasks/${t.id}/${path}`));
     await call("explain");
     await waitFor(() => explained && status(t.id) === "blocked");
     const after = getTask(db, t.id)!;
@@ -562,7 +562,7 @@ describe("the brief as the first stage", () => {
     expect(claude.calls).toHaveLength(1);
     const { loopRoute } = await import("../../src/server/loop");
     const url = `http://127.0.0.1/api/tasks/${t.id}/answers`;
-    const res = await loopRoute(db, undefined, r.kick, new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [{ question: "Weekly or monthly?", answer: "Monthly" }] }) }), new URL(url));
+    const res = await loopRoute(db, undefined, r.kick, r.stopTask, new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [{ question: "Weekly or monthly?", answer: "Monthly" }] }) }), new URL(url));
     expect(res!.status).toBe(200);
     await waitFor(() => status(t.id) === "review");
     expect(claude.calls[1]!.prompt).toContain("## Clarified\n- Weekly or monthly? Monthly");

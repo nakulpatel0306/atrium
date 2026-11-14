@@ -3211,3 +3211,99 @@ code {
 .loop-settings textarea {
   width: 100%;
 }
+/* How a task runs: its shape, the override, and a split's parts or a best-of-N's attempts. */
+.shape-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--dim);
+}
+.shape-line > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.shape-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.shape-pick .hint,
+.shape-pick .check {
+  flex-basis: 100%;
+}
+.shape-pick .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+}
+.brief-shape {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tag.cost {
+  font-variant-numeric: tabular-nums;
+}
+.fanout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fanout-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fanout-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fanout-list .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attempts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.attempt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+}
+.attempt.out {
+  opacity: 0.6;
+}
+.tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.tiers label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tiers input {
+  max-width: 260px;
+}
+.spend-line {
+  color: var(--dim);
+  margin-bottom: 8px;
+}

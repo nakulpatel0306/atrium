@@ -849,3 +849,45 @@ export async function untrackedFile(root: string, rel: string, budget: number, t
   }
   return { file, cut };
 }
+
+// The parts' branches merged one after another onto `base`, without touching any checkout: git works out each tree
+// in memory (attributes from the empty tree, so no merge driver a repo names can run) and the commits are made from
+// those trees. commit-tree ignores commit.gpgsign, so a repo that signs its commits gets -S, with the signing programs
+// pinned as for any engine commit; a signature that fails stops the merge rather than leaving unsigned commits.
+// Returns the last commit, or which branch conflicted.
+export async function mergeBranches(path: string, base: string, branches: { branch: string; message: string }[]): Promise<{ sha: string } | { conflict: string }> {
+  const empty = await git(path, ["hash-object", "-t", "tree", "/dev/null"]);
+  if (empty.code !== 0) throw new Error(`Couldn't read git objects: ${empty.err.trim()}`);
+  const flags = [...STAGE_FLAGS, `--attr-source=${empty.out.trim()}`];
+  const signs = (await git(path, ["config", "--bool", "commit.gpgsign"])).out.trim() === "true";
+  const pins = await signingPins(path);
+  let tip = base;
+  for (const { branch, message } of branches) {
+    const merged = await git(path, [...flags, "merge-tree", "--write-tree", "--no-messages", tip, `refs/heads/${branch}`]);
+    // Exit 1 is a conflict; the first line is still the tree, with conflict markers in it.
+    if (merged.code === 1) return { conflict: branch };
+    if (merged.code !== 0) throw new Error(`Couldn't merge ${branch}: ${merged.err.trim()}`);
+    const tree = merged.out.split("\n")[0]!.trim();
+    const commit = await git(path, [...flags, ...pins, "commit-tree", ...(signs ? ["-S"] : []), tree, "-p", tip, "-p", `refs/heads/${branch}`, "-m", message]);
+    if (commit.code !== 0) {
+      const why = (commit.err || commit.out).trim();
+      throw new Error(signs ? `Couldn't sign the merge of ${branch}, and this repo signs its commits, so nothing was merged: ${why}` : `Couldn't commit the merge of ${branch}: ${why}`);
+    }
+    tip = commit.out.trim();
+  }
+  return { sha: tip };
+}
+
+// A new branch at `sha`. It must not exist yet: an Atrium branch already there holds work this mustn't overwrite.
+export async function createBranchAt(path: string, branch: string, sha: string): Promise<void> {
+  const valid = await git(path, ["check-ref-format", "--branch", branch]);
+  if (valid.code !== 0 || !branch.startsWith("atrium/")) throw new Error(`Invalid branch name: ${branch}`);
+  const res = await git(path, ["update-ref", `refs/heads/${branch}`, sha, ""]);
+  if (res.code !== 0) throw new Error(`Couldn't create ${branch}: ${res.err.trim()}`);
+}
+
+// Deletes an Atrium branch nobody has checked out; git refuses one that is.
+export async function deleteAtriumBranch(path: string, branch: string): Promise<boolean> {
+  if (!branch.startsWith("atrium/")) return false;
+  return (await git(path, ["branch", "-D", "--", branch])).code === 0;
+}

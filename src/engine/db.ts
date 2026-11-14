@@ -177,6 +177,25 @@ CREATE TABLE IF NOT EXISTS checks (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS checks_task ON checks(task_id, created_at);
+-- Every run's tokens by model and job, with an estimate of what they'd cost at list prices (see usage.ts, cost.ts).
+CREATE TABLE IF NOT EXISTS usage_log (
+  id TEXT PRIMARY KEY,
+  task_id TEXT REFERENCES tasks(id),
+  space_id TEXT REFERENCES spaces(id),
+  agent TEXT NOT NULL,
+  model TEXT,
+  -- Checked in code (usage.ts), so a new job never needs this table rebuilt.
+  purpose TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  weighted INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS usage_log_task ON usage_log(task_id);
+CREATE INDEX IF NOT EXISTS usage_log_at ON usage_log(created_at);
 CREATE TABLE IF NOT EXISTS rule_events (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),

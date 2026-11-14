@@ -2,8 +2,10 @@ import type { Database } from "bun:sqlite";
 import { bus } from "./events";
 import { newId } from "./ids";
 import { type Brief, normalizeBrief } from "./brief";
-import { type LoopState, newLoop, SIZE_BUDGETS } from "./loop";
+import { type Fanout, type LoopState, newLoop, SIZE_BUDGETS } from "./loop";
+import { storedShape } from "./shape";
 import type { Outcome } from "./outcome";
+import { storedSession } from "./sessions";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
@@ -103,12 +105,35 @@ const toTask = (r: TaskRow): Task => ({
   outcomeReason: r.outcome_reason ?? null,
   prUrl: r.pr_url ?? null,
   brief: r.brief ? normalizeBrief(JSON.parse(r.brief)) : null,
-  // Over the defaults, so a row from an older engine, missing a field the gate reads, reads as that field's
-  // strictest value rather than as undefined.
-  loop: r.loop ? { ...newLoop(SIZE_BUDGETS.medium), ...(JSON.parse(r.loop) as Partial<LoopState>) } : null,
+  loop: r.loop ? readLoop(JSON.parse(r.loop) as Partial<LoopState>) : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
+
+// Over the defaults, so a row from an older engine, missing a field the gate reads, reads as that field's strictest
+// value rather than as undefined. A session, a shape and a fan-out are read field by field: anything off starts the
+// next turn cold, runs one writer, or fans out nothing, and only a literal true approves a shape or adopts a branch.
+function readLoop(stored: Partial<LoopState>): LoopState {
+  return {
+    ...newLoop(SIZE_BUDGETS.medium),
+    ...stored,
+    session: storedSession(stored.session),
+    shape: storedShape(stored.shape),
+    role: stored.role === "part" || stored.role === "attempt" ? stored.role : null,
+    fanout: storedFanout(stored.fanout),
+    adopted: stored.adopted === true,
+  };
+}
+
+function storedFanout(v: unknown): Fanout | null {
+  const f = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  if ((f.kind !== "split" && f.kind !== "best_of_n") || !Array.isArray(f.children) || !f.children.every((c) => typeof c === "string")) return null;
+  const scores: Fanout["scores"] = {};
+  for (const [id, s] of Object.entries((f.scores && typeof f.scores === "object" ? f.scores : {}) as Record<string, { score?: unknown; comment?: unknown }>)) {
+    if (typeof s?.score === "number" && typeof s.comment === "string") scores[id] = { score: s.score, comment: s.comment };
+  }
+  return { kind: f.kind, children: f.children as string[], scores, judgeNote: typeof f.judgeNote === "string" ? f.judgeNote : null };
+}
 
 export function getTask(db: Database, id: string): Task | null {
   const row = db.query("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | null;

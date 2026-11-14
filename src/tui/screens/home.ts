@@ -1,6 +1,8 @@
 // Home: the briefing, Needs you as cards with their actions on them, and what's running beside them (below them under
 // 100 columns).
 import { agentText } from "../../dashboard/agents";
+import { askLine } from "../../engine/needs";
+import { askSteps } from "../keys";
 import { duration, relative } from "../../dashboard/format";
 import { liveStatus } from "../../dashboard/summary";
 import { outcomeText } from "../../engine/outcome";
@@ -44,8 +46,8 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
       tone: "info",
       title: t.title,
       meta: [...owner(t.spaceId), dot, { text: `asks before it starts · ${relative(t.updatedAt, now)}`, color: "faint" }],
-      body: wrapStyled([{ text: oneLine(questions.map((q) => q.question).join("  ")), color: "dim" }], inner).slice(0, 2),
-      keys: [{ key: "a", label: questions.length > 1 ? "Answer them" : "Answer", input: "a", hot: true }, { key: "↵", label: "Open", input: "\r" }],
+      body: wrapStyled([{ text: oneLine(questions.length ? questions.map((q) => q.question).join("  ") : askLine(t)), color: "dim" }], inner).slice(0, 2),
+      keys: [{ key: "a", label: askSteps(t).length > 1 ? "Answer them" : "Answer", input: "a", hot: true }, { key: "↵", label: "Open", input: "\r" }],
     });
   }
   for (const p of view.proposals) {

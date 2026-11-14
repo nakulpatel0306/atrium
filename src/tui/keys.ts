@@ -212,11 +212,11 @@ const ANSWERS = { y: "yes", n: "not_now", N: "never" } as const;
 // Starts answering a task's questions from the first.
 const answering = (task: { id: string }): Command => open({ kind: "answer", taskId: task.id, index: 0, step: 0, answers: [] });
 
-// After one question: the next, or the answers sent and the writer started.
+// After one step: the next, or everything sent together and the work started.
 function answered(view: View, taskId: string, a: Answering): Command[] {
   const task = view.state.tasks.find((t) => t.id === taskId);
   if (!task?.loop) return [close, info("That task isn't asking anything anymore.")];
-  if (a.step + 1 < task.loop.questions.length) return [open({ kind: "answer", taskId, index: 0, step: a.step + 1, answers: a.answers })];
+  if (a.step + 1 < askSteps(task).length) return [open({ kind: "answer", taskId, index: 0, step: a.step + 1, answers: a.answers })];
   return [close, intent({ type: "answerBrief", taskId, title: task.title, answers: a.answers })];
 }
 
@@ -226,10 +226,17 @@ export const LEAVE_IT = "Leave it to the agent";
 // A question's choices: its own options by number, then typing one, then leaving it.
 export const answerChoices = (options: string[]) => [...options, TYPE_ANSWER, LEAVE_IT];
 
+type AskTask = { loop: { questions: { question: string; options: string[] }[] } | null };
+export type AskStep = { question: string; choices: string[] };
+
+// What a task asks before it starts, one question at a time.
+export const askSteps = (task: AskTask): AskStep[] => (task.loop?.questions ?? []).map((q) => ({ question: q.question, choices: answerChoices(q.options) }));
+
 function answerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "answer" }>, view: View): Command[] {
-  const question = view.state.tasks.find((t) => t.id === overlay.taskId)?.loop?.questions[overlay.step];
-  if (!question) return [close, info("That task isn't asking anything anymore.")];
-  const choices = answerChoices(question.options);
+  const task = view.state.tasks.find((t) => t.id === overlay.taskId);
+  const step = task ? askSteps(task)[overlay.step] : undefined;
+  if (!step) return [close, info("That task isn't asking anything anymore.")];
+  const choices = step.choices;
   if (key.escape || input === "q") return [close];
   const move = (delta: number) => [ui({ type: "setOverlay", overlay: { ...overlay, index: (overlay.index + delta + choices.length) % choices.length } })];
   if (key.downArrow || input === "j") return move(1);
@@ -240,15 +247,16 @@ function answerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "a
   if (choice === TYPE_ANSWER) {
     return [close, ui({ type: "ask", ask: { purpose: "answer", value: "", cursor: 0, agent: "auto", targetId: overlay.taskId, answering: { step: overlay.step, answers: overlay.answers } } })];
   }
-  const answers = choice === LEAVE_IT ? overlay.answers : [...overlay.answers, { question: question.question, answer: choice }];
+  const answers = choice === LEAVE_IT ? overlay.answers : [...overlay.answers, { question: step.question, answer: choice }];
   return answered(view, overlay.taskId, { step: overlay.step, answers });
 }
 
 function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
   const asking = pinned(u, "needs", view.askingTask);
   if (asking) {
-    if (input === "a") return [answering(asking)];
-    if (input === "r") return [info("This task is asking before it starts: a answers its questions.")];
+    // Picking between parts or attempts needs their diffs side by side, which the dashboard shows.
+    if (input === "a") return [askSteps(asking).length ? answering(asking) : info("Its parts or attempts wait on you: decide on the dashboard, where they're side by side.")];
+    if (input === "r") return [info("This task is asking before it starts: a answers it.")];
     if (key.return) {
       return [
         ui({ type: "select", pane: "spaces", id: asking.spaceId }),

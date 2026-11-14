@@ -1,5 +1,9 @@
 // What the Detail pane says about the selected thing, as styled lines. Pure, so it's tested without a terminal.
 import { agentName, agentText, needsAction, verdictOf, waitOf } from "../dashboard/agents";
+import { cacheShare, spendText } from "../engine/cost";
+import { compact } from "../engine/loop";
+import { CHILD_STATE_TEXT, childState, followsText, SHAPE_LABEL, shapeLine, suggestion, suggestionLine, switchOpen } from "../engine/shape";
+import { askSteps } from "./keys";
 import { absolute, clock, duration, relative, tokens } from "../dashboard/format";
 import { actorName, attentionText, loopLine, reviewerName, reviewHint, reviewLine, runOutcome, spaceStatus, STAGE_TEXT, STATUS_TEXT } from "../dashboard/summary";
 import { shownStage } from "../engine/loop";
@@ -123,7 +127,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   if (told && (task.status === "review" || task.status === "done")) lines.push(plain(told, { color: task.outcome === "unknown" ? color.muted : color.warn }));
   // Wait reasons can name a command in backticks; they're kept as written so it can be copied.
   if (wait) lines.push(plain(wait.reason, { color: needsAction(wait) ? color.bad : color.warn }));
-  if (parent) lines.push(muted(`${task.kind === "review" ? "Reviews" : "Fixes what the review found in"} "${parent.title}"`));
+  if (parent) lines.push(muted(`${followsText(task)} "${parent.title}"`));
   // The loop at a glance, read-only: the stage, what the checks and reviews said, and the budget used.
   if (task.loop && state.spaces.find((s) => s.id === task.spaceId)?.kind === "repo") {
     const line = loopLine(task.loop);
@@ -133,8 +137,17 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
     ]);
     const attention = attentionText(task.loop);
     if (attention) lines.push(plain(attention, { color: color.bad }));
+    const offer = switchOpen(task) ? suggestion(task.loop.shape, task.brief?.size ?? "medium") : null;
+    if (task.loop.shape) lines.push(muted(`Shape: ${offer ? SHAPE_LABEL[task.loop.shape.kind] : shapeLine(task.loop.shape)}`));
+    if (task.loop.shape && offer) lines.push(plain(`${suggestionLine(task.loop.shape, offer)}. Switch on the dashboard, which stops the writer and starts over.`, { color: color.info }));
+    const spend = state.spend.tasks[task.id];
+    if (spend?.weighted) {
+      const share = cacheShare(spend);
+      lines.push(muted(`Cost: ${compact(spend.weighted)} weighted tokens · ${spendText(spend)} at list prices${share !== null ? ` · ${Math.round(share * 100)}% from cache` : ""}`));
+    }
+    lines.push(...fanoutLines(task, state));
     for (const q of task.loop.questions) lines.push(plain(`Asks: ${q.question}${q.options.length ? ` (${q.options.join(" / ")})` : ""}`, { color: color.info }));
-    if (task.loop.questions.length && task.status === "queued") lines.push(muted("a answers its questions"));
+    if (askSteps(task).length && task.status === "queued") lines.push(muted("a answers it"));
     if (task.loop.explanation) lines.push(blank, muted("What it says is wrong"), ...block(task.loop.explanation));
   }
   lines.push(blank, ...block(task.detail || task.title), blank, ...made(outputs, selectedFile, width));
@@ -311,4 +324,23 @@ export function wrapStyled(line: DetailLine, cols: number): DetailLine[] {
     }
     return out.map(({ i: _, ...seg }) => seg);
   });
+}
+
+// A split's parts or a best-of-N's attempts, read-only: where each is and, for attempts, the judge's score.
+function fanoutLines(task: State["tasks"][number], state: State): DetailLine[] {
+  const fanout = task.loop?.fanout;
+  if (!fanout) return [];
+  const kids = fanout.children.map((id) => state.tasks.find((t) => t.id === id)).filter((t) => t !== undefined);
+  const out: DetailLine[] = [muted(fanout.kind === "split" ? `Parts (${kids.length})` : `Attempts (${kids.length})`)];
+  kids.forEach((k, i) => {
+    const s = childState(k);
+    const score = fanout.scores[k.id];
+    out.push([
+      { text: `  ${CHILD_STATE_TEXT[s]} `, color: s === "ready" ? color.ok : s === "running" ? color.muted : color.bad },
+      { text: fanout.kind === "split" ? k.title : `Attempt ${i + 1}` },
+      { text: score ? ` · ${score.score}/10 ${score.comment}` : "", color: color.muted },
+    ]);
+  });
+  if (task.loop?.stage === "pick") out.push(muted(fanout.kind === "split" ? "Open their pull requests or merge them on the dashboard." : "Pick one on the dashboard, where they're side by side."));
+  return out;
 }

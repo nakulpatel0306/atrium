@@ -34,6 +34,8 @@ function result(text: string, isError = false) {
     result: text,
     session_id: sessionId,
     usage: { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: Number(process.env.FAKE_CLAUDE_CACHE_READ ?? 0), cache_creation_input_tokens: Number(process.env.FAKE_CLAUDE_CACHE_WRITE ?? 0) },
+    // Per-model totals, subagents included, as Claude Code adds them; a test passes the JSON it wants back.
+    ...(process.env.FAKE_CLAUDE_MODEL_USAGE && { modelUsage: JSON.parse(process.env.FAKE_CLAUDE_MODEL_USAGE) }),
   });
 }
 
@@ -71,7 +73,10 @@ if (mode === "rate_limited_text") {
   process.exit(1);
 }
 if (mode === "slow") {
-  out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Starting a long job." }] } });
+  // A step's usage repeats on each of its lines, as Claude Code's do; its output count is a floor until it finishes.
+  const step = { id: "msg_slow_1", model: "claude-haiku-5-5", role: "assistant", usage: { input_tokens: 3, output_tokens: 8, cache_read_input_tokens: 9000, cache_creation_input_tokens: 400, cache_creation: { ephemeral_1h_input_tokens: 400, ephemeral_5m_input_tokens: 0 } } };
+  out({ type: "assistant", message: { ...step, content: [{ type: "text", text: "Starting a long job." }] } });
+  out({ type: "assistant", message: { ...step, content: [{ type: "text", text: "Still going." }] } });
   await Bun.sleep(30_000);
   result("Finished the long job.");
   process.exit(0);
@@ -116,9 +121,15 @@ out({
   rate_limit_info: { status: mode === "ok_warning" ? "allowed_warning" : "allowed", resetsAt: 1893456000, rateLimitType: "five_hour" },
 });
 out({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Looking at the repo." }] } });
+// A subagent's step, then the main agent's: only the main agent's says how much context it holds.
+out({ type: "assistant", parent_tool_use_id: "toolu_0", message: { role: "assistant", usage: { input_tokens: 999_999 }, content: [{ type: "text", text: "Scouting." }] } });
 out({
   type: "assistant",
-  message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/repo/README.md" } }] },
+  message: {
+    role: "assistant",
+    usage: { input_tokens: 10, cache_read_input_tokens: Number(process.env.FAKE_CLAUDE_CONTEXT ?? 0), cache_creation_input_tokens: 5 },
+    content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/repo/README.md" } }],
+  },
 });
 out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "# fixture" }] } });
 // FAKE_CLAUDE_TEXT stands in for the reply, so a dev engine can drive the setup agent. With by_prompt, the reply is
