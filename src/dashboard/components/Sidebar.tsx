@@ -1,5 +1,6 @@
 import { Activity, Archive, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
+import { agentsHeld } from "../agents";
 import { post, type State } from "../api";
 import { bytes } from "../format";
 import { navigate, type Route } from "../route";
@@ -38,8 +39,7 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
   const pending = needsCount(state);
   const activeRules = state.rules.filter((r) => r.state === "active").length;
   const battery = state.power.source === "battery";
-  // Agents that can't take work right now: missing, signed out, or at a limit.
-  const held = Object.values(state.agents).filter((a) => !a.installed || a.loggedIn === false || a.limitedUntil).length;
+  const held = agentsHeld(state);
   const window = state.claudeWindow;
 
   return (

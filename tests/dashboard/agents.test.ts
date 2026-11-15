@@ -41,3 +41,12 @@ test("a task waiting on its review shows the review's own wait, naming the revie
   expect(waitOf(parent, state)).toEqual(reserve);
   expect(waitOf(parent, { ...state, waits: { tsk_p: state.waits.tsk_p } })?.kind).toBe("reviewing");
 });
+
+test("the sidebar's agent badge counts problems, not optional agents nobody installed", async () => {
+  const { agentsHeld } = await import("../../src/dashboard/agents");
+  const { makeState } = await import("../tui/fixtures");
+  const info = (over: object) => ({ label: "x", installed: true, loggedIn: true, detail: "", limitedUntil: null, tokensToday: 0, ...over });
+  const s = makeState();
+  expect(agentsHeld({ ...s, agents: { claude: info({}), codex: info({ installed: false, loggedIn: null }), gemini: info({ installed: false, loggedIn: null }) } })).toBe(0);
+  expect(agentsHeld({ ...s, agents: { claude: info({ installed: false }), codex: info({ loggedIn: false }), gemini: info({ limitedUntil: 5 }) } })).toBe(3);
+});

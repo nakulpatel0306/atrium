@@ -57,3 +57,9 @@ export function inReserve(state: State): { until: number } | null {
   const w = state.claudeWindow;
   return w && w.utilization >= w.reserve ? { until: w.resetsAt } : null;
 }
+
+// Agents worth a badge: Claude when it can't run (it's the one required), and any other agent that's installed but
+// signed out or at a limit. An optional agent that was never installed is a choice, not a problem.
+export function agentsHeld(state: State): number {
+  return Object.entries(state.agents).filter(([id, a]) => (id === "claude" && !a.installed) || (a.installed && (a.loggedIn === false || a.limitedUntil))).length;
+}
