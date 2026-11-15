@@ -101,8 +101,9 @@ test("⌘↩ drafts the brief here to edit; fields keep spaces and new lines as 
   }
   expect(card.textContent).not.toContain("No acceptance criteria");
   await act(async () => button(el, "Run").click());
-  const sent = calls.at(-1)!;
-  expect(sent.url).toBe("/api/command");
+  // The command itself, not the last request: a refetch of the state can land after it.
+  const sent = calls.findLast((c) => c.url === "/api/command")!;
+  expect(sent).toBeDefined();
   expect(sent.body).toMatchObject({
     text: "totals on the report",
     brief: { verify: "bun test", acceptance: ["Totals match", "Zero shows 0"], answers: [{ question: "Which report?", answer: "Monthly" }] },
@@ -198,5 +199,5 @@ test("a task asking before it starts is in Needs you and its counts, and Start s
   expect(el.textContent).toContain("has a question before it starts");
   await act(async () => button(el, "Monthly").click());
   await act(async () => button(el, "Start").click());
-  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_asks/answers", body: { answers: [{ question: "Weekly or monthly?", answer: "Monthly" }] } });
+  expect(calls.findLast((c) => c.url === "/api/tasks/tsk_asks/answers")).toEqual({ url: "/api/tasks/tsk_asks/answers", body: { answers: [{ question: "Weekly or monthly?", answer: "Monthly" }] } });
 });
