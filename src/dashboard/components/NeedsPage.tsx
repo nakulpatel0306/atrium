@@ -120,8 +120,9 @@ function ApprovalDecision({ approval, task, space, state }: { approval: Approval
       {outcome && <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />}
       {task && space ? (
         <>
-          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen />}
+          {/* What changed and where to look first leads; the brief, checks and findings it rests on follow. */}
           <WalkthroughCard task={task} space={space} />
+          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen />}
           <RetroCard task={task} state={state} />
           <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />
         </>
