@@ -417,8 +417,11 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
       if (task.legacyPurpose !== null) return [info(REMOVED_FEATURE_RETRY)];
       return [intent({ type: "retry", taskId: task.id })];
     case "s":
-      if (!task || waitOf(task, view.state)?.kind !== "reserve") return [info("Run now is for tasks waiting on Claude's reserve.")];
-      return [intent({ type: "runNow", taskId: task.id })];
+      {
+        const wait = task ? waitOf(task, view.state) : null;
+        if (!task || wait?.kind !== "reserve") return [info("Run now is for tasks waiting on Claude's reserve.")];
+        return [intent({ type: "runNow", taskId: wait.taskId })];
+      }
     case "n":
       if (!space) return [info(NO_SPACE)];
       return [ask("ask")];

@@ -32,7 +32,7 @@ test("the sample copies the bundled repo to a temp folder and queues its ask the
   expect(log.stdout.toString().trim()).toBe("Start the sample");
   // A reviewer every install has, so the cost shown up front holds.
   expect(getSpace(db, space.id)!.reviewBy).toBe("claude");
-  expect(task).toMatchObject({ title: SAMPLE_ASK, status: "queued", allowOnBattery: true, agent: "claude" });
+  expect(task).toMatchObject({ title: SAMPLE_ASK, status: "queued", allowOnBattery: true, ignoreReserve: true, agent: "claude" });
   expect(task.loop?.stage).toBe("brief");
   expect(isSampleSpace(db, space.id)).toBe(true);
 });

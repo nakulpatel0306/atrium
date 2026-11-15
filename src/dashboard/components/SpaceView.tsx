@@ -352,7 +352,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
     if (!res.ok) setError(res.error);
   };
   const retry = () => act(() => post(`/api/tasks/${task.id}/retry`));
-  const runNow = () => act(() => post(`/api/tasks/${task.id}/run-now`));
+  const runNow = () => act(() => post(`/api/tasks/${wait?.taskId ?? task.id}/run-now`));
   const setAgent = (value: AgentChoice) => act(() => patch(`/api/tasks/${task.id}`, { agent: value }));
 
   return (

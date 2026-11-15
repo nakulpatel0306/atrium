@@ -316,3 +316,17 @@ test("refusal names the reason a free agent can't take a kind of task in a space
   expect(r.refusal("gemini", "work", getSpace(db, space.id)!)).toMatchObject({ kind: "gemini_repo" });
   expect(r.refusal("gemini", "review", getSpace(db, space.id)!)).toBeNull();
 });
+
+test("the sample and its review run with the window over the reserve", async () => {
+  const { startSample } = await import("../../src/engine/sample");
+  const { startReview } = await import("../../src/engine/handoff");
+  const { rmSync } = await import("node:fs");
+  const r = await registry();
+  r.recordUsage("claude", { fiveHour: { utilization: 0.9, resetsAt: Date.now() + 3600_000 } });
+  const { space, task: sample } = await startSample(db);
+  cleanups.push(() => rmSync(space.repoPath!, { recursive: true, force: true }));
+  const review = startReview(db, sample, getSpace(db, space.id)!, { diff: "", files: 0, truncated: false });
+  expect(review.ignoreReserve).toBe(true);
+  expect(r.resolve(sample, getSpace(db, space.id)!)).toEqual({ agent: "claude" });
+  expect(r.resolve(review, getSpace(db, space.id)!)).toEqual({ agent: "claude" });
+});

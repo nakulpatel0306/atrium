@@ -29,3 +29,15 @@ test("an auto task shows the agent that ran it", () => {
   expect(agentText(task(), [])).toBe("Auto");
   expect(agentText(task({ agent: "claude" }), [{ taskId: "tsk_1", agent: "claude" }] as Run[])).toBe("Claude");
 });
+
+test("a task waiting on its review shows the review's own wait, naming the review for Run now", async () => {
+  const { waitOf } = await import("../../src/dashboard/agents");
+  const { makeState, task } = await import("../tui/fixtures");
+  const s = makeState();
+  const parent = task({ id: "tsk_p", status: "queued" });
+  const review = task({ id: "tsk_r", status: "queued", kind: "review", parentTaskId: "tsk_p" });
+  const reserve = { taskId: "tsk_r", agent: "claude", kind: "reserve" as const, reason: "Saving the rest of your Claude window for you.", until: 1 };
+  const state = { ...s, tasks: [parent, review], waits: { tsk_p: { taskId: "tsk_p", agent: "claude", kind: "reviewing" as const, reason: "Waiting for its review." }, tsk_r: reserve } };
+  expect(waitOf(parent, state)).toEqual(reserve);
+  expect(waitOf(parent, { ...state, waits: { tsk_p: state.waits.tsk_p } })?.kind).toBe("reviewing");
+});

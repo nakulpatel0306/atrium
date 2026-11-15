@@ -42,8 +42,16 @@ const PRIORITY: WaitKind[] = [
 export const byPriority = (a: Wait, b: Wait) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind);
 
 // A task that has started since the runner's last pass may still have an entry; it no longer applies.
-export const waitOf = (task: Task, state: State): Wait | null =>
-  task.status === "queued" ? (state.waits[task.id] ?? null) : null;
+// Why a queued task isn't starting. A task waiting on its review shows its review's own wait instead when that has
+// one (the Claude reserve, say), so the reason and its Run now are on the task the user is looking at; the wait's
+// `taskId` names the task Run now starts.
+export function waitOf(task: Task, state: State): Wait | null {
+  if (task.status !== "queued") return null;
+  const own = state.waits[task.id] ?? null;
+  if (own?.kind !== "reviewing") return own;
+  const review = state.tasks.find((t) => t.parentTaskId === task.id && t.kind === "review" && t.status === "queued" && state.waits[t.id]);
+  return review ? state.waits[review.id]! : own;
+}
 
 export function inReserve(state: State): { until: number } | null {
   const w = state.claudeWindow;

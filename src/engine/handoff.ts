@@ -90,6 +90,8 @@ export function startReview(db: Database, task: Task, space: Space, diff: Review
     detail: reviewPrompt(task, diff.diff, space.learning),
     weight: "light",
     allowOnBattery: true,
+    // A task the user said may use Claude's reserved window takes its review there too, or it would stall halfway.
+    ignoreReserve: task.ignoreReserve,
     kind: "review",
     parentTaskId: task.id,
     agent: space.reviewBy === "off" ? "auto" : space.reviewBy,
