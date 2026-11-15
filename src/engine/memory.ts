@@ -229,8 +229,14 @@ export async function proposeLine(db: Database, claude: AgentAdapter, input: Evi
 // What a proposal is asked from, and the reason the user sees beside it.
 export type Evidence = { source: MemoryLine["source"]; evidence: string; why: string };
 
-// The user's steer, as a correction the curator may turn into a line.
-export function steerEvidence(task: Task, note: string): Evidence {
+// Words a steer that corrects the agent uses, rather than one that adds to the task ("also add a test"). A fixed
+// rule, so a steer only costs a call when it reads like a rule the agent broke.
+const CORRECTION = /\b(don'?t|do not|doesn'?t|never|not|no longer|instead|rather than|stop|wrong|avoid|always|must|mustn'?t|should|shouldn'?t|isn'?t|aren'?t)\b/i;
+export const readsAsCorrection = (note: string): boolean => CORRECTION.test(note);
+
+// The user's steer, as a correction the curator may turn into a line; null when it doesn't read as one.
+export function steerEvidence(task: Task, note: string): Evidence | null {
+  if (!readsAsCorrection(note)) return null;
   return { source: "steer", evidence: `While an agent worked on "${task.title}", the user stopped it with this correction:\n${note}`, why: `From your steer on "${task.title}".` };
 }
 

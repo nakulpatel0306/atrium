@@ -98,15 +98,15 @@ describe("proposing", () => {
     process.env.FAKE_CLAUDE_TEXT = REPLY;
     process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
     process.env.FAKE_CLAUDE_STDIN = join(dir, "stdin.txt");
-    const line = await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "money is integer cents here") });
+    const line = await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "never use floats, money is integer cents here")! });
     expect(line).toMatchObject({ source: "steer", status: "open", taskId: t.id, why: 'From your steer on "Coupons".' });
     const argv = JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")) as string[];
     expect(argv[argv.indexOf("--tools") + 1]).toBe("");
     const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");
-    expect(prompt).toMatch(/--- evidence ([0-9a-f]{12}) ---[\s\S]*money is integer cents here[\s\S]*--- end of evidence \1 ---/);
+    expect(prompt).toMatch(/--- evidence ([0-9a-f]{12}) ---[\s\S]*never use floats, money is integer cents here[\s\S]*--- end of evidence \1 ---/);
     expect(prompt).toMatch(/--- file ([0-9a-f]{12}) ---\nRun tests with `bun test`\.[\s\S]*--- end of file \1 ---/);
     // One open proposal per space at a time.
-    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "again") })).toBeNull();
+    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "don't do that again")! })).toBeNull();
     expect(openLines(h.db)).toHaveLength(1);
   });
 
@@ -116,15 +116,23 @@ describe("proposing", () => {
     const s = updateSpace(h.db, h.space(repo).id, { learning: "light" });
     const t = createTask(h.db, { spaceId: s.id, title: "x" });
     process.env.FAKE_CLAUDE_TEXT = "LINE Use bun test.";
-    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "n") })).toBeNull();
+    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "never n")! })).toBeNull();
     process.env.FAKE_CLAUDE_TEXT = "NONE";
-    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "n") })).toBeNull();
+    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: getSpace(h.db, s.id)!, task: t, ...steerEvidence(t, "never n")! })).toBeNull();
     process.env.FAKE_CLAUDE_TEXT = "LINE Something new.";
     const off = updateSpace(h.db, s.id, { learning: "off" });
     // The same reply in a space with learning on would be kept.
     expect(off.learning).toBe("off");
-    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: off, task: t, ...steerEvidence(t, "n") })).toBeNull();
+    expect(await proposeLine(h.db, claudeAdapter(FAKE), { space: off, task: t, ...steerEvidence(t, "never n")! })).toBeNull();
     expect(h.db.query("SELECT COUNT(*) AS n FROM memory_lines").get()).toEqual({ n: 0 });
+  });
+
+  test("only a steer that reads as a correction is evidence; one that adds to the task costs no call", () => {
+    const t = createTask(h.db, { spaceId: h.space(h.repo()).id, title: "Coupons" });
+    for (const note of ["Don't use floats for money", "Use integer cents instead", "never touch the lockfile", "That's wrong, prices are cents", "Always run the migration test", "Tests should live next to the code"]) {
+      expect(steerEvidence(t, note)?.source).toBe("steer");
+    }
+    for (const note of ["Also add a test for the empty cart", "Use the brand colour for the footer links", "Make the button bigger"]) expect(steerEvidence(t, note)).toBeNull();
   });
 
   test("a pattern finding waits for a second from another round in the space, then the pair is the evidence", () => {
