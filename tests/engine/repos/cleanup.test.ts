@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getApproval, listPending, onApprovalResolved, resolveApproval } from "../../../src/engine/approvals";
+import { getApproval, listPending, onApprovalResolved, reopenDecision, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { askToRemove, CLONE_IDLE_MS, checkRemovable, DECLINE_QUIET_MS, recoverRemovals, removeVerified, scanIdleClones } from "../../../src/engine/repos/cleanup";
 import { createCloner } from "../../../src/engine/repos/clones";
@@ -45,7 +45,7 @@ afterEach(() => {
 
 // As main.ts wires it: Nakul's decisions reach the repo executors through the approval listener.
 const wired = () => {
-  const repos = createRepos({ db, kick: () => {} });
+  const repos = createRepos({ db, kick: () => {}, holdMs: 0 });
   unsubscribe.push(onApprovalResolved(repos.onDecision));
   return repos;
 };
@@ -191,6 +191,39 @@ test("Nakul's yes removes the folder and keeps the space's GitHub link", async (
   expect(listClones(db)[0]!.status).toBe("removed");
   expect(getSpace(db, space.id)).toMatchObject({ repoPath: null, github: "fakeuser/demo" });
   expect(actionForApproval(db, asked.approval.id)!.status).toBe("done");
+});
+
+test("a yes to a removal waits out its hold, and taken back in it removes nothing", async () => {
+  const repos = createRepos({ db, kick: () => {}, holdMs: 150 });
+  unsubscribe.push(onApprovalResolved(repos.onDecision));
+  const asked = await askToRemove(db, clone.id);
+  if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
+  resolveApproval(db, asked.approval.id, "approve");
+  // Still held: nothing deleted, and the yes can go back to a pending ask the removal now waits on.
+  expect(existsSync(path)).toBe(true);
+  const again = reopenDecision(db, asked.approval.id);
+  expect(again).toMatchObject({ status: "pending", alwaysAsk: "remove_clone" });
+  expect(actionForApproval(db, again.id)!.status).toBe("draft");
+  await Bun.sleep(250);
+  await repos.settle();
+  expect(existsSync(path)).toBe(true);
+  expect(listPending(db).map((a) => a.id)).toContain(again.id);
+  // A yes left alone starts when its hold ends, and then can't be taken back.
+  resolveApproval(db, again.id, "approve");
+  await Bun.sleep(250);
+  await repos.settle();
+  expect(existsSync(path)).toBe(false);
+  expect(() => reopenDecision(db, again.id)).toThrow("This has already started, so it can't be taken back.");
+});
+
+test("a yes still held when the engine stopped starts after its hold on the next start", async () => {
+  const asked = await askToRemove(db, clone.id);
+  if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
+  resolveApproval(db, asked.approval.id, "approve");
+  const repos = createRepos({ db, kick: () => {}, holdMs: 0 });
+  await Bun.sleep(50);
+  await repos.settle();
+  expect(existsSync(path)).toBe(false);
 });
 
 test("a .env planted after the yes is caught by the fresh check", async () => {

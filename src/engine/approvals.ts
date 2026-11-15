@@ -4,7 +4,7 @@ import { newId } from "./ids";
 import { branchHeadSync } from "./git";
 import { getSpace } from "./spaces";
 import { resumed } from "./loop";
-import { batchApprovable } from "./needs";
+import { batchApprovable, HELD_ASKS } from "./needs";
 import { appendTaskDetail, getTask, listTasks, reopenForReview, setTaskLoop, setTaskStatus } from "./tasks";
 
 export const ALWAYS_ASK = [
@@ -310,14 +310,30 @@ export function approveClean(
   return { approved, skipped };
 }
 
-// How long after approving a result the user can take it back from the toast; past this, ask for a new task.
+// How long after approving the user can take it back from the toast; past this, ask for a new task. A new repo or a
+// local copy's removal waits this long after the yes before it starts, so its Undo is real.
 export const UNDO_MS = 60_000;
+
+// Takes back a yes to a new repo or a removal that hasn't started: the ask is pending again, under a fresh approval
+// its repo action now points to, so the held start finds no yes and does nothing.
+function reopenHeldAsk(db: Database, a: Approval, now: number): Approval {
+  if (a.status !== "approved" || a.decidedBy !== "you") throw new Error("Only an approval you just gave can be taken back.");
+  if (a.undoneAt !== null) throw new Error("This approval was already taken back.");
+  if (now - (a.resolvedAt ?? 0) > UNDO_MS) throw new Error("This was approved too long ago to take back.");
+  const action = db.query("SELECT id, status FROM repo_actions WHERE approval_id = ?").get(a.id) as { id: string; status: string } | null;
+  if (!action || action.status !== "draft") throw new Error("This has already started, so it can't be taken back.");
+  db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, a.id);
+  const fresh = createApproval(db, { spaceId: a.spaceId, taskId: a.taskId ?? undefined, kind: a.kind, title: a.title, detail: a.detail, fingerprint: a.fingerprint ?? undefined, alwaysAsk: a.alwaysAsk ?? undefined });
+  db.query("UPDATE repo_actions SET approval_id = ?, updated_at = ? WHERE id = ?").run(fresh.id, now, action.id);
+  return fresh;
+}
 
 // Takes back the user's own approval of a result a moment ago: the task goes back to review with a fresh approval,
 // as long as nothing has left the Mac since (no push or pull request started for it) and nothing else happened to it.
 export function reopenDecision(db: Database, id: string, now = Date.now()): Approval {
   const reopened = db.transaction((): Approval => {
     const a = getApproval(db, id);
+    if (a && a.kind === "question" && a.alwaysAsk && HELD_ASKS.includes(a.alwaysAsk)) return reopenHeldAsk(db, a, now);
     if (!a || a.kind !== "review" || a.status !== "approved" || a.decidedBy !== "you" || !a.taskId || !a.spaceId) throw new Error("Only an approval you just gave a result can be taken back.");
     if (a.undoneAt !== null) throw new Error("This approval was already taken back.");
     if (now - (a.resolvedAt ?? 0) > UNDO_MS) throw new Error("This was approved too long ago to take back. Ask for the change again as a new task.");

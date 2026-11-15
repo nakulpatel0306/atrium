@@ -3,6 +3,7 @@ import { useState } from "react";
 import { post, type State } from "../api";
 import { showToast } from "../toast";
 import { isRisky, shownSha } from "../queue";
+import { HELD_ASKS } from "../../engine/needs";
 import { reviewLine } from "../summary";
 import { approveLabel } from "./OutcomeBanner";
 
@@ -32,13 +33,21 @@ export function useDecision(approval: Approval, sha?: string | null) {
     // a key went to the wrong item.
     if (res.ok) {
       if (decision === "reject") return showToast(`Sent back: ${approval.title}`);
-      return showToast(`Approved: ${approval.title}`, approval.kind === "review" && approval.taskId ? () => reopen(approval.id) : undefined, approval.taskId ?? undefined);
+      return approvedToast(approval);
     }
     setError(res.error);
     setBusy(false);
   };
 
   return { busy, setBusy, error, setError, sendingBack, setSendingBack, note, setNote, decide };
+}
+
+// The toast after a yes, with an Undo wherever the engine can still take it back: a result until anything leaves the
+// Mac, a new repo or a removal during the minute its start is held.
+export function approvedToast(approval: Approval) {
+  const held = approval.alwaysAsk !== null && HELD_ASKS.includes(approval.alwaysAsk);
+  const undoable = (approval.kind === "review" && approval.taskId) || held;
+  showToast(held ? `Approved: ${approval.title} It starts in a minute.` : `Approved: ${approval.title}`, undoable ? () => reopen(approval.id) : undefined, approval.taskId ?? undefined);
 }
 
 export async function reopen(id: string): Promise<{ ok: boolean; error?: string }> {

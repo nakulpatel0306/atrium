@@ -215,7 +215,7 @@ Everything that needs you is one queue, defined once in `src/engine/needs.ts` an
 
 A result is **clean** when the agent finished and changed something, its checks passed (not unverified, nothing already failing), the change left no attention note, the last review approved it, and no medium or high finding from any round is left unfixed; a low note on an approval doesn't count against it. That one rule (`cleanResult` in `src/engine/needs.ts`) decides the row's green tone, whether Approve reads "Approve anyway", whether `a` needs a second press (in the dashboard and the terminal app), and what may be approved together. Approving names the commit the screen showed; the engine re-reads the branch inside the decision and refuses if it moved. A batch shows its list first, sends each result with the commit it showed, and the engine approves only those still clean at that commit, saying why it left the rest.
 
-In the dashboard, an approval can be taken back from its toast for a minute: each approval keeps its own Undo, and the Undo goes away as soon as a push or pull request starts for that result, since by then it has left the Mac. The terminal app has no Undo.
+In the dashboard, a yes can be taken back from its toast for a minute, while nothing has left the Mac: each approval keeps its own Undo. For a result, the Undo goes away as soon as a push or pull request starts. A new GitHub repo or a local copy's removal waits out that minute before it starts, so its Undo is real; once it starts, it can't be taken back. The terminal app has no Undo.
 
 ## Where it lives
 

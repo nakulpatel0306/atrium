@@ -30,7 +30,7 @@ beforeEach(() => {
   home = tempHome();
   db = openDb();
   gh = fakeGitHub();
-  repos = createRepos({ db, kick: () => {} });
+  repos = createRepos({ db, kick: () => {}, holdMs: 0 });
   unsubscribe = onApprovalResolved(repos.onDecision);
   setupImpl = async () => {
     throw new Error("setup not stubbed");

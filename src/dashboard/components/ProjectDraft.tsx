@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ProjectDraft } from "../../engine/repos/names";
 import { TEMPLATE_LABELS, type TemplateId } from "../../engine/repos/rules";
 import { post, type State } from "../api";
+import { approvedToast } from "./Decision";
 import { draftErrors, draftSummary, folderFor, tildeShown } from "../repos";
 
 type Approval = State["approvals"][number];
@@ -30,8 +31,10 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
     setBusy(true);
     setError(null);
     const res = await post(`/api/repo-actions/${action.id}/approve`, fields);
-    // On success the row leaves with the next state push, and the space appears once the repo is made.
-    if (!res.ok) {
+    // On success the row leaves with the next state push, and the space appears once the repo is made, a minute later,
+    // so the yes can still be taken back.
+    if (res.ok) approvedToast(approval);
+    else {
       setError(res.error);
       setOpen(true);
       setBusy(false);

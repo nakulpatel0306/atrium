@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { post, type State } from "../api";
+import { approvedToast } from "./Decision";
 import { removalSize } from "../repos";
 
 type Approval = State["approvals"][number];
@@ -16,6 +17,7 @@ export function RemovalRow({ approval }: { approval: Approval }) {
     setBusy(true);
     setError(null);
     const res = await post(`/api/approvals/${approval.id}`, { decision });
+    if (res.ok && decision === "approve") approvedToast(approval);
     if (!res.ok) {
       setError(res.error);
       setBusy(false);

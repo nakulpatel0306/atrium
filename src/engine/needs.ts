@@ -111,3 +111,7 @@ export function askLine(t: TaskLike): string {
   if (loop?.paused) return loop.paused.diagnosis;
   return "it's waiting for you";
 }
+
+// The asks whose work the engine holds for a minute after a yes (approvals.ts UNDO_MS), and so can take back: nothing
+// has left the Mac or been deleted until the hold ends.
+export const HELD_ASKS: readonly string[] = ["create_repo", "remove_clone"];

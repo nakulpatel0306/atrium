@@ -1,12 +1,12 @@
 import type { Database } from "bun:sqlite";
-import type { Approval } from "../approvals";
+import { type Approval, getApproval, UNDO_MS } from "../approvals";
 import { getSetting, setSetting } from "../settings";
 import { listSpaces, type Space } from "../spaces";
 import { atriumDiskUsage } from "../storage";
 import { askToRemove, checkRemovable, dirBytes, pendingRemovalId, removeClone, scanIdleClones } from "./cleanup";
 import { createCloner } from "./clones";
 import { createProject } from "./create";
-import { actionForApproval, listClones, markDeclined, presentCloneForPath, setActionStatus, touchClone } from "./store";
+import { actionForApproval, getRepoAction, listClones, markDeclined, presentCloneForPath, setActionStatus, touchClone } from "./store";
 
 const DAY_MS = 86_400_000;
 const SIZE_CACHE_MS = 10 * 60_000;
@@ -40,8 +40,10 @@ export type Repos = {
 };
 
 // The engine's side of repos: what runs after Nakul decides, on-demand clones, and the daily idle check.
-export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: number }): Repos {
+// `holdMs` is how long a yes waits before its work starts, so it can be taken back (UNDO_MS unless a test says less).
+export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: number; holdMs?: number }): Repos {
   const { db, kick } = deps;
+  const holdMs = deps.holdMs ?? UNDO_MS;
   const cloner = createCloner(db, kick);
   const work = new Map<string, Promise<unknown>>();
   const sizes = new Map<string, { bytes: number; at: number }>();
@@ -54,6 +56,28 @@ export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: nu
       .finally(() => work.delete(key));
     work.set(key, job);
   }
+
+  // Starts an approved action once its hold is over, unless the yes was taken back meanwhile (its action then points
+  // to a fresh, pending approval).
+  function start(actionId: string, approvalId: string) {
+    const action = getRepoAction(db, actionId);
+    const yes = getApproval(db, approvalId);
+    if (!action || action.status !== "draft" || action.approvalId !== approvalId || yes?.status !== "approved" || yes.undoneAt !== null) return;
+    if (action.kind === "create") track(action.id, () => createProject(db, action.id, { kick, ghTimeoutMs: deps.ghTimeoutMs }));
+    else track(action.id, () => removeClone(db, action.id));
+  }
+
+  function hold(actionId: string, approvalId: string, approvedAt: number) {
+    const left = approvedAt + holdMs - Date.now();
+    if (left <= 0) return start(actionId, approvalId);
+    setTimeout(() => start(actionId, approvalId), left).unref?.();
+  }
+
+  // A yes still in its hold when the engine stopped starts when its hold would have ended.
+  const held = db
+    .query("SELECT r.id AS action, a.id AS approval, a.resolved_at AS at FROM repo_actions r JOIN approvals a ON a.id = r.approval_id WHERE r.status = 'draft' AND a.status = 'approved' AND a.undone_at IS NULL")
+    .all() as { action: string; approval: string; at: number | null }[];
+  for (const h of held) hold(h.action, h.approval, h.at ?? 0);
 
   async function sizeOf(path: string): Promise<number> {
     const hit = sizes.get(path);
@@ -72,8 +96,7 @@ export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: nu
         if (action.kind === "remove" && action.cloneId) markDeclined(db, action.cloneId, Date.now());
         return;
       }
-      if (action.kind === "create") track(action.id, () => createProject(db, action.id, { kick, ghTimeoutMs: deps.ghTimeoutMs }));
-      else track(action.id, () => removeClone(db, action.id));
+      hold(action.id, a.id, a.resolvedAt ?? Date.now());
     },
     requestClone: cloner.request,
     cloning: cloner.pending,
