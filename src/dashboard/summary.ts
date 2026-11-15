@@ -1,6 +1,6 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
 import type { Stage } from "../engine/loop";
-import { needsYouCount } from "../engine/needs";
+import { cleanResult, needsYouCount } from "../engine/needs";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
@@ -128,11 +128,12 @@ export function loopLine(loop: Loop): Review {
     const ended = [count("fixed") && `${count("fixed")} fixed`, count("declined") && `${count("declined")} declined`, open && `${open} open`].filter(Boolean).join(", ");
     if (asked.length) parts.push(`${who}: ${asked.length} finding${asked.length === 1 ? "" : "s"}${ended ? `, ${ended}` : ""}`);
     else parts.push(last.verdict === "approve" ? `reviewed by ${who}` : `${who} gave no verdict`);
+    // Notes on an approval are the reviewer's asides: shown, never something to answer.
+    const notes = last.verdict === "approve" ? last.findings.filter((f) => !f.resolution).length : 0;
+    if (notes) parts.push(`${notes} note${notes === 1 ? "" : "s"}`);
   }
-  // Red only for failing checks; anything else that wants a look (a note, an unproven result, a finding not fixed) is
-  // amber, and green means there's nothing left to read first.
-  const unsettled = loop.attention.length > 0 || loop.reviews.some((r) => r.skipped || r.findings.some((f) => f.resolution?.action !== "fixed"));
-  const tone = loop.checks === "failed" ? "bad" : loop.checks === "passed" && !loop.noChanges && !unsettled ? "ok" : "waiting";
+  // Red only for failing checks; green exactly when the result is clean by the one rule (needs.ts); amber otherwise.
+  const tone = loop.checks === "failed" ? "bad" : cleanResult({ outcome: "done", loop }) ? "ok" : "waiting";
   return { text: parts.join(" · "), tone };
 }
 

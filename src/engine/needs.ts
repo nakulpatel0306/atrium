@@ -70,16 +70,24 @@ export function attentionQueue(s: QueueInput): QueueItem[] {
 
 export const needsYouCount = (s: QueueInput): number => attentionQueue(s).filter((i) => !i.low).length;
 
-// Whether a result may be approved together with others in one go: only a finished result that changed something,
-// whose checks passed, with no attention note, nothing unverified, every review finding fixed and no review that
-// failed to happen. Anything
-// else waits to be read on its own; the engine checks this again before it approves.
-export function batchApprovable(a: { kind: string; alwaysAsk: string | null }, t: { outcome: string | null; loop: LoopState | null } | undefined): boolean {
+// The one rule for a clean result, with nothing to read first: the agent finished and changed something, the checks
+// passed (not unverified, nothing already failing), the change left no attention note, the last review approved it,
+// and no medium or high finding from any round is left unfixed. A low note on an approval doesn't block: the writer
+// is never asked to answer those. The row's tone, "Approve anyway", the two-press key and batch approval all use this,
+// so they can't disagree.
+export function cleanResult(t: { outcome: string | null; loop: LoopState | null } | undefined): boolean {
   const loop = t?.loop;
-  if (a.kind !== "review" || a.alwaysAsk || t?.outcome !== "done" || !loop) return false;
-  if (loop.noChanges || loop.checks !== "passed" || loop.attention.length > 0 || loop.unverified || loop.alreadyFailing.length > 0) return false;
-  return loop.reviews.every((r) => !r.skipped && r.findings.every((f) => f.resolution?.action === "fixed"));
+  if (t?.outcome !== "done" || !loop) return false;
+  if (loop.noChanges || loop.checks !== "passed" || loop.unverified || loop.attention.length > 0 || loop.alreadyFailing.length > 0) return false;
+  const last = loop.reviews.at(-1);
+  if (!last || last.skipped || last.verdict !== "approve") return false;
+  return loop.reviews.every((r) => !r.skipped && r.findings.every((f) => f.severity === "low" || f.resolution?.action === "fixed"));
 }
+
+// Whether a result may be approved together with others in one go: a clean review result that only the user's own
+// rules could decide. The engine checks this again, against the commit, before it approves.
+export const batchApprovable = (a: { kind: string; alwaysAsk: string | null }, t: { outcome: string | null; loop: LoopState | null } | undefined): boolean =>
+  a.kind === "review" && !a.alwaysAsk && cleanResult(t);
 
 // What such a task asks, in one line: its first question, the decision on its parts or attempts, the part that
 // stopped, or its pause.

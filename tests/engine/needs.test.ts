@@ -104,6 +104,11 @@ describe("batchApprovable", () => {
   const review = { kind: "review" as const, alwaysAsk: null };
   const done = (l: LoopState) => task("t", { status: "review", outcome: "done", loop: l });
 
+  test("takes the sample's own result: an approval with one low note nobody was asked to answer", () => {
+    const sample = { ...clean, reviews: [{ reviewer: "claude", verdict: "approve" as const, findings: [{ severity: "low" as const, file: "src/cart.ts", line: 12, reason: "Rounding is a choice.", resolution: null }], skipped: null }] };
+    expect(batchApprovable(review, done(sample))).toBe(true);
+  });
+
   test("takes a clean result: checks passed, no notes, every finding fixed", () => {
     const fixed = { ...clean, reviews: [{ reviewer: "codex", verdict: "approve" as const, findings: [{ severity: "low" as const, file: null, line: null, reason: "r", resolution: { action: "fixed" as const, note: "" } }], skipped: null }] };
     expect(batchApprovable(review, done(clean))).toBe(true);
@@ -121,6 +126,8 @@ describe("batchApprovable", () => {
       { ...clean, reviews: [{ reviewer: "codex", verdict: "changes", findings: [{ severity: "low", file: null, line: null, reason: "r", resolution: null }], skipped: null }] },
       { ...clean, reviews: [{ reviewer: "codex", verdict: "changes", findings: [{ severity: "low", file: null, line: null, reason: "r", resolution: { action: "declined", note: "" } }], skipped: null }] },
       { ...clean, reviews: [{ reviewer: "codex", verdict: null, findings: [], skipped: "Codex timed out" }] },
+      { ...clean, reviews: [{ reviewer: "codex", verdict: "approve", findings: [{ severity: "medium", file: null, line: null, reason: "r", resolution: null }], skipped: null }] },
+      { ...clean, reviews: [] },
     ];
     for (const l of cases) expect(batchApprovable(review, done(l))).toBe(false);
   });

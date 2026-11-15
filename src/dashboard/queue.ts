@@ -1,6 +1,6 @@
 // The attention queue as the dashboard shows it: each item's title and one-line summary, from the one definition
 // in engine/needs.ts. The terminal app reads the same lines, so both say the same thing.
-import { askLine, attentionQueue, batchApprovable, type QueueItem, type QueueKind } from "../engine/needs";
+import { askLine, attentionQueue, batchApprovable, cleanResult, type QueueItem, type QueueKind } from "../engine/needs";
 import type { State } from "../engine/state";
 import { reviewLine, summaryLine } from "./summary";
 
@@ -67,9 +67,9 @@ export function waited(since: number, now = Date.now()): string {
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
-// A result that went through the loop but isn't clean, including one the agent didn't say it finished: its Approve is
-// quieter and the a key asks twice.
+// A result that went through the loop but isn't clean by the one rule (needs.ts), including one the agent didn't say
+// it finished: its Approve is quieter and the a key asks twice.
 export function isRisky(state: State, a: State["approvals"][number]): boolean {
   const task = a.kind === "review" && a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
-  return !!task?.loop && !batchApprovable(a, task);
+  return !!task?.loop && !cleanResult(task);
 }

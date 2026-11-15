@@ -20,7 +20,7 @@ afterAll(() => closeDom());
 // The fixture's review made clean: checks passed and an approving review.
 function cleanState(): State {
   const s = makeState();
-  return { ...s, tasks: s.tasks.map((t) => (t.id === ids.review ? { ...t, outcome: "done" as const, loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready" as const, checks: "passed" as const } } : t)) };
+  return { ...s, tasks: s.tasks.map((t) => (t.id === ids.review ? { ...t, outcome: "done" as const, loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready" as const, checks: "passed" as const, reviews: [{ reviewer: "codex", verdict: "approve" as const, findings: [], skipped: null }] } } : t)) };
 }
 const labels = (s: State) => paletteActions(s, { spaceId: null, theme: "system" }).map((a) => a.label);
 

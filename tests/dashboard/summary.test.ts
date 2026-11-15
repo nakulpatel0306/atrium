@@ -68,6 +68,9 @@ test("reviewLine says what the checks and the reviewer made of the work", () => 
   const declined = task({ loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "changes", findings: [{ ...finding, resolution: { action: "declined", note: "" } }, { ...finding, resolution: null }], skipped: null }] }) });
   expect(reviewLine(approval, state({ tasks: [declined], spaces: [repo] }))).toEqual({ text: "Checks passed · Codex: 2 findings, 1 declined, 1 open", tone: "waiting" });
 
+  const noted = task({ outcome: "done", loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "approve", findings: [{ ...finding, severity: "low", resolution: null }], skipped: null }] }) });
+  expect(reviewLine(approval, state({ tasks: [noted], spaces: [repo] }))).toEqual({ text: "Checks passed · reviewed by Codex · 1 note", tone: "ok" });
+
   // A note on what the change did to its checks asks for a look; only failing checks read as bad.
   const flagged = task({ loop: loop({ checks: "passed", attention: ["This change edits how checks run: package.json."] }) });
   expect(reviewLine(approval, state({ tasks: [flagged], spaces: [repo] }))?.tone).toBe("waiting");
