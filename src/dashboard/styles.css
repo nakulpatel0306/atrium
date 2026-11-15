@@ -2155,7 +2155,8 @@ code {
 }
 /* Every text field in a settings form, styled like the rest rather than left to the browser. */
 .mk-form input:not([type]),
-.mk-form input[type="text"] {
+.mk-form input[type="text"],
+.tiers input {
   min-width: 220px;
   min-height: 30px;
   background: var(--bg);
@@ -2168,7 +2169,8 @@ code {
   outline: none;
 }
 .mk-form input:not([type]):focus,
-.mk-form input[type="text"]:focus {
+.mk-form input[type="text"]:focus,
+.tiers input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
@@ -3974,6 +3976,7 @@ kbd {
 }
 .tiers input {
   max-width: 260px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 .spend-line {
   color: var(--dim);

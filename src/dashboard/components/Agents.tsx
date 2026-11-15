@@ -230,7 +230,8 @@ export function Agents({ state }: { state: State }) {
       <h1>Agents</h1>
       <p className="spend-line">
         Spent today: {compact(state.spend.today.weighted)} weighted tokens, {spendText(state.spend.today)} · this week: {compact(state.spend.week.weighted)},{" "}
-        {spendText(state.spend.week)}. Estimates at list prices; a subscription doesn't bill per token.
+        {/* The amount already ends "est.", so the sentence needs no second stop. */}
+        {spendText(state.spend.week)} All at list prices; a subscription doesn't bill per token.
       </p>
       <p className="brief">
         Who can take work right now. Auto sends work to Claude. While Claude's window is being saved, general tasks go to
