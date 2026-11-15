@@ -109,7 +109,7 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
     else setHint("");
   };
   const explain = (
-    <button className={`btn${nudge ? " p" : ""}`} type="button" disabled={busy} onClick={() => void act("explain")}>
+    <button className={`btn${nudge ? " p" : ""}`} type="button" data-act="explain" disabled={busy} onClick={() => void act("explain")}>
       <MessageSquareText />
       Explain the problem instead
     </button>
@@ -189,7 +189,8 @@ function Budget({ task }: { task: Task }) {
 
 // The loop in a task's detail: its stage, the brief it runs from, the checks, each review round and how its
 // findings ended, the budget, and the way on when it's paused. Away from a repo there are no stages or checks.
-export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state: State; repo: boolean; showChecks: boolean }) {
+// `briefOpen` shows the brief unfolded, as the Needs you queue does: it's what the result is judged against.
+export function LoopPanel({ task, state, repo, showChecks, briefOpen = false }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean }) {
   const [checksOpen, setChecksOpen] = useState(showChecks);
   const loop = task.loop;
   const attention = attentionText(loop);
@@ -214,7 +215,7 @@ export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state
       {loop?.stage === "brief" && task.status === "running" && <p className="hint">Drafting the brief. The writer starts as soon as it's ready.</p>}
       {loop?.stage === "brief" && asksBeforeStarting(task) && <BriefQuestions task={task} />}
       {task.brief && (
-        <details className="brief-view" open={loop?.questions.length ? true : undefined}>
+        <details className="brief-view" open={briefOpen || loop?.questions.length ? true : undefined}>
           <summary>Brief</summary>
           <Markdown text={briefSections(task.brief, null).join("\n\n")} />
         </details>

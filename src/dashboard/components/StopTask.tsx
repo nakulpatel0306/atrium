@@ -52,12 +52,12 @@ export function StopButtons({ state, onAsk, onCancel, onStop }: ViewProps) {
           <button className="btn" disabled={state.busy} onClick={onCancel}>
             Keep running
           </button>
-          <button className="btn danger" disabled={state.busy} onClick={onStop}>
+          <button className="btn danger" data-act="stop-confirm" disabled={state.busy} onClick={onStop}>
             Stop
           </button>
         </>
       ) : (
-        <button className="btn" title="Stop this task's agent now" onClick={onAsk}>
+        <button className="btn" data-act="stop" title="Stop this task's agent now" onClick={onAsk}>
           <Square />
           Stop…
         </button>

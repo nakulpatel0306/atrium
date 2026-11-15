@@ -4,7 +4,8 @@ import { newId } from "./ids";
 import { branchHeadSync } from "./git";
 import { getSpace } from "./spaces";
 import { resumed } from "./loop";
-import { appendTaskDetail, getTask, listTasks, setTaskLoop, setTaskStatus } from "./tasks";
+import { batchApprovable } from "./needs";
+import { appendTaskDetail, getTask, listTasks, reopenForReview, setTaskLoop, setTaskStatus } from "./tasks";
 
 export const ALWAYS_ASK = [
   "merge_main",
@@ -248,4 +249,48 @@ const resolvedListeners = new Set<(a: Approval, decision: "approve" | "reject") 
 export function onApprovalResolved(fn: (a: Approval, decision: "approve" | "reject") => void): () => void {
   resolvedListeners.add(fn);
   return () => resolvedListeners.delete(fn);
+}
+
+// Approves several results in one go, each only if it's clean by the one rule (needs.ts batchApprovable), checked
+// here against the database rather than what the page last saw. Anything else is left waiting, with why.
+export function approveClean(db: Database, ids: readonly string[]): { approved: string[]; skipped: { id: string; reason: string }[] } {
+  const approved: string[] = [];
+  const skipped: { id: string; reason: string }[] = [];
+  for (const id of ids) {
+    const a = getApproval(db, id);
+    if (!a || a.status !== "pending") {
+      skipped.push({ id, reason: "It was already decided." });
+      continue;
+    }
+    if (!batchApprovable(a, a.taskId ? (getTask(db, a.taskId) ?? undefined) : undefined)) {
+      skipped.push({ id, reason: "It has something to read on its own first: a note, a check that didn't pass, or a finding that wasn't fixed." });
+      continue;
+    }
+    resolveApproval(db, id, "approve");
+    approved.push(id);
+  }
+  return { approved, skipped };
+}
+
+// How long after approving a result the user can take it back from the toast; past this, ask for a new task.
+export const UNDO_MS = 60_000;
+
+// Takes back the user's own approval of a result a moment ago: the task goes back to review with a fresh approval,
+// as long as nothing has happened to it since (no pull request, no other change of status).
+export function reopenDecision(db: Database, id: string, now = Date.now()): Approval {
+  const reopened = db.transaction((): Approval => {
+    const a = getApproval(db, id);
+    if (!a || a.kind !== "review" || a.status !== "approved" || a.decidedBy !== "you" || !a.taskId || !a.spaceId) throw new Error("Only an approval you just gave a result can be taken back.");
+    if (a.undoneAt !== null) throw new Error("This approval was already taken back.");
+    if (now - (a.resolvedAt ?? 0) > UNDO_MS) throw new Error("This was approved too long ago to take back. Ask for the change again as a new task.");
+    const task = getTask(db, a.taskId);
+    if (task?.prUrl) throw new Error("A pull request is already open for this result, so it can't go back to review.");
+    if (task?.status !== "done" || task.kind !== "work") throw new Error("This task changed after it was approved, so it can't go back to review.");
+    db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, a.id);
+    reopenForReview(db, task.id);
+    return createApproval(db, { spaceId: a.spaceId, taskId: task.id, kind: a.kind, title: a.title, detail: a.detail, fingerprint: a.fingerprint });
+  })();
+  logActivity(db, reopened.spaceId, "you", `Took back the approval: ${reopened.title}`, { taskId: reopened.taskId });
+  bus.emit({ type: "changed" });
+  return reopened;
 }

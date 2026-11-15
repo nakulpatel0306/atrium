@@ -1,10 +1,23 @@
-// The Needs you page's keys. Single letters only move, open, approve a review or open its send-back note, and every
-// key is ignored while Nakul is typing.
-export type NeedsKey = "next" | "prev" | "open" | "approve" | "sendBack" | "close";
+// The Needs you queue's keys. Single letters only move, open, and press a button the open item already shows, and
+// every key is ignored while the user is typing.
+export type NeedsKey = "next" | "prev" | "open" | "approve" | "sendBack" | "stop" | "explain" | "batch" | "help" | "close";
 
 type KeyLike = { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; target: EventTarget | null };
 
-const KEYS: Record<string, NeedsKey> = { j: "next", ArrowDown: "next", k: "prev", ArrowUp: "prev", Enter: "open", a: "approve", s: "sendBack", Escape: "close" };
+const KEYS: Record<string, NeedsKey> = {
+  j: "next",
+  ArrowDown: "next",
+  k: "prev",
+  ArrowUp: "prev",
+  Enter: "open",
+  a: "approve",
+  s: "sendBack",
+  x: "stop",
+  e: "explain",
+  A: "batch",
+  "?": "help",
+  Escape: "close",
+};
 
 export function isTyping(target: EventTarget | null): boolean {
   if (!target || typeof target !== "object" || !("tagName" in target)) return false;
@@ -24,5 +37,18 @@ export function moveFocus(at: number, count: number, key: "next" | "prev"): numb
   return Math.max(0, Math.min(count - 1, at + (key === "next" ? 1 : -1)));
 }
 
-// The control a key presses on the focused row; a row without it (a rule suggestion) ignores the key.
-export const ACT: Partial<Record<NeedsKey, string>> = { open: "open", approve: "approve", sendBack: "send-back" };
+// The control a key presses in the open item; an item without it (a rule suggestion has no stop) ignores the key.
+export const ACT: Partial<Record<NeedsKey, string>> = { approve: "approve", sendBack: "send-back", stop: "stop", explain: "explain" };
+
+// The keys as the help sheet lists them.
+export const KEY_HELP: [string, string][] = [
+  ["j / k", "Next / previous item"],
+  ["Enter", "Open the item"],
+  ["a", "Approve"],
+  ["s", "Send back with a note"],
+  ["x", "Stop a running task"],
+  ["e", "Explain the problem, on a paused task"],
+  ["Shift A", "Approve every clean result at once"],
+  ["Esc", "Back to the list"],
+  ["?", "Show or hide these keys"],
+];

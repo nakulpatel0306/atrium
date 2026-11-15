@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
 import { STEER_NOTE_MAX, type SteerOutcome, type StopOutcome } from "../engine/runner";
-import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
+import { AlreadyResolved, approveClean, getApproval, reopenDecision, resolveApproval } from "../engine/approvals";
 import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
 import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
 import { markSeen } from "../engine/briefing";
@@ -326,6 +326,25 @@ export function startServer(deps: Deps): Server<WsData> {
     if (msgM) {
       if (!getTask(db, msgM[1]!)) throw new HttpError(404, "No such task.");
       return json(listMessages(db, msgM[1]!));
+    }
+
+    // Before the single approval's route, which would read "batch" as an id.
+    if (hit("POST", /^\/api\/approvals\/batch$/)) {
+      const b = await readBody(req);
+      if (!Array.isArray(b.ids) || !b.ids.every(isString)) throw new HttpError(400, "ids must be a list of approval ids.");
+      const res = approveClean(db, b.ids as string[]);
+      runner.kick();
+      return json(res);
+    }
+
+    const reopenM = hit("POST", /^\/api\/approvals\/([^/]+)\/reopen$/);
+    if (reopenM) {
+      if (!getApproval(db, reopenM[1]!)) throw new HttpError(404, "No such approval.");
+      try {
+        return json(reopenDecision(db, reopenM[1]!));
+      } catch (e) {
+        throw new HttpError(409, (e as Error).message);
+      }
     }
 
     const apprM = hit("POST", /^\/api\/approvals\/([^/]+)$/);

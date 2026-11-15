@@ -1,4 +1,4 @@
-import { Inbox, SearchCheck, TriangleAlert } from "lucide-react";
+import { ChevronRight, Inbox, SearchCheck, TriangleAlert } from "lucide-react";
 import { type Ref, useState } from "react";
 import { post, type State } from "../api";
 import { absolute, relative } from "../format";
@@ -6,8 +6,9 @@ import { navigate } from "../route";
 import { attentionText, reviewLine, summaryLine } from "../summary";
 import { DecideButtons, SendBackNote, useDecision } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
-import { askingTasks, QuestionsRow } from "./BriefQuestions";
+import { QuestionsRow } from "./BriefQuestions";
 import { needsYouCount } from "../../engine/needs";
+import { isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem } from "../queue";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -52,7 +53,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           <button className="btn" data-act="open" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? "Hide" : "View"}
           </button>
-          <DecideButtons d={d} outcome={outcome} />
+          <DecideButtons d={d} outcome={outcome} risky={isRisky(state, approval)} />
         </div>
       </div>
       {attention && (
@@ -102,35 +103,62 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
   );
 }
 
-// Every row waiting on Nakul, each with its own kind of answer. A space shows its share of the same rows.
+// A queue item answered on its own screen in Needs you (a pause, a CLAUDE.md line, a suggested shape): one line here,
+// and Open goes to it.
+function OpenRow({ item, space, state }: { item: QueueItem; space: Space | undefined; state: State }) {
+  const title = itemTitle(state, item);
+  const line = itemLine(state, item);
+  return (
+    <div className="entry">
+      <div className={`item${item.low ? " low" : ""}`}>
+        <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
+        <span className="who">{space?.name ?? "Atrium"}</span>
+        <span className="t" title={`${title}\n${line}`}>
+          {title}
+          <span>{line}</span>
+        </span>
+        <span className="tag">{KIND_TEXT[item.kind]}</span>
+        <div className="acts">
+          <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
+            Open
+            <ChevronRight />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Every item waiting on Nakul, in the queue's order (longest-blocked first), each with its own kind of answer. A
+// space shows its share of the same rows.
 function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
-  const mine = <T extends { spaceId: string | null }>(xs: T[]) => (spaceId ? xs.filter((x) => x.spaceId === spaceId) : xs);
+  const items = queueOf(state).filter((i) => !spaceId || i.spaceId === spaceId);
   return (
     <>
-      {askingTasks(state, spaceId).map((t) => (
-        <QuestionsRow key={t.id} task={t} space={spaces.get(t.spaceId)} state={state} />
-      ))}
-      {mine(state.proposals).map((p) => (
-        <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
-      ))}
-      {mine(state.approvals).map((a) => {
-        const action = state.repoActions.find((r) => r.approvalId === a.id);
-        if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
-        if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
-        return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
+      {items.map((i) => {
+        const space = i.spaceId ? spaces.get(i.spaceId) : undefined;
+        if (i.kind === "question" || i.kind === "pick" || i.kind === "stuck") return <QuestionsRow key={i.key} task={state.tasks.find((t) => t.id === i.key)!} space={space} state={state} />;
+        if (i.kind === "suggestion") return <ProposalRow key={i.key} proposal={state.proposals.find((p) => p.id === i.key)!} space={space} />;
+        if (i.kind === "review" || i.kind === "approval") {
+          const a = state.approvals.find((x) => x.id === i.key)!;
+          const action = state.repoActions.find((r) => r.approvalId === a.id);
+          if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
+          if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
+          return <Row key={a.id} approval={a} space={space} state={state} />;
+        }
+        return <OpenRow key={i.key} item={i} space={space} state={state} />;
       })}
     </>
   );
 }
 
-export const waitingIn = (state: State, spaceId: string) =>
-  state.approvals.filter((a) => a.spaceId === spaceId).length + state.proposals.filter((p) => p.spaceId === spaceId).length + askingTasks(state, spaceId).length;
+export const waitingIn = (state: State, spaceId: string) => queueOf(state).filter((i) => i.spaceId === spaceId && !i.low).length;
 
 // At the top of a space: what's waiting on Nakul there, answered right where the work is.
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
   const count = waitingIn(state, spaceId);
-  if (count === 0) return null;
+  if (!queueOf(state).some((i) => i.spaceId === spaceId)) return null;
   return (
     <>
       <h2>
@@ -150,7 +178,7 @@ export const needsCount = (state: State) => needsYouCount(state);
 export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {
   return (
     <div className="list needs-list" ref={listRef}>
-      {needsCount(state) === 0 ? <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
+      {queueOf(state).length === 0 ? <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
     </div>
   );
 }

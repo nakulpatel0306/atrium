@@ -36,6 +36,7 @@ func noteTitle(_ n: Need) -> String {
   if n.kind == "review" && n.outcome == "couldnt" { return "Couldn't do this" }
   if n.kind == "review" && n.outcome == "partial" { return "Partly done" }
   if n.kind == "review" { return "Ready for review" }
+  if n.kind == "paused" { return "Paused" }
   return "Atrium has a question"
 }
 

@@ -11,7 +11,8 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "
 const key = (k: string, target: unknown = { tagName: "DIV" }, mods: { metaKey?: boolean; ctrlKey?: boolean } = {}) => needsKey({ key: k, target: target as EventTarget, ...mods });
 
 test("/needs-you and /activity are routes of their own", () => {
-  expect(parseRoute("/needs-you")).toEqual({ name: "needs" });
+  expect(parseRoute("/needs-you")).toEqual({ name: "needs", item: null });
+  expect(parseRoute("/needs-you?item=apr_1")).toEqual({ name: "needs", item: "apr_1" });
   expect(parseRoute("/activity")).toEqual({ name: "activity" });
 });
 
@@ -27,9 +28,9 @@ test("the sidebar marks Needs you and Activity active on their pages", () => {
   expect(on("/", "Needs you")).toBe(false);
 });
 
-test("j k and the arrows move, Enter opens, a approves, s sends back, Esc closes", () => {
-  expect(["j", "ArrowDown", "k", "ArrowUp", "Enter", "a", "s", "Escape"].map((k) => key(k))).toEqual(["next", "next", "prev", "prev", "open", "approve", "sendBack", "close"]);
-  expect(key("x")).toBeNull();
+test("j k and the arrows move, Enter opens, a approves, s sends back, x stops, e explains, Esc closes", () => {
+  expect(["j", "ArrowDown", "k", "ArrowUp", "Enter", "a", "s", "x", "e", "A", "?", "Escape"].map((k) => key(k))).toEqual(["next", "next", "prev", "prev", "open", "approve", "sendBack", "stop", "explain", "batch", "help", "close"]);
+  expect(key("z")).toBeNull();
   expect(key("a", undefined, { metaKey: true })).toBeNull();
   expect(key("k", undefined, { ctrlKey: true })).toBeNull();
 });
@@ -53,6 +54,6 @@ test("the page lists every waiting row with the keys hint", () => {
   const s = makeState();
   const t = text(renderToStaticMarkup(<NeedsPage state={s} />));
   expect(t).toContain("Needs you · 1");
-  expect(t).toContain("Keys: j k a s");
+  expect(t).toContain("Keys ?");
   expect(t).toContain("Review: Fix login redirect");
 });

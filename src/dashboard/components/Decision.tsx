@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { post, type State } from "../api";
 import { announce } from "../live";
+import { showToast } from "../toast";
 import { approveLabel } from "./OutcomeBanner";
 
 type Approval = State["approvals"][number];
@@ -22,13 +23,22 @@ export function useDecision(approval: Approval) {
       decision,
       ...(decision === "reject" && note.trim() ? { note: note.trim() } : {}),
     });
-    // On success the row disappears with the next state refresh.
-    if (res.ok) return announce(decision === "approve" ? `Approved: ${approval.title}` : `Sent back: ${approval.title}`);
+    // On success the row disappears with the next state refresh. An approval can be taken back for a moment, in case
+    // a key went to the wrong item.
+    if (res.ok) {
+      if (decision === "reject") return announce(`Sent back: ${approval.title}`);
+      return showToast(`Approved: ${approval.title}`, approval.kind === "review" && approval.taskId ? () => reopen(approval.id) : undefined);
+    }
     setError(res.error);
     setBusy(false);
   };
 
   return { busy, setBusy, error, setError, sendingBack, setSendingBack, note, setNote, decide };
+}
+
+async function reopen(id: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await post(`/api/approvals/${id}/reopen`);
+  return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
 export function SendBackNote({ d }: { d: Decision }) {
@@ -59,28 +69,36 @@ export function SendBackNote({ d }: { d: Decision }) {
   );
 }
 
-// The two answers to a result. `data-act` lets the Needs you keys press them on the focused row.
-export function DecideButtons({ d, outcome }: { d: Decision; outcome: Outcome }) {
+// The two answers to a result. `data-act` lets the Needs you keys press them on the focused row. A `risky` result
+// (a note, a check that didn't pass, a finding left open) gets a quieter Approve that says so.
+export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outcome: Outcome; risky?: boolean }) {
+  const label = approveLabel(outcome && outcome !== "done" ? outcome : null);
   return (
     <>
       <button className="btn" data-act="send-back" disabled={d.busy} onClick={() => d.setSendingBack(!d.sendingBack)}>
         Send back
       </button>
-      <button className="btn p" data-act="approve" disabled={d.busy} onClick={() => void d.decide("approve")}>
-        {approveLabel(outcome && outcome !== "done" ? outcome : null)}
+      <button
+        className={`btn${risky ? "" : " p"}`}
+        data-act="approve"
+        disabled={d.busy}
+        title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
+        onClick={() => void d.decide("approve")}
+      >
+        {risky && label === "Approve" ? "Approve anyway" : label}
       </button>
     </>
   );
 }
 
 // A task in review, decided from its own detail.
-export function ReviewActions({ approval, outcome }: { approval: Approval; outcome: Outcome }) {
+export function ReviewActions({ approval, outcome, risky = false }: { approval: Approval; outcome: Outcome; risky?: boolean }) {
   const d = useDecision(approval);
   return (
     <div className="review-acts">
       <div className="acts">
         <span className="faint">Waiting for your review</span>
-        <DecideButtons d={d} outcome={outcome} />
+        <DecideButtons d={d} outcome={outcome} risky={risky} />
       </div>
       <SendBackNote d={d} />
       {d.error && <p className="err">{d.error}</p>}

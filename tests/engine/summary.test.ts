@@ -208,3 +208,15 @@ test("every needs-you counter uses the one definition", async () => {
   expect(liveStatus(state)).toContain("3 things need you");
   expect(statusLine(state, "http://127.0.0.1:7420")).toContain("3 needs you");
 });
+
+test("a paused task counts toward the badge once, as a need and not as stopped; a CLAUDE.md proposal never counts", () => {
+  const s = createSpace(db, { name: "atrium", kind: "repo", goal: "g", repoPath: "/tmp/x" });
+  const t = createTask(db, { spaceId: s.id, title: "Totals" });
+  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "Another turn would go over the 200k token budget." } });
+  setTaskStatus(db, t.id, "blocked", { blockedReason: "Paused: another turn would go over the 200k token budget." });
+  db.query("INSERT INTO memory_lines (id, space_id, task_id, source, line, why, status, created_at) VALUES ('mem_1', ?, NULL, 'steer', 'Use the helper.', 'why', 'open', 1)").run(s.id);
+  const sum = summary(db);
+  expect(sum.needsYou).toBe(1);
+  expect(sum.needs[0]).toEqual({ id: t.id, kind: "paused", title: "Totals: Another turn would go over the 200k token budget.", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null });
+  expect(sum.stopped).toEqual([]);
+});

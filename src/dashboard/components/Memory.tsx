@@ -21,7 +21,7 @@ export function MemorySize({ space, version }: { space: Space; version: unknown 
 }
 
 // One proposed line: the exact text, editable, accepted with one click into its own commit, or dismissed.
-function Proposal({ line, space }: { line: MemoryLine; space: Space }) {
+export function MemoryProposal({ line, space }: { line: MemoryLine; space: Space }) {
   const [text, setText] = useState(line.line);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,14 +54,14 @@ function Proposal({ line, space }: { line: MemoryLine; space: Space }) {
   );
 }
 
-// The curator's open proposals for a space; never a needs-you item.
+// The curator's open proposals for a space. Needs you lists them too, as low-priority items that are never counted.
 export function MemoryProposals({ state, space }: { state: State; space: Space }) {
   const lines = state.learning.memory.filter((m) => m.spaceId === space.id);
   if (!lines.length) return null;
   return (
     <>
       {lines.map((l) => (
-        <Proposal key={l.id} line={l} space={space} />
+        <MemoryProposal key={l.id} line={l} space={space} />
       ))}
     </>
   );
