@@ -5,7 +5,7 @@ import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
-import { cleanReviews, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, waited } from "../queue";
+import { attentionQueue, cleanReviews, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
 import { navigate } from "../route";
 import { DecisionBar } from "./Decision";
 import { ChangesView } from "./ChangesView";
@@ -301,7 +301,7 @@ function KeysSheet({ onClose }: { onClose: () => void }) {
 // Everything waiting on the user as one queue, longest-blocked first, worked through from the keyboard: the list on
 // the left, the selected item's whole decision on the right (or full width on a narrow window once opened).
 export function NeedsPage({ state, item = null, batch: batchAsked = false }: { state: State; item?: string | null; batch?: boolean }) {
-  const items = queueOf(state);
+  const items = attentionQueue(state);
   const count = items.filter((i) => !i.low).length;
   const low = items.length - count;
   const [selected, setSelected] = useState<string | null>(item);

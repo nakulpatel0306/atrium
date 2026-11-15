@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NeedsPage, visibleRange, ROW_PX } from "../../src/dashboard/components/NeedsPage";
-import { cleanReviews, itemLine, itemTitle, queueOf } from "../../src/dashboard/queue";
+import { attentionQueue, cleanReviews, itemLine, itemTitle } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS, type LoopState } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
 import { ids, makeState, task } from "../tui/fixtures";
@@ -69,9 +69,9 @@ function queueState(): State {
 
 test("the queue runs longest-blocked first, low-priority items last, and counts only what holds something up", () => {
   const s = queueState();
-  expect(queueOf(s).map((i) => i.key)).toEqual(["tsk_p", "apr_c", "apr_b", "apr_a", "mem_1"]);
-  expect(itemTitle(s, queueOf(s)[0]!)).toBe("Ranking");
-  expect(itemLine(s, queueOf(s)[0]!)).toBe("Another turn would go over the budget.");
+  expect(attentionQueue(s).map((i) => i.key)).toEqual(["tsk_p", "apr_c", "apr_b", "apr_a", "mem_1"]);
+  expect(itemTitle(s, attentionQueue(s)[0]!)).toBe("Ranking");
+  expect(itemLine(s, attentionQueue(s)[0]!)).toBe("Another turn would go over the budget.");
   const el = render(<NeedsPage state={s} />);
   expect(el.querySelector("h1")!.textContent).toBe("Needs you · 4");
   expect([...el.querySelectorAll(".q-row")].map((r) => r.id)).toEqual(["q-tsk_p", "q-apr_c", "q-apr_b", "q-apr_a", "q-mem_1"]);

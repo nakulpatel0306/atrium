@@ -5,8 +5,7 @@ import type { State } from "../engine/state";
 import { reviewLine, summaryLine } from "./summary";
 
 export type { QueueItem, QueueKind };
-
-export const queueOf = (state: State): QueueItem[] => attentionQueue(state);
+export { attentionQueue };
 
 // What kind of decision each item is, as its row's label.
 export const KIND_TEXT: Record<QueueKind, string> = {
@@ -51,7 +50,7 @@ export function itemLine(state: State, i: QueueItem): string {
 
 // Results that may be approved together: each one finished with passing checks, no attention note, nothing
 // unverified and every review finding fixed. The engine checks each again before it approves.
-export function cleanReviews(state: State, items: QueueItem[] = queueOf(state)): QueueItem[] {
+export function cleanReviews(state: State, items: QueueItem[] = attentionQueue(state)): QueueItem[] {
   return items.filter((i) => {
     const a = i.kind === "review" ? approvalOf(state, i) : undefined;
     return !!a && batchApprovable(a, taskOf(state, i));

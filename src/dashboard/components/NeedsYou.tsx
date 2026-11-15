@@ -7,7 +7,7 @@ import { DecisionBar } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { QuestionsRow } from "./BriefQuestions";
 import { needsYouCount } from "../../engine/needs";
-import { itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem } from "../queue";
+import { attentionQueue, itemLine, itemTitle, KIND_TEXT, type QueueItem } from "../queue";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -79,7 +79,7 @@ function OpenRow({ item, space, state }: { item: QueueItem; space: Space | undef
 function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
   // In a space, its CLAUDE.md proposal has a card of its own under the list.
-  const items = queueOf(state).filter((i) => !spaceId || (i.spaceId === spaceId && i.kind !== "memory"));
+  const items = attentionQueue(state).filter((i) => !spaceId || (i.spaceId === spaceId && i.kind !== "memory"));
   return (
     <>
       {items.map((i) => {
@@ -99,12 +99,12 @@ function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   );
 }
 
-export const waitingIn = (state: State, spaceId: string) => queueOf(state).filter((i) => i.spaceId === spaceId && !i.low).length;
+export const waitingIn = (state: State, spaceId: string) => attentionQueue(state).filter((i) => i.spaceId === spaceId && !i.low).length;
 
 // At the top of a space: what's waiting on Nakul there, answered right where the work is.
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
   const count = waitingIn(state, spaceId);
-  if (!queueOf(state).some((i) => i.spaceId === spaceId && i.kind !== "memory")) return null;
+  if (!attentionQueue(state).some((i) => i.spaceId === spaceId && i.kind !== "memory")) return null;
   return (
     <>
       <h2>
@@ -124,7 +124,7 @@ export const needsCount = (state: State) => needsYouCount(state);
 export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {
   return (
     <div className="list needs-list" ref={listRef}>
-      {queueOf(state).length === 0 ? <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
+      {attentionQueue(state).length === 0 ? <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
     </div>
   );
 }

@@ -1495,9 +1495,8 @@ class StoppedEarly extends Error {}
 // Whether a writer turn already finished on this task, so a fresh session has progress to be told about.
 const hadTurn = (task: Task): boolean => task.loop !== null && (task.loop.said !== null || task.loop.checkedSha !== null);
 
-// Which tier's Claude model a run uses: review judges and an explanation only reads, and a writer the user had to
-// unstick after a pause goes on with the strong model. The first-run sample runs everything on the cheap tier, so
-// its cost up front holds.
+// Review and a writer the user had to unstick get the strong model, an explanation the cheap one. The first-run sample
+// runs entirely on the cheap tier, because Get started quotes its cost before it starts. Exported for its tests.
 export function tierFor(task: Task, explaining: boolean, sample: boolean): Tier {
   if (sample) return "cheap";
   if (task.kind === "review") return "strong";
