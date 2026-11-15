@@ -1,4 +1,4 @@
-import { SearchCheck } from "lucide-react";
+import { SearchCheck, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { post, type State } from "../api";
 import { showToast } from "../toast";
@@ -119,9 +119,16 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
 
 // What the checks said and what the reviewer said, as two chips that never cut each other off: each keeps its whole
 // text and wraps to a line of its own when the row is narrow.
-export function Chips({ chips }: { chips: NonNullable<ReturnType<typeof reviewChips>> }) {
+// `attention` adds a third: "Look closely", with what to look at on hover.
+export function Chips({ chips, attention = null }: { chips: NonNullable<ReturnType<typeof reviewChips>>; attention?: string | null }) {
   return (
     <span className="chips">
+      {attention && (
+        <span className="chip waiting" title={attention} aria-label={attention}>
+          <TriangleAlert />
+          Look closely
+        </span>
+      )}
       <span className={`chip${chips.checks.tone ? ` ${chips.checks.tone}` : ""}`}>{chips.checks.text}</span>
       {chips.review && (
         <span className={`chip${chips.review.tone ? ` ${chips.review.tone}` : ""}`}>

@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ChangesList } from "../../src/dashboard/components/ChangesView";
 import { LoopPanel } from "../../src/dashboard/components/LoopPanel";
-import { MemoryProposals } from "../../src/dashboard/components/Memory";
+import { MemoryProposal } from "../../src/dashboard/components/Memory";
 import { RetroCard, RollupCard } from "../../src/dashboard/components/Retro";
 import { spotLink, WalkthroughCard } from "../../src/dashboard/components/Walkthrough";
 import type { DiffResult } from "../../src/engine/diff-parse";
@@ -184,7 +184,7 @@ test("a proposed CLAUDE.md line is shown exactly, edited, and accepted with the 
   const { state, space } = setup({});
   state.learning.memory = [{ id: "mem_1", spaceId: space.id, taskId: null, source: "steer", line: "Money is cents.", why: 'From your steer on "Cart".', status: "open", branch: null, commitSha: null, createdAt: 1 }];
   reply = { lines: 12, budget: 200, missing: false, problem: null };
-  const el = render(<MemoryProposals state={state} space={space} />);
+  const el = render(<MemoryProposal line={state.learning.memory[0]!} space={space} />);
   await settle();
   const input = el.querySelector("input")!;
   expect(input.value).toBe("Money is cents.");

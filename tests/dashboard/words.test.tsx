@@ -80,11 +80,17 @@ test("Home's summary rows: each item's tag is its label and its one button names
   const items = attentionQueue(s);
   expect(rows).toHaveLength(items.length);
   items.forEach((item, i) => {
-    expect(rows[i]!.querySelector(".tag")!.textContent).toBe(KIND[item.kind].label);
+    // A result's chips say what it is; every other row wears its kind's label.
+    const tag = rows[i]!.querySelector(".tag");
+    if (rows[i]!.querySelector(".chips")) expect(tag).toBeNull();
+    else expect(tag!.textContent).toBe(KIND[item.kind].label);
     const buttons = [...rows[i]!.querySelectorAll("button")];
     expect(buttons).toHaveLength(1);
     expect(buttons[0]!.textContent).toBe(goTo(item.kind));
   });
+  // Low-priority items sit under their own divider, so the heading's count is the rows above it.
+  const order = [...el.querySelector(".needs-list")!.children].map((c) => (c.classList.contains("low-head") ? "divider" : "row"));
+  expect(order.indexOf("divider")).toBe(items.filter((i) => !i.low).length);
   // Nothing is decided from a summary.
   expect(el.querySelector('[data-act="approve"], [data-act="send-back"]')).toBeNull();
 });

@@ -37,5 +37,8 @@ export const KIND: Record<QueueKind, { label: string; action: string }> = {
   shape: { label: "Could split", action: "Split instead" },
 };
 
+// A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.
+export const taskLabel = (w: TaskWord): string => TASK_WORD[w][0]!.toUpperCase() + TASK_WORD[w].slice(1);
+
 // A row's way to the item's screen in Needs you: its action, marked as leading somewhere rather than doing it.
 export const goTo = (kind: QueueKind): string => `${KIND[kind].action}…`;

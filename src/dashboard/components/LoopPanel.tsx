@@ -128,13 +128,15 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
         className="hint-form"
         onSubmit={(e) => {
           e.preventDefault();
+          // Pressed with nothing written, it goes to the box rather than looking unavailable.
           if (hint.trim()) void act("hint", { note: hint.trim() });
+          else e.currentTarget.querySelector("textarea")?.focus();
         }}
       >
         <textarea rows={2} aria-label="Hint for the agent" placeholder="What should it try, or what is it missing?" value={hint} onChange={(e) => setHint(e.target.value)} />
         <div className="acts">
           {/* A pause's one primary step, named as on every surface (engine/words.ts); the diagnosis is the other way on. */}
-          <button className="btn p" type="submit" disabled={busy || !hint.trim()}>
+          <button className="btn p" type="submit" disabled={busy}>
             <Lightbulb />
             {KIND.paused.action}
           </button>

@@ -3297,8 +3297,6 @@ kbd {
   margin-right: 4px;
   font-size: var(--fs-xs);
   font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
   color: var(--dim);
 }
 .q-kind.k-review {
@@ -4450,4 +4448,36 @@ kbd {
 }
 .item.task .task-open .tag {
   flex: none;
+}
+
+/* Low-priority items: their own group under the counted ones, dimmed, so the heading's count is the rows above. */
+.low-head {
+  padding: 6px 14px;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.low-head ~ .entry .item {
+  opacity: 0.85;
+}
+
+/* A task waiting on you: who ran it, its history and runs fold under one disclosure. */
+.task-more > summary {
+  cursor: pointer;
+  color: var(--dim);
+  font-size: var(--fs-sm);
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+.task-more[open] > summary {
+  margin-bottom: 8px;
+}
+.task-more > summary::before {
+  content: "▸";
+  margin-right: 6px;
+}
+.task-more[open] > summary::before {
+  content: "▾";
 }

@@ -1,4 +1,4 @@
-import { ChevronRight, Inbox, TriangleAlert } from "lucide-react";
+import { ChevronRight, Inbox } from "lucide-react";
 import type { Ref } from "react";
 import type { State } from "../api";
 import { navigate } from "../route";
@@ -31,8 +31,8 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
           {title}
           {line && <span>{line}</span>}
         </span>
-        {chips && <Chips chips={chips} />}
-        <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>
+        {/* A result's chips say what it is; anything else wears its kind. */}
+        {chips ? <Chips chips={chips} attention={attention} /> : <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>}
         <div className="acts">
           <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
             {approval ? `${approveText(state, approval)}…` : goTo(item.kind)}
@@ -40,14 +40,6 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
           </button>
         </div>
       </div>
-      {attention && (
-        <div className="outcome-row">
-          <p className="attention" role="note">
-            <TriangleAlert />
-            {attention}
-          </p>
-        </div>
-      )}
       {outcome && (
         <div className="outcome-row">
           <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
@@ -57,16 +49,23 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
   );
 }
 
-// Every item waiting on Nakul, in the queue's order (longest-blocked first). A space shows its share of the same rows.
+// Every item waiting on Nakul, in the queue's order (longest-blocked first), with the low-priority ones as a group of
+// their own under the count's items, so the number in the heading is the rows above the divider, everywhere. A space
+// shows its share of the same rows.
 function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
-  // In a space, its CLAUDE.md proposal has a card of its own under the list.
-  const items = attentionQueue(state).filter((i) => !spaceId || (i.spaceId === spaceId && i.kind !== "memory"));
+  const items = attentionQueue(state).filter((i) => !spaceId || i.spaceId === spaceId);
+  const low = items.filter((i) => i.low);
+  const row = (i: QueueItem) => <SummaryRow key={i.key} item={i} space={i.spaceId ? spaces.get(i.spaceId) : undefined} state={state} />;
   return (
     <>
-      {items.map((i) => (
-        <SummaryRow key={i.key} item={i} space={i.spaceId ? spaces.get(i.spaceId) : undefined} state={state} />
-      ))}
+      {items.filter((i) => !i.low).map(row)}
+      {low.length > 0 && (
+        <div className="low-head" role="separator">
+          Low priority · {low.length}: nothing waits on {low.length === 1 ? "it" : "them"}
+        </div>
+      )}
+      {low.map(row)}
     </>
   );
 }
@@ -77,7 +76,7 @@ export const waitingIn = (state: State, spaceId: string) => attentionQueue(state
 // row below decides it too, so a decision shows once as a summary and once in full.
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
   const count = waitingIn(state, spaceId);
-  if (!attentionQueue(state).some((i) => i.spaceId === spaceId && i.kind !== "memory")) return null;
+  if (!attentionQueue(state).some((i) => i.spaceId === spaceId)) return null;
   return (
     <>
       <h2>

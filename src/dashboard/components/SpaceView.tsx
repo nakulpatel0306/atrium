@@ -1,4 +1,4 @@
-import { TASK_WORD, taskWord } from "../../engine/words";
+import { taskLabel, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
@@ -8,7 +8,7 @@ import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
-import { MemoryProposals, MemorySize } from "./Memory";
+import { MemorySize } from "./Memory";
 import { RetroCard, RollupCard } from "./Retro";
 import { ChecksBadge, LoopPanel } from "./LoopPanel";
 import { CostChip } from "./Shape";
@@ -334,6 +334,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const word = taskWord(task);
+  const waitsOnYou = word === "paused" || word === "review";
   const stuck = word === "stopped" || word === "failed";
   const runs = state.runs.filter((r) => r.taskId === task.id);
   const wait = waitOf(task, state);
@@ -369,12 +370,12 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {wait ? (
             // Still queued: what holds it back is in the tooltip.
             <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
-              {TASK_WORD.queued}
+              {taskLabel("queued")}
             </span>
           ) : (
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
             <span className={`tag${stuck || word === "paused" ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
-              {notDone ?? TASK_WORD[word]}
+              {notDone ?? taskLabel(word)}
             </span>
           )}
         </button>
@@ -433,6 +434,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           ) : (
             space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
           )}
+          <MoreDetails folded={waitsOnYou}>
           <div className="meta">
             <span className="agent-meta">
               Agent
@@ -461,10 +463,22 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </ul>
           )}
           <DeleteTask task={task} />
+          </MoreDetails>
         </div>
       )}
       {error && <div className="row-err err">{error}</div>}
     </div>
+  );
+}
+
+// A task waiting on you leads with the decision; who ran it, when, its history and runs fold under Details.
+function MoreDetails({ folded, children }: { folded: boolean; children: React.ReactNode }) {
+  if (!folded) return <>{children}</>;
+  return (
+    <details className="task-more">
+      <summary>Details: agent, history, runs</summary>
+      {children}
+    </details>
   );
 }
 
@@ -591,8 +605,6 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
       <SpaceNeeds state={state} spaceId={space.id} />
-      {/* A proposed CLAUDE.md line is edited right here; the waiting list above leaves it to this card. */}
-      <MemoryProposals state={state} space={space} />
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />

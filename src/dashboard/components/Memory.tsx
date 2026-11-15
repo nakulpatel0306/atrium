@@ -54,16 +54,3 @@ export function MemoryProposal({ line, space }: { line: MemoryLine; space: Space
     </div>
   );
 }
-
-// The curator's open proposals for a space. Needs you lists them too, as low-priority items that are never counted.
-export function MemoryProposals({ state, space }: { state: State; space: Space }) {
-  const lines = state.learning.memory.filter((m) => m.spaceId === space.id);
-  if (!lines.length) return null;
-  return (
-    <>
-      {lines.map((l) => (
-        <MemoryProposal key={l.id} line={l} space={space} />
-      ))}
-    </>
-  );
-}

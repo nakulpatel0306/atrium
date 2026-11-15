@@ -134,14 +134,13 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
             className="toggle"
             role="switch"
             aria-checked={state.power.overnight}
-            title="Overnight mode"
+            title="Keeps your Mac awake while plugged in and work is queued. Leave the lid open."
             onClick={() => void post("/api/settings", { overnight: !state.power.overnight })}
           >
             <span className="switch" />
             <Moon />
             <span className="label">Overnight mode</span>
           </button>
-          <div className="hint">Keeps your Mac awake while plugged in and work is queued. Leave the lid open.</div>
         </div>
         <div className="row">
           <span>Atrium disk usage</span>
