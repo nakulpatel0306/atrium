@@ -90,7 +90,7 @@ The writer and the checks share a codebase, so tampering can't be made impossibl
 
 ## The reviewer
 
-Once the checks pass (or there are none), a fresh session reviews only the diff and the brief. It knows nothing of the writer's session. The space picks the reviewer:
+Once the checks pass (or there are none), a fresh session reviews only the diff and the brief, and is told which checks Atrium ran and how they came out, so it doesn't ask for a test run that already happened. It knows nothing of the writer's session. The space picks the reviewer:
 
 - **Auto** (the default) uses Codex, then Gemini, when one is installed and allowed in that space, else a fresh Claude session. Private spaces (the default for new spaces) and repos with `.env` files are Claude only.
 - Or pin one agent, or turn review off.
@@ -130,7 +130,7 @@ The engine reads the proposal as untrusted and checks it against the task before
 - Best-of-N needs checks Atrium can run and isn't for small tasks.
 - Anything else becomes one writer, with the engine's reason ("Two of the parts touch the same files, so one writer does it.").
 
-The task shows the reason ("Single writer: sequential change in one module") and, until the writer starts, a one-click change among the shapes the task can take; the ones it can't take say why. Enter always runs at once: **single** and **scouts** run as proposed, and a proposed **split** or **best_of_n**, which cost more, runs as one writer meanwhile, with the proposal on the task as a suggestion and its estimate (the space's recent tasks times the fan-out, or each run's budget as the ceiling): "Could run as 2 parts: … (est. ~$0.04) · Split instead". Nothing waits in **Needs you** for a shape alone. Clicking the suggestion stops the writer, starts the task over from the brief as that shape and then removes the writer's branch (only if it's still where Atrium left it); it's offered until the task reaches review, and a writer that finished before the stop landed keeps its result. The ⌘↩ card offers the same choice before anything runs, and leaving a costlier shape chosen there is the click. Only a user's choice approves a shape: a stored `approved` must be a literal `true`, a shape that reads oddly is no shape, and a task that is itself a part or an attempt never fans out.
+The task shows the reason ("Single writer: sequential change in one module") and, until the writer starts, a one-click change among the shapes the task can take; the ones it can't take say why. Enter always runs at once: **single** and **scouts** run as proposed, and a proposed **split** or **best_of_n**, which cost more, runs as one writer meanwhile, with the proposal on the task as a suggestion and its estimate (the space's recent tasks times the fan-out, or each run's budget as the ceiling): "Could run as 2 parts: … (est. ~$0.04) · Split instead". Nothing waits on a shape alone: while the writer runs, the suggestion is a low-priority item at the end of **Needs you**, never counted. Clicking the suggestion stops the writer, starts the task over from the brief as that shape and then removes the writer's branch (only if it's still where Atrium left it); it's offered until the task reaches review, and a writer that finished before the stop landed keeps its result. The ⌘↩ card offers the same choice before anything runs, and leaving a costlier shape chosen there is the click. Only a user's choice approves a shape: a stored `approved` must be a literal `true`, a shape that reads oddly is no shape, and a task that is itself a part or an attempt never fans out.
 
 ### Scouts
 
@@ -160,7 +160,7 @@ One table in `src/engine/tiers.ts`, changeable under Agents:
 - **default** (empty: whatever model Claude Code is set to): writing.
 - **strong** (`opus`, falling back to `sonnet` when it isn't on the plan): a Claude reviewer, a writer the user had to unstick after a pause (a hint or a retry of a paused task), and the best-of-N judge.
 
-The defaults work on a plain Claude subscription. Codex and Gemini keep their own models. This follows the evidence that cheap models are enough for exploration and summaries and that the strongest model pays off on review and hard debugging (Anthropic's advisor results; Cognition's capability routing).
+The defaults work on a plain Claude subscription. Codex and Gemini keep their own models. The first-run sample task runs every Claude call on the cheap tier, so the cost Get started shows before it runs holds. This follows the evidence that cheap models are enough for exploration and summaries and that the strongest model pays off on review and hard debugging (Anthropic's advisor results; Cognition's capability routing).
 
 ## Cost
 
@@ -207,8 +207,17 @@ When you steer with what reads as a correction (a fixed word rule: "don't", "can
 - **The steer gate and pattern matching are fixed word rules.** A correction worded without those words ("prefer the helper") asks nothing, and a finding about patterns that avoids the matched words never pairs up.
 - **Spots link by file and line from the reviewer's reply.** A line number outside every hunk of that file opens its first hunk.
 
+## You: one queue
+
+Everything that needs you is one queue, defined once in `src/engine/needs.ts` and read by the dashboard, the terminal app, the Mac app's badge and `atrium status`: results to approve or send back, questions, a brief's questions, a split's parts or best-of-N's attempts to decide on, a split with a part that stopped, and budget or loop pauses. CLAUDE.md proposals and a running task's suggested split or best-of-N are listed too, last, as low-priority items that are never counted. The queue runs longest-blocked first, with ties grouped by space.
+
+**Needs you** shows the queue beside one screen per item with everything needed to decide: the brief, the checks and the end of any failing output, attention notes, each review finding and how it was answered, the walkthrough, the retro and the way into the diff. The keys are j and k to move, Enter to open, a to approve, s to send back with a note, x to stop a running task, e for "Explain the problem instead" on a paused one, Shift-A for every clean result at once, and ? for the list; the terminal app's Home works the same way. An approval can be taken back from its toast for a minute, while nothing else has happened to the task.
+
+Several results can be approved in one go only when each is clean: checks passed, no attention notes, nothing unverified, every review finding fixed and no review that failed to happen. Anything else is never offered there, its Approve button reads "Approve anyway", and the engine checks each again before it approves. The Changes view shows all of a task's changes or one turn's commit on its own, unified or side by side.
+
 ## Where it lives
 
+- `src/engine/needs.ts`: what needs you, the queue's order and what can be approved together; `sample.ts`: the first-run sample.
 - `src/engine/brief.ts`, `brief-draft.ts`: the brief and its pre-pass.
 - `src/engine/checks/`: detection (`detect.ts`), the sandboxed runs and what they prove (`run.ts`, `sandbox.ts`), the check checkout, base results and install (`gate.ts`), and the attention notes (`attention.ts`).
 - `src/engine/loop.ts`: loop state, budgets and loop detection.
