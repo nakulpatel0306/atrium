@@ -3610,6 +3610,23 @@ kbd {
 .brief-q .opts input {
   flex: 1;
   min-width: 140px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 3px 8px;
+  outline: none;
+}
+.brief-q .opts input:focus {
+  border-color: var(--accent);
+}
+.brief-qs > .acts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
 }
 .brief-hints {
   list-style: none;
@@ -4052,14 +4069,22 @@ kbd {
 @container main (max-width: 640px) {
   .needs-list .item {
     flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .needs-list .item .who {
+    display: none;
   }
   .needs-list .item .t {
-    flex-basis: calc(100% - 140px);
+    flex: 1 1 calc(100% - 24px);
   }
   .needs-list .item .acts {
+    flex-wrap: wrap;
+    justify-content: flex-end;
     margin-left: auto;
   }
   .needs-list .review-line {
     order: 3;
+    flex: 1 1 100%;
+    white-space: normal;
   }
 }
