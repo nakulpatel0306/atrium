@@ -116,6 +116,12 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
             : `Atrium won't suggest a rule for ${intent.label} again.`,
       );
     }
+    case "explain":
+      return said(await client.post(`/api/tasks/${enc(intent.taskId)}/explain`), () => `Asked for the diagnosis of "${intent.title}". It reads the branch without trying again.`);
+    case "memory": {
+      const res = await client.post(`/api/memory/${enc(intent.lineId)}`, intent.accept ? { action: "accept", line: intent.line } : { action: "dismiss" });
+      return said(res, () => (intent.accept ? "Added the line to CLAUDE.md in a commit of its own." : "Dropped the proposed line."));
+    }
     case "openFile": {
       const res = await client.post<{ app: string }>(`/api/spaces/${enc(intent.spaceId)}/file/open`, { path: intent.path, how: intent.how });
       return said(res, (d) => (intent.how === "reveal" ? `Showing ${intent.name} in Finder.` : `Opened a copy of ${intent.name} in ${d.app}.`));

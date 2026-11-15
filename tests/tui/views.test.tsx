@@ -81,7 +81,7 @@ test("help lists every key", async () => {
   await app.frame((f) => f.includes("1 Home"));
   await app.type("?");
   const f = await app.frame((f) => f.includes("send back"));
-  for (const s of ["approve", "send back", "text: send, edit, skip", "transcript", "agents and usage", "switch tab", "type in the Ask box", "stop running task"]) expect(f).toContain(s);
+  for (const s of ["approve", "send back", "explain a paused task's problem", "transcript", "agents and usage", "switch tab", "type in the Ask box", "stop running task"]) expect(f).toContain(s);
   await app.type("?");
   await app.frame((f) => !f.includes("agents and usage"));
   await app.type("2", "?");

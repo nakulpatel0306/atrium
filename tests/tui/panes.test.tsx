@@ -99,6 +99,9 @@ test("an Atrium-wide repo question shows as Atrium's and approves with a", async
   state.repoActions = [{ id: "rpa_1", approvalId: "apr_repo", kind: "create", draft: { name: "demo", description: "d", visibility: "private", template: "bun-ts" }, path: "/p/demo", folderTaken: false, github: null, pickedUp: false, bytes: null }];
   const client = fakeClient(state);
   const app = openApp(client);
+  await app.frame((f) => f.includes('Create GitHub repo "demo"?'));
+  // The queue runs longest-waiting first, so the question asked just now is after the older review.
+  await app.type("j");
   await app.frame((f) => f.includes('? Create GitHub repo "demo"?') && /Atrium\s+·\s+asks you/.test(f));
   await app.type(KEY.enter);
   await app.frame((f) => f.includes("Edit the fields in the dashboard. a approves them as shown."));
