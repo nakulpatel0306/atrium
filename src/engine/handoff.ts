@@ -61,6 +61,16 @@ export function reviewPrompt(task: Task, diff: string, learning: Learning = "off
   ].join("\n\n");
 }
 
+// The diff a review prompt carries, between its own fence, and nothing else from the prompt: the brief, the attention
+// notes and check output around it may hold lines that look like a diff's file headers.
+export function fencedDiff(prompt: string): string {
+  const fence = /--- end of diff ([0-9a-f]{12}) ---\s*$/.exec(prompt)?.[1];
+  if (!fence) return "";
+  const open = `--- diff ${fence} ---\n`;
+  const start = prompt.indexOf(open);
+  return start < 0 ? "" : prompt.slice(start + open.length, prompt.lastIndexOf(`\n--- end of diff ${fence} ---`));
+}
+
 // The next review round of a work task's branch, run by the space's reviewer: "auto" lets the runner pick one
 // from another vendor at launch.
 export function startReview(db: Database, task: Task, space: Space, diff: ReviewDiff): Task {
@@ -94,7 +104,7 @@ export function recordReview(db: Database, reviewTask: Task, reviewer: string, r
     const learning = getSpace(db, parent.spaceId)?.learning ?? "off";
     if (learning !== "off") {
       const opts = { by: reviewer, source: "review" as const, sha: parent.loop.reviewedSha, deep: learning === "deep" };
-      walkthrough = parseWalkthrough(summary, diffFiles(reviewTask.detail), opts) ?? walkthrough;
+      walkthrough = parseWalkthrough(summary, diffFiles(fencedDiff(reviewTask.detail)), opts) ?? walkthrough;
     }
     // The walkthrough shows on its own card, so the thread keeps the review itself.
     addMessage(db, { ...thread, fromAgent: reviewer, toAgent: resolvedAgent(db, parent), body: withoutWalkthrough(summary) });

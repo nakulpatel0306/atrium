@@ -69,6 +69,9 @@ function spot(rest: string, files: ReadonlySet<string>): Spot | null {
   return { file, line: line !== null && line > 0 && line < 10_000_000 ? line : null, note };
 }
 
+// A wrapped approach ends at a full stop, question or exclamation mark, closing quote or bracket included.
+const endsSentence = (text: string) => /[.!?]["'”’)\]]?$/.test(text.trim());
+
 // Reads the walkthrough lines out of a reply; null when there's no approach, which means the writer of the reply
 // didn't (or couldn't) give one. `files` are the paths the diff changed.
 export function parseWalkthrough(text: string, files: Iterable<string>, opts: { by: string; source: Walkthrough["source"]; sha: string | null; deep: boolean }): Walkthrough | null {
@@ -84,9 +87,11 @@ export function parseWalkthrough(text: string, files: Iterable<string>, opts: { 
   for (const raw of text.split("\n")) {
     const m = LINE.exec(raw);
     if (!m) {
-      // A model that wraps its approach keeps going on the next lines, up to a blank one.
-      if (inApproach && raw.trim()) approach += ` ${raw.trim()}`;
-      else inApproach = false;
+      // A model that wraps its approach keeps going on the next lines, until a blank line or the end of a sentence.
+      if (inApproach && raw.trim()) {
+        approach += ` ${raw.trim()}`;
+        inApproach = !endsSentence(approach);
+      } else inApproach = false;
       continue;
     }
     inApproach = false;
@@ -94,7 +99,7 @@ export function parseWalkthrough(text: string, files: Iterable<string>, opts: { 
     const rest = m[2]!.trim();
     if (key === "APPROACH" && !approach && rest) {
       approach = rest;
-      inApproach = true;
+      inApproach = !endsSentence(rest);
     } else if (key === "DECISION" && rest && decisions.length < ITEMS_MAX) {
       const [chose, rejected] = rest.split(/\s*[|;,]?\s+REJECTED\b:?\s*/i);
       if (chose) decisions.push({ chose: cap(chose.trim(), NOTE_MAX), rejected: rejected?.trim() ? cap(rejected.trim(), NOTE_MAX) : null });
@@ -121,16 +126,21 @@ export function parseWalkthrough(text: string, files: Iterable<string>, opts: { 
 // The reply without its walkthrough lines, for the agent thread: the card shows them.
 export function withoutWalkthrough(text: string): string {
   const out: string[] = [];
-  let inApproach = false;
+  // The approach's wrapped lines, by the same rule parseWalkthrough reads them with, so commentary after it stays.
+  let approach: string | null = null;
   for (const raw of text.split("\n")) {
     const m = LINE.exec(raw);
     const key = m?.[1]!.toUpperCase();
     if (key && ["APPROACH", "DECISION", "RISK", "LOOK", "PREDICT", "OPTION", "ANSWER"].includes(key)) {
-      inApproach = key === "APPROACH";
+      approach = key === "APPROACH" && !endsSentence(m![2]!.trim()) ? m![2]!.trim() : null;
       continue;
     }
-    if (inApproach && raw.trim() && !m) continue;
-    inApproach = false;
+    if (approach !== null && raw.trim() && !m) {
+      approach += ` ${raw.trim()}`;
+      if (endsSentence(approach)) approach = null;
+      continue;
+    }
+    approach = null;
     out.push(raw);
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { claudeAdapter } from "../../src/engine/agents/claude";
-import { recordReview, reviewPrompt, startReview } from "../../src/engine/handoff";
+import { fencedDiff, recordReview, reviewPrompt, startReview } from "../../src/engine/handoff";
 import { listMessages } from "../../src/engine/messages";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { getSpace, updateSpace } from "../../src/engine/spaces";
@@ -58,6 +58,12 @@ describe("reading a walkthrough", () => {
     expect(thread).not.toMatch(/^(APPROACH|DECISION|RISK|LOOK|PREDICT|OPTION|ANSWER)\b/m);
   });
 
+  test("a wrapped approach ends with its sentence, and the reviewer's own words after it stay in the thread", () => {
+    const reply = "APPROACH It adds a guard\nthat clamps the coupon.\nThis is extra review commentary.\nVERDICT: approve";
+    expect(parseWalkthrough(reply, FILES, opts)!.approach).toBe("It adds a guard that clamps the coupon.");
+    expect(withoutWalkthrough(reply)).toBe("This is extra review commentary.\nVERDICT: approve");
+  });
+
   test("a stored walkthrough is read field by field", () => {
     const w = parseWalkthrough(REVIEW, FILES, opts)!;
     expect(storedWalkthrough(JSON.parse(JSON.stringify(w)))).toEqual(w);
@@ -94,6 +100,18 @@ describe("the reviewer's pass", () => {
     expect([w.by, w.source, w.sha, w.look.length]).toEqual(["codex", "review", "sha1", 3]);
     expect(recorded.parent.loop!.tally!.reviewRounds).toBe(1);
     expect(listMessages(h.db, t.id).at(-1)!.body).not.toContain("APPROACH");
+  });
+
+  test("where to look links only to files in the review's own diff, not to a file the brief or a note names", () => {
+    const s = updateSpace(h.db, h.space(h.repo()).id, { reviewBy: "codex" });
+    const t = createTask(h.db, { spaceId: s.id, title: "Coupons", detail: "Context:\ndiff --git a/../../etc/passwd b/x" });
+    setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.small), stage: "review", attention: ["diff --git a/secret.txt b/secret.txt"] });
+    const review = startReview(h.db, getTask(h.db, t.id)!, s, { diff: "diff --git a/src/cart.ts b/src/cart.ts\n+x\n", files: 1, truncated: false });
+    expect(fencedDiff(review.detail)).toBe("diff --git a/src/cart.ts b/src/cart.ts\n+x\n");
+    const reply = "APPROACH It adds a guard.\nLOOK ../../etc/passwd:1 read this\nLOOK secret.txt:1 and this\nLOOK src/cart.ts:1 the guard\nVERDICT: approve";
+    const w = recordReview(h.db, review, "codex", { status: "ok", summary: reply, inputTokens: 1, outputTokens: 1 })!.parent.loop!.walkthrough!;
+    expect(w.look.map((l) => l.file)).toEqual(["src/cart.ts"]);
+    expect(fencedDiff("no fence here")).toBe("");
   });
 
   test("with learning off the reply's walkthrough lines are ignored", () => {
