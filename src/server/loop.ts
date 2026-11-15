@@ -16,6 +16,7 @@ import { recordUsage } from "../engine/usage";
 import { lastRepoRun } from "../engine/runner";
 import { ChangesRefused, taskChanges } from "../engine/changes";
 import { explainHunk } from "../engine/explain-hunk";
+import { acceptLine, dismissLine, MemoryRefused, memoryFile } from "../engine/memory";
 import { answerPredict, needsWalkthrough, writeWalkthrough } from "../engine/walkthrough-run";
 import { HttpError, json, readBody, str } from "./http";
 
@@ -321,6 +322,31 @@ export async function loopRoute(
     } catch (e) {
       throw new HttpError(502, (e as Error).message);
     }
+  }
+
+  // The repo's CLAUDE.md against its budget, for space settings and the curator's card.
+  const memFileM = method === "GET" ? pathname.match(/^\/api\/spaces\/([^/]+)\/memory$/) : null;
+  if (memFileM) {
+    const space = getSpace(db, memFileM[1]!);
+    if (!space) throw new HttpError(404, "No such space.");
+    if (space.kind !== "repo" || !space.repoPath) return json(null);
+    const { text: _, ...size } = memoryFile(space.repoPath);
+    return json(size);
+  }
+
+  // The user's answer to a proposed CLAUDE.md line: Accept with the text as they left it, which the engine commits,
+  // or Dismiss.
+  const memM = method === "POST" ? pathname.match(/^\/api\/memory\/([^/]+)$/) : null;
+  if (memM) {
+    const b = await readBody(req);
+    try {
+      if (b.action === "accept") return json(await acceptLine(db, memM[1]!, str(b.line, "line")));
+      if (b.action === "dismiss") return json(dismissLine(db, memM[1]!));
+    } catch (e) {
+      if (e instanceof MemoryRefused) throw new HttpError(409, e.message);
+      throw new HttpError(409, `Atrium couldn't add the line: ${(e as Error).message}`);
+    }
+    throw new HttpError(400, "action must be accept or dismiss.");
   }
 
   // One read-only run that says what's wrong, instead of another attempt; the task stays paused after it.

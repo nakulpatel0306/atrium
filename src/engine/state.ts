@@ -19,6 +19,7 @@ import { type Tier, TIER_DEFAULTS, TIER_JOBS, TIERS, tierModel } from "./tiers";
 import { hasOldData, OLD_DATA_DISMISSED } from "./old-data";
 import { type Attachment, claimedAttachments } from "./attachments";
 import { type Retro, type Rollup, retros, rollup } from "./retro";
+import { type MemoryLine, openLines } from "./memory";
 
 export type RunSummary = {
   id: string;
@@ -83,8 +84,8 @@ export type State = {
   // Whether removed features left data behind (see old-data.ts), and whether Home's notice about it was put off.
   oldData: { present: boolean; dismissed: boolean };
   // The learning features (docs/loop.md, Learning): each finished task's director retro, this week's roll-up by space
-  // and for everything ("all"; a key is missing until there's enough data).
-  learning: { retros: Record<string, Retro>; rollups: Record<string, Rollup> };
+  // and for everything ("all"; a key is missing until there's enough data), and open CLAUDE.md proposals.
+  learning: { retros: Record<string, Retro>; rollups: Record<string, Rollup>; memory: MemoryLine[] };
 };
 
 export type RepoActionView = {
@@ -158,7 +159,7 @@ function learningView(db: Database, tasks: Task[], now: number): State["learning
     const r = rollup(db, tasks, key, now);
     if (r) rollups[key ?? "all"] = r;
   }
-  return { retros: retros(db, tasks), rollups };
+  return { retros: retros(db, tasks), rollups, memory: openLines(db) };
 }
 
 export function snapshot(db: Database, registry?: Registry): State {

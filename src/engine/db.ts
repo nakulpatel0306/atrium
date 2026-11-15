@@ -206,6 +206,21 @@ CREATE TABLE IF NOT EXISTS hunk_notes (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS hunk_notes_task ON hunk_notes(task_id);
+-- One-line CLAUDE.md additions the curator proposed, and what the user did with each (memory.ts).
+CREATE TABLE IF NOT EXISTS memory_lines (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id),
+  task_id TEXT REFERENCES tasks(id),
+  source TEXT NOT NULL,
+  line TEXT NOT NULL,
+  why TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  branch TEXT,
+  commit_sha TEXT,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS memory_lines_space ON memory_lines(space_id, status);
 CREATE TABLE IF NOT EXISTS rule_events (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),

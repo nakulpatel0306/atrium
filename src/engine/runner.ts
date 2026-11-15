@@ -67,6 +67,7 @@ import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./sh
 import { childrenOf, childState, deleteChildBranches, fanIn, fanOut, judgePrompt, keptNote, parseScores } from "./fanout";
 import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
 import { needsWalkthrough, writeWalkthrough } from "./walkthrough-run";
+import { type Evidence, noticePatterns, proposeLine, steerEvidence } from "./memory";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -994,6 +995,7 @@ export function createRunner(deps: {
     appendTaskDetail(db, task.id, `\n\n${steerBlock(note)}`);
     const loop = getTask(db, task.id)?.loop;
     if (loop) setTaskLoop(db, task.id, { ...loop, tally: { ...loop.tally, steers: loop.tally.steers + 1 } });
+    curate(task, () => steerEvidence(task, note));
     setTaskStatus(db, task.id, "queued");
     steeredBySteer.add(task.id);
     const flat = note.replace(/\s+/g, " ");
@@ -1397,6 +1399,7 @@ export function createRunner(deps: {
     const recorded = recordReview(db, review, reviewer, result);
     if (!recorded) return;
     const { parent, round } = recorded;
+    curate(parent, () => noticePatterns(db, parent, parent.loop!.reviews.length, round.findings));
     const space = getSpace(db, parent.spaceId);
     const loop = parent.loop!;
     if (!space) return;
@@ -1409,6 +1412,15 @@ export function createRunner(deps: {
       return;
     }
     await ready(parent, space, [...loop.report, ...loopNotes(loop, space)]);
+  }
+
+  // A correction or a repeated review finding may be worth one line in the repo's CLAUDE.md; the curator proposes it
+  // in the background, and only the user's Accept writes it.
+  function curate(task: Task, evidence: () => Evidence | null) {
+    const space = getSpace(db, task.spaceId);
+    if (!adapters.claude || space?.kind !== "repo" || space.learning === "off") return;
+    const found = evidence();
+    if (found) void proposeLine(db, adapters.claude, { space, task, ...found }).catch(report);
   }
 
   // What the agent said was wrong goes on the task, which stays paused for a hint.

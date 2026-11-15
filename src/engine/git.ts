@@ -891,3 +891,53 @@ export async function deleteAtriumBranch(path: string, branch: string): Promise<
   if (!branch.startsWith("atrium/")) return false;
   return (await git(path, ["branch", "-D", "--", branch])).code === 0;
 }
+
+// A commit that adds one line to the end of `file` on top of `tip`, made without touching any checkout: the blob is
+// hashed without filters and the tree built in a throwaway index. Signed like the engine's merges when the repo signs
+// its commits. The file must be a plain file at `tip` (or missing, when it's created) and at most `cap` bytes.
+// Returns the new commit; moving a branch to it is the caller's.
+export async function appendLineCommit(path: string, tip: string, file: string, line: string, message: string, cap = 256 * 1024): Promise<string> {
+  const entry = await git(path, ["ls-tree", "-z", tip, "--", file]);
+  if (entry.code !== 0) throw new Error(`Couldn't read ${file}: ${entry.err.trim()}`);
+  const mode = entry.out ? entry.out.slice(0, entry.out.indexOf(" ")) : null;
+  if (mode !== null && mode !== "100644" && mode !== "100755") throw new Error(`${file} isn't a plain file in this repo, so Atrium won't change it.`);
+  let text = "";
+  if (mode) {
+    const size = await git(path, ["cat-file", "-s", `${tip}:${file}`]);
+    if (size.code !== 0 || Number(size.out.trim()) > cap) throw new Error(`${file} is too large for Atrium to change (over ${Math.round(cap / 1024)} KB).`);
+    text = (await fileAt(path, tip, file, cap)).text;
+  }
+  const next = `${text}${text && !text.endsWith("\n") ? "\n" : ""}${line}\n`;
+  const blob = await git(path, ["hash-object", "-w", "--no-filters", "--stdin"], undefined, { stdin: next });
+  if (blob.code !== 0) throw new Error(`Couldn't write ${file}: ${blob.err.trim()}`);
+  const dir = mkdtempSync(join(tmpdir(), "atrium-index-"));
+  try {
+    const env = { GIT_INDEX_FILE: join(dir, "index") };
+    const steps: string[][] = [
+      ["read-tree", tip],
+      ["update-index", "--add", "--cacheinfo", `${mode ?? "100644"},${blob.out.trim()},${file}`],
+    ];
+    for (const args of steps) {
+      const res = await git(path, args, undefined, { env });
+      if (res.code !== 0) throw new Error(`Couldn't build the commit: ${res.err.trim()}`);
+    }
+    const tree = await git(path, ["write-tree"], undefined, { env });
+    if (tree.code !== 0) throw new Error(`Couldn't build the commit: ${tree.err.trim()}`);
+    const signs = (await git(path, ["config", "--bool", "commit.gpgsign"])).out.trim() === "true";
+    const commit = await git(path, [...(await signingPins(path)), "commit-tree", ...(signs ? ["-S"] : []), tree.out.trim(), "-p", tip, "-m", message]);
+    if (commit.code !== 0) {
+      const why = (commit.err || commit.out).trim();
+      throw new Error(signs ? `Couldn't sign the commit, and this repo signs its commits, so nothing changed: ${why}` : `Couldn't commit: ${why}`);
+    }
+    return commit.out.trim();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Moves an Atrium branch from `from` to `to`, only if nothing moved it meanwhile.
+export async function moveAtriumBranch(path: string, branch: string, to: string, from: string): Promise<void> {
+  if (!branch.startsWith("atrium/")) throw new Error(`Invalid branch name: ${branch}`);
+  const res = await git(path, ["update-ref", `refs/heads/${branch}`, to, from]);
+  if (res.code !== 0) throw new Error(`${branch} moved while Atrium was adding to it. Try again.`);
+}

@@ -7,6 +7,7 @@ import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
+import { MemoryProposals, MemorySize } from "./Memory";
 import { RetroCard, RollupCard } from "./Retro";
 import { ChecksBadge, LoopPanel } from "./LoopPanel";
 import { CostChip } from "./Shape";
@@ -111,6 +112,7 @@ function LoopSettings({ space }: { space: Space }) {
         </select>
       </label>
       <span className="hint">{LEARNING_HINT[space.learning]}</span>
+      <MemorySize space={space} version={space.updatedAt} />
       <button className="btn link subtle" aria-expanded={open} onClick={() => setOpen(!open)}>
         Checks and budget
       </button>
@@ -569,6 +571,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
       <SpaceNeeds state={state} spaceId={space.id} />
+      <MemoryProposals state={state} space={space} />
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />

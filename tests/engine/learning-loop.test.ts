@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { openLines } from "../../src/engine/memory";
 import { APPROACH_FIRST } from "../../src/engine/runner";
 import { updateSpace } from "../../src/engine/spaces";
 import { createTask } from "../../src/engine/tasks";
@@ -66,4 +67,21 @@ test("the tally counts turns sent back for failing checks, a check that broke af
   h.start({ claude: claude.adapter });
   await waitFor(() => h.status(t.id) === "review", 15_000);
   expect(h.task(t.id).loop!.tally).toEqual({ steers: 0, checkFails: 1, lateFails: 1, reviewRounds: 1 });
+});
+
+test("the same kind of pattern finding on two tasks brings one proposed CLAUDE.md line, never more", async () => {
+  const s = updateSpace(h.db, h.space(h.repo(), { reviewBy: "claude" }).id, { learning: "light" });
+  const review = "FINDING medium work.txt:1 Doesn't match the error handling used elsewhere in the module\nVERDICT: approve";
+  const claude = agents(["pass"], [review], "LINE Return errors as Result values, as the rest of the module does.");
+  h.start({ claude: claude.adapter });
+  const a = createTask(h.db, { spaceId: s.id, title: "First" });
+  await waitFor(() => h.status(a.id) === "review");
+  expect(claude.calls.some((c) => isMemory(c.systemPrompt))).toBe(false);
+  const b = createTask(h.db, { spaceId: s.id, title: "Second" });
+  await waitFor(() => h.status(b.id) === "review");
+  await waitFor(() => openLines(h.db).length === 1);
+  expect(openLines(h.db)[0]).toMatchObject({ source: "review", line: "Return errors as Result values, as the rest of the module does.", why: "The reviewer flagged this kind of mismatch twice." });
+  const ask = claude.calls.find((c) => isMemory(c.systemPrompt))!;
+  expect(ask.allowedTools).toEqual([]);
+  expect(ask.prompt).toContain('On "First"');
 });

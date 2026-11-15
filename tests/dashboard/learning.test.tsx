@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ChangesList } from "../../src/dashboard/components/ChangesView";
 import { LoopPanel } from "../../src/dashboard/components/LoopPanel";
+import { MemoryProposals } from "../../src/dashboard/components/Memory";
 import { RetroCard, RollupCard } from "../../src/dashboard/components/Retro";
 import { spotLink, WalkthroughCard } from "../../src/dashboard/components/Walkthrough";
 import type { DiffResult } from "../../src/engine/diff-parse";
@@ -167,4 +168,21 @@ test("the retro and the roll-up show only the measured lines the engine sent", (
   expect(el.textContent).toContain("Next time: Nothing stood out");
   expect(el.textContent).toContain("What paid off this weekmeasured on 5 finished tasks");
   expect(el.querySelectorAll(".rollup")).toHaveLength(1);
+});
+
+test("a proposed CLAUDE.md line is shown exactly, edited, and accepted with the user's text", async () => {
+  const { state, space } = setup({});
+  state.learning.memory = [{ id: "mem_1", spaceId: space.id, taskId: null, source: "steer", line: "Money is cents.", why: 'From your steer on "Cart".', status: "open", branch: null, commitSha: null, createdAt: 1 }];
+  reply = { lines: 12, budget: 200, missing: false, problem: null };
+  const el = render(<MemoryProposals state={state} space={space} />);
+  await settle();
+  const input = el.querySelector("input")!;
+  expect(input.value).toBe("Money is cents.");
+  expect(el.textContent).toContain("CLAUDE.md: 12 of 200 lines");
+  // happy-dom's inputs don't trip React's change tracking, so typing goes straight to the input's onChange.
+  const key = Object.keys(input).find((k) => k.startsWith("__reactProps$"))!;
+  act(() => (input as unknown as Record<string, { onChange: (e: { target: { value: string } }) => void }>)[key]!.onChange({ target: { value: "Money is integer cents." } }));
+  act(() => button(el, "Add it")!.click());
+  await settle();
+  expect(calls.at(-1)).toEqual({ url: "/api/memory/mem_1", body: { action: "accept", line: "Money is integer cents." } });
 });

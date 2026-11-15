@@ -69,6 +69,7 @@ function fullSpace(name: string): { space: Space; task: string; review: string; 
   recordRunFiles(db, { runId: run, taskId: task, spaceId: space.id, root: "space" }, [{ path: "list.md", change: "created", size: 4 }]);
   recordUsage(db, { taskId: task, spaceId: space.id, agent: "claude", purpose: "write", models: [{ model: "claude-sonnet-5-5", inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }] });
   db.query("INSERT INTO hunk_notes (hash, id, task_id, space_id, note, created_at) VALUES (?, ?, ?, ?, 'why', 0)").run(newId("h"), newId("hnk"), task, space.id);
+  db.query("INSERT INTO memory_lines (id, space_id, task_id, source, line, created_at) VALUES (?, ?, ?, 'steer', 'Use bun.', 0)").run(newId("mem"), space.id, task);
   const repoApproval = createApproval(db, { spaceId: null, kind: "question", title: "Create repo?", detail: "", alwaysAsk: "create_repo" });
   db.query("INSERT INTO repo_actions (id, kind, status, approval_id, space_id, created_at, updated_at) VALUES (?, 'create', 'done', ?, ?, ?, ?)").run(newId("rpa"), repoApproval.id, space.id, now, now);
   ensureSpaceFolder(db, space);

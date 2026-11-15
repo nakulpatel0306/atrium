@@ -341,7 +341,7 @@ test("an older database gains the learning dial, read as light, and the learning
   old.close();
   const db = openDb(path);
   const names = (db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name);
-  expect(names).toEqual(expect.arrayContaining(["hunk_notes"]));
+  expect(names).toEqual(expect.arrayContaining(["hunk_notes", "memory_lines"]));
   expect(getSpace(db, "spc_a")!.learning).toBe("light");
   db.query("UPDATE spaces SET learning = 'nonsense' WHERE id = 'spc_a'").run();
   expect(getSpace(db, "spc_a")!.learning).toBe("light");
