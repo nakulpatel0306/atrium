@@ -8,17 +8,23 @@ import { HttpError, json } from "./http";
 const OVERHEAD = 1024 * 1024;
 // The engine's whole request cap: the biggest upload allowed plus its overhead. Nothing else sends more than a few MB.
 export const MAX_BODY_BYTES = MAX_TOTAL_BYTES + OVERHEAD;
+// The most a file part's own boundary and headers take, with a long name.
+const PART_HEADERS = 1024;
 const TOO_BIG = "Those files add up to more than 100 MB, the most one task can carry.";
 
 export const isMultipart = (req: Request) => (req.headers.get("content-type") ?? "").toLowerCase().startsWith("multipart/form-data");
 
 // The text fields and files of a multipart body. Its length must be stated, and is refused before reading when it's
 // too big; Bun's body cap (MAX_BODY_BYTES) stops one that understates it.
-export async function readUploads(req: Request): Promise<{ fields: Record<string, string>; files: Upload[] }> {
+// `filesOnly`: a body that carries nothing but files is refused from its stated length alone once that length can only
+// mean more than 100 MB of files, rather than read whole (100 MB parsed under memory pressure can fail, and then the
+// answer would be "couldn't read" instead of "too big").
+export async function readUploads(req: Request, opts: { filesOnly?: boolean } = {}): Promise<{ fields: Record<string, string>; files: Upload[] }> {
   if (!isMultipart(req)) throw new HttpError(415, "Send the files as multipart/form-data.");
   const length = req.headers.get("content-length");
   if (length === null) throw new HttpError(411, "Atrium needs to know how big the upload is. Try attaching the files again.");
-  if (Number(length) > MAX_BODY_BYTES) throw new HttpError(413, TOO_BIG);
+  const cap = opts.filesOnly ? MAX_TOTAL_BYTES + MAX_FILES * PART_HEADERS : MAX_BODY_BYTES;
+  if (Number(length) > cap) throw new HttpError(413, TOO_BIG);
   let form: FormData;
   try {
     form = await req.formData();
@@ -46,6 +52,6 @@ export async function attachmentsRoute(db: Database, req: Request, url: URL): Pr
   if (!m) return null;
   const space = getSpace(db, m[1]!);
   if (!space) throw new HttpError(404, "No such space.");
-  const { files } = await readUploads(req);
+  const { files } = await readUploads(req, { filesOnly: true });
   return json(attachedView(storeAttachments(db, space, files)));
 }
