@@ -5,6 +5,7 @@
   font-display: swap;
 }
 :root {
+  --top-h: 44px;
   /* Surfaces, darkest to lightest, and the lines between them. */
   --bg: #0d0d0f;
   --panel: #141417;
@@ -230,7 +231,7 @@ svg.lucide {
 }
 .nav .ct.hot {
   color: var(--bg);
-  background: var(--yellow);
+  background: var(--accent);
   border-radius: var(--r-lg);
   padding: 0 6px;
   font-weight: 600;
@@ -361,7 +362,7 @@ main {
   scroll-padding-bottom: var(--cmd-clear);
 }
 .top {
-  height: 44px;
+  height: var(--top-h);
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
@@ -3168,8 +3169,8 @@ code {
   border-radius: var(--r-md);
   background: var(--bg);
   position: sticky;
-  /* Pins to the top of the page's own scroll area, which already starts under the top bar. */
-  top: 0;
+  /* The page scrolls under the sticky top bar, so the decision pins just below it. */
+  top: calc(var(--top-h) + 8px);
   z-index: 1;
   box-shadow: var(--shadow-1);
 }
@@ -3361,7 +3362,8 @@ kbd {
   gap: 8px;
   justify-content: flex-end;
   position: sticky;
-  top: 0;
+  /* The page scrolls under the sticky top bar, so the decision pins just below it. */
+  top: var(--top-h);
   z-index: 1;
   padding: 8px 0;
   background: var(--panel);
@@ -4612,4 +4614,16 @@ kbd {
 
 .reason.wait-text {
   color: var(--yellow);
+}
+
+/* Amber is kept for the two states that ask for care: a pause and a result that Needs a look. A question, a sign-off
+   or a pick is routine, so it takes the accent. */
+.q-kind.k-question,
+.q-kind.k-approval,
+.q-kind.k-pick {
+  color: var(--accent);
+}
+.start-optional .tag {
+  justify-self: start;
+  align-self: center;
 }

@@ -388,7 +388,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </span>
           ) : (
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
-            <span className={`tag${stuck ? " bad" : word === "paused" || asks ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
+            <span className={`tag${stuck ? " bad" : word === "paused" ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
               {notDone ?? (asks ? QUEUE_KIND[asks].label : taskLabel(word))}
             </span>
           )}
@@ -444,7 +444,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </p>
           )}
           {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
-            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} />
+            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} reasonsAbove={risky} />
           )}
           <section className="asked">
             <h4>You asked</h4>

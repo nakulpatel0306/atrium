@@ -29,9 +29,9 @@ test("the sidebar marks Needs you and Activity active on their pages", () => {
   expect(on("/", "Needs you")).toBe(false);
 });
 
-test("j k and the arrows move, Enter opens, a approves, s sends back, x stops, e explains, Esc closes", () => {
-  expect(["j", "ArrowDown", "k", "ArrowUp", "Enter", "a", "s", "x", "e", "A", "?", "Escape"].map((k) => key(k))).toEqual(["next", "next", "prev", "prev", "open", "approve", "sendBack", "stop", "explain", "batch", "help", "close"]);
-  expect(key("z")).toBeNull();
+test("j k and the arrows move, Enter opens, a approves, s sends back, x stops, e explains, z takes back, Esc closes", () => {
+  expect(["j", "ArrowDown", "k", "ArrowUp", "Enter", "a", "s", "x", "e", "A", "z", "?", "Escape"].map((k) => key(k))).toEqual(["next", "next", "prev", "prev", "open", "approve", "sendBack", "stop", "explain", "batch", "undo", "help", "close"]);
+  expect(key("q")).toBeNull();
   expect(key("a", undefined, { metaKey: true })).toBeNull();
   expect(key("k", undefined, { ctrlKey: true })).toBeNull();
 });

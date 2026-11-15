@@ -4,12 +4,12 @@ import { post, type State } from "../api";
 import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
 import { announce } from "../live";
-import { showToast } from "../toast";
+import { showToast, undoLatest } from "../toast";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
-import { DecisionBar, OpenPoints, reopen } from "./Decision";
+import { ARM_MS, DecisionBar, OpenPoints, reopen } from "./Decision";
 import { ChangesView } from "./ChangesView";
 import { agentText } from "../agents";
 import { LoopPanel } from "./LoopPanel";
@@ -137,7 +137,7 @@ function ApprovalDecision({ approval, task, space, state, armed }: { approval: A
           {/* What changed and where to look first leads; the diff itself next; the brief, checks and findings after. */}
           <WalkthroughCard task={task} space={space} />
           {diff && <ChangesView task={task} agent={agentText(task, state.runs)} />}
-          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen={!diff} />}
+          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen={!diff} reasonsAbove={isRisky(state, approval)} />}
           <RetroCard task={task} state={state} />
           {!diff && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
         </>
@@ -167,10 +167,13 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   else if (task)
     body = (
       <>
-        {/* Why it waits, first: the pause's own diagnosis, or what the split or attempts need. */}
-        <p className={`dp-lead${item.kind === "paused" ? " wait" : ""}`} role="note">
-          {item.kind === "paused" ? `Paused: ${askLine(task)}` : askLine(task)}
-        </p>
+        {/* Why it waits, first: the pause's own diagnosis, or what the split or attempts need. A question needs no lead:
+            its answer form below says it. */}
+        {item.kind !== "question" && (
+          <p className={`dp-lead${item.kind === "paused" ? " wait" : ""}`} role="note">
+            {item.kind === "paused" ? `Paused: ${askLine(task)}` : askLine(task)}
+          </p>
+        )}
         {item.kind === "shape" && (
           <div className="dp-acts">
             <StopTask task={task} />
@@ -340,6 +343,12 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
   const [batch, setBatch] = useState(batchAsked);
   // The item whose risky Approve the a key has been pressed once for; a second a approves it.
   const [armed, setArmed] = useState<string | null>(null);
+  // The first a on a risky result disarms by itself, as a first click does.
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(null), ARM_MS);
+    return () => clearTimeout(t);
+  }, [armed]);
   const panel = useRef<HTMLDivElement>(null);
   // Where the selection was, so when the item there is answered and leaves, the next one takes its place.
   const at = useRef(0);
@@ -376,6 +385,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
         if (next) setSelected(next.key);
         return;
       }
+      if (key === "undo") return void undoLatest();
       if (key === "batch") {
         if (live.current.clean < 2) return announce("Shift A approves two or more clean results at once; fewer than two are clean right now.");
         return setBatch(true);

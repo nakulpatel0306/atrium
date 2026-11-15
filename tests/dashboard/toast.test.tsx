@@ -26,10 +26,22 @@ test("a yes to a new repo or a removal gets an Undo for its held minute; other a
   const base = { ...makeState().approvals[0]!, kind: "question" as const, taskId: null, spaceId: null };
   dismissToast();
   approvedToast({ ...base, id: "apr_rm", title: "Remove the local copy of fakeuser/demo?", alwaysAsk: "remove_clone" });
-  expect(shown()).toEqual(["Approved: Remove the local copy of fakeuser/demo? It starts in a minute."]);
+  expect(shown()).toEqual(["Approved: Remove the local copy of fakeuser/demo? (it starts in a minute)"]);
   expect(renderToStaticMarkup(<Toast />)).toContain(">Undo<");
   dismissToast();
   approvedToast({ ...base, id: "apr_dep", title: "Deploy?", alwaysAsk: "deploy" });
   expect(renderToStaticMarkup(<Toast />)).not.toContain(">Undo<");
+  dismissToast();
+});
+
+test("z takes back the newest approval, and a fourth quick approval never pushes out the first's Undo", async () => {
+  const { undoLatest } = await import("../../src/dashboard/toast");
+  dismissToast();
+  const taken: string[] = [];
+  for (const n of ["A", "B", "C", "D"]) showToast(`Approved: ${n}`, async () => (taken.push(n), { ok: true }), `tsk_${n}`);
+  expect(renderToStaticMarkup(<Toast />).match(/>Undo</g)?.length).toBe(4);
+  await undoLatest();
+  expect(taken).toEqual(["D"]);
+  expect(shown()).toEqual(["Approved: A", "Approved: B", "Approved: C"]);
   dismissToast();
 });

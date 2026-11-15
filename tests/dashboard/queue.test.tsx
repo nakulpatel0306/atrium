@@ -169,7 +169,7 @@ test("a risky result takes two clicks too: the first arms Approve, the second ap
   const button = () => el.querySelector<HTMLButtonElement>('.dp-acts [data-act="approve"]')!;
   await act(async () => button().click());
   expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
-  expect(button().textContent).toBe("Click again to approve");
+  expect(button().textContent).toBe("Click again to approve anyway");
   await act(async () => button().click());
   expect(calls.find((c) => c.url === "/api/approvals/apr_c")!.body).toMatchObject({ decision: "approve" });
 });

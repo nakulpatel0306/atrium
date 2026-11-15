@@ -10,7 +10,8 @@ import { RISKY } from "../../engine/words";
 import { approveLabel } from "./OutcomeBanner";
 
 type Approval = State["approvals"][number];
-const ARM_MS = 4000;
+// How long a first press of a risky Approve stays armed, by key or by click.
+export const ARM_MS = 4000;
 
 type Task = State["tasks"][number];
 type Outcome = Task["outcome"];
@@ -52,7 +53,7 @@ export function useDecision(approval: Approval, sha?: string | null) {
 export function approvedToast(approval: Approval) {
   const held = approval.alwaysAsk !== null && HELD_ASKS.includes(approval.alwaysAsk);
   const undoable = (approval.kind === "review" && approval.taskId) || held;
-  showToast(held ? `Approved: ${approval.title} It starts in a minute.` : `Approved: ${approval.title}`, undoable ? () => reopen(approval.id) : undefined, approval.taskId ?? undefined);
+  showToast(held ? `Approved: ${approval.title} (it starts in a minute)` : `Approved: ${approval.title}`, undoable ? () => reopen(approval.id) : undefined, approval.taskId ?? undefined);
 }
 
 export async function reopen(id: string): Promise<{ ok: boolean; error?: string }> {
@@ -132,7 +133,7 @@ export function DecideButtons({ d, outcome, risky = false, armed = false }: { d:
         title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
         onClick={approve}
       >
-        {clicked ? "Click again to approve" : approveWord(outcome, risky)}
+        {clicked ? "Click again to approve anyway" : approveWord(outcome, risky)}
       </button>
     </>
   );

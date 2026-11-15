@@ -209,10 +209,12 @@ function Budget({ task }: { task: Task }) {
 // The loop in a task's detail: its stage, the brief it runs from, the checks, each review round and how its
 // findings ended, the budget, and the way on when it's paused. Away from a repo there are no stages or checks.
 // `briefOpen` shows the brief unfolded, as the Needs you queue does: it's what the result is judged against.
-export function LoopPanel({ task, state, repo, showChecks, briefOpen = false }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean }) {
+// `reasonsAbove`: a risky result's reasons are already listed above (OpenPoints), so this says them once more only as a
+// count, not as a second and third list.
+export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, reasonsAbove = false }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean; reasonsAbove?: boolean }) {
   const [checksOpen, setChecksOpen] = useState(showChecks);
   const loop = task.loop;
-  const attention = attentionText(loop);
+  const attention = reasonsAbove ? null : attentionText(loop);
   return (
     <section className="loop">
       {repo && !loop?.fanout && <StageStrip task={task} />}
@@ -267,7 +269,8 @@ export function LoopPanel({ task, state, repo, showChecks, briefOpen = false }: 
           <span className="hint">
             {r.skipped ? ` didn't happen: ${r.skipped}` : r.verdict === "approve" ? " · ready to merge" : r.verdict === "changes" ? ` · asked for changes${stillOpen(r)}` : " · no verdict"}
           </span>
-          {r.findings.length > 0 && (
+          {r.findings.length > 0 && reasonsAbove && <span className="hint"> · {r.findings.length === 1 ? "1 finding" : `${r.findings.length} findings`}, with what's open listed above</span>}
+          {r.findings.length > 0 && !reasonsAbove && (
             <ol>
               {r.findings.map((f, n) => (
                 <li key={n} className={`finding ${f.severity}`}>

@@ -1,6 +1,6 @@
 // The Needs you queue's keys. Single letters only move, open, and press a button the open item already shows, and
 // every key is ignored while the user is typing.
-export type NeedsKey = "next" | "prev" | "open" | "approve" | "sendBack" | "stop" | "explain" | "batch" | "help" | "close";
+export type NeedsKey = "next" | "prev" | "open" | "approve" | "sendBack" | "stop" | "explain" | "batch" | "undo" | "help" | "close";
 
 type KeyLike = { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; target: EventTarget | null };
 
@@ -15,6 +15,7 @@ const KEYS: Record<string, NeedsKey> = {
   x: "stop",
   e: "explain",
   A: "batch",
+  z: "undo",
   "?": "help",
   Escape: "close",
 };
@@ -44,11 +45,12 @@ export const ACT: Partial<Record<NeedsKey, string>> = { approve: "approve", send
 export const KEY_HELP: [string, string][] = [
   ["j / k", "Next / previous item"],
   ["Enter", "Open the item"],
-  ["a", "Approve; twice on a result with something open"],
+  ["a", "Approve; twice on a result that Needs a look"],
   ["s", "Send back with a note"],
   ["x", "Stop a running task"],
   ["e", "Explain the problem, on a paused task"],
   ["Shift A", "Approve every clean result at once"],
+  ["z", "Take back the last approval, within its minute"],
   ["Esc", "Back to the list"],
   ["?", "Show or hide these keys"],
 ];

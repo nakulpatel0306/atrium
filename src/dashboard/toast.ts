@@ -8,8 +8,6 @@ export type Toast = { id: number; text: string; key?: string; undo?: () => Promi
 export const TOAST_MS = 8000;
 // The engine's own window for taking an approval back (approvals.ts UNDO_MS).
 export const UNDO_TOAST_MS = 60_000;
-const MAX = 3;
-
 let toasts: Toast[] = [];
 let next = 1;
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -20,10 +18,20 @@ const notify = () => {
 
 export function showToast(text: string, undo?: Toast["undo"], key?: string): void {
   const t: Toast = { id: next++, text, undo, key };
-  // A plain message replaces the last plain one; Undo toasts keep their place.
-  toasts = [...toasts.filter((x) => x.undo), t].slice(-MAX);
+  // A plain message replaces the last plain one. An Undo toast is never pushed out: it stays its full minute, so every
+  // approval keeps its way back however fast they come.
+  toasts = undo ? [...toasts, t] : [...toasts.filter((x) => x.undo), t];
   timers.set(t.id, setTimeout(() => dismissToast(t.id), undo ? UNDO_TOAST_MS : TOAST_MS));
   notify();
+}
+
+// Takes back the newest approval that still can be, as its Undo button would; the queue's z key.
+export async function undoLatest(): Promise<void> {
+  const t = [...toasts].reverse().find((x) => x.undo);
+  if (!t?.undo) return showToast("Nothing to take back right now.");
+  const res = await t.undo();
+  dismissToast(t.id);
+  if (!res.ok) showToast(res.error ?? "Atrium couldn't take that back. Ask for the change again as a new task.");
 }
 
 // One toast by id; with none, every toast.
