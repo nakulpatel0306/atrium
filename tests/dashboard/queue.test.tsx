@@ -153,6 +153,17 @@ test("on a narrow window, a key never presses a decision the list is hiding", as
   expect(calls.some((c) => c.url.startsWith("/api/approvals/"))).toBe(true);
 });
 
+test("a risky result leads with why it needs a look, and its keys say a second a approves anyway", () => {
+  const el = render(<NeedsPage state={queueState()} item="apr_c" />);
+  const points = el.querySelector(".open-points")!;
+  expect(points.textContent).toContain("Why it needs a look");
+  expect(points.textContent).toContain("Look closely: The change edits check config: bunfig.toml.");
+  // Before the walkthrough and the diff, right under the decision.
+  expect(el.querySelector(".dp-acts")!.nextElementSibling).toBe(points);
+  expect(el.querySelector(".decision-keys")!.textContent).toContain("a a approve anyway");
+  expect(el.querySelector(".q-kind.risky")).not.toBeNull();
+});
+
 test("a result on a branch shows its diff right in the queue", async () => {
   const s = queueState();
   const onBranch = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_a" ? { ...t, branch: "atrium/tsk_a" } : t)) };

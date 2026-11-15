@@ -176,7 +176,7 @@ test("failing check output is one click away; findings show how each was answere
   );
   const el = render(<LoopPanel task={task} state={makeState()} repo showChecks={false} />);
   expect(el.textContent).toContain("Look closely: This change edits how checks run: package.json.");
-  expect(el.textContent).toContain("[high] src/a.ts:3 — misses zero → fixed: guarded it");
+  expect(el.textContent).toContain("[high] src/a.ts:3 — misses zero · the writer fixed it: guarded it");
   await act(async () => button(el, "Show output").click());
   await act(async () => await Bun.sleep(5));
   expect(el.querySelector(".check-rows pre")!.textContent).toBe("(fail) adds totals");

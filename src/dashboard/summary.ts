@@ -77,7 +77,8 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
   if (stuck.length === 1 && stuck[0]!.status === "blocked") {
     const t = stuck[0]!;
     const paused = pausedForYou(t);
-    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason) ?? t.title}`, tone: "blocked" };
+    // A pause is a normal stop that waits for a hint, so it reads amber; a stopped task needs a retry and reads red.
+    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason) ?? t.title}`, tone: paused ? "waiting" : "blocked" };
   }
   if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
   const review = tasks.filter((t) => t.status === "review").length;
@@ -231,3 +232,11 @@ export const emptyHome = (state: State): boolean =>
 
 // One line for a row: the first paragraph of agent text, without its markdown.
 export const summaryLine = (text: string): string => plainText(text.trim().split(/\n\s*\n/)[0] ?? "");
+
+// How a review finding ended, naming who answered it. A note on an approval was never put to the writer.
+export function answeredText(f: { resolution: { action: "fixed" | "declined"; note: string } | null }, asked: boolean): string {
+  if (!asked) return "a note on an approval, nothing to answer";
+  if (!f.resolution) return "the writer didn't answer it";
+  const note = f.resolution.note ? `: ${f.resolution.note}` : "";
+  return f.resolution.action === "fixed" ? `the writer fixed it${note}` : `the writer declined it${note}`;
+}

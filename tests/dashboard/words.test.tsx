@@ -11,6 +11,7 @@ import { goTo, KIND, TASK_WORD } from "../../src/engine/words";
 import { STATUS_TEXT } from "../../src/dashboard/summary";
 import { deriveView } from "../../src/tui/select";
 import { cardsOf } from "../../src/tui/screens/home";
+import { paletteActions } from "../../src/dashboard/palette";
 import { initialUi } from "../../src/tui/ui";
 import { ids, makeState, proposal, task } from "../tui/fixtures";
 
@@ -116,4 +117,11 @@ test("the terminal app's cards say each label and offer the same step as their m
     expect(card.meta.map((m) => m.text).join("")).toContain(KIND[item.kind].label);
     expect(card.keys.find((k) => k.hot)!.label).toBe(KIND[item.kind].action);
   }
+});
+
+test("the palette names a task's state in the shared words, never the raw status", () => {
+  const s = everyKind();
+  const hint = (id: string) => paletteActions(s, { spaceId: null, theme: "system" }).find((a) => a.id === `task-${id}`)!.hint;
+  expect(hint("tsk_paused")).toBe("atrium · Paused");
+  expect(hint(ids.blocked)).toBe("job hunt · Stopped");
 });

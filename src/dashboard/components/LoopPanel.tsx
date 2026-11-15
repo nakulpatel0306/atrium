@@ -3,11 +3,11 @@ import { Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
 import type { CheckRow } from "../../engine/checks/run";
-import { compact, findingLine, resolutionText, shownStage, type Stage } from "../../engine/loop";
+import { compact, findingLine, shownStage, type Stage } from "../../engine/loop";
 import { agentName } from "../agents";
 import { post, type State, useFetched } from "../api";
 import { duration } from "../format";
-import { attentionText, STAGE_TEXT } from "../summary";
+import { answeredText, attentionText, STAGE_TEXT } from "../summary";
 import { BriefQuestions } from "./BriefQuestions";
 import { Markdown } from "./Markdown";
 import { asksBeforeStarting } from "../../engine/needs";
@@ -261,7 +261,7 @@ export function LoopPanel({ task, state, repo, showChecks, briefOpen = false }: 
               {r.findings.map((f, n) => (
                 <li key={n} className={`finding ${f.severity}`}>
                   {findingLine(f, n + 1).replace(/^\d+\. /, "")}
-                  {r.verdict === "changes" && <span className="hint"> → {resolutionText(f)}</span>}
+                  {r.verdict === "changes" && <span className="hint"> · {answeredText(f, true)}</span>}
                 </li>
               ))}
             </ol>

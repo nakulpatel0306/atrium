@@ -25,16 +25,16 @@ export function taskWord(t: Parameters<typeof pausedForYou>[0]): TaskWord {
 // What each thing waiting on you is, and the one next step it asks for. The label tags its row everywhere; the action
 // names the primary button on its decision screen and, with "…", the row's way to that screen, so the same item
 // always offers the same step under the same name.
-export const KIND: Record<QueueKind, { label: string; action: string }> = {
-  review: { label: "Review", action: "Approve" },
-  approval: { label: "Sign-off", action: "Approve" },
-  question: { label: "Question", action: "Answer" },
-  pick: { label: "Pick", action: "Choose" },
-  stuck: { label: "Stopped", action: "Decide" },
-  paused: { label: "Paused", action: "Give it a hint" },
-  suggestion: { label: "Suggestion", action: "Stop asking" },
-  memory: { label: "CLAUDE.md", action: "Add it" },
-  shape: { label: "Could split", action: "Split instead" },
+export const KIND: Record<QueueKind, { label: string; action: string; means: string }> = {
+  review: { label: "Review", action: "Approve", means: "A finished result, checked and reviewed, waiting for your yes." },
+  approval: { label: "Sign-off", action: "Approve", means: "Something Atrium will do on your behalf, like making a GitHub repo." },
+  question: { label: "Question", action: "Answer", means: "A brief with a question before its work starts." },
+  pick: { label: "Pick", action: "Choose", means: "Attempts or parts ready for you to choose between or open." },
+  stuck: { label: "Stopped", action: "Decide", means: "A part of a split stopped: give it a hint, retry it, or set the parts aside." },
+  paused: { label: "Paused", action: "Give it a hint", means: "The loop stopped itself (a budget, the same failure twice) and waits for a hint." },
+  suggestion: { label: "Suggestion", action: "Stop asking", means: "A kind of result you always approve unchanged; a rule could approve it for you." },
+  memory: { label: "CLAUDE.md", action: "Add it", means: "A line Atrium suggests for the repo's CLAUDE.md. Low priority." },
+  shape: { label: "Could split", action: "Split instead", means: "A running task that could run as parts. Low priority." },
 };
 
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.

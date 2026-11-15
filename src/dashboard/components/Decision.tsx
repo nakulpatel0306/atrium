@@ -4,7 +4,7 @@ import { post, type State } from "../api";
 import { showToast } from "../toast";
 import { isRisky, shownSha } from "../queue";
 import { HELD_ASKS } from "../../engine/needs";
-import { reviewChips } from "../summary";
+import { attentionText, reviewChips } from "../summary";
 import { approveLabel } from "./OutcomeBanner";
 
 type Approval = State["approvals"][number];
@@ -149,17 +149,18 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
   const d = useDecision(approval, shownSha(state, approval));
   const chips = reviewChips(approval, state);
   const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
+  const risky = isRisky(state, approval);
   return (
     <div className="decision">
       <div className="decision-row">
-        {chips ? <Chips chips={chips} /> : <span className="review-line">Waiting for your decision</span>}
+        {chips ? <Chips chips={chips} attention={attentionText(task?.loop)} /> : <span className="review-line">Waiting for your decision</span>}
         <span className="decision-acts">
           {open && (
             <button className="btn" data-act="open" onClick={open}>
               Open
             </button>
           )}
-          <DecideButtons d={d} outcome={outcome} risky={isRisky(state, approval)} />
+          <DecideButtons d={d} outcome={outcome} risky={risky} />
         </span>
       </div>
       {keys && (
@@ -170,7 +171,16 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
             </>
           ) : (
             <>
-              <kbd>a</kbd> approve · <kbd>s</kbd> send back · <kbd>?</kbd> all keys
+              {risky ? (
+                <>
+                  <kbd>a</kbd> <kbd>a</kbd> approve anyway
+                </>
+              ) : (
+                <>
+                  <kbd>a</kbd> approve
+                </>
+              )}{" "}
+              · <kbd>s</kbd> send back · <kbd>?</kbd> all keys
             </>
           )}
         </p>

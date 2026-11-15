@@ -1,4 +1,4 @@
-import { CheckCheck, ChevronLeft, Keyboard, PartyPopper } from "lucide-react";
+import { CheckCheck, ChevronLeft, Keyboard, PartyPopper, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { post, type State } from "../api";
 import { absolute } from "../format";
@@ -6,7 +6,10 @@ import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { showToast } from "../toast";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
-import { attentionQueue, cleanReviews, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
+import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
+import { answeredText, attentionText } from "../summary";
+import { findingLine } from "../../engine/loop";
+import { KIND } from "../../engine/words";
 import { navigate } from "../route";
 import { DecisionBar, reopen } from "./Decision";
 import { ChangesView } from "./ChangesView";
@@ -52,7 +55,7 @@ function QueueRow({ item, state, selected, onSelect }: { item: QueueItem; state:
     >
       <span className="q-title">{title}</span>
       <span className="q-line">
-        <span className={`q-kind k-${item.kind}`}>{KIND_TEXT[item.kind]}</span> {line}
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{KIND_TEXT[item.kind]}</span> {line}
       </span>
       <span className="q-meta">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -104,6 +107,43 @@ export function QueueList({ items, state, selected, onSelect }: { items: QueueIt
   );
 }
 
+// A result in the queue that isn't clean: its kind label takes the warning tone its Approve anyway has.
+function riskyItem(state: State, item: QueueItem): boolean {
+  const a = item.kind === "review" ? state.approvals.find((x) => x.id === item.key) : undefined;
+  return !!a && isRisky(state, a);
+}
+
+// A risky result's reasons, in one place above the walkthrough and the diff: the attention note and every finding the
+// writer didn't fix, with what it said.
+function OpenPoints({ task }: { task: Task }) {
+  const loop = task.loop;
+  if (!loop) return null;
+  const attention = attentionText(loop);
+  const open = loop.reviews.flatMap((r) => r.findings.filter((f) => f.resolution?.action !== "fixed").map((f) => ({ f, asked: r.verdict === "changes" })));
+  const notes = [loop.unverified, ...loop.alreadyFailing.map((c) => `${c.name} was already failing before the change.`)].filter((x): x is string => !!x);
+  if (!attention && !open.length && !notes.length) return null;
+  return (
+    <section className="open-points" aria-label="Why it needs a look">
+      <h4>
+        <TriangleAlert />
+        Why it needs a look
+      </h4>
+      <ul>
+        {attention && <li>{attention}</li>}
+        {notes.map((n) => (
+          <li key={n}>{n}</li>
+        ))}
+        {open.map(({ f, asked }, i) => (
+          <li key={i} className={`finding ${f.severity}`}>
+            {findingLine(f, i + 1).replace(/^\d+\. /, "")}
+            <span className="hint"> · {answeredText(f, asked)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // A result or question decided right here, with everything it rests on in view, the diff included: a decision never
 // has to leave the queue.
 function ApprovalDecision({ approval, task, space, state, armed }: { approval: Approval; task: Task | undefined; space: Space | undefined; state: State; armed: boolean }) {
@@ -115,6 +155,8 @@ function ApprovalDecision({ approval, task, space, state, armed }: { approval: A
       <div className="dp-acts">
         <DecisionBar approval={approval} state={state} armed={armed} keys />
       </div>
+      {/* Why a risky result asks for a look, before anything else on its screen. */}
+      {task && isRisky(state, approval) && <OpenPoints task={task} />}
       {task?.loop?.noChanges ? (
         // Said plainly: an empty result has no commits to read or push, whatever the agent's own words were.
         <p className="dp-lead" role="note">
@@ -174,7 +216,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   return (
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
-        <span className={`q-kind k-${item.kind}`}>{KIND_TEXT[item.kind]}</span>
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{KIND_TEXT[item.kind]}</span>
         <h2 id="dp-title">{itemTitle(state, item)}</h2>
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -297,6 +339,18 @@ function KeysSheet({ onClose }: { onClose: () => void }) {
               <kbd>{k}</kbd>
             </dt>
             <dd>{what}</dd>
+          </div>
+        ))}
+      </dl>
+      {/* The same words every surface uses (engine/words.ts), said once in full. */}
+      <h3>What each item asks</h3>
+      <dl className="kinds">
+        {Object.values(KIND).map((k) => (
+          <div key={k.label}>
+            <dt>{k.label}</dt>
+            <dd>
+              {k.means} <span className="hint">Next: {k.action}.</span>
+            </dd>
           </div>
         ))}
       </dl>

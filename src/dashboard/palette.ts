@@ -1,5 +1,6 @@
 // What the command palette (⌘K) can do, by name: every action in the dashboard, built from the state it's opened on.
 // Pure, so the list and its matching are tested without a page.
+import { taskLabel, taskWord } from "../engine/words";
 import { batchApprovable } from "../engine/needs";
 import { SHAPE_LABEL, suggestion, switchOpen } from "../engine/shape";
 import type { State } from "../engine/state";
@@ -61,7 +62,7 @@ export function paletteActions(state: State, here: { spaceId: string | null; the
   for (const t of [...open, ...done]) {
     const space = state.spaces.find((s) => s.id === t.spaceId);
     if (!space) continue;
-    actions.push({ id: `task-${t.id}`, group: "Tasks", label: shownTitle(t), hint: `${space.name} · ${t.status}`, run: { kind: "navigate", path: `/space/${space.id}?task=${t.id}` } });
+    actions.push({ id: `task-${t.id}`, group: "Tasks", label: shownTitle(t), hint: `${space.name} · ${taskLabel(taskWord(t))}`, run: { kind: "navigate", path: `/space/${space.id}?task=${t.id}` } });
     const shape = t.loop?.shape;
     const offer = shape && switchOpen(t) ? suggestion(shape, t.brief?.size ?? "medium") : null;
     if (offer) actions.push({ id: `shape-${t.id}`, group: "Tasks", label: `Run ${shownTitle(t)} as ${SHAPE_LABEL[offer].toLowerCase()}`, hint: "Starts over from the brief", run: { kind: "post", path: `/api/tasks/${t.id}/shape`, body: { kind: offer }, done: `Starting ${shownTitle(t)} over as ${SHAPE_LABEL[offer].toLowerCase()}.` } });

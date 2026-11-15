@@ -4516,3 +4516,62 @@ kbd {
     row-gap: 2px;
   }
 }
+
+/* A risky result: its kind label takes the same warning tone as its Approve anyway, and its reasons lead its screen. */
+.q-kind.k-review.risky {
+  color: var(--yellow);
+}
+.open-points {
+  border: 1px solid color-mix(in srgb, var(--yellow) 40%, var(--line));
+  border-radius: var(--r-lg);
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--yellow) 6%, var(--panel));
+}
+.open-points h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--yellow);
+  margin-bottom: 6px;
+}
+.open-points h4 svg {
+  width: 14px;
+  height: 14px;
+}
+.open-points ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 80ch;
+}
+
+/* The Keys sheet's second list: each kind of item with what it means and its next step. */
+.keys-sheet dl.kinds {
+  grid-template-columns: 1fr;
+}
+.keys-sheet dl.kinds dt {
+  min-width: 96px;
+  font-weight: 500;
+}
+
+/* In the queue's decision panel the file list sits above the diff whenever the panel is narrow, so code keeps the
+   width. */
+.dp-body {
+  container: panel / inline-size;
+}
+@container panel (max-width: 1000px) {
+  .chg-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chg-list {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    max-height: 140px;
+  }
+  .chg-list li + li {
+    border-top: 0;
+  }
+}
