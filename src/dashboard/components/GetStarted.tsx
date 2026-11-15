@@ -157,7 +157,7 @@ export function StartView(p: ViewProps) {
           }}
         >
           <p>
-            Watch the loop once. Atrium copies a tiny demo repo with one failing test to a temporary folder, and your Claude CLI fixes it on its cheapest model: brief, write, checks, review, walkthrough, ready.
+            Watch the loop once. Atrium copies a tiny demo repo with one failing test into its own folder, and your Claude CLI fixes it on its cheapest model: brief, write, checks, review, walkthrough, ready.
           </p>
           <label className="start-ask">
             <span className="sr-only">The sample's ask</span>

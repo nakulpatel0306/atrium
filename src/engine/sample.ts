@@ -15,8 +15,8 @@ export const SAMPLE_ASK = "Fix the failing cart test";
 const SAMPLE_KEY = "sample.spaceIds";
 const REPO = resolve(import.meta.dir, "..", "..", "assets", "sample-repo");
 
-// Shown before it starts, so nobody is surprised. A real run on the cheap tier (haiku, Claude Code 2.1.323) took 52
-// seconds and about 1¢ at list prices from brief to ready, review round and walkthrough included; this leaves room.
+// Shown before it starts, so nobody is surprised. Real runs on the cheap tier (haiku, Claude Code 2.1.323) took 30 to 52
+// seconds and under 1¢ at list prices from brief to ready, review and walkthrough included; this leaves room.
 export const SAMPLE_ESTIMATE = { cents: 2, seconds: 60 };
 
 export function isSampleSpace(db: Database, spaceId: string): boolean {
