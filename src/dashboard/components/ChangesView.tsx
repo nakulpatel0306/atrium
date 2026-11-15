@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, MessageCircleQuestion } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { DiffFile, DiffHunk, DiffResult } from "../../engine/diff-parse";
 import { post, type State, useDiffVersion } from "../api";
 import type { ChangeSpot } from "../route";
@@ -34,13 +34,20 @@ export function hunkAt(file: DiffFile, line: number | null): number {
   return Math.max(i, 0);
 }
 
+// A short fingerprint of a hunk's header and lines (FNV-1a), unique enough to tell a file's hunks apart.
+function hunkKey(h: DiffHunk): string {
+  let x = 0x811c9dc5;
+  for (const c of `${h.header}\n${h.lines.map((l) => `${l.kind[0]}${l.text}`).join("\n")}`) x = Math.imul(x ^ c.charCodeAt(0), 0x01000193) >>> 0;
+  return `${h.header}#${x.toString(36)}`;
+}
+
 // A hunk's header row with "Explain this hunk": the cheap tier's conceptual answer, kept by the engine per hunk, shown
 // in a row of its own under the header.
 function HunkHead({ taskId, file, hunk, index, focused }: { taskId: string | null; file: string; hunk: DiffHunk; index: number; focused: boolean }) {
   const [state, setState] = useState<{ busy: boolean; note: string | null; error: string | null }>({ busy: false, note: null, error: null });
   const explain = async () => {
     setState({ busy: true, note: null, error: null });
-    const res = await post<{ note: string }>(`/api/tasks/${taskId}/explain-hunk`, { file, index, header: hunk.header });
+    const res = await post<{ note: string }>(`/api/tasks/${taskId}/explain-hunk`, { file, header: hunk.header });
     setState(res.ok ? { busy: false, note: res.data.note, error: null } : { busy: false, note: null, error: res.error });
   };
   return (
@@ -88,19 +95,22 @@ function FileDiff({ file, open, onToggle, taskId, focus }: { file: DiffFile; ope
         ) : (
           <table className="chg-lines mono">
             <tbody>
-              {file.hunks.map((h, i) => [
-                <HunkHead key={`h${i}`} taskId={taskId} file={file.path} hunk={h} index={i} focused={focus === i} />,
-                ...h.lines.map((l, j) => (
-                  <tr key={`${i}-${j}`} className={`chg-${l.kind}`}>
-                    <td className="chg-no">{l.oldNo ?? ""}</td>
-                    <td className="chg-no">{l.newNo ?? ""}</td>
-                    <td className="chg-text">
-                      <span className="chg-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}</span>
-                      {l.text}
-                    </td>
-                  </tr>
-                )),
-              ])}
+              {file.hunks.map((h, i) => (
+                // Keyed by what the hunk holds, so on a live diff an explanation stays with its own hunk.
+                <Fragment key={hunkKey(h)}>
+                  <HunkHead taskId={taskId} file={file.path} hunk={h} index={i} focused={focus === i} />
+                  {h.lines.map((l, j) => (
+                    <tr key={j} className={`chg-${l.kind}`}>
+                      <td className="chg-no">{l.oldNo ?? ""}</td>
+                      <td className="chg-no">{l.newNo ?? ""}</td>
+                      <td className="chg-text">
+                        <span className="chg-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}</span>
+                        {l.text}
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         ))}

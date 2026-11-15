@@ -112,14 +112,14 @@ test("a hunk is explained from the task's own diff, once, and a hunk that moved 
   const { task } = finished("light");
   const diff = (await (await fetch(`${base}/api/tasks/${task.id}/diff`)).json()) as { files: { path: string; hunks: { header: string }[] }[] };
   const header = diff.files[0]!.hunks[0]!.header;
-  const first = await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts", index: 0, header });
+  const first = await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts", header });
   expect(await first.json()).toEqual({ note: NOTE, cached: false });
   expect(calls[0]).toMatchObject({ allowedTools: ["Read", "Glob", "Grep"], cwd: repo.path });
   expect(calls[0]!.prompt).toContain("+export const zero = 0;");
-  expect(await (await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts", index: 0, header })).json()).toEqual({ note: NOTE, cached: true });
+  expect(await (await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts", header })).json()).toEqual({ note: NOTE, cached: true });
   expect(calls).toHaveLength(1);
-  expect((await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts", index: 0, header: "@@ -9 +9 @@" })).status).toBe(409);
-  expect((await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts", index: -1, header })).status).toBe(400);
+  expect((await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts", header: "@@ -9 +9 @@" })).status).toBe(409);
+  expect((await send("POST", `/api/tasks/${task.id}/explain-hunk`, { file: "cart.ts" })).status).toBe(400);
 });
 
 test("CLAUDE.md's size is reported, and a proposal is accepted with the user's text or dismissed", async () => {

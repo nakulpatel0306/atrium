@@ -26,8 +26,9 @@ export const HUNK_SYSTEM = [
 const hunkText = (hunk: DiffHunk): string =>
   [hunk.header, ...hunk.lines.map((l) => `${l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}${l.text}`)].join("\n");
 
-// The cache key: the file and every line of the hunk, so a hunk that changes is explained afresh.
-export const hunkHash = (file: string, hunk: DiffHunk): string => createHash("sha256").update(`${file}\0${hunkText(hunk)}`).digest("hex");
+// The cache key: the space, the file and every line of the hunk. A hunk that changes is explained afresh, and an answer
+// written in one space (a private one included) never shows in another that happens to hold the same lines.
+export const hunkHash = (spaceId: string, file: string, hunk: DiffHunk): string => createHash("sha256").update(`${spaceId}\0${file}\0${hunkText(hunk)}`).digest("hex");
 
 export function hunkPrompt(task: Task, file: string, hunk: DiffHunk): string {
   const fence = randomBytes(6).toString("hex");
@@ -54,7 +55,7 @@ const asking = new Map<string, Promise<string>>();
 // The explanation of one hunk of a task's change, from the cache or a new cheap-tier run. Throws a plain-language
 // error when Claude couldn't answer.
 export function explainHunk(db: Database, claude: AgentAdapter, task: Task, space: Space, file: string, hunk: DiffHunk): Promise<{ note: string; cached: boolean }> {
-  const hash = hunkHash(file, hunk);
+  const hash = hunkHash(space.id, file, hunk);
   const kept = cachedNote(db, hash);
   if (kept !== null) return Promise.resolve({ note: kept, cached: true });
   const current = asking.get(hash) ?? ask(db, claude, task, space, file, hunk, hash).finally(() => asking.delete(hash));

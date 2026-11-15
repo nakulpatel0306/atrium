@@ -297,7 +297,7 @@ export async function loopRoute(
   }
 
   // "Explain this hunk" on the Changes view: the hunk is read from the task's diff here, not taken from the request,
-  // and must still be the one the user saw (its header).
+  // found by its header (unique within a file), so a diff that moved on since the user looked is refused.
   const hunkM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/explain-hunk$/) : null;
   if (hunkM) {
     const task = getTask(db, hunkM[1]!);
@@ -305,8 +305,7 @@ export async function loopRoute(
     if (!task || space?.kind !== "repo" || !space.repoPath) throw new HttpError(404, "No such task in a repo space.");
     const b = await readBody(req);
     const file = str(b.file, "file");
-    const index = b.index;
-    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) throw new HttpError(400, "index must be the hunk's number in its file.");
+    const header = str(b.header, "header");
     let diff;
     try {
       diff = await taskChanges(db, task.id);
@@ -314,8 +313,8 @@ export async function loopRoute(
       if (e instanceof ChangesRefused) throw new HttpError(e.status, e.message);
       throw e;
     }
-    const hunk = diff.files.find((f) => f.path === file)?.hunks[index];
-    if (!hunk || hunk.header !== b.header) throw new HttpError(409, "The changes moved on since you looked. Look at the hunk again, then ask.");
+    const hunk = diff.files.find((f) => f.path === file)?.hunks.find((h) => h.header === header);
+    if (!hunk) throw new HttpError(409, "The changes moved on since you looked. Look at the hunk again, then ask.");
     if (!claude) throw new HttpError(503, "Claude isn't set up, so Atrium can't explain this hunk.");
     try {
       return json(await explainHunk(db, claude, task, space, file, hunk));

@@ -127,8 +127,13 @@ test("each hunk offers an explanation from the engine, shown under its header", 
   expect(el.querySelector(".chg-hunk.focus")).not.toBeNull();
   act(() => button(el, "Explain this hunk")!.click());
   await settle();
-  expect(calls).toEqual([{ url: "/api/tasks/tsk_1/explain-hunk", body: { file: "src/cart.ts", index: 0, header: "@@ -1,2 +1,3 @@" } }]);
+  expect(calls).toEqual([{ url: "/api/tasks/tsk_1/explain-hunk", body: { file: "src/cart.ts", header: "@@ -1,2 +1,3 @@" } }]);
   expect(el.querySelector(".chg-explained")!.textContent).toBe("It guards the total against a bad coupon.");
+  // The live diff grows a hunk above it: the explanation stays with its own hunk, not with whatever is first now.
+  const grown: DiffResult = { ...diff, files: [{ ...diff.files[0]!, hunks: [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add", text: "y", newNo: 1 }] }, ...diff.files[0]!.hunks] }] };
+  act(() => root!.render(<ChangesList diff={grown} live={null} taskId="tsk_1" />));
+  const rows = [...el.querySelectorAll("tr")].map((r) => r.className);
+  expect(rows.indexOf("chg-explained")).toBe(rows.lastIndexOf("chg-hunk") + 1);
   // Without a task (a plain render), no hunk offers one.
   act(() => root!.unmount());
   root = null;

@@ -51,10 +51,22 @@ test("the cheap tier explains one fenced hunk with read-only tools, and the answ
   expect(h.db.query("SELECT purpose FROM usage_log").all()).toEqual([{ purpose: "hunk" }]);
 });
 
-test("a hunk that changed, or the same hunk in another file, hashes differently", () => {
+test("a hunk that changed, the same hunk in another file, or in another space, hashes differently", () => {
   const other = { ...hunk, lines: [...hunk.lines, { kind: "add" as const, text: "x", newNo: 3 }] };
-  expect(hunkHash("a.ts", hunk)).not.toBe(hunkHash("a.ts", other));
-  expect(hunkHash("a.ts", hunk)).not.toBe(hunkHash("b.ts", hunk));
+  expect(hunkHash("spc_a", "a.ts", hunk)).not.toBe(hunkHash("spc_a", "a.ts", other));
+  expect(hunkHash("spc_a", "a.ts", hunk)).not.toBe(hunkHash("spc_a", "b.ts", hunk));
+  expect(hunkHash("spc_a", "a.ts", hunk)).not.toBe(hunkHash("spc_b", "a.ts", hunk));
+});
+
+test("the same hunk in another space, a private one's included, is explained afresh there, never from its cache", async () => {
+  const a = h.space(h.repo(), { private: true });
+  const b = h.space(h.repo());
+  const answers = ["Written for the private space.", "Written for the other space."];
+  const claude = { id: "claude", label: "Claude Code", run: async () => ({ status: "ok" as const, summary: answers.shift()!, inputTokens: 1, outputTokens: 1 }) };
+  const ta = createTask(h.db, { spaceId: a.id, title: "A" });
+  const tb = createTask(h.db, { spaceId: b.id, title: "B" });
+  expect((await explainHunk(h.db, claude, ta, getSpace(h.db, a.id)!, "src/cart.ts", hunk)).note).toBe("Written for the private space.");
+  expect(await explainHunk(h.db, claude, tb, getSpace(h.db, b.id)!, "src/cart.ts", hunk)).toEqual({ note: "Written for the other space.", cached: false });
 });
 
 test("a failed run says so in plain words and caches nothing", async () => {
