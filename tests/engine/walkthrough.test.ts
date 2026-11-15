@@ -9,6 +9,7 @@ import { getSpace, updateSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskLoop, setTaskStatus } from "../../src/engine/tasks";
 import { parseWalkthrough, predictOpen, storedWalkthrough, withoutWalkthrough } from "../../src/engine/walkthrough";
 import { answerPredict, needsWalkthrough, writeWalkthrough } from "../../src/engine/walkthrough-run";
+import { deleteTask } from "../../src/engine/delete";
 import { fake, git, loopHarness, ok } from "./loop-harness";
 
 // Replies recorded from a real cheap run (Claude Code, haiku) on a made-up cart repo.
@@ -212,6 +213,21 @@ describe("the cheap tier's walkthrough", () => {
     release();
     expect(await job).toBeNull();
     expect(getTask(h.db, t.id)!.loop!.walkthrough).toBeNull();
+  });
+
+  test("a task deleted while its walkthrough is written is let go quietly, with nothing recorded against it", async () => {
+    const t = finished();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const claude = fake("claude", async () => {
+      await gate;
+      return ok(CHEAP.replaceAll("src/cart.ts", "cart.ts"));
+    });
+    const job = writeWalkthrough(h.db, claude.adapter, t, "main");
+    await deleteTask(h.db, t.id);
+    release();
+    expect(await job).toBeNull();
+    expect(h.db.query("SELECT COUNT(*) AS n FROM usage_log").get()).toEqual({ n: 0 });
   });
 
   test("a space with learning off, or a reply with no approach, leaves no walkthrough", async () => {

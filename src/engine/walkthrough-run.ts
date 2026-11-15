@@ -84,7 +84,8 @@ async function write(db: Database, claude: AgentAdapter, task: Task, start: stri
       signal: AbortSignal.timeout(WALKTHROUGH_TIMEOUT_MS),
       onChunk() {},
     });
-    if (result.status !== "ok") return null;
+    // A task deleted while the call ran leaves nothing to record its tokens against or to describe.
+    if (result.status !== "ok" || !getTask(db, task.id)) return null;
     recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "walkthrough", models: runModels(result, tierModel(db, "cheap") || null) });
     const walkthrough = parseWalkthrough(result.summary, diffFiles(diff.diff), { by: "claude", source: "cheap", sha, deep });
     // Kept only if nothing moved on while it ran: the task in the same state, its checks still on this commit, learning

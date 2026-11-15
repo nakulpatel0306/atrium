@@ -268,8 +268,9 @@ export type Evidence = { source: MemoryLine["source"]; evidence: string; why: st
 
 // Words a steer that corrects the agent uses, rather than one that adds to the task ("also add a test"). A fixed
 // rule, so a steer only costs a call when it reads like a rule the agent broke.
-const CORRECTION = /\b(don'?t|do not|doesn'?t|never|not|no longer|instead|rather than|stop|wrong|avoid|always|must|mustn'?t|should|shouldn'?t|isn'?t|aren'?t)\b/i;
-export const readsAsCorrection = (note: string): boolean => CORRECTION.test(note);
+// Apostrophes may be straight or curly, as macOS types them.
+const CORRECTION = /\b(don['’]?t|do not|doesn['’]?t|can['’]?t|cannot|never|not|no longer|instead|rather than|stop|wrong|avoid|always|must|mustn['’]?t|should|shouldn['’]?t|isn['’]?t|aren['’]?t)\b/i;
+export const readsAsCorrection = (note: string): boolean => CORRECTION.test(note) || /^\s*no\b/i.test(note);
 
 // The user's steer, as a correction the curator may turn into a line; null when it doesn't read as one.
 export function steerEvidence(task: Task, note: string): Evidence | null {
@@ -321,6 +322,7 @@ export async function acceptLine(db: Database, id: string, edited: string): Prom
   const { line } = checked;
   const space = getSpace(db, proposal.spaceId);
   if (!space?.repoPath) throw new MemoryRefused("This space has no repo folder, so there's no CLAUDE.md to add to.");
+  if (space.learning === "off") throw new MemoryRefused("Learning is off for this space, so Atrium adds no CLAUDE.md lines here. Turn it on in the space's settings first.");
   const repo = space.repoPath;
   const task = proposal.taskId ? getTask(db, proposal.taskId) : null;
   const onTask = task?.branch && task.status === "review" && !(await checkedOut(repo, task.branch)) ? await branchSha(repo, task.branch) : null;

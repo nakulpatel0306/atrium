@@ -134,6 +134,12 @@ test("CLAUDE.md's size is reported, and a proposal is accepted with the user's t
   expect(await accepted.json()).toMatchObject({ status: "accepted", branch: "atrium/tsk_cart" });
   expect(git("show", "atrium/tsk_cart:CLAUDE.md")).toBe("## Notes from Atrium\n\n- Money is integer cents.");
   expect((await send("POST", "/api/memory/mem_a", { action: "accept", line: "x" })).status).toBe(409);
+  // With learning off, a proposal can't be accepted even by a direct request; the UI hides it anyway.
+  db.query("INSERT INTO memory_lines (id, space_id, task_id, source, line, created_at) VALUES ('mem_c', ?, NULL, 'steer', 'Off.', 1)").run(space.id);
+  db.query("UPDATE spaces SET learning = 'off' WHERE id = ?").run(space.id);
+  const off = await send("POST", "/api/memory/mem_c", { action: "accept", line: "Off." });
+  expect([off.status, ((await off.json()) as { error: string }).error]).toEqual([409, "Learning is off for this space, so Atrium adds no CLAUDE.md lines here. Turn it on in the space's settings first."]);
+  db.query("UPDATE spaces SET learning = 'light' WHERE id = ?").run(space.id);
   expect(await (await send("POST", "/api/memory/mem_b", { action: "dismiss" })).json()).toMatchObject({ status: "dismissed" });
   expect((await send("POST", "/api/memory/mem_b", { action: "maybe" })).status).toBe(400);
 });

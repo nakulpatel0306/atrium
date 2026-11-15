@@ -132,7 +132,11 @@ describe("proposing", () => {
     for (const note of ["Don't use floats for money", "Use integer cents instead", "never touch the lockfile", "That's wrong, prices are cents", "Always run the migration test", "Tests should live next to the code"]) {
       expect(steerEvidence(t, note)?.source).toBe("steer");
     }
-    for (const note of ["Also add a test for the empty cart", "Use the brand colour for the footer links", "Make the button bigger"]) expect(steerEvidence(t, note)).toBeNull();
+    // Curly apostrophes, as macOS types them, can't and cannot, and a leading "No," read as corrections too.
+    for (const note of ["Don’t use floats", "That isn’t how we do it", "You can't edit the lockfile", "This cannot use globals", "No, use the helper", "no — the other file"]) {
+      expect(steerEvidence(t, note)?.source).toBe("steer");
+    }
+    for (const note of ["Also add a test for the empty cart", "Use the brand colour for the footer links", "Make the button bigger", "Note the new route too"]) expect(steerEvidence(t, note)).toBeNull();
   });
 
   test("a pattern finding waits for a second from another round in the space, then the pair is the evidence", () => {
