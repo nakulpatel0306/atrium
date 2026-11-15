@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 
 // Keeping a private space's Claude run away from bank exports (Downloads, Desktop, Documents, and any
 // CSV, OFX or QFX outside its own folder).
@@ -11,8 +11,11 @@ import { join, resolve, sep } from "node:path";
 // - With no Bash, the whole home folder, /Users/Shared and /Volumes are denied and only the cwd is re-opened
 //   (sandbox.filesystem.allowRead re-opens a narrower plain path inside a denied one).
 // - With Bash (a private repo), its tools still need the home folder, so the deny walks down from each root to the
-//   cwd and covers every sibling's exports at every level. Paths are real paths, and a symlinked folder is denied as
-//   the link and as its target. A folder that can't be listed is denied whole (fail closed).
+//   cwd and closes every folder beside the way down as one path, which covers its exports and keeps the list short:
+//   Claude Code adds every entry to every Bash command, and nine globs per sibling overflowed the OS's argument limit
+//   beside a few hundred folders. Dot folders and the toolchain folders in TOOL_FOLDERS stay readable (that's where
+//   bun, node, cargo and their caches live) and get the export globs instead. Paths are real paths, and a symlinked
+//   folder is denied as the link and as its target. A folder that can't be listed has every export under it denied.
 //
 // Pattern syntax (sandbox.filesystem on macOS, and Read permission rules): `*`, `?`, `**` and bracket classes such
 // as `[cC]` are wildcards, so `*.[cC][sS][vV]` matches every case of ".csv". A wildcard deny can't be re-opened.
@@ -25,9 +28,13 @@ export const EXPORT_GLOBS = [
 export const CLOUD_FOLDERS = ["Library/Mobile Documents", "Library/CloudStorage", "Library/Mail", "Library/Containers/com.apple.mail"];
 export const PRIVATE_FOLDERS = ["Downloads", "Desktop", "Documents"];
 const SHARED_ROOTS = ["/Users/Shared", "/Volumes"];
+// Folders beside the way down that test commands may need to read whole: macOS's Library (frameworks, caches),
+// Applications (CLIs linked out of app bundles), Go's module cache, and the per-user cache folder in /var/folders.
+const TOOL_FOLDERS = ["Library", "Applications", "go", "C"];
 const OTHER_ROOTS = [...SHARED_ROOTS, "/tmp", "/private/tmp", "/private/var/folders"];
 
 const inside = (path: string, dir: string) => path === dir || path.startsWith(dir + sep);
+const readable = (path: string) => basename(path).startsWith(".") || TOOL_FOLDERS.includes(basename(path));
 const exports = (dir: string) => EXPORT_GLOBS.map((g) => join(dir, "**", g));
 const filesIn = (dir: string) => EXPORT_GLOBS.map((g) => join(dir, g));
 const real = (path: string) => {
@@ -104,7 +111,7 @@ function denyExports(root: string, keep: string, closeAll: (dir: string) => bool
     ancestor: (dir) => out.push(...filesIn(dir)),
     sibling: (paths, dir, closed) => {
       if (!dir) return;
-      const close = closed || paths.some(closeAll);
+      const close = closed || paths.some(closeAll) || !paths.some(readable);
       for (const p of paths) out.push(...(close ? [p] : exports(p)));
     },
     unlisted: (dir) => {

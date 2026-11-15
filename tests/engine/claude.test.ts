@@ -484,16 +484,23 @@ describe("a private repo's run, which keeps its test commands", () => {
   const csv = (dir: string) => join(dir, "**", "*.[cC][sS][vV]");
 
   test("only its own folder stays open; siblings at every level, links and their targets are denied", () => {
+    for (const d of [".bun/bin", "Library/Caches", "go/pkg"]) mkdirSync(join(root, d), { recursive: true });
     const { denyRead } = privateReads(join(root, "Atrium", "investing", "run-x"), { bash: true, home: root });
-    expect(denyRead).toContain(csv(join(root, "Atrium", "other")));
-    expect(denyRead).toContain(csv(join(root, "Atrium", "investing", "other-run")));
-    expect(denyRead).toContain(csv(join(root, "Projects")));
+    // A folder beside the way down is closed as one path, which covers every export in it.
+    expect(denyRead).toContain(join(root, "Atrium", "other"));
+    expect(denyRead).toContain(join(root, "Atrium", "investing", "other-run"));
+    expect(denyRead).toContain(join(root, "Projects"));
     expect(denyRead).toContain(join(root, "Atrium", "investing", "*.[cC][sS][vV]"));
     expect(denyRead).toContain(join(root, "Documents"));
-    // A link to Documents is closed as a whole too, and a linked folder's target is covered.
+    // A link to Documents is closed as a whole too, and a linked folder and its target are closed.
     expect(denyRead).toContain(join(root, "Docs"));
-    expect(denyRead).toContain(csv(join(root, "Atrium", "linked")));
-    expect(denyRead).toContain(csv(join(root, "outside")));
+    expect(denyRead).toContain(join(root, "Atrium", "linked"));
+    expect(denyRead).toContain(join(root, "outside"));
+    // Toolchains stay readable for the test commands; only their exports are denied.
+    for (const d of [".bun", "Library", "go"]) {
+      expect(denyRead).not.toContain(join(root, d));
+      expect(denyRead).toContain(csv(join(root, d)));
+    }
     const keep = join(root, "Atrium", "investing", "run-x");
     expect(denyRead.some((p) => p.startsWith(keep))).toBe(false);
   });
@@ -506,6 +513,21 @@ describe("a private repo's run, which keeps its test commands", () => {
     for (const f of ["Downloads", "Desktop", "Documents"]) expect(denyRead).toContain(join(gone, f));
     expect(denyRead).toContain(csv(gone));
   });
+});
+
+test("a private repo beside 500 folders keeps its sandbox settings small enough for every Bash command", () => {
+  // Under /private/tmp, which has few entries, so only the 500 folders beside the repo grow the list.
+  const root = mkdtempSync("/private/tmp/atrium-size-");
+  try {
+    for (let i = 0; i < 500; i++) mkdirSync(join(root, `project-${i}`));
+    mkdirSync(join(root, "repo"));
+    const settings = sandboxSettings(join(root, "repo"), { privateData: true, bash: true });
+    expect(settings.length).toBeLessThan(64 * 1024);
+    expect(sandboxSettings(join(root, "repo")).length).toBeLessThan(8 * 1024);
+    expect(JSON.parse(settings).sandbox.filesystem.denyRead).toContain(join(realpathSync(root), "project-7"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("card data: a private run refuses an older or unreadable Claude Code, and nothing is spawned for real work", async () => {
