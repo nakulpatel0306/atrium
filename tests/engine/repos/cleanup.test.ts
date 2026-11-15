@@ -221,6 +221,10 @@ test("a yes still held when the engine stopped starts after its hold on the next
   if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
   resolveApproval(db, asked.approval.id, "approve");
   const repos = createRepos({ db, kick: () => {}, holdMs: 0 });
+  // Building the engine side starts nothing: boot resumes held yeses only after recovery (boot.ts).
+  await Bun.sleep(50);
+  expect(existsSync(path)).toBe(true);
+  repos.resumeHeld();
   await Bun.sleep(50);
   await repos.settle();
   expect(existsSync(path)).toBe(false);

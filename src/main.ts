@@ -12,10 +12,8 @@ import { keepAwake, powerSource } from "./engine/power";
 import { createRunner, recoverOnBoot } from "./engine/runner";
 import { onApprovalResolved } from "./engine/approvals";
 import { createRepos } from "./engine/repos";
-import { recoverRemovals } from "./engine/repos/cleanup";
+import { bootRepos } from "./engine/boot";
 import { finishPendingDeletes } from "./engine/delete-files";
-import { recoverRepoActions } from "./engine/repos/create";
-import { removeOrphanSamples } from "./engine/sample";
 import { setupSpace } from "./engine/setup";
 import { startServer } from "./server/server";
 
@@ -59,9 +57,7 @@ try {
 await recoverOnBoot(db);
 // Before the runner starts, so no run works in a folder that is being moved.
 for (const m of migrateSpaceFolders(db)) logActivity(db, m.spaceId, "atrium", `Moved this space's files to ${tildePath(m.to)}, where Finder can see them.`);
-recoverRepoActions(db);
-recoverRemovals(db);
-removeOrphanSamples(db);
+bootRepos(db, repos);
 // Files a delete queued but didn't get to remove before the engine stopped; their rows are already gone.
 void finishPendingDeletes(db).catch((e) => console.error("Couldn't finish removing deleted files:", e));
 runner.start();

@@ -37,6 +37,8 @@ export type Repos = {
   askToRemove(cloneId: string): ReturnType<typeof askToRemove>;
   storage(): Promise<StorageView>;
   settle(): Promise<void>;
+  // Yeses still held when the engine last stopped; boot calls it once recovery has run (boot.ts).
+  resumeHeld(now?: number): void;
 };
 
 // The engine's side of repos: what runs after Nakul decides, on-demand clones, and the daily idle check.
@@ -73,11 +75,6 @@ export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: nu
     setTimeout(() => start(actionId, approvalId), left).unref?.();
   }
 
-  // A yes still in its hold when the engine stopped starts when its hold would have ended.
-  const held = db
-    .query("SELECT r.id AS action, a.id AS approval, a.resolved_at AS at FROM repo_actions r JOIN approvals a ON a.id = r.approval_id WHERE r.status = 'draft' AND a.status = 'approved' AND a.undone_at IS NULL")
-    .all() as { action: string; approval: string; at: number | null }[];
-  for (const h of held) hold(h.action, h.approval, h.at ?? 0);
 
   async function sizeOf(path: string): Promise<number> {
     const hit = sizes.get(path);
@@ -107,6 +104,17 @@ export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: nu
       track("scan", () => scanIdleClones(db, now));
     },
     askToRemove: (cloneId) => askToRemove(db, cloneId),
+    resumeHeld(now = Date.now()) {
+      const held = db
+        .query("SELECT r.id AS action, a.id AS approval, a.resolved_at AS at FROM repo_actions r JOIN approvals a ON a.id = r.approval_id WHERE r.status = 'draft' AND a.status = 'approved' AND a.undone_at IS NULL")
+        .all() as { action: string; approval: string; at: number | null }[];
+      for (const h of held) {
+        // A hold that ran out while the engine was down starts over, so the yes gets its full minute to be taken back.
+        const at = (h.at ?? 0) + holdMs > now ? (h.at ?? now) : now;
+        if (at !== h.at) db.query("UPDATE approvals SET resolved_at = ? WHERE id = ?").run(at, h.approval);
+        hold(h.action, h.approval, at);
+      }
+    },
     async storage() {
       const repos: StorageView["repos"] = [];
       for (const space of listSpaces(db, { includeArchived: true })) {
