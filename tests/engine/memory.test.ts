@@ -216,6 +216,26 @@ describe("accepting", () => {
     git(repo, "worktree", "remove", "--force", wt);
   });
 
+  test("a task in review whose branch the user is rebasing gets a branch of its own, and the rebase can go on", async () => {
+    const repo = h.repo();
+    const s = h.space(repo);
+    const t = createTask(h.db, { spaceId: s.id, title: "A" });
+    h.db.query("UPDATE tasks SET branch = 'atrium/tsk_a' WHERE id = ?").run(t.id);
+    setTaskLoop(h.db, t.id, newLoop(SIZE_BUDGETS.small));
+    setTaskStatus(h.db, t.id, "review");
+    git(repo, "checkout", "-qb", "atrium/tsk_a");
+    writeFileSync(join(repo, "a.txt"), "a\n");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-qm", "a");
+    const tip = git(repo, "rev-parse", "atrium/tsk_a");
+    const r = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", "rebase", "-i", "HEAD~1"], { cwd: repo, env: { ...process.env, GIT_SEQUENCE_EDITOR: "sed -i.bak 's/^pick/edit/'" } });
+    expect(r.exitCode).toBe(0);
+    proposal(s.id, t.id);
+    expect((await acceptLine(h.db, "mem_one", "Money is integer cents.")).branch).toBe("atrium/memory-one");
+    expect(git(repo, "rev-parse", "atrium/tsk_a")).toBe(tip);
+    expect(Bun.spawnSync(["git", "-c", "commit.gpgsign=false", "rebase", "--continue"], { cwd: repo, env: { ...process.env, GIT_EDITOR: "true" } }).exitCode).toBe(0);
+  });
+
   test("with no open task the line goes on a small branch of its own, creating CLAUDE.md", async () => {
     const repo = h.repo();
     const s = h.space(repo);

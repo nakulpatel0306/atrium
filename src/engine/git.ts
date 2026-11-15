@@ -4,6 +4,7 @@ import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf } from "./diff-parse";
+import { readCapped } from "./capped-read";
 import { isEnvPath } from "./envpath";
 
 const PROTECTED = new Set(["main", "master"]);
@@ -935,11 +936,31 @@ export async function editFileCommit(path: string, tip: string, file: string, ed
   }
 }
 
-// Whether any checkout of the repo (its own folder or a worktree) has `branch` checked out. Moving such a branch would
-// leave that checkout's files behind its HEAD, so a failure to tell counts as checked out.
+// Whether any checkout of the repo (its own folder or a worktree) has `branch` checked out, or is in the middle of
+// rebasing it or bisecting. Moving such a branch would leave that checkout's files behind its HEAD, or make the user's
+// `rebase --continue` fail to update the branch, so a failure to tell counts as checked out.
 export async function checkedOut(path: string, branch: string): Promise<boolean> {
   const res = await git(path, ["for-each-ref", "--format=%(worktreepath)", `refs/heads/${branch}`]);
-  return res.code !== 0 || res.out.trim() !== "";
+  if (res.code !== 0 || res.out.trim() !== "") return true;
+  // A rebase detaches HEAD, so worktreepath is empty while it runs; the branch is named in the git dir instead.
+  const common = await git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (common.code !== 0) return true;
+  const root = common.out.trim();
+  let dirs: string[];
+  try {
+    dirs = [root, ...readdirSync(join(root, "worktrees")).map((d) => join(root, "worktrees", d))];
+  } catch {
+    dirs = [root];
+  }
+  const ref = `refs/heads/${branch}`;
+  for (const dir of dirs) {
+    if (existsSync(join(dir, "BISECT_START"))) return true;
+    for (const file of ["rebase-merge/head-name", "rebase-apply/head-name"]) {
+      const read = readCapped(join(dir, file), 4096);
+      if (read.ok && read.bytes.toString().trim() === ref) return true;
+    }
+  }
+  return false;
 }
 
 // Moves an Atrium branch from `from` to `to`, only if nothing moved it meanwhile.
