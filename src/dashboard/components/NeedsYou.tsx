@@ -1,6 +1,6 @@
 import { ChevronRight, Inbox, SearchCheck, TriangleAlert } from "lucide-react";
 import { type Ref, useState } from "react";
-import { post, type State } from "../api";
+import type { State } from "../api";
 import { absolute, relative } from "../format";
 import { navigate } from "../route";
 import { attentionText, reviewLine, summaryLine } from "../summary";
