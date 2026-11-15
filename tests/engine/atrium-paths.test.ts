@@ -30,6 +30,18 @@ test("a run in its own space folder is denied the database, transcripts, logs an
   expect(denied).not.toContain(root);
 });
 
+test("the first-run sample's repo, kept in Atrium's own folder, is open to its run; other samples and the database aren't", () => {
+  for (const d of ["samples/sample_mine/src", "samples/sample_old"]) mkdirSync(join(root, d), { recursive: true });
+  const denied = atriumDenyPaths(join(root, "samples", "sample_mine"));
+  expect(denied).not.toContain(join(root, "samples", "sample_mine"));
+  expect(denied).not.toContain(join(root, "samples"));
+  expect(denied).toContain(join(root, "samples", "sample_old"));
+  expect(denied).toContain(join(root, "atrium.db"));
+  expect(denied).toContain(join(root, "spaces"));
+  // Any other run is kept out of every sample.
+  expect(atriumDenyPaths("/tmp/some-repo")).toContain(join(root, "samples"));
+});
+
 test("a run outside Atrium's folder (a repo or a scratch folder) is denied every space", () => {
   const denied = atriumDenyPaths("/tmp/some-repo");
   expect(denied).toContain(join(root, "spaces"));

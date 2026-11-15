@@ -10,6 +10,8 @@ import { config } from "../config";
 export function atriumDenyPaths(cwd: string): string[] {
   const { home, dbPath, transcriptsDir, filesHome } = config();
   const spaces = join(home, "spaces");
+  // The first-run sample's repo copies (sample.ts): a sample's run reads its own, as a space's run reads its folder.
+  const samples = join(home, "samples");
   const paths = new Set([dbPath, `${dbPath}-wal`, `${dbPath}-shm`, transcriptsDir, join(home, "engine.log")]);
   // A dev or test engine with folders of its own must still keep its agents out of the real ones.
   const realHome = join(homedir(), "Library", "Application Support", "Atrium");
@@ -17,8 +19,8 @@ export function atriumDenyPaths(cwd: string): string[] {
   if (realHome !== home) paths.add(realHome);
   if (realFiles !== filesHome) paths.add(realFiles);
   // An engine with its own ATRIUM_HOME keeps the files folder inside it; that one is handled below.
-  for (const name of list(home)) if (name !== "spaces" && join(home, name) !== filesHome) paths.add(join(home, name));
-  for (const root of [spaces, filesHome]) {
+  for (const name of list(home)) if (name !== "spaces" && name !== "samples" && join(home, name) !== filesHome) paths.add(join(home, name));
+  for (const root of [spaces, filesHome, samples]) {
     const own = ownSpace(cwd, root);
     // A repo or scratch run has no space folder of its own here.
     if (!own) paths.add(root);
