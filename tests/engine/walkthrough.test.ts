@@ -89,6 +89,15 @@ describe("the reviewer's pass", () => {
     expect(light.indexOf("APPROACH")).toBeLessThan(light.indexOf("VERDICT: approve"));
   });
 
+  test("the reviewer is told which checks Atrium ran and how they came out, so it doesn't ask for a test run", () => {
+    const s = h.space(h.repo());
+    const t = createTask(h.db, { spaceId: s.id, title: "Coupons" });
+    const passed = setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.small), checks: "passed", passing: ["Typecheck", "Tests"] });
+    expect(reviewPrompt(passed, "diff")).toContain("Atrium ran these checks on this change itself, outside the writer's sandbox: Typecheck, Tests passed.");
+    const none = setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.small), checks: "none" });
+    expect(reviewPrompt(none, "diff")).toContain("No checks could prove this change");
+  });
+
   test("a review round keeps the walkthrough on the task for the commit it read, and counts a round that asked for changes", () => {
     const s = updateSpace(h.db, h.space(h.repo()).id, { reviewBy: "codex", learning: "deep" });
     const t = createTask(h.db, { spaceId: s.id, title: "Coupons" });
