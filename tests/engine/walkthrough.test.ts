@@ -82,7 +82,7 @@ describe("the reviewer's pass", () => {
     expect(light.indexOf("APPROACH")).toBeLessThan(light.indexOf("VERDICT: approve"));
   });
 
-  test("a review round keeps the walkthrough on the task for the commit it read", () => {
+  test("a review round keeps the walkthrough on the task for the commit it read, and counts a round that asked for changes", () => {
     const s = updateSpace(h.db, h.space(h.repo()).id, { reviewBy: "codex", learning: "deep" });
     const t = createTask(h.db, { spaceId: s.id, title: "Coupons" });
     setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.small), stage: "review", reviewedSha: "sha1" });
@@ -92,6 +92,7 @@ describe("the reviewer's pass", () => {
     const recorded = recordReview(h.db, review, "codex", { status: "ok", summary: reply, inputTokens: 1, outputTokens: 1 })!;
     const w = recorded.parent.loop!.walkthrough!;
     expect([w.by, w.source, w.sha, w.look.length]).toEqual(["codex", "review", "sha1", 3]);
+    expect(recorded.parent.loop!.tally.reviewRounds).toBe(1);
     expect(listMessages(h.db, t.id).at(-1)!.body).not.toContain("APPROACH");
   });
 

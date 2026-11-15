@@ -992,6 +992,8 @@ export function createRunner(deps: {
   // its branch, and the next run checks it out again.
   function steeredByYou(task: Task, note: string) {
     appendTaskDetail(db, task.id, `\n\n${steerBlock(note)}`);
+    const loop = getTask(db, task.id)?.loop;
+    if (loop) setTaskLoop(db, task.id, { ...loop, tally: { ...loop.tally, steers: loop.tally.steers + 1 } });
     setTaskStatus(db, task.id, "queued");
     steeredBySteer.add(task.id);
     const flat = note.replace(/\s+/g, " ");
@@ -1342,7 +1344,10 @@ export function createRunner(deps: {
       const newlyPassing = loop.passing.some((n) => !before.passing.includes(n));
       const stalled = newlyPassing ? 0 : before.stalled + 1;
       const feedback = failed.length ? `## Atrium's checks failed after your last turn\n${failureReport(failed)}\n\nFix what they report. Your changes so far are on this branch; continue from them.` : before.feedback;
-      loop = { ...loop, stage: "writing", feedback, failSig: sig, stalled };
+      // For the retro: a turn sent back for failing checks, and whether one of them had passed earlier in the task.
+      const late = failed.some((c) => before.passing.includes(c.name));
+      const tally = failed.length ? { ...loop.tally, checkFails: loop.tally.checkFails + 1, lateFails: loop.tally.lateFails + (late ? 1 : 0) } : loop.tally;
+      loop = { ...loop, stage: "writing", feedback, failSig: sig, stalled, tally };
       setTaskLoop(db, task.id, loop);
       const names = failed.map((c) => c.name).join(", ");
       const over = overBudget(loop);

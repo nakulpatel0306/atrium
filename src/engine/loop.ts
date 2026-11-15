@@ -38,6 +38,18 @@ export type ReviewRound = {
 
 export type Budget = { tokens: number; minutes: number };
 
+// What the director retro is built from, counted as the task runs (retro.ts): the user's steers, writer turns sent
+// back for failing checks, failures of a check that had passed earlier in the task, and review rounds that asked for
+// changes. Never reset, so the retro sees the whole task.
+export type Tally = { steers: number; checkFails: number; lateFails: number; reviewRounds: number };
+export const NO_TALLY: Tally = { steers: 0, checkFails: 0, lateFails: 0, reviewRounds: 0 };
+
+// A stored tally, field by field; anything that isn't a count reads as none.
+export function storedTally(v: unknown): Tally {
+  const t = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const n = (x: unknown) => (Number.isInteger(x) && (x as number) >= 0 ? (x as number) : 0);
+  return { steers: n(t.steers), checkFails: n(t.checkFails), lateFails: n(t.lateFails), reviewRounds: n(t.reviewRounds) };
+}
 export type Pause = { kind: "budget" | "loop"; diagnosis: string };
 
 export type LoopState = {
@@ -109,6 +121,7 @@ export type LoopState = {
   // The walkthrough of the result for the user (walkthrough.ts); null until the reviewer or the cheap tier writes one,
   // and when the space's learning is off.
   walkthrough: Walkthrough | null;
+  tally: Tally;
 };
 
 export const MAX_REVIEW_ROUNDS = 2;
@@ -160,6 +173,7 @@ export function newLoop(budget: Budget): LoopState {
     fanout: null,
     adopted: false,
     walkthrough: null,
+    tally: NO_TALLY,
   };
 }
 

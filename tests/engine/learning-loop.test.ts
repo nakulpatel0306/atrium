@@ -57,3 +57,13 @@ test("a reviewer that writes the walkthrough saves the extra call, and deep mode
   await Bun.sleep(50);
   expect(claude.calls.some((c) => isWalkthrough(c.systemPrompt))).toBe(false);
 });
+
+test("the tally counts turns sent back for failing checks, a check that broke after passing, and review rounds", async () => {
+  const s = h.space(h.repo(), { reviewBy: "claude" });
+  const t = createTask(h.db, { spaceId: s.id, title: "Cart" });
+  // Passes, the review asks for changes, the fix breaks the check that had passed, then passes again.
+  const claude = agents(["pass", "wrong", "pass"], ["FINDING medium work.txt:1 off by one\nVERDICT: changes", "VERDICT: approve"]);
+  h.start({ claude: claude.adapter });
+  await waitFor(() => h.status(t.id) === "review", 15_000);
+  expect(h.task(t.id).loop!.tally).toEqual({ steers: 0, checkFails: 1, lateFails: 1, reviewRounds: 1 });
+});

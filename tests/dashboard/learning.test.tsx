@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ChangesList } from "../../src/dashboard/components/ChangesView";
 import { LoopPanel } from "../../src/dashboard/components/LoopPanel";
+import { RetroCard, RollupCard } from "../../src/dashboard/components/Retro";
 import { spotLink, WalkthroughCard } from "../../src/dashboard/components/Walkthrough";
 import type { DiffResult } from "../../src/engine/diff-parse";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
@@ -146,4 +147,24 @@ test("a loop pause on a repeated failure leads with the diagnosis; a budget paus
   const b = render(<LoopPanel task={budget.task} state={budget.state} repo showChecks={false} />);
   expect(b.textContent).not.toContain("Want the diagnosis");
   expect(button(b, "Give it a hint")!.className).toBe("btn p");
+});
+
+test("the retro and the roll-up show only the measured lines the engine sent", () => {
+  const { state, task } = setup({}, "done");
+  expect(render(<RetroCard task={task} state={state} />).textContent).toBe("");
+  act(() => root!.unmount());
+  root = null;
+  state.learning.retros[task.id] = { lines: ["You steered 1 time · no rework · no late check failures.", "~$0.10 est. (20k weighted tokens). Not enough medium tasks in this space to compare yet.", "Next time: Nothing stood out: keep briefs this specific."] };
+  state.learning.rollups.all = { tasks: 5, lines: ["This week (5): median $0.20 est., 0.4 rework turns each"] };
+  const el = render(
+    <>
+      <RetroCard task={task} state={state} />
+      <RollupCard state={state} spaceId={null} />
+      <RollupCard state={state} spaceId="spc_none" />
+    </>,
+  );
+  expect(el.textContent).toContain("How directing it went");
+  expect(el.textContent).toContain("Next time: Nothing stood out");
+  expect(el.textContent).toContain("What paid off this weekmeasured on 5 finished tasks");
+  expect(el.querySelectorAll(".rollup")).toHaveLength(1);
 });

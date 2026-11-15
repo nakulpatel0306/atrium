@@ -7,6 +7,7 @@ import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
 import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
+import { RetroCard, RollupCard } from "./Retro";
 import { ChecksBadge, LoopPanel } from "./LoopPanel";
 import { CostChip } from "./Shape";
 import { followsText } from "../../engine/shape";
@@ -389,6 +390,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
           {review && <ReviewActions approval={review} outcome={task.outcome} />}
+          {task.status === "done" && <RetroCard task={task} state={state} />}
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">
@@ -592,6 +594,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
             )}
           </div>
           )}
+          <RollupCard state={state} spaceId={space.id} />
           <Activity state={state} spaceId={space.id} />
         </div>
         <div className="live">

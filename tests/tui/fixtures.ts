@@ -138,6 +138,7 @@ export function makeState(over: Partial<State> = {}): State {
       strong: { model: "opus", stock: "opus", jobs: "Review, a writer after a pause, judging attempts" },
     },
     oldData: { present: false, dismissed: false },
+    learning: { retros: {}, rollups: {} },
     ...over,
   };
 }
