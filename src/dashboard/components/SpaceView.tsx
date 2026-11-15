@@ -392,7 +392,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
           {review && <ReviewActions approval={review} outcome={task.outcome} />}
-          {task.status === "done" && <RetroCard task={task} state={state} />}
+          <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">

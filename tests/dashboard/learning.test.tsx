@@ -168,6 +168,10 @@ test("the retro and the roll-up show only the measured lines the engine sent", (
   expect(el.textContent).toContain("Next time: Nothing stood out");
   expect(el.textContent).toContain("What paid off this weekmeasured on 5 finished tasks");
   expect(el.querySelectorAll(".rollup")).toHaveLength(1);
+  act(() => root!.unmount());
+  root = null;
+  // A task whose pull request is open is still in review, and shows its retro there too.
+  expect(render(<RetroCard task={{ ...task, status: "review", prUrl: "https://example.com/pr/1" }} state={state} />).textContent).toContain("How directing it went");
 });
 
 test("a proposed CLAUDE.md line is shown exactly, edited, and accepted with the user's text", async () => {

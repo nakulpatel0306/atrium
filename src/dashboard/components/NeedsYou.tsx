@@ -12,6 +12,7 @@ import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
 import { Markdown } from "./Markdown";
+import { RetroCard } from "./Retro";
 import { WalkthroughCard } from "./Walkthrough";
 import { WhatItMade } from "./WhatItMade";
 
@@ -72,6 +73,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           {approval.taskId && space ? (
             <>
               {task && <WalkthroughCard task={task} space={space} />}
+              {task && <RetroCard task={task} state={state} />}
               <WhatItMade taskId={approval.taskId} spaceId={space.id} spaceKind={space.kind} />
             </>
           ) : (

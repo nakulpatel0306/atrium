@@ -192,3 +192,12 @@ test("space detail shows the learning dial, a proposed CLAUDE.md line and the we
   expect(all).toContain('Add to CLAUDE.md? "Use integer cents." Edit and accept it on the dashboard.');
   expect(all).toContain("What paid off this week (6 tasks)");
 });
+
+test("a result waiting for you shows its retro in the approval's detail too", () => {
+  const state = makeState();
+  const approval = state.approvals.find((a) => a.kind === "review" && a.taskId)!;
+  state.learning.retros[approval.taskId!] = { lines: ["You steered once · no rework · no late check failures.", "~$0.10 est.", "Next time: Nothing stood out: keep briefs this specific."] };
+  const all = text(approvalDetail(deriveView(state, { ...initialUi })));
+  expect(all).toContain("How directing it went");
+  expect(all).toContain("You steered once");
+});

@@ -188,6 +188,8 @@ export function approvalDetail(view: View, width = 100): DetailLine[] {
   const attention = attentionText(task?.loop);
   if (attention) lines.push(plain(attention, { color: color.bad }));
   lines.push(blank, ...(approval.detail ? markdownLines(approval.detail, width) : [plain("No further detail.")]), blank);
+  const retro = task ? view.state.learning.retros[task.id] : undefined;
+  if (retro) lines.push(heading("How directing it went"), ...retro.lines.map((l) => plain(l)), blank);
   lines.push(muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`));
   if (approval.alwaysAsk === "create_repo") lines.push(plain("Edit the fields in the dashboard. a approves them as shown."));
   lines.push(

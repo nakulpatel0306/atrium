@@ -3,7 +3,7 @@ import type { State } from "../api";
 
 type Task = State["tasks"][number];
 
-// The director retro on a finished task: what Atrium measured (steers, rework, late failures, cost against similar
+// The director retro on a task the user accepted or opened a pull request for: what Atrium measured (steers, rework, late failures, cost against similar
 // tasks) and one suggestion picked by fixed rules from those numbers.
 export function RetroCard({ task, state }: { task: Task; state: State }) {
   const retro = state.learning.retros[task.id];

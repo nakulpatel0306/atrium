@@ -92,7 +92,7 @@ describe("the reviewer's pass", () => {
     const recorded = recordReview(h.db, review, "codex", { status: "ok", summary: reply, inputTokens: 1, outputTokens: 1 })!;
     const w = recorded.parent.loop!.walkthrough!;
     expect([w.by, w.source, w.sha, w.look.length]).toEqual(["codex", "review", "sha1", 3]);
-    expect(recorded.parent.loop!.tally.reviewRounds).toBe(1);
+    expect(recorded.parent.loop!.tally!.reviewRounds).toBe(1);
     expect(listMessages(h.db, t.id).at(-1)!.body).not.toContain("APPROACH");
   });
 

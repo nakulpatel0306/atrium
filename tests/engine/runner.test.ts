@@ -2057,7 +2057,7 @@ describe("steer", () => {
     expect(git(path, "show", `atrium/${t.id}:footer.html`)).toBe("<footer>half</footer>");
     expect(listActivity(db).map((a) => a.message)).toContain(`You steered: ${note}`);
     // The director retro counts it.
-    expect(getTask(db, t.id)!.loop!.tally.steers).toBe(1);
+    expect(getTask(db, t.id)!.loop!.tally!.steers).toBe(1);
 
     await waitFor(() => status(t.id) === "review", 15000);
     const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");

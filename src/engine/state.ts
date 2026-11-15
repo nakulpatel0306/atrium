@@ -18,7 +18,7 @@ import { claudeSince, spaceSpend, spendWindows, taskSpend, totalSince } from "./
 import { type Tier, TIER_DEFAULTS, TIER_JOBS, TIERS, tierModel } from "./tiers";
 import { hasOldData, OLD_DATA_DISMISSED } from "./old-data";
 import { type Attachment, claimedAttachments } from "./attachments";
-import { type Retro, type Rollup, retros, rollup } from "./retro";
+import { learned, type Retro, type Rollup } from "./retro";
 import { type MemoryLine, openLines } from "./memory";
 
 export type RunSummary = {
@@ -83,8 +83,9 @@ export type State = {
   repoActions: RepoActionView[];
   // Whether removed features left data behind (see old-data.ts), and whether Home's notice about it was put off.
   oldData: { present: boolean; dismissed: boolean };
-  // The learning features (docs/loop.md, Learning): each finished task's director retro, this week's roll-up by space
-  // and for everything ("all"; a key is missing until there's enough data), and open CLAUDE.md proposals.
+  // The learning features (docs/loop.md, Learning), for spaces with learning on only: each finished task's director
+  // retro, this week's roll-up by space and for all of them ("all"; a key is missing until there's enough data), and
+  // open CLAUDE.md proposals.
   learning: { retros: Record<string, Retro>; rollups: Record<string, Rollup>; memory: MemoryLine[] };
 };
 
@@ -153,13 +154,11 @@ function planGauge(db: Database, now: number, reserve: number): State["plan"] {
   return { fiveHour, sevenDay: planWindow(db, "usage.claude.sevenDay", now), atrium: claudeSince(db, since), reserve };
 }
 
+// Only spaces with learning on show retros, roll-ups and CLAUDE.md proposals: Off means none of them.
 function learningView(db: Database, tasks: Task[], now: number): State["learning"] {
-  const rollups: Record<string, Rollup> = {};
-  for (const key of [null, ...listSpaces(db).map((s) => s.id)]) {
-    const r = rollup(db, tasks, key, now);
-    if (r) rollups[key ?? "all"] = r;
-  }
-  return { retros: retros(db, tasks), rollups, memory: openLines(db) };
+  const spaces = listSpaces(db);
+  const on = new Set(spaces.filter((s) => s.learning !== "off").map((s) => s.id));
+  return { ...learned(db, tasks, spaces, now), memory: openLines(db).filter((m) => on.has(m.spaceId)) };
 }
 
 export function snapshot(db: Database, registry?: Registry): State {

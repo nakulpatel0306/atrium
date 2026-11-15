@@ -103,7 +103,7 @@ export function recordReview(db: Database, reviewTask: Task, reviewer: string, r
     ...parent.loop,
     reviews: [...parent.loop.reviews, round],
     walkthrough,
-    tally: wantsTriage(round) ? { ...parent.loop.tally, reviewRounds: parent.loop.tally.reviewRounds + 1 } : parent.loop.tally,
+    tally: wantsTriage(round) && parent.loop.tally ? { ...parent.loop.tally, reviewRounds: parent.loop.tally.reviewRounds + 1 } : parent.loop.tally,
     usage: { ...parent.loop.usage, tokens: parent.loop.usage.tokens + (result.status === "ok" ? weightedTokens(result) : 0) },
   };
   return { parent: setTaskLoop(db, parent.id, loop), round };

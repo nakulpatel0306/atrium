@@ -44,9 +44,11 @@ export type Budget = { tokens: number; minutes: number };
 export type Tally = { steers: number; checkFails: number; lateFails: number; reviewRounds: number };
 export const NO_TALLY: Tally = { steers: 0, checkFails: 0, lateFails: 0, reviewRounds: 0 };
 
-// A stored tally, field by field; anything that isn't a count reads as none.
-export function storedTally(v: unknown): Tally {
-  const t = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+// A stored tally, field by field; a count that's off reads as none. A loop stored before tallies existed has none at
+// all (null), since its numbers were never measured.
+export function storedTally(v: unknown): Tally | null {
+  if (!v || typeof v !== "object") return null;
+  const t = v as Record<string, unknown>;
   const n = (x: unknown) => (Number.isInteger(x) && (x as number) >= 0 ? (x as number) : 0);
   return { steers: n(t.steers), checkFails: n(t.checkFails), lateFails: n(t.lateFails), reviewRounds: n(t.reviewRounds) };
 }
@@ -121,7 +123,8 @@ export type LoopState = {
   // The walkthrough of the result for the user (walkthrough.ts); null until the reviewer or the cheap tier writes one,
   // and when the space's learning is off.
   walkthrough: Walkthrough | null;
-  tally: Tally;
+  // Null for a task from before the tally existed: its retro would be built on numbers nobody measured.
+  tally: Tally | null;
 };
 
 export const MAX_REVIEW_ROUNDS = 2;
