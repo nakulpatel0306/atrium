@@ -127,6 +127,9 @@ test("CLAUDE.md's size is reported, and a proposal is accepted with the user's t
   expect(await (await fetch(`${base}/api/spaces/${space.id}/memory`)).json()).toEqual({ lines: 0, budget: 200, missing: true, problem: null });
   db.query("INSERT INTO memory_lines (id, space_id, task_id, source, line, created_at) VALUES ('mem_a', ?, ?, 'steer', 'Use cents.', 1), ('mem_b', ?, NULL, 'review', 'Other.', 1)").run(space.id, task.id, space.id);
   expect(openLines(db).map((m) => m.id)).toEqual(["mem_a", "mem_b"]);
+  // Hidden characters in the edited line are refused before anything is committed.
+  const hidden = await send("POST", "/api/memory/mem_a", { action: "accept", line: "Money is cents.\u{E0069}\u{E0067}" });
+  expect([hidden.status, ((await hidden.json()) as { error: string }).error]).toEqual([409, "Keep it to one line of plain text, 300 characters or fewer, with no hidden characters."]);
   const accepted = await send("POST", "/api/memory/mem_a", { action: "accept", line: "Money is integer cents." });
   expect(await accepted.json()).toMatchObject({ status: "accepted", branch: "atrium/tsk_cart" });
   expect(git("show", "atrium/tsk_cart:CLAUDE.md")).toBe("Money is integer cents.");

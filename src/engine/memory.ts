@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
-import { lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentAdapter } from "./agents/types";
+import { readCapped } from "./capped-read";
 import { bus } from "./events";
 import { appendLineCommit, branchSha, createBranchAt, git, moveAtriumBranch } from "./git";
 import { newId } from "./ids";
@@ -63,21 +64,23 @@ export const getLine = (db: Database, id: string): MemoryLine | null => {
 };
 
 // The repo's CLAUDE.md as the user's checkout has it, for its size against the budget. The repo is agents' to write,
-// so only a regular file within the cap is read: a link or anything else is reported, not followed.
+// so only a regular file within the cap is read (capped-read.ts): a link or anything else is reported, not followed.
 export type MemoryFile = { lines: number; budget: number; missing: boolean; problem: string | null; text: string };
 export function memoryFile(repoPath: string): MemoryFile {
   const none = { lines: 0, budget: MEMORY_BUDGET, text: "" };
-  const path = join(repoPath, MEMORY_FILE);
-  let st;
-  try {
-    st = lstatSync(path);
-  } catch {
-    return { ...none, missing: true, problem: null };
+  const read = readCapped(join(repoPath, MEMORY_FILE), READ_CAP);
+  if (read.ok) {
+    const text = read.bytes.toString("utf8");
+    return { lines: text ? text.replace(/\n$/, "").split("\n").length : 0, budget: MEMORY_BUDGET, missing: false, problem: null, text };
   }
-  if (!st.isFile()) return { ...none, missing: false, problem: `${MEMORY_FILE} isn't a plain file, so Atrium doesn't read it.` };
-  if (st.size > READ_CAP) return { ...none, missing: false, problem: `${MEMORY_FILE} is over ${READ_CAP / 1024} KB, far past any useful size.` };
-  const text = readFileSync(path, "utf8");
-  return { lines: text ? text.replace(/\n$/, "").split("\n").length : 0, budget: MEMORY_BUDGET, missing: false, problem: null, text };
+  if (read.why === "missing") return { ...none, missing: true, problem: null };
+  const problem =
+    read.why === "not-file"
+      ? `${MEMORY_FILE} isn't a plain file, so Atrium doesn't read it.`
+      : read.why === "too-large"
+        ? `${MEMORY_FILE} is over ${READ_CAP / 1024} KB, far past any useful size.`
+        : `Atrium couldn't read ${MEMORY_FILE}. Check its permissions.`;
+  return { ...none, missing: false, problem };
 }
 
 const SYSTEM = [
@@ -100,17 +103,26 @@ export function proposalPrompt(evidence: string, current: string): string {
 
 // The one line a reply proposes, or null for NONE or anything Atrium can't use as a single line.
 export function parseProposal(text: string): string | null {
-  const m = /^[\s>*`-]*LINE\b:?\s*(.+?)[`\s]*$/im.exec(text);
-  if (!m || /^NONE\b/i.test(text.trim())) return null;
-  return cleanLine(m[1]!.replace(/^["']|["']$/g, ""));
+  if (/^NONE\b/i.test(text.trim())) return null;
+  // Lines split at "\n" alone: a regex's own idea of a line would also end at U+2028, cutting a hidden tail off instead
+  // of letting cleanLine refuse it.
+  for (const raw of text.split("\n")) {
+    const m = /^[ \t>*`-]*LINE\b:?[ \t]*(.+?)[`\t \r]*$/su.exec(raw);
+    if (m) return cleanLine(m[1]!.replace(/^["']|["']$/g, ""));
+  }
+  return null;
 }
 
-// One line of plain text, as the user may have edited it; null when it can't be one.
+const HIDDEN = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}]/u;
+
+// One line of plain text, as the model proposed it or the user edited it; null when it can't be one. Anything that
+// could hide text from the user who read the line, or carry it past them to an agent, is refused: controls and line
+// breaks, format characters (bidi overrides, zero-width and tag characters), private-use and unassigned code points.
+// Plain spaces and tabs are the only exceptions.
 export function cleanLine(raw: string): string | null {
-  const line = raw.replace(/\s+/g, " ").trim();
-  // Control and direction-changing characters could hide part of the line from the user who reviewed it.
-  if (!line || line.length > LINE_MAX || /[\u0000-\u001f\u007f‪-‮⁦-⁩]/.test(raw.replace(/[\t ]/g, ""))) return null;
-  return line;
+  if (HIDDEN.test(raw.replace(/\t/g, " "))) return null;
+  const line = raw.replace(/[ \t]+/g, " ").trim();
+  return line && line.length <= LINE_MAX ? line : null;
 }
 
 const alreadySays = (file: string, line: string) => file.split("\n").some((l) => l.replace(/^[\s*-]+/, "").trim().toLowerCase() === line.replace(/^[\s*-]+/, "").trim().toLowerCase());
@@ -208,7 +220,7 @@ export async function acceptLine(db: Database, id: string, edited: string): Prom
   const proposal = getLine(db, id);
   if (!proposal || proposal.status !== "open") throw new MemoryRefused("This suggestion was already answered.");
   const line = cleanLine(edited);
-  if (!line) throw new MemoryRefused(`Keep it to one line of ${LINE_MAX} characters or fewer.`);
+  if (!line) throw new MemoryRefused(`Keep it to one line of plain text, ${LINE_MAX} characters or fewer, with no hidden characters.`);
   const space = getSpace(db, proposal.spaceId);
   if (!space?.repoPath) throw new MemoryRefused("This space has no repo folder, so there's no CLAUDE.md to add to.");
   const repo = space.repoPath;
