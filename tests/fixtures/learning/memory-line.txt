@@ -1,0 +1,1 @@
+LINE Money amounts use integer cents, not floats; don't use `reduce` for money math when a repo helper exists (follow existing money helpers).

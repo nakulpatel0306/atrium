@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; changes: boolean };
+export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; changes: boolean; at: ChangeSpot | null };
+// A place in a task's Changes to open at, from a walkthrough's "where to look first".
+export type ChangeSpot = { file: string; line: number | null };
 export type SpaceTab = "tasks" | "files";
 
 const listeners = new Set<() => void>();
@@ -37,13 +39,14 @@ export function parseRoute(path: string): Route {
   if (!m) return { name: "home" };
   try {
     const q = new URLSearchParams(search);
-    // `&view=changes` opens the task on its Changes, from Needs you's "See changes".
+    // `&view=changes` opens the task on its Changes, from Needs you's "See changes"; `&file=…&line=…` at one hunk.
     return {
       name: "space",
       id: decodeURIComponent(m[1]!),
       task: q.get("task"),
       tab: q.get("tab") === "files" ? "files" : "tasks",
       changes: q.get("view") === "changes",
+      at: q.get("file") ? { file: q.get("file")!, line: Number(q.get("line")) > 0 ? Number(q.get("line")) : null } : null,
     };
   } catch {
     // A hand-typed URL with a stray "%" shouldn't crash the page.

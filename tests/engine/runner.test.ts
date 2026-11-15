@@ -16,6 +16,7 @@ import { taskFiles } from "../../src/engine/outputs/store";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { BASE_TOOLS, createRunner, engineOnlyClaim, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
+import { HUNK_TOOLS } from "../../src/engine/explain-hunk";
 import { capabilityLines } from "../../src/engine/capabilities";
 import { OUTCOME_INSTRUCTION, outcomeLabel, outcomeText } from "../../src/engine/outcome";
 import { getSetting, setSetting } from "../../src/engine/settings";
@@ -1745,7 +1746,9 @@ describe("attached GitHub repos", () => {
 
 describe("agents and repos", () => {
   test("no agent tool list allows gh, pushes, remotes, clones or git -c", () => {
-    for (const tool of [...REVIEW_TOOLS, ...BASE_TOOLS, ...REPO_TOOLS]) expect(tool).not.toMatch(/\bgh\b|push|remote|clone|-c\b/);
+    for (const tool of [...REVIEW_TOOLS, ...BASE_TOOLS, ...REPO_TOOLS, ...HUNK_TOOLS]) expect(tool).not.toMatch(/\bgh\b|push|remote|clone|-c\b/);
+    // Explaining a hunk only reads.
+    expect(HUNK_TOOLS).toEqual(["Read", "Glob", "Grep"]);
   });
 
   test("an agent cannot draft, create or remove repos", async () => {
@@ -2052,6 +2055,8 @@ describe("steer", () => {
     expect(git(path, "log", "-1", "--format=%s", `atrium/${t.id}`)).toBe("WIP (steered): Add a footer");
     expect(git(path, "show", `atrium/${t.id}:footer.html`)).toBe("<footer>half</footer>");
     expect(listActivity(db).map((a) => a.message)).toContain(`You steered: ${note}`);
+    // The director retro counts it.
+    expect(getTask(db, t.id)!.loop!.tally!.steers).toBe(1);
 
     await waitFor(() => status(t.id) === "review", 15000);
     const prompt = readFileSync(join(dir, "stdin.txt"), "utf8");

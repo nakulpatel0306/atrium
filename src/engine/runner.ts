@@ -66,6 +66,8 @@ import { planSession, progressNote, type Session } from "./sessions";
 import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./shape";
 import { childrenOf, childState, deleteChildBranches, fanIn, fanOut, judgePrompt, keptNote, parseScores } from "./fanout";
 import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
+import { needsWalkthrough, writeWalkthrough } from "./walkthrough-run";
+import { type Evidence, noticePatterns, proposeLine, steerEvidence } from "./memory";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -991,6 +993,9 @@ export function createRunner(deps: {
   // its branch, and the next run checks it out again.
   function steeredByYou(task: Task, note: string) {
     appendTaskDetail(db, task.id, `\n\n${steerBlock(note)}`);
+    const loop = getTask(db, task.id)?.loop;
+    if (loop?.tally) setTaskLoop(db, task.id, { ...loop, tally: { ...loop.tally, steers: loop.tally.steers + 1 } });
+    curate(task, () => steerEvidence(task, note));
     setTaskStatus(db, task.id, "queued");
     steeredBySteer.add(task.id);
     const flat = note.replace(/\s+/g, " ");
@@ -1143,6 +1148,16 @@ export function createRunner(deps: {
     });
     logActivity(db, space.id, resolvedAgent(db, task), readyLine(task), { taskId: task.id });
     await considerRule(approval.id, { filesKept });
+    walkthroughLater(task.id);
+  }
+
+  // The walkthrough of a result the reviewer didn't describe, written on the cheap tier after the work is already
+  // waiting for the user, so it never holds up the result. A failure leaves the card's "Write it" to try again.
+  function walkthroughLater(taskId: string) {
+    const task = getTask(db, taskId);
+    const start = lastRepoRun(db, taskId)?.start;
+    if (!task || !start || !adapters.claude || !needsWalkthrough(db, task)) return;
+    void writeWalkthrough(db, adapters.claude, task, start).catch(report);
   }
 
   // A part or attempt whose loop is done reports to its parent, which decides with the user; it makes no approval.
@@ -1331,7 +1346,10 @@ export function createRunner(deps: {
       const newlyPassing = loop.passing.some((n) => !before.passing.includes(n));
       const stalled = newlyPassing ? 0 : before.stalled + 1;
       const feedback = failed.length ? `## Atrium's checks failed after your last turn\n${failureReport(failed)}\n\nFix what they report. Your changes so far are on this branch; continue from them.` : before.feedback;
-      loop = { ...loop, stage: "writing", feedback, failSig: sig, stalled };
+      // For the retro: a turn sent back for failing checks, and whether one of them had passed earlier in the task.
+      const late = failed.some((c) => before.passing.includes(c.name));
+      const tally = failed.length && loop.tally ? { ...loop.tally, checkFails: loop.tally.checkFails + 1, lateFails: loop.tally.lateFails + (late ? 1 : 0) } : loop.tally;
+      loop = { ...loop, stage: "writing", feedback, failSig: sig, stalled, tally };
       setTaskLoop(db, task.id, loop);
       const names = failed.map((c) => c.name).join(", ");
       const over = overBudget(loop);
@@ -1381,6 +1399,7 @@ export function createRunner(deps: {
     const recorded = recordReview(db, review, reviewer, result);
     if (!recorded) return;
     const { parent, round } = recorded;
+    curate(parent, () => noticePatterns(db, parent, parent.loop!.reviews.length, round.findings));
     const space = getSpace(db, parent.spaceId);
     const loop = parent.loop!;
     if (!space) return;
@@ -1393,6 +1412,15 @@ export function createRunner(deps: {
       return;
     }
     await ready(parent, space, [...loop.report, ...loopNotes(loop, space)]);
+  }
+
+  // A correction or a repeated review finding may be worth one line in the repo's CLAUDE.md; the curator proposes it
+  // in the background, and only the user's Accept writes it.
+  function curate(task: Task, evidence: () => Evidence | null) {
+    const space = getSpace(db, task.spaceId);
+    if (!adapters.claude || space?.kind !== "repo" || space.learning === "off") return;
+    const found = evidence();
+    if (found) void proposeLine(db, adapters.claude, { space, task, ...found }).catch(report);
   }
 
   // What the agent said was wrong goes on the task, which stays paused for a hint.
@@ -1524,6 +1552,8 @@ function buildPrompt(task: Task, space: Space, checks: string[] | null, progress
   if (task.brief) parts.push(...briefSections(task.brief, checks));
   else if (checks) parts.push(checksSection(checks));
   if (space.goal.trim()) parts.push(`Space goal: ${space.goal.trim()}`);
+  // Deep learning: the user reads the writer's reasoning before its edits.
+  if (space.learning === "deep" && space.kind === "repo") parts.push(APPROACH_FIRST);
   if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
   if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
   if (scouts) parts.push(scouts);
@@ -1531,6 +1561,8 @@ function buildPrompt(task: Task, space: Space, checks: string[] | null, progress
   if (task.loop?.feedback) parts.push(task.loop.feedback);
   return parts.join("\n\n");
 }
+
+export const APPROACH_FIRST = "## Explain your approach first\nBefore you change anything, say in 2–3 plain sentences how you'll do this and why, so the user can follow your reasoning.";
 
 // A turn in a resumed session, which already holds the brief and everything before: only what's new.
 function resumePrompt(added: string, feedback: string | null): string {

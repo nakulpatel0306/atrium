@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, readlink } from "node:fs/promises";
+import { lstat, readlink } from "node:fs/promises";
+import { readCapped } from "../capped-read";
 import { basename, dirname, join, normalize } from "node:path";
 import { changedText, fileAt, outsideGit, treeEntries } from "../git";
 import { DEPENDENCY_DIRS } from "../agents/seatbelt";
@@ -95,8 +96,12 @@ export async function outsideSnapshot(repo: string): Promise<Record<string, stri
     if (!st) continue;
     if (st.isSymbolicLink()) snap[path] = `${LINK}${await readlink(join(repo, path)).catch(() => "?")}`;
     else if (!st.isFile()) snap[path] = SPECIAL;
-    else if (st.size > SNAPSHOT_CAP) snap[path] = OVERSIZE;
-    else snap[path] = createHash("sha256").update(await readFile(join(repo, path))).digest("hex");
+    else {
+      // Read through one no-follow descriptor, so a link swapped in after the check above is never followed.
+      const read = readCapped(join(repo, path), SNAPSHOT_CAP);
+      if (read.ok) snap[path] = createHash("sha256").update(read.bytes).digest("hex");
+      else if (read.why !== "missing") snap[path] = read.why === "too-large" ? OVERSIZE : SPECIAL;
+    }
   }
   return snap;
 }

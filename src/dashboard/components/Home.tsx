@@ -5,6 +5,7 @@ import { navigate } from "../route";
 import { kindLabel } from "../spaces";
 import { emptyHome, liveStatus, spaceStatus } from "../summary";
 import { Activity } from "./Activity";
+import { RollupCard } from "./Retro";
 import { Avatar } from "./Avatar";
 import { Logo } from "./Logo";
 import { NeedsYou } from "./NeedsYou";
@@ -120,6 +121,7 @@ export function Home({ state, briefing, onNewSpace }: Props) {
         </button>
       </div>
 
+      <RollupCard state={state} spaceId={null} />
       <Activity state={state} />
     </div>
   );

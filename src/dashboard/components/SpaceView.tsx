@@ -1,12 +1,14 @@
-import { CornerDownRight, Lock, Play, SearchCheck, Wrench } from "lucide-react";
+import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
-import { navigate, type SpaceTab } from "../route";
+import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
-import { REVIEW_CHOICES } from "../../engine/spaces";
+import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
+import { MemoryProposals, MemorySize } from "./Memory";
+import { RetroCard, RollupCard } from "./Retro";
 import { ChecksBadge, LoopPanel } from "./LoopPanel";
 import { CostChip } from "./Shape";
 import { followsText } from "../../engine/shape";
@@ -55,7 +57,15 @@ function KindBadge({ kind }: { kind: Task["kind"] }) {
   );
 }
 
-// Who reviews, what the gate runs and how much a task may spend before it pauses; every field has a default.
+const LEARNING_LABEL: Record<Learning, string> = { off: "Off", light: "Light", deep: "Deep" };
+const LEARNING_HINT: Record<Learning, string> = {
+  off: "No walkthroughs, retros, weekly roll-ups or CLAUDE.md suggestions.",
+  light: "A walkthrough with each result, a retro once you accept it or open its pull request, a weekly roll-up and CLAUDE.md suggestions.",
+  deep: "Light, plus a question before each walkthrough and the writer explaining its approach first.",
+};
+
+// Who reviews, what the gate runs, how much a task may spend before it pauses, and how much the space helps you learn
+// from the code; every field has a default.
 function LoopSettings({ space }: { space: Space }) {
   const reasons = useReviewers(space);
   const [open, setOpen] = useState(false);
@@ -90,6 +100,19 @@ function LoopSettings({ space }: { space: Space }) {
         </select>
       </label>
       {reason ? <span className="why bad">{reason} Reviews will be skipped until you pick another reviewer.</span> : <span className="hint">{reviewHint(space.reviewBy)}</span>}
+      <label>
+        <GraduationCap />
+        Learning
+        <select className="pick" value={space.learning} disabled={busy} onChange={(e) => void save({ learning: e.target.value })}>
+          {LEARNING_LEVELS.map((l) => (
+            <option key={l} value={l}>
+              {LEARNING_LABEL[l]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="hint">{LEARNING_HINT[space.learning]}</span>
+      <MemorySize space={space} version={space.updatedAt} />
       <button className="btn link subtle" aria-expanded={open} onClick={() => setOpen(!open)}>
         Checks and budget
       </button>
@@ -288,11 +311,12 @@ type TaskRowProps = {
   open: boolean;
   onToggle: () => void;
   onTranscript: (run: Run) => void;
-  // Open on its Changes, from a "See changes" link.
+  // Open on its Changes, from a "See changes" link, at one hunk from a walkthrough's link.
   showChanges?: boolean;
+  at?: ChangeSpot | null;
 };
 
-function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: TaskRowProps) {
+function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = null }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -368,6 +392,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
           {review && <ReviewActions approval={review} outcome={task.outcome} />}
+          <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">
@@ -384,7 +409,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges }: Tas
           </section>
           <TaskAttachments attachments={attached} />
           {space?.kind === "repo" ? (
-            <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} />
+            <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} at={at} />
           ) : (
             space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />
           )}
@@ -485,8 +510,9 @@ type Props = {
   // Task to open expanded, from a `?task=` link such as Needs you's "View transcript".
   focusTask: string | null;
   tab?: SpaceTab;
-  // Open the focused task on its Changes, from `&view=changes`.
+  // Open the focused task on its Changes, from `&view=changes`, at one hunk with `&file=`.
   changes?: boolean;
+  at?: ChangeSpot | null;
 };
 
 // The Files count comes from the same listing the tab shows, so it's read whichever tab is open.
@@ -505,7 +531,7 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
   );
 }
 
-export function SpaceView({ state, space, focusTask, tab = "tasks", changes = false }: Props) {
+export function SpaceView({ state, space, focusTask, tab = "tasks", changes = false, at = null }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
   const [, setTick] = useState(0);
@@ -545,6 +571,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
       <SpaceNeeds state={state} spaceId={space.id} />
+      <MemoryProposals state={state} space={space} />
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />
@@ -564,11 +591,13 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
                   onToggle={() => toggle(t.id)}
                   onTranscript={(run) => setTranscript({ run, title: t.title })}
                   showChanges={changes && t.id === focusTask}
+                  at={t.id === focusTask ? at : null}
                 />
               ))
             )}
           </div>
           )}
+          <RollupCard state={state} spaceId={space.id} />
           <Activity state={state} spaceId={space.id} />
         </div>
         <div className="live">

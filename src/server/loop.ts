@@ -13,6 +13,11 @@ import { chooseShape, costlier, proposeShape, runNow, type Shape, type ShapeKind
 import { childrenOf, discardFanout, FanoutRefused, mergeParts, partBody, pickAttempt, restartAs } from "../engine/fanout";
 import { openPullRequest } from "../engine/repos/pr";
 import { recordUsage } from "../engine/usage";
+import { lastRepoRun } from "../engine/runner";
+import { ChangesRefused, taskChanges } from "../engine/changes";
+import { explainHunk } from "../engine/explain-hunk";
+import { acceptLine, dismissLine, MemoryRefused, memoryFile } from "../engine/memory";
+import { answerPredict, needsWalkthrough, writeWalkthrough } from "../engine/walkthrough-run";
 import { HttpError, json, readBody, str } from "./http";
 
 const ASK_MAX = 4000;
@@ -262,6 +267,85 @@ export async function loopRoute(
     }
     kick();
     return json(getTask(db, task.id));
+  }
+
+  // The walkthrough of a ready result, written on the cheap tier when the reviewer didn't give one; the card's retry.
+  const walkM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/walkthrough$/) : null;
+  if (walkM) {
+    const task = getTask(db, walkM[1]!);
+    if (!task || (task.status !== "review" && task.status !== "done")) throw new HttpError(409, "Only a finished result has a walkthrough.");
+    if (!needsWalkthrough(db, task)) return json(task);
+    const start = lastRepoRun(db, task.id)?.start;
+    if (!claude || !start) throw new HttpError(503, "Claude isn't set up, so Atrium can't write the walkthrough.");
+    const written = await writeWalkthrough(db, claude, task, start);
+    if (!written) throw new HttpError(502, "Claude couldn't write the walkthrough this time. Try again in a moment.");
+    return json(written);
+  }
+
+  // The answer to the question before the walkthrough, or a skip (`guess: null`); either opens it.
+  const predictM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/predict$/) : null;
+  if (predictM) {
+    const task = getTask(db, predictM[1]!);
+    if (!task?.loop?.walkthrough?.predict) throw new HttpError(409, "This walkthrough has no question to answer.");
+    const guess = (await readBody(req)).guess;
+    if (guess !== null && typeof guess !== "number") throw new HttpError(400, "guess must be an option's number, or null to skip.");
+    try {
+      return json(answerPredict(db, task, guess));
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+  }
+
+  // "Explain this hunk" on the Changes view: the hunk is read from the task's diff here, not taken from the request,
+  // found by its header (unique within a file), so a diff that moved on since the user looked is refused.
+  const hunkM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/explain-hunk$/) : null;
+  if (hunkM) {
+    const task = getTask(db, hunkM[1]!);
+    const space = task ? getSpace(db, task.spaceId) : null;
+    if (!task || space?.kind !== "repo" || !space.repoPath) throw new HttpError(404, "No such task in a repo space.");
+    const b = await readBody(req);
+    const file = str(b.file, "file");
+    const header = str(b.header, "header");
+    let diff;
+    try {
+      diff = await taskChanges(db, task.id);
+    } catch (e) {
+      if (e instanceof ChangesRefused) throw new HttpError(e.status, e.message);
+      throw e;
+    }
+    const hunk = diff.files.find((f) => f.path === file)?.hunks.find((h) => h.header === header);
+    if (!hunk) throw new HttpError(409, "The changes moved on since you looked. Look at the hunk again, then ask.");
+    if (!claude) throw new HttpError(503, "Claude isn't set up, so Atrium can't explain this hunk.");
+    try {
+      return json(await explainHunk(db, claude, task, space, file, hunk));
+    } catch (e) {
+      throw new HttpError(502, (e as Error).message);
+    }
+  }
+
+  // The repo's CLAUDE.md against its budget, for space settings and the curator's card.
+  const memFileM = method === "GET" ? pathname.match(/^\/api\/spaces\/([^/]+)\/memory$/) : null;
+  if (memFileM) {
+    const space = getSpace(db, memFileM[1]!);
+    if (!space) throw new HttpError(404, "No such space.");
+    if (space.kind !== "repo" || !space.repoPath) return json(null);
+    const { text: _, ...size } = memoryFile(space.repoPath);
+    return json(size);
+  }
+
+  // The user's answer to a proposed CLAUDE.md line: Accept with the text as they left it, which the engine commits,
+  // or Dismiss.
+  const memM = method === "POST" ? pathname.match(/^\/api\/memory\/([^/]+)$/) : null;
+  if (memM) {
+    const b = await readBody(req);
+    try {
+      if (b.action === "accept") return json(await acceptLine(db, memM[1]!, str(b.line, "line")));
+      if (b.action === "dismiss") return json(dismissLine(db, memM[1]!));
+    } catch (e) {
+      if (e instanceof MemoryRefused) throw new HttpError(409, e.message);
+      throw new HttpError(409, `Atrium couldn't add the line: ${(e as Error).message}`);
+    }
+    throw new HttpError(400, "action must be accept or dismiss.");
   }
 
   // One read-only run that says what's wrong, instead of another attempt; the task stays paused after it.

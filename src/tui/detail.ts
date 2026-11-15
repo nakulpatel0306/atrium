@@ -15,6 +15,8 @@ import type { State } from "../engine/state";
 import { outcomeText } from "../engine/outcome";
 import { fileSize, plural } from "../engine/text";
 import { markdownLines } from "./markdown";
+import type { Learning } from "../engine/spaces";
+import { predictOpen, type Spot } from "../engine/walkthrough";
 import type { View } from "./select";
 import { clean, width } from "./text";
 import type { Line, Seg } from "./canvas";
@@ -129,7 +131,8 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   if (wait) lines.push(plain(wait.reason, { color: needsAction(wait) ? color.bad : color.warn }));
   if (parent) lines.push(muted(`${followsText(task)} "${parent.title}"`));
   // The loop at a glance, read-only: the stage, what the checks and reviews said, and the budget used.
-  if (task.loop && state.spaces.find((s) => s.id === task.spaceId)?.kind === "repo") {
+  const space = state.spaces.find((s) => s.id === task.spaceId);
+  if (task.loop && space?.kind === "repo") {
     const line = loopLine(task.loop);
     lines.push([
       { text: `${STAGE_TEXT[shownStage(task.status, task.loop)]} · `, bold: true },
@@ -148,7 +151,13 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
     lines.push(...fanoutLines(task, state));
     for (const q of task.loop.questions) lines.push(plain(`Asks: ${q.question}${q.options.length ? ` (${q.options.join(" / ")})` : ""}`, { color: color.info }));
     if (askSteps(task).length && task.status === "queued") lines.push(muted("a answers it"));
+    if (task.loop.paused && task.status === "blocked" && task.loop.paused.kind === "loop" && !task.loop.explanation && space?.learning !== "off") {
+      lines.push(plain("Want the diagnosis instead of another attempt? Choose Explain the problem instead on the dashboard.", { color: color.info }));
+    }
     if (task.loop.explanation) lines.push(blank, muted("What it says is wrong"), ...block(task.loop.explanation));
+    lines.push(...walkthroughLines(task, space, width));
+    const retro = state.learning.retros[task.id];
+    if (retro) lines.push(blank, heading("How directing it went"), ...retro.lines.map((l) => plain(l)));
   }
   lines.push(blank, ...block(task.detail || task.title), blank, ...made(outputs, selectedFile, width));
   lines.push(
@@ -179,6 +188,8 @@ export function approvalDetail(view: View, width = 100): DetailLine[] {
   const attention = attentionText(task?.loop);
   if (attention) lines.push(plain(attention, { color: color.bad }));
   lines.push(blank, ...(approval.detail ? markdownLines(approval.detail, width) : [plain("No further detail.")]), blank);
+  const retro = task ? view.state.learning.retros[task.id] : undefined;
+  if (retro) lines.push(heading("How directing it went"), ...retro.lines.map((l) => plain(l)), blank);
   lines.push(muted(`Asked ${relative(approval.createdAt)} (${absolute(approval.createdAt)})`));
   if (approval.alwaysAsk === "create_repo") lines.push(plain("Edit the fields in the dashboard. a approves them as shown."));
   lines.push(
@@ -249,6 +260,13 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
         : muted(reviewHint(space.reviewBy)),
     );
   }
+  if (space.kind === "repo") {
+    lines.push([{ text: "Learning ", color: color.muted }, { text: LEARNING_TEXT[space.learning] }, { text: "  (change it in the space's settings on the dashboard)", color: color.muted }]);
+    const proposals = state.learning.memory.filter((m) => m.spaceId === space.id);
+    for (const m of proposals) lines.push(plain(`Add to CLAUDE.md? "${m.line}" Edit and accept it on the dashboard.`, { color: color.info }));
+    const week = state.learning.rollups[space.id];
+    if (week) lines.push(blank, heading(`What paid off this week (${week.tasks} tasks)`), ...week.lines.map((l) => plain(l)));
+  }
   // Failures and lines waiting on Nakul always show, past the newest few.
   const { visible: groups } = visibleGroups(
     groupActivity(state.activity.filter((a) => a.spaceId === space.id), { tasks: state.tasks, files: state.activityFiles }),
@@ -289,6 +307,27 @@ export function activityDetail(view: View): DetailLine[] {
       : []),
     ...(space ? [blank, muted("enter opens this space")] : []),
   ];
+}
+
+const LEARNING_TEXT: Record<Learning, string> = { off: "Off", light: "Light: a walkthrough with each result", deep: "Deep: a question first, and the writer's approach" };
+
+// The walkthrough of a finished change, as text. Deep mode's question comes first and is answered on the dashboard,
+// which then opens the walkthrough here too.
+function walkthroughLines(task: State["tasks"][number], space: State["spaces"][number] | undefined, width: number): DetailLine[] {
+  const w = task.loop?.walkthrough;
+  if (!w || space?.learning === "off" || (task.status !== "review" && task.status !== "done")) return [];
+  const out: DetailLine[] = [blank, heading("Walkthrough")];
+  if (predictOpen(w)) {
+    out.push(plain(`Before you read it: ${w.predict!.question}`), ...w.predict!.options.map((o, i) => muted(`  ${i + 1}. ${o}`)), muted("Answer or skip it on the dashboard, and the walkthrough opens."));
+    return out;
+  }
+  if (w.sha !== task.loop!.checkedSha) out.push(muted("Written before the last turn changed the branch."));
+  out.push(...markdownLines(w.approach, width));
+  for (const d of w.decisions) out.push([{ text: `· ${d.chose}` }, ...(d.rejected ? [{ text: ` (over ${d.rejected})`, color: color.muted }] : [])]);
+  const spot = (label: string, s: Spot): DetailLine => [{ text: `${label} `, color: color.muted }, ...(s.file ? [{ text: `${s.file}${s.line ? `:${s.line}` : ""} `, color: color.info }] : []), { text: s.note }];
+  for (const r of w.risks) out.push(spot("Risk", r));
+  for (const l of w.look) out.push(spot("Look", l));
+  return out;
 }
 
 const segmenter = new Intl.Segmenter();

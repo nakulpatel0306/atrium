@@ -5,8 +5,10 @@ import { newId } from "./ids";
 import { weightedTokens } from "./loop";
 
 // Every run's tokens, by model and job, so a task, a space and the plan window can each say what they used.
-export const PURPOSES = ["brief", "write", "scout", "review", "explain", "judge"] as const;
+// walkthrough, hunk and memory are the learning features' own calls (docs/loop.md, Learning).
+export const PURPOSES = ["brief", "write", "scout", "review", "explain", "judge", "walkthrough", "hunk", "memory"] as const;
 export type Purpose = (typeof PURPOSES)[number];
+const LEARNING: Purpose[] = ["walkthrough", "hunk", "memory"];
 
 const sum = (rows: ModelTokens[]): Omit<ModelTokens, "model"> =>
   rows.reduce(
@@ -86,11 +88,12 @@ const add = (a: Spend, b: Spend): Spend => ({ weighted: a.weighted + b.weighted,
 
 // Each task's own spend plus its reviews', by task. A split's or a best-of-N's parent also counts every part or
 // attempt (each still shows its own), so the whole fan-out's cost shows in one place.
-export function taskSpend(db: Database): Record<string, Spend> {
+export function taskSpend(db: Database, opts: { work?: boolean } = {}): Record<string, Spend> {
+  const where = opts.work ? `WHERE u.purpose NOT IN (${LEARNING.map((p) => `'${p}'`).join(",")})` : "";
   const rows = db
     .query(
       `SELECT COALESCE(CASE WHEN t.kind = 'review' THEN t.parent_task_id END, u.task_id) AS id, ${SPEND_COLUMNS}
-       FROM usage_log u JOIN tasks t ON t.id = u.task_id GROUP BY 1`,
+       FROM usage_log u JOIN tasks t ON t.id = u.task_id ${where} GROUP BY 1`,
     )
     .all() as (SpendRow & { id: string })[];
   const own = new Map(rows.map((r) => [r.id, toSpend(r)]));
@@ -102,6 +105,10 @@ export function taskSpend(db: Database): Record<string, Spend> {
   }
   return Object.fromEntries(out);
 }
+
+// What the work itself cost, by task: the same as taskSpend without the learning features' calls, which the user
+// chose and which say nothing about how the task was directed.
+export const workSpend = (db: Database): Record<string, Spend> => taskSpend(db, { work: true });
 
 // Midnight today and the Monday that starts this week, local time.
 export function spendWindows(now: number): { today: number; week: number } {

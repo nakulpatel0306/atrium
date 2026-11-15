@@ -18,6 +18,8 @@ import { claudeSince, spaceSpend, spendWindows, taskSpend, totalSince } from "./
 import { type Tier, TIER_DEFAULTS, TIER_JOBS, TIERS, tierModel } from "./tiers";
 import { hasOldData, OLD_DATA_DISMISSED } from "./old-data";
 import { type Attachment, claimedAttachments } from "./attachments";
+import { learned, type Retro, type Rollup } from "./retro";
+import { type MemoryLine, openLines } from "./memory";
 
 export type RunSummary = {
   id: string;
@@ -81,6 +83,10 @@ export type State = {
   repoActions: RepoActionView[];
   // Whether removed features left data behind (see old-data.ts), and whether Home's notice about it was put off.
   oldData: { present: boolean; dismissed: boolean };
+  // The learning features (docs/loop.md, Learning), for spaces with learning on only: each finished task's director
+  // retro, this week's roll-up by space and for all of them ("all"; a key is missing until there's enough data), and
+  // open CLAUDE.md proposals.
+  learning: { retros: Record<string, Retro>; rollups: Record<string, Rollup>; memory: MemoryLine[] };
 };
 
 export type RepoActionView = {
@@ -148,6 +154,13 @@ function planGauge(db: Database, now: number, reserve: number): State["plan"] {
   return { fiveHour, sevenDay: planWindow(db, "usage.claude.sevenDay", now), atrium: claudeSince(db, since), reserve };
 }
 
+// Only spaces with learning on show retros, roll-ups and CLAUDE.md proposals: Off means none of them.
+function learningView(db: Database, tasks: Task[], now: number): State["learning"] {
+  const spaces = listSpaces(db);
+  const on = new Set(spaces.filter((s) => s.learning !== "off").map((s) => s.id));
+  return { ...learned(db, tasks, spaces, now), memory: openLines(db).filter((m) => on.has(m.spaceId)) };
+}
+
 export function snapshot(db: Database, registry?: Registry): State {
   const now = Date.now();
   const activity = listActivity(db, { limit: 300 });
@@ -170,6 +183,7 @@ export function snapshot(db: Database, registry?: Registry): State {
   const windowRaw = getSetting(db, "usage.claude.fiveHour");
   const window = windowRaw ? (JSON.parse(windowRaw) as { utilization: number; resetsAt: number }) : null;
   const reserve = Number(getSetting(db, "usage.claude.reserve") ?? 0.5);
+  const tasks = listTasks(db);
   const tokens = db
     .query("SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS n FROM runs WHERE started_at > ?")
     .get(now - 24 * 3600_000) as { n: number };
@@ -178,7 +192,7 @@ export function snapshot(db: Database, registry?: Registry): State {
     archived: listSpaces(db, { includeArchived: true })
       .filter((s) => s.status === "archived")
       .sort((a, b) => b.updatedAt - a.updatedAt),
-    tasks: listTasks(db),
+    tasks,
     attachments: claimedAttachments(db),
     // rowid breaks ties between runs started in the same millisecond
     runs: db
@@ -216,5 +230,6 @@ export function snapshot(db: Database, registry?: Registry): State {
     tiers: Object.fromEntries(TIERS.map((t) => [t, { model: tierModel(db, t), stock: TIER_DEFAULTS[t], jobs: TIER_JOBS[t] }])) as State["tiers"],
     repoActions: repoActionViews(db),
     oldData: { present: hasOldData(db), dismissed: getSetting(db, OLD_DATA_DISMISSED) === "1" },
+    learning: learningView(db, tasks, now),
   };
 }

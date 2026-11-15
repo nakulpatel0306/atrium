@@ -4,6 +4,7 @@ import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf } from "./diff-parse";
+import { readCapped } from "./capped-read";
 import { isEnvPath } from "./envpath";
 
 const PROTECTED = new Set(["main", "master"]);
@@ -890,4 +891,81 @@ export async function createBranchAt(path: string, branch: string, sha: string):
 export async function deleteAtriumBranch(path: string, branch: string): Promise<boolean> {
   if (!branch.startsWith("atrium/")) return false;
   return (await git(path, ["branch", "-D", "--", branch])).code === 0;
+}
+
+// A commit that changes one file on top of `tip`, made without touching any checkout: `edit` gets the file's text
+// ("" when it's missing) and returns the new text, the blob is hashed without filters and the tree built in a throwaway
+// index. Signed like the engine's merges when the repo signs its commits. The file must be a plain file at `tip` (or
+// missing, when it's created) and at most `cap` bytes. Returns the new commit; moving a branch to it is the caller's.
+export async function editFileCommit(path: string, tip: string, file: string, edit: (text: string) => string, message: string, cap = 256 * 1024): Promise<string> {
+  const entry = await git(path, ["ls-tree", "-z", tip, "--", file]);
+  if (entry.code !== 0) throw new Error(`Couldn't read ${file}: ${entry.err.trim()}`);
+  const mode = entry.out ? entry.out.slice(0, entry.out.indexOf(" ")) : null;
+  if (mode !== null && mode !== "100644" && mode !== "100755") throw new Error(`${file} isn't a plain file in this repo, so Atrium won't change it.`);
+  let text = "";
+  if (mode) {
+    const size = await git(path, ["cat-file", "-s", `${tip}:${file}`]);
+    if (size.code !== 0 || Number(size.out.trim()) > cap) throw new Error(`${file} is too large for Atrium to change (over ${Math.round(cap / 1024)} KB).`);
+    text = (await fileAt(path, tip, file, cap)).text;
+  }
+  const next = edit(text);
+  const blob = await git(path, ["hash-object", "-w", "--no-filters", "--stdin"], undefined, { stdin: next });
+  if (blob.code !== 0) throw new Error(`Couldn't write ${file}: ${blob.err.trim()}`);
+  const dir = mkdtempSync(join(tmpdir(), "atrium-index-"));
+  try {
+    const env = { GIT_INDEX_FILE: join(dir, "index") };
+    const steps: string[][] = [
+      ["read-tree", tip],
+      ["update-index", "--add", "--cacheinfo", `${mode ?? "100644"},${blob.out.trim()},${file}`],
+    ];
+    for (const args of steps) {
+      const res = await git(path, args, undefined, { env });
+      if (res.code !== 0) throw new Error(`Couldn't build the commit: ${res.err.trim()}`);
+    }
+    const tree = await git(path, ["write-tree"], undefined, { env });
+    if (tree.code !== 0) throw new Error(`Couldn't build the commit: ${tree.err.trim()}`);
+    const signs = (await git(path, ["config", "--bool", "commit.gpgsign"])).out.trim() === "true";
+    const commit = await git(path, [...(await signingPins(path)), "commit-tree", ...(signs ? ["-S"] : []), tree.out.trim(), "-p", tip, "-m", message]);
+    if (commit.code !== 0) {
+      const why = (commit.err || commit.out).trim();
+      throw new Error(signs ? `Couldn't sign the commit, and this repo signs its commits, so nothing changed: ${why}` : `Couldn't commit: ${why}`);
+    }
+    return commit.out.trim();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Whether any checkout of the repo (its own folder or a worktree) has `branch` checked out, or is in the middle of
+// rebasing it or bisecting. Moving such a branch would leave that checkout's files behind its HEAD, or make the user's
+// `rebase --continue` fail to update the branch, so a failure to tell counts as checked out.
+export async function checkedOut(path: string, branch: string): Promise<boolean> {
+  const res = await git(path, ["for-each-ref", "--format=%(worktreepath)", `refs/heads/${branch}`]);
+  if (res.code !== 0 || res.out.trim() !== "") return true;
+  // A rebase detaches HEAD, so worktreepath is empty while it runs; the branch is named in the git dir instead.
+  const common = await git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (common.code !== 0) return true;
+  const root = common.out.trim();
+  let dirs: string[];
+  try {
+    dirs = [root, ...readdirSync(join(root, "worktrees")).map((d) => join(root, "worktrees", d))];
+  } catch {
+    dirs = [root];
+  }
+  const ref = `refs/heads/${branch}`;
+  for (const dir of dirs) {
+    if (existsSync(join(dir, "BISECT_START"))) return true;
+    for (const file of ["rebase-merge/head-name", "rebase-apply/head-name"]) {
+      const read = readCapped(join(dir, file), 4096);
+      if (read.ok && read.bytes.toString().trim() === ref) return true;
+    }
+  }
+  return false;
+}
+
+// Moves an Atrium branch from `from` to `to`, only if nothing moved it meanwhile.
+export async function moveAtriumBranch(path: string, branch: string, to: string, from: string): Promise<void> {
+  if (!branch.startsWith("atrium/")) throw new Error(`Invalid branch name: ${branch}`);
+  const res = await git(path, ["update-ref", `refs/heads/${branch}`, to, from]);
+  if (res.code !== 0) throw new Error(`${branch} moved while Atrium was adding to it. Try again.`);
 }

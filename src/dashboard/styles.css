@@ -3307,3 +3307,107 @@ code {
   color: var(--dim);
   margin-bottom: 8px;
 }
+
+/* Learning: the walkthrough above a result's diff, its question, the retro and roll-up, and CLAUDE.md proposals. */
+.walkthrough,
+.retro,
+.rollup,
+.memory {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  font-size: 12px;
+}
+.walkthrough h4,
+.retro h4,
+.rollup h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dim);
+}
+.walkthrough h4 svg,
+.retro h4 svg,
+.rollup h4 svg,
+.memory p svg,
+.predict p svg {
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+  flex: none;
+}
+.walkthrough h5 {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--faint);
+  margin-bottom: 2px;
+}
+.walkthrough ul,
+.rollup ul {
+  margin-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.walkthrough .btn.link.mono {
+  font-size: 11px;
+}
+.predict p,
+.memory p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.predict .acts,
+.memory .acts,
+.nudge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.predicted {
+  color: var(--dim);
+}
+.predicted.right {
+  color: var(--green);
+}
+.retro-tip {
+  color: var(--text);
+}
+.memory input {
+  width: 100%;
+}
+.nudge {
+  margin-bottom: 6px;
+}
+.nudge p {
+  flex-basis: 100%;
+}
+.chg-explain {
+  margin-left: 10px;
+  font-size: 11px;
+}
+.chg-explain svg {
+  width: 12px;
+  height: 12px;
+}
+.chg-explained td {
+  padding: 8px 12px;
+  font-family: Inter, system-ui, sans-serif;
+  white-space: normal;
+  color: var(--text);
+  background: var(--raised);
+}
+.chg-hunk.focus td {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}

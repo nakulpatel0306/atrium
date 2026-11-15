@@ -94,7 +94,9 @@ export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }
   );
 }
 
-function Paused({ task }: { task: Task }) {
+// The way on from a pause. When loop detection paused it on a repeated failure and the space has learning on, the
+// diagnosis comes first: another attempt at the same error is the slowest way to fix it and teaches nothing.
+function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,8 +108,20 @@ function Paused({ task }: { task: Task }) {
     if (!res.ok) setError(res.error);
     else setHint("");
   };
+  const explain = (
+    <button className={`btn${nudge ? " p" : ""}`} type="button" disabled={busy} onClick={() => void act("explain")}>
+      <MessageSquareText />
+      Explain the problem instead
+    </button>
+  );
   return (
     <div className="paused">
+      {nudge && (
+        <div className="nudge">
+          <p>Want the diagnosis instead of another attempt? It reads the branch and says what's actually going wrong, without trying again.</p>
+          {explain}
+        </div>
+      )}
       <form
         className="hint-form"
         onSubmit={(e) => {
@@ -117,14 +131,11 @@ function Paused({ task }: { task: Task }) {
       >
         <textarea rows={2} aria-label="Hint for the agent" placeholder="What should it try, or what is it missing?" value={hint} onChange={(e) => setHint(e.target.value)} />
         <div className="acts">
-          <button className="btn p" type="submit" disabled={busy || !hint.trim()}>
+          <button className={`btn${nudge ? "" : " p"}`} type="submit" disabled={busy || !hint.trim()}>
             <Lightbulb />
             Give it a hint
           </button>
-          <button className="btn" type="button" disabled={busy} onClick={() => void act("explain")}>
-            <MessageSquareText />
-            Explain the problem instead
-          </button>
+          {!nudge && explain}
         </div>
       </form>
       {error && <p className="err">{error}</p>}
@@ -187,7 +198,7 @@ export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state
       {repo && !loop?.fanout && <StageStrip task={task} />}
       {repo && <ShapeLine task={task} state={state} />}
       {repo && <Fanout task={task} state={state} />}
-      {loop?.paused && task.status === "blocked" && <Paused task={task} />}
+      {loop?.paused && task.status === "blocked" && <Paused task={task} nudge={loop.paused.kind === "loop" && !loop.explanation && state.spaces.find((sp) => sp.id === task.spaceId)?.learning !== "off"} />}
       {loop?.explanation && (
         <div className="explained">
           <h4>What it says is wrong</h4>

@@ -1,7 +1,9 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { DiffFile, DiffResult } from "../../engine/diff-parse";
-import { type State, useDiffVersion } from "../api";
+import { ChevronDown, ChevronRight, MessageCircleQuestion } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import type { DiffFile, DiffHunk, DiffResult } from "../../engine/diff-parse";
+import { post, type State, useDiffVersion } from "../api";
+import type { ChangeSpot } from "../route";
+import { Markdown } from "./Markdown";
 import { middle } from "./WhatItMade";
 
 type Task = State["tasks"][number];
@@ -20,8 +22,57 @@ export function changesHeader(t: DiffResult["totals"]): string {
 }
 
 const anchor = (path: string) => `chg-${encodeURIComponent(path)}`;
+const hunkAnchor = (path: string, i: number) => `${anchor(path)}-h${i}`;
 
-function FileDiff({ file, open, onToggle }: { file: DiffFile; open: boolean; onToggle: () => void }) {
+// The hunk whose changed side holds `line`, else the file's first.
+export function hunkAt(file: DiffFile, line: number | null): number {
+  if (line === null) return 0;
+  const i = file.hunks.findIndex((h) => {
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(h.header);
+    return m ? line >= Number(m[1]) && line < Number(m[1]) + Number(m[2] ?? 1) : false;
+  });
+  return Math.max(i, 0);
+}
+
+// A short fingerprint of a hunk's header and lines (FNV-1a), unique enough to tell a file's hunks apart.
+function hunkKey(h: DiffHunk): string {
+  let x = 0x811c9dc5;
+  for (const c of `${h.header}\n${h.lines.map((l) => `${l.kind[0]}${l.text}`).join("\n")}`) x = Math.imul(x ^ c.charCodeAt(0), 0x01000193) >>> 0;
+  return `${h.header}#${x.toString(36)}`;
+}
+
+// A hunk's header row with "Explain this hunk": the cheap tier's conceptual answer, kept by the engine per hunk, shown
+// in a row of its own under the header.
+function HunkHead({ taskId, file, hunk, index, focused }: { taskId: string | null; file: string; hunk: DiffHunk; index: number; focused: boolean }) {
+  const [state, setState] = useState<{ busy: boolean; note: string | null; error: string | null }>({ busy: false, note: null, error: null });
+  const explain = async () => {
+    setState({ busy: true, note: null, error: null });
+    const res = await post<{ note: string }>(`/api/tasks/${taskId}/explain-hunk`, { file, header: hunk.header });
+    setState(res.ok ? { busy: false, note: res.data.note, error: null } : { busy: false, note: null, error: res.error });
+  };
+  return (
+    <>
+      <tr className={`chg-hunk${focused ? " focus" : ""}`} id={hunkAnchor(file, index)}>
+        <td colSpan={3}>
+          {hunk.header}
+          {taskId && !state.note && (
+            <button className="btn link subtle chg-explain" disabled={state.busy} onClick={() => void explain()}>
+              <MessageCircleQuestion />
+              {state.busy ? "Explaining…" : "Explain this hunk"}
+            </button>
+          )}
+        </td>
+      </tr>
+      {(state.note || state.error) && (
+        <tr className="chg-explained">
+          <td colSpan={3}>{state.note ? <Markdown text={state.note} /> : <span className="err">{state.error}</span>}</td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function FileDiff({ file, open, onToggle, taskId, focus }: { file: DiffFile; open: boolean; onToggle: () => void; taskId: string | null; focus: number | null }) {
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <section className="chg-file" id={anchor(file.path)}>
@@ -44,21 +95,22 @@ function FileDiff({ file, open, onToggle }: { file: DiffFile; open: boolean; onT
         ) : (
           <table className="chg-lines mono">
             <tbody>
-              {file.hunks.map((h, i) => [
-                <tr key={`h${i}`} className="chg-hunk">
-                  <td colSpan={3}>{h.header}</td>
-                </tr>,
-                ...h.lines.map((l, j) => (
-                  <tr key={`${i}-${j}`} className={`chg-${l.kind}`}>
-                    <td className="chg-no">{l.oldNo ?? ""}</td>
-                    <td className="chg-no">{l.newNo ?? ""}</td>
-                    <td className="chg-text">
-                      <span className="chg-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}</span>
-                      {l.text}
-                    </td>
-                  </tr>
-                )),
-              ])}
+              {file.hunks.map((h, i) => (
+                // Keyed by what the hunk holds, so on a live diff an explanation stays with its own hunk.
+                <Fragment key={hunkKey(h)}>
+                  <HunkHead taskId={taskId} file={file.path} hunk={h} index={i} focused={focus === i} />
+                  {h.lines.map((l, j) => (
+                    <tr key={j} className={`chg-${l.kind}`}>
+                      <td className="chg-no">{l.oldNo ?? ""}</td>
+                      <td className="chg-no">{l.newNo ?? ""}</td>
+                      <td className="chg-text">
+                        <span className="chg-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}</span>
+                        {l.text}
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         ))}
@@ -67,9 +119,18 @@ function FileDiff({ file, open, onToggle }: { file: DiffFile; open: boolean; onT
   );
 }
 
-// Without fetching, so a test can render it. `live` names the agent while its run is still going.
-export function ChangesList({ diff, live }: { diff: DiffResult; live: string | null }) {
+// Without fetching, so a test can render it. `live` names the agent while its run is still going; with `taskId` each
+// hunk offers an explanation, and `at` opens the list at one hunk.
+export function ChangesList({ diff, live, taskId = null, at = null }: { diff: DiffResult; live: string | null; taskId?: string | null; at?: ChangeSpot | null }) {
   const [folded, setFolded] = useState<Record<string, boolean>>({});
+  const target = at ? diff.files.find((f) => f.path === at.file) : undefined;
+  const focus = target ? { path: target.path, hunk: hunkAt(target, at!.line) } : null;
+  useEffect(() => {
+    if (!focus) return;
+    setFolded((prev) => ({ ...prev, [focus.path]: false }));
+    // After the unfolded file has rendered.
+    requestAnimationFrame(() => document.getElementById(hunkAnchor(focus.path, focus.hunk))?.scrollIntoView({ block: "center" }));
+  }, [focus?.path, focus?.hunk]);
   const isOpen = (f: DiffFile) => !(folded[f.path] ?? lineCount(f) > FOLD_LINES);
   const toggle = (f: DiffFile) => setFolded((prev) => ({ ...prev, [f.path]: isOpen(f) }));
   const jump = (f: DiffFile) => {
@@ -102,7 +163,7 @@ export function ChangesList({ diff, live }: { diff: DiffResult; live: string | n
           </ul>
           <div className="chg-diff">
             {diff.files.map((f) => (
-              <FileDiff key={f.path} file={f} open={isOpen(f)} onToggle={() => toggle(f)} />
+              <FileDiff key={f.path} file={f} open={isOpen(f)} onToggle={() => toggle(f)} taskId={taskId} focus={focus?.path === f.path ? focus.hunk : null} />
             ))}
           </div>
         </div>
@@ -127,7 +188,7 @@ export function ChangesList({ diff, live }: { diff: DiffResult; live: string | n
 
 // Read again on every diff-changed event for this task, and whenever the task itself changes (it finished, its
 // branch moved). A failed read keeps what's shown and says why.
-export function ChangesView({ task, agent }: { task: Task; agent: string }) {
+export function ChangesView({ task, agent, at = null }: { task: Task; agent: string; at?: ChangeSpot | null }) {
   const version = useDiffVersion(task.id);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +235,7 @@ export function ChangesView({ task, agent }: { task: Task; agent: string }) {
   return (
     <section className="changes-section">
       {error && <p className="err">{error}</p>}
-      {diff ? <ChangesList diff={diff} live={task.status === "running" ? agent : null} /> : !error && <p className="chg-empty">Reading the changes…</p>}
+      {diff ? <ChangesList diff={diff} live={task.status === "running" ? agent : null} taskId={task.id} at={at} /> : !error && <p className="chg-empty">Reading the changes…</p>}
     </section>
   );
 }

@@ -8,6 +8,7 @@ import { config } from "./config";
 import { fileNow, finishPendingDeletes, notesOf, queueDelete } from "./delete-files";
 import { bus } from "./events";
 import { spaceFolder, tildePath } from "./folders";
+import { pendingKey } from "./memory";
 import { presentCloneForPath } from "./repos/store";
 import { legacyDelete, LEGACY, legacyUnlinkTasks } from "./legacy";
 import { getSpace, type Space } from "./spaces";
@@ -25,8 +26,8 @@ export class DeleteRefused extends Error {
 // Every table that points at a space, a task or a run, and what a delete does with it. The test checks this against
 // the live schema, so a new table can't be missed.
 export const HANDLED = {
-  space: ["tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions", "run_files", "rule_events", "attachments", "usage_log"],
-  task: ["tasks", "runs", "approvals", "activity", "messages", "run_files", "attachments", "checks", "usage_log"],
+  space: ["tasks", "approvals", "activity", "messages", "autonomy_proposals", "autonomy_rules", "repo_clones", "repo_actions", "run_files", "rule_events", "attachments", "usage_log", "hunk_notes", "memory_lines"],
+  task: ["tasks", "runs", "approvals", "activity", "messages", "run_files", "attachments", "checks", "usage_log", "hunk_notes", "memory_lines"],
   run: ["run_files", "checks"],
 } as const;
 
@@ -110,6 +111,9 @@ function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] 
     db.query(`DELETE FROM run_files WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM checks WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM usage_log WHERE task_id IN (${t})`).run(...tasks);
+    db.query(`DELETE FROM hunk_notes WHERE task_id IN (${t})`).run(...tasks);
+    // A line already committed lives on in the repo; the record of the proposal goes with its task.
+    db.query(`DELETE FROM memory_lines WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM messages WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM activity WHERE task_id IN (${t})`).run(...tasks);
     // Tasks and approvals point at each other, so the task side lets go first.
@@ -225,6 +229,9 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     db.query("DELETE FROM autonomy_proposals WHERE space_id = ?").run(id);
     db.query("DELETE FROM run_files WHERE space_id = ?").run(id);
     db.query("DELETE FROM usage_log WHERE space_id = ?").run(id);
+    db.query("DELETE FROM hunk_notes WHERE space_id = ?").run(id);
+    db.query("DELETE FROM memory_lines WHERE space_id = ?").run(id);
+    db.query("DELETE FROM settings WHERE key = ?").run(pendingKey(id));
     db.query("DELETE FROM attachments WHERE space_id = ?").run(id);
     db.query("DELETE FROM messages WHERE space_id = ?").run(id);
     db.query("DELETE FROM activity WHERE space_id = ?").run(id);

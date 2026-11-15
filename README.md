@@ -42,6 +42,17 @@ One writer is the default, because more agents make most coding worse. The brief
 
 Splits and best-of-N cost more, so they run only on your click. Enter never waits for it: a task the pre-pass would split runs as one writer, with "Could run as 2 parts (est. ~$0.04) · Split instead" on it, and the click starts it over from the brief as the parts. Claude runs on three tiers you can change under Agents: a cheap model for briefs, scouts and explanations, your own model for writing, and a strong one for review, a writer you had to unstick, and judging attempts. Every task shows its weighted tokens and an estimate at list prices, each space shows today and this week, and the five-hour gauge says what Atrium ran in the window and what it can't see. A writer's next turn within the hour Claude Code keeps its prompt cache resumes its Claude session, so most of its context comes from the cache; a long one starts afresh with a progress note.
 
+## Learning, both kinds
+
+Directing agents is a skill, and so is understanding the code they write. Atrium helps with both, and all of it is optional: nothing is a quiz or a gate, and nothing adds a step before the result reaches you. Each code space has a learning dial in its settings: **Off**, **Light** (the default) or **Deep**.
+
+- **Walkthrough.** Every finished result carries a short walkthrough above its diff: the approach, the key decisions and what they passed over, risky spots, and where to look first, each a link that opens the Changes at that hunk. The reviewer writes it in the pass that already reads the diff; when it can't (review is off, or a later turn changed the branch), a cheap model writes it from the diff after the result is already waiting for you.
+- **Explain this hunk.** On any hunk in the Changes view, a cheap, read-only model says why it's there and what it touches, not what each line does. Answers are kept, so asking again is instant.
+- **Deep mode** adds one question before the walkthrough opens ("What does a 150% coupon do?"), answered with a click or skipped, and asks the writer to state its approach before it edits.
+- **The diagnosis first.** When an agent is paused for failing the same way again, "Explain the problem instead" becomes the main way on: another attempt at the same error is the slowest way to fix it.
+- **Director retro.** After you accept a result or open its pull request, three lines built only from what Atrium measured: your steers, rework turns (failing checks and review rounds), checks that broke late, and the cost against your median for similar earlier tasks in the space, with one suggestion picked by fixed rules ("2 rework turns came from failing checks and the brief had no acceptance criteria: add them next time"). Each space and Home show what paid off this week, once there are five finished tasks to compare.
+- **Project memory.** When you steer with what reads as a correction ("don't…", "use X instead"), or the reviewer flags the same kind of mismatch twice, Atrium proposes one line for the repo's CLAUDE.md. You see the exact text, edit it, and only your click commits it, as a bullet under one "Notes from Atrium" section, on the task's branch or a small branch of its own. The space shows CLAUDE.md's length against a 200-line budget. Atrium never writes the file wholesale.
+
 ## Screenshots
 
 All screenshots come from a throwaway engine with fake agents and made-up repos.
