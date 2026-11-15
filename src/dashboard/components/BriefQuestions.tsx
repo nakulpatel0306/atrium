@@ -1,14 +1,12 @@
+import { KIND } from "../../engine/words";
 import { MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
-import { askLine, asksBeforeStarting } from "../../engine/needs";
+import { askLine } from "../../engine/needs";
 import { post, type State } from "../api";
 import { Fanout } from "./Shape";
 
 type Task = State["tasks"][number];
 type Space = State["spaces"][number];
-
-// Tasks whose brief asked something, waiting for the answers before the writer starts.
-export const askingTasks = (state: State, spaceId?: string): Task[] => state.tasks.filter((t) => asksBeforeStarting(t, state.tasks) && (!spaceId || t.spaceId === spaceId));
 
 // A brief's questions, one tap or a few words each. Start sends what's answered; the writer starts either way.
 export function BriefQuestions({ task }: { task: Task }) {
@@ -41,9 +39,9 @@ export function BriefQuestions({ task }: { task: Task }) {
       ))}
       <div className="acts">
         <button type="button" className="btn p" disabled={busy} onClick={() => void start()}>
-          Start
+          {KIND.question.action}
         </button>
-        <span className="hint">Unanswered questions are left to the agent.</span>
+        <span className="hint">It starts then; unanswered questions are left to the agent.</span>
       </div>
       {error && <p className="err">{error}</p>}
     </div>

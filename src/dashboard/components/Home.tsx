@@ -1,3 +1,4 @@
+import { pausedForYou } from "../../engine/needs";
 import { ArrowDown, Plus } from "lucide-react";
 import { ranAgent } from "../agents";
 import type { State } from "../api";
@@ -57,7 +58,7 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
         <ul className="tasks">
           {open.slice(0, SHOWN_TASKS).map((t) => (
             <li key={t.id}>
-              <StatusIcon status={t.status} />
+              <StatusIcon status={t.status} paused={pausedForYou(t)} />
               <span>{t.title}</span>
             </li>
           ))}

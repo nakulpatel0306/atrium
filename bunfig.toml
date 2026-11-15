@@ -1,0 +1,3 @@
+# Plain `bun test` runs Atrium's own suite only; the bundled sample repo has a test that fails on purpose.
+[test]
+root = "./tests"

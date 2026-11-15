@@ -1,13 +1,15 @@
+import { KIND } from "../../engine/words";
 import { useState } from "react";
 import type { ProjectDraft } from "../../engine/repos/names";
 import { TEMPLATE_LABELS, type TemplateId } from "../../engine/repos/rules";
 import { post, type State } from "../api";
+import { approvedToast } from "./Decision";
 import { draftErrors, draftSummary, folderFor, tildeShown } from "../repos";
 
 type Approval = State["approvals"][number];
 type Action = State["repoActions"][number];
 
-// A new GitHub repo Atrium drafted. Nakul edits the fields and his "Create repo" is the approval; only the name
+// A new GitHub repo Atrium drafted. The user edits the fields and their Approve is the approval; only the name
 // changes the folder, which always sits in the projects folder.
 export function ProjectDraftRow({ approval, action }: { approval: Approval; action: Action }) {
   const [open, setOpen] = useState(false);
@@ -17,7 +19,7 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
   const problems = draftErrors(fields);
   const invalid = problems.name !== null || problems.description !== null;
   const folder = action.path ? tildeShown(folderFor(action.path, fields.name || "…")) : null;
-  // The engine only checked the drafted name; any other name is checked when he presses Create repo.
+  // The engine only checked the drafted name; any other name is checked when they press Approve.
   const taken = action.folderTaken && fields.name === action.draft!.name;
   const lastTry = approval.detail.match(/^Last try failed: .*$/m)?.[0];
   const set = (patch: Partial<ProjectDraft>) => {
@@ -30,8 +32,10 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
     setBusy(true);
     setError(null);
     const res = await post(`/api/repo-actions/${action.id}/approve`, fields);
-    // On success the row leaves with the next state push, and the space appears once the repo is made.
-    if (!res.ok) {
+    // On success the row leaves with the next state push, and the space appears once the repo is made, a minute later,
+    // so the yes can still be taken back.
+    if (res.ok) approvedToast(approval);
+    else {
       setError(res.error);
       setOpen(true);
       setBusy(false);
@@ -63,7 +67,7 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
             Don't create
           </button>
           <button className="btn p" disabled={busy || invalid} onClick={() => void create()}>
-            {busy ? "Creating…" : "Create repo"}
+            {busy ? "Creating…" : KIND.approval.action}
           </button>
         </div>
       </div>

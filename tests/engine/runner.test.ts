@@ -379,6 +379,8 @@ test("run with no changes reaches review without a commit", async () => {
   await waitFor(() => status(t.id) === "review");
   expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("0");
   expect(listPending(db)[0]!.detail).toContain("No file changes");
+  // Nothing on the branch, so nothing to push.
+  expect(listPending(db)[0]!.detail).not.toContain("Push it");
 });
 
 test(".env change blocks the task without a commit", async () => {
@@ -1495,7 +1497,7 @@ test("recoverOnBoot sweeps Atrium temp folders older than a day", async () => {
   expect(existsSync(other)).toBe(true);
 });
 
-// Earned autonomy: a rule Nakul said yes to, created a second ago so the results below are newer than it.
+// Earned autonomy: a rule the user said yes to, created a second ago so the results below are newer than it.
 function yesRule(spaceId: string, fingerprint = "v1:code:docs:small:claude") {
   const id = `prp_${Math.random().toString(36).slice(2, 8)}`;
   db.query("INSERT INTO autonomy_proposals (id, space_id, fingerprint, evidence, status, created_at, answered_at) VALUES (?, ?, ?, '[]', 'yes', 1, 1)").run(
@@ -1578,7 +1580,7 @@ test("a rule decides only once the space's review has approved", async () => {
   const codex = gated("codex", "Reads well.\nVERDICT: approve");
   start({ adapter: writesDoc().adapter, extra: { codex: codex.adapter } });
   await waitFor(() => codex.calls.length === 1);
-  // Nothing reaches Nakul, or a rule, before the review is in.
+  // Nothing reaches the user, or a rule, before the review is in.
   expect(approvalFor(t.id)).toBeNull();
   codex.release();
   await waitFor(() => status(t.id) === "done");

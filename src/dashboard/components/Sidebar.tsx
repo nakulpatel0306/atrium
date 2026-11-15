@@ -1,4 +1,6 @@
 import { Activity, Archive, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
+import { agentsHeld } from "../agents";
 import { post, type State } from "../api";
 import { bytes } from "../format";
 import { navigate, type Route } from "../route";
@@ -14,13 +16,30 @@ type Props = {
   onNewSpace: () => void;
 };
 
+// A real link, so a space or page opens in a new tab with ⌘-click; a plain click stays in the page.
+function NavLink({ href, children, ...rest }: { href: string; className: string; title: string; children: ReactNode }) {
+  return (
+    <a
+      {...rest}
+      href={href}
+      aria-current={rest.className.includes(" on") ? "page" : undefined}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        navigate(href);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 export function Sidebar({ state, archived, route, onNewSpace }: Props) {
   // Suggestions and tasks asking before they start wait for an answer just like approvals do.
   const pending = needsCount(state);
   const activeRules = state.rules.filter((r) => r.state === "active").length;
   const battery = state.power.source === "battery";
-  // Agents that can't take work right now: missing, signed out, or at a limit.
-  const held = Object.values(state.agents).filter((a) => !a.installed || a.loggedIn === false || a.limitedUntil).length;
+  const held = agentsHeld(state);
   const window = state.claudeWindow;
 
   return (
@@ -29,20 +48,20 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
         <Logo />
         <span className="label">Atrium</span>
       </div>
-      <button className={`nav${route.name === "home" ? " on" : ""}`} title="Home" onClick={() => navigate("/")}>
+      <NavLink className={`nav${route.name === "home" ? " on" : ""}`} title="Home" href="/">
         <House />
         <span className="label">Home</span>
-      </button>
-      <button className={`nav${route.name === "needs" ? " on" : ""}`} title="Needs you" onClick={() => navigate("/needs-you")}>
+      </NavLink>
+      <NavLink className={`nav${route.name === "needs" ? " on" : ""}`} title="Needs you" href="/needs-you">
         <Inbox />
         <span className="label">Needs you</span>
         {pending > 0 && <span className="ct hot">{pending}</span>}
-      </button>
-      <button className={`nav${route.name === "activity" ? " on" : ""}`} title="Activity" onClick={() => navigate("/activity")}>
+      </NavLink>
+      <NavLink className={`nav${route.name === "activity" ? " on" : ""}`} title="Activity" href="/activity">
         <Activity />
         <span className="label">Activity</span>
-      </button>
-      <button className={`nav${route.name === "agents" ? " on" : ""}`} title="Agents" onClick={() => navigate("/agents")}>
+      </NavLink>
+      <NavLink className={`nav${route.name === "agents" ? " on" : ""}`} title="Agents" href="/agents">
         <Bot />
         <span className="label">Agents</span>
         {held > 0 && (
@@ -50,8 +69,8 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
             {held}
           </span>
         )}
-      </button>
-      <button className={`nav${route.name === "rules" ? " on" : ""}`} title="Rules" onClick={() => navigate("/rules")}>
+      </NavLink>
+      <NavLink className={`nav${route.name === "rules" ? " on" : ""}`} title="Rules" href="/rules">
         <ShieldCheck />
         <span className="label">Rules</span>
         {activeRules > 0 && (
@@ -59,7 +78,7 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
             {activeRules}
           </span>
         )}
-      </button>
+      </NavLink>
 
       <div className="sec">
         <span>Spaces</span>
@@ -70,16 +89,11 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
       {state.spaces.map((s) => {
         const n = waitingIn(state, s.id);
         return (
-          <button
-            key={s.id}
-            className={`nav${route.name === "space" && route.id === s.id ? " on" : ""}`}
-            title={s.name}
-            onClick={() => navigate(`/space/${s.id}`)}
-          >
+          <NavLink key={s.id} className={`nav${route.name === "space" && route.id === s.id ? " on" : ""}`} title={s.name} href={`/space/${s.id}`}>
             <span className="sd" style={{ background: s.color }} />
             <span className="label">{s.name}</span>
             {n > 0 && <span className="ct">{n}</span>}
-          </button>
+          </NavLink>
         );
       })}
       {archived > 0 && (
@@ -98,10 +112,10 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
       )}
 
       <div className="foot">
-        <button className={`nav${route.name === "settings" ? " on" : ""}`} title="Settings" onClick={() => navigate("/settings")}>
+        <NavLink className={`nav${route.name === "settings" ? " on" : ""}`} title="Settings" href="/settings">
           <Settings />
           <span className="label">Settings</span>
-        </button>
+        </NavLink>
         {window && (
           <button className="window-mini" onClick={() => navigate("/agents")} title="Claude's five-hour window, estimated">
             <span className="row">
@@ -120,14 +134,13 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
             className="toggle"
             role="switch"
             aria-checked={state.power.overnight}
-            title="Overnight mode"
+            title="Keeps your Mac awake while plugged in and work is queued. Leave the lid open."
             onClick={() => void post("/api/settings", { overnight: !state.power.overnight })}
           >
             <span className="switch" />
             <Moon />
             <span className="label">Overnight mode</span>
           </button>
-          <div className="hint">Keeps your Mac awake while plugged in and work is queued. Leave the lid open.</div>
         </div>
         <div className="row">
           <span>Atrium disk usage</span>

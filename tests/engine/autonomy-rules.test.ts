@@ -90,7 +90,7 @@ describe("createRule", () => {
     expect(r).toMatchObject({ spaceId: other.id, fingerprint: "v1:general:text:codex" });
   });
 
-  test("only a suggestion Nakul said yes to makes a rule", () => {
+  test("only a suggestion the user said yes to makes a rule", () => {
     for (const status of ["pending", "not_now", "never"]) expect(() => createRule(db, proposal(space, FP, status))).toThrow(RuleRefused);
     expect(() => createRule(db, "prp_missing")).toThrow(RuleRefused);
     expect(ruleCount()).toBe(0);
@@ -373,7 +373,7 @@ test("applyRule never decides an always-ask approval", () => {
   expect(getApproval(db, send.id)!.status).toBe("pending");
 });
 
-test("applyRule leaves a result that wasn't done for Nakul", () => {
+test("applyRule leaves a result that wasn't done for the user", () => {
   const general = createSpace(db, { name: "Notes", kind: "general", goal: "" });
   const fp = "v1:general:text:claude";
   createRule(db, proposal(general, fp), Date.now() - 1000);

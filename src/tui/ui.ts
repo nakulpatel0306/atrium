@@ -30,6 +30,8 @@ export type Overlay =
   // Deleting a space for good waits for its name, typed in full.
   | { kind: "delete"; spaceId: string; value: string; cursor: number }
   | { kind: "confirm"; purpose: "accept"; targetId: string }
+  // Approving every clean result in Needs you at once, after one look at the list; `targetId` is unused.
+  | { kind: "confirm"; purpose: "batch"; targetId: string }
   | { kind: "confirm"; purpose: "stop"; targetId: string };
 
 export type Flash = { text: string; tone: "ok" | "bad" | "info" };

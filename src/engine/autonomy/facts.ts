@@ -26,7 +26,7 @@ export function runStart(db: Database, taskId: string): string | null {
 }
 
 // Read fresh from git every time, and all at one commit, so a rule decides on exactly what it classified. Null
-// (ask Nakul) when the branch, the repo or the run's start can't be read.
+// (ask the user) when the branch, the repo or the run's start can't be read.
 export async function factsFor(db: Database, task: Task, space: Space, filesKept = 0): Promise<ActionFacts | null> {
   const agent = resolvedAgent(db, task);
   if (space.kind === "general") return { domain: "general", agent, filesKept };

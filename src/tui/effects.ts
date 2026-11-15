@@ -37,7 +37,8 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
 
   switch (intent.type) {
     case "approve":
-      return said(await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "approve" }), () => `Approved "${intent.title}".`);
+      // The commit this screen showed, as the dashboard sends: the approval binds to it, or is refused if it moved.
+      return said(await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "approve", ...(intent.sha ? { sha: intent.sha } : {}) }), () => `Approved "${intent.title}".`);
     case "reject": {
       const note = intent.note.trim();
       const res = await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "reject", ...(note ? { note } : {}) });
@@ -60,7 +61,7 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       const res = await client.post<Reply>("/api/command", { text: intent.text });
       if (!res.ok) return said(res, () => "");
       const data = res.data;
-      // A new project is only a draft until Nakul approves it, so there's no space to select yet.
+      // A new project is only a draft until the user approves it, so there's no space to select yet.
       if ("draft" in data) return said(res, () => `Drafted "${data.draft.draft?.name ?? "your project"}". It's waiting in Needs you.`);
       return { ...said(res, () => `Set up ${data.space.name}.`), spaceId: data.space.id };
     }
@@ -115,6 +116,19 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
             ? `Not now. Atrium will keep asking about ${intent.label}.`
             : `Atrium won't suggest a rule for ${intent.label} again.`,
       );
+    }
+    case "batch": {
+      const res = await client.post<{ approved: string[]; skipped: { id: string; reason: string }[] }>("/api/approvals/batch", { items: intent.items.map(({ id, sha }) => ({ id, sha })) });
+      return said(res, (d) => {
+        const left = d.skipped.map((s) => intent.items.find((i) => i.id === s.id)?.title ?? s.id);
+        return `Approved ${d.approved.length}.${left.length ? ` Left for you to read: ${left.join(", ")}.` : ""}`;
+      });
+    }
+    case "explain":
+      return said(await client.post(`/api/tasks/${enc(intent.taskId)}/explain`), () => `Asked for the diagnosis of "${intent.title}". It reads the branch without trying again.`);
+    case "memory": {
+      const res = await client.post(`/api/memory/${enc(intent.lineId)}`, intent.accept ? { action: "accept", line: intent.line } : { action: "dismiss" });
+      return said(res, () => (intent.accept ? "Added the line to CLAUDE.md in a commit of its own." : "Dropped the proposed line."));
     }
     case "openFile": {
       const res = await client.post<{ app: string }>(`/api/spaces/${enc(intent.spaceId)}/file/open`, { path: intent.path, how: intent.how });

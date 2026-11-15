@@ -8,6 +8,7 @@ import { GetStarted } from "./components/GetStarted";
 import { Home } from "./components/Home";
 import { LiveRegion } from "./components/LiveRegion";
 import { NeedsPage } from "./components/NeedsPage";
+import { Palette } from "./components/Palette";
 import { Activity } from "./components/Activity";
 import { Logo } from "./components/Logo";
 import { Rules } from "./components/Rules";
@@ -16,6 +17,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SpaceView } from "./components/SpaceView";
 import { Toast } from "./components/Toast";
 import { navigate, parseRoute, usePath } from "./route";
+import { applyTheme, storedTheme } from "./theme";
 
 function App() {
   const state = useEngineState();
@@ -27,6 +29,8 @@ function App() {
   const briefing = useRef<State["briefing"] | null>(null);
   const seen = useRef(false);
   const [setupRequest, setSetupRequest] = useState(0);
+  const [askRequest, setAskRequest] = useState(0);
+  const [palette, setPalette] = useState(false);
   const [, setTick] = useState(0);
 
   if (state && !briefing.current) briefing.current = state.briefing;
@@ -48,6 +52,17 @@ function App() {
       .then((r) => r.autoOpen && navigate("/start"))
       .catch(() => {});
   }, [fresh, route.name]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette((p) => !p);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Keeps relative times ("3m ago") current while nothing else changes.
   useEffect(() => {
@@ -98,9 +113,17 @@ function App() {
             </>
           ) : (
             <>
-              <button className="crumb" onClick={() => navigate("/")}>
+              <a
+                className="crumb"
+                href="/"
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                  e.preventDefault();
+                  navigate("/");
+                }}
+              >
                 Home
-              </button>
+              </a>
               <ChevronRight className="sep" />
               <b>
                 {route.name === "needs" ? "Needs you" : route.name === "activity" ? "Activity" : route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : route.name === "settings" ? "Settings" : route.name === "start" ? "Get started" : (space?.name ?? "Unknown space")}
@@ -108,34 +131,49 @@ function App() {
             </>
           )}
           {offline}
-          <span className="k">⌘K</span>
+          <button className="k palette-open" onClick={() => setPalette(true)} title="Every action by name">
+            ⌘K
+          </button>
         </div>
-        {route.name === "home" ? (
-          <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
-        ) : route.name === "needs" ? (
-          <NeedsPage state={activeOnly(state)} />
-        ) : route.name === "activity" ? (
-          <div className="wrap">
-            <Activity state={activeOnly(state)} page />
-          </div>
-        ) : route.name === "agents" ? (
-          <Agents state={state} />
-        ) : route.name === "rules" ? (
-          <Rules state={state} />
-        ) : route.name === "settings" ? (
-          <Settings state={state} />
-        ) : route.name === "start" ? (
-          <GetStarted />
-        ) : (
-          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} changes={route.changes} at={route.at} />
-        )}
-        <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} />
+        <div className="page">
+          {route.name === "home" ? (
+            <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
+          ) : route.name === "needs" ? (
+            <NeedsPage state={activeOnly(state)} item={route.item} batch={route.batch} />
+          ) : route.name === "activity" ? (
+            <div className="wrap">
+              <Activity state={activeOnly(state)} page />
+            </div>
+          ) : route.name === "agents" ? (
+            <Agents state={state} />
+          ) : route.name === "rules" ? (
+            <Rules state={state} />
+          ) : route.name === "settings" ? (
+            <Settings state={state} />
+          ) : route.name === "start" ? (
+            <GetStarted />
+          ) : (
+            <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} changes={route.changes} at={route.at} />
+          )}
+        </div>
+        {/* Get started has its own ask (the sample's); a second box there, before Claude is ready, only confuses. */}
+        {route.name !== "start" && <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} askRequest={askRequest} />}
+        <Palette
+          state={activeOnly(state)}
+          spaceId={route.name === "space" ? route.id : null}
+          open={palette}
+          onClose={() => setPalette(false)}
+          onAsk={() => setAskRequest((n) => n + 1)}
+          onNewSpace={newSpace}
+        />
         <Toast />
         <LiveRegion />
       </main>
     </div>
   );
 }
+
+applyTheme(storedTheme());
 
 // Every icon shares one size and stroke so the set reads as a single family.
 createRoot(document.getElementById("root")!).render(

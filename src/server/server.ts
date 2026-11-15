@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
 import { STEER_NOTE_MAX, type SteerOutcome, type StopOutcome } from "../engine/runner";
-import { AlreadyResolved, getApproval, resolveApproval } from "../engine/approvals";
+import { AlreadyResolved, approveClean, BATCH_MAX, getApproval, HeadMoved, reopenDecision, resolveApproval } from "../engine/approvals";
 import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
 import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
 import { markSeen } from "../engine/briefing";
@@ -219,7 +219,7 @@ export function startServer(deps: Deps): Server<WsData> {
       if (!current) throw new HttpError(404, "No such task.");
       // Requeueing a running or in-review task would start a second run or orphan its review.
       if (current.status !== "blocked" && current.status !== "failed") {
-        throw new HttpError(409, "This task isn't blocked or failed, so there's nothing to retry.");
+        throw new HttpError(409, "This task isn't stopped or failed, so there's nothing to retry.");
       }
       // The runner would only fail it again.
       if (current.legacyPurpose !== null) throw new HttpError(409, REMOVED_FEATURE_RETRY);
@@ -279,7 +279,7 @@ export function startServer(deps: Deps): Server<WsData> {
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
 
-    // Stop and continue with Nakul's note: 200 once the task is back in the queue with it; 202 while the agent is still
+    // Stop and continue with the user's note: 200 once the task is back in the queue with it; 202 while the agent is still
     // winding down (it requeues when it exits); 409 when there's no run to steer.
     const steerM = hit("POST", /^\/api\/tasks\/([^/]+)\/steer$/);
     if (steerM) {
@@ -295,7 +295,7 @@ export function startServer(deps: Deps): Server<WsData> {
       if (task.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to steer.");
       const outcome = (await runner.steerTask?.(id, note)) ?? "not-running";
       if (outcome === "pending") throw new HttpError(409, pending);
-      if (outcome === "blocked") throw new HttpError(409, `It couldn't start again with your note: ${getTask(db, id)?.blockedReason ?? "it was blocked."}`);
+      if (outcome === "blocked") throw new HttpError(409, `It couldn't start again with your note: ${getTask(db, id)?.blockedReason ?? "it stopped again."}`);
       if (outcome === "not-running") throw new HttpError(409, "It finished or stopped before your note arrived, so nothing was restarted.");
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
@@ -306,7 +306,7 @@ export function startServer(deps: Deps): Server<WsData> {
       return json(await prInfo(db, prInfoM[1]!));
     }
 
-    // Nakul's click on "Push and open PR" is his yes; 409 when the task can't open one or GitHub turns the push
+    // The user's click on "Push and open PR" is their yes; 409 when the task can't open one or GitHub turns the push
     // down, 502 when gh fails.
     const prM = hit("POST", /^\/api\/tasks\/([^/]+)\/pr$/);
     if (prM) {
@@ -320,12 +320,41 @@ export function startServer(deps: Deps): Server<WsData> {
     }
 
     const diffM = hit("GET", /^\/api\/tasks\/([^/]+)\/diff$/);
-    if (diffM) return json(await taskChanges(db, diffM[1]!));
+    if (diffM) return json(await taskChanges(db, diffM[1]!, url.searchParams.get("turn") ?? undefined));
 
     const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
     if (msgM) {
       if (!getTask(db, msgM[1]!)) throw new HttpError(404, "No such task.");
       return json(listMessages(db, msgM[1]!));
+    }
+
+    // Before the single approval's route, which would read "batch" as an id.
+    if (hit("POST", /^\/api\/approvals\/batch$/)) {
+      const b = await readBody(req);
+      const items = b.items;
+      const pair = (x: unknown): x is { id: string; sha: string } => !!x && typeof x === "object" && isString((x as { id?: unknown }).id) && isString((x as { sha?: unknown }).sha);
+      if (!Array.isArray(items) || !items.every(pair) || items.length > BATCH_MAX) throw new HttpError(400, `items must be a list of up to ${BATCH_MAX} { id, sha } pairs.`);
+      const res = approveClean(db, items);
+      // Each one counts toward "stop asking about this?" as a single approval does.
+      for (const id of res.approved) {
+        try {
+          considerProposal(db, id);
+        } catch (e) {
+          console.error("Couldn't consider a rule suggestion:", e);
+        }
+      }
+      runner.kick();
+      return json(res);
+    }
+
+    const reopenM = hit("POST", /^\/api\/approvals\/([^/]+)\/reopen$/);
+    if (reopenM) {
+      if (!getApproval(db, reopenM[1]!)) throw new HttpError(404, "No such approval.");
+      try {
+        return json(reopenDecision(db, reopenM[1]!));
+      } catch (e) {
+        throw new HttpError(409, (e as Error).message);
+      }
     }
 
     const apprM = hit("POST", /^\/api\/approvals\/([^/]+)$/);
@@ -337,8 +366,21 @@ export function startServer(deps: Deps): Server<WsData> {
       }
       const current = getApproval(db, id);
       if (!current) throw new HttpError(404, "No such approval.");
-      const approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"));
-      // Nakul's decision stands whatever happens here; a suggestion is only ever extra.
+      // The commit the page showed: the approval binds to exactly that, or to nothing. A result whose checks read a
+      // commit on its branch (every result through the loop) can only be approved with it, so no client approves
+      // whatever the head happens to be. A result from before the loop has no such commit to show.
+      const sha = opt(b.sha, isString, "sha");
+      const task = current.kind === "review" && current.taskId ? getTask(db, current.taskId) : null;
+      const onBranch = !!task?.branch && !!task.loop?.checkedSha;
+      if (b.decision === "approve" && onBranch && !sha) throw new HttpError(400, "Approving a result on a branch needs the commit you looked at. Reload it and approve again.");
+      let approval;
+      try {
+        approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"), undefined, b.decision === "approve" && sha ? { atHead: sha } : {});
+      } catch (e) {
+        if (e instanceof HeadMoved) throw new HttpError(409, e.message);
+        throw e;
+      }
+      // The user's decision stands whatever happens here; a suggestion is only ever extra.
       if (b.decision === "approve") {
         try {
           considerProposal(db, id);
@@ -491,7 +533,7 @@ export function startServer(deps: Deps): Server<WsData> {
     if (files) return files;
     const attached = await attachmentsRoute(db, req, url);
     if (attached) return attached;
-    const start = await startRoute(db, req, url);
+    const start = await startRoute(db, req, url, () => runner.kick());
     if (start) return start;
 
     if (deps.repos) {

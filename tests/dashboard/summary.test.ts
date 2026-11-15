@@ -49,7 +49,7 @@ test("spaceStatus says who is running", () => {
   expect(s.text).toBe("Claude is signed out.");
 
   const blocked = task({ status: "blocked", blockedReason: "No repo" });
-  expect(spaceStatus(space, [blocked], state({ tasks: [blocked] })).text).toBe("Blocked: No repo");
+  expect(spaceStatus(space, [blocked], state({ tasks: [blocked] })).text).toBe("Stopped: No repo");
 
   expect(spaceStatus(space, [], state()).text.startsWith("Idle · last activity ")).toBe(true);
 });
@@ -60,15 +60,22 @@ const loop = (over: Partial<NonNullable<Task["loop"]>> = {}) => ({ ...newLoop(SI
 
 test("reviewLine says what the checks and the reviewer made of the work", () => {
   const passed = task({ loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] }) });
-  expect(reviewLine(approval, state({ tasks: [passed], spaces: [repo] }))).toEqual({ text: "Checks passed · reviewed by Codex", tone: "ok" });
+  expect(reviewLine(approval, state({ tasks: [passed], spaces: [repo] }))).toEqual({ text: "Checks passed · Approved by Codex", tone: "ok" });
 
   const finding = { severity: "high" as const, file: "a.ts", line: 1, reason: "r", resolution: { action: "fixed" as const, note: "" } };
   const fixed = task({ loop: loop({ checks: "none", reviews: [{ reviewer: "claude", verdict: "changes", findings: [finding, { ...finding, resolution: null }], skipped: null }] }) });
-  expect(reviewLine(approval, state({ tasks: [fixed], spaces: [repo] }))).toEqual({ text: "Unverified: no checks found · Claude found 2 to fix, 1 fixed", tone: "waiting" });
+  expect(reviewLine(approval, state({ tasks: [fixed], spaces: [repo] }))).toEqual({ text: "Unverified: no checks found · 1 open finding · Claude", tone: "waiting" });
+  const declined = task({ loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "changes", findings: [{ ...finding, resolution: { action: "declined", note: "" } }, { ...finding, resolution: null }], skipped: null }] }) });
+  expect(reviewLine(approval, state({ tasks: [declined], spaces: [repo] }))).toEqual({ text: "Checks passed · 1 open finding · Codex", tone: "waiting" });
 
+  const noted = task({ outcome: "done", loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "approve", findings: [{ ...finding, severity: "low", resolution: null }], skipped: null }] }) });
+  expect(reviewLine(approval, state({ tasks: [noted], spaces: [repo] }))).toEqual({ text: "Checks passed · Approved by Codex · 1 note", tone: "ok" });
+
+  // A note on what the change did to its checks asks for a look; only failing checks read as bad.
   const flagged = task({ loop: loop({ checks: "passed", attention: ["This change edits how checks run: package.json."] }) });
-  expect(reviewLine(approval, state({ tasks: [flagged], spaces: [repo] }))?.tone).toBe("bad");
-  expect(attentionText(flagged.loop)).toBe("Look closely: This change edits how checks run: package.json.");
+  expect(reviewLine(approval, state({ tasks: [flagged], spaces: [repo] }))?.tone).toBe("waiting");
+  expect(reviewLine(approval, state({ tasks: [task({ loop: loop({ checks: "failed" }) })], spaces: [repo] }))?.tone).toBe("bad");
+  expect(attentionText(flagged.loop)).toBe("Needs a look: This change edits how checks run: package.json.");
 
   // Work outside the loop has no line.
   expect(reviewLine(approval, state({ tasks: [task()], spaces: [repo] }))).toBeNull();
@@ -110,4 +117,14 @@ test("Home is only empty when there are no spaces and nothing waiting", () => {
   const ask = { id: "apr_1", spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?' } as Approval;
   expect(emptyHome(state({ spaces: [], proposals: [], approvals: [ask] } as Partial<State>))).toBe(false);
   expect(emptyHome(state({ spaces: [space], proposals: [] } as Partial<State>))).toBe(false);
+});
+
+test("a paused task counts once, as needing you, and isn't also reported as blocked", async () => {
+  const { liveStatus } = await import("../../src/dashboard/summary");
+  const { makeState, task } = await import("../tui/fixtures");
+  const s = makeState({ approvals: [], proposals: [] });
+  const paused = task({ id: "tsk_paused", status: "blocked", blockedReason: "Paused: over budget.", loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "over budget" } } });
+  const state = { ...s, tasks: [...s.tasks.filter((t) => t.status !== "blocked"), paused] };
+  expect(liveStatus(state)).toContain("1 thing needs you");
+  expect(liveStatus(state)).not.toContain("blocked");
 });

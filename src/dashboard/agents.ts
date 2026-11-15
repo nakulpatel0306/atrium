@@ -22,11 +22,11 @@ export function agentText(task: Task, runs: Run[]): string {
 export type Wait = State["waits"][string];
 export type WaitKind = Wait["kind"];
 
-// These need Nakul to act (sign in, install, pick another agent); the rest clear up on their own.
+// These need the user to act (sign in, install, pick another agent); the rest clear up on their own.
 const ACTION_KINDS = new Set<WaitKind>(["signed_out", "not_installed", "private_space", "env_files", "gemini_repo"]);
 export const needsAction = (wait: Wait) => ACTION_KINDS.has(wait.kind);
 
-// Most pressing first, for the one-line summaries: what Nakul must fix, then what's simply queued behind something.
+// Most pressing first, for the one-line summaries: what the user must fix, then what's simply queued behind something.
 const PRIORITY: WaitKind[] = [
   "signed_out",
   "not_installed",
@@ -42,10 +42,24 @@ const PRIORITY: WaitKind[] = [
 export const byPriority = (a: Wait, b: Wait) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind);
 
 // A task that has started since the runner's last pass may still have an entry; it no longer applies.
-export const waitOf = (task: Task, state: State): Wait | null =>
-  task.status === "queued" ? (state.waits[task.id] ?? null) : null;
+// Why a queued task isn't starting. A task waiting on its review shows its review's own wait instead when that has
+// one (the Claude reserve, say), so the reason and its Run now are on the task the user is looking at; the wait's
+// `taskId` names the task Run now starts.
+export function waitOf(task: Task, state: State): Wait | null {
+  if (task.status !== "queued") return null;
+  const own = state.waits[task.id] ?? null;
+  if (own?.kind !== "reviewing") return own;
+  const review = state.tasks.find((t) => t.parentTaskId === task.id && t.kind === "review" && t.status === "queued" && state.waits[t.id]);
+  return review ? state.waits[review.id]! : own;
+}
 
 export function inReserve(state: State): { until: number } | null {
   const w = state.claudeWindow;
   return w && w.utilization >= w.reserve ? { until: w.resetsAt } : null;
+}
+
+// Agents worth a badge: Claude when it can't run (it's the one required), and any other agent that's installed but
+// signed out or at a limit. An optional agent that was never installed is a choice, not a problem.
+export function agentsHeld(state: State): number {
+  return Object.entries(state.agents).filter(([id, a]) => (id === "claude" && !a.installed) || (a.installed && (a.loggedIn === false || a.limitedUntil))).length;
 }

@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { post, type State } from "../api";
@@ -6,7 +7,7 @@ import { absolute, relative } from "../format";
 type Proposal = State["proposals"][number];
 type Space = State["spaces"][number];
 
-// "Stop asking about this?" Only Nakul's yes here turns a habit into a rule.
+// "Stop asking about this?" Only the user's yes here turns a habit into a rule.
 export function ProposalRow({ proposal, space }: { proposal: Proposal; space: Space | undefined }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,7 +44,7 @@ export function ProposalRow({ proposal, space }: { proposal: Proposal; space: Sp
             Not now
           </button>
           <button className="btn p" disabled={busy} onClick={() => void answer("yes")}>
-            Yes
+            {KIND.suggestion.action}
           </button>
         </div>
       </div>

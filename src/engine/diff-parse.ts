@@ -19,7 +19,11 @@ export type DiffResult = {
   truncated: boolean;
   // Files too large to read whose size matches what's committed, so Atrium can't tell whether they changed.
   unchecked?: { path: string; note: string }[];
+  // A finished task's commits on its branch, oldest first: one per writer turn, each viewable on its own.
+  turns?: Turn[];
 };
+
+export type Turn = { sha: string; title: string; at: number };
 
 export const MAX_FILE_LINES = 2000;
 

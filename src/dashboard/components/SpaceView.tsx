@@ -1,13 +1,16 @@
-import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, Wrench } from "lucide-react";
+import { attentionQueue } from "../../engine/needs";
+import { KIND as QUEUE_KIND, RISKY, taskLabel, taskWord } from "../../engine/words";
+import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
-import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
+import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, reviewLine, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
+import { isRisky } from "../queue";
 import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
-import { MemoryProposals, MemorySize } from "./Memory";
+import { MemorySize } from "./Memory";
 import { RetroCard, RollupCard } from "./Retro";
 import { ChecksBadge, LoopPanel } from "./LoopPanel";
 import { CostChip } from "./Shape";
@@ -16,7 +19,7 @@ import { spendText } from "../../engine/cost";
 import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
-import { ReviewActions } from "./Decision";
+import { DecisionBar, OpenPoints } from "./Decision";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -153,6 +156,8 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
   const [goal, setGoal] = useState(space.goal);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // How the space runs (path, review, learning, checks, archive) stays folded so the work comes first.
+  const [settings, setSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -187,14 +192,9 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
         <span className="sd" style={{ background: space.color }} />
         <h1>{space.name}</h1>
         {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
-        {space.repoPath && (
-          <span className="tag mono path" title={space.repoPath}>
-            {space.repoPath}
-          </span>
-        )}
         {spend && (
-          <span className="tag cost" title="Weighted tokens, with an estimate at Anthropic's list prices. A subscription doesn't bill per token.">
-            today {compact(spend.today.weighted)} · {spendText(spend.today)} · this week {compact(spend.week.weighted)} · {spendText(spend.week)}
+          <span className="tag cost" title={`Weighted tokens, with an estimate at Anthropic's list prices. A subscription doesn't bill per token. This week: ${compact(spend.week.weighted)} · ${spendText(spend.week)}.`}>
+            today {compact(spend.today.weighted)} · {spendText(spend.today)}
           </span>
         )}
         <div className="head-acts">
@@ -212,26 +212,10 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
             </button>
             <span className="hint">{space.unknownKind ? STAYS_PRIVATE : "Private spaces only use Claude"}</span>
           </div>
-          {confirmArchive ? (
-            <>
-              <span className="hint">Archive this space? Its agents stop picking up tasks.</span>
-              <button className="btn" onClick={() => setConfirmArchive(false)}>
-                Cancel
-              </button>
-              <button className="btn danger" disabled={busy} onClick={() => void archive()}>
-                Archive
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="btn" onClick={() => setConfirmArchive(true)}>
-                Archive
-              </button>
-              <button className="btn" onClick={() => setDeleting(true)}>
-                Delete…
-              </button>
-            </>
-          )}
+          <button className="btn" aria-expanded={settings} aria-controls={`settings-${space.id}`} onClick={() => setSettings(!settings)}>
+            <SlidersHorizontal />
+            Settings
+          </button>
         </div>
       </div>
       {editing ? (
@@ -271,8 +255,39 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
         </button>
       )}
       {error && <div className="err">{error}</div>}
-      {/* Checks and reviews read the branch, so only repo spaces have them. */}
-      {space.kind === "repo" && <LoopSettings space={space} />}
+      {settings && (
+        <div className="space-settings" id={`settings-${space.id}`}>
+          {space.repoPath && (
+            <p className="hint">
+              Repo <span className="mono">{space.repoPath}</span>
+            </p>
+          )}
+          {/* Checks and reviews read the branch, so only repo spaces have them. */}
+          {space.kind === "repo" && <LoopSettings space={space} />}
+          <div className="acts">
+            {confirmArchive ? (
+              <>
+                <span className="hint">Archive this space? Its agents stop picking up tasks.</span>
+                <button className="btn" onClick={() => setConfirmArchive(false)}>
+                  Cancel
+                </button>
+                <button className="btn danger" disabled={busy} onClick={() => void archive()}>
+                  Archive
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn" onClick={() => setConfirmArchive(true)}>
+                  Archive
+                </button>
+                <button className="btn" onClick={() => setDeleting(true)}>
+                  Delete…
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {deleting && <DeleteSpace space={space} onClose={() => setDeleting(false)} onDeleted={() => navigate("/")} />}
     </div>
   );
@@ -316,11 +331,21 @@ type TaskRowProps = {
   at?: ChangeSpot | null;
 };
 
+// The queue kind a task waits under when that isn't already its state word: a question, a pick, a stopped part.
+function queueKindOf(state: State, taskId: string) {
+  const item = attentionQueue(state).find((i) => i.key === taskId);
+  return item && (item.kind === "question" || item.kind === "pick" || item.kind === "stuck") ? item.kind : null;
+}
+
 function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = null }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const stuck = task.status === "blocked" || task.status === "failed";
+  const word = taskWord(task);
+  // A task in the queue for something other than its state (a question before it starts, a pick) wears that kind.
+  const asks = queueKindOf(state, task.id);
+  const waitsOnYou = word === "paused" || word === "review";
+  const stuck = word === "stopped" || word === "failed";
   const runs = state.runs.filter((r) => r.taskId === task.id);
   const wait = waitOf(task, state);
   const parent = task.parentTaskId ? state.tasks.find((t) => t.id === task.parentTaskId) : undefined;
@@ -329,6 +354,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   // A finished task the agent said it couldn't or only partly do is labelled that way, never plain done.
   const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
   const review = task.status === "review" ? state.approvals.find((a) => a.taskId === task.id && a.kind === "review") : undefined;
+  const risky = !!review && isRisky(state, review);
   const attached = state.attachments.filter((a) => a.taskId === task.id);
 
   const act = async (fn: () => ReturnType<typeof post>) => {
@@ -339,7 +365,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
     if (!res.ok) setError(res.error);
   };
   const retry = () => act(() => post(`/api/tasks/${task.id}/retry`));
-  const runNow = () => act(() => post(`/api/tasks/${task.id}/run-now`));
+  const runNow = () => act(() => post(`/api/tasks/${wait?.taskId ?? task.id}/run-now`));
   const setAgent = (value: AgentChoice) => act(() => patch(`/api/tasks/${task.id}`, { agent: value }));
 
   return (
@@ -347,19 +373,23 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
       {/* The summary is the row's one button; its actions sit beside it, so no control is nested in another. */}
       <div className={`item task${task.status === "done" ? " done" : ""}`}>
         <button className="task-open" aria-expanded={open} onClick={onToggle}>
-          <StatusIcon status={task.status} outcome={task.outcome} />
+          {/* The tag beside it says the state in words; the icon is only for the eye. */}
+          <span aria-hidden="true">
+            <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} />
+          </span>
           <KindBadge kind={task.kind} />
           <span className="t" title={shownTitle(task)}>
             {shownTitle(task)}
           </span>
-          {wait ? (
-            <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
-              waiting
+          {wait && !asks ? (
+            // Still queued: what holds it back is in the tooltip. Only a wait that needs you (a sign-in) is coloured.
+            <span className={`tag${needsAction(wait) ? " bad" : ""}`} title={wait.reason}>
+              {taskLabel("queued")}
             </span>
           ) : (
-            <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
-              {notDone ?? STATUS_TEXT[task.status]}
-              {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
+            // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
+            <span className={`tag${stuck ? " bad" : word === "paused" ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
+              {notDone ?? (asks ? QUEUE_KIND[asks].label : taskLabel(word))}
             </span>
           )}
         </button>
@@ -374,7 +404,14 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             Run now
           </button>
         )}
-        {space?.kind === "repo" && task.kind === "work" && (
+        {/* A result waiting on you that isn't clean says so on its row, as everywhere else (needs.ts, one rule). */}
+        {risky && (
+          <span className="tag wait" title={review ? (reviewLine(review, state)?.text ?? undefined) : undefined}>
+            {RISKY}
+          </span>
+        )}
+        {/* Open on a decision, the checks have their chip right below; the row doesn't say it twice. */}
+        {space?.kind === "repo" && task.kind === "work" && !(open && review) && !risky && (
           <ChecksBadge
             task={task}
             onOpen={() => {
@@ -383,15 +420,21 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             }}
           />
         )}
-        {task.kind === "work" && <CostChip spend={state.spend.tasks[task.id]} />}
         <StopTask task={task} />
         <Avatar agent={ranAgent(task, state.runs)} live={task.status === "running"} title={agent} />
       </div>
       {open && (
         <div className="detail">
-          {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
+          {/* A pause waits for a hint and reads amber; a stopped task waits for a retry and reads red. */}
+          {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
-          {review && <ReviewActions approval={review} outcome={task.outcome} />}
+          {review && (
+            <div className="review-acts">
+              <DecisionBar approval={review} state={state} />
+            </div>
+          )}
+          {/* The same reasons, in the same place, as on its screen in Needs you. */}
+          {risky && <OpenPoints task={task} />}
           <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
@@ -401,7 +444,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </p>
           )}
           {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
-            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} />
+            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} reasonsAbove={risky} />
           )}
           <section className="asked">
             <h4>You asked</h4>
@@ -411,8 +454,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {space?.kind === "repo" ? (
             <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} at={at} />
           ) : (
-            space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />
+            space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
           )}
+          <MoreDetails folded={waitsOnYou}>
           <div className="meta">
             <span className="agent-meta">
               Agent
@@ -427,6 +471,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             {task.branch && <span className="mono">Branch {task.branch}</span>}
             <span>{task.weight === "heavy" ? "Runs when your Mac is plugged in" : "Runs anytime"}</span>
             {task.ignoreReserve && <span>Runs during Claude's reserve</span>}
+            {task.kind === "work" && <CostChip spend={state.spend.tasks[task.id]} />}
           </div>
           {task.kind === "work" && <Thread taskId={task.id} />}
           <TaskHistory task={task} state={state} />
@@ -441,10 +486,22 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </ul>
           )}
           <DeleteTask task={task} />
+          </MoreDetails>
         </div>
       )}
       {error && <div className="row-err err">{error}</div>}
     </div>
+  );
+}
+
+// A task waiting on you leads with the decision; who ran it, when, its history and runs fold under Details.
+function MoreDetails({ folded, children }: { folded: boolean; children: React.ReactNode }) {
+  if (!folded) return <>{children}</>;
+  return (
+    <details className="task-more">
+      <summary>Details: agent, history, runs</summary>
+      {children}
+    </details>
   );
 }
 
@@ -571,7 +628,6 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
       <SpaceNeeds state={state} spaceId={space.id} />
-      <MemoryProposals state={state} space={space} />
       <div className="cols">
         <div>
           <Tabs space={space} tab={tab} />

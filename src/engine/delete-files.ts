@@ -54,7 +54,7 @@ export function fileNow(root: string, rel: string): { absPath: string; size: num
   }
 }
 
-// Space folders go to the Trash, so a delete of Nakul's own files has a way back. Tests and dev engines use a
+// Space folders go to the Trash, so a delete of the user's own files has a way back. Tests and dev engines use a
 // trash of their own.
 function trashDir(): string {
   if (process.env.ATRIUM_TRASH) return process.env.ATRIUM_TRASH;
@@ -91,7 +91,7 @@ type FolderResult = { note: string | null; trashed: boolean };
 const kept = (note: string): FolderResult => ({ note, trashed: false });
 const done: FolderResult = { note: null, trashed: false };
 
-// A space's visible folder holds Nakul's files, so Atrium never removes one for good: it goes to the Trash, and if
+// A space's visible folder holds the user's files, so Atrium never removes one for good: it goes to the Trash, and if
 // the Trash can't take it (no permission under launchd, another volume) it stays where it is and the note says so.
 // It must sit directly in its root, have an ordinary name, be the very folder Atrium made (when Atrium recorded
 // that), and not be in use by anything still recorded. The hidden legacy folder is Atrium's own and is removed.
@@ -106,7 +106,7 @@ function removeFolder(db: Database, r: Pending): FolderResult {
   if (!parent) return done;
   if (parent !== realOrNull(root)) return outside;
   const visible = resolve(root) === resolve(config().filesHome);
-  // A files home that is the home folder itself (or above it) holds folders Nakul made; Atrium never removes one.
+  // A files home that is the home folder itself (or above it) holds folders the user made; Atrium never removes one.
   const home = realOrNull(process.env.HOME || homedir());
   if (home && inside(home, parent)) return kept(`Atrium left ${shown} alone: its files folder is your home folder, where it can't tell its folders from yours.`);
   // Left by an earlier version's half-finished removal: a visible folder's copy goes to the Trash too, never away.
@@ -168,7 +168,7 @@ function removeMadeFile(path: string, root: string, expect: { size: number | nul
     if (e instanceof FileRefused) return `Atrium left ${path} alone: ${e.message}`;
     throw e;
   }
-  // Checked again right before removing: a file changed since the delete was asked for (or since a crash) is Nakul's.
+  // Checked again right before removing: a file changed since the delete was asked for (or since a crash) is the user's.
   const now = fileNow(root, path);
   if (!now) return null;
   if (expect.size === null || expect.mtimeMax === null || now.size !== expect.size || now.mtimeMs > expect.mtimeMax) {
@@ -189,7 +189,7 @@ function removeMadeFile(path: string, root: string, expect: { size: number | nul
 }
 
 // An Atrium clone goes only through the same checks as Settings › Storage: nothing uncommitted, untracked or
-// unpushed, and no space still using it. Nakul's own checkouts never get here.
+// unpushed, and no space still using it. The user's own checkouts never get here.
 async function removeClone(db: Database, cloneId: string): Promise<string | null> {
   const clone = getClone(db, cloneId);
   if (clone?.status !== "present") return null;

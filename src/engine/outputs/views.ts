@@ -46,7 +46,7 @@ export type SpaceFile = {
   madeBy: { taskId: string; title: string } | null;
 };
 
-// `shown` is the folder as Nakul would type it ("~/Atrium/weekly-planning").
+// `shown` is the folder as the user would type it ("~/Atrium/weekly-planning").
 export type SpaceFiles = { folder: string | null; shown: string | null; files: SpaceFile[]; truncated: boolean };
 
 const isFileOnDisk = (abs: string) => {
@@ -100,7 +100,7 @@ export async function taskOutputs(db: Database, taskId: string): Promise<TaskOut
 }
 
 // The folder as it is now, credited to the newest task that touched each file. A repo space lists what its
-// tasks changed on their branches instead, since the working copy is Nakul's.
+// tasks changed on their branches instead, since the working copy is the user's.
 export async function spaceFiles(db: Database, spaceId: string): Promise<SpaceFiles | null> {
   const space = getSpace(db, spaceId);
   if (!space) return null;

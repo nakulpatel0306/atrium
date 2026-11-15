@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getApproval, listPending, onApprovalResolved, resolveApproval } from "../../../src/engine/approvals";
+import { getApproval, listPending, onApprovalResolved, reopenDecision, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { askToRemove, CLONE_IDLE_MS, checkRemovable, DECLINE_QUIET_MS, recoverRemovals, removeVerified, scanIdleClones } from "../../../src/engine/repos/cleanup";
 import { createCloner } from "../../../src/engine/repos/clones";
@@ -43,9 +43,9 @@ afterEach(() => {
   home.cleanup();
 });
 
-// As main.ts wires it: Nakul's decisions reach the repo executors through the approval listener.
+// As main.ts wires it: the user's decisions reach the repo executors through the approval listener.
 const wired = () => {
-  const repos = createRepos({ db, kick: () => {} });
+  const repos = createRepos({ db, kick: () => {}, holdMs: 0 });
   unsubscribe.push(onApprovalResolved(repos.onDecision));
   return repos;
 };
@@ -149,7 +149,7 @@ for (const [name, setup, reason] of cases) {
   });
 }
 
-test("a folder Nakul made is never Atrium's to remove", async () => {
+test("a folder the user made is never Atrium's to remove", async () => {
   const mine = join(gh.projects, "mine");
   mkdirSync(mine);
   git(mine, "init", "-q");
@@ -181,7 +181,7 @@ test("idle clones are offered for removal once, and a no keeps it quiet for 30 d
   expect(await scanIdleClones(db, declined + DECLINE_QUIET_MS + 86_400_000)).toBe(1);
 });
 
-test("Nakul's yes removes the folder and keeps the space's GitHub link", async () => {
+test("The user's yes removes the folder and keeps the space's GitHub link", async () => {
   const repos = wired();
   const asked = await askToRemove(db, clone.id);
   if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
@@ -191,6 +191,43 @@ test("Nakul's yes removes the folder and keeps the space's GitHub link", async (
   expect(listClones(db)[0]!.status).toBe("removed");
   expect(getSpace(db, space.id)).toMatchObject({ repoPath: null, github: "fakeuser/demo" });
   expect(actionForApproval(db, asked.approval.id)!.status).toBe("done");
+});
+
+test("a yes to a removal waits out its hold, and taken back in it removes nothing", async () => {
+  const repos = createRepos({ db, kick: () => {}, holdMs: 150 });
+  unsubscribe.push(onApprovalResolved(repos.onDecision));
+  const asked = await askToRemove(db, clone.id);
+  if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
+  resolveApproval(db, asked.approval.id, "approve");
+  // Still held: nothing deleted, and the yes can go back to a pending ask the removal now waits on.
+  expect(existsSync(path)).toBe(true);
+  const again = reopenDecision(db, asked.approval.id);
+  expect(again).toMatchObject({ status: "pending", alwaysAsk: "remove_clone" });
+  expect(actionForApproval(db, again.id)!.status).toBe("draft");
+  await Bun.sleep(250);
+  await repos.settle();
+  expect(existsSync(path)).toBe(true);
+  expect(listPending(db).map((a) => a.id)).toContain(again.id);
+  // A yes left alone starts when its hold ends, and then can't be taken back.
+  resolveApproval(db, again.id, "approve");
+  await Bun.sleep(250);
+  await repos.settle();
+  expect(existsSync(path)).toBe(false);
+  expect(() => reopenDecision(db, again.id)).toThrow("This has already started, so it can't be taken back.");
+});
+
+test("a yes still held when the engine stopped starts after its hold on the next start", async () => {
+  const asked = await askToRemove(db, clone.id);
+  if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));
+  resolveApproval(db, asked.approval.id, "approve");
+  const repos = createRepos({ db, kick: () => {}, holdMs: 0 });
+  // Building the engine side starts nothing: boot resumes held yeses only after recovery (boot.ts).
+  await Bun.sleep(50);
+  expect(existsSync(path)).toBe(true);
+  repos.resumeHeld();
+  await Bun.sleep(50);
+  await repos.settle();
+  expect(existsSync(path)).toBe(false);
 });
 
 test("a .env planted after the yes is caught by the fresh check", async () => {

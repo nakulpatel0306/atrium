@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
@@ -35,18 +36,18 @@ const put = (path: string, body: unknown) => fetch(base + path, { method: "PUT",
 test("GET /api/start gives the checks, the saved place and whether to open on its own", async () => {
   const r = await (await fetch(base + "/api/start")).json();
   expect(r.report.agents.map((a: { id: string; state: string }) => [a.id, a.state])).toEqual([["claude", "ready"], ["codex", "not_installed"], ["gemini", "not_installed"]]);
-  expect(r.progress).toEqual({ step: "welcome", skipped: [], done: false, dismissed: false });
+  expect(r.progress).toEqual({ step: "claude", skipped: [], done: false, dismissed: false });
   expect(r.autoOpen).toBe(true);
 });
 
-test("PUT /api/start moves and skips steps, and Done waits for Claude", async () => {
-  expect(await (await put("/api/start", { skip: "tools", step: "profile" })).json()).toEqual({ step: "profile", skipped: ["tools"], done: false, dismissed: false });
+test("PUT /api/start moves and skips steps, and finishing waits for Claude", async () => {
+  expect(await (await put("/api/start", { skip: "folder", step: "sample" })).json()).toEqual({ step: "sample", skipped: ["folder"], done: false, dismissed: false });
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const blocked = await put("/api/start", { done: true });
   expect(blocked.status).toBe(400);
   expect((await blocked.json()).error).toContain("Claude comes first");
   delete process.env.FAKE_CLAUDE_AUTH;
-  expect(await (await put("/api/start", { done: true })).json()).toMatchObject({ step: "done", done: true });
+  expect(await (await put("/api/start", { done: true })).json()).toMatchObject({ step: "sample", done: true });
   expect((await (await fetch(base + "/api/start")).json()).autoOpen).toBe(false);
 });
 
@@ -65,7 +66,13 @@ test("the profile keeps a name and a projects folder in settings, and the curren
   // Folders must be inside the home folder, so the test's home is the temp one.
   process.env.ATRIUM_USER_HOME = home.home;
   const folder = join(home.home, "code");
-  const saved = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder })).json();
+  // A folder that isn't there yet saves nothing until it's asked to make it.
+  const missing = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder })).json();
+  expect(missing.missing).toEndWith("/code");
+  expect(db.query("SELECT value FROM settings WHERE key = 'projects.root'").get()).toBeNull();
+  expect(existsSync(folder)).toBe(false);
+  const saved = await (await put("/api/profile", { name: "Sam Rivera", projectsRoot: folder, create: true })).json();
+  expect(existsSync(folder)).toBe(true);
   expect(saved).toMatchObject({ name: "Sam Rivera", projectsRoot: folder });
   expect(db.query("SELECT value FROM settings WHERE key = 'projects.root'").get()).toEqual({ value: folder });
   const bad = await put("/api/profile", { projectsRoot: "nope" });

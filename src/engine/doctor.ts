@@ -104,17 +104,19 @@ export async function doctor(db: Database | null): Promise<Report> {
 
 const MARK: Record<CheckState, string> = { ready: "ok     ", not_installed: "missing", too_old: "old    ", signed_out: "sign in", unknown: "?      " };
 
+// The same three things as Get started, in its order: Claude, the projects folder, and what only widens the choice.
 export function formatDoctor(r: Report): string {
-  const lines = ["Agents"];
+  const lines = ["Required"];
   const row = (k: Check) => {
     lines.push(`  ${MARK[k.state]}  ${k.label}${k.version ? ` ${k.version}` : ""}${k.required ? " (required)" : " (optional)"}`);
     if (k.state === "not_installed") lines.push(`           install:  ${k.install}`);
     if (k.state === "not_installed" || k.state === "signed_out" || k.state === "unknown") lines.push(`           sign in:  ${k.signIn}`);
     if (k.state === "too_old") lines.push(`           ${k.message}`);
   };
-  r.agents.forEach(row);
-  lines.push("", "Code spaces");
-  row(r.github);
+  r.agents.filter((a) => a.required).forEach(row);
   lines.push("", "Your folders", `  Projects folder: ${r.profile.projectsRoot}`);
+  lines.push("", "Optional: a second reviewer and pull requests");
+  r.agents.filter((a) => !a.required).forEach(row);
+  row(r.github);
   return lines.join("\n");
 }

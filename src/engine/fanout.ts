@@ -84,7 +84,7 @@ export function fanIn(db: Database, parentId: string): "pick" | "judge" | "block
     const reason = `None of the ${plural(states.length, "attempt")} passed Atrium's checks, so there's nothing to pick. Open each attempt to see why, or retry it as one writer.`;
     setTaskLoop(db, parent.id, { ...loop, stage: "writing", shape: loop.shape && { ...loop.shape, kind: "single", reason: "no attempt passed its checks", approved: false }, fanout: null });
     setTaskStatus(db, parent.id, "blocked", { blockedReason: reason });
-    logActivity(db, parent.spaceId, "atrium", `Blocked: ${parent.title}. ${reason}`, { taskId: parent.id });
+    logActivity(db, parent.spaceId, "atrium", `Stopped: ${parent.title}. ${reason}`, { taskId: parent.id });
     return "blocked";
   }
   // One survivor has nothing to be compared with, so the judge isn't run for it.

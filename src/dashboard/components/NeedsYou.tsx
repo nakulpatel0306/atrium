@@ -1,144 +1,96 @@
-import { Inbox, SearchCheck, TriangleAlert } from "lucide-react";
-import { type Ref, useState } from "react";
-import { post, type State } from "../api";
-import { absolute, relative } from "../format";
+import { ChevronRight, Inbox } from "lucide-react";
+import type { Ref } from "react";
+import type { State } from "../api";
 import { navigate } from "../route";
-import { attentionText, reviewLine, summaryLine } from "../summary";
-import { DecideButtons, SendBackNote, useDecision } from "./Decision";
+import { attentionText, reviewChips } from "../summary";
+import { approveText, Chips } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
-import { askingTasks, QuestionsRow } from "./BriefQuestions";
 import { needsYouCount } from "../../engine/needs";
-import { ProjectDraftRow } from "./ProjectDraft";
-import { ProposalRow } from "./Proposal";
-import { RemovalRow } from "./RepoRemoval";
-import { Markdown } from "./Markdown";
-import { RetroCard } from "./Retro";
-import { WalkthroughCard } from "./Walkthrough";
-import { WhatItMade } from "./WhatItMade";
+import { goTo, KIND } from "../../engine/words";
+import { attentionQueue, itemLine, itemTitle, type QueueItem } from "../queue";
 
-type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
-function Row({ approval, space, state }: { approval: Approval; space: Space | undefined; state: State }) {
-  const [open, setOpen] = useState(false);
-  const d = useDecision(approval);
-  const { error } = d;
-  const review = reviewLine(approval, state);
-  // What the agent said about a result that isn't plainly done; only reviews carry one.
-  const task = approval.kind === "review" && approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
-  const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
-  const attention = attentionText(task?.loop);
 
+// One item waiting on the user, as a summary: what kind it is, its title, one line (for a result, what the checks and the
+// reviewer said, as two chips), and one way to its screen in Needs you, named for the step it asks (engine/words.ts).
+// Deciding happens there, with the walkthrough and the diff in view, never from a summary.
+function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | undefined; state: State }) {
+  const title = itemTitle(state, item);
+  const approval = item.kind === "review" ? state.approvals.find((a) => a.id === item.key) : undefined;
+  const task = item.taskId ? state.tasks.find((t) => t.id === item.taskId) : undefined;
+  const chips = approval ? reviewChips(approval, state) : null;
+  const line = chips ? null : itemLine(state, item);
+  const outcome = approval && task?.outcome && task.outcome !== "done" && !task.loop?.noChanges ? task.outcome : null;
+  const attention = approval ? attentionText(task?.loop) : null;
   return (
     <div className="entry">
-      <div className="item">
+      <div className={`item summary-row${item.low ? " low" : ""}`}>
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
-        <span className="who">{space?.name ?? (approval.spaceId === null ? "Atrium" : "Unknown space")}</span>
-        <span className="t" title={approval.detail ? `${approval.title}\n${summaryLine(approval.detail)}` : approval.title}>
-          {approval.title}
-          {approval.detail && <span>{summaryLine(approval.detail)}</span>}
+        <span className="who">{space?.name ?? "Atrium"}</span>
+        <span className="t" title={line ? `${title}\n${line}` : title}>
+          {title}
+          {line && <span>{line}</span>}
         </span>
-        {review && (
-          <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>
-            <SearchCheck />
-            {review.text}
-          </span>
-        )}
+        {/* A result's chips say what it is; anything else wears its kind. */}
+        {chips ? <Chips chips={chips} attention={attention} /> : <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>}
         <div className="acts">
-          {approval.taskId && space?.kind === "repo" && approval.kind === "review" && (
-            <button className="btn link" onClick={() => navigate(`/space/${space.id}?task=${approval.taskId}&view=changes`)}>
-              See changes
-            </button>
-          )}
-          <button className="btn" data-act="open" onClick={() => setOpen(!open)} aria-expanded={open}>
-            {open ? "Hide" : "View"}
+          <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
+            {approval ? `${approveText(state, approval)}…` : goTo(item.kind)}
+            <ChevronRight />
           </button>
-          <DecideButtons d={d} outcome={outcome} />
         </div>
       </div>
-      {attention && (
-        <div className="outcome-row">
-          <p className="attention" role="note">
-            <TriangleAlert />
-            {attention}
-          </p>
-        </div>
-      )}
       {outcome && (
         <div className="outcome-row">
           <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
         </div>
       )}
-      {open && (
-        <div className="detail">
-          {approval.taskId && space ? (
-            <>
-              {task && <WalkthroughCard task={task} space={space} />}
-              {task && <RetroCard task={task} state={state} />}
-              <WhatItMade taskId={approval.taskId} spaceId={space.id} spaceKind={space.kind} />
-            </>
-          ) : (
-            <Markdown text={approval.detail || "No further detail."} />
-          )}
-          <div className="meta">
-            <span title={absolute(approval.createdAt)}>Asked {relative(approval.createdAt)}</span>
-            {approval.taskId && space && (
-              // The task shows its runs, transcripts and files in full.
-              <a
-                href={`/space/${space.id}?task=${approval.taskId}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate(`/space/${space.id}?task=${approval.taskId}`);
-                }}
-              >
-                Open the task in {space.name}
-              </a>
-            )}
-          </div>
-        </div>
-      )}
-      <SendBackNote d={d} />
-      {error && <div className="row-err err">{error}</div>}
     </div>
   );
 }
 
-// Every row waiting on Nakul, each with its own kind of answer. A space shows its share of the same rows.
-function Items({ state, spaceId }: { state: State; spaceId?: string }) {
+// Every item waiting on the user, in the queue's order (longest-blocked first), with the low-priority ones as a group of
+// their own under the count's items, so the number in the heading is the rows above the divider, everywhere. A space
+// shows its share of the same rows.
+function Items({ state, items: shown }: { state: State; items?: QueueItem[] }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
-  const mine = <T extends { spaceId: string | null }>(xs: T[]) => (spaceId ? xs.filter((x) => x.spaceId === spaceId) : xs);
+  const items = shown ?? attentionQueue(state);
+  const low = items.filter((i) => i.low);
+  const row = (i: QueueItem) => <SummaryRow key={i.key} item={i} space={i.spaceId ? spaces.get(i.spaceId) : undefined} state={state} />;
   return (
     <>
-      {askingTasks(state, spaceId).map((t) => (
-        <QuestionsRow key={t.id} task={t} space={spaces.get(t.spaceId)} state={state} />
-      ))}
-      {mine(state.proposals).map((p) => (
-        <ProposalRow key={p.id} proposal={p} space={spaces.get(p.spaceId)} />
-      ))}
-      {mine(state.approvals).map((a) => {
-        const action = state.repoActions.find((r) => r.approvalId === a.id);
-        if (a.alwaysAsk === "create_repo" && action?.draft) return <ProjectDraftRow key={a.id} approval={a} action={action} />;
-        if (a.alwaysAsk === "remove_clone") return <RemovalRow key={a.id} approval={a} />;
-        return <Row key={a.id} approval={a} space={a.spaceId ? spaces.get(a.spaceId) : undefined} state={state} />;
-      })}
+      {items.filter((i) => !i.low).map(row)}
+      {low.length > 0 && (
+        <div className="low-head" role="separator">
+          Low priority · {low.length}: nothing waits on {low.length === 1 ? "it" : "them"}
+        </div>
+      )}
+      {low.map(row)}
     </>
   );
 }
 
-export const waitingIn = (state: State, spaceId: string) =>
-  state.approvals.filter((a) => a.spaceId === spaceId).length + state.proposals.filter((p) => p.spaceId === spaceId).length + askingTasks(state, spaceId).length;
+export const waitingIn = (state: State, spaceId: string) => attentionQueue(state).filter((i) => i.spaceId === spaceId && !i.low).length;
 
-// At the top of a space: what's waiting on Nakul there, answered right where the work is.
+// At the top of a space: what's waiting on the user there, each one leading to its screen in Needs you; the task's own
+// row below decides it too, so a decision shows once as a summary and once in full.
+// Kinds that are a task's own state, so its row already says them. A CLAUDE.md line or a suggestion isn't.
+const ROW_KINDS = new Set<QueueItem["kind"]>(["review", "question", "pick", "stuck", "paused", "shape"]);
+
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
-  const count = waitingIn(state, spaceId);
-  if (count === 0) return null;
+  // A task that waits shows once, as its row in the task list with its decision inside; this list keeps the rest.
+  const tasks = new Set(state.tasks.filter((t) => t.spaceId === spaceId).map((t) => t.id));
+  const items = attentionQueue(state).filter((i) => i.spaceId === spaceId && !(ROW_KINDS.has(i.kind) && i.taskId && tasks.has(i.taskId)));
+  if (!items.length) return null;
+  const counted = items.filter((i) => !i.low).length;
   return (
     <>
       <h2>
         <Inbox />
-        Waiting for you · {count}
+        Also waiting for you{counted > 0 && ` · ${counted}`}
       </h2>
-      <div className="list needs-list">
-        <Items state={state} spaceId={spaceId} />
+      <div className="list needs-list space-needs">
+        <Items state={state} items={items} />
       </div>
     </>
   );
@@ -150,7 +102,7 @@ export const needsCount = (state: State) => needsYouCount(state);
 export function NeedsList({ state, listRef }: { state: State; listRef?: Ref<HTMLDivElement> }) {
   return (
     <div className="list needs-list" ref={listRef}>
-      {needsCount(state) === 0 ? <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
+      {attentionQueue(state).length === 0 ? <div className="empty-row">You're all caught up.</div> : <Items state={state} />}
     </div>
   );
 }

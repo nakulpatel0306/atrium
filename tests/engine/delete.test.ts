@@ -219,7 +219,7 @@ test("files queued before a crash are removed on the next boot", async () => {
   expect(readdirSync(config().filesHome).filter((n) => n.startsWith(".atrium-trash-"))).toEqual([]);
 });
 
-test("a repo space Nakul made: nothing in his repo changes", async () => {
+test("a repo space the user made: nothing in their repo changes", async () => {
   const repo = tempRepo();
   const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo.path }).stdout.toString();
   try {

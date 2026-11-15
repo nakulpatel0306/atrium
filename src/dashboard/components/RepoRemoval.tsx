@@ -1,5 +1,7 @@
+import { KIND } from "../../engine/words";
 import { useState } from "react";
 import { post, type State } from "../api";
+import { approvedToast } from "./Decision";
 import { removalSize } from "../repos";
 
 type Approval = State["approvals"][number];
@@ -16,6 +18,7 @@ export function RemovalRow({ approval }: { approval: Approval }) {
     setBusy(true);
     setError(null);
     const res = await post(`/api/approvals/${approval.id}`, { decision });
+    if (res.ok && decision === "approve") approvedToast(approval);
     if (!res.ok) {
       setError(res.error);
       setBusy(false);
@@ -38,7 +41,7 @@ export function RemovalRow({ approval }: { approval: Approval }) {
             Keep it
           </button>
           <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
-            Remove copy
+            {KIND.approval.action}
           </button>
         </div>
       </div>

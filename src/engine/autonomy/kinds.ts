@@ -48,7 +48,7 @@ export const SECRET =
   /(^|\/)(id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|[^/]*\.(pem|key|p12|pfx|jks|keystore)|\.npmrc|\.netrc|\.pypirc|credentials(\.json)?|secrets?\.(json|ya?ml|toml))$/i;
 const DEPLOY =
   /(^|\/)(\.github\/workflows\/|\.gitlab-ci\.ya?ml$|vercel\.json$|netlify\.toml$|fly\.toml$|wrangler\.toml$|render\.ya?ml$|procfile$|dockerfile[^/]*$|docker-compose[^/]*$)/i;
-// An agent must never get its own instructions (or another tool's) approved without Nakul looking. The docs
+// An agent must never get its own instructions (or another tool's) approved without the user looking. The docs
 // allowlist below already leaves these out; this list stays as a second check.
 const INSTRUCTIONS = [
   /(^|\/)(claude|agents?|gemini|copilot|cursor|windsurf|conventions\.md$|\.aider)[^/]*$/i,
@@ -101,7 +101,7 @@ export const isAgentInstructionFile = (path: string) => AGENT_INSTRUCTIONS.some(
 // Any `@path` at the start of a word, the way Claude, Gemini and Codex instruction files import other files.
 export const hasImport = (text: string) => /(?:^|[\s(\[])@[^\s`'"()<>\[\]]/.test(text);
 
-// Only ordinary files: symlinks, gitlinks, executable bits and type changes always go to Nakul.
+// Only ordinary files: symlinks, gitlinks, executable bits and type changes always go to the user.
 const PLAIN_MODES = new Set(["100644", "000000"]);
 
 export function forbiddenFor(facts: ActionFacts): ForbiddenReason[] {

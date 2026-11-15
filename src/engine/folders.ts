@@ -5,7 +5,7 @@ import { dirname, join, sep } from "node:path";
 import { config } from "./config";
 import type { Space } from "./spaces";
 
-// General spaces keep their files in ~/Atrium/<space-slug>/, where Nakul can find them in Finder.
+// General spaces keep their files in ~/Atrium/<space-slug>/, where the user can find them in Finder.
 // The folder is chosen once, when the space is made: renaming the space doesn't move it.
 
 const slug = (name: string) =>
@@ -31,7 +31,7 @@ export function pickFolder(db: Database, name: string): string {
   }
 }
 
-// "~/Atrium/weekly-planning" rather than the full path, for messages Nakul reads.
+// "~/Atrium/weekly-planning" rather than the full path, for messages the user reads.
 export const tildePath = (p: string): string => {
   const home = homedir();
   return p === home ? "~" : p.startsWith(home + sep) ? `~${p.slice(home.length)}` : p;

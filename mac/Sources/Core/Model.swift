@@ -7,6 +7,8 @@ struct Need: Decodable, Equatable {
   var files: Int? = nil
   // What a review's agent said when it wasn't plainly done ("couldnt", "partial", "unknown"); absent from older engines.
   var outcome: String? = nil
+  // The item's kind in the engine's shared words ("Review", "Paused", "Sign-off"); absent from older engines.
+  var label: String? = nil
 }
 
 struct Stopped: Decodable, Equatable {

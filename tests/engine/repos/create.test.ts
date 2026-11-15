@@ -43,7 +43,7 @@ function approved(draft: ProjectDraft = d) {
   return action;
 }
 
-test("Nakul's yes creates the repo, first commit, push, space and clone row", async () => {
+test("The user's yes creates the repo, first commit, push, space and clone row", async () => {
   const done = await createProject(db, approved().id, deps());
   expect(done.status).toBe("done");
   const final = join(gh.projects, "demo");
@@ -195,6 +195,6 @@ test("a retry after a successful push picks up the repo Atrium already pushed", 
   expect(done.status).toBe("done");
   expect(git(join(gh.projects, "demo"), "rev-parse", "HEAD").trim()).toBe(sha);
   expect(gh.argv().some((a) => a[1] === "create")).toBe(false);
-  // The reused repo gets the description Nakul approved this time.
+  // The reused repo gets the description the user approved this time.
   expect(gh.argv()).toContainEqual(["repo", "edit", "fakeuser/demo", "--description=new words"]);
 });

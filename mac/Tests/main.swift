@@ -42,7 +42,7 @@ let s1 = summary(needs: [Need(id: "apr_1", kind: "review", title: "Fix login", s
 check(newNotes(previous: nil, next: s1).isEmpty, "notes: first summary seeds")
 check(
   newNotes(previous: summary(), next: s1)
-    == [Note(id: "apr_1", title: "Ready for review", body: "Fix login · atrium", path: "/space/spc_1?task=tsk_1")],
+    == [Note(id: "apr_1", title: "Review", body: "Fix login · atrium", path: "/space/spc_1?task=tsk_1")],
   "notes: new review")
 check(newNotes(previous: s1, next: s1).isEmpty, "notes: seen ids don't repeat")
 // A need resolved elsewhere and then raised again (same id) is a new event once a summary without it was seen.
@@ -50,19 +50,24 @@ let gone = summary()
 check(newNotes(previous: s1, next: gone).isEmpty, "notes: a need going away posts nothing")
 check(newNotes(previous: gone, next: s1).map(\.id) == ["apr_1"], "notes: a need that comes back after it was gone is new again")
 let q = summary(needs: [need("apr_9", kind: "question", title: "Which db?")])
-check(newNotes(previous: summary(), next: q).first?.title == "Atrium has a question", "notes: question title")
+check(newNotes(previous: summary(), next: q).first?.title == "Question", "notes: question title")
 let sug = summary(needs: [need("prp_1", kind: "suggestion", title: "Stop asking about docs changes?")])
 check(
   newNotes(previous: summary(), next: sug)
-    == [Note(id: "prp_1", title: "Atrium has a question", body: "Stop asking about docs changes? · atrium", path: "/space/spc_1?task=prp_1")],
+    == [Note(id: "prp_1", title: "Question", body: "Stop asking about docs changes? · atrium", path: "/space/spc_1?task=prp_1")],
   "notes: a new suggestion notifies like a question")
 check(newNotes(previous: sug, next: sug).isEmpty, "notes: a seen suggestion doesn't repeat")
+var labelled = need("apr_l", kind: "question", title: "Create GitHub repo?")
+labelled.label = "Sign-off"
+check(newNotes(previous: summary(), next: summary(needs: [labelled])).first?.title == "Sign-off", "notes: the engine's shared label names the note")
+let paused = summary(needs: [need("tsk_3", kind: "paused", title: "Totals: over budget")])
+check(newNotes(previous: summary(), next: paused).first?.title == "Paused", "notes: a paused task says so")
 let blocked = Stopped(id: "tsk_2", title: "Ship", spaceName: "atrium", status: "blocked", reason: "Claude is signed out", path: "/space/spc_1?task=tsk_2")
 let blockedNotes = newNotes(previous: summary(), next: summary(stopped: [blocked]))
-check(blockedNotes.first?.title == "Blocked" && blockedNotes.first?.body == "Ship · Claude is signed out", "notes: blocked uses reason")
+check(blockedNotes.first?.title == "Stopped" && blockedNotes.first?.body == "Ship · Claude is signed out", "notes: blocked uses reason")
 let failedTask = Stopped(id: "tsk_3", title: "Build", spaceName: "atrium", status: "failed", reason: nil, path: "/space/spc_1?task=tsk_3")
 let failedNotes = newNotes(previous: summary(), next: summary(stopped: [failedTask]))
-check(failedNotes.first?.title == "Didn't finish" && failedNotes.first?.body == "Build · atrium", "notes: failed falls back to space")
+check(failedNotes.first?.title == "Failed" && failedNotes.first?.body == "Build · atrium", "notes: failed falls back to space")
 check(newNotes(previous: summary(stopped: [failedTask]), next: summary(stopped: [failedTask])).isEmpty, "notes: seen stopped don't repeat")
 let four = summary(needs: (1...4).map { need("apr_\($0)") })
 let collapsed = newNotes(previous: summary(), next: four)
@@ -146,7 +151,7 @@ check(madeText(4) == "made 4 files", "made: many")
 let withFiles = summary(needs: [Need(id: "apr_m", kind: "review", title: "Make a grocery list", spaceName: "Weekly Planning", path: "/space/spc_1?task=tsk_m", files: 4)])
 check(
   newNotes(previous: summary(), next: withFiles)
-    == [Note(id: "apr_m", title: "Ready for review", body: "Make a grocery list · Weekly Planning · made 4 files", path: "/space/spc_1?task=tsk_m")],
+    == [Note(id: "apr_m", title: "Review", body: "Make a grocery list · Weekly Planning · made 4 files", path: "/space/spc_1?task=tsk_m")],
   "notes: a review says how many files it made")
 let oneFile = summary(needs: [Need(id: "apr_o", kind: "review", title: "Notes", spaceName: "Weekly Planning", path: "/space/spc_1?task=tsk_o", files: 1)])
 check(newNotes(previous: summary(), next: oneFile).first?.body == "Notes · Weekly Planning · made 1 file", "notes: one file")
@@ -196,7 +201,7 @@ check(newNotes(previous: summary(), next: summary(needs: [couldntNeed])).first?.
 let partialNeed = Need(id: "apr_p", kind: "review", title: "Write three files", spaceName: "Notes", path: "/space/spc_3", outcome: "partial")
 check(newNotes(previous: summary(), next: summary(needs: [partialNeed])).first?.title == "Partly done", "notes: partly done")
 let unknownNeed = Need(id: "apr_u", kind: "review", title: "Answer", spaceName: "Notes", path: "/space/spc_3", outcome: "unknown")
-check(newNotes(previous: summary(), next: summary(needs: [unknownNeed])).first?.title == "Ready for review", "notes: unknown reads as a review")
+check(newNotes(previous: summary(), next: summary(needs: [unknownNeed])).first?.title == "Review", "notes: unknown reads as a review")
 let newJson = #"{"needsYou":1,"needs":[{"id":"a","kind":"review","title":"t","spaceName":"s","path":"/","topic":null,"files":0,"symbol":null,"outcome":"couldnt"}],"stopped":[],"overnight":false}"#
 check((try? JSONDecoder().decode(Summary.self, from: Data(newJson.utf8)))?.needs.first?.outcome == "couldnt", "decode: outcome")
 check(decoded?.needs.first?.outcome == nil, "decode: an older engine has no outcome")

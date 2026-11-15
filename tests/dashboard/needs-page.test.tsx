@@ -11,7 +11,9 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "
 const key = (k: string, target: unknown = { tagName: "DIV" }, mods: { metaKey?: boolean; ctrlKey?: boolean } = {}) => needsKey({ key: k, target: target as EventTarget, ...mods });
 
 test("/needs-you and /activity are routes of their own", () => {
-  expect(parseRoute("/needs-you")).toEqual({ name: "needs" });
+  expect(parseRoute("/needs-you")).toEqual({ name: "needs", item: null, batch: false });
+  expect(parseRoute("/needs-you?item=apr_1")).toEqual({ name: "needs", item: "apr_1", batch: false });
+  expect(parseRoute("/needs-you?batch=1")).toEqual({ name: "needs", item: null, batch: true });
   expect(parseRoute("/activity")).toEqual({ name: "activity" });
 });
 
@@ -19,17 +21,17 @@ test("the sidebar marks Needs you and Activity active on their pages", () => {
   const s = makeState();
   const on = (path: string, label: string) =>
     renderToStaticMarkup(<Sidebar state={s} archived={0} route={parseRoute(path)} onNewSpace={() => {}} />)
-      .split("<button")
+      .split("<a ")
       .find((b) => text(b).includes(label))!
-      .startsWith(' class="nav on"');
+      .startsWith('class="nav on"');
   expect(on("/needs-you", "Needs you")).toBe(true);
   expect(on("/activity", "Activity")).toBe(true);
   expect(on("/", "Needs you")).toBe(false);
 });
 
-test("j k and the arrows move, Enter opens, a approves, s sends back, Esc closes", () => {
-  expect(["j", "ArrowDown", "k", "ArrowUp", "Enter", "a", "s", "Escape"].map((k) => key(k))).toEqual(["next", "next", "prev", "prev", "open", "approve", "sendBack", "close"]);
-  expect(key("x")).toBeNull();
+test("j k and the arrows move, Enter opens, a approves, s sends back, x stops, e explains, z takes back, Esc closes", () => {
+  expect(["j", "ArrowDown", "k", "ArrowUp", "Enter", "a", "s", "x", "e", "A", "z", "?", "Escape"].map((k) => key(k))).toEqual(["next", "next", "prev", "prev", "open", "approve", "sendBack", "stop", "explain", "batch", "undo", "help", "close"]);
+  expect(key("q")).toBeNull();
   expect(key("a", undefined, { metaKey: true })).toBeNull();
   expect(key("k", undefined, { ctrlKey: true })).toBeNull();
 });
@@ -53,6 +55,6 @@ test("the page lists every waiting row with the keys hint", () => {
   const s = makeState();
   const t = text(renderToStaticMarkup(<NeedsPage state={s} />));
   expect(t).toContain("Needs you · 1");
-  expect(t).toContain("Keys: j k a s");
+  expect(t).toContain("Keys ?");
   expect(t).toContain("Review: Fix login redirect");
 });

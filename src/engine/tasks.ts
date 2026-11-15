@@ -76,7 +76,7 @@ export class InvalidTransition extends Error {
 
 // A review task finishes straight to done (its parent's approval covers it), and is cancelled to done from any
 // unfinished state once the user decides on the parent. A work task waits in the queue while its review runs, and
-// goes from there to waiting for him.
+// goes from there to waiting for the user.
 const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   queued: ["running", "blocked", "review", "done"],
   running: ["review", "failed", "blocked", "queued", "done"],
@@ -222,7 +222,7 @@ export function setTaskStatus(
   return getTask(db, id)!;
 }
 
-// Not tied to status: a result Nakul accepts stays labelled with what the agent said about it.
+// Not tied to status: a result the user accepts stays labelled with what the agent said about it.
 export function setTaskOutcome(db: Database, id: string, outcome: Outcome, reason: string | null): Task {
   const res = db.query("UPDATE tasks SET outcome = ?, outcome_reason = ?, updated_at = ? WHERE id = ?").run(outcome, reason, Date.now(), id);
   if (res.changes === 0) throw new Error(`No task with id ${id}`);

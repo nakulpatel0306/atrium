@@ -1,7 +1,7 @@
 // Failures nothing else caught. A late background rejection (a clone or lookup that outlived its space) is logged
 // and the engine keeps running. A synchronous throw can leave the runner's in-memory state half updated, and a
 // damaged or full database means every later write is suspect, so those exit with code 1: launchd's KeepAlive
-// starts a fresh engine, boot recovery requeues the runs, and the next boot tells Nakul it happened.
+// starts a fresh engine, boot recovery requeues the runs, and the next boot tells the user it happened.
 import type { Database } from "bun:sqlite";
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { logActivity } from "./events";

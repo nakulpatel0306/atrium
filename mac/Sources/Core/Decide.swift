@@ -29,14 +29,16 @@ func madeText(_ n: Int?) -> String? {
   return n == 1 ? "made 1 file" : "made \(n) files"
 }
 
-// Notes only for ids the previous summary didn't have, so a reconnect or wake never repeats what Nakul already saw.
+// Notes only for ids the previous summary didn't have, so a reconnect or wake never repeats what the user already saw.
 // The first summary after launch only seeds: the badge already shows what was waiting.
 // A result the agent didn't finish says so in the title, before anything else.
 func noteTitle(_ n: Need) -> String {
   if n.kind == "review" && n.outcome == "couldnt" { return "Couldn't do this" }
   if n.kind == "review" && n.outcome == "partial" { return "Partly done" }
-  if n.kind == "review" { return "Ready for review" }
-  return "Atrium has a question"
+  if let label = n.label { return label }
+  if n.kind == "review" { return "Review" }
+  if n.kind == "paused" { return "Paused" }
+  return "Question"
 }
 
 func newNotes(previous: Summary?, next: Summary) -> [Note] {
@@ -51,7 +53,7 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {
     Note(
-      id: $0.id, title: $0.status == "blocked" ? "Blocked" : "Didn't finish",
+      id: $0.id, title: $0.status == "blocked" ? "Stopped" : "Failed",
       body: "\($0.title) · \($0.reason ?? $0.spaceName)", path: $0.path)
   }
   if notes.count > 3 {
@@ -102,7 +104,7 @@ enum LinkDecision: Equatable {
 }
 
 // Dashboard pages show agent-written text, so a link or script there must not get NSWorkspace to open files or
-// launch other apps. Only a click Nakul made in the main frame leaves the app, and only to the web or mail.
+// launch other apps. Only a click the user made in the main frame leaves the app, and only to the web or mail.
 func linkDecision(_ url: URL, port: Int, userClick: Bool, mainFrame: Bool) -> LinkDecision {
   if isInternal(url, port: port) { return .allow }
   let scheme = url.scheme?.lowercased() ?? ""

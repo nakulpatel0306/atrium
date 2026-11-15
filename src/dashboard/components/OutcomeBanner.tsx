@@ -1,10 +1,11 @@
+import { KIND } from "../../engine/words";
 import { CircleAlert, CircleDashed, CircleHelp } from "lucide-react";
 import { type Outcome, outcomeText } from "../../engine/outcome";
 
 export { outcomeText };
 
 export const approveLabel = (outcome: Outcome | null): string =>
-  outcome === "couldnt" ? "Accept anyway" : outcome === "partial" ? "Accept as is" : "Approve";
+  outcome === "couldnt" ? "Accept anyway" : outcome === "partial" ? "Accept as is" : KIND.review.action;
 
 const ICONS = { couldnt: CircleAlert, partial: CircleDashed, unknown: CircleHelp } as const;
 

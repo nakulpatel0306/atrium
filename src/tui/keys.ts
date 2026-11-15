@@ -4,13 +4,14 @@ import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import { asksBeforeStarting } from "../engine/needs";
+import { cleanReviews, isRisky, itemTitle, shownSha } from "../dashboard/queue";
 import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
 import { type Action, type Answering, type Ask, type AskPurpose, listPaneOf, type ListPane, type Overlay, TABS, type Ui } from "./ui";
 
 export type Intent =
-  | { type: "approve"; approvalId: string; title: string }
+  | { type: "approve"; approvalId: string; title: string; sha: string | null }
   | { type: "reject"; approvalId: string; note: string }
   | { type: "retry"; taskId: string }
   | { type: "runNow"; taskId: string }
@@ -29,6 +30,9 @@ export type Intent =
   | { type: "answer"; proposalId: string; answer: "yes" | "not_now" | "never"; label: string }
   | { type: "answerBrief"; taskId: string; title: string; answers: Answering["answers"] }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
+  | { type: "explain"; taskId: string; title: string }
+  | { type: "memory"; lineId: string; accept: boolean; line: string }
+  | { type: "batch"; items: { id: string; sha: string; title: string }[] }
 
 
 // A file the selected task made, as the keys need it.
@@ -58,10 +62,11 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Everywhere", keys: "? q", does: "help, close, quit" },
   // Mouse reporting takes plain drags, so selecting text needs the terminal's own modifier.
   { section: "Everywhere", keys: "Opt/Shift", does: "drag to select text" },
-  { section: "Home", keys: "s e x", does: "text: send, edit, skip" },
-  { section: "Home", keys: "a r", does: "approve, send back" },
+  { section: "Home", keys: "a A s", does: "approve, approve all clean, send back" },
+  { section: "Home", keys: "e", does: "explain a paused task's problem" },
+  { section: "Home", keys: "x", does: "stop a running task" },
   { section: "Home", keys: "a 1-9", does: "answer a task's questions" },
-  { section: "Home", keys: "y n N", does: "yes, not now, never" },
+  { section: "Home", keys: "y n N", does: "yes, not now, never; y n on a CLAUDE.md line" },
   { section: "Home", keys: "t", does: "transcript" },
   { section: "Home", keys: ".", does: "stop running task" },
   { section: "Spaces", keys: "tab h l", does: "move between panes" },
@@ -108,7 +113,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
     return keys;
   }
   if (ui.overlay?.kind === "confirm") {
-    const yes = { accept: "accept", archive: "archive", stop: "stop it" }[ui.overlay.purpose];
+    const yes = { accept: "approve", archive: "archive", stop: "stop it", batch: "approve all" }[ui.overlay.purpose];
     return [k("y", yes), k("n", ui.overlay.purpose === "stop" ? "keep running" : "not now")];
   }
   const overlay = ui.overlay && OVERLAY_KEYS[ui.overlay.kind];
@@ -119,7 +124,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
   const ask = k("space", "ask", " ");
   switch (ui.tab) {
     case "home":
-      return [...lead, k("↵", "open", "\r"), ask, k("1-3", "views", undefined), k("/", "filter"), HELP_KEY, k("q", "quit")];
+      return [...lead, k("↵", "open", "\r"), k("a", "approve"), k("s", "send back"), ask, k("/", "filter"), HELP_KEY, k("q", "quit")];
     case "spaces":
       if (ui.focus === "spaces") return [...lead, k("↵", "tasks", "\r"), k("n", "new task"), k("N", "new space"), k("e", "goal"), k("X", "archive"), k("D", "delete"), HELP_KEY];
       if (ui.focus === "tasks") return [...lead, k("↵", "detail", "\r"), k("n", "new task"), k("R", "retry"), k("s", "run now"), k(".", "stop"), k("A", "agent"), k("t", "transcript"), HELP_KEY];
@@ -191,13 +196,13 @@ function stop(u: Ui, view: View): Command {
   return open({ kind: "confirm", purpose: "stop", targetId: task.id });
 }
 
-// Approve: a result the agent said it didn't finish asks first.
+// Approve: a result that isn't clean by the one rule (needs.ts), or that the agent said it didn't finish, asks first;
+// a second a (or y) approves it, as in the dashboard.
 function approve(u: Ui, view: View): Command {
   const approval = approvalOf(u, view);
   if (!approval) return nothingHere(u, view, u.tab === "home" ? "Nothing to approve here." : "Nothing to approve here. Pick a task in review.");
-  const outcome = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId)?.outcome : null;
-  if (outcome === "couldnt" || outcome === "partial") return open({ kind: "confirm", purpose: "accept", targetId: approval.id });
-  return intent({ type: "approve", approvalId: approval.id, title: approval.title });
+  if (isRisky(view.state, approval)) return open({ kind: "confirm", purpose: "accept", targetId: approval.id });
+  return intent({ type: "approve", approvalId: approval.id, title: approval.title, sha: shownSha(view.state, approval) });
 }
 
 function sendBack(u: Ui, view: View): Command {
@@ -252,11 +257,12 @@ function answerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "a
 }
 
 function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
+  if (input === "A") return [cleanItems(view).length >= 2 ? open({ kind: "confirm", purpose: "batch", targetId: "" }) : info("Shift-A approves clean results together once there are two or more.")];
   const asking = pinned(u, "needs", view.askingTask);
   if (asking) {
     // Picking between parts or attempts needs their diffs side by side, which the dashboard shows.
     if (input === "a") return [askSteps(asking).length ? answering(asking) : info("Its parts or attempts wait on you: decide on the dashboard, where they're side by side.")];
-    if (input === "r") return [info("This task is asking before it starts: a answers it.")];
+    if (input === "r" || input === "s") return [info("This task is asking before it starts: a answers it.")];
     if (key.return) {
       return [
         ui({ type: "select", pane: "spaces", id: asking.spaceId }),
@@ -266,10 +272,34 @@ function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
       ];
     }
   }
+  const item = view.item && u.selected.needs.id === view.item.key ? view.item : null;
+  if (item && (item.kind === "paused" || item.kind === "shape")) {
+    const task = view.state.tasks.find((t) => t.id === item.key);
+    if (!task) return null;
+    if (input === "e") return item.kind === "paused" ? [intent({ type: "explain", taskId: task.id, title: task.title })] : [info("Explain is for a paused task.")];
+    if (input === "x") return [task.status === "running" ? open({ kind: "confirm", purpose: "stop", targetId: task.id }) : info("That task isn't running.")];
+    if (input === "a" || input === "s" || input === "r") return [info(item.kind === "paused" ? "This task is paused: e explains the problem, enter opens it to give a hint." : "This task is still running: enter opens it, x stops it.")];
+    if (key.return) {
+      return [
+        ui({ type: "select", pane: "spaces", id: task.spaceId }),
+        ui({ type: "focus", pane: "tasks" }),
+        ui({ type: "select", pane: "tasks", id: task.id }),
+        ui({ type: "focus", pane: "detail" }),
+      ];
+    }
+    return null;
+  }
+  if (item?.kind === "memory") {
+    const line = view.state.learning.memory.find((m) => m.id === item.key);
+    if (!line) return null;
+    if (input === "y" || input === "n") return [intent({ type: "memory", lineId: line.id, accept: input === "y", line: line.line })];
+    if (input === "a" || input === "s" || input === "r") return [info("That's a proposed CLAUDE.md line: y adds it, n says not this.")];
+    return null;
+  }
   const suggestion = pinnedSuggestion(u, view) ? view.proposal : null;
   if (suggestion) {
     if (input === "y" || input === "n" || input === "N") return [intent({ type: "answer", proposalId: suggestion.id, answer: ANSWERS[input], label: suggestion.label })];
-    if (input === "a" || input === "r") return [info("That's a suggestion: y yes, n not now, N never.")];
+    if (input === "a" || input === "r" || input === "s") return [info("That's a suggestion: y yes, n not now, N never.")];
     if (key.return) return [open({ kind: "detail", scroll: 0 })];
   }
   const approval = pinned(u, "needs", view.approval);
@@ -369,6 +399,8 @@ function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext):
     case "r":
       return [sendBack(u, view)];
   }
+  // On Home, s sends back as it does in the dashboard's queue (r still does).
+  if (u.tab === "home" && input === "s") return [sendBack(u, view)];
   if (u.tab !== "spaces") return [];
   return spacesKey(input, u, view);
 }
@@ -384,12 +416,15 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
       return [ui({ type: "column", dir: "right" })];
     case "R":
       if (!task) return [nothingHere(u, view, NO_TASK)];
-      if (task.status !== "blocked" && task.status !== "failed") return [info("Retry is for blocked or failed tasks.")];
+      if (task.status !== "blocked" && task.status !== "failed") return [info("Retry is for a stopped or failed task.")];
       if (task.legacyPurpose !== null) return [info(REMOVED_FEATURE_RETRY)];
       return [intent({ type: "retry", taskId: task.id })];
     case "s":
-      if (!task || waitOf(task, view.state)?.kind !== "reserve") return [info("Run now is for tasks waiting on Claude's reserve.")];
-      return [intent({ type: "runNow", taskId: task.id })];
+      {
+        const wait = task ? waitOf(task, view.state) : null;
+        if (!task || wait?.kind !== "reserve") return [info("Run now is for tasks waiting on Claude's reserve.")];
+        return [intent({ type: "runNow", taskId: wait.taskId })];
+      }
     case "n":
       if (!space) return [info(NO_SPACE)];
       return [ask("ask")];
@@ -553,6 +588,12 @@ function detailKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "d
   return scroll === null ? [] : [ui({ type: "setOverlay", overlay: { ...overlay, scroll } })];
 }
 
+// The clean results the queue holds, each at the commit its checks and review read, so the engine can refuse any that
+// moved before the yes lands.
+export function cleanItems(view: View): { id: string; sha: string; title: string }[] {
+  return cleanReviews(view.state).map((i) => ({ id: i.key, sha: view.state.tasks.find((t) => t.id === i.taskId)?.loop?.checkedSha ?? "", title: itemTitle(view.state, i) }));
+}
+
 function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): Command[] {
   switch (overlay.purpose) {
     case "archive":
@@ -561,8 +602,10 @@ function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): 
       return [intent({ type: "stop", taskId: overlay.targetId })];
     case "accept": {
       const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
-      return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];
+      return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title, sha: shownSha(view.state, approval) })] : [info("Already handled. It was decided somewhere else.")];
     }
+    case "batch":
+      return [intent({ type: "batch", items: cleanItems(view) })];
   }
 }
 
@@ -575,7 +618,8 @@ function overlayKey(input: string, key: Key, overlay: Overlay, u: Ui, view: View
     case "delete":
       return deleteKey(input, key, overlay, view);
     case "confirm":
-      if (input === "y") return [close, ...confirmed(overlay, view)];
+      // A risky approval takes a second a, as the dashboard's does; a batch takes Shift-A again.
+      if (input === "y" || (input === "a" && overlay.purpose === "accept") || (input === "A" && overlay.purpose === "batch")) return [close, ...confirmed(overlay, view)];
       return input === "n" || input === "q" || key.escape ? [close] : [];
     case "help":
       return input === "?" || input === "q" || key.escape ? [close] : [];

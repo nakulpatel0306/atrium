@@ -16,7 +16,7 @@ test("a task's wait comes from the engine, and only while it's still queued", ()
   expect(waitOf(task({ id: "tsk_2" }), s)).toBeNull();
 });
 
-test("waits Nakul has to act on sort first and are marked as such", () => {
+test("waits the user has to act on sort first and are marked as such", () => {
   const sorted = [wait("busy"), wait("reserve"), wait("signed_out"), wait("limited")].sort(byPriority).map((w) => w.kind);
   expect(sorted).toEqual(["signed_out", "limited", "reserve", "busy"]);
   expect(needsAction(wait("env_files"))).toBe(true);
@@ -28,4 +28,25 @@ test("an auto task shows the agent that ran it", () => {
   expect(agentText(task(), runs)).toBe("Auto → Codex");
   expect(agentText(task(), [])).toBe("Auto");
   expect(agentText(task({ agent: "claude" }), [{ taskId: "tsk_1", agent: "claude" }] as Run[])).toBe("Claude");
+});
+
+test("a task waiting on its review shows the review's own wait, naming the review for Run now", async () => {
+  const { waitOf } = await import("../../src/dashboard/agents");
+  const { makeState, task } = await import("../tui/fixtures");
+  const s = makeState();
+  const parent = task({ id: "tsk_p", status: "queued" });
+  const review = task({ id: "tsk_r", status: "queued", kind: "review", parentTaskId: "tsk_p" });
+  const reserve = { taskId: "tsk_r", agent: "claude", kind: "reserve" as const, reason: "Saving the rest of your Claude window for you.", until: 1 };
+  const state = { ...s, tasks: [parent, review], waits: { tsk_p: { taskId: "tsk_p", agent: "claude", kind: "reviewing" as const, reason: "Waiting for its review." }, tsk_r: reserve } };
+  expect(waitOf(parent, state)).toEqual(reserve);
+  expect(waitOf(parent, { ...state, waits: { tsk_p: state.waits.tsk_p } })?.kind).toBe("reviewing");
+});
+
+test("the sidebar's agent badge counts problems, not optional agents nobody installed", async () => {
+  const { agentsHeld } = await import("../../src/dashboard/agents");
+  const { makeState } = await import("../tui/fixtures");
+  const info = (over: object) => ({ label: "x", installed: true, loggedIn: true, detail: "", limitedUntil: null, tokensToday: 0, ...over });
+  const s = makeState();
+  expect(agentsHeld({ ...s, agents: { claude: info({}), codex: info({ installed: false, loggedIn: null }), gemini: info({ installed: false, loggedIn: null }) } })).toBe(0);
+  expect(agentsHeld({ ...s, agents: { claude: info({ installed: false }), codex: info({ loggedIn: false }), gemini: info({ limitedUntil: 5 }) } })).toBe(3);
 });

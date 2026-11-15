@@ -51,7 +51,7 @@ export function getProposal(db: Database, id: string): Proposal | null {
   return row ? toProposal(db, row) : null;
 }
 
-// "Unedited" for code review, where there's no draft to edit: Nakul approved it as it was, with nothing to
+// "Unedited" for code review, where there's no draft to edit: the user approved it as it was, with nothing to
 // add, first time round, no reviewer had to send it back (a fix task in older databases, triage in the loop) and
 // nothing about the change touched its own checks.
 const CLEAN = `a.decided_by = 'you' AND a.status = 'approved' AND COALESCE(a.note, '') = ''
@@ -60,8 +60,8 @@ const CLEAN = `a.decided_by = 'you' AND a.status = 'approved' AND COALESCE(a.not
   AND NOT EXISTS (SELECT 1 FROM tasks w WHERE w.id = a.task_id AND (json_extract(w.loop, '$.triaged') = 1 OR json_array_length(w.loop, '$.attention') > 0))`;
 
 // The approval ids of the current run of clean approvals, newest first. Automatic approvals neither count
-// nor break it; anything else Nakul decided (a send-back, a note, an undone automatic approval) ends it. Only
-// approvals after his last answer about this kind count, so "Not now" and "Suggest again" start over.
+// nor break it; anything else the user decided (a send-back, a note, an undone automatic approval) ends it. Only
+// approvals after their last answer about this kind count, so "Not now" and "Suggest again" start over.
 export function cleanStreak(db: Database, spaceId: string, fingerprint: string, now = Date.now()): string[] {
   const answered = db
     .query(
@@ -86,12 +86,12 @@ export function cleanStreak(db: Database, spaceId: string, fingerprint: string, 
   return streak;
 }
 
-// Called after Nakul decides an approval. Asks once the same kind has been approved cleanly STREAK times in a
-// row, and never while he already has a rule, an open question, or a "never" for it.
+// Called after the user decides an approval. Asks once the same kind has been approved cleanly STREAK times in a
+// row, and never while they already have a rule, an open question, or a "never" for it.
 export function considerProposal(db: Database, approvalId: string, now = Date.now()): Proposal | null {
   const made = db.transaction((): string | null => {
     const a = getApproval(db, approvalId);
-    // An always-ask kind never earns a rule, however often Nakul says yes to it.
+    // An always-ask kind never earns a rule, however often the user says yes to it.
     if (a?.alwaysAsk) return null;
     if (!a || a.status !== "approved" || a.decidedBy !== "you" || !a.fingerprint || !a.spaceId) return null;
     if (!parseFingerprint(a.fingerprint) || activeRuleFor(db, a.spaceId, a.fingerprint, now)) return null;

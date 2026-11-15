@@ -80,7 +80,7 @@ test("no git identity says how to set one", async () => {
   );
 });
 
-test("pushInitialMain refuses anything but Nakul's own yes on a new repo", async () => {
+test("pushInitialMain refuses anything but the user's own yes on a new repo", async () => {
   await initialCommit(dir);
   const remote = bare();
   const url = "https://github.com/fakeuser/demo.git";
@@ -101,7 +101,7 @@ test("pushInitialMain refuses anything but Nakul's own yes on a new repo", async
   expect(git(remote, "rev-parse", "--verify", "-q", "main").code).not.toBe(0);
 });
 
-test("pushInitialMain pushes main on Nakul's yes", async () => {
+test("pushInitialMain pushes main on the user's yes", async () => {
   const sha = await initialCommit(dir);
   const remote = bare();
   const yes = repoAsk();

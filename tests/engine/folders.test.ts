@@ -141,7 +141,7 @@ describe("a migration that was interrupted", () => {
     expect(getSpace(db, s.id)!.folder).toBe(target);
     // The files still live in the old folder, so runs keep using it until the move happens.
     expect(spaceFolder(getSpace(db, s.id)!)).toBe(legacy);
-    // Nakul (or a half-done rename) moves it by hand; the next boot just uses it.
+    // The user (or a half-done rename) moves it by hand; the next boot just uses it.
     fs.renameSync(legacy, target);
     migrateSpaceFolders(db);
     expect(getSpace(db, s.id)!.folder).toBe(target);

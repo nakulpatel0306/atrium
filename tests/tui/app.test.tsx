@@ -17,7 +17,7 @@ test("Home: tabs, the briefing, Needs you as cards, what is running, the Ask box
   // The selected card carries its actions.
   expect(f).toContain("◆ Review: Fix login redirect");
   expect(f).toContain(" a  Approve");
-  expect(f).toContain(" r  Send back");
+  expect(f).toContain(" s  Send back");
 });
 
 test("at 80×24 what is running folds under the cards and every line fits", async () => {

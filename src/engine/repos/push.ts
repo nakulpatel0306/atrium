@@ -10,7 +10,7 @@ export class PushRefused extends Error {
   }
 }
 
-// The one push Atrium makes on its own: a new project's first main, and only on Nakul's own yes to creating it.
+// The one push Atrium makes on its own: a new project's first main, and only on the user's own yes to creating it.
 // The approval is re-read here so no caller can push on a stale or rule-made decision.
 export async function pushInitialMain(db: Database, approvalId: string, path: string, url: string, timeoutMs = 60_000): Promise<void> {
   const a = getApproval(db, approvalId);

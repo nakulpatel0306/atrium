@@ -87,3 +87,29 @@ test("reads don't pile up: callers asking at once share one read, and a change e
   expect(reads).toHaveBeenCalledTimes(2);
   expect(after.files[0]!.hunks[0]!.lines.some((l) => l.text === "edited again")).toBe(true);
 });
+
+test("a finished task's changes list its turns, and each turn's own diff reads on its own", async () => {
+  const r = tempRepo();
+  cleanups.push(r.cleanup);
+  const space = createSpace(db, { name: "App", kind: "repo", goal: "g", repoPath: r.path });
+  const task = createTask(db, { spaceId: space.id, title: "Edit" });
+  git(r.path, "checkout", "-q", "-b", `atrium/${task.id}`);
+  writeFileSync(join(r.path, "a.ts"), "export const a = 1;\n");
+  git(r.path, "add", "-A");
+  git(r.path, "commit", "-q", "-m", "Add a");
+  const first = git(r.path, "rev-parse", "HEAD");
+  writeFileSync(join(r.path, "b.ts"), "export const b = 2;\n");
+  git(r.path, "add", "-A");
+  git(r.path, "commit", "-q", "-m", "Add b");
+  git(r.path, "checkout", "-q", "main");
+  db.query("INSERT INTO runs (id, task_id, agent, started_at, transcript_path, start_ref) VALUES ('run_1', ?, 'claude', 1, '/tmp/none', 'main')").run(task.id);
+  setTaskStatus(db, task.id, "running", { branch: `atrium/${task.id}` });
+  setTaskStatus(db, task.id, "review");
+  const all = await taskChanges(db, task.id);
+  expect(all.files.map((f) => f.path).sort()).toEqual(["a.ts", "b.ts"]);
+  expect(all.turns?.map((t) => t.title)).toEqual(["Add a", "Add b"]);
+  const one = await taskChanges(db, task.id, first);
+  expect(one.files.map((f) => f.path)).toEqual(["a.ts"]);
+  expect(one.turns?.length).toBe(2);
+  await expect(taskChanges(db, task.id, "0".repeat(40))).rejects.toThrow("isn't one of this task's turns");
+});

@@ -33,7 +33,7 @@ test("a Needs you row says couldn't, above the summary, and asks to accept anywa
   const html = renderToStaticMarkup(<NeedsYou state={withOutcome("couldnt", "the file isn't there.")} />);
   const t = text(html);
   expect(t).toContain("Couldn't do this: the file isn't there.");
-  expect(t).toContain("Accept anyway");
+  expect(t).toContain("Accept anyway…");
   expect(t).not.toContain("Approve");
   expect(html.indexOf("outcome-banner")).toBeLessThan(html.indexOf("Send back</button>") + 2000);
   const partial = text(renderToStaticMarkup(<NeedsYou state={withOutcome("partial", "one left.")} />));
@@ -72,5 +72,5 @@ test("an accepted couldn't reads as accepted anyway, not approved", () => {
 test("I1: an engine-certain couldn't asks to accept anyway and shows its reason", () => {
   const t = text(renderToStaticMarkup(<NeedsYou state={withOutcome("couldnt", "Only Atrium can send messages, and nothing was sent.")} />));
   expect(t).toContain("Couldn't do this: Only Atrium can send messages, and nothing was sent.");
-  expect(t).toContain("Accept anyway");
+  expect(t).toContain("Accept anyway…");
 });

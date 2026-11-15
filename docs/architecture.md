@@ -14,7 +14,7 @@ A **space** is a place for one kind of work. There are two kinds: `repo` (a git 
 
 ## The loop
 
-A coding task runs brief → write → verify → review → you. Its first stage drafts a brief with a small read-only Claude pass. After each writer turn the engine runs the repo's own checks in a checkout of their own (under a sandbox profile of their own), feeds failures back, sends passing work to a fresh reviewer as a child task, and then creates the approval. Budgets and loop detection pause a stuck task. The pre-pass also proposes the task's shape (one writer, scouts, a split into child tasks, or best-of-N attempts), and each run is logged in `usage_log` with its tokens by model and a list-price estimate. See [the loop](loop.md).
+A coding task runs brief → write → verify → review → you. Its first stage drafts a brief with a small read-only Claude pass. After each writer turn the engine runs the repo's own checks in a checkout of their own (under a sandbox profile of their own), feeds failures back, sends passing work to a fresh reviewer as a child task, and then creates the approval. Budgets and loop detection pause a task that stops making progress. The pre-pass also proposes the task's shape (one writer, scouts, a split into child tasks, or best-of-N attempts), and each run is logged in `usage_log` with its tokens by model and a list-price estimate. See [the loop](loop.md).
 
 ## Agents
 
@@ -24,17 +24,21 @@ An adapter per CLI: `claude` (the Claude Code CLI on your subscription), `codex`
 
 Claude runs inside Claude Code's own sandbox with settings Atrium pins. Codex and Gemini run inside a `sandbox-exec` profile. Both block credentials, loopback (so an agent can't call Atrium's API), Apple Events, `open` and Shortcuts. Agents never see `.env` files, keys or tokens.
 
+## What needs you
+
+`src/engine/needs.ts` is the one definition of what's waiting on the user, imports nothing but types, and every surface reads it: the dashboard's queue, the terminal app's Home, the Mac app's badge and notifications (through `/api/summary`) and `atrium status`. It also decides which results may be approved together, and the engine checks that rule again before a batch approval.
+
 ## Draft-and-wait
 
 Anything that leaves the Mac is done by the engine, never an agent, and only after the user's yes: a push, a new GitHub repo. The agent drafts; Atrium stores the draft on an approval card in **Needs you**; pressing Approve is the only path to the action. Standing rules can pre-approve some results, and every rule decision is logged and can be undone.
 
 ## The dashboard
 
-A React app (`src/dashboard`) served by the engine on the same port and kept live by a WebSocket. It includes the Get started wizard, Settings and every space view.
+A React app (`src/dashboard`) served by the engine on the same port and kept live by a WebSocket. It includes Get started (Claude, a projects folder, and an optional sample task that copies `assets/sample-repo` under the data folder's `samples/` and runs the loop on it), Needs you (the queue beside one decision screen per item, the diff included; every decision on a result goes through one `DecisionBar`), every space view and Settings. ⌘K opens a command palette of every action by name, built from state in `palette.ts`; / goes to the ask bar. Styles are one CSS file on design tokens (colour, type, radius, motion) with a dark and a light set, following the Mac's setting unless the palette picks one. Long lists draw only what's in view, off-screen diff files skip layout, and render budgets for the queue and the diff view are part of the test suite.
 
 ## The terminal app
 
-`atrium` with no arguments starts an Ink app (`src/tui`) that talks to the engine over the same HTTP API as the dashboard.
+`atrium` with no arguments starts an Ink app (`src/tui`) that talks to the engine over the same HTTP API as the dashboard. Its Home is the same queue in the same order, with the same keys.
 
 ## The Mac app
 

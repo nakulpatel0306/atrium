@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { totalsOf, type DiffResult } from "./diff-parse";
 import { bus } from "./events";
-import { branchDiff, branchSha, gitSettingsFingerprint, headRef, workingDiff } from "./git";
+import { branchDiff, branchSha, branchTurns, gitSettingsFingerprint, headRef, workingDiff } from "./git";
 import { lastRepoRun } from "./runner";
 import { getSpace } from "./spaces";
 import { getTask } from "./tasks";
@@ -29,7 +29,10 @@ bus.on((e) => {
   if (e.type === "diff-changed") edits.set(e.taskId, (edits.get(e.taskId) ?? 0) + 1);
 });
 
-export async function taskChanges(db: Database, taskId: string): Promise<DiffResult> {
+// With `turn`, one commit of a finished task's branch on its own (one writer turn), named by its sha and checked
+// against the branch's own commits.
+export async function taskChanges(db: Database, taskId: string, turn?: string): Promise<DiffResult> {
+  if (turn !== undefined) return readTurn(db, taskId, turn);
   const task = getTask(db, taskId);
   // Only running tasks are kept, so a finished task's entries go the first time it's read after its run.
   if (task?.status !== "running") {
@@ -80,5 +83,18 @@ async function readChanges(db: Database, taskId: string): Promise<DiffResult> {
   if (!(await branchSha(path, task.branch))) {
     throw new ChangesRefused(404, `The branch ${task.branch} isn't in the repo anymore, so there are no changes to show.`);
   }
-  return branchDiff(path, base, task.branch);
+  const [diff, turns] = await Promise.all([branchDiff(path, base, task.branch), branchTurns(path, base, task.branch)]);
+  return { ...diff, turns };
+}
+
+async function readTurn(db: Database, taskId: string, sha: string): Promise<DiffResult> {
+  const task = getTask(db, taskId);
+  const space = task ? getSpace(db, task.spaceId) : null;
+  const run = task ? lastRepoRun(db, task.id) : null;
+  if (!task?.branch || space?.kind !== "repo" || !space.repoPath || !run) throw new ChangesRefused(404, "Only a repo task's branch has turns to show.");
+  if (task.status === "running") throw new ChangesRefused(409, "The agent is still working, so its turns aren't committed yet. Its changes so far are under All changes.");
+  const base = (task.kind === "fix" && task.parentTaskId && lastRepoRun(db, task.parentTaskId)?.start) || run.start;
+  const turns = await branchTurns(space.repoPath, base, task.branch);
+  if (!turns.some((t) => t.sha === sha)) throw new ChangesRefused(404, "That commit isn't one of this task's turns. Reload the changes to see its turns now.");
+  return { ...(await branchDiff(space.repoPath, `${sha}^`, sha)), turns };
 }

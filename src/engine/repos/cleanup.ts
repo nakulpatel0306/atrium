@@ -248,7 +248,7 @@ export function removeVerified(path: string, cloneId: string, pin: { dev: number
   return true;
 }
 
-// Runs only on Nakul's own yes, and checks everything again right before deleting.
+// Runs only on the user's own yes, and checks everything again right before deleting.
 export async function removeClone(db: Database, actionId: string): Promise<RepoAction> {
   const action = getRepoAction(db, actionId);
   if (!action || action.kind !== "remove" || !action.cloneId) throw new Error(`No clone removal with id ${actionId}`);

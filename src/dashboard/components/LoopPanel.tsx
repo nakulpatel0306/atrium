@@ -1,15 +1,16 @@
+import { KIND, RISKY } from "../../engine/words";
 import { Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
 import type { CheckRow } from "../../engine/checks/run";
-import { compact, findingLine, resolutionText, shownStage, type Stage } from "../../engine/loop";
+import { compact, findingLine, shownStage, type Stage } from "../../engine/loop";
 import { agentName } from "../agents";
 import { post, type State, useFetched } from "../api";
 import { duration } from "../format";
-import { attentionText, STAGE_TEXT } from "../summary";
+import { answeredText, attentionText, STAGE_TEXT } from "../summary";
 import { BriefQuestions } from "./BriefQuestions";
 import { Markdown } from "./Markdown";
-import { asksBeforeStarting } from "../../engine/needs";
+import { asksBeforeStarting, cleanResult } from "../../engine/needs";
 import { Fanout, ShapeLine } from "./Shape";
 
 type Task = State["tasks"][number];
@@ -20,13 +21,15 @@ const STRIP: (Stage | "brief")[] = ["brief", "writing", "checks", "review", "rea
 export function StageStrip({ task }: { task: Task }) {
   const now = shownStage(task.status, task.loop);
   const at = now === "paused" ? STRIP.indexOf(task.loop!.stage) : STRIP.indexOf(now);
+  // Ready with something open reads amber, like its Approve anyway: one rule (needs.ts) for both.
+  const notes = now === "ready" && task.status === "review" && !cleanResult(task);
   return (
     <ol className="stages" aria-label="Where this task is">
       {STRIP.map((s, i) => {
         const here = i === at;
-        const label = here && now === "paused" ? "Paused" : STAGE_TEXT[s];
+        const label = here && now === "paused" ? "Paused" : here && notes ? RISKY : STAGE_TEXT[s];
         return (
-          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && now === "paused" ? " bad" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
+          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
             {label}
           </li>
         );
@@ -85,7 +88,8 @@ function SuggestedCheck({ task, command }: { task: Task; command: string }) {
 export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const loop = task.loop;
   if (!loop || loop.noChanges || loop.checks === "pending") return null;
-  const text = loop.checks === "running" ? "checking" : loop.checks === "passed" ? "checks passed" : loop.checks === "failed" ? "checks failed" : "unverified";
+  const text = loop.checks === "running" ? "Checking" : loop.checks === "passed" ? "Checks passed" : loop.checks === "failed" ? "Checks failed" : "Unverified";
+  // Says what the checks said, nothing more: the review has its own chip, so passed checks stay green.
   const tone = loop.checks === "failed" ? " bad" : loop.checks === "passed" ? " good" : loop.checks === "none" ? " wait" : "";
   return (
     <button type="button" className={`tag check-badge${tone}`} title={loop.checks === "none" ? (loop.unverified ?? "Unverified: no checks found") : "Show what the checks said"} onClick={onOpen}>
@@ -109,9 +113,9 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
     else setHint("");
   };
   const explain = (
-    <button className={`btn${nudge ? " p" : ""}`} type="button" disabled={busy} onClick={() => void act("explain")}>
+    <button className="btn" type="button" data-act="explain" disabled={busy} onClick={() => void act("explain")}>
       <MessageSquareText />
-      Explain the problem instead
+      Explain the problem
     </button>
   );
   return (
@@ -126,14 +130,17 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
         className="hint-form"
         onSubmit={(e) => {
           e.preventDefault();
+          // Pressed with nothing written, it goes to the box rather than looking unavailable.
           if (hint.trim()) void act("hint", { note: hint.trim() });
+          else e.currentTarget.querySelector("textarea")?.focus();
         }}
       >
         <textarea rows={2} aria-label="Hint for the agent" placeholder="What should it try, or what is it missing?" value={hint} onChange={(e) => setHint(e.target.value)} />
         <div className="acts">
-          <button className={`btn${nudge ? "" : " p"}`} type="submit" disabled={busy || !hint.trim()}>
+          {/* A pause's one primary step, named as on every surface (engine/words.ts); the diagnosis is the other way on. */}
+          <button className="btn p" type="submit" disabled={busy}>
             <Lightbulb />
-            Give it a hint
+            {KIND.paused.action}
           </button>
           {!nudge && explain}
         </div>
@@ -142,6 +149,15 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
     </div>
   );
 }
+
+// How a round's findings ended, counted as the review chip counts them, so "asked for changes" and "1 open finding"
+// tell one story.
+const stillOpen = (r: { findings: { resolution: { action: string } | null }[] }): string => {
+  const declined = r.findings.filter((f) => f.resolution?.action === "declined").length;
+  const open = r.findings.filter((f) => !f.resolution).length;
+  const parts = [declined && `${declined} declined`, open && `${open} open`].filter(Boolean);
+  return parts.length ? `: ${parts.join(", ")}` : ": all fixed";
+};
 
 function Budget({ task }: { task: Task }) {
   const loop = task.loop!;
@@ -154,11 +170,14 @@ function Budget({ task }: { task: Task }) {
     if (res.ok) setEditing(false);
     else setError(res.error);
   };
-  const used = `${compact(loop.usage.tokens)}${loop.usage.unreported ? "+" : ""} of ${compact(loop.budget.tokens)} weighted tokens · ${Math.round(loop.usage.ms / 60_000)} of ${loop.budget.minutes} min`;
+  const over = loop.usage.tokens - loop.budget.tokens;
+  const used = `${compact(loop.usage.tokens)}${loop.usage.unreported ? "+" : ""} of ${compact(loop.budget.tokens)} tokens${over > 0 ? `, over by ${compact(over)}` : ""} · ${Math.round(loop.usage.ms / 60_000)} of ${loop.budget.minutes} min`;
   return (
     <div className="budget">
       <span>
-        <span title="Weighted as the API prices them: cache reads count 0.1×, cache writes 1.25×, fresh input and output 1×.">Budget since you last stepped in: {used}</span>
+        <span className={over > 0 ? "over" : undefined} title="Tokens are counted the way the API prices them: a read from Claude's prompt cache counts a tenth, a cache write 1.25×, everything else in full.">
+          Budget since your last hint: {used}
+        </span>
         {loop.usage.unreported && <span className="hint"> (an agent didn't report its tokens, so this is at least)</span>}
       </span>
       {task.status !== "done" &&
@@ -189,10 +208,13 @@ function Budget({ task }: { task: Task }) {
 
 // The loop in a task's detail: its stage, the brief it runs from, the checks, each review round and how its
 // findings ended, the budget, and the way on when it's paused. Away from a repo there are no stages or checks.
-export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state: State; repo: boolean; showChecks: boolean }) {
+// `briefOpen` shows the brief unfolded, as the Needs you queue does: it's what the result is judged against.
+// `reasonsAbove`: a risky result's reasons are already listed above (OpenPoints), so this says them once more only as a
+// count, not as a second and third list.
+export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, reasonsAbove = false }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean; reasonsAbove?: boolean }) {
   const [checksOpen, setChecksOpen] = useState(showChecks);
   const loop = task.loop;
-  const attention = attentionText(loop);
+  const attention = reasonsAbove ? null : attentionText(loop);
   return (
     <section className="loop">
       {repo && !loop?.fanout && <StageStrip task={task} />}
@@ -214,7 +236,7 @@ export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state
       {loop?.stage === "brief" && task.status === "running" && <p className="hint">Drafting the brief. The writer starts as soon as it's ready.</p>}
       {loop?.stage === "brief" && asksBeforeStarting(task) && <BriefQuestions task={task} />}
       {task.brief && (
-        <details className="brief-view" open={loop?.questions.length ? true : undefined}>
+        <details className="brief-view" open={briefOpen || loop?.questions.length ? true : undefined}>
           <summary>Brief</summary>
           <Markdown text={briefSections(task.brief, null).join("\n\n")} />
         </details>
@@ -245,14 +267,15 @@ export function LoopPanel({ task, state, repo, showChecks }: { task: Task; state
             {loop.reviews.length > 1 ? `Review round ${i + 1}` : "Review"} by {agentName(r.reviewer)}
           </b>
           <span className="hint">
-            {r.skipped ? ` didn't happen: ${r.skipped}` : r.verdict === "approve" ? " · ready to merge" : r.verdict === "changes" ? " · asked for changes" : " · no verdict"}
+            {r.skipped ? ` didn't happen: ${r.skipped}` : r.verdict === "approve" ? " · ready to merge" : r.verdict === "changes" ? ` · asked for changes${stillOpen(r)}` : " · no verdict"}
           </span>
-          {r.findings.length > 0 && (
+          {r.findings.length > 0 && reasonsAbove && <span className="hint"> · {r.findings.length === 1 ? "1 finding" : `${r.findings.length} findings`}, with what's open listed above</span>}
+          {r.findings.length > 0 && !reasonsAbove && (
             <ol>
               {r.findings.map((f, n) => (
                 <li key={n} className={`finding ${f.severity}`}>
                   {findingLine(f, n + 1).replace(/^\d+\. /, "")}
-                  {r.verdict === "changes" && <span className="hint"> → {resolutionText(f)}</span>}
+                  {r.verdict === "changes" && <span className="hint"> · {answeredText(f, true)}</span>}
                 </li>
               ))}
             </ol>

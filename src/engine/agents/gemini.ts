@@ -108,7 +108,7 @@ export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: str
         return { status: "ok", summary: response.trimEnd(), ...usage };
       }
       // A tool needing approval is auto-denied in headless mode; agy still exits 0 with an empty response. Its own
-      // explanation goes to the transcript, and Nakul gets one he can act on.
+      // explanation goes to the transcript, and the user gets one they can act on.
       if (proc.exitCode === 0 && status === "SUCCESS") {
         if (proc.stderr.trim()) input.onChunk(proc.stderr.trim());
         const known = classify("", proc.stderr, proc.exitCode);

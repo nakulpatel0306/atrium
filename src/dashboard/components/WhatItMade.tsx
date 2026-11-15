@@ -68,7 +68,8 @@ function FileRow({ file, spaceId, taskId, spaceKind }: { file: OutputFile; space
   );
 }
 
-export function WhatItMadeList({ outputs, spaceId, taskId, spaceKind }: { outputs: TaskOutputs; spaceId: string; taskId: string; spaceKind: SpaceKind }) {
+// `noChanges` is a repo result whose branch holds nothing new, which must never read as if there were commits.
+export function WhatItMadeList({ outputs, spaceId, taskId, spaceKind, noChanges = false }: { outputs: TaskOutputs; spaceId: string; taskId: string; spaceKind: SpaceKind; noChanges?: boolean }) {
   const { summary, files } = outputs;
   if (!summary && files.length === 0) return null;
   return (
@@ -85,7 +86,7 @@ export function WhatItMadeList({ outputs, spaceId, taskId, spaceKind }: { output
       <section>
         <h4>What it made</h4>
         {files.length === 0 ? (
-          <p className="made-none">No files. This run answered in text only.</p>
+          <p className="made-none">{spaceKind !== "repo" ? "No files. This run answered in text only." : noChanges ? "No changes: its branch holds nothing new." : "Its changes are commits on its branch: Changes shows them."}</p>
         ) : (
           <ul className="made-files">
             {files.map((f) => (
@@ -98,7 +99,7 @@ export function WhatItMadeList({ outputs, spaceId, taskId, spaceKind }: { output
   );
 }
 
-export function WhatItMade({ taskId, spaceId, spaceKind }: { taskId: string; spaceId: string; spaceKind: SpaceKind }) {
+export function WhatItMade({ taskId, spaceId, spaceKind, noChanges = false }: { taskId: string; spaceId: string; spaceKind: SpaceKind; noChanges?: boolean }) {
   const outputs = useTaskOutputs(taskId);
-  return outputs ? <WhatItMadeList outputs={outputs} spaceId={spaceId} taskId={taskId} spaceKind={spaceKind} /> : null;
+  return outputs ? <WhatItMadeList outputs={outputs} spaceId={spaceId} taskId={taskId} spaceKind={spaceKind} noChanges={noChanges} /> : null;
 }

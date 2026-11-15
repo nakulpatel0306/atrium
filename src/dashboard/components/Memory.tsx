@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { NotebookPen } from "lucide-react";
 import { useState } from "react";
 import type { MemoryFile, MemoryLine } from "../../engine/memory";
@@ -21,7 +22,7 @@ export function MemorySize({ space, version }: { space: Space; version: unknown 
 }
 
 // One proposed line: the exact text, editable, accepted with one click into its own commit, or dismissed.
-function Proposal({ line, space }: { line: MemoryLine; space: Space }) {
+export function MemoryProposal({ line, space }: { line: MemoryLine; space: Space }) {
   const [text, setText] = useState(line.line);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ function Proposal({ line, space }: { line: MemoryLine; space: Space }) {
       <input aria-label="Line to add to CLAUDE.md" value={text} maxLength={300} onChange={(e) => setText(e.target.value)} />
       <div className="acts">
         <button className="btn p" disabled={busy || !text.trim()} onClick={() => void answer({ action: "accept", line: text })}>
-          Add it
+          {KIND.memory.action}
         </button>
         <button className="btn" disabled={busy} onClick={() => void answer({ action: "dismiss" })}>
           Not this
@@ -51,18 +52,5 @@ function Proposal({ line, space }: { line: MemoryLine; space: Space }) {
       <p className="hint">{line.taskId ? "Committed on the task's branch while it's open, or else on a branch of its own." : "Committed on a branch of its own."} Edit it first if it's not quite right.</p>
       {error && <p className="err">{error}</p>}
     </div>
-  );
-}
-
-// The curator's open proposals for a space; never a needs-you item.
-export function MemoryProposals({ state, space }: { state: State; space: Space }) {
-  const lines = state.learning.memory.filter((m) => m.spaceId === space.id);
-  if (!lines.length) return null;
-  return (
-    <>
-      {lines.map((l) => (
-        <Proposal key={l.id} line={l} space={space} />
-      ))}
-    </>
   );
 }

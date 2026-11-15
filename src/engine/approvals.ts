@@ -4,7 +4,8 @@ import { newId } from "./ids";
 import { branchHeadSync } from "./git";
 import { getSpace } from "./spaces";
 import { resumed } from "./loop";
-import { appendTaskDetail, getTask, listTasks, setTaskLoop, setTaskStatus } from "./tasks";
+import { batchApprovable, HELD_ASKS } from "./needs";
+import { appendTaskDetail, getTask, listTasks, reopenForReview, setTaskLoop, setTaskStatus } from "./tasks";
 
 export const ALWAYS_ASK = [
   "merge_main",
@@ -30,14 +31,14 @@ export type Approval = {
   detail: string;
   status: "pending" | "approved" | "rejected";
   note: string | null;
-  // The task branch's commit at the moment Nakul decided; null for non-repo work.
+  // The task branch's commit at the moment the user decided; null for non-repo work.
   branchHead: string | null;
   // The action kind the engine saw (see autonomy/kinds.ts); null when no rule could ever cover it.
   fingerprint: string | null;
   decidedBy: "you" | "rule";
   ruleId: string | null;
   undoneAt: number | null;
-  // Set when only Nakul himself may ever decide this; no rule, proposal or auto-approval can.
+  // Set when only the user may ever decide this; no rule, proposal or auto-approval can.
   alwaysAsk: AlwaysAsk | null;
   createdAt: number;
   resolvedAt: number | null;
@@ -61,6 +62,14 @@ type ApprovalRow = {
   created_at: number;
   resolved_at: number | null;
 };
+
+// The branch moved after the user looked: the approval would bind to a commit nobody saw.
+export class HeadMoved extends Error {
+  constructor() {
+    super("The branch has changed since you looked, so nothing was approved. Look at it again, then decide.");
+    this.name = "HeadMoved";
+  }
+}
 
 export class AlreadyResolved extends Error {
   constructor() {
@@ -125,7 +134,7 @@ export function createApproval(
   return getApproval(db, id)!;
 }
 
-// Only a pending approval grows: once Nakul has decided, what he decided on stays as it was.
+// Only a pending approval grows: once the user has decided, what they decided on stays as it was.
 export function appendApprovalDetail(db: Database, id: string, text: string): void {
   db.query("UPDATE approvals SET detail = detail || ? WHERE id = ? AND status = 'pending'").run(text, id);
   bus.emit({ type: "changed" });
@@ -158,19 +167,23 @@ function taskBranchHead(db: Database, taskId: string | null): string | null {
   return path && task?.branch ? branchHeadSync(path, task.branch) : null;
 }
 
-// With `rule`, one of Nakul's rules is deciding in his place, and a rule can only ever approve. Its `head` is the
-// commit the rule checked, recorded as what was approved.
+// With `rule`, one of the user's rules is deciding in their place, and a rule can only ever approve. Its `head` is the
+// commit the rule checked, recorded as what was approved. With `atHead`, the user approved the commit the page showed:
+// the branch is read again inside the decision and, if it moved, nothing is decided (HeadMoved); otherwise exactly that
+// commit is what's recorded.
 export function resolveApproval(
   db: Database,
   id: string,
   decision: "approve" | "reject",
   note?: string,
   rule?: { id: string; label: string; head?: string },
+  opts: { atHead?: string } = {},
 ): Approval {
   if (rule && decision !== "approve") throw new Error("A rule can only approve.");
   if (rule && getApproval(db, id)?.alwaysAsk) throw new Error(RULE_NEVER_DECIDES);
-  const head = rule?.head ?? taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
   const resolve = db.transaction((): Approval => {
+    const head = rule?.head ?? taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
+    if (opts.atHead !== undefined && head !== opts.atHead) throw new HeadMoved();
     const res = db
       .query(
         `UPDATE approvals SET status = ?, note = ?, branch_head = ?, resolved_at = ?, decided_by = ?, rule_id = ? WHERE id = ? AND status = 'pending'${rule ? " AND always_ask IS NULL" : ""}`,
@@ -238,7 +251,7 @@ function decisionLine(db: Database, a: Approval, decision: "approve" | "reject")
   return `Approved: ${a.title}`;
 }
 
-// Nakul himself said yes and hasn't undone it: the only decision that may run a repo action.
+// The user said yes and hasn't undone it: the only decision that may run a repo action.
 export const isOwnYes = (a: Approval): boolean =>
   a.status === "approved" && a.decidedBy === "you" && a.ruleId === null && a.undoneAt === null;
 
@@ -248,4 +261,105 @@ const resolvedListeners = new Set<(a: Approval, decision: "approve" | "reject") 
 export function onApprovalResolved(fn: (a: Approval, decision: "approve" | "reject") => void): () => void {
   resolvedListeners.add(fn);
   return () => resolvedListeners.delete(fn);
+}
+
+// The most a batch may name at once; the page never shows more than this many clean results together.
+export const BATCH_MAX = 200;
+
+// Approves several results in one go, each only if it's clean by the one rule (needs.ts) as the database has it now,
+// and only at the commit the page showed: that commit must still be the branch's head and what the checks and the
+// reviewer read. Anything else is left waiting, with why. `beforeResolve` is a test seam for a branch moving in
+// between.
+export function approveClean(
+  db: Database,
+  items: readonly { id: string; sha: string }[],
+  seams: { beforeResolve?: (id: string) => void } = {},
+): { approved: string[]; skipped: { id: string; reason: string }[] } {
+  const approved: string[] = [];
+  const skipped: { id: string; reason: string }[] = [];
+  for (const { id, sha } of items.slice(0, BATCH_MAX)) {
+    const a = getApproval(db, id);
+    if (!a) {
+      skipped.push({ id, reason: "No such approval." });
+      continue;
+    }
+    if (a.status !== "pending") {
+      skipped.push({ id, reason: "It was already decided." });
+      continue;
+    }
+    const task = a.taskId ? getTask(db, a.taskId) : null;
+    if (!batchApprovable(a, task ?? undefined)) {
+      skipped.push({ id, reason: "It has something to read on its own first: a note, a check that didn't pass, or a finding that wasn't fixed." });
+      continue;
+    }
+    const head = taskBranchHead(db, a.taskId);
+    if (!head || head !== sha || task!.loop!.checkedSha !== sha || task!.loop!.reviewedSha !== sha) {
+      skipped.push({ id, reason: "Its branch changed since it was checked, reviewed or shown, so it needs another look." });
+      continue;
+    }
+    seams.beforeResolve?.(id);
+    try {
+      resolveApproval(db, id, "approve", undefined, undefined, { atHead: sha });
+    } catch (e) {
+      if (!(e instanceof HeadMoved)) throw e;
+      skipped.push({ id, reason: "Its branch changed since it was checked, reviewed or shown, so it needs another look." });
+      continue;
+    }
+    approved.push(id);
+  }
+  return { approved, skipped };
+}
+
+// How long after approving the user can take it back from the toast; past this, ask for a new task. A new repo or a
+// local copy's removal waits this long after the yes before it starts, so its Undo is real.
+export const UNDO_MS = 60_000;
+
+// Yeses to a new repo or a removal still in their hold: shown in Needs you as starting soon, with an Undo, so one that
+// resumed after a restart can be taken back even though its toast is gone.
+export type Held = { id: string; spaceId: string | null; title: string; approvedAt: number; startsAt: number };
+export function listHeld(db: Database): Held[] {
+  const rows = db
+    .query(
+      `SELECT a.id, a.space_id AS spaceId, a.title, a.resolved_at AS approvedAt FROM repo_actions r JOIN approvals a ON a.id = r.approval_id
+       WHERE r.status = 'draft' AND a.status = 'approved' AND a.undone_at IS NULL ORDER BY a.resolved_at`,
+    )
+    .all() as Omit<Held, "startsAt">[];
+  return rows.map((r) => ({ ...r, startsAt: r.approvedAt + UNDO_MS }));
+}
+
+// Takes back a yes to a new repo or a removal that hasn't started: the ask is pending again, under a fresh approval
+// its repo action now points to, so the held start finds no yes and does nothing.
+function reopenHeldAsk(db: Database, a: Approval, now: number): Approval {
+  if (a.status !== "approved" || a.decidedBy !== "you") throw new Error("Only an approval you just gave can be taken back.");
+  if (a.undoneAt !== null) throw new Error("This approval was already taken back.");
+  if (now - (a.resolvedAt ?? 0) > UNDO_MS) throw new Error("This was approved too long ago to take back.");
+  const action = db.query("SELECT id, status FROM repo_actions WHERE approval_id = ?").get(a.id) as { id: string; status: string } | null;
+  if (!action || action.status !== "draft") throw new Error("This has already started, so it can't be taken back.");
+  db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, a.id);
+  const fresh = createApproval(db, { spaceId: a.spaceId, taskId: a.taskId ?? undefined, kind: a.kind, title: a.title, detail: a.detail, fingerprint: a.fingerprint ?? undefined, alwaysAsk: a.alwaysAsk ?? undefined });
+  db.query("UPDATE repo_actions SET approval_id = ?, updated_at = ? WHERE id = ?").run(fresh.id, now, action.id);
+  return fresh;
+}
+
+// Takes back the user's own approval of a result a moment ago: the task goes back to review with a fresh approval,
+// as long as nothing has left the Mac since (no push or pull request started for it) and nothing else happened to it.
+export function reopenDecision(db: Database, id: string, now = Date.now()): Approval {
+  const reopened = db.transaction((): Approval => {
+    const a = getApproval(db, id);
+    if (a && a.kind === "question" && a.alwaysAsk && HELD_ASKS.includes(a.alwaysAsk)) return reopenHeldAsk(db, a, now);
+    if (!a || a.kind !== "review" || a.status !== "approved" || a.decidedBy !== "you" || !a.taskId || !a.spaceId) throw new Error("Only an approval you just gave a result can be taken back.");
+    if (a.undoneAt !== null) throw new Error("This approval was already taken back.");
+    if (now - (a.resolvedAt ?? 0) > UNDO_MS) throw new Error("This was approved too long ago to take back. Ask for the change again as a new task.");
+    const task = getTask(db, a.taskId);
+    // The push's own approval is recorded before anything is sent, so a push still in flight counts too.
+    const pushed = db.query("SELECT 1 FROM approvals WHERE task_id = ? AND always_ask = 'push' AND created_at >= ?").get(a.taskId, a.resolvedAt ?? 0);
+    if (task?.prUrl || pushed) throw new Error("This result has already left your Mac (a push or pull request started), so it can't go back to review.");
+    if (task?.status !== "done" || task.kind !== "work") throw new Error("This task changed after it was approved, so it can't go back to review.");
+    db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, a.id);
+    reopenForReview(db, task.id);
+    return createApproval(db, { spaceId: a.spaceId, taskId: task.id, kind: a.kind, title: a.title, detail: a.detail, fingerprint: a.fingerprint });
+  })();
+  logActivity(db, reopened.spaceId, "you", `Took back the approval: ${reopened.title}`, { taskId: reopened.taskId });
+  bus.emit({ type: "changed" });
+  return reopened;
 }

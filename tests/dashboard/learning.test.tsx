@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ChangesList } from "../../src/dashboard/components/ChangesView";
 import { LoopPanel } from "../../src/dashboard/components/LoopPanel";
-import { MemoryProposals } from "../../src/dashboard/components/Memory";
+import { MemoryProposal } from "../../src/dashboard/components/Memory";
 import { RetroCard, RollupCard } from "../../src/dashboard/components/Retro";
 import { spotLink, WalkthroughCard } from "../../src/dashboard/components/Walkthrough";
 import type { DiffResult } from "../../src/engine/diff-parse";
@@ -81,7 +81,7 @@ test("the walkthrough shows above the diff with its spots linking into the Chang
 test("no walkthrough yet offers to write one; one for an earlier commit says so; learning off shows nothing", async () => {
   const empty = setup({ walkthrough: null });
   const el = render(<WalkthroughCard task={empty.task} space={empty.space} />);
-  expect(el.textContent).toContain("Not written yet.");
+  expect(el.textContent).toContain("Walkthrough not written yet");
   act(() => button(el, "Write it now")!.click());
   await settle();
   expect(calls.map((c) => c.url)).toEqual([`/api/tasks/${empty.task.id}/walkthrough`]);
@@ -140,13 +140,14 @@ test("each hunk offers an explanation from the engine, shown under its header", 
   expect(button(render(<ChangesList diff={diff} live={null} />), "Explain this hunk")).toBeUndefined();
 });
 
-test("a loop pause on a repeated failure leads with the diagnosis; a budget pause leads with the hint", () => {
+test("a loop pause on a repeated failure offers the diagnosis first; every pause's primary step is the hint", () => {
   const paused = { paused: { kind: "loop" as const, diagnosis: "The same check failed the same way twice in a row (test)." } };
   const loop = setup(paused, "blocked");
   const el = render(<LoopPanel task={loop.task} state={loop.state} repo showChecks={false} />);
   expect(el.textContent).toContain("Want the diagnosis instead of another attempt?");
-  expect(button(el, "Explain the problem instead")!.className).toBe("btn p");
-  expect(button(el, "Give it a hint")!.className).toBe("btn");
+  // The diagnosis is offered first here, but the primary step stays the hint, as on every surface.
+  expect(button(el, "Explain the problem")!.className).toBe("btn");
+  expect(button(el, "Give it a hint")!.className).toBe("btn p");
   act(() => root!.unmount());
   root = null;
   const budget = setup({ paused: { kind: "budget", diagnosis: "It worked for 45 minutes, its budget." } }, "blocked");
@@ -183,7 +184,7 @@ test("a proposed CLAUDE.md line is shown exactly, edited, and accepted with the 
   const { state, space } = setup({});
   state.learning.memory = [{ id: "mem_1", spaceId: space.id, taskId: null, source: "steer", line: "Money is cents.", why: 'From your steer on "Cart".', status: "open", branch: null, commitSha: null, createdAt: 1 }];
   reply = { lines: 12, budget: 200, missing: false, problem: null };
-  const el = render(<MemoryProposals state={state} space={space} />);
+  const el = render(<MemoryProposal line={state.learning.memory[0]!} space={space} />);
   await settle();
   const input = el.querySelector("input")!;
   expect(input.value).toBe("Money is cents.");

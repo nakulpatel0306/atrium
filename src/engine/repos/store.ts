@@ -137,7 +137,7 @@ export function draftProject(
   return made;
 }
 
-// Nakul's edits land on the draft and its approval together, and only while he hasn't decided yet.
+// The user's edits land on the draft and its approval together, and only while they haven't decided yet.
 export function updateDraft(db: Database, actionId: string, draft: ProjectDraft): RepoAction {
   const next = db.transaction(() => {
     const action = getRepoAction(db, actionId);

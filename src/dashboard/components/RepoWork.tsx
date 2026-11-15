@@ -31,7 +31,7 @@ export function RepoWork({ task, space, agent, initial, at = null }: { task: Tas
           Changes
         </button>
       </div>
-      {view === "changes" ? <ChangesView task={task} agent={agent} at={at} /> : <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />}
+      {view === "changes" ? <ChangesView task={task} agent={agent} at={at} /> : <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
       {(task.status === "review" || task.status === "done") && task.kind === "work" && <PullRequest task={task} />}
     </>
   );

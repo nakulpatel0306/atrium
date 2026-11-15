@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { GitMerge, GitPullRequest, Split } from "lucide-react";
 import { useState } from "react";
 import { cacheShare, type Spend, spendText } from "../../engine/cost";
@@ -111,7 +112,7 @@ export function estimateShort(state: State, spaceId: string, budget: number, n: 
   return e.usd !== null ? `est. ~$${e.usd.toFixed(2)}` : `up to ${compact(e.weighted)} weighted tokens`;
 }
 
-const SWITCH_LABEL: Record<ShapeKind, string> = { single: "One writer instead", scouts: "Scouts instead", split: "Split instead", best_of_n: "Try best of N instead" };
+const SWITCH_LABEL: Record<ShapeKind, string> = { single: "One writer instead", scouts: "Scouts instead", split: KIND.shape.action, best_of_n: "Try best of N instead" };
 
 // The shape line on a task: its chip, the one-line reason, the pre-pass's costlier suggestion while it runs as one
 // writer, and the override while it can still change.
@@ -156,7 +157,8 @@ export function ShapeLine({ task, state }: { task: Task; state: State }) {
           </button>
         </span>
       )}
-      {!offer && shape.proposed !== shape.kind && <span className="hint">(suggested: {SHAPE_LABEL[shape.proposed]})</span>}
+      {/* Once the work is done, what the pre-pass once suggested is history, not advice. */}
+      {!offer && shape.proposed !== shape.kind && task.status !== "review" && task.status !== "done" && <span className="hint">(suggested: {SHAPE_LABEL[shape.proposed]})</span>}
       {open && (
         <button type="button" className="btn link subtle" aria-expanded={editing} onClick={() => setEditing(!editing)}>
           Change
@@ -255,7 +257,7 @@ export function Fanout({ task, state }: { task: Task; state: State }) {
                     <p className="hint">{c.loop?.report.find((l) => /commit/.test(l)) ?? ""}</p>
                     <a href={`#task-${c.id}`}>See its changes</a>
                     <button type="button" className="btn p" disabled={busy} onClick={() => void act("pick", { attempt: c.id })}>
-                      Pick this one
+                      {KIND.pick.action} this one
                     </button>
                   </>
                 ) : (

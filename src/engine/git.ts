@@ -3,7 +3,7 @@ import { constants, existsSync, promises as fsp, mkdirSync, mkdtempSync, readdir
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf } from "./diff-parse";
+import { type DiffFile, type DiffResult, MAX_FILE_LINES, parseDiff, totalsOf, type Turn } from "./diff-parse";
 import { readCapped } from "./capped-read";
 import { isEnvPath } from "./envpath";
 
@@ -413,7 +413,7 @@ export async function changedFiles(path: string, base: string, branch: string): 
 
 export type BranchFile = { path: string; change: "created" | "changed" | "deleted"; insertions: number | null; deletions: number | null };
 
-// What a task branch changed, for showing Nakul what it made. .env paths are left out: Atrium never shows them.
+// What a task branch changed, for showing the user what it made. .env paths are left out: Atrium never shows them.
 export async function branchFiles(path: string, base: string, branch: string): Promise<BranchFile[]> {
   const flags = ["-c", "core.quotePath=false", "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-z"];
   const range = `${base}...${branch}`;
@@ -595,6 +595,19 @@ function parseCapped(res: { out: string; truncated: boolean }): DiffResult {
 // A finished task's changes, from its branch's commits against where the work started.
 export async function branchDiff(path: string, base: string, branch: string): Promise<DiffResult> {
   return parseCapped(await gitCapped(path, [...(await diffFlags(path)), `${base}...${branch}`, ...ENV_EXCLUDES], CHANGES_CAP));
+}
+
+// The branch's own commits since it left `base`, oldest first, capped so a long-lived branch can't flood the view.
+export async function branchTurns(path: string, base: string, branch: string): Promise<Turn[]> {
+  const res = await git(path, ["log", "--reverse", "--no-merges", "-n", "200", "--format=%H%x00%s%x00%ct", `${base}..${branch}`]);
+  if (res.code !== 0) throw new Error(`Couldn't list the commits on ${branch}: ${res.err.trim()}`);
+  return res.out
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      const [sha = "", title = "", at = "0"] = l.split("\0");
+      return { sha, title, at: Number(at) * 1000 };
+    });
 }
 
 // What a running agent has changed so far, against `start`: every file git knows (committed on the branch, or

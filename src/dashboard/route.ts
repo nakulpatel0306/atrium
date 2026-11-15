@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type Route = { name: "home" } | { name: "needs" } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; changes: boolean; at: ChangeSpot | null };
+export type Route = { name: "home" } | { name: "needs"; item: string | null; batch: boolean } | { name: "activity" } | { name: "agents" } | { name: "rules" } | { name: "settings" } | { name: "start" } | { name: "space"; id: string; task: string | null; tab: SpaceTab; changes: boolean; at: ChangeSpot | null };
 // A place in a task's Changes to open at, from a walkthrough's "where to look first".
 export type ChangeSpot = { file: string; line: number | null };
 export type SpaceTab = "tasks" | "files";
@@ -29,7 +29,11 @@ export function usePath(): string {
 
 export function parseRoute(path: string): Route {
   const [pathname = "", search = ""] = path.split("?");
-  if (pathname === "/needs-you") return { name: "needs" };
+  // `?item=` opens the queue at one item, from a row elsewhere; `?batch=1` opens the list of clean results to approve.
+  if (pathname === "/needs-you") {
+    const q = new URLSearchParams(search);
+    return { name: "needs", item: q.get("item"), batch: q.get("batch") === "1" };
+  }
   if (pathname === "/activity") return { name: "activity" };
   if (pathname === "/agents") return { name: "agents" };
   if (pathname === "/rules") return { name: "rules" };

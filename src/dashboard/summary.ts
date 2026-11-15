@@ -1,6 +1,7 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
 import type { Stage } from "../engine/loop";
-import { needsYouCount } from "../engine/needs";
+import { cleanResult, needsYouCount, pausedForYou, reviewSettled } from "../engine/needs";
+import { RISKY, TASK_WORD, taskWord } from "../engine/words";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
@@ -24,14 +25,17 @@ export function activeOnly(state: State): State {
   };
 }
 
+// A task's one word, from engine/words.ts: "blocked" splits into paused (waits for your hint) and stopped (waits for a
+// retry).
 export const STATUS_TEXT: Record<Task["status"], string> = {
-  queued: "queued",
-  running: "running",
-  review: "in review",
-  done: "done",
-  failed: "failed",
-  blocked: "blocked",
+  queued: TASK_WORD.queued,
+  running: TASK_WORD.running,
+  review: TASK_WORD.review,
+  done: TASK_WORD.done,
+  failed: TASK_WORD.failed,
+  blocked: TASK_WORD.stopped,
 };
+export const taskText = (t: Task): string => TASK_WORD[taskWord(t)];
 
 export const KIND_PREFIX: Record<Exclude<Task["kind"], "work">, string> = { review: "Review: ", fix: "Fix: " };
 
@@ -71,7 +75,10 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
   if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait };
   const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
   if (stuck.length === 1 && stuck[0]!.status === "blocked") {
-    return { text: `Blocked: ${stuck[0]!.blockedReason ?? stuck[0]!.title}`, tone: "blocked" };
+    const t = stuck[0]!;
+    const paused = pausedForYou(t);
+    // A pause is a normal stop that waits for a hint, so it reads amber; a stopped task needs a retry and reads red.
+    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason) ?? t.title}`, tone: paused ? "waiting" : "blocked" };
   }
   if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
   const review = tasks.filter((t) => t.status === "review").length;
@@ -87,11 +94,12 @@ export function liveStatus(state: State): string {
   const parts: string[] = [];
   const pending = needsYouCount(state);
   if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
-  const blocked = state.tasks.filter((t) => t.status === "blocked");
-  if (blocked.length > 0) {
-    const reason = blocked[0]!.blockedReason;
-    parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
-  }
+  // A pause is already one of the things that need you; only other stops are news here.
+  const blocked = state.tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
+  if (blocked.length === 1) {
+    const reason = blocked[0]!.blockedReason?.replace(/\.$/, "");
+    parts.push(`1 stopped${reason ? `: ${reason}` : ""}`);
+  } else if (blocked.length > 1) parts.push(`${blocked.length} stopped`);
   // Queueing behind a running task is the normal case, not news.
   const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy");
   if (waits.length > 0) {
@@ -114,26 +122,62 @@ export type Review = { text: string; tone?: "ok" | "waiting" | "bad" };
 type Loop = NonNullable<Task["loop"]>;
 
 // What Atrium's checks and the reviewer made of a coding task, as one line.
-export function loopLine(loop: Loop): Review {
-  const parts = [loop.noChanges ? "No changes" : loop.checks === "passed" ? "Checks passed" : loop.checks === "failed" ? "Checks failed" : loop.unverified ? "Unverified: changes how dependencies install" : "Unverified: no checks found"];
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// What the checks said and what the reviewer said, as two separate chips, each in its own colour: checks that passed
+// stay green even when the review left something open. Whatever needs you leads its chip ("1 open finding"), so a
+// narrow row never cuts it off.
+export function loopChips(loop: Loop): { checks: Review; review: Review | null } {
+  const checks: Review = loop.noChanges
+    ? { text: "No changes" }
+    : loop.checks === "passed"
+      ? { text: "Checks passed", tone: "ok" }
+      : loop.checks === "failed"
+        ? { text: "Checks failed", tone: "bad" }
+        : { text: loop.unverified ? "Unverified: changes how dependencies install" : "Unverified: no checks found", tone: "waiting" };
   const last = loop.reviews.at(-1);
-  if (last?.skipped) parts.push("review didn't happen");
-  else if (last) {
-    const who = agentName(last.reviewer);
-    const asked = loop.reviews.flatMap((r) => (r.verdict === "changes" ? r.findings : []));
-    const fixed = asked.filter((f) => f.resolution?.action === "fixed").length;
-    if (asked.length) parts.push(`${who} found ${asked.length} to fix, ${fixed} fixed`);
-    else parts.push(last.verdict === "approve" ? `reviewed by ${who}` : `${who} gave no verdict`);
+  if (!last) return { checks, review: null };
+  if (last.skipped) return { checks, review: { text: "Review didn't happen", tone: "waiting" } };
+  const who = agentName(last.reviewer);
+  const tone = reviewSettled(loop) ? "ok" : "waiting";
+  const asked = loop.reviews.flatMap((r) => (r.verdict === "changes" ? r.findings : []));
+  if (asked.length) {
+    // How each finding ended, so "asked for changes" and a result waiting for you don't read as a contradiction.
+    const open = asked.filter((f) => !f.resolution).length;
+    if (open) return { checks, review: { text: `${plural(open, "open finding")} · ${who}`, tone } };
+    const count = (action: "fixed" | "declined") => asked.filter((f) => f.resolution?.action === action).length;
+    const ended = [count("fixed") && `${count("fixed")} fixed`, count("declined") && `${count("declined")} declined`].filter(Boolean).join(", ");
+    return { checks, review: { text: `${who}: ${ended}`, tone } };
   }
-  const tone = loop.attention.length || loop.checks === "failed" ? "bad" : loop.checks === "passed" && !loop.noChanges ? "ok" : "waiting";
-  return { text: parts.join(" · "), tone };
+  if (last.verdict !== "approve") return { checks, review: { text: `${who} gave no verdict`, tone } };
+  // Notes on an approval are the reviewer's asides: shown, never something to answer.
+  const notes = last.findings.filter((f) => !f.resolution).length;
+  return { checks, review: { text: `Approved by ${who}${notes ? ` · ${plural(notes, "note")}` : ""}`, tone } };
 }
 
-// The line on an approval's card, for work that went through the loop; null for anything else.
-export function reviewLine(approval: Approval, state: State): Review | null {
+// The same two as one line, for a terminal row or a tooltip. Red only for failing checks; green exactly when the
+// result is clean by the one rule (needs.ts); amber otherwise.
+export function loopLine(loop: Loop): Review {
+  const { checks, review } = loopChips(loop);
+  const tone = loop.checks === "failed" ? "bad" : cleanResult({ outcome: "done", loop }) ? "ok" : "waiting";
+  return { text: [checks.text, review?.text].filter(Boolean).join(" · "), tone };
+}
+
+// The loop behind an approval's card, for repo work that went through it; null for anything else.
+function loopOf(approval: Approval, state: State): Loop | null {
   const loop = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId)?.loop : null;
   const space = state.spaces.find((s) => s.id === approval.spaceId);
-  return loop && space?.kind === "repo" ? loopLine(loop) : null;
+  return loop && space?.kind === "repo" ? loop : null;
+}
+
+export function reviewLine(approval: Approval, state: State): Review | null {
+  const loop = loopOf(approval, state);
+  return loop ? loopLine(loop) : null;
+}
+
+export function reviewChips(approval: Approval, state: State): ReturnType<typeof loopChips> | null {
+  const loop = loopOf(approval, state);
+  return loop ? loopChips(loop) : null;
 }
 
 export const reviewerName = (choice: Space["reviewBy"]) => (choice === "off" ? "Off" : agentName(choice));
@@ -142,7 +186,8 @@ export const STAGE_TEXT: Record<Stage, string> = {
   brief: "Brief",
   writing: "Writing",
   checks: "Checks",
-  review: "Review",
+  // The reviewer's pass, not your decision (which the queue calls a Review).
+  review: "Reviewer",
   ready: "Ready",
   paused: "Paused",
   parts: "Parts",
@@ -151,7 +196,7 @@ export const STAGE_TEXT: Record<Stage, string> = {
 };
 
 // Things the change does to the checks themselves, which every card shows before anything else.
-export const attentionText = (loop: Loop | null | undefined): string | null => (loop?.attention.length ? `Look closely: ${loop.attention.join(" ")}` : null);
+export const attentionText = (loop: Loop | null | undefined): string | null => (loop?.attention.length ? `${RISKY}: ${loop.attention.join(" ")}` : null);
 
 // What the router lets each agent do, so a reader knows why work went where it did.
 export const AGENT_ROLES: Record<string, string> = {
@@ -188,3 +233,11 @@ export const emptyHome = (state: State): boolean =>
 
 // One line for a row: the first paragraph of agent text, without its markdown.
 export const summaryLine = (text: string): string => plainText(text.trim().split(/\n\s*\n/)[0] ?? "");
+
+// How a review finding ended, naming who answered it. A note on an approval was never put to the writer.
+export function answeredText(f: { resolution: { action: "fixed" | "declined"; note: string } | null }, asked: boolean): string {
+  if (!asked) return "A note on an approval, nothing to answer.";
+  if (!f.resolution) return "The writer didn't answer it.";
+  const note = f.resolution.note ? `: ${f.resolution.note}` : ".";
+  return f.resolution.action === "fixed" ? `The writer fixed it${note}` : `The writer declined it${note}`;
+}

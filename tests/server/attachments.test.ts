@@ -289,3 +289,11 @@ test("a new space's files are checked before it's made, and a repo space doesn't
   expect(out.attached).toEqual([]);
   expect(db.query("SELECT COUNT(*) AS n FROM attachments").get()).toEqual({ n: 0 });
 });
+
+test("a files-only upload stated as more than 100 MB of files is refused from its length, without parsing it", async () => {
+  const { readUploads } = await import("../../src/server/attachments");
+  // Under the engine's whole request cap, and not a valid form: parsing it would answer 400, so 413 means it wasn't.
+  const req = new Request("http://127.0.0.1/x", { method: "POST", headers: { "content-type": "multipart/form-data; boundary=b", "content-length": String(100 * 1024 * 1024 + 64 * 1024) }, body: "not a form" });
+  const err = (await readUploads(req, { filesOnly: true }).catch((e) => e)) as { status: number };
+  expect(err.status).toBe(413);
+});

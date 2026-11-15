@@ -1,5 +1,5 @@
 // Turns the activity log into a short, calm feed: one line per task per stretch of routine work, repeated system
-// lines folded with a count, failures and things waiting on Nakul kept on their own lines. Pure, so the dashboard
+// lines folded with a count, failures and things waiting on the user kept on their own lines. Pure, so the dashboard
 // and the terminal app show the same feed.
 import type { ActivityRow } from "./events";
 
@@ -20,7 +20,7 @@ export type ActivityKind =
   | "note"
   | "other";
 
-// routine: folds away; attention: waiting on Nakul; failure: something went wrong; notice: worth its own line.
+// routine: folds away; attention: waiting on the user; failure: something went wrong; notice: worth its own line.
 export type ActivityTone = "routine" | "attention" | "failure" | "notice";
 
 export type ActivityGroup = {
@@ -34,7 +34,7 @@ export type ActivityGroup = {
   // The task the line is about, when there is one.
   title: string | null;
   tone: ActivityTone;
-  // Its task is still in review: the line is about something waiting on Nakul right now.
+  // Its task is still in review: the line is about something waiting on the user right now.
   waiting: boolean;
   text: string;
   count: number;
@@ -67,7 +67,7 @@ const KINDS: [RegExp, ActivityKind][] = [
   [/^Paused: /, "paused"],
   [/^Partly done: /, "partial"],
   [/^Couldn't do: /, "couldnt"],
-  [/^Blocked: /, "blocked"],
+  [/^(Blocked|Stopped): /, "blocked"],
   [/^(Couldn't |Atrium hit a problem|Discarded the result|Kept the local copy)/, "failed"],
   [/^(Atrium left |Atrium kept |Kept |Removed the local copy |Removed the new copy )/, "note"],
 ];
@@ -130,12 +130,14 @@ export function dayLabel(t: number, now = Date.now()): string {
 }
 
 const PHRASE: Partial<Record<ActivityKind, (message: string) => string>> = {
-  ready: () => "ready for review",
+  // Past tense: the one still waiting now says "waiting for review" instead.
+  ready: () => "went to review",
   rule: () => "approved by your rule",
   skipped: () => "review skipped",
   requeued: () => "back in the queue",
   stopped: () => "stopped by you",
-  paused: () => "paused for a usage limit",
+  // The engine writes "Paused: " for more than one cause, so the phrase says which.
+  paused: (m) => (/usage limit/i.test(m) ? "paused for a usage limit" : /budget/i.test(m) ? "paused at its budget" : "paused"),
   decided: (m) =>
     m.startsWith("Rejected")
       ? "sent back"
@@ -257,7 +259,7 @@ export function groupActivity(rows: ActivityRow[], ctx: ActivityContext = {}): A
 }
 
 // What a feed shows before "Show more": the newest `shown` groups, plus today's failures and any line whose task is
-// still waiting on Nakul, wherever they fall. Older failures fold away like everything else.
+// still waiting on the user, wherever they fall. Older failures fold away like everything else.
 export function visibleGroups(groups: ActivityGroup[], shown: number): { visible: ActivityGroup[]; hidden: number } {
   const visible = groups.filter((g, i) => i < shown || (g.tone === "failure" && g.day === "Today") || (g.tone === "attention" && g.waiting));
   return { visible, hidden: groups.length - visible.length };

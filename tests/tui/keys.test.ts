@@ -63,8 +63,12 @@ test("numbers switch tabs; tab and arrows move between Spaces panes", () => {
 });
 
 test("a approves the selected card on Home, or the selected task in review", () => {
-  const approve = { type: "approve" as const, approvalId: ids.approval, title: "Review: Fix login redirect" };
+  const approve = { type: "approve" as const, approvalId: ids.approval, title: "Review: Fix login redirect", sha: null };
   expect(play(["a"]).intents).toEqual([approve]);
+  // A result whose checks read a commit sends that commit, as the dashboard does.
+  const checked = makeState();
+  checked.tasks = checked.tasks.map((t) => (t.id === ids.review ? { ...t, loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", checks: "passed", checkedSha: "abc1234", reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] }, outcome: "done" } : t));
+  expect(play(["a"], undefined, checked).intents).toEqual([{ ...approve, sha: "abc1234" }]);
   expect(play(["a"], onTask(1, ids.review)).intents).toEqual([approve]);
   const queued = play(["a"], onTask(2, ids.queued));
   expect(queued.intents).toEqual([]);
@@ -93,7 +97,7 @@ test("retry and run now only where the dashboard offers them", () => {
   expect(play(["R"], blocked).intents).toEqual([{ type: "retry", taskId: ids.blocked }]);
   const running = play(["R"], onTask(0, ids.running));
   expect(running.intents).toEqual([]);
-  expect(flashText(running.all)).toEqual(["Retry is for blocked or failed tasks."]);
+  expect(flashText(running.all)).toEqual(["Retry is for a stopped or failed task."]);
   const old = makeState();
   old.tasks = old.tasks.map((t) => (t.id === ids.blocked ? { ...t, status: "failed", legacyPurpose: "money" } : t));
   const removed = play(["R"], blocked, old);
@@ -270,7 +274,7 @@ test("f picks a made file, then o opens it and R reveals it", () => {
 test("with no file picked, o and R keep their usual meaning", () => {
   const start = inDetail(1, ids.review);
   expect(play(["o"], start, makeState(), withFiles()).intents[0]?.type).toBe("overnight");
-  expect(flashText(play(["R"], start, makeState(), withFiles()).all)).toContain("Retry is for blocked or failed tasks.");
+  expect(flashText(play(["R"], start, makeState(), withFiles()).all)).toContain("Retry is for a stopped or failed task.");
   expect(flashText(play(["f"], start, makeState(), withFiles([])).all)).toContain("This task didn't make any files.");
 });
 
@@ -332,7 +336,9 @@ test("the asking card and the question box show the questions and numbered answe
   const briefing = { greeting: "Hi.", summary: "" } as Parameters<typeof homeScreen>[2]["briefing"];
   const home = homeScreen(view, initialUi, { briefing, now: Date.now(), frame: 0, lastLine: "" } as unknown as Parameters<typeof homeScreen>[2], 120, 30);
   expect(text(home.lines)).toContain("Add totals");
-  expect(text(home.lines)).toContain("asks before it starts");
+  expect(text(home.lines)).toContain("Question · ");
+  // Its wait is the queue's own time, in the dashboard's words.
+  expect(text(home.lines)).toMatch(/Question · waiting \d+[mhd]|Question · just now/);
   const box = answerOver(Array.from({ length: 20 }, () => []), { kind: "answer", taskId: "tsk_asks", index: 0, step: 0, answers: [] }, state, 100, 0);
   const shown = text(box.lines);
   expect(shown).toContain("1/2 · Weekly or monthly?");
@@ -368,4 +374,15 @@ test("the detail shows the suggested shape while the task runs as one writer, an
   expect(shown).toContain("Cost: 412k weighted tokens · ~$1.84 est. at list prices · 90% from cache");
   expect(shown).toContain("ready Part A");
   expect(shown).toContain("Open their pull requests or merge them on the dashboard.");
+});
+
+test("a paused card's wait counts from the pause, not from the task's last change", async () => {
+  const { cardsOf } = await import("../../src/tui/screens/home");
+  const state = makeState();
+  const now = Date.now();
+  state.tasks = state.tasks.map((t) =>
+    t.id === ids.blocked ? { ...t, kind: "work", updatedAt: now, loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "Over budget.", at: now - 2 * 3_600_000 } } } : t,
+  );
+  const card = cardsOf(deriveView(state, initialUi), now, 80).find((c) => c.id === ids.blocked)!;
+  expect(card.meta.map((m) => m.text).join("")).toContain("Paused · waiting 2h");
 });

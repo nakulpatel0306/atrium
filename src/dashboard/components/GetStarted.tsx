@@ -1,171 +1,203 @@
+import { Check, CircleCheck, CircleDashed, CircleX, Copy, Play } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Check, Report } from "../../engine/doctor";
+import type { Check as Probe, Report } from "../../engine/doctor";
 import { claudeBlocks, nextStep, prevStep, STEPS, type Progress, type Step } from "../../engine/start-steps";
-import { put } from "../api";
+import { post, put } from "../api";
 import { navigate } from "../route";
 
 export const STEP_TITLES: Record<Step, string> = {
-  welcome: "Welcome",
-  agents: "Agents",
-  tools: "Optional tools",
-  profile: "Your name and projects folder",
-  done: "Done",
+  claude: "Claude",
+  folder: "Projects folder",
+  sample: "Try it once",
 };
 
-// The steps the user may leave out. Agents can't be left out while Claude is missing.
-export const canSkip = (step: Step): boolean => step !== "welcome" && step !== "agents" && step !== "done";
+export type Sample = { ask: string; cents: number; seconds: number };
 
-function CheckRow({ check }: { check: Check }) {
+// A command to paste, with one-click copy; an instruction that isn't a command ("Install Antigravity…") stays text.
+function Command({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  if (/^[A-Z]/.test(text)) return <span>{text}</span>;
+  return (
+    <span className="cmd-copy">
+      <code>{text}</code>
+      <button
+        type="button"
+        className="btn link subtle"
+        aria-label={`Copy ${text}`}
+        onClick={() =>
+          void navigator.clipboard.writeText(text).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          )
+        }
+      >
+        {copied ? <Check /> : <Copy />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </span>
+  );
+}
+
+const STATE_TEXT: Record<Probe["state"], string> = { ready: "Ready", not_installed: "Not installed", too_old: "Too old", signed_out: "Signed out", unknown: "Couldn't check" };
+
+function CheckRow({ check }: { check: Probe }) {
+  const Icon = check.state === "ready" ? CircleCheck : check.required ? CircleX : CircleDashed;
   return (
     <div className={`set-card start-check ${check.state}`}>
       <div className="set-title">
+        <Icon className={check.state === "ready" ? "ok" : check.required ? "bad" : "faint"} />
         <b>{check.label}</b>
-        <span className="tag">{check.required ? "Required" : "Optional"}</span>
-        <span className={`tag${check.state === "ready" ? " ok" : ""}`}>{check.state === "ready" ? `Ready${check.version ? ` · ${check.version}` : ""}` : check.state === "not_installed" ? "Not installed" : check.state === "too_old" ? "Too old" : check.state === "signed_out" ? "Signed out" : "Unconfirmed"}</span>
+        <span className={`tag${check.state === "ready" ? " ok" : ""}`}>
+          {STATE_TEXT[check.state]}
+          {check.state === "ready" && check.version ? ` · ${check.version}` : ""}
+        </span>
       </div>
-      <p className="hint">{check.message}</p>
+      {check.state !== "ready" && <p className="hint">{check.message}</p>}
       {check.state === "not_installed" && (
         <p className="hint">
-          Install: <code>{check.install}</code>
+          Install: <Command text={check.install} />
         </p>
       )}
       {check.state !== "ready" && check.state !== "too_old" && (
         <p className="hint">
-          Sign in: <code>{check.signIn}</code>
+          Sign in: <Command text={check.signIn} />
         </p>
       )}
     </div>
   );
 }
 
-export type ProfileDraft = { name: string; projectsRoot: string };
+// The extras, one line each: what they add and how to get them. Nothing waits on them.
+function Optional({ checks }: { checks: Probe[] }) {
+  const adds: Record<string, string> = { codex: "a second-vendor reviewer", gemini: "another reviewer", gh: "pull requests and GitHub repos" };
+  return (
+    <ul className="start-optional">
+      {checks.map((c) => (
+        <li key={c.id}>
+          {c.state === "ready" ? <CircleCheck className="ok" /> : <CircleDashed className="faint" />}
+          <span>
+            <b>{c.label}</b> <span className="hint">· {adds[c.id] ?? "optional"}</span>
+          </span>
+          {c.state === "ready" ? <span className="tag ok">Ready</span> : <Command text={c.state === "not_installed" ? c.install : c.signIn} />}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 type ViewProps = {
   report: Report;
   progress: Progress;
-  draft: ProfileDraft;
+  folder: string;
+  sample: Sample;
   message: string | null;
   busy?: boolean;
-  onDraft(d: ProfileDraft): void;
+  // The folder Next found isn't there yet, as the engine wrote it.
+  missing?: string | null;
+  onFolder(path: string): void;
   onGo(step: Step): void;
-  onSkip(step: Step): void;
   onRecheck(): void;
-  onSaveProfile(): void;
+  onSaveFolder(create?: boolean): void;
+  onRunSample(): void;
   onFinish(): void;
-  onDismiss(): void;
 };
 
-// One step at a time. Everything it shows comes from the same checks as `atrium doctor`.
+// Three short steps: Claude, a folder, and the loop once on a demo repo. Everything it checks is what `atrium doctor`
+// checks.
 export function StartView(p: ViewProps) {
   const { report, progress } = p;
   const step = progress.step;
   const index = STEPS.indexOf(step);
   const blocked = claudeBlocks(report);
-  const next = nextStep(step);
+  const claude = report.agents.find((a) => a.id === "claude")!;
   return (
     <div className="wrap start">
       <h1>Get started</h1>
-      <p className="brief">
-        Step {index + 1} of {STEPS.length} · {STEP_TITLES[step]}
-      </p>
+      <ol className="start-steps" aria-label="Steps">
+        {STEPS.map((s, i) => (
+          <li key={s} className={i === index ? "on" : i < index ? "past" : ""} aria-current={i === index ? "step" : undefined}>
+            {STEP_TITLES[s]}
+          </li>
+        ))}
+      </ol>
       {p.message && <p className="hint start-message">{p.message}</p>}
 
-      {step === "welcome" && (
+      {step === "claude" && (
         <>
-          <p>Atrium is a command center on your Mac for the AI agents you already use. You describe the work, agents do it in the background, and anything that leaves your Mac waits for your yes.</p>
-          <p className="hint">Next: check your agents, pick optional tools, then choose your name and projects folder. Everything except Claude can be skipped, and you can come back to this from Settings.</p>
-        </>
-      )}
-
-      {step === "agents" && (
-        <>
-          {report.agents.map((a) => (
-            <CheckRow key={a.id} check={a} />
-          ))}
+          <p>Atrium runs your coding tasks through your own Claude CLI, on your Mac: a brief, the work, Atrium's own checks and a fresh review, then you.</p>
+          <CheckRow check={claude} />
           <button className="btn" onClick={p.onRecheck} disabled={p.busy}>
             Check again
           </button>
-          {blocked && <p className="hint">Claude is required before you can finish. {blocked}</p>}
+          <h2>Optional, any time</h2>
+          <Optional checks={[...report.agents.filter((a) => !a.required), report.github]} />
         </>
       )}
 
-      {step === "tools" && (
-        <>
-          <CheckRow check={report.github} />
-          <button className="btn" onClick={p.onRecheck} disabled={p.busy}>
-            Check again
-          </button>
-        </>
-      )}
-
-      {step === "profile" && (
+      {step === "folder" && (
         <form
           className="mk-form"
           onSubmit={(e) => {
             e.preventDefault();
-            p.onSaveProfile();
+            p.onSaveFolder();
           }}
         >
-          <label>
-            Your name
-            <input value={p.draft.name} placeholder={report.profile.suggestedName ?? "Optional"} onChange={(e) => p.onDraft({ ...p.draft, name: e.target.value })} />
-          </label>
-          <label>
+          <label className="start-folder">
             Projects folder
-            <input value={p.draft.projectsRoot} onChange={(e) => p.onDraft({ ...p.draft, projectsRoot: e.target.value })} />
+            <input value={p.folder} spellCheck={false} onChange={(e) => p.onFolder(e.target.value)} />
           </label>
-          <p className="hint">New projects and clones go in the projects folder.</p>
-          <button className="btn" type="submit" disabled={p.busy}>
-            Save
-          </button>
+          <p className="hint">Where your repos live: Atrium finds them here, and new projects and clones go here. Change it later in Settings.</p>
+          {p.missing && (
+            <p className="start-missing" role="status">
+              {p.missing} doesn't exist yet.
+              <button type="button" className="btn p" disabled={p.busy} onClick={() => p.onSaveFolder(true)}>
+                Create it
+              </button>
+            </p>
+          )}
         </form>
       )}
 
-      {step === "done" && (
-        <>
-          <ul className="start-summary">
-            {report.agents.map((a) => (
-              <li key={a.id}>
-                {a.label}: {a.state === "ready" ? "ready" : a.required ? "needs attention" : "skipped or not ready"}
-              </li>
-            ))}
-            <li>GitHub CLI: {report.github.state === "ready" ? "ready" : "not set up"}</li>
-            <li>Projects folder: {report.profile.projectsRoot}</li>
-          </ul>
-          {progress.skipped.length > 0 && <p className="hint">Skipped: {progress.skipped.map((s) => STEP_TITLES[s]).join(", ")}. Find them again in Settings → Get started.</p>}
-          {blocked && <p className="hint">Claude is required before you can finish. {blocked}</p>}
-        </>
+      {step === "sample" && (
+        <form
+          className="start-sample"
+          onSubmit={(e) => {
+            e.preventDefault();
+            p.onRunSample();
+          }}
+        >
+          <p>
+            Watch the loop once. Atrium copies a tiny demo repo with one failing test into its own folder, and your Claude CLI fixes it on its cheapest model: brief, write, checks, review, walkthrough, ready.
+          </p>
+          <label className="start-ask">
+            <span className="sr-only">The sample's ask</span>
+            <input value={p.sample.ask} readOnly autoFocus />
+            <button className="btn p" type="submit" disabled={p.busy || blocked !== null}>
+              <Play />
+              Run it
+            </button>
+          </label>
+          <p className="hint">
+            {p.sample.seconds <= 60 ? "About a minute" : `About ${Math.ceil(p.sample.seconds / 60)} minutes`} and around {p.sample.cents}¢ at Anthropic's list prices (your subscription doesn't bill per token). Your own repos aren't touched.
+          </p>
+        </form>
       )}
 
+      {blocked && step !== "claude" && <p className="hint">Claude comes first. {blocked}</p>}
+
       <div className="start-nav">
-        {index > 0 && step !== "done" && (
+        {index > 0 && (
           <button className="btn" onClick={() => p.onGo(prevStep(step))}>
             Back
           </button>
         )}
-        {step === "done" && (
-          <button className="btn" onClick={() => p.onGo("profile")}>
-            Back
+        {step === "sample" ? (
+          <button className="btn link" onClick={p.onFinish}>
+            Skip, go to Home
           </button>
-        )}
-        {step !== "done" && (
-          <button className="btn link" onClick={p.onDismiss}>
-            Skip for now
-          </button>
-        )}
-        {canSkip(step) && (
-          <button className="btn link" onClick={() => p.onSkip(step)}>
-            Skip
-          </button>
-        )}
-        {step !== "done" && (
-          <button className="btn primary" onClick={() => p.onGo(next)} disabled={next === "done" && blocked !== null}>
+        ) : (
+          <button className="btn primary" onClick={() => (step === "folder" ? p.onSaveFolder() : p.onGo(nextStep(step)))} disabled={blocked !== null || p.busy}>
             Next
-          </button>
-        )}
-        {step === "done" && (
-          <button className="btn primary" onClick={p.onFinish} disabled={blocked !== null}>
-            Open home
           </button>
         )}
       </div>
@@ -174,16 +206,17 @@ export function StartView(p: ViewProps) {
 }
 
 export function GetStarted() {
-  const [data, setData] = useState<{ report: Report; progress: Progress } | null>(null);
-  const [draft, setDraft] = useState<ProfileDraft>({ name: "", projectsRoot: "" });
+  const [data, setData] = useState<{ report: Report; progress: Progress; sample: Sample } | null>(null);
+  const [folder, setFolder] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [missing, setMissing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true);
-    const res = await fetch("/api/start").then((r) => r.json() as Promise<{ report: Report; progress: Progress }>);
+    const res = await fetch("/api/start").then((r) => r.json() as Promise<{ report: Report; progress: Progress; sample: Sample }>);
     setData(res);
-    setDraft((d) => (d.projectsRoot ? d : { name: res.report.profile.name ?? res.report.profile.suggestedName ?? "", projectsRoot: res.report.profile.projectsRoot }));
+    setFolder((f) => f || res.report.profile.projectsRoot);
     setBusy(false);
   }, []);
   // Opening Get started again (from Settings or by hand) lifts an earlier "Skip for now".
@@ -191,35 +224,47 @@ export function GetStarted() {
 
   if (!data) return <div className="wrap"><p className="brief">Checking your Mac…</p></div>;
 
-  const save = async (change: Record<string, unknown>) => {
-    const res = await put<Progress>("/api/start", change);
+  const go = async (step: Step) => {
+    const res = await put<Progress>("/api/start", { step });
     if (res.ok) {
       setData({ ...data, progress: res.data });
       setMessage(null);
     } else setMessage(res.error);
-    return res.ok;
   };
   return (
     <StartView
       report={data.report}
       progress={data.progress}
-      draft={draft}
+      folder={folder}
+      sample={data.sample}
       message={message}
       busy={busy}
-      onDraft={setDraft}
-      onGo={(step) => void save({ step })}
-      onSkip={(step) => void save({ skip: step, step: nextStep(step) })}
-      onRecheck={() => void load()}
-      onSaveProfile={async () => {
-        const res = await put("/api/profile", { name: draft.name, projectsRoot: draft.projectsRoot });
-        setMessage(res.ok ? "Saved." : res.error);
-        await load();
+      onFolder={(path) => {
+        setFolder(path);
+        setMissing(null);
       }}
-      onDismiss={async () => {
-        if (await save({ dismiss: true })) navigate("/");
+      onGo={(step) => void go(step)}
+      onRecheck={() => void load()}
+      missing={missing}
+      onSaveFolder={async (create) => {
+        const res = await put<{ missing?: string }>("/api/profile", { projectsRoot: folder, ...(create ? { create: true } : {}) });
+        if (!res.ok) return setMessage(res.error);
+        // Not there yet: nothing was saved, and the step offers to make it before moving on.
+        if (res.data.missing) return setMissing(res.data.missing);
+        setMissing(null);
+        await go("sample");
+      }}
+      onRunSample={async () => {
+        setBusy(true);
+        const res = await post<{ spaceId: string; taskId: string }>("/api/start/sample");
+        setBusy(false);
+        if (!res.ok) return setMessage(res.error);
+        navigate(`/space/${res.data.spaceId}?task=${res.data.taskId}`);
       }}
       onFinish={async () => {
-        if (await save({ done: true })) navigate("/");
+        const res = await put<Progress>("/api/start", { done: true });
+        if (res.ok) navigate("/");
+        else setMessage(res.error);
       }}
     />
   );

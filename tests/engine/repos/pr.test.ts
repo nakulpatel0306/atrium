@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApproval } from "../../../src/engine/approvals";
+import { createApproval, reopenDecision, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { gitSettingsFingerprint } from "../../../src/engine/git";
 import { listActivity } from "../../../src/engine/events";
@@ -122,7 +122,7 @@ test("Push and open PR pushes the branch to the remote read before the run and o
   expect(readFileSync(cwdLog, "utf8")).not.toContain(path);
   expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/1");
   expect(listActivity(db).map((a) => a.message)).toContain("Opened pull request https://github.com/fakeuser/app/pull/1");
-  // The yes is on record as Nakul's own, for a push only he can decide.
+  // The yes is on record as the user's own, for a push only they can decide.
   expect(pushApprovals()).toEqual([expect.objectContaining({ status: "approved", decided_by: "you", rule_id: null, task_id: task.id })]);
   const create = gh.argv().find((a) => a[0] === "pr")!;
   expect(create).toEqual(["pr", "create", "--repo=fakeuser/app", `--head=${branch}`, "--base=main", "--title=Add a footer", "--body=Opened from Atrium."]);
@@ -207,7 +207,7 @@ test("repo settings that changed since the run stop the push in plain words", as
 test("the approved commit is what goes out, named in the approval, and a stale confirm is refused", async () => {
   const { path, task, branch } = await finishedTask();
   const approved = git(path, "rev-parse", branch);
-  // A later commit on the branch isn't what Nakul approved.
+  // A later commit on the branch isn't what the user approved.
   db.query("UPDATE approvals SET status = 'approved', branch_head = ?, resolved_at = 2 WHERE task_id = ? AND kind = 'review'").run(approved, task.id);
   git(path, "checkout", "-q", branch);
   writeFileSync(join(path, "later.txt"), "later\n");
@@ -219,6 +219,31 @@ test("the approved commit is what goes out, named in the approval, and a stale c
   await openPullRequest(db, task.id, { title: "t", body: "b", sha: approved });
   expect(git(join(gh.remotes, "fakeuser", "app.git"), "rev-parse", branch)).toBe(approved);
   expect((db.query("SELECT detail FROM approvals WHERE always_ask = 'push'").get() as { detail: string }).detail).toBe(`Commit ${approved.slice(0, 7)}, pull request into main: t`);
+});
+
+test("an approval the user took back no longer names the commit that goes out", async () => {
+  const { path, task, branch } = await finishedTask();
+  const approved = git(path, "rev-parse", branch);
+  db.query("UPDATE approvals SET status = 'approved', branch_head = ?, resolved_at = 2, undone_at = 3 WHERE task_id = ? AND kind = 'review'").run(approved, task.id);
+  git(path, "checkout", "-q", branch);
+  writeFileSync(join(path, "later.txt"), "later\n");
+  git(path, "add", "-A");
+  git(path, "commit", "-q", "-m", "later");
+  git(path, "checkout", "-q", "main");
+  expect(await prInfo(db, task.id)).toMatchObject({ sha: git(path, "rev-parse", branch) });
+});
+
+test("an Undo that lands while a push gets ready stops the push", async () => {
+  const { task } = await finishedTask();
+  const review = db.query("SELECT id FROM approvals WHERE task_id = ? AND kind = 'review'").get(task.id) as { id: string };
+  resolveApproval(db, review.id, "approve");
+  const sha = await shaFor(db, task.id);
+  const err = await openPullRequest(db, task.id, { title: "t", body: "b", sha }, { beforeRecord: () => void reopenDecision(db, review.id) }).catch((e) => e);
+  expect(err).toBeInstanceOf(PushRefused);
+  expect((err as Error).message).toContain("went back to review");
+  expect(pushApprovals()).toHaveLength(0);
+  expect(gh.argv()).toEqual([]);
+  expect(getTask(db, task.id)!.status).toBe("review");
 });
 
 test("a double submit records one yes and pushes once", async () => {

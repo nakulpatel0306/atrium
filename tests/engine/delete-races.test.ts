@@ -41,7 +41,7 @@ function finishedTaskThatMade(spaceId: string, file: string, body: string) {
   return task;
 }
 
-// R1: deleting a task removes a file it made even after Nakul edited it by hand (size no longer matches the record).
+// R1: deleting a task removes a file it made even after the user edited it by hand (size no longer matches the record).
 test("R1 deleteTask keeps a made file that was edited since the run", async () => {
   const space = createSpace(db, { name: "Notes", kind: "general", goal: "g" });
   mkdirSync(space.folder!, { recursive: true });
@@ -142,9 +142,9 @@ test("a queued file removal re-checks the file on boot and keeps one changed sin
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, "a.md"), "abc");
   queueDelete(db, "file", "a.md", root, { size: 3, mtimeMax: Date.now() + 2000 });
-  writeFileSync(join(root, "a.md"), "Nakul's own words now");
+  writeFileSync(join(root, "a.md"), "My own words now");
   await finishPendingDeletes(db);
-  expect(readFileSync(join(root, "a.md"), "utf8")).toBe("Nakul's own words now");
+  expect(readFileSync(join(root, "a.md"), "utf8")).toBe("My own words now");
   expect(db.query("SELECT COUNT(*) AS n FROM pending_deletes").get()).toEqual({ n: 0 });
 });
 
@@ -209,7 +209,7 @@ test("the result says where the folder went", async () => {
 test("a folder Atrium never made, or one swapped in since, is left alone", async () => {
   const never = createSpace(db, { name: "Never ran", kind: "general", goal: "g" });
   mkdirSync(never.folder!, { recursive: true });
-  writeFileSync(join(never.folder!, "mine.md"), "Nakul made this folder himself");
+  writeFileSync(join(never.folder!, "mine.md"), "I made this folder myself");
   expect((await deleteSpace(db, never.id, "Never ran")).message).toBe(`Deleted "Never ran". Atrium never made ${tildePath(never.folder!)}, so it left it where it is.`);
   expect(existsSync(join(never.folder!, "mine.md"))).toBe(true);
 

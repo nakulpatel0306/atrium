@@ -1,7 +1,7 @@
 import AppKit
 import ServiceManagement
 
-// The menu is rebuilt only when Nakul opens it; between opens the status item just shows the count.
+// The menu is rebuilt only when the user opens it; between opens the status item just shows the count.
 @MainActor
 final class StatusMenu: NSObject, NSMenuDelegate {
   private let client: EngineClient

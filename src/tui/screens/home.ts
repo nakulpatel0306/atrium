@@ -2,9 +2,11 @@
 // 100 columns).
 import { agentText } from "../../dashboard/agents";
 import { askLine } from "../../engine/needs";
+import { waited } from "../../dashboard/queue";
+import { KIND } from "../../engine/words";
 import { askSteps } from "../keys";
-import { duration, relative } from "../../dashboard/format";
-import { liveStatus } from "../../dashboard/summary";
+import { duration } from "../../dashboard/format";
+import { liveStatus, reviewLine } from "../../dashboard/summary";
 import { outcomeText } from "../../engine/outcome";
 import { type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
 import { wrapStyled } from "../detail";
@@ -27,7 +29,11 @@ type Card = { id: string; glyph: string; tone: Tone; title: string; meta: Line; 
 
 const RIGHT = 36;
 
-function cardsOf(view: View, now: number, inner: number): Card[] {
+// How long an item has waited, from the queue's own time (needs.ts) and in the dashboard's words, so asking a paused
+// task to explain itself doesn't reset it.
+const waiting = (since: number, now: number) => (waited(since, now) === "now" ? "just now" : `waiting ${waited(since, now)}`);
+
+export function cardsOf(view: View, now: number, inner: number): Card[] {
   const { state } = view;
   const names = new Map(state.spaces.map((s, i) => [s.id, { name: s.name, i }]));
   const owner = (spaceId: string | null): Line => {
@@ -38,42 +44,83 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
   const dot = { text: "  ·  ", color: "faint" } as const;
   const open: CardKey = { key: "↵", label: "Read", input: "\r" };
   const cards: Card[] = [];
-  for (const t of view.asking) {
-    const questions = t.loop!.questions;
-    cards.push({
-      id: t.id,
-      glyph: "?",
-      tone: "info",
-      title: t.title,
-      meta: [...owner(t.spaceId), dot, { text: `asks before it starts · ${relative(t.updatedAt, now)}`, color: "faint" }],
-      body: wrapStyled([{ text: oneLine(questions.length ? questions.map((q) => q.question).join("  ") : askLine(t)), color: "dim" }], inner).slice(0, 2),
-      keys: [{ key: "a", label: askSteps(t).length > 1 ? "Answer them" : "Answer", input: "a", hot: true }, { key: "↵", label: "Open", input: "\r" }],
-    });
-  }
-  for (const p of view.proposals) {
-    cards.push({
-      id: p.id,
-      glyph: GLYPH.suggestion,
-      tone: "info",
-      title: `Stop asking about ${p.label}?`,
-      meta: [...owner(p.spaceId), dot, { text: `You approved the last ${p.evidence.length} without changes`, color: "faint" }],
-      body: [[{ text: "Atrium would approve these on its own. It still never merges or pushes.", color: "dim" }]],
-      keys: [{ key: "y", label: "Yes", input: "y", hot: true }, { key: "n", label: "Not now", input: "n" }, { key: "N", label: "Never", input: "N" }, open],
-    });
-  }
-  for (const a of view.approvals) {
+  // In the queue's order: longest-blocked first, low-priority items last.
+  for (const item of view.queue) {
+    if (item.kind === "question" || item.kind === "pick" || item.kind === "stuck") {
+      const t = state.tasks.find((x) => x.id === item.key)!;
+      const questions = t.loop!.questions;
+      cards.push({
+        id: t.id,
+        glyph: "?",
+        tone: "info",
+        title: t.title,
+        meta: [...owner(t.spaceId), dot, { text: `${KIND[item.kind].label} · ${waiting(item.since, now)}`, color: "faint" }],
+        body: wrapStyled([{ text: oneLine(questions.length ? questions.map((q) => q.question).join("  ") : askLine(t)), color: "dim" }], inner).slice(0, 2),
+        // A question is answered right here; a pick or a stopped part is decided on its own screen, under the same name.
+        keys: askSteps(t).length
+          ? [{ key: "a", label: KIND.question.action, input: "a", hot: true }, { key: "↵", label: "Open", input: "\r" }]
+          : [{ key: "↵", label: KIND[item.kind].action, input: "\r", hot: true }],
+      });
+      continue;
+    }
+    if (item.kind === "paused" || item.kind === "shape") {
+      const t = state.tasks.find((x) => x.id === item.key)!;
+      const paused = item.kind === "paused";
+      cards.push({
+        id: t.id,
+        glyph: paused ? GLYPH.notdone : GLYPH.suggestion,
+        tone: paused ? "bad" : "info",
+        title: t.title,
+        meta: [...owner(t.spaceId), dot, { text: paused ? `${KIND.paused.label} · ${waiting(item.since, now)}` : `${KIND.shape.label} · low priority`, color: "faint" }],
+        body: wrapStyled([{ text: oneLine(paused ? askLine(t) : (t.loop?.shape?.reason ?? "")), color: paused ? "warn" : "dim" }], inner).slice(0, 2),
+        keys: paused
+          ? [{ key: "↵", label: KIND.paused.action, input: "\r", hot: true }, { key: "e", label: "Explain the problem", input: "e" }]
+          : [{ key: "↵", label: "Open", input: "\r" }, { key: "x", label: "Stop", input: "x" }],
+      });
+      continue;
+    }
+    if (item.kind === "memory") {
+      const m = state.learning.memory.find((x) => x.id === item.key)!;
+      cards.push({
+        id: m.id,
+        glyph: GLYPH.suggestion,
+        tone: "info",
+        title: "Add a line to CLAUDE.md?",
+        meta: [...owner(m.spaceId), dot, { text: `${KIND.memory.label} · low priority`, color: "faint" }],
+        body: wrapStyled([{ text: oneLine(m.line), color: "dim" }], inner).slice(0, 2),
+        keys: [{ key: "y", label: KIND.memory.action, input: "y", hot: true }, { key: "n", label: "Not this", input: "n" }],
+      });
+      continue;
+    }
+    if (item.kind === "suggestion") {
+      const p = state.proposals.find((x) => x.id === item.key)!;
+      cards.push({
+        id: p.id,
+        glyph: GLYPH.suggestion,
+        tone: "info",
+        title: `Stop asking about ${p.label}?`,
+        meta: [...owner(p.spaceId), dot, { text: `${KIND.suggestion.label} · you approved the last ${p.evidence.length} without changes`, color: "faint" }],
+        body: [[{ text: "Atrium would approve these on its own. It still never merges or pushes.", color: "dim" }]],
+        keys: [{ key: "y", label: KIND.suggestion.action, input: "y", hot: true }, { key: "n", label: "Not now", input: "n" }, { key: "N", label: "Never", input: "N" }, open],
+      });
+      continue;
+    }
+    const a = state.approvals.find((x) => x.id === item.key)!;
     const task = a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
     if (a.kind === "review") {
       const told = task ? outcomeText(task.outcome, task.outcomeReason) : null;
       const notDone = task?.outcome === "couldnt" || task?.outcome === "partial";
+      const review = reviewLine(a, state);
       cards.push({
         id: a.id,
         glyph: notDone ? GLYPH.notdone : "◆",
         tone: notDone ? "warn" : "accent",
         title: a.title,
-        meta: [...owner(a.spaceId), dot, { text: task ? `${agentText(task, state.runs)} · ${notDone ? "says it isn't done" : "ready for review"} · ${relative(a.createdAt, now)}` : `ready for review · ${relative(a.createdAt, now)}`, color: "faint" }],
-        body: told ? wrapStyled([{ text: told, color: "warn" }], inner).slice(0, 2) : wrapStyled([{ text: oneLine(a.detail.split("\n")[0] ?? ""), color: "dim" }], inner).slice(0, 1),
-        keys: [{ key: "a", label: notDone ? "Accept" : "Approve", input: "a", hot: true }, { key: "r", label: "Send back", input: "r" }, { key: "↵", label: "Open", input: "\r" }, { key: "t", label: "Transcript", input: "t" }],
+        meta: [...owner(a.spaceId), dot, { text: task ? `${KIND.review.label} · ${agentText(task, state.runs)}${notDone ? " · says it isn't done" : ""} · ${waiting(item.since, now)}` : `${KIND.review.label} · ${waiting(item.since, now)}`, color: "faint" }],
+        body: told
+          ? wrapStyled([{ text: told, color: "warn" }], inner).slice(0, 2)
+          : wrapStyled([{ text: oneLine(review?.text ?? a.detail.split("\n")[0] ?? ""), color: review?.tone === "bad" ? "warn" : "dim" }], inner).slice(0, 1),
+        keys: [{ key: "a", label: notDone ? "Accept" : KIND.review.action, input: "a", hot: true }, { key: "s", label: "Send back", input: "s" }, { key: "↵", label: "Open", input: "\r" }, { key: "t", label: "Transcript", input: "t" }],
       });
       continue;
     }
@@ -82,9 +129,9 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
       glyph: "?",
       tone: "info",
       title: a.title,
-      meta: [...owner(a.spaceId), dot, { text: `asks you · ${relative(a.createdAt, now)}`, color: "faint" }],
+      meta: [...owner(a.spaceId), dot, { text: `${KIND.approval.label} · ${waiting(item.since, now)}`, color: "faint" }],
       body: wrapStyled([{ text: oneLine(a.detail.split("\n").find((l) => l.trim()) ?? ""), color: "dim" }], inner).slice(0, 2),
-      keys: [{ key: "a", label: "Approve", input: "a", hot: true }, { key: "r", label: a.spaceId === null ? "Decline" : "Send back", input: "r" }, open],
+      keys: [{ key: "a", label: KIND.approval.action, input: "a", hot: true }, { key: "s", label: a.spaceId === null ? "Decline" : "Send back", input: "s" }, open],
     });
   }
   return cards;
@@ -105,7 +152,8 @@ function cardBlock(c: Card, selected: boolean, cols: number): Block {
 function needsColumn(view: View, ui: Ui, cols: number, rows: number, now: number): Block {
   const cards = cardsOf(view, now, cols - 4);
   const selected = ui.selected.needs.id;
-  const head: Line = [{ text: " " }, label("Needs you"), ...(cards.length ? [{ text: `  ${cards.length}`, color: "accent" as const, bold: true }] : [])];
+  const count = view.queue.filter((i) => !i.low).length;
+  const head: Line = [{ text: " " }, label("Needs you"), ...(count ? [{ text: `  ${count}`, color: "accent" as const, bold: true }] : [])];
   if (!cards.length) {
     return { lines: [head, [], [{ text: ` ${GLYPH.ok} `, color: "ok" }, { text: "You're all caught up." }], [{ text: "   New things to decide show up here as cards.", color: "faint" }]], hits: [] };
   }

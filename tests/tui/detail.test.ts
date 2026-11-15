@@ -25,7 +25,7 @@ test("task detail has the dashboard's facts", () => {
   expect(view.task?.id).toBe(ids.review);
   const lines = taskDetail(view, [msg("claude", "codex", "Please review."), msg("codex", "claude", "Fine.\nVERDICT: approve")]);
   const all = text(lines);
-  for (const s of ["in review", "Branch atrium/", "Heavy · runs when plugged in", "Claude → Codex", "approves", "finished after", "t transcript"]) {
+  for (const s of ["ready for review", "Branch atrium/", "Heavy · runs when plugged in", "Claude → Codex", "approves", "finished after", "t transcript"]) {
     expect(all).toContain(s);
   }
 });
@@ -59,8 +59,8 @@ test("approval detail shows what the checks and the reviewer said, and anything 
     loop: { ...newLoop(SIZE_BUDGETS.medium), checks: "passed", attention: ["This change edits how checks run: package.json."], reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] },
   };
   const all = text(approvalDetail(deriveView(state, { ...initialUi })));
-  expect(all).toContain("Checks passed · reviewed by Codex");
-  expect(all).toContain("Look closely: This change edits how checks run: package.json.");
+  expect(all).toContain("Checks passed · Approved by Codex");
+  expect(all).toContain("Needs a look: This change edits how checks run: package.json.");
   expect(all).toContain("Changed 2 files.");
 });
 

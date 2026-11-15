@@ -71,7 +71,9 @@ export function SteerForm({ state, onEdit, onSend }: ViewProps) {
 // Steering stops the run and starts it again with the note, so the agent keeps its edits but not its train of thought.
 export function SteerTask({ task }: { task: Task }) {
   const [state, dispatch] = useReducer(steerReducer, STEER_START);
-  useEffect(() => dispatch({ type: "status", status: task.status }), [task.status]);
+  useEffect(() => {
+    dispatch({ type: "status", status: task.status });
+  }, [task.status]);
 
   const send = async () => {
     dispatch({ type: "sending" });

@@ -11,7 +11,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     self.open = open
     super.init()
     UNUserNotificationCenter.current().delegate = self
-    // Nakul may turn notifications on in System Settings while the app runs; the menu row should follow.
+    // The user may turn notifications on in System Settings while the app runs; the menu row should follow.
     NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) {
       [weak self] _ in
       MainActor.assumeIsolated { self?.refresh() }
@@ -57,7 +57,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     await MainActor.run { open(path) }
   }
 
-  // Nakul is already looking at the dashboard when the window is key, so a banner would only repeat it.
+  // The user is already looking at the dashboard when the window is key, so a banner would only repeat it.
   nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
     -> UNNotificationPresentationOptions
   {

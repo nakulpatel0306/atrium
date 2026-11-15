@@ -155,7 +155,7 @@ export function parseSpacePlan(text: string, projectsRoot = defaultProjectsRoot(
 }
 
 // The agent's reply is untrusted: a new-project reply is reduced to the four draft fields, each normalised to a
-// safe value, and can only ever become a draft waiting for Nakul.
+// safe value, and can only ever become a draft waiting for the user.
 export function parseSetupReply(
   text: string,
   projectsRoot = defaultProjectsRoot(),
@@ -253,7 +253,7 @@ export async function setupSpace(
       return { space, tasks: onCreate ? onCreate(space, tasks) : tasks };
     })();
   } catch (e) {
-    // A refused file has its own reason and fix; hiding it behind "try again" would send Nakul round the slow setup for nothing.
+    // A refused file has its own reason and fix; hiding it behind "try again" would send the user round the slow setup for nothing.
     if (e instanceof SetupFailed || e instanceof AttachRefused) throw e;
     throw new SetupFailed("Couldn't set that up. Try describing it again.", e);
   }

@@ -23,7 +23,7 @@ export async function reposRoute(db: Database, repos: Repos, req: Request, url: 
       if (e instanceof BadDraft) throw new HttpError(400, e.message);
       throw e;
     }
-    // His edits and his yes land together: the approval he decides on is exactly what will be created.
+    // The user's edits and yes land together: the approval they decide on is exactly what will be created.
     db.transaction(() => {
       updateDraft(db, action.id, draft);
       resolveApproval(db, action.approvalId, "approve");

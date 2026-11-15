@@ -73,7 +73,7 @@ export function agentEnv(base: Record<string, string | undefined>): Record<strin
   return env;
 }
 
-// gh wherever it's installed, so a run can't use Nakul's GitHub login even through a path the env still names.
+// gh wherever it's installed, so a run can't use the user's GitHub login even through a path the env still names.
 function ghBinaries(): string[] {
   const found = [Bun.which(config().ghBin), "/opt/homebrew/bin/gh", "/usr/local/bin/gh"].filter((p): p is string => !!p && existsSync(p));
   return [...new Set(found.map((p) => realpathSync(p)))];

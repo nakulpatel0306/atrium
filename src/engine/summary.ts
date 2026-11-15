@@ -4,19 +4,23 @@ import { listPendingProposals } from "./autonomy/proposals";
 import { taskFiles } from "./outputs/store";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
-import { askLine, asksBeforeStarting } from "./needs";
-import { getTask, listTasks } from "./tasks";
+import { askLine, attentionQueue } from "./needs";
+import { KIND } from "./words";
+import { openLines } from "./memory";
+import { listTasks } from "./tasks";
 
 // `files` is how many files a review's task made (0 for everything else), so the notification can say so.
-// `outcome` is what a review's agent said when it wasn't plainly done.
+// `outcome` is what a review's agent said when it wasn't plainly done. `label` is the item's kind in the shared words
+// (words.ts), which a notification's title uses.
 export type Need = {
   id: string;
-  kind: "review" | "question" | "suggestion";
+  kind: "review" | "question" | "suggestion" | "paused";
   title: string;
   spaceName: string;
   path: string;
   files: number;
   outcome: "partial" | "couldnt" | "unknown" | null;
+  label: string;
 };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
 export type Summary = {
@@ -30,50 +34,40 @@ const STOPPED_LIMIT = 20;
 
 const pathFor = (spaceId: string, taskId: string | null) => (taskId ? `/space/${spaceId}?task=${taskId}` : `/space/${spaceId}`);
 
-// The Mac app's badge, menu and notifications; small enough to refetch on every change. Only active spaces count,
-// and "stop asking about this?" suggestions and tasks asking before they start count like approvals, so the badge
-// matches the dashboard's Needs you (needs.ts).
+// The Mac app's badge, menu and notifications; small enough to refetch on every change. Built on the one queue
+// (needs.ts), so the badge matches the dashboard's Needs you: only active spaces, and only items that hold something
+// up. The menu lists them newest first, as notifications arrive.
 export function summary(db: Database): Summary {
-  const names = new Map(listSpaces(db).map((s) => [s.id, s.name]));
-  // An Atrium-wide question (a new repo, removing a local copy) belongs to no space and is answered from Home.
-  const approvals = listPending(db)
-    .filter((a) => a.spaceId === null || names.has(a.spaceId))
-    .map((a) => {
-      const told = a.kind === "review" && a.taskId ? getTask(db, a.taskId)?.outcome : null;
-      const extra = { outcome: told && told !== "done" ? told : null };
-      return {
-      at: a.createdAt,
-      need: ({ ...(a.spaceId === null
-        ? { id: a.id, kind: a.kind, title: a.title, spaceName: "Atrium", path: "/", files: 0 }
-        : {
-            id: a.id,
-            kind: a.kind,
-            title: a.title,
-            spaceName: names.get(a.spaceId)!,
-            path: pathFor(a.spaceId, a.taskId),
-            files: a.kind === "review" && a.taskId ? taskFiles(db, a.taskId).filter((f) => f.change !== "deleted").length : 0,
-          }), ...extra }) as Need,
-      };
-    });
-  // Suggestions are answered from Home's Needs you list, not from a space.
-  const suggestions = listPendingProposals(db)
-    .filter((p) => names.has(p.spaceId))
-    .map((p) => ({
-      at: p.createdAt,
-      need: { id: p.id, kind: "suggestion", title: `Stop asking about ${p.label}?`, spaceName: names.get(p.spaceId)!, path: "/", files: 0, outcome: null } as Need,
-    }));
-  // Tasks whose brief asks something before the writer starts; answered on the task or in Needs you.
-  const all = listTasks(db);
-  const asking = all
-    .filter((t) => asksBeforeStarting(t, all) && names.has(t.spaceId))
-    .map((t) => ({
-      at: t.updatedAt,
-      need: { id: t.id, kind: "question", title: `${t.title}: ${askLine(t)}`, spaceName: names.get(t.spaceId)!, path: pathFor(t.spaceId, t.id), files: 0, outcome: null } as Need,
-    }));
-  // Stable sort keeps each list's own tie order when two land in the same millisecond.
-  const needs = [...approvals, ...suggestions, ...asking].sort((a, b) => b.at - a.at).map((x) => x.need);
-  const stopped = listTasks(db, { status: ["failed", "blocked"] })
-    .filter((t) => t.kind === "work" && names.has(t.spaceId))
+  const spaces = listSpaces(db);
+  const names = new Map(spaces.map((s) => [s.id, s.name]));
+  const approvals = listPending(db);
+  const proposals = listPendingProposals(db);
+  const tasks = listTasks(db);
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const queue = attentionQueue({ spaces, approvals, proposals, tasks, learning: { memory: openLines(db) } }).filter((i) => !i.low);
+  // Stable: a tie keeps the queue's order, which keeps each list's own.
+  const needs = [...queue]
+    .sort((a, b) => b.since - a.since)
+    .map((i): Need => ({ ...need(i), label: KIND[i.kind].label }));
+  function need(i: (typeof queue)[number]): Omit<Need, "label"> {
+      const spaceName = i.spaceId === null ? "Atrium" : names.get(i.spaceId)!;
+      if (i.kind === "review" || i.kind === "approval") {
+        const a = approvals.find((x) => x.id === i.key)!;
+        // An Atrium-wide question (a new repo, removing a local copy) belongs to no space and is answered from Home.
+        if (a.spaceId === null) return { id: a.id, kind: a.kind, title: a.title, spaceName, path: "/", files: 0, outcome: null };
+        const told = a.kind === "review" && a.taskId ? byId.get(a.taskId)?.outcome : null;
+        const files = a.kind === "review" && a.taskId ? taskFiles(db, a.taskId).filter((f) => f.change !== "deleted").length : 0;
+        return { id: a.id, kind: a.kind, title: a.title, spaceName, path: pathFor(a.spaceId, a.taskId), files, outcome: told && told !== "done" ? told : null };
+      }
+      // Suggestions are answered from Home's Needs you list, not from a space.
+      if (i.kind === "suggestion") return { id: i.key, kind: "suggestion", title: `Stop asking about ${proposals.find((p) => p.id === i.key)!.label}?`, spaceName, path: "/", files: 0, outcome: null };
+      const t = byId.get(i.taskId!)!;
+      return { id: t.id, kind: i.kind === "paused" ? "paused" : "question", title: `${t.title}: ${askLine(t)}`, spaceName, path: pathFor(t.spaceId, t.id), files: 0, outcome: null };
+  }
+  const asking = new Set(queue.map((i) => i.taskId));
+  // A paused task is already in needs; listing it as stopped too would notify twice.
+  const stopped = tasks
+    .filter((t) => (t.status === "failed" || t.status === "blocked") && t.kind === "work" && names.has(t.spaceId) && !asking.has(t.id))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, STOPPED_LIMIT)
     .map(
