@@ -29,6 +29,9 @@ describe("reading proposals", () => {
     expect(cleanLine("Run it‮ reversed")).toBeNull();
     expect(cleanLine("")).toBeNull();
     expect(cleanLine("Use bun\ttest")).toBe("Use bun test");
+    // Letters, digits, punctuation and symbols from any script pass; an accent typed apart is composed first.
+    expect(cleanLine("Montants en centimes, jamais en flottants → `toCents()` ✓")).toBe("Montants en centimes, jamais en flottants → `toCents()` ✓");
+    expect(cleanLine("Re\u0301sume\u0301 the cache")).toBe("Résumé the cache");
   });
 
   test("a line with hidden characters is refused, from the model or from the user's edit", async () => {
@@ -45,6 +48,14 @@ describe("reading proposals", () => {
       "Use \u0378cents", // unassigned
       "Use\ncents", // a second line
       "Use\u0007cents", // a control character
+      "Use\u00a0cents", // a no-break space, which isn't a plain space
+      "Use cents\ufe0f", // a variation selector
+      "Use cents\u{e0100}", // a supplementary variation selector
+      "Use\u3164cents", // a Hangul filler, a letter that shows as nothing
+      "Use\u115fcents",
+      "Use\uffa0cents",
+      "Use\u2800cents", // the blank braille pattern, a symbol that shows as nothing
+      "Use c\u0336ents", // a combining mark with no letter to compose with
     ]) {
       expect(cleanLine(hidden)).toBeNull();
       // A reply's LINE is its own line, so a break only ends it there.

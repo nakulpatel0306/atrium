@@ -113,15 +113,20 @@ export function parseProposal(text: string): string | null {
   return null;
 }
 
-const HIDDEN = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}]/u;
+// What a CLAUDE.md line may hold: letters, digits, punctuation and symbols, with ASCII spaces and tabs between them.
+// An allowlist, since a denylist misses invisible characters that count as letters or symbols.
+const VISIBLE = /^[\p{L}\p{N}\p{P}\p{S} \t]*$/u;
+// Allowed by the classes above, or easily mistaken for them, yet invisible: variation selectors, Hangul fillers, the
+// blank braille pattern, and combining marks (any still left once the text is composed).
+const INVISIBLE = /[\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}\u{115F}\u{1160}\u{3164}\u{FFA0}\u{2800}\p{M}]/u;
 
-// One line of plain text, as the model proposed it or the user edited it; null when it can't be one. Anything that
-// could hide text from the user who read the line, or carry it past them to an agent, is refused: controls and line
-// breaks, format characters (bidi overrides, zero-width and tag characters), private-use and unassigned code points.
-// Plain spaces and tabs are the only exceptions.
+// One line of plain text, as the model proposed it or the user edited it, or null when it can't be one: nothing in it
+// may hide text from the user who read it, or carry text past them to an agent. Composed (NFC) first, so a letter
+// and its accent count as the one letter they show as.
 export function cleanLine(raw: string): string | null {
-  if (HIDDEN.test(raw.replace(/\t/g, " "))) return null;
-  const line = raw.replace(/[ \t]+/g, " ").trim();
+  const text = raw.normalize("NFC");
+  if (!VISIBLE.test(text) || INVISIBLE.test(text)) return null;
+  const line = text.replace(/[ \t]+/g, " ").trim();
   return line && line.length <= LINE_MAX ? line : null;
 }
 
