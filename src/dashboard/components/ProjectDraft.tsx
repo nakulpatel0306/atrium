@@ -9,7 +9,7 @@ import { draftErrors, draftSummary, folderFor, tildeShown } from "../repos";
 type Approval = State["approvals"][number];
 type Action = State["repoActions"][number];
 
-// A new GitHub repo Atrium drafted. Nakul edits the fields and his "Create repo" is the approval; only the name
+// A new GitHub repo Atrium drafted. The user edits the fields and their Approve is the approval; only the name
 // changes the folder, which always sits in the projects folder.
 export function ProjectDraftRow({ approval, action }: { approval: Approval; action: Action }) {
   const [open, setOpen] = useState(false);
@@ -19,7 +19,7 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
   const problems = draftErrors(fields);
   const invalid = problems.name !== null || problems.description !== null;
   const folder = action.path ? tildeShown(folderFor(action.path, fields.name || "…")) : null;
-  // The engine only checked the drafted name; any other name is checked when he presses Create repo.
+  // The engine only checked the drafted name; any other name is checked when they press Approve.
   const taken = action.folderTaken && fields.name === action.draft!.name;
   const lastTry = approval.detail.match(/^Last try failed: .*$/m)?.[0];
   const set = (patch: Partial<ProjectDraft>) => {

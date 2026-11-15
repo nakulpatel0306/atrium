@@ -200,7 +200,7 @@ test("activity lines keep the task they're about", async () => {
   }
 });
 
-test("today's failures and lines still waiting on Nakul stay above Show more; older ones fold", () => {
+test("today's failures and lines still waiting on the user stay above Show more; older ones fold", () => {
   const routine = Array.from({ length: 8 }, (_, i) => row(at(6, 14, i), `Cloned repo-${i} into ~/dev`));
   const groups = groupActivity(
     feed(
@@ -233,7 +233,7 @@ test("notes about kept or removed files get a line of their own", () => {
   expect(groups.map((g) => g.tone)).toEqual(["notice", "notice"]);
 });
 
-test("a task Nakul stopped folds into its line as stopped by you", () => {
+test("a task the user stopped folds into its line as stopped by you", () => {
   const groups = groupActivity(
     feed(
       row(at(6, 10), "Started: Groceries", { taskId: "tsk_g", actor: "claude" }),

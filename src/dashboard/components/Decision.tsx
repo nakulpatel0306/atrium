@@ -18,7 +18,7 @@ type Outcome = Task["outcome"];
 export type Decision = ReturnType<typeof useDecision>;
 
 // Approve or send back one approval. Needs you, the space's waiting list and a task's detail all decide through
-// this, so a result reads the same and goes to the same endpoint wherever Nakul acts on it.
+// this, so a result reads the same and goes to the same endpoint wherever the user acts on it.
 // `sha` is the commit the screen shows, for a result on a branch: approving binds to exactly that commit, and a branch
 // that moved in the meantime is refused rather than approved unseen.
 export function useDecision(approval: Approval, sha?: string | null) {

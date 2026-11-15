@@ -51,7 +51,7 @@ export type State = {
   runs: RunSummary[];
   approvals: Approval[];
   held: Held[];
-  // Pending "stop asking about this?" suggestions; every rule, newest first; kinds Nakul said never to suggest.
+  // Pending "stop asking about this?" suggestions; every rule, newest first; kinds the user said never to suggest.
   proposals: Proposal[];
   rules: Rule[];
   neverAsk: Proposal[];

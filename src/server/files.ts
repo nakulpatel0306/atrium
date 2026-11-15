@@ -87,7 +87,7 @@ export async function filesRoute(db: Database, req: Request, url: URL): Promise<
       try {
         target = revealable(() => resolveTarget(space.repoPath!, rel), how);
       } catch (e) {
-        // A file a task made exists only on its branch until Nakul checks it out.
+        // A file a task made exists only on its branch until the user checks it out.
         if (e instanceof FileRefused && e.status === 404) {
           throw new HttpError(404, "This file is only on its task branch so far, so Finder can't show it. Check out the branch to see it.");
         }

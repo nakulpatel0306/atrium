@@ -267,7 +267,7 @@ export function spaceDetail(view: View, reviewers: Record<string, string | null>
     const week = state.learning.rollups[space.id];
     if (week) lines.push(blank, heading(`What paid off this week (${week.tasks} tasks)`), ...week.lines.map((l) => plain(l)));
   }
-  // Failures and lines waiting on Nakul always show, past the newest few.
+  // Failures and lines waiting on the user always show, past the newest few.
   const { visible: groups } = visibleGroups(
     groupActivity(state.activity.filter((a) => a.spaceId === space.id), { tasks: state.tasks, files: state.activityFiles }),
     SPACE_ACTIVITY,

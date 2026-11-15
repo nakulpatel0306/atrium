@@ -413,7 +413,7 @@ export async function changedFiles(path: string, base: string, branch: string): 
 
 export type BranchFile = { path: string; change: "created" | "changed" | "deleted"; insertions: number | null; deletions: number | null };
 
-// What a task branch changed, for showing Nakul what it made. .env paths are left out: Atrium never shows them.
+// What a task branch changed, for showing the user what it made. .env paths are left out: Atrium never shows them.
 export async function branchFiles(path: string, base: string, branch: string): Promise<BranchFile[]> {
   const flags = ["-c", "core.quotePath=false", "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-z"];
   const range = `${base}...${branch}`;

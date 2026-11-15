@@ -7,7 +7,7 @@ import { absolute, relative } from "../format";
 type Proposal = State["proposals"][number];
 type Space = State["spaces"][number];
 
-// "Stop asking about this?" Only Nakul's yes here turns a habit into a rule.
+// "Stop asking about this?" Only the user's yes here turns a habit into a rule.
 export function ProposalRow({ proposal, space }: { proposal: Proposal; space: Space | undefined }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);

@@ -191,13 +191,13 @@ export function createRunner(deps: {
   const maxConcurrent = deps.maxConcurrent ?? 1;
   const active = new Map<string, { taskId: string; done: Promise<void>; controller: AbortController }>();
   const activeSpaces = new Set<string>();
-  // Tasks Nakul asked to stop, so their aborted run ends blocked with his word rather than back in the queue; and the
+  // Tasks the user asked to stop, so their aborted run ends stopped with their word rather than back in the queue; and the
   // ones whose run did end that way, so stopTask can say so.
   const stopRequested = new Set<string>();
   // What a stop that's part of something else should say in place of "You stopped this task", by task.
   const stopWhy = new Map<string, string>();
   const stoppedByStop = new Set<string>();
-  // The same for a steer: the note Nakul sent, by task, and the tasks whose run did end that way. A steered task's
+  // The same for a steer: the note the user sent, by task, and the tasks whose run did end that way. A steered task's
   // next run opens its transcript with the note (steerMarkers).
   const steerRequested = new Map<string, string>();
   const steeredBySteer = new Set<string>();
@@ -339,7 +339,7 @@ export function createRunner(deps: {
   }
 
   async function tick() {
-    // A run whose task was taken out from under it (Nakul decided on its parent) has nothing left to do.
+    // A run whose task was taken out from under it (the user decided on its parent) has nothing left to do.
     for (const run of active.values()) {
       if (getTask(db, run.taskId)?.status !== "running") run.controller.abort();
     }
@@ -639,7 +639,7 @@ export function createRunner(deps: {
     let cwd: string | null = null;
     try {
       cwd = repo ? repo.path : scratch ? mkdtempSync(join(tmpdir(), "atrium-run-")) : ensureSpaceFolder(db, space);
-      // An empty folder doesn't have the files Nakul attached, so they're copied in where the task says they are.
+      // An empty folder doesn't have the files the user attached, so they're copied in where the task says they are.
       const copied = scratch ? copyAttachments(db, task.id, spaceFolder(space), cwd) : [];
       const runId = newId("run");
       const transcript = openTranscript(runId);
@@ -977,7 +977,7 @@ export function createRunner(deps: {
     }
   }
 
-  // Blocked rather than failed or queued: nothing went wrong, and Retry is how he runs it again. A stop that's part of
+  // Blocked rather than failed or queued: nothing went wrong, and Retry is how the user runs it again. A stop that's part of
   // something else (starting over as another shape, setting parts aside) says that instead, since its saved edits are
   // about to go.
   function stoppedByYou(task: Task, saved: string | null) {
@@ -990,7 +990,7 @@ export function createRunner(deps: {
     if (task.kind === "review") void reviewEnded(task, resolvedAgent(db, task), { status: "error", kind: "failed", message: "You stopped the review." }).catch(report);
   }
 
-  // Back in the queue with the note added to what he asked, so the next run's prompt carries it. The task keeps
+  // Back in the queue with the note added to what the user asked, so the next run's prompt carries it. The task keeps
   // its branch, and the next run checks it out again.
   function steeredByYou(task: Task, note: string) {
     appendTaskDetail(db, task.id, `\n\n${steerBlock(note)}`);
@@ -1078,7 +1078,7 @@ export function createRunner(deps: {
     const run = { runId: r.runId, taskId: r.task.id, spaceId: r.space.id };
     try {
       if (r.repo) {
-        // The repo's git settings changed under the run; nothing more is read from it until Nakul looks.
+        // The repo's git settings changed under the run; nothing more is read from it until the user looks.
         if (r.tampered) return null;
         const files = await branchFiles(r.repo.path, r.repo.start, r.repo.branch);
         const changes = files.map((f) => ({ ...f, size: null }));
@@ -1598,7 +1598,7 @@ async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: nu
   } catch (e) {
     summaryLine = `Couldn't summarise the changes on ${repo.branch}: ${(e as Error).message}`;
   }
-  // Atrium never pushes as Nakul; sharing the branch is his call. A branch with nothing on it has nothing to push.
+  // Atrium never pushes as the user; sharing the branch is their call. A branch with nothing on it has nothing to push.
   return { lines: commits ? [summaryLine, `Branch ${repo.branch} is on your machine. Push it when you're ready.`] : [summaryLine], commits };
 }
 

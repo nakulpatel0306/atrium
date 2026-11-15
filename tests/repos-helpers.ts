@@ -18,7 +18,7 @@ export type FakeGitHub = {
 };
 
 // A fake gh, a temp projects root and a global git config of its own, so no test reaches GitHub or reads
-// Nakul's git identity, signing key or keychain. "https://github.com/" is rewritten to the local bare repos.
+// the user's git identity, signing key or keychain. "https://github.com/" is rewritten to the local bare repos.
 export function fakeGitHub(mode = "ok"): FakeGitHub {
   const saved = Object.fromEntries(VARS.map((v) => [v, process.env[v]]));
   const base = mkdtempSync(join(tmpdir(), "atrium-gh-"));

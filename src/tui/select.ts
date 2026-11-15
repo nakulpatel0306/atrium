@@ -49,7 +49,7 @@ function subjectOf(ui: Ui): Subject {
 export const CLEARED = "";
 
 // Selections are pinned to a row id, so rows arriving or leaving never put a different item under the cursor
-// (pressing `a` must approve what Nakul was looking at). Only an unpinned selection (id null, before the app
+// (pressing `a` must approve what the user was looking at). Only an unpinned selection (id null, before the app
 // pins it) resolves by position; a pinned row that has gone leaves nothing selected.
 export function pick<T extends { id: string }>(
   list: T[],

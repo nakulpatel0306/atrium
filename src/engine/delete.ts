@@ -1,6 +1,6 @@
 // Deleting a space or a task for good. Every row goes in one transaction, children before parents, along with the
 // queue of files to remove; the files go after it commits (see delete-files.ts). Nothing here touches a repo
-// Nakul made, his branches, or GitHub.
+// the user made, their branches, or GitHub.
 import type { Database } from "bun:sqlite";
 import { existsSync, lstatSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -107,7 +107,7 @@ function deleteTaskRows(db: Database, tasks: string[], extraApprovals: string[] 
   if (tasks.length) {
     legacyUnlinkTasks(db, tasks);
     db.query(`UPDATE approvals SET task_id = NULL WHERE task_id IN (${t})${a ? ` AND id NOT IN (${a})` : ""}`).run(...tasks, ...approvals);
-    // Attached files are Nakul's own and stay in the space folder; only the link to the task goes.
+    // Attached files are the user's own and stay in the space folder; only the link to the task goes.
     db.query(`UPDATE attachments SET task_id = NULL WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM run_files WHERE task_id IN (${t})`).run(...tasks);
     db.query(`DELETE FROM checks WHERE task_id IN (${t})`).run(...tasks);
@@ -180,7 +180,7 @@ export type SpaceDeletePreview = {
   history: number;
   // The visible folder and what's in it now; null for a repo space.
   folder: { path: string; files: number; bytes: number; more: boolean } | null;
-  // A repo space's folder: whether Atrium cloned it (removed only if everything is on GitHub) or Nakul did (never touched).
+  // A repo space's folder: whether Atrium cloned it (removed only if everything is on GitHub) or the user did (never touched).
   repo: { path: string; atriumClone: boolean } | null;
   refusal: string | null;
 };
@@ -271,7 +271,7 @@ export type TaskDeletePreview = {
   runs: number;
   // Files its runs created in the space folder, unchanged since, that no other task also recorded; these go.
   files: string[];
-  // Files it made that were changed afterwards (by Nakul or another task); these stay.
+  // Files it made that were changed afterwards (by the user or another task); these stay.
   edited: string[];
   // A repo task's branch, which stays.
   branch: string | null;

@@ -35,7 +35,7 @@ final class OfflineView: NSView {
     button.action = #selector(start)
     error.isHidden = true
     manual.isHidden = true
-    // With everything installed, only a dev port makes the start manual; say so before Nakul presses anything.
+    // With everything installed, only a dev port makes the start manual; say so before the user presses anything.
     if case .manual(let message) = startAction(port: port, plistExists: true, loaded: true, cliKnown: true) {
       showManual(message)
     }

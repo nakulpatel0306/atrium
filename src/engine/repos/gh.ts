@@ -43,7 +43,7 @@ export class GhProblem extends Error {
   constructor(
     readonly kind: GhProblemKind,
     message: string,
-    // gh's or git's own words, for the activity log; Nakul-facing text stays plain.
+    // gh's or git's own words, for the activity log; the user-facing text stays plain.
     readonly raw?: string,
   ) {
     super(message);
@@ -104,7 +104,7 @@ export async function ghCreateRepo(d: ProjectDraft, opts: { timeoutMs?: number }
   return url;
 }
 
-// A reused repo was created with an earlier draft's description; it gets the one Nakul approved this time.
+// A reused repo was created with an earlier draft's description; it gets the one the user approved this time.
 export async function ghEditDescription(slug: string, description: string, opts: { timeoutMs?: number } = {}): Promise<void> {
   validateGithubSlug(slug);
   const res = await runGh(["repo", "edit", slug, `--description=${description}`], opts);

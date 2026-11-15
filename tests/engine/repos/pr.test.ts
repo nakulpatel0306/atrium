@@ -122,7 +122,7 @@ test("Push and open PR pushes the branch to the remote read before the run and o
   expect(readFileSync(cwdLog, "utf8")).not.toContain(path);
   expect(getTask(db, task.id)!.prUrl).toBe("https://github.com/fakeuser/app/pull/1");
   expect(listActivity(db).map((a) => a.message)).toContain("Opened pull request https://github.com/fakeuser/app/pull/1");
-  // The yes is on record as Nakul's own, for a push only he can decide.
+  // The yes is on record as the user's own, for a push only they can decide.
   expect(pushApprovals()).toEqual([expect.objectContaining({ status: "approved", decided_by: "you", rule_id: null, task_id: task.id })]);
   const create = gh.argv().find((a) => a[0] === "pr")!;
   expect(create).toEqual(["pr", "create", "--repo=fakeuser/app", `--head=${branch}`, "--base=main", "--title=Add a footer", "--body=Opened from Atrium."]);
@@ -207,7 +207,7 @@ test("repo settings that changed since the run stop the push in plain words", as
 test("the approved commit is what goes out, named in the approval, and a stale confirm is refused", async () => {
   const { path, task, branch } = await finishedTask();
   const approved = git(path, "rev-parse", branch);
-  // A later commit on the branch isn't what Nakul approved.
+  // A later commit on the branch isn't what the user approved.
   db.query("UPDATE approvals SET status = 'approved', branch_head = ?, resolved_at = 2 WHERE task_id = ? AND kind = 'review'").run(approved, task.id);
   git(path, "checkout", "-q", branch);
   writeFileSync(join(path, "later.txt"), "later\n");

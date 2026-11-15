@@ -31,14 +31,14 @@ export type Approval = {
   detail: string;
   status: "pending" | "approved" | "rejected";
   note: string | null;
-  // The task branch's commit at the moment Nakul decided; null for non-repo work.
+  // The task branch's commit at the moment the user decided; null for non-repo work.
   branchHead: string | null;
   // The action kind the engine saw (see autonomy/kinds.ts); null when no rule could ever cover it.
   fingerprint: string | null;
   decidedBy: "you" | "rule";
   ruleId: string | null;
   undoneAt: number | null;
-  // Set when only Nakul himself may ever decide this; no rule, proposal or auto-approval can.
+  // Set when only the user may ever decide this; no rule, proposal or auto-approval can.
   alwaysAsk: AlwaysAsk | null;
   createdAt: number;
   resolvedAt: number | null;
@@ -134,7 +134,7 @@ export function createApproval(
   return getApproval(db, id)!;
 }
 
-// Only a pending approval grows: once Nakul has decided, what he decided on stays as it was.
+// Only a pending approval grows: once the user has decided, what they decided on stays as it was.
 export function appendApprovalDetail(db: Database, id: string, text: string): void {
   db.query("UPDATE approvals SET detail = detail || ? WHERE id = ? AND status = 'pending'").run(text, id);
   bus.emit({ type: "changed" });
@@ -167,7 +167,7 @@ function taskBranchHead(db: Database, taskId: string | null): string | null {
   return path && task?.branch ? branchHeadSync(path, task.branch) : null;
 }
 
-// With `rule`, one of Nakul's rules is deciding in his place, and a rule can only ever approve. Its `head` is the
+// With `rule`, one of the user's rules is deciding in their place, and a rule can only ever approve. Its `head` is the
 // commit the rule checked, recorded as what was approved. With `atHead`, the user approved the commit the page showed:
 // the branch is read again inside the decision and, if it moved, nothing is decided (HeadMoved); otherwise exactly that
 // commit is what's recorded.
@@ -251,7 +251,7 @@ function decisionLine(db: Database, a: Approval, decision: "approve" | "reject")
   return `Approved: ${a.title}`;
 }
 
-// Nakul himself said yes and hasn't undone it: the only decision that may run a repo action.
+// The user said yes and hasn't undone it: the only decision that may run a repo action.
 export const isOwnYes = (a: Approval): boolean =>
   a.status === "approved" && a.decidedBy === "you" && a.ruleId === null && a.undoneAt === null;
 

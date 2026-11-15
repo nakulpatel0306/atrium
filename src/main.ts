@@ -36,7 +36,7 @@ const runner = createRunner({
   keepAwake,
   repos,
 });
-// The only path to creating, pushing or removing a repo: Nakul's own decision on its approval.
+// The only path to creating, pushing or removing a repo: the user's own decision on its approval.
 onApprovalResolved(repos.onDecision);
 
 // Bind before recovery: the port is the lock, so a second engine leaves the first one's tasks alone.

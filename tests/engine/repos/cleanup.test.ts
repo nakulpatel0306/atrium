@@ -43,7 +43,7 @@ afterEach(() => {
   home.cleanup();
 });
 
-// As main.ts wires it: Nakul's decisions reach the repo executors through the approval listener.
+// As main.ts wires it: the user's decisions reach the repo executors through the approval listener.
 const wired = () => {
   const repos = createRepos({ db, kick: () => {}, holdMs: 0 });
   unsubscribe.push(onApprovalResolved(repos.onDecision));
@@ -149,7 +149,7 @@ for (const [name, setup, reason] of cases) {
   });
 }
 
-test("a folder Nakul made is never Atrium's to remove", async () => {
+test("a folder the user made is never Atrium's to remove", async () => {
   const mine = join(gh.projects, "mine");
   mkdirSync(mine);
   git(mine, "init", "-q");
@@ -181,7 +181,7 @@ test("idle clones are offered for removal once, and a no keeps it quiet for 30 d
   expect(await scanIdleClones(db, declined + DECLINE_QUIET_MS + 86_400_000)).toBe(1);
 });
 
-test("Nakul's yes removes the folder and keeps the space's GitHub link", async () => {
+test("The user's yes removes the folder and keeps the space's GitHub link", async () => {
   const repos = wired();
   const asked = await askToRemove(db, clone.id);
   if (!("approval" in asked)) throw new Error(asked.reasons.join(" "));

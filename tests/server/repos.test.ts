@@ -107,7 +107,7 @@ test("a command that drafts a project returns the draft", async () => {
   expect(body.approval.alwaysAsk).toBe("create_repo");
 });
 
-test("storage lists Atrium's clone and Nakul's own folder, and ask-remove explains a refusal", async () => {
+test("storage lists Atrium's clone and the user's own folder, and ask-remove explains a refusal", async () => {
   const { action } = draft();
   await post(`/api/repo-actions/${action.id}/approve`, fields);
   await repos.settle();

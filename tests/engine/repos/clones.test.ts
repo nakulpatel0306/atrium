@@ -66,7 +66,7 @@ test("an unrelated folder with that name blocks the space's tasks and is left al
   expect(listClones(db)).toEqual([]);
 });
 
-test("a checkout of the same repo is used as Nakul's own folder", async () => {
+test("a checkout of the same repo is used as the user's own folder", async () => {
   seedRemote(gh, "demo");
   const r = Bun.spawnSync(["git", "clone", "-q", "https://github.com/fakeuser/demo.git", join(gh.projects, "demo")], { env: process.env });
   expect(r.exitCode).toBe(0);

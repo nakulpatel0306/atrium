@@ -29,7 +29,7 @@ func madeText(_ n: Int?) -> String? {
   return n == 1 ? "made 1 file" : "made \(n) files"
 }
 
-// Notes only for ids the previous summary didn't have, so a reconnect or wake never repeats what Nakul already saw.
+// Notes only for ids the previous summary didn't have, so a reconnect or wake never repeats what the user already saw.
 // The first summary after launch only seeds: the badge already shows what was waiting.
 // A result the agent didn't finish says so in the title, before anything else.
 func noteTitle(_ n: Need) -> String {
@@ -104,7 +104,7 @@ enum LinkDecision: Equatable {
 }
 
 // Dashboard pages show agent-written text, so a link or script there must not get NSWorkspace to open files or
-// launch other apps. Only a click Nakul made in the main frame leaves the app, and only to the web or mail.
+// launch other apps. Only a click the user made in the main frame leaves the app, and only to the web or mail.
 func linkDecision(_ url: URL, port: Int, userClick: Bool, mainFrame: Bool) -> LinkDecision {
   if isInternal(url, port: port) { return .allow }
   let scheme = url.scheme?.lowercased() ?? ""

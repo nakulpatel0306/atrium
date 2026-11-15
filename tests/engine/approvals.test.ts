@@ -153,7 +153,7 @@ test("a question resolves without a task, and a broken listener changes nothing"
   expect(listActivity(db)[0]!.message).toBe("Approved: Which folder?");
 });
 
-test("a spaceless always-ask question waits for Nakul and no rule can decide it", () => {
+test("a spaceless always-ask question waits for the user and no rule can decide it", () => {
   const a = createApproval(db, { spaceId: null, kind: "question", title: "Create?", detail: "d", alwaysAsk: "create_repo" });
   expect(a.spaceId).toBeNull();
   expect(a.alwaysAsk).toBe("create_repo");
@@ -168,7 +168,7 @@ test("createApproval refuses an always-ask kind with a fingerprint, or a spacele
   expect(() => createApproval(db, { spaceId: null, kind: "review", title: "r", detail: "" })).toThrow();
 });
 
-test("isOwnYes is true only for Nakul's own standing approval", () => {
+test("isOwnYes is true only for the user's own standing approval", () => {
   const mk = () => createApproval(db, { spaceId: null, kind: "question", title: "q", detail: "", alwaysAsk: "create_repo" });
   const pending = mk();
   expect(isOwnYes(pending)).toBe(false);

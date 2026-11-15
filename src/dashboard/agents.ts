@@ -22,11 +22,11 @@ export function agentText(task: Task, runs: Run[]): string {
 export type Wait = State["waits"][string];
 export type WaitKind = Wait["kind"];
 
-// These need Nakul to act (sign in, install, pick another agent); the rest clear up on their own.
+// These need the user to act (sign in, install, pick another agent); the rest clear up on their own.
 const ACTION_KINDS = new Set<WaitKind>(["signed_out", "not_installed", "private_space", "env_files", "gemini_repo"]);
 export const needsAction = (wait: Wait) => ACTION_KINDS.has(wait.kind);
 
-// Most pressing first, for the one-line summaries: what Nakul must fix, then what's simply queued behind something.
+// Most pressing first, for the one-line summaries: what the user must fix, then what's simply queued behind something.
 const PRIORITY: WaitKind[] = [
   "signed_out",
   "not_installed",

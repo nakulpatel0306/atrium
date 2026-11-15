@@ -41,7 +41,7 @@ export type Repos = {
   resumeHeld(now?: number): void;
 };
 
-// The engine's side of repos: what runs after Nakul decides, on-demand clones, and the daily idle check.
+// The engine's side of repos: what runs after the user decides, on-demand clones, and the daily idle check.
 // `holdMs` is how long a yes waits before its work starts, so it can be taken back (UNDO_MS unless a test says less).
 export function createRepos(deps: { db: Database; kick(): void; ghTimeoutMs?: number; holdMs?: number }): Repos {
   const { db, kick } = deps;

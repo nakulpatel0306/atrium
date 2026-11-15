@@ -98,7 +98,7 @@ export function getRule(db: Database, id: string, now = Date.now()): Rule | null
   return row ? toRule(row, now) : null;
 }
 
-// A rule exists only because Nakul said yes to a suggestion: its space and kind come from that suggestion's
+// A rule exists only because the user said yes to a suggestion: its space and kind come from that suggestion's
 // row and nowhere else, and each suggestion makes at most one rule.
 export function createRule(db: Database, proposalId: string, now = Date.now()): Rule {
   const id = newId("rul");
@@ -131,18 +131,18 @@ export function activeRuleFor(db: Database, spaceId: string, fingerprint: string
 }
 
 // Facts are re-read from git by the caller just before this, at one commit; the branch must still be there when the
-// rule decides, so what gets approved is exactly what was classified. Any doubt leaves the item waiting for Nakul.
+// rule decides, so what gets approved is exactly what was classified. Any doubt leaves the item waiting for the user.
 export function applyRule(db: Database, approvalId: string, facts: ActionFacts | null, now = Date.now()): Approval | null {
   let capped = false;
   const result = db.transaction((): Approval | null => {
     const a = getApproval(db, approvalId);
-    // Repo creation, pushing and clone removal are Nakul's alone, whatever else the row says.
+    // Repo creation, pushing and clone removal are the user's alone, whatever else the row says.
     if (a?.alwaysAsk) return null;
     if (a?.status !== "pending" || a.kind !== "review" || !a.fingerprint || !a.spaceId || !facts) return null;
     if (forbiddenFor(facts).length > 0 || fingerprintOf(facts) !== a.fingerprint) return null;
-    // The agent's own words can only ever stop a rule, never start one: anything short of "done" is Nakul's call.
+    // The agent's own words can only ever stop a rule, never start one: anything short of "done" is the user's call.
     if (!a.taskId || getTask(db, a.taskId)?.outcome !== "done") return null;
-    // Once Nakul has sent a task back, or undone a rule's approval of it, only he decides on it again.
+    // Once the user has sent a task back, or undone a rule's approval of it, only they decide on it again.
     const doubted = db
       .query("SELECT 1 FROM approvals WHERE task_id = ? AND id != ? AND (status = 'rejected' OR undone_at IS NOT NULL)")
       .get(a.taskId, a.id);
@@ -155,7 +155,7 @@ export function applyRule(db: Database, approvalId: string, facts: ActionFacts |
       head = facts.sha;
     }
     const rule = activeRuleFor(db, a.spaceId, a.fingerprint, now);
-    // A rule covers results that arrive after it, never ones already waiting when Nakul said yes.
+    // A rule covers results that arrive after it, never ones already waiting when the user said yes.
     if (!rule || rule.createdAt >= a.createdAt) return null;
     // Per space, across all its rules: a burst of automatic approvals is worth a look whichever rule made them.
     const today = db
@@ -206,7 +206,7 @@ export function renewRule(db: Database, id: string, now = Date.now()): Rule {
   return getRule(db, id, now)!;
 }
 
-// Puts the task back in Needs you and turns the rule off: a rule Nakul had to undo is one he doesn't trust.
+// Puts the task back in Needs you and turns the rule off: a rule the user had to undo is one they don't trust.
 export function undoAutoApproval(db: Database, approvalId: string, now = Date.now()): Approval {
   const next = db.transaction((): Approval => {
     const a = getApproval(db, approvalId);

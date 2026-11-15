@@ -16,7 +16,7 @@ import { templateFiles, writeTemplate } from "./templates";
 
 const stagingPath = (actionId: string) => join(config().projectsRoot, `.atrium-new-${actionId}`);
 
-// Runs only after Nakul's own yes. Everything that can fail on this Mac (folder, template, identity, signing) is
+// Runs only after the user's own yes. Everything that can fail on this Mac (folder, template, identity, signing) is
 // done before GitHub is touched, so most failures leave no empty repo behind.
 export async function createProject(db: Database, actionId: string, deps: { kick(): void; ghTimeoutMs?: number }): Promise<RepoAction> {
   const action = getRepoAction(db, actionId);
@@ -81,7 +81,7 @@ export async function createProject(db: Database, actionId: string, deps: { kick
     deps.kick();
     return done;
   } catch (e) {
-    // The staging folder only ever holds files Atrium wrote, so removing it loses nothing of Nakul's.
+    // The staging folder only ever holds files Atrium wrote, so removing it loses nothing of the user's.
     if (staging) rmSync(staging, { recursive: true, force: true });
     const message = e instanceof Error ? e.message : String(e);
     const failed = setActionStatus(db, actionId, "failed", { error: message, remoteUrl: url });

@@ -16,7 +16,7 @@ test("a task's wait comes from the engine, and only while it's still queued", ()
   expect(waitOf(task({ id: "tsk_2" }), s)).toBeNull();
 });
 
-test("waits Nakul has to act on sort first and are marked as such", () => {
+test("waits the user has to act on sort first and are marked as such", () => {
   const sorted = [wait("busy"), wait("reserve"), wait("signed_out"), wait("limited")].sort(byPriority).map((w) => w.kind);
   expect(sorted).toEqual(["signed_out", "limited", "reserve", "busy"]);
   expect(needsAction(wait("env_files"))).toBe(true);

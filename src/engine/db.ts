@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS run_files (
 );
 CREATE INDEX IF NOT EXISTS run_files_task ON run_files(task_id, created_at);
 CREATE INDEX IF NOT EXISTS run_files_space ON run_files(space_id, created_at);
--- Files Nakul attached in the ask bar, stored in the space folder. task_id is set when a task claims them.
+-- Files the user attached in the ask bar, stored in the space folder. task_id is set when a task claims them.
 CREATE TABLE IF NOT EXISTS attachments (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
@@ -263,7 +263,7 @@ function migrate(db: Database): boolean {
   const has = (table: string, column: string) =>
     (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
   // CHECK constraints can't be altered, so an approvals table that predates these is rebuilt.
-  // Repo approvals belong to no space and must always wait for Nakul, so the table gains both constraints.
+  // Repo approvals belong to no space and must always wait for the user, so the table gains both constraints.
   rebuilt = rebuildIfMissing(db, "approvals", "always_ask", (n) => APPROVALS_DDL(n, true)) || rebuilt;
   // And no rule may ever be recorded as deciding one.
   rebuilt = rebuildIfMissing(db, "approvals", "OR decided_by = 'you'", (n) => APPROVALS_DDL(n, true)) || rebuilt;
@@ -288,17 +288,17 @@ function migrate(db: Database): boolean {
   if (!has("spaces", "folder")) db.exec("ALTER TABLE spaces ADD COLUMN folder TEXT");
   // The approval a review or fix reports to, so a late one can't land on a newer approval.
   if (!has("tasks", "approval_id")) db.exec("ALTER TABLE tasks ADD COLUMN approval_id TEXT REFERENCES approvals(id)");
-  // The task branch's commit when Nakul decided, so what he approved stays checkable.
+  // The task branch's commit when the user decided, so what they approved stays checkable.
   if (!has("approvals", "branch_head")) db.exec("ALTER TABLE approvals ADD COLUMN branch_head TEXT");
   // The engine-computed kind of result, so repeated approvals of the same kind can earn a rule. NULL is never counted.
   if (!has("approvals", "fingerprint")) db.exec("ALTER TABLE approvals ADD COLUMN fingerprint TEXT");
-  // Who decided: Nakul, or one of his rules. Only his own decisions count towards a new rule.
+  // Who decided: the user, or one of their rules. Only their own decisions count towards a new rule.
   if (!has("approvals", "decided_by")) {
     db.exec("ALTER TABLE approvals ADD COLUMN decided_by TEXT NOT NULL DEFAULT 'you' CHECK (decided_by IN ('you','rule'))");
   }
   // The rule that approved it, so the rule's page can list and undo what it did.
   if (!has("approvals", "rule_id")) db.exec("ALTER TABLE approvals ADD COLUMN rule_id TEXT REFERENCES autonomy_rules(id)");
-  // When Nakul undid an automatic approval; an undone one is neither evidence nor counted again.
+  // When the user undid an automatic approval; an undone one is neither evidence nor counted again.
   if (!has("approvals", "undone_at")) db.exec("ALTER TABLE approvals ADD COLUMN undone_at INTEGER");
   // Whether a finished run did what its task asks, from the agent's OUTCOME line; NULL for older or unfinished tasks.
   if (!has("tasks", "outcome")) {

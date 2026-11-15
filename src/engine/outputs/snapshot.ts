@@ -13,7 +13,7 @@ export type FileChange = { path: string; change: "created" | "changed" | "delete
 // in full, twice per run); files past it are compared by size and mtime.
 export const SNAPSHOT_LIMITS = { hashBytes: 1_048_576, hashTotalBytes: 64 * 1024 * 1024, maxFiles: 2_000, maxDepth: 8 };
 
-// Dot-entries are tool state (.claude/, .git, .DS_Store), never something an agent made for Nakul, and Atrium
+// Dot-entries are tool state (.claude/, .git, .DS_Store), never something an agent made for the user, and Atrium
 // never reads a .env file to show it.
 export const isHiddenPath = (rel: string): boolean => rel.split("/").some((seg) => seg.startsWith(".")) || isEnvPath(rel);
 

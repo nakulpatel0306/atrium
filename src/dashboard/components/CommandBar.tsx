@@ -73,7 +73,7 @@ export function CommandBar({ space, setupRequest, askRequest = 0 }: Props) {
   }, [setupRequest]);
 
   // Text typed for one place (a new space, or another space's task) shouldn't follow the user elsewhere. Attached
-  // files do: they're what Nakul wants looked at, wherever he ends up sending them.
+  // files do: they're what the user wants looked at, wherever they end up being sent.
   useEffect(() => {
     setForceSetup(false);
     setAgent("auto");
@@ -203,7 +203,7 @@ export function CommandBar({ space, setupRequest, askRequest = 0 }: Props) {
         setFiles([]);
         uploaded.current.clear();
       }
-      // A new project is only a draft until Nakul approves it in Needs you, which lives on Home.
+      // A new project is only a draft until the user approves it in Needs you, which lives on Home.
       if ("draft" in res.data) {
         setMessage({ kind: "info", text: `Drafted "${res.data.draft.draft?.name}". Check it in Needs you and approve to create the repo.` });
         keepMessage.current = space !== null;

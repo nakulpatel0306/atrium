@@ -61,7 +61,7 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
       const res = await client.post<Reply>("/api/command", { text: intent.text });
       if (!res.ok) return said(res, () => "");
       const data = res.data;
-      // A new project is only a draft until Nakul approves it, so there's no space to select yet.
+      // A new project is only a draft until the user approves it, so there's no space to select yet.
       if ("draft" in data) return said(res, () => `Drafted "${data.draft.draft?.name ?? "your project"}". It's waiting in Needs you.`);
       return { ...said(res, () => `Set up ${data.space.name}.`), spaceId: data.space.id };
     }

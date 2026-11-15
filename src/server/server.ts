@@ -279,7 +279,7 @@ export function startServer(deps: Deps): Server<WsData> {
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
 
-    // Stop and continue with Nakul's note: 200 once the task is back in the queue with it; 202 while the agent is still
+    // Stop and continue with the user's note: 200 once the task is back in the queue with it; 202 while the agent is still
     // winding down (it requeues when it exits); 409 when there's no run to steer.
     const steerM = hit("POST", /^\/api\/tasks\/([^/]+)\/steer$/);
     if (steerM) {
@@ -306,7 +306,7 @@ export function startServer(deps: Deps): Server<WsData> {
       return json(await prInfo(db, prInfoM[1]!));
     }
 
-    // Nakul's click on "Push and open PR" is his yes; 409 when the task can't open one or GitHub turns the push
+    // The user's click on "Push and open PR" is their yes; 409 when the task can't open one or GitHub turns the push
     // down, 502 when gh fails.
     const prM = hit("POST", /^\/api\/tasks\/([^/]+)\/pr$/);
     if (prM) {
@@ -380,7 +380,7 @@ export function startServer(deps: Deps): Server<WsData> {
         if (e instanceof HeadMoved) throw new HttpError(409, e.message);
         throw e;
       }
-      // Nakul's decision stands whatever happens here; a suggestion is only ever extra.
+      // The user's decision stands whatever happens here; a suggestion is only ever extra.
       if (b.decision === "approve") {
         try {
           considerProposal(db, id);

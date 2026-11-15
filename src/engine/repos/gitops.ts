@@ -6,7 +6,7 @@ import { ghCredentialFlags, ghProblem } from "./gh";
 const IDENTITY = "Set your git name and email first (git config --global user.name / user.email), then approve again.";
 const UNSIGNED = "Git couldn't sign the first commit, so nothing was pushed. Check your signing key setup, then approve again.";
 
-// The first commit of a new project, as Nakul: his global identity and signing setup, a bare message, no trailers.
+// The first commit of a new project, as the user: their global identity and signing setup, a bare message, no trailers.
 export async function initialCommit(path: string): Promise<string> {
   const init = await git(path, ["init", "-q", "-b", "main"]);
   if (init.code !== 0) throw new Error(`Couldn't set up git in the new folder: ${init.err.trim()}`);

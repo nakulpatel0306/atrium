@@ -9,7 +9,7 @@ import { ghCredentialFlags, GhProblem, ghPrCreate } from "./gh";
 import { PushRefused } from "./push";
 
 // Where a task's pull request would go. Everything comes from what was recorded before the agent ran (the remote,
-// the branch the work started from, the repo's git settings) or when Nakul decided (`sha`, the commit he approved).
+// the branch the work started from, the repo's git settings) or when the user decided (`sha`, the commit they approved).
 // `approvalId` and `status` are what the target was read from, checked again when the push is recorded.
 export type PrTarget = { taskId: string; repoDir: string; branch: string; sha: string; base: string; repo: string; remote: string; fingerprint: string | null; approvalId: string | null; status: string };
 export type PrInfo =
@@ -40,8 +40,8 @@ export async function prTarget(db: Database, taskId: string): Promise<PrTarget |
   if (!task.branch || !run) return { reason: "This task has no branch to open a pull request from." };
   const head = await branchSha(space.repoPath, task.branch);
   if (!head) return { reason: `The branch ${task.branch} isn't in the repo anymore.` };
-  // A decided review recorded the commit Nakul approved; that is what goes out, even if the branch moved since. An
-  // approval he took back doesn't count.
+  // A decided review recorded the commit the user approved; that is what goes out, even if the branch moved since. An
+  // approval they took back doesn't count.
   const approved = db
     .query("SELECT id, branch_head FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'approved' AND undone_at IS NULL AND branch_head IS NOT NULL ORDER BY resolved_at DESC, rowid DESC LIMIT 1")
     .get(task.id) as { id: string; branch_head: string } | null;
@@ -71,7 +71,7 @@ export async function prInfo(db: Database, taskId: string): Promise<PrInfo> {
   return { eligible: true, url, branch: t.branch, sha: t.sha, base: t.base, repo: t.repo, title: getTask(db, taskId)!.title, body: defaultBody(db, taskId) };
 }
 
-// What git said when the remote turned the push down, in words Nakul can act on; null when it wasn't a refusal.
+// What git said when the remote turned the push down, in words the user can act on; null when it wasn't a refusal.
 function refusal(reason: string, t: PrTarget): string | null {
   if (/permission to .* denied|denied to|HTTP 403|error: 403|not allowed to push|insufficient permission|read-only/i.test(reason)) {
     return `Your GitHub account can't push to ${t.repo}. Check that you have write access, then try again.`;
@@ -102,8 +102,8 @@ function ghFailed(e: GhProblem, t: PrTarget): PrFailed {
 // One open at a time per task, so a double click can't record two yeses or push twice.
 const opening = new Set<string>();
 
-// Nakul's click on "Push and open PR" is the yes. It's recorded as an always-ask push approval he decided himself, so
-// the audit trail shows it, and re-read before anything leaves the Mac. `sha` is the commit his confirm step showed;
+// The user's click on "Push and open PR" is the yes. It's recorded as an always-ask push approval they decided themselves, so
+// the audit trail shows it, and re-read before anything leaves the Mac. `sha` is the commit their confirm step showed;
 // if the commit that would go out is a different one, nothing is pushed.
 // `beforeRecord` is a test seam: it runs after the checks and before the push is recorded.
 type PrOptions = { timeoutMs?: number; beforeRecord?: () => void };

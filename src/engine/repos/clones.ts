@@ -62,7 +62,7 @@ export function createCloner(db: Database, kick: () => void): { request(space: S
         logActivity(db, space.id, "atrium", `Cloned ${slug} into ${tildePath(dest)}`);
       })();
     } catch (e) {
-      // Unrecorded, the folder would later pass for Nakul's own checkout; this run made it, so it goes.
+      // Unrecorded, the folder would later pass for the user's own checkout; this run made it, so it goes.
       rmSync(dest, { recursive: true, force: true });
       throw e;
     }
