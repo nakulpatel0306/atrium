@@ -1,0 +1,24 @@
+FINDING low src/cart.ts:9 `Math.round` quietly rounds the total to whole cents, which the spec didn't ask for and which can differ from callers' expectations for fractional prices.
+FINDING low src/cart.ts:8 A NaN or missing `percent` passes through `Math.min`/`Math.max` as NaN, so the total becomes NaN rather than being clamped or rejected.
+FINDING low src/cart.test.ts:1 No test covers the "can't make the total negative" criterion; only the 10% case is tested.
+FINDING low src/cart.ts:6 Rewriting the summing loop as `reduce` is unrelated to the coupon feature and adds churn to the diff.
+
+APPROACH The change adds an optional `Coupon` argument to `total()`, which keeps the no-coupon path returning the plain subtotal. With a coupon, it clamps `percent` to 0–100, multiplies the subtotal by the remaining fraction, and rounds the result to cents. Because the clamp caps the discount at 100%, a coupon alone can't push the total below zero. A new test checks the 10%-on-20 example from the acceptance criteria.
+DECISION Clamp the coupon percentage to 0–100 instead of rejecting out-of-range values REJECTED throwing an error for percentages outside 0–100
+DECISION Apply the coupon to the subtotal with one multiplication and round the result to cents REJECTED a per-item discount calculation
+DECISION Keep `coupon` optional so existing callers are unaffected REJECTED a separate `totalWithCoupon` function
+RISK src/cart.ts:8 A non-numeric `percent` such as NaN is not caught by the clamp and yields a NaN total.
+RISK src/cart.ts:9 Rounding to cents changes the result for any subtotal with more than two decimal places.
+LOOK src/cart.ts:8 The clamp is the part that enforces the "never negative" rule, so check the bounds first.
+LOOK src/cart.ts:9 The return line holds the rounding and the discount math; confirm 20 × 90 / 100 gives 18.
+LOOK src/cart.test.ts:3 This is the only test; no case covers the negative-total path.
+PREDICT What does the change do with a coupon of 150%?
+OPTION It throws an error for any percentage above 100.
+OPTION It clamps the discount to 100%, so the total is 0.
+OPTION It applies the 150% discount, so the total goes negative.
+OPTION It ignores the coupon and returns the plain subtotal.
+ANSWER 2
+
+The acceptance criteria are met. The 10% coupon on 20 gives `Math.round(20 * 90) / 100 = 18`, and the percentage clamp keeps the total from going negative. The findings are minor: a NaN coupon is not guarded, the rounding and the `reduce` rewrite were not requested, and the negative-total case has no test. None of them block merging.
+
+VERDICT: approve

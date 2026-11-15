@@ -128,6 +128,7 @@ const space = (over: Partial<Space> = {}): Space => ({
   unknownKind: false,
   status: "active",
   reviewBy: "auto",
+  learning: "light",
   checks: null,
   budget: null,
   github: null,

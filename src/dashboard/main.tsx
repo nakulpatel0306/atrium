@@ -127,7 +127,7 @@ function App() {
         ) : route.name === "start" ? (
           <GetStarted />
         ) : (
-          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} changes={route.changes} />
+          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} changes={route.changes} at={route.at} />
         )}
         <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} />
         <Toast />

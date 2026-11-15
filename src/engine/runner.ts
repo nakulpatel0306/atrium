@@ -66,6 +66,7 @@ import { planSession, progressNote, type Session } from "./sessions";
 import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./shape";
 import { childrenOf, childState, deleteChildBranches, fanIn, fanOut, judgePrompt, keptNote, parseScores } from "./fanout";
 import { SCOUT_TOOLS, SCOUT_TURNS, scoutFindings, scoutPrompt, scoutSystemPrompt } from "./scouts";
+import { needsWalkthrough, writeWalkthrough } from "./walkthrough-run";
 
 const POWER_CHECK_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -1143,6 +1144,16 @@ export function createRunner(deps: {
     });
     logActivity(db, space.id, resolvedAgent(db, task), readyLine(task), { taskId: task.id });
     await considerRule(approval.id, { filesKept });
+    walkthroughLater(task.id);
+  }
+
+  // The walkthrough of a result the reviewer didn't describe, written on the cheap tier after the work is already
+  // waiting for the user, so it never holds up the result. A failure leaves the card's "Write it" to try again.
+  function walkthroughLater(taskId: string) {
+    const task = getTask(db, taskId);
+    const start = lastRepoRun(db, taskId)?.start;
+    if (!task || !start || !adapters.claude || !needsWalkthrough(db, task)) return;
+    void writeWalkthrough(db, adapters.claude, task, start).catch(report);
   }
 
   // A part or attempt whose loop is done reports to its parent, which decides with the user; it makes no approval.
@@ -1524,6 +1535,8 @@ function buildPrompt(task: Task, space: Space, checks: string[] | null, progress
   if (task.brief) parts.push(...briefSections(task.brief, checks));
   else if (checks) parts.push(checksSection(checks));
   if (space.goal.trim()) parts.push(`Space goal: ${space.goal.trim()}`);
+  // Deep learning: the user reads the writer's reasoning before its edits.
+  if (space.learning === "deep" && space.kind === "repo") parts.push(APPROACH_FIRST);
   if (task.detail.trim()) parts.push(task.brief ? `## What you were asked\n${task.detail.trim()}` : task.detail.trim());
   if (task.loop?.alreadyFailing.length) parts.push(alreadyFailingSection(task.loop.alreadyFailing, "Leave them alone unless the brief asks for them; Atrium won't count them against you."));
   if (scouts) parts.push(scouts);
@@ -1531,6 +1544,8 @@ function buildPrompt(task: Task, space: Space, checks: string[] | null, progress
   if (task.loop?.feedback) parts.push(task.loop.feedback);
   return parts.join("\n\n");
 }
+
+export const APPROACH_FIRST = "## Explain your approach first\nBefore you change anything, say in 2–3 plain sentences how you'll do this and why, so the user can follow your reasoning.";
 
 // A turn in a resumed session, which already holds the brief and everything before: only what's new.
 function resumePrompt(added: string, feedback: string | null): string {

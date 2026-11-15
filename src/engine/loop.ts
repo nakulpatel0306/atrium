@@ -3,6 +3,7 @@
 import type { BriefQuestion, TaskSize } from "./brief";
 import type { Session } from "./sessions";
 import type { Shape } from "./shape";
+import type { Walkthrough } from "./walkthrough";
 
 // A task that fanned out: its parts (a split) or attempts (best-of-N), and what the judge made of the attempts.
 export type Fanout = {
@@ -36,6 +37,7 @@ export type ReviewRound = {
 };
 
 export type Budget = { tokens: number; minutes: number };
+
 export type Pause = { kind: "budget" | "loop"; diagnosis: string };
 
 export type LoopState = {
@@ -104,6 +106,9 @@ export type LoopState = {
   adopted: boolean;
   // Set once the user stepped in after a pause, so the writer goes on with the strong tier's model (tiers.ts).
   escalated: boolean;
+  // The walkthrough of the result for the user (walkthrough.ts); null until the reviewer or the cheap tier writes one,
+  // and when the space's learning is off.
+  walkthrough: Walkthrough | null;
 };
 
 export const MAX_REVIEW_ROUNDS = 2;
@@ -154,6 +159,7 @@ export function newLoop(budget: Budget): LoopState {
     role: null,
     fanout: null,
     adopted: false,
+    walkthrough: null,
   };
 }
 

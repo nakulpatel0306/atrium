@@ -9,6 +9,10 @@ export type ReviewerId = (typeof REVIEWERS)[number];
 // Auto picks a reviewer from another vendor when one can work here, else a fresh Claude session.
 export const REVIEW_CHOICES = ["auto", ...REVIEWERS, "off"] as const;
 export type ReviewChoice = (typeof REVIEW_CHOICES)[number];
+// How much a code space helps the user understand what agents write (docs/loop.md, Learning): nothing, a walkthrough on
+// each result, or that plus a question to answer before it and an approach the writer states first.
+export const LEARNING_LEVELS = ["off", "light", "deep"] as const;
+export type Learning = (typeof LEARNING_LEVELS)[number];
 
 export type Space = {
   id: string;
@@ -27,6 +31,7 @@ export type Space = {
   checks: string | null;
   // The space's budget for each task, in place of the defaults by task size; null for those defaults.
   budget: Budget | null;
+  learning: Learning;
   // The GitHub repo ("owner/name") a repo space comes from; its local copy is cloned when a task needs it.
   github: string | null;
   // Where a general space keeps its files; null for repo spaces, and for old spaces until boot moves them.
@@ -48,6 +53,7 @@ type SpaceRow = {
   review_by: string | null;
   checks?: string | null;
   budget?: string | null;
+  learning?: string | null;
   github: string | null;
   folder: string | null;
   created_at: number;
@@ -74,6 +80,8 @@ const toSpace = (r: SpaceRow): Space => ({
   reviewBy: REVIEW_CHOICES.includes(r.review_by as ReviewChoice) ? (r.review_by as ReviewChoice) : "auto",
   checks: r.checks ?? null,
   budget: r.budget ? (JSON.parse(r.budget) as Budget) : null,
+  // Unset, or a value this Atrium doesn't know, is the default: the walkthrough alone.
+  learning: LEARNING_LEVELS.includes(r.learning as Learning) ? (r.learning as Learning) : "light",
   github: r.github,
   folder: r.folder,
   createdAt: r.created_at,
@@ -121,12 +129,12 @@ export function listSpaces(db: Database, opts: { includeArchived?: boolean } = {
 export function updateSpace(
   db: Database,
   id: string,
-  patch: Partial<Pick<Space, "name" | "goal" | "private" | "status" | "reviewBy" | "checks" | "budget">>,
+  patch: Partial<Pick<Space, "name" | "goal" | "private" | "status" | "reviewBy" | "checks" | "budget" | "learning">>,
 ): Space {
   const cur = getSpace(db, id);
   if (!cur) throw new Error(`No space with id ${id}`);
   const next = { ...cur, ...patch };
-  db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, checks = ?, budget = ?, updated_at = ? WHERE id = ?").run(
+  db.query("UPDATE spaces SET name = ?, goal = ?, private = ?, status = ?, review_by = ?, checks = ?, budget = ?, learning = ?, updated_at = ? WHERE id = ?").run(
     next.name,
     next.goal,
     next.private ? 1 : 0,
@@ -134,6 +142,7 @@ export function updateSpace(
     next.reviewBy,
     next.checks?.trim() || null,
     next.budget ? JSON.stringify(next.budget) : null,
+    next.learning,
     Date.now(),
     id,
   );

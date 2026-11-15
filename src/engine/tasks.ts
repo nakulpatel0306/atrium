@@ -6,6 +6,7 @@ import { type Fanout, type LoopState, newLoop, SIZE_BUDGETS } from "./loop";
 import { storedShape } from "./shape";
 import type { Outcome } from "./outcome";
 import { storedSession } from "./sessions";
+import { storedWalkthrough } from "./walkthrough";
 
 export type TaskStatus = "queued" | "running" | "review" | "done" | "failed" | "blocked";
 
@@ -111,8 +112,8 @@ const toTask = (r: TaskRow): Task => ({
 });
 
 // Over the defaults, so a row from an older engine, missing a field the gate reads, reads as that field's strictest
-// value rather than as undefined. A session, a shape and a fan-out are read field by field: anything off starts the
-// next turn cold, runs one writer, or fans out nothing, and only a literal true approves a shape or adopts a branch.
+// value rather than as undefined. A session, a shape, a fan-out and a walkthrough are read field by field:
+// anything off starts the next turn cold, runs one writer, fans out nothing or shows no walkthrough, and only a literal true approves a shape or adopts a branch.
 function readLoop(stored: Partial<LoopState>): LoopState {
   return {
     ...newLoop(SIZE_BUDGETS.medium),
@@ -122,6 +123,7 @@ function readLoop(stored: Partial<LoopState>): LoopState {
     role: stored.role === "part" || stored.role === "attempt" ? stored.role : null,
     fanout: storedFanout(stored.fanout),
     adopted: stored.adopted === true,
+    walkthrough: storedWalkthrough(stored.walkthrough),
   };
 }
 

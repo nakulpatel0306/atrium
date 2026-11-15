@@ -5,7 +5,8 @@ import { newId } from "./ids";
 import { weightedTokens } from "./loop";
 
 // Every run's tokens, by model and job, so a task, a space and the plan window can each say what they used.
-export const PURPOSES = ["brief", "write", "scout", "review", "explain", "judge"] as const;
+// walkthrough, hunk and memory are the learning features' own calls (docs/loop.md, Learning).
+export const PURPOSES = ["brief", "write", "scout", "review", "explain", "judge", "walkthrough", "hunk", "memory"] as const;
 export type Purpose = (typeof PURPOSES)[number];
 
 const sum = (rows: ModelTokens[]): Omit<ModelTokens, "model"> =>

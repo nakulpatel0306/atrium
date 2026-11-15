@@ -91,7 +91,8 @@ async function waitFor(cond: () => boolean, ms = 8000) {
 
 function space(path: string, opts: { reviewBy?: ReviewChoice; checks?: string | null; budget?: { tokens: number; minutes: number } } = {}) {
   const s = createSpace(db, { name: "App", kind: "repo", goal: "Ship it", repoPath: path, private: false });
-  return updateSpace(db, s.id, { reviewBy: opts.reviewBy ?? "auto", checks: opts.checks === undefined ? FAKE_CHECK : opts.checks, budget: opts.budget ?? null });
+  // Learning's background calls would race the call counts here; learning-loop.test.ts covers it.
+  return updateSpace(db, s.id, { reviewBy: opts.reviewBy ?? "auto", checks: opts.checks === undefined ? FAKE_CHECK : opts.checks, budget: opts.budget ?? null, learning: "off" });
 }
 
 const status = (id: string) => getTask(db, id)!.status;

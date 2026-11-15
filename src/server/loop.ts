@@ -13,6 +13,10 @@ import { chooseShape, costlier, proposeShape, runNow, type Shape, type ShapeKind
 import { childrenOf, discardFanout, FanoutRefused, mergeParts, partBody, pickAttempt, restartAs } from "../engine/fanout";
 import { openPullRequest } from "../engine/repos/pr";
 import { recordUsage } from "../engine/usage";
+import { lastRepoRun } from "../engine/runner";
+import { ChangesRefused, taskChanges } from "../engine/changes";
+import { explainHunk } from "../engine/explain-hunk";
+import { answerPredict, needsWalkthrough, writeWalkthrough } from "../engine/walkthrough-run";
 import { HttpError, json, readBody, str } from "./http";
 
 const ASK_MAX = 4000;
@@ -262,6 +266,61 @@ export async function loopRoute(
     }
     kick();
     return json(getTask(db, task.id));
+  }
+
+  // The walkthrough of a ready result, written on the cheap tier when the reviewer didn't give one; the card's retry.
+  const walkM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/walkthrough$/) : null;
+  if (walkM) {
+    const task = getTask(db, walkM[1]!);
+    if (!task || (task.status !== "review" && task.status !== "done")) throw new HttpError(409, "Only a finished result has a walkthrough.");
+    if (!needsWalkthrough(db, task)) return json(task);
+    const start = lastRepoRun(db, task.id)?.start;
+    if (!claude || !start) throw new HttpError(503, "Claude isn't set up, so Atrium can't write the walkthrough.");
+    const written = await writeWalkthrough(db, claude, task, start);
+    if (!written) throw new HttpError(502, "Claude couldn't write the walkthrough this time. Try again in a moment.");
+    return json(written);
+  }
+
+  // The answer to the question before the walkthrough, or a skip (`guess: null`); either opens it.
+  const predictM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/predict$/) : null;
+  if (predictM) {
+    const task = getTask(db, predictM[1]!);
+    if (!task?.loop?.walkthrough?.predict) throw new HttpError(409, "This walkthrough has no question to answer.");
+    const guess = (await readBody(req)).guess;
+    if (guess !== null && typeof guess !== "number") throw new HttpError(400, "guess must be an option's number, or null to skip.");
+    try {
+      return json(answerPredict(db, task, guess));
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+  }
+
+  // "Explain this hunk" on the Changes view: the hunk is read from the task's diff here, not taken from the request,
+  // and must still be the one the user saw (its header).
+  const hunkM = method === "POST" ? pathname.match(/^\/api\/tasks\/([^/]+)\/explain-hunk$/) : null;
+  if (hunkM) {
+    const task = getTask(db, hunkM[1]!);
+    const space = task ? getSpace(db, task.spaceId) : null;
+    if (!task || space?.kind !== "repo" || !space.repoPath) throw new HttpError(404, "No such task in a repo space.");
+    const b = await readBody(req);
+    const file = str(b.file, "file");
+    const index = b.index;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) throw new HttpError(400, "index must be the hunk's number in its file.");
+    let diff;
+    try {
+      diff = await taskChanges(db, task.id);
+    } catch (e) {
+      if (e instanceof ChangesRefused) throw new HttpError(e.status, e.message);
+      throw e;
+    }
+    const hunk = diff.files.find((f) => f.path === file)?.hunks[index];
+    if (!hunk || hunk.header !== b.header) throw new HttpError(409, "The changes moved on since you looked. Look at the hunk again, then ask.");
+    if (!claude) throw new HttpError(503, "Claude isn't set up, so Atrium can't explain this hunk.");
+    try {
+      return json(await explainHunk(db, claude, task, space, file, hunk));
+    } catch (e) {
+      throw new HttpError(502, (e as Error).message);
+    }
   }
 
   // One read-only run that says what's wrong, instead of another attempt; the task stays paused after it.

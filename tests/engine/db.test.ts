@@ -328,3 +328,24 @@ test("an older database gains the loop's columns and checks table; its spaces re
   openDb(path).close();
   t.cleanup();
 });
+
+test("an older database gains the learning dial, read as light, and the learning tables", () => {
+  const t = tempHome();
+  const path = join(t.home, "atrium.db");
+  const old = new Database(path);
+  old.exec(`CREATE TABLE spaces (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', color TEXT NOT NULL,
+    repo_path TEXT, private INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, review_by TEXT, checks TEXT, budget TEXT);
+  INSERT INTO spaces (id, name, kind, color, created_at, updated_at) VALUES ('spc_a', 'A', 'repo', '#fff', 1, 1)`);
+  old.close();
+  const db = openDb(path);
+  const names = (db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name);
+  expect(names).toEqual(expect.arrayContaining(["hunk_notes"]));
+  expect(getSpace(db, "spc_a")!.learning).toBe("light");
+  db.query("UPDATE spaces SET learning = 'nonsense' WHERE id = 'spc_a'").run();
+  expect(getSpace(db, "spc_a")!.learning).toBe("light");
+  db.close();
+  openDb(path).close();
+  t.cleanup();
+});

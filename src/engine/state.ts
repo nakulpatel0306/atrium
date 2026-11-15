@@ -170,6 +170,7 @@ export function snapshot(db: Database, registry?: Registry): State {
   const windowRaw = getSetting(db, "usage.claude.fiveHour");
   const window = windowRaw ? (JSON.parse(windowRaw) as { utilization: number; resetsAt: number }) : null;
   const reserve = Number(getSetting(db, "usage.claude.reserve") ?? 0.5);
+  const tasks = listTasks(db);
   const tokens = db
     .query("SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS n FROM runs WHERE started_at > ?")
     .get(now - 24 * 3600_000) as { n: number };
@@ -178,7 +179,7 @@ export function snapshot(db: Database, registry?: Registry): State {
     archived: listSpaces(db, { includeArchived: true })
       .filter((s) => s.status === "archived")
       .sort((a, b) => b.updatedAt - a.updatedAt),
-    tasks: listTasks(db),
+    tasks,
     attachments: claimedAttachments(db),
     // rowid breaks ties between runs started in the same millisecond
     runs: db

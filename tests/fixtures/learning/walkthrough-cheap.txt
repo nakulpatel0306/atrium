@@ -1,0 +1,8 @@
+APPROACH The change makes `total` accept an optional `Coupon` and, when one is given, clamps its percent to 0–100 and applies it to the subtotal, rounding the result to cents. Without a coupon, the function returns the same sum as before. Summing is now done with `reduce`. A new test covers one case: 10% off 2 × $10 gives 18.
+DECISION Make the coupon an optional parameter so existing `total(items)` calls still compile and behave the same REJECTED a separate `applyCoupon` function or a required coupon argument
+DECISION Clamp an out-of-range percent to 0–100 instead of throwing REJECTED validating the input and throwing on bad percentages
+DECISION Round to cents only on the coupon path, so a discounted total is always a two-decimal value REJECTED rounding every total, including the no-coupon path
+RISK src/cart.ts:7 The no-coupon path returns the raw float sum with no rounding, while the coupon path rounds, so the two paths can return different precision.
+RISK src/cart.ts:8 `Math.min(Math.max(NaN, 0), 100)` stays NaN, so a NaN percent produces a NaN total with no error.
+LOOK src/cart.ts:9 This is the rounding formula, `Math.round(sum * (100 - pct)) / 100`, and the core of the change.
+LOOK src/cart.test.ts:3 This is the only test, and it covers just the happy path; clamping, the no-coupon path, and NaN are untested.

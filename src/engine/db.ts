@@ -196,6 +196,16 @@ CREATE TABLE IF NOT EXISTS usage_log (
 );
 CREATE INDEX IF NOT EXISTS usage_log_task ON usage_log(task_id);
 CREATE INDEX IF NOT EXISTS usage_log_at ON usage_log(created_at);
+-- "Explain this hunk" answers, kept by the hunk's hash (explain-hunk.ts).
+CREATE TABLE IF NOT EXISTS hunk_notes (
+  hash TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
+  task_id TEXT REFERENCES tasks(id),
+  space_id TEXT REFERENCES spaces(id),
+  note TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS hunk_notes_task ON hunk_notes(task_id);
 CREATE TABLE IF NOT EXISTS rule_events (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id),
@@ -300,6 +310,8 @@ function migrate(db: Database): boolean {
   if (!has("spaces", "checks")) db.exec("ALTER TABLE spaces ADD COLUMN checks TEXT");
   // A space's budget for each task (JSON: tokens, minutes), in place of the defaults by task size.
   if (!has("spaces", "budget")) db.exec("ALTER TABLE spaces ADD COLUMN budget TEXT");
+  // How much a space helps the user learn from the code agents write: off, light or deep (spaces.ts).
+  if (!has("spaces", "learning")) db.exec("ALTER TABLE spaces ADD COLUMN learning TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS activity_space ON activity(space_id, created_at)");
   // Streaks are counted per space and kind, newest first.
   db.exec("CREATE INDEX IF NOT EXISTS approvals_fp ON approvals(space_id, fingerprint, resolved_at)");

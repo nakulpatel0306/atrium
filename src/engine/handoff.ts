@@ -6,7 +6,8 @@ import type { ReviewDiff } from "./git";
 import { type Finding, findingLine, type LoopState, MAX_REVIEW_ROUNDS, parseFindings, resolutionText, type ReviewRound, weightedTokens } from "./loop";
 import { addMessage } from "./messages";
 import { agentName as name, plural, sentence } from "./text";
-import type { Space } from "./spaces";
+import { getSpace, type Learning, type Space } from "./spaces";
+import { diffFiles, parseWalkthrough, walkthroughAsk, withoutWalkthrough } from "./walkthrough";
 import { createTask, getTask, setTaskLoop, type Task } from "./tasks";
 import { verdictOf } from "./verdict";
 
@@ -32,7 +33,8 @@ export function alreadyFailingSection(failing: LoopState["alreadyFailing"], ask:
 
 // The reviewer gets the brief and the diff and nothing of the writer's session: a clean context finds what the
 // writer stopped seeing. It judges mergeability against the brief, not taste.
-function reviewPrompt(task: Task, diff: string): string {
+// With learning on, the same pass writes the walkthrough the user reads with the result (walkthrough.ts).
+export function reviewPrompt(task: Task, diff: string, learning: Learning = "off"): string {
   // A per-run fence the diff can't predict, so changed lines can't pose as the end of it and talk to the reviewer.
   const fence = randomBytes(6).toString("hex");
   const brief: Brief | null = task.brief;
@@ -53,6 +55,7 @@ function reviewPrompt(task: Task, diff: string): string {
       "FINDING <high|medium|low> <file>:<line> <one-sentence reason>",
       'Use "-" in place of <file>:<line> when a problem isn\'t about one place.',
     ].join("\n"),
+    ...(learning !== "off" ? [walkthroughAsk(learning === "deep")] : []),
     "Your last line must be exactly `VERDICT: approve` if it's ready to merge as is, or `VERDICT: changes` if anything high or medium needs fixing first.",
     `--- diff ${fence} ---\n${diff}\n--- end of diff ${fence} ---`,
   ].join("\n\n");
@@ -65,7 +68,7 @@ export function startReview(db: Database, task: Task, space: Space, diff: Review
   return createTask(db, {
     spaceId: space.id,
     title: round > 1 ? `Review ${round}: ${task.title}` : `Review: ${task.title}`,
-    detail: reviewPrompt(task, diff.diff),
+    detail: reviewPrompt(task, diff.diff, space.learning),
     weight: "light",
     allowOnBattery: true,
     kind: "review",
@@ -81,17 +84,25 @@ export function recordReview(db: Database, reviewTask: Task, reviewer: string, r
   if (!parent?.loop || parent.status !== "queued" || parent.loop.stage !== "review") return null;
   const thread = { spaceId: parent.spaceId, taskId: parent.id };
   let round: ReviewRound;
+  let walkthrough = parent.loop.walkthrough;
   if (result.status !== "ok") {
     round = { reviewer, verdict: null, findings: [], skipped: sentence(result.message) };
     addMessage(db, { ...thread, fromAgent: "atrium", toAgent: resolvedAgent(db, parent), body: `${name(reviewer)}'s review didn't happen: ${round.skipped}` });
   } else {
     const summary = result.summary.trim();
     round = { reviewer, verdict: verdictOf(summary), findings: parseFindings(summary), skipped: null };
-    addMessage(db, { ...thread, fromAgent: reviewer, toAgent: resolvedAgent(db, parent), body: summary });
+    const learning = getSpace(db, parent.spaceId)?.learning ?? "off";
+    if (learning !== "off") {
+      const opts = { by: reviewer, source: "review" as const, sha: parent.loop.reviewedSha, deep: learning === "deep" };
+      walkthrough = parseWalkthrough(summary, diffFiles(reviewTask.detail), opts) ?? walkthrough;
+    }
+    // The walkthrough shows on its own card, so the thread keeps the review itself.
+    addMessage(db, { ...thread, fromAgent: reviewer, toAgent: resolvedAgent(db, parent), body: withoutWalkthrough(summary) });
   }
   const loop: LoopState = {
     ...parent.loop,
     reviews: [...parent.loop.reviews, round],
+    walkthrough,
     usage: { ...parent.loop.usage, tokens: parent.loop.usage.tokens + (result.status === "ok" ? weightedTokens(result) : 0) },
   };
   return { parent: setTaskLoop(db, parent.id, loop), round };

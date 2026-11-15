@@ -15,7 +15,7 @@ import type { setupSpace } from "../engine/setup";
 import { type OnCreate, SetupFailed } from "../engine/setup";
 import { setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
-import { createSpace, getSpace, REVIEW_CHOICES, REVIEWERS, type ReviewChoice, updateSpace } from "../engine/spaces";
+import { createSpace, getSpace, type Learning, LEARNING_LEVELS, REVIEW_CHOICES, REVIEWERS, type ReviewChoice, updateSpace } from "../engine/spaces";
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
 import { snapshot } from "../engine/state";
 import { summary } from "../engine/summary";
@@ -148,6 +148,7 @@ export function startServer(deps: Deps): Server<WsData> {
       if (reviewBy !== undefined && !REVIEW_CHOICES.includes(reviewBy as ReviewChoice)) {
         throw new HttpError(400, "reviewBy must be auto, codex, gemini, claude, or off.");
       }
+      if (b.learning !== undefined && !LEARNING_LEVELS.includes(b.learning as Learning)) throw new HttpError(400, "learning must be off, light or deep.");
       if (b.checks !== undefined && b.checks !== null && typeof b.checks !== "string") throw new HttpError(400, "checks must be text or null.");
       if (typeof b.checks === "string" && b.checks.length > 2000) throw new HttpError(400, "Keep the check commands to 2,000 characters or fewer.");
       const res = json(
@@ -159,6 +160,7 @@ export function startServer(deps: Deps): Server<WsData> {
           ...(reviewBy !== undefined && { reviewBy: reviewBy as ReviewChoice }),
           ...(b.checks !== undefined && { checks: b.checks as string | null }),
           ...(b.budget !== undefined && { budget: b.budget === null ? null : budgetField(b.budget) }),
+          ...(b.learning !== undefined && { learning: b.learning as Learning }),
         }),
       );
       // An archived space's local copy may now be idle enough to offer for removal.

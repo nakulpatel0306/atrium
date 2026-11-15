@@ -16,6 +16,7 @@ import { taskFiles } from "../../src/engine/outputs/store";
 import * as storage from "../../src/engine/storage";
 import { bus, listActivity } from "../../src/engine/events";
 import { BASE_TOOLS, createRunner, engineOnlyClaim, recoverOnBoot, REPO_TOOLS, REVIEW_TOOLS } from "../../src/engine/runner";
+import { HUNK_TOOLS } from "../../src/engine/explain-hunk";
 import { capabilityLines } from "../../src/engine/capabilities";
 import { OUTCOME_INSTRUCTION, outcomeLabel, outcomeText } from "../../src/engine/outcome";
 import { getSetting, setSetting } from "../../src/engine/settings";
@@ -129,7 +130,8 @@ const realSnapshot = snapshot.snapshotFolder;
 const ownLines = (prompt: string) => prompt.split("What Atrium can and can't do right now:")[0]!;
 const generalSpace = () => createSpace(db, { name: "Docs", kind: "general", goal: "Write clear docs" });
 // Review is off so these stay about the run itself; the loop's checks and reviews are covered in loop.test.ts.
-const repoSpace = (path: string) => updateSpace(db, createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path }).id, { reviewBy: "off" });
+// Learning's background calls would race the call counts here; learning-loop.test.ts covers it.
+const repoSpace = (path: string) => updateSpace(db, createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path }).id, { reviewBy: "off", learning: "off" });
 const status = (id: string) => getTask(db, id)!.status;
 
 test("runs a queued task to review and creates a review approval", async () => {
@@ -1745,7 +1747,9 @@ describe("attached GitHub repos", () => {
 
 describe("agents and repos", () => {
   test("no agent tool list allows gh, pushes, remotes, clones or git -c", () => {
-    for (const tool of [...REVIEW_TOOLS, ...BASE_TOOLS, ...REPO_TOOLS]) expect(tool).not.toMatch(/\bgh\b|push|remote|clone|-c\b/);
+    for (const tool of [...REVIEW_TOOLS, ...BASE_TOOLS, ...REPO_TOOLS, ...HUNK_TOOLS]) expect(tool).not.toMatch(/\bgh\b|push|remote|clone|-c\b/);
+    // Explaining a hunk only reads.
+    expect(HUNK_TOOLS).toEqual(["Read", "Glob", "Grep"]);
   });
 
   test("an agent cannot draft, create or remove repos", async () => {
