@@ -60,12 +60,24 @@ export function attentionQueue(s: QueueInput): QueueItem[] {
     const kind: QueueKind | null = asksBeforeStarting(t, s.tasks)
       ? t.loop?.questions.length ? "question" : t.loop?.stage === "pick" ? "pick" : "stuck"
       : pausedForYou(t) ? "paused" : suggestsShape(t) ? "shape" : null;
-    if (kind) items.push({ key: t.id, kind, spaceId: t.spaceId, taskId: t.id, since: t.updatedAt, low: kind === "shape" });
+    if (kind) items.push({ key: t.id, kind, spaceId: t.spaceId, taskId: t.id, since: blockedSince(t, kind, s.tasks), low: kind === "shape" });
   }
   for (const m of s.learning?.memory ?? []) if (order.has(m.spaceId)) items.push({ key: m.id, kind: "memory", spaceId: m.spaceId, taskId: m.taskId, since: m.createdAt, low: true });
   const rank = (i: QueueItem) => (i.spaceId === null ? -1 : order.get(i.spaceId)!);
   // Stable, so items of one space that started waiting in the same millisecond keep the order they were listed in.
   return items.sort((a, b) => Number(a.low) - Number(b.low) || a.since - b.since || rank(a) - rank(b));
+}
+
+// When a task started waiting: a pause's own time (so asking it to explain itself doesn't move it), a stuck split's
+// part's stop, or else the task's last change, as for a row from before pauses kept their time.
+function blockedSince(t: QueueInput["tasks"][number], kind: QueueKind, tasks: QueueInput["tasks"]): number {
+  const at = t.loop?.paused?.at;
+  if (kind === "paused" && typeof at === "number" && Number.isFinite(at)) return at;
+  if (kind === "stuck") {
+    const stopped = tasks.filter((c) => c.parentTaskId === t.id && (c.status === "blocked" || c.status === "failed")).map((c) => c.updatedAt);
+    if (stopped.length) return Math.min(...stopped);
+  }
+  return t.updatedAt;
 }
 
 export const needsYouCount = (s: QueueInput): number => attentionQueue(s).filter((i) => !i.low).length;

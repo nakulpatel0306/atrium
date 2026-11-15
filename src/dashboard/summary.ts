@@ -1,6 +1,6 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
 import type { Stage } from "../engine/loop";
-import { cleanResult, needsYouCount } from "../engine/needs";
+import { cleanResult, needsYouCount, pausedForYou } from "../engine/needs";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
@@ -87,12 +87,12 @@ export function liveStatus(state: State): string {
   const parts: string[] = [];
   const pending = needsYouCount(state);
   if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
-  const blocked = state.tasks.filter((t) => t.status === "blocked");
-  if (blocked.length > 0) {
-    // Its reason after a colon, not in brackets: reasons have brackets and stops of their own.
+  // A pause is already one of the things that need you; only other stops are news here.
+  const blocked = state.tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
+  if (blocked.length === 1) {
     const reason = blocked[0]!.blockedReason?.replace(/\.$/, "");
-    parts.push(`${blocked.length} blocked${reason ? `${blocked.length > 1 ? ", the first" : ""}: ${reason}` : ""}`);
-  }
+    parts.push(`1 blocked${reason ? `: ${reason}` : ""}`);
+  } else if (blocked.length > 1) parts.push(`${blocked.length} blocked`);
   // Queueing behind a running task is the normal case, not news.
   const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy");
   if (waits.length > 0) {

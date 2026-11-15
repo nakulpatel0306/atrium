@@ -58,10 +58,25 @@ describe("attentionQueue", () => {
         ],
       }),
     );
+    // The split has waited since its part stopped (5), before the pause (10).
     expect(q.map((i) => [i.kind, i.key])).toEqual([
-      ["paused", "t1"],
       ["stuck", "parent"],
+      ["paused", "t1"],
     ]);
+  });
+
+  test("a pause is ordered by when it paused, so explaining it later doesn't move it, and a stuck split by its part's stop", () => {
+    const q = attentionQueue(
+      input({
+        approvals: [{ id: "a1", spaceId: "s1", taskId: null, kind: "question", alwaysAsk: null, createdAt: 50 }],
+        tasks: [
+          task("p", { status: "blocked", updatedAt: 900, loop: loop({ paused: { kind: "loop", diagnosis: "d", at: 10 } }) }),
+          task("parent", { status: "queued", updatedAt: 800, loop: loop({ stage: "parts" }) }),
+          task("part", { status: "blocked", parentTaskId: "parent", updatedAt: 30, loop: loop({ role: "part" }) }),
+        ],
+      }),
+    );
+    expect(q.map((i) => [i.key, i.since])).toEqual([["p", 10], ["parent", 30], ["a1", 50]]);
   });
 
   test("lists CLAUDE.md proposals and a running task's split suggestion last, and never counts them", () => {

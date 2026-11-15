@@ -80,6 +80,10 @@ test("j and k move the selection and the decision beside it follows; a and s pre
   const el = render(<NeedsPage state={queueState()} />);
   const title = () => el.querySelector("#dp-title")!.textContent;
   expect(title()).toBe("Ranking");
+  // A paused item's screen leads with why it paused, and its time reads as the row's does.
+  expect(el.querySelector(".dp-lead")!.textContent).toBe("Paused: Another turn would go over the budget.");
+  expect(el.querySelector(".dp-meta")!.textContent).toContain("waiting 1h");
+  expect(el.querySelector("#q-tsk_p time")!.textContent).toBe("1h");
   await press("j");
   expect(title()).toBe("Review tsk_c");
   // A result with a note gets the quieter "Approve anyway", and the key asks twice.

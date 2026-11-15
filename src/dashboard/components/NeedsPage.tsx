@@ -1,7 +1,8 @@
 import { CheckCheck, ChevronLeft, Keyboard, PartyPopper } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { post, type State } from "../api";
-import { absolute, relative } from "../format";
+import { absolute } from "../format";
+import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, shownSha, waited } from "../queue";
@@ -155,6 +156,10 @@ export function DecisionPanel({ item, state }: { item: QueueItem; state: State }
   else if (task)
     body = (
       <>
+        {/* Why it waits, first: the pause's own diagnosis, or what the split or attempts need. */}
+        <p className={`dp-lead${item.kind === "paused" ? " bad" : ""}`} role="note">
+          {item.kind === "paused" ? `Paused: ${askLine(task)}` : askLine(task)}
+        </p>
         {item.kind === "shape" && (
           <div className="dp-acts">
             <StopTask task={task} />
@@ -173,7 +178,8 @@ export function DecisionPanel({ item, state }: { item: QueueItem; state: State }
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
           {space?.name ?? "Atrium"}
           <span aria-hidden="true">·</span>
-          <span title={absolute(item.since)}>waiting since {relative(item.since)}</span>
+          {/* The same short form as the row beside it, with the exact time on hover. */}
+          <span title={`Waiting since ${absolute(item.since)}`}>{waited(item.since) === "now" ? "just now" : `waiting ${waited(item.since)}`}</span>
           {item.low && (
             <>
               <span aria-hidden="true">·</span>

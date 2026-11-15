@@ -398,7 +398,7 @@ export function createRunner(deps: {
   // Stops the loop with a one-line diagnosis; the user gives a hint or asks for an explanation to go on.
   function pause(task: Task, p: Pause, saved: string | null = null) {
     const loop = getTask(db, task.id)?.loop;
-    if (loop) setTaskLoop(db, task.id, { ...loop, stage: "writing", paused: p });
+    if (loop) setTaskLoop(db, task.id, { ...loop, stage: "writing", paused: { ...p, at: Date.now() } });
     block(task, `Paused: ${p.diagnosis}`, saved);
   }
 

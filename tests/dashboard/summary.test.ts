@@ -118,3 +118,13 @@ test("Home is only empty when there are no spaces and nothing waiting", () => {
   expect(emptyHome(state({ spaces: [], proposals: [], approvals: [ask] } as Partial<State>))).toBe(false);
   expect(emptyHome(state({ spaces: [space], proposals: [] } as Partial<State>))).toBe(false);
 });
+
+test("a paused task counts once, as needing you, and isn't also reported as blocked", async () => {
+  const { liveStatus } = await import("../../src/dashboard/summary");
+  const { makeState, task } = await import("../tui/fixtures");
+  const s = makeState({ approvals: [], proposals: [] });
+  const paused = task({ id: "tsk_paused", status: "blocked", blockedReason: "Paused: over budget.", loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "over budget" } } });
+  const state = { ...s, tasks: [...s.tasks.filter((t) => t.status !== "blocked"), paused] };
+  expect(liveStatus(state)).toContain("1 thing needs you");
+  expect(liveStatus(state)).not.toContain("blocked");
+});

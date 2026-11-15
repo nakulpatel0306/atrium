@@ -135,7 +135,8 @@ const PHRASE: Partial<Record<ActivityKind, (message: string) => string>> = {
   skipped: () => "review skipped",
   requeued: () => "back in the queue",
   stopped: () => "stopped by you",
-  paused: () => "paused for a usage limit",
+  // The engine writes "Paused: " for more than one cause, so the phrase says which.
+  paused: (m) => (/usage limit/i.test(m) ? "paused for a usage limit" : /budget/i.test(m) ? "paused at its budget" : "paused"),
   decided: (m) =>
     m.startsWith("Rejected")
       ? "sent back"

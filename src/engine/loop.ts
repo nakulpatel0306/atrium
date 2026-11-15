@@ -52,7 +52,8 @@ export function storedTally(v: unknown): Tally | null {
   const n = (x: unknown) => (Number.isInteger(x) && (x as number) >= 0 ? (x as number) : 0);
   return { steers: n(t.steers), checkFails: n(t.checkFails), lateFails: n(t.lateFails), reviewRounds: n(t.reviewRounds) };
 }
-export type Pause = { kind: "budget" | "loop"; diagnosis: string };
+// `at` is when it paused, which orders it in Needs you; missing on a pause from before it was recorded.
+export type Pause = { kind: "budget" | "loop"; diagnosis: string; at?: number };
 
 export type LoopState = {
   stage: Stage;

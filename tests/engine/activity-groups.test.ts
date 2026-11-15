@@ -245,3 +245,11 @@ test("a task Nakul stopped folds into its line as stopped by you", () => {
   expect(groups).toHaveLength(1);
   expect(groups[0]!.text).toBe("started, stopped by you");
 });
+
+test("a pause says what paused it, not a usage limit every time", () => {
+  const t = { taskId: "tsk_g" };
+  const text = (message: string) => groupActivity(feed(row(at(6, 10), message, t)), { now: NOW, tasks: [{ id: "tsk_g", title: "Groceries", status: "queued" }] })[0]!.text;
+  expect(text("Paused: Claude Code hit its usage limit. Groceries will run again after that.")).toBe("paused for a usage limit");
+  expect(text("Paused: another turn would go over the 600k token budget.")).toBe("paused at its budget");
+  expect(text("Paused: Groceries.")).toBe("paused");
+});
