@@ -142,6 +142,17 @@ test("approving a result on a branch sends the commit its screen shows", async (
   expect(calls.find((c) => c.url === "/api/approvals/apr_a")!.body).toEqual({ decision: "approve", sha: "sha_a" });
 });
 
+test("on a narrow window, a key never presses a decision the list is hiding", async () => {
+  render(<NeedsPage state={queueState()} item="apr_a" />);
+  const panel = document.querySelector<HTMLElement>(".q-panel")!;
+  panel.style.display = "none";
+  await press("a");
+  expect(calls.some((c) => c.url.startsWith("/api/approvals/"))).toBe(false);
+  panel.style.display = "";
+  await press("a");
+  expect(calls.some((c) => c.url.startsWith("/api/approvals/"))).toBe(true);
+});
+
 test("a result on a branch shows its diff right in the queue", async () => {
   const s = queueState();
   const onBranch = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_a" ? { ...t, branch: "atrium/tsk_a" } : t)) };

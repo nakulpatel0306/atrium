@@ -364,6 +364,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
         requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>(".dp")?.focus());
         return;
       }
+      // On a narrow window the list hides the decision; a key must never press a button nobody can see.
+      if (panel.current && getComputedStyle(panel.current).display === "none") return;
       const button = panel.current?.querySelector<HTMLButtonElement>(`[data-act="${ACT[key]}"]`);
       if (!button || button.disabled) return;
       // Keeps the letter out of the note field that s is about to focus.
