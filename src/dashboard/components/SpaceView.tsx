@@ -1,4 +1,5 @@
-import { taskLabel, taskWord } from "../../engine/words";
+import { attentionQueue } from "../../engine/needs";
+import { KIND as QUEUE_KIND, taskLabel, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
@@ -329,11 +330,19 @@ type TaskRowProps = {
   at?: ChangeSpot | null;
 };
 
+// The queue kind a task waits under when that isn't already its state word: a question, a pick, a stopped part.
+function queueKindOf(state: State, taskId: string) {
+  const item = attentionQueue(state).find((i) => i.key === taskId);
+  return item && (item.kind === "question" || item.kind === "pick" || item.kind === "stuck") ? item.kind : null;
+}
+
 function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = null }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const word = taskWord(task);
+  // A task in the queue for something other than its state (a question before it starts, a pick) wears that kind.
+  const asks = queueKindOf(state, task.id);
   const waitsOnYou = word === "paused" || word === "review";
   const stuck = word === "stopped" || word === "failed";
   const runs = state.runs.filter((r) => r.taskId === task.id);
@@ -374,8 +383,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </span>
           ) : (
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
-            <span className={`tag${stuck || word === "paused" ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
-              {notDone ?? taskLabel(word)}
+            <span className={`tag${stuck || word === "paused" ? " bad" : asks ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
+              {notDone ?? (asks ? QUEUE_KIND[asks].label : taskLabel(word))}
             </span>
           )}
         </button>
@@ -400,7 +409,6 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             }}
           />
         )}
-        {task.kind === "work" && <CostChip spend={state.spend.tasks[task.id]} />}
         <StopTask task={task} />
         <Avatar agent={ranAgent(task, state.runs)} live={task.status === "running"} title={agent} />
       </div>
@@ -449,6 +457,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             {task.branch && <span className="mono">Branch {task.branch}</span>}
             <span>{task.weight === "heavy" ? "Runs when your Mac is plugged in" : "Runs anytime"}</span>
             {task.ignoreReserve && <span>Runs during Claude's reserve</span>}
+            {task.kind === "work" && <CostChip spend={state.spend.tasks[task.id]} />}
           </div>
           {task.kind === "work" && <Thread taskId={task.id} />}
           <TaskHistory task={task} state={state} />

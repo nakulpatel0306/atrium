@@ -8,15 +8,19 @@ import { ids, makeState } from "../tui/fixtures";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
-test("a space lists what's waiting on you there as summaries; the decision itself shows once, in the task's row", () => {
+test("a waiting task shows once in its space, as its row; the space's list keeps what has no row", () => {
   const s = makeState();
-  const html = renderToStaticMarkup(<SpaceNeeds state={s} spaceId={ids.atrium} />);
+  // The only item here is a task's result: it's in the task list, so the separate list has nothing to add.
+  expect(renderToStaticMarkup(<SpaceNeeds state={s} spaceId={ids.atrium} />)).toBe("");
+  const withLine = { ...s, learning: { ...s.learning, memory: [{ id: "mem_1", spaceId: ids.atrium, taskId: ids.review, source: "steer" as const, line: "Use the wait() helper.", why: "You steered.", status: "open" as const, branch: null, commitSha: null, createdAt: Date.now() }] } };
+  const html = renderToStaticMarkup(<SpaceNeeds state={withLine} spaceId={ids.atrium} />);
   const t = text(html);
-  expect(t).toContain("Waiting for you · 1");
-  expect(t).toContain("Review: Fix login redirect");
-  expect(t).toContain("Approve…");
+  expect(t).toContain("Also waiting for you ");
+  expect(t).not.toContain("Also waiting for you ·");
+  expect(t).toContain("Add a line to CLAUDE.md?");
+  expect(t).toContain("Add it…");
+  expect(t).not.toContain("Fix login redirect");
   expect(html).not.toContain('data-act="approve"');
-  expect(t).not.toContain("Send back");
   expect(renderToStaticMarkup(<SpaceNeeds state={s} spaceId={ids.jobHunt} />)).toBe("");
 });
 

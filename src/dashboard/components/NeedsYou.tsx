@@ -52,9 +52,9 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
 // Every item waiting on Nakul, in the queue's order (longest-blocked first), with the low-priority ones as a group of
 // their own under the count's items, so the number in the heading is the rows above the divider, everywhere. A space
 // shows its share of the same rows.
-function Items({ state, spaceId }: { state: State; spaceId?: string }) {
+function Items({ state, items: shown }: { state: State; items?: QueueItem[] }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
-  const items = attentionQueue(state).filter((i) => !spaceId || i.spaceId === spaceId);
+  const items = shown ?? attentionQueue(state);
   const low = items.filter((i) => i.low);
   const row = (i: QueueItem) => <SummaryRow key={i.key} item={i} space={i.spaceId ? spaces.get(i.spaceId) : undefined} state={state} />;
   return (
@@ -74,17 +74,23 @@ export const waitingIn = (state: State, spaceId: string) => attentionQueue(state
 
 // At the top of a space: what's waiting on Nakul there, each one leading to its screen in Needs you; the task's own
 // row below decides it too, so a decision shows once as a summary and once in full.
+// Kinds that are a task's own state, so its row already says them. A CLAUDE.md line or a suggestion isn't.
+const ROW_KINDS = new Set<QueueItem["kind"]>(["review", "question", "pick", "stuck", "paused", "shape"]);
+
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
-  const count = waitingIn(state, spaceId);
-  if (!attentionQueue(state).some((i) => i.spaceId === spaceId)) return null;
+  // A task that waits shows once, as its row in the task list with its decision inside; this list keeps the rest.
+  const tasks = new Set(state.tasks.filter((t) => t.spaceId === spaceId).map((t) => t.id));
+  const items = attentionQueue(state).filter((i) => i.spaceId === spaceId && !(ROW_KINDS.has(i.kind) && i.taskId && tasks.has(i.taskId)));
+  if (!items.length) return null;
+  const counted = items.filter((i) => !i.low).length;
   return (
     <>
       <h2>
         <Inbox />
-        Waiting for you · {count}
+        Also waiting for you{counted > 0 && ` · ${counted}`}
       </h2>
       <div className="list needs-list space-needs">
-        <Items state={state} spaceId={spaceId} />
+        <Items state={state} items={items} />
       </div>
     </>
   );

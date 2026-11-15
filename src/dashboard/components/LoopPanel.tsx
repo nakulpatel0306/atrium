@@ -86,7 +86,7 @@ function SuggestedCheck({ task, command }: { task: Task; command: string }) {
 export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const loop = task.loop;
   if (!loop || loop.noChanges || loop.checks === "pending") return null;
-  const text = loop.checks === "running" ? "checking" : loop.checks === "passed" ? "checks passed" : loop.checks === "failed" ? "checks failed" : "unverified";
+  const text = loop.checks === "running" ? "Checking" : loop.checks === "passed" ? "Checks passed" : loop.checks === "failed" ? "Checks failed" : "Unverified";
   // Says what the checks said, nothing more: the review has its own chip, so passed checks stay green.
   const tone = loop.checks === "failed" ? " bad" : loop.checks === "passed" ? " good" : loop.checks === "none" ? " wait" : "";
   return (
