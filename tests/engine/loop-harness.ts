@@ -63,8 +63,7 @@ export function loopHarness() {
     },
     space(path: string, opts: { reviewBy?: ReviewChoice; checks?: string | null; private?: boolean } = {}) {
       const s = createSpace(h.db, { name: "App", kind: "repo", goal: "", repoPath: path, private: opts.private ?? false });
-      // Learning is off unless a test turns it on: its background calls (walkthrough-run.ts) would race the call counts here.
-      return updateSpace(h.db, s.id, { reviewBy: opts.reviewBy ?? "off", checks: opts.checks === undefined ? FAKE_CHECK : opts.checks, learning: "off" });
+      return updateSpace(h.db, s.id, { reviewBy: opts.reviewBy ?? "off", checks: opts.checks === undefined ? FAKE_CHECK : opts.checks });
     },
     start(adapters: Record<string, AgentAdapter>) {
       h.runner = createRunner({ db: h.db, adapters, power: async () => "ac", keepAwake: { start() {}, stop() {}, active: () => false } });

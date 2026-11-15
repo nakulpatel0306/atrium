@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentAdapter } from "./agents/types";
 import { briefSections } from "./brief";
-import { branchSha, reviewDiff } from "./git";
+import { reviewDiff } from "./git";
 import { getSpace } from "./spaces";
 import { getTask, setTaskLoop, type Task } from "./tasks";
 import { tierModel, tierRun } from "./tiers";
@@ -44,25 +44,29 @@ export function needsWalkthrough(db: Database, task: Task): boolean {
   return !loop.walkthrough || loop.walkthrough.sha !== loop.checkedSha;
 }
 
-// One at a time per task: a second ask while one is on its way gets the same answer.
+// One job per task and commit: a second ask for the same commit joins it, and an ask for a newer commit (after a
+// send-back) starts its own rather than waiting on one for a commit that's gone.
 const writing = new Map<string, Promise<Task | null>>();
 
-// Writes the walkthrough of a task's branch on the cheap tier and keeps it on the task. Returns the task, or null
-// when there's nothing to describe or the call failed (the card then offers to try again).
+// Writes the walkthrough of the commit the task's checks last ran on, on the cheap tier, and keeps it on the task.
+// Returns the task, or null when there's nothing to describe, the call failed (the card then offers to try again), or
+// the task moved on while it ran.
 export function writeWalkthrough(db: Database, claude: AgentAdapter, task: Task, start: string): Promise<Task | null> {
-  const current = writing.get(task.id);
+  const sha = task.loop?.checkedSha;
+  if (!sha) return Promise.resolve(null);
+  const key = `${task.id}:${sha}`;
+  const current = writing.get(key);
   if (current) return current;
-  const job = write(db, claude, task, start).finally(() => writing.delete(task.id));
-  writing.set(task.id, job);
+  const job = write(db, claude, task, start, sha).finally(() => writing.delete(key));
+  writing.set(key, job);
   return job;
 }
 
-export const walkthroughPending = (taskId: string): boolean => writing.has(taskId);
-
-async function write(db: Database, claude: AgentAdapter, task: Task, start: string): Promise<Task | null> {
+async function write(db: Database, claude: AgentAdapter, task: Task, start: string, sha: string): Promise<Task | null> {
   const space = getSpace(db, task.spaceId);
   if (!space?.repoPath || !task.branch || space.learning === "off") return null;
-  const [diff, sha] = await Promise.all([reviewDiff(space.repoPath, start, task.branch), branchSha(space.repoPath, task.branch)]);
+  // The diff of that very commit, not of whatever the branch holds by now.
+  const diff = await reviewDiff(space.repoPath, start, sha);
   if (!diff.files) return null;
   const deep = space.learning === "deep";
   // No tools and an empty folder: the diff is all it reads.
@@ -83,9 +87,12 @@ async function write(db: Database, claude: AgentAdapter, task: Task, start: stri
     if (result.status !== "ok") return null;
     recordUsage(db, { taskId: task.id, spaceId: space.id, agent: "claude", purpose: "walkthrough", models: runModels(result, tierModel(db, "cheap") || null) });
     const walkthrough = parseWalkthrough(result.summary, diffFiles(diff.diff), { by: "claude", source: "cheap", sha, deep });
+    // Kept only if nothing moved on while it ran: the task in the same state, its checks still on this commit, learning
+    // still on, and no walkthrough for this commit already (the reviewer's comes first).
     const now = getTask(db, task.id);
-    if (!walkthrough || !now?.loop) return null;
-    return setTaskLoop(db, task.id, { ...now.loop, walkthrough });
+    const fresh = now?.loop && now.status === task.status && now.loop.checkedSha === sha && now.loop.walkthrough?.sha !== sha && getSpace(db, task.spaceId)?.learning !== "off";
+    if (!walkthrough || !fresh) return null;
+    return setTaskLoop(db, task.id, { ...now.loop!, walkthrough });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

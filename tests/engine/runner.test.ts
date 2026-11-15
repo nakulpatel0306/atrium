@@ -130,8 +130,7 @@ const realSnapshot = snapshot.snapshotFolder;
 const ownLines = (prompt: string) => prompt.split("What Atrium can and can't do right now:")[0]!;
 const generalSpace = () => createSpace(db, { name: "Docs", kind: "general", goal: "Write clear docs" });
 // Review is off so these stay about the run itself; the loop's checks and reviews are covered in loop.test.ts.
-// Learning's background calls would race the call counts here; learning-loop.test.ts covers it.
-const repoSpace = (path: string) => updateSpace(db, createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path }).id, { reviewBy: "off", learning: "off" });
+const repoSpace = (path: string) => updateSpace(db, createSpace(db, { name: "App", kind: "repo", goal: "Ship the app", repoPath: path }).id, { reviewBy: "off" });
 const status = (id: string) => getTask(db, id)!.status;
 
 test("runs a queued task to review and creates a review approval", async () => {

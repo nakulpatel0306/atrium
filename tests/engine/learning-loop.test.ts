@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveApproval } from "../../src/engine/approvals";
 import { openLines } from "../../src/engine/memory";
 import { APPROACH_FIRST } from "../../src/engine/runner";
 import { updateSpace } from "../../src/engine/spaces";
@@ -43,6 +44,37 @@ test("with review off, the result reaches the user first and the cheap tier's wa
   expect(call).toMatchObject({ allowedTools: [], mode: "review", model: "haiku" });
   // The writer in light mode isn't asked for its approach first.
   expect(claude.calls[0]!.prompt).not.toContain(APPROACH_FIRST);
+});
+
+test("sent back while round 1's walkthrough is still being written, round 2 gets the walkthrough of its own commit", async () => {
+  const s = updateSpace(h.db, h.space(h.repo()).id, { learning: "light" });
+  const t = createTask(h.db, { spaceId: s.id, title: "Cart" });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let asked = 0;
+  let turn = 0;
+  const claude = fake("claude", async (input) => {
+    if (isWalkthrough(input.systemPrompt)) {
+      // Round 1's walkthrough is slow; round 2's answers at once, naming its own round.
+      if (++asked === 1) await gate;
+      return ok(CHEAP.replace("APPROACH ", `APPROACH Round ${asked}. `));
+    }
+    turn++;
+    writeFileSync(join(input.cwd, "status.txt"), "pass\n");
+    writeFileSync(join(input.cwd, "work.txt"), `turn ${turn}\n`);
+    return ok("Changed it.\nOUTCOME: done");
+  });
+  h.start({ claude: claude.adapter });
+  await waitFor(() => h.status(t.id) === "review");
+  await waitFor(() => asked === 1);
+  const approval = h.db.query("SELECT id FROM approvals WHERE task_id = ? AND status = 'pending'").get(t.id) as { id: string };
+  resolveApproval(h.db, approval.id, "reject", "Count the empty cart too.");
+  await waitFor(() => h.status(t.id) === "review" && h.task(t.id).loop!.walkthrough !== null, 15_000);
+  release();
+  await Bun.sleep(50);
+  const loop = h.task(t.id).loop!;
+  expect(loop.walkthrough!.approach).toStartWith("Round 2.");
+  expect(loop.walkthrough!.sha).toBe(loop.checkedSha);
 });
 
 test("a reviewer that writes the walkthrough saves the extra call, and deep mode asks the writer for its approach first", async () => {
