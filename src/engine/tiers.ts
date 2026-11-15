@@ -14,7 +14,7 @@ export const TIER_DEFAULTS: Record<Tier, string> = { cheap: "haiku", default: ""
 export const STRONG_FALLBACK = "sonnet";
 
 export const TIER_JOBS: Record<Tier, string> = {
-  cheap: "Briefs and the workflow it picks, scouts, explanations",
+  cheap: "Briefs and the workflow it picks, scouts, explanations, walkthroughs, hunks, CLAUDE.md lines",
   default: "Writing",
   strong: "Review, a writer after a pause, judging attempts",
 };

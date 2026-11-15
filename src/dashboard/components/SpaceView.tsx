@@ -59,8 +59,8 @@ function KindBadge({ kind }: { kind: Task["kind"] }) {
 
 const LEARNING_LABEL: Record<Learning, string> = { off: "Off", light: "Light", deep: "Deep" };
 const LEARNING_HINT: Record<Learning, string> = {
-  off: "No walkthroughs, retros or CLAUDE.md suggestions.",
-  light: "A walkthrough with each result, a retro after each merge, and CLAUDE.md suggestions.",
+  off: "No walkthroughs, retros, weekly roll-ups or CLAUDE.md suggestions.",
+  light: "A walkthrough with each result, a retro once you accept it or open its pull request, a weekly roll-up and CLAUDE.md suggestions.",
   deep: "Light, plus a question before each walkthrough and the writer explaining its approach first.",
 };
 

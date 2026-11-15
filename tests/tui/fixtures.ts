@@ -133,7 +133,7 @@ export function makeState(over: Partial<State> = {}): State {
     },
     plan: { fiveHour: { utilization: 0.41, resetsAt: now + 2 * 60 * min, seenAt: now - 4 * min }, sevenDay: null, atrium: { weighted: 412_000, usd: 1.84, unpriced: 0, cacheRead: 0, input: 0 }, reserve: 0.5 },
     tiers: {
-      cheap: { model: "haiku", stock: "haiku", jobs: "Briefs and the workflow it picks, scouts, explanations" },
+      cheap: { model: "haiku", stock: "haiku", jobs: "Briefs and the workflow it picks, scouts, explanations, walkthroughs, hunks, CLAUDE.md lines" },
       default: { model: "", stock: "", jobs: "Writing" },
       strong: { model: "opus", stock: "opus", jobs: "Review, a writer after a pause, judging attempts" },
     },
