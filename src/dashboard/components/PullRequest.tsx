@@ -1,6 +1,7 @@
 import { ExternalLink, GitPullRequest } from "lucide-react";
 import { useEffect, useReducer } from "react";
 import type { PrInfo } from "../../engine/repos/pr";
+import { withdrawUndo } from "../toast";
 import { post, type PostResult, type State, useFetched } from "../api";
 
 type Task = State["tasks"][number];
@@ -39,7 +40,11 @@ export const requestPr = (
   taskId: string,
   pr: { title: string; body: string; sha: string },
   send: (path: string, body: unknown) => Promise<PostResult<{ url: string }>> = (p, b) => post<{ url: string }>(p, b),
-) => send(`/api/tasks/${encodeURIComponent(taskId)}/pr`, pr);
+) => {
+  // Once the push starts the result has left the Mac, so its approval can't be taken back.
+  withdrawUndo(taskId);
+  return send(`/api/tasks/${encodeURIComponent(taskId)}/pr`, pr);
+};
 
 // An external link: the Mac app hands target=_blank links off the dashboard to the default browser.
 export function PrLink({ url }: { url: string }) {

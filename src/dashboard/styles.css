@@ -1131,12 +1131,19 @@ h2 {
   justify-content: flex-end;
   gap: 8px;
 }
-.toast {
+/* Toasts stack upward above the ask bar, newest at the bottom. */
+.toasts {
   position: fixed;
   left: calc(50% + 110px);
   bottom: calc(var(--cmd-clear) + 4px);
   transform: translateX(-50%);
   z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.toast {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3502,8 +3509,10 @@ kbd {
   .toggle svg.lucide {
     display: none;
   }
-  .toast {
+  .toasts {
     left: calc(50% + 26px);
+  }
+  .toast {
     max-width: min(560px, calc(100vw - 92px));
   }
   .cmd {

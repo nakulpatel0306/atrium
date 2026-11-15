@@ -27,7 +27,7 @@ export function useDecision(approval: Approval) {
     // a key went to the wrong item.
     if (res.ok) {
       if (decision === "reject") return announce(`Sent back: ${approval.title}`);
-      return showToast(`Approved: ${approval.title}`, approval.kind === "review" && approval.taskId ? () => reopen(approval.id) : undefined);
+      return showToast(`Approved: ${approval.title}`, approval.kind === "review" && approval.taskId ? () => reopen(approval.id) : undefined, approval.taskId ?? undefined);
     }
     setError(res.error);
     setBusy(false);
