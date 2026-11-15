@@ -5,6 +5,7 @@ import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { activityDetail, approvalDetail, type DetailLine, spaceDetail, taskDetail, wrapStyled } from "../../src/tui/detail";
 import { deriveView } from "../../src/tui/select";
 import { initialUi, type Ui } from "../../src/tui/ui";
+import type { Walkthrough } from "../../src/engine/walkthrough";
 import { ids, makeState, task } from "./fixtures";
 
 const text = (lines: DetailLine[]) => lines.map((l) => l.map((s) => s.text).join("")).join("\n");
@@ -149,4 +150,45 @@ test("approval detail renders markdown", () => {
   state.approvals[0]!.detail = "**Done.** See the *list*.";
   const view = deriveView(state, { ...initialUi, selected: { ...initialUi.selected, needs: { id: ids.approval, index: 0 } } });
   expect(text(approvalDetail(view))).not.toContain("**");
+});
+
+const walkthrough = (over: Partial<Walkthrough> = {}): Walkthrough => ({
+  approach: "It adds an optional coupon to the total.",
+  decisions: [{ chose: "Clamp the percentage", rejected: "throwing on bad input" }],
+  risks: [{ file: "src/cart.ts", line: 8, note: "NaN passes the clamp" }],
+  look: [{ file: "src/cart.ts", line: 9, note: "the rounding" }],
+  predict: null,
+  sha: "abc",
+  by: "codex",
+  source: "review",
+  ...over,
+});
+
+test("a finished task shows its walkthrough and retro as text; deep mode's question comes first", () => {
+  const state = makeState();
+  const at = state.tasks.findIndex((t) => t.id === ids.review);
+  const index = deriveView(state, initialUi).tasks.findIndex((t) => t.id === ids.review);
+  state.tasks[at] = { ...state.tasks[at]!, loop: { ...newLoop(SIZE_BUDGETS.medium), checkedSha: "abc", walkthrough: walkthrough() } };
+  state.learning.retros[ids.review] = { lines: ["No steers · no rework · no late check failures.", "~$0.10 est.", "Next time: A clean run."] };
+  const all = text(taskDetail(deriveView(state, onTask(ids.review, index)), null));
+  for (const s of ["Walkthrough", "It adds an optional coupon", "· Clamp the percentage (over throwing on bad input)", "Risk src/cart.ts:8 NaN passes the clamp", "Look src/cart.ts:9 the rounding", "How directing it went", "Next time: A clean run."]) expect(all).toContain(s);
+  expect(all).not.toContain("Written before the last turn");
+
+  const predict = { question: "Which file changed most?", options: ["cart.ts", "test", "readme"], answer: 0, guess: null, skipped: false };
+  state.tasks[at] = { ...state.tasks[at]!, loop: { ...state.tasks[at]!.loop!, walkthrough: walkthrough({ predict }) } };
+  const asked = text(taskDetail(deriveView(state, onTask(ids.review, index)), null));
+  expect(asked).toContain("Before you read it: Which file changed most?");
+  expect(asked).toContain("Answer or skip it on the dashboard");
+  expect(asked).not.toContain("It adds an optional coupon");
+});
+
+test("space detail shows the learning dial, a proposed CLAUDE.md line and the week's roll-up", () => {
+  const state = makeState();
+  state.spaces[0] = { ...state.spaces[0]!, learning: "deep" };
+  state.learning.memory = [{ id: "mem_1", spaceId: ids.atrium, taskId: null, source: "steer", line: "Use integer cents.", why: "", status: "open", branch: null, commitSha: null, createdAt: 1 }];
+  state.learning.rollups[ids.atrium] = { tasks: 6, lines: ["This week (6): median $0.20 est., 0.5 rework turns each"] };
+  const all = text(spaceDetail(deriveView(state, initialUi), null));
+  expect(all).toContain("Learning Deep: a question first, and the writer's approach");
+  expect(all).toContain('Add to CLAUDE.md? "Use integer cents." Edit and accept it on the dashboard.');
+  expect(all).toContain("What paid off this week (6 tasks)");
 });
