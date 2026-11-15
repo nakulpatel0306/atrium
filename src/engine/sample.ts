@@ -1,7 +1,7 @@
 // The first-run sample: a tiny bun project with one failing test, bundled with Atrium and copied into Atrium's own
 // folder, so a new user can watch the whole loop once on their own Claude CLI without pointing it at their own code.
 import type { Database } from "bun:sqlite";
-import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { config } from "./config";
 import { git } from "./git";
@@ -75,6 +75,8 @@ export function sampleFolder(space: Space | null): string | null {
   return path && path.startsWith(samplesDir() + "/") && !path.slice(samplesDir().length + 1).includes("/") ? path : null;
 }
 
+const ORPHAN_AGE_MS = 60_000;
+
 // Copies no space points at any more: left by a delete the engine didn't get to finish.
 export function removeOrphanSamples(db: Database): void {
   let names: string[];
@@ -86,6 +88,8 @@ export function removeOrphanSamples(db: Database): void {
   const used = new Set(listSpaces(db, { includeArchived: true }).map((s) => s.repoPath));
   for (const name of names) {
     const path = join(samplesDir(), name);
-    if (!used.has(path)) rmSync(path, { recursive: true, force: true });
+    // A copy from the last minute may belong to a Run it click still between copying and creating its space.
+    if (used.has(path) || statSync(path).mtimeMs > Date.now() - ORPHAN_AGE_MS) continue;
+    rmSync(path, { recursive: true, force: true });
   }
 }

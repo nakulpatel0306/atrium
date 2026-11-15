@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../../src/engine/config";
 import { openDb } from "../../src/engine/db";
@@ -59,6 +59,11 @@ test("at start, sample copies no space points at are removed", async () => {
   const { space } = await startSample(db);
   const orphan = join(config().home, "samples", "sample-orphan");
   mkdirSync(orphan, { recursive: true });
+  // A copy made this minute may be a Run it click still creating its space during boot; it's left alone.
+  removeOrphanSamples(db);
+  expect(existsSync(orphan)).toBe(true);
+  const old = new Date(Date.now() - 5 * 60_000);
+  utimesSync(orphan, old, old);
   removeOrphanSamples(db);
   expect(existsSync(orphan)).toBe(false);
   expect(existsSync(space.repoPath!)).toBe(true);
