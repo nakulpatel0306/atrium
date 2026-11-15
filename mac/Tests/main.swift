@@ -67,7 +67,7 @@ let blockedNotes = newNotes(previous: summary(), next: summary(stopped: [blocked
 check(blockedNotes.first?.title == "Stopped" && blockedNotes.first?.body == "Ship · Claude is signed out", "notes: blocked uses reason")
 let failedTask = Stopped(id: "tsk_3", title: "Build", spaceName: "atrium", status: "failed", reason: nil, path: "/space/spc_1?task=tsk_3")
 let failedNotes = newNotes(previous: summary(), next: summary(stopped: [failedTask]))
-check(failedNotes.first?.title == "Didn't finish" && failedNotes.first?.body == "Build · atrium", "notes: failed falls back to space")
+check(failedNotes.first?.title == "Failed" && failedNotes.first?.body == "Build · atrium", "notes: failed falls back to space")
 check(newNotes(previous: summary(stopped: [failedTask]), next: summary(stopped: [failedTask])).isEmpty, "notes: seen stopped don't repeat")
 let four = summary(needs: (1...4).map { need("apr_\($0)") })
 let collapsed = newNotes(previous: summary(), next: four)

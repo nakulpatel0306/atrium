@@ -32,7 +32,7 @@ So Atrium keeps a writer's Claude session warm within the cache window, puts wha
 - Cognitive-forcing designs (decide first, then see the answer) reduce over-reliance on AI, but people dislike them, so they have to stay light and optional. [12]
 - **METR**'s 2025 trial found experienced developers were 19% slower with early-2025 tools while believing they were 20% faster. [13]
 
-So Atrium adds a **walkthrough** to each result, **explain this hunk** on any change, an optional **predict-then-reveal** question, and the **diagnosis first** when an agent is stuck, none of them a gate. Its **director retro** is built only from measured numbers, never from how a task felt.
+So Atrium adds a **walkthrough** to each result, **explain this hunk** on any change, an optional **predict-then-reveal** question, and the **diagnosis first** when an agent is paused, none of them a gate. Its **director retro** is built only from measured numbers, never from how a task felt.
 
 ## Short, human-curated project notes beat generated ones
 

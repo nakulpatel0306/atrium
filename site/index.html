@@ -315,8 +315,8 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .m-stages li.past::before { background: #4cb782; border-color: #4cb782; }
 .m-stages li.on { color: #e6e6ea; font-weight: 500; }
 .m-stages li.on::before { background: #7c7cf5; border-color: #7c7cf5; }
-.m-verdict { color: #4cb782; font-size: 12.5px; margin: 0; }
-.m-item.need .t span.ok { color: #4cb782; }
+.m-verdict { margin: 0; }
+.m-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .m-detail { background: var(--m-panel); padding: 2px 14px 14px 39px; color: var(--m-dim); font-size: 12.5px; display: flex; flex-direction: column; gap: 10px; animation: m-in .22s ease-out; }
 .m-made { background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 6px; padding: 12px 14px; color: var(--m-text); display: flex; flex-direction: column; gap: 8px; }
 .m-made .lbl { font-size: 11px; color: var(--m-faint); }
@@ -613,7 +613,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       <ol class="steps" id="steps">
         <li class="on"><div><h3>Ask, and it starts</h3><p>Type what you want, like “fix the off-by-one in pagination”, and press Enter. A quick first pass turns it into a brief on the task: the goal, what done looks like, what to look at. A question only comes back when the ask is really unclear.</p></div></li>
         <li><div><h3>It writes, Atrium checks</h3><p>The agent works on <code>atrium/&lt;taskId&gt;</code> inside a sandbox. Atrium runs your typecheck and tests itself and sends failures back. Then a fresh session, from another vendor when one can work in the space, reviews the diff against the brief.</p></div></li>
-        <li><div><h3>You decide, from one queue</h3><p>Then the work waits in <b>Needs you</b>: one queue, longest-waiting first, each item one screen with the walkthrough, the checks, the review findings and how each was answered. <kbd>a</kbd> approves, <kbd>s</kbd> sends it back, and Atrium opens the pull request on your yes.</p></div></li>
+        <li><div><h3>You decide, from one queue</h3><p>Then the work waits in <b>Needs you</b>: one queue, longest-waiting first, each item one screen with the walkthrough, the checks, the review findings and how each was answered. <kbd>a</kbd> approves, <kbd>s</kbd> sends it back, and one more click pushes the branch and opens the pull request.</p></div></li>
       </ol>
       <div class="demo reveal" id="demo" aria-label="Example: asking Atrium to fix a bug on its own branch">
         <div class="ask"><span class="p">›</span><span id="typed">fix the off-by-one in pagination</span><span class="caret"></span></div>
@@ -622,7 +622,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
         <div class="card" data-s="card">
           <div class="t"><b>◆ lumen-api</b><span>ready for review</span></div>
           <p class="what">The last page dropped a row when the total was a multiple of the page size. Fixed, with a test.</p>
-          <div class="to">atrium/tsk_7f3a · src/paginate.ts +4 −2 · tests/paginate.test.ts +19 · checks passed · reviewed by Codex</div>
+          <div class="to">atrium/tsk_7f3a · src/paginate.ts +4 −2 · tests/paginate.test.ts +19 · Checks passed · Approved by Codex</div>
           <div class="acts"><span class="chip go" id="yes">Approve</span><span class="chip">Send back</span><span class="chip">View diff</span></div>
           <div class="sent" data-s="sent">✓ Kept on atrium/tsk_7f3a. The pull request waits for one more yes.</div>
         </div>
@@ -1049,8 +1049,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     // Rows shared by Home and Needs you
     function needRow({ s, t }) {
       const acts = `${t.push ? "" : `<button class="m-btn" type="button" data-open="${s.id}:${t.id}">View</button>`}${decide(t)}`;
-      const line = verdict(t) || t.peek;
-      return `<div class="m-item click need" data-open="${s.id}:${t.id}"><span class="who"><span class="m-sd" style="background:${s.color}"></span><span>${esc(s.name)}</span></span><span class="t">${esc(t.title)}${line ? `<span${verdict(t) ? ' class="ok"' : ""}>${esc(line)}</span>` : ""}</span><span class="acts">${acts}</span></div>`;
+      return `<div class="m-item click need" data-open="${s.id}:${t.id}"><span class="who"><span class="m-sd" style="background:${s.color}"></span><span>${esc(s.name)}</span></span><span class="t">${esc(t.title)}${!verdict(t) && t.peek ? `<span>${esc(t.peek)}</span>` : ""}</span>${verdict(t) ? `<span class="m-chips">${verdict(t)}</span>` : ""}<span class="acts">${acts}</span></div>`;
     }
     function needsList() {
       const r = ready();
@@ -1120,7 +1119,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       return `<div class="m-made"><span class="lbl">What it made${t.revised ? " · revised after your note" : ""}</span>${t.made(t)}</div>`;
     }
     // Where a coding task is in the loop, from its log: the brief, writing, Atrium's checks, the review, then you.
-    const STAGES = ["Brief", "Writing", "Checks", "Review", "Ready"];
+    const STAGES = ["Brief", "Writing", "Checks", "Reviewer", "Ready"];
     function stageOf(t) {
       if (t.status === "ready" || t.status === "done") return 4;
       const lines = (t.log || []).slice(0, t.shown || 1).join("\n");
@@ -1130,7 +1129,8 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       const at = stageOf(t);
       return `<ol class="m-stages" aria-label="Where this task is">${STAGES.map((n, i) => `<li class="${i < at ? "past" : i === at ? "on" : ""}">${n}</li>`).join("")}</ol>`;
     }
-    const verdict = (t) => (t.review ? `Checks passed · reviewed by ${AG[t.review][1]}` : "");
+    // What the checks said and what the reviewer said, as the app's two chips.
+    const verdict = (t) => (t.review ? `<span class="m-tag run">Checks passed</span> <span class="m-tag run">Approved by ${AG[t.review][1]}</span>` : "");
     function entry(s, t) {
       const open = S.open === t.id;
       let acts = "";
@@ -1139,7 +1139,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       const tag = t.status === "ready" ? (t.push ? `<span class="m-tag warn">Always asks</span>` : "") : t.status === "run" ? `<span class="m-tag run">Running</span>` : `<span class="m-tag">${t.when}</span>`;
       const said = t.outcome && t.status !== "run" && t.status !== "queued" ? `<span class="m-tag ${t.outcome === "done" ? "run" : "warn"}">Agent says: ${t.outcome}</span>` : "";
       return `<div class="m-entry${t.status === "done" ? " done" : ""}"><div class="m-item click${t.push && t.status === "ready" ? " tall" : ""}" data-row="${t.id}" aria-expanded="${open}">${st(t.status)}<span class="t">${esc(t.title)}</span>${tag}<span class="acts">${acts}</span></div>
-        ${open ? `<div class="m-detail">${t.branch && !t.push ? loopStrip(t) : ""}<div class="m-meta">${av(t.agent)}<span>${AG[t.agent][1]}</span><span>${esc(t.when)}</span>${t.branch ? `<span class="m-mono">Branch ${esc(t.branch)}</span>` : ""}${said}</div>${t.status === "ready" && verdict(t) ? `<p class="m-verdict">${verdict(t)}</p>` : ""}${made(s, t)}</div>` : ""}</div>`;
+        ${open ? `<div class="m-detail">${t.branch && !t.push ? loopStrip(t) : ""}<div class="m-meta">${av(t.agent)}<span>${AG[t.agent][1]}</span><span>${esc(t.when)}</span>${t.branch ? `<span class="m-mono">Branch ${esc(t.branch)}</span>` : ""}${said}</div>${t.status === "ready" && verdict(t) ? `<p class="m-verdict m-chips">${verdict(t)}</p>` : ""}${made(s, t)}</div>` : ""}</div>`;
     }
     function livePanel(s) {
       const r = s.tasks.find((t) => t.status === "run");

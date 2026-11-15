@@ -53,7 +53,7 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {
     Note(
-      id: $0.id, title: $0.status == "blocked" ? "Stopped" : "Didn't finish",
+      id: $0.id, title: $0.status == "blocked" ? "Stopped" : "Failed",
       body: "\($0.title) · \($0.reason ?? $0.spaceName)", path: $0.path)
   }
   if notes.count > 3 {

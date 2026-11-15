@@ -295,7 +295,7 @@ export function startServer(deps: Deps): Server<WsData> {
       if (task.status !== "running") throw new HttpError(409, "This task isn't running, so there's nothing to steer.");
       const outcome = (await runner.steerTask?.(id, note)) ?? "not-running";
       if (outcome === "pending") throw new HttpError(409, pending);
-      if (outcome === "blocked") throw new HttpError(409, `It couldn't start again with your note: ${getTask(db, id)?.blockedReason ?? "it was blocked."}`);
+      if (outcome === "blocked") throw new HttpError(409, `It couldn't start again with your note: ${getTask(db, id)?.blockedReason ?? "it stopped again."}`);
       if (outcome === "not-running") throw new HttpError(409, "It finished or stopped before your note arrived, so nothing was restarted.");
       return json(getTask(db, id), outcome === "timeout" ? 202 : 200);
     }
