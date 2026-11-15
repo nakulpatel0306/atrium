@@ -60,16 +60,16 @@ const loop = (over: Partial<NonNullable<Task["loop"]>> = {}) => ({ ...newLoop(SI
 
 test("reviewLine says what the checks and the reviewer made of the work", () => {
   const passed = task({ loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] }) });
-  expect(reviewLine(approval, state({ tasks: [passed], spaces: [repo] }))).toEqual({ text: "Checks passed · reviewed by Codex", tone: "ok" });
+  expect(reviewLine(approval, state({ tasks: [passed], spaces: [repo] }))).toEqual({ text: "Checks passed · Approved by Codex", tone: "ok" });
 
   const finding = { severity: "high" as const, file: "a.ts", line: 1, reason: "r", resolution: { action: "fixed" as const, note: "" } };
   const fixed = task({ loop: loop({ checks: "none", reviews: [{ reviewer: "claude", verdict: "changes", findings: [finding, { ...finding, resolution: null }], skipped: null }] }) });
-  expect(reviewLine(approval, state({ tasks: [fixed], spaces: [repo] }))).toEqual({ text: "Unverified: no checks found · Claude: 2 findings, 1 fixed, 1 open", tone: "waiting" });
+  expect(reviewLine(approval, state({ tasks: [fixed], spaces: [repo] }))).toEqual({ text: "Unverified: no checks found · 1 open finding · Claude", tone: "waiting" });
   const declined = task({ loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "changes", findings: [{ ...finding, resolution: { action: "declined", note: "" } }, { ...finding, resolution: null }], skipped: null }] }) });
-  expect(reviewLine(approval, state({ tasks: [declined], spaces: [repo] }))).toEqual({ text: "Checks passed · Codex: 2 findings, 1 declined, 1 open", tone: "waiting" });
+  expect(reviewLine(approval, state({ tasks: [declined], spaces: [repo] }))).toEqual({ text: "Checks passed · 1 open finding · Codex", tone: "waiting" });
 
   const noted = task({ outcome: "done", loop: loop({ checks: "passed", reviews: [{ reviewer: "codex", verdict: "approve", findings: [{ ...finding, severity: "low", resolution: null }], skipped: null }] }) });
-  expect(reviewLine(approval, state({ tasks: [noted], spaces: [repo] }))).toEqual({ text: "Checks passed · reviewed by Codex · 1 note", tone: "ok" });
+  expect(reviewLine(approval, state({ tasks: [noted], spaces: [repo] }))).toEqual({ text: "Checks passed · Approved by Codex · 1 note", tone: "ok" });
 
   // A note on what the change did to its checks asks for a look; only failing checks read as bad.
   const flagged = task({ loop: loop({ checks: "passed", attention: ["This change edits how checks run: package.json."] }) });

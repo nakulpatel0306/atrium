@@ -386,7 +386,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             Run now
           </button>
         )}
-        {space?.kind === "repo" && task.kind === "work" && (
+        {/* Open on a decision, the checks have their chip right below; the row doesn't say it twice. */}
+        {space?.kind === "repo" && task.kind === "work" && !(open && review) && (
           <ChecksBadge
             task={task}
             onOpen={() => {

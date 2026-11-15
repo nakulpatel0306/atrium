@@ -4394,3 +4394,59 @@ kbd {
   flex-wrap: wrap;
   color: var(--yellow);
 }
+
+/* What the checks said and what the reviewer said: two chips, each whole, each in its own colour. On a narrow row they
+   wrap below the title rather than cut each other off. */
+.chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  padding: 1px 8px;
+  min-height: 22px;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.chip svg {
+  width: 12px;
+  height: 12px;
+}
+.chip.ok {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 40%, var(--line));
+}
+.chip.waiting {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
+}
+.chip.bad {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 40%, var(--line));
+}
+.summary-row .chips {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+@container main (max-width: 640px) {
+  .summary-row .chips {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* A task row keeps enough of its title to recognise. */
+.item.task .task-open .t {
+  min-width: 8em;
+}
+.item.task .task-open .tag {
+  flex: none;
+}

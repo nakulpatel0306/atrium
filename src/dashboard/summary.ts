@@ -1,6 +1,6 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
 import type { Stage } from "../engine/loop";
-import { cleanResult, needsYouCount, pausedForYou } from "../engine/needs";
+import { cleanResult, needsYouCount, pausedForYou, reviewSettled } from "../engine/needs";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
@@ -115,33 +115,62 @@ export type Review = { text: string; tone?: "ok" | "waiting" | "bad" };
 type Loop = NonNullable<Task["loop"]>;
 
 // What Atrium's checks and the reviewer made of a coding task, as one line.
-export function loopLine(loop: Loop): Review {
-  const parts = [loop.noChanges ? "No changes" : loop.checks === "passed" ? "Checks passed" : loop.checks === "failed" ? "Checks failed" : loop.unverified ? "Unverified: changes how dependencies install" : "Unverified: no checks found"];
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// What the checks said and what the reviewer said, as two separate chips, each in its own colour: checks that passed
+// stay green even when the review left something open. Whatever needs you leads its chip ("1 open finding"), so a
+// narrow row never cuts it off.
+export function loopChips(loop: Loop): { checks: Review; review: Review | null } {
+  const checks: Review = loop.noChanges
+    ? { text: "No changes" }
+    : loop.checks === "passed"
+      ? { text: "Checks passed", tone: "ok" }
+      : loop.checks === "failed"
+        ? { text: "Checks failed", tone: "bad" }
+        : { text: loop.unverified ? "Unverified: changes how dependencies install" : "Unverified: no checks found", tone: "waiting" };
   const last = loop.reviews.at(-1);
-  if (last?.skipped) parts.push("review didn't happen");
-  else if (last) {
-    const who = agentName(last.reviewer);
-    const asked = loop.reviews.flatMap((r) => (r.verdict === "changes" ? r.findings : []));
+  if (!last) return { checks, review: null };
+  if (last.skipped) return { checks, review: { text: "Review didn't happen", tone: "waiting" } };
+  const who = agentName(last.reviewer);
+  const tone = reviewSettled(loop) ? "ok" : "waiting";
+  const asked = loop.reviews.flatMap((r) => (r.verdict === "changes" ? r.findings : []));
+  if (asked.length) {
     // How each finding ended, so "asked for changes" and a result waiting for you don't read as a contradiction.
-    const count = (action: "fixed" | "declined") => asked.filter((f) => f.resolution?.action === action).length;
     const open = asked.filter((f) => !f.resolution).length;
-    const ended = [count("fixed") && `${count("fixed")} fixed`, count("declined") && `${count("declined")} declined`, open && `${open} open`].filter(Boolean).join(", ");
-    if (asked.length) parts.push(`${who}: ${asked.length} finding${asked.length === 1 ? "" : "s"}${ended ? `, ${ended}` : ""}`);
-    else parts.push(last.verdict === "approve" ? `reviewed by ${who}` : `${who} gave no verdict`);
-    // Notes on an approval are the reviewer's asides: shown, never something to answer.
-    const notes = last.verdict === "approve" ? last.findings.filter((f) => !f.resolution).length : 0;
-    if (notes) parts.push(`${notes} note${notes === 1 ? "" : "s"}`);
+    if (open) return { checks, review: { text: `${plural(open, "open finding")} · ${who}`, tone } };
+    const count = (action: "fixed" | "declined") => asked.filter((f) => f.resolution?.action === action).length;
+    const ended = [count("fixed") && `${count("fixed")} fixed`, count("declined") && `${count("declined")} declined`].filter(Boolean).join(", ");
+    return { checks, review: { text: `${who}: ${ended}`, tone } };
   }
-  // Red only for failing checks; green exactly when the result is clean by the one rule (needs.ts); amber otherwise.
-  const tone = loop.checks === "failed" ? "bad" : cleanResult({ outcome: "done", loop }) ? "ok" : "waiting";
-  return { text: parts.join(" · "), tone };
+  if (last.verdict !== "approve") return { checks, review: { text: `${who} gave no verdict`, tone } };
+  // Notes on an approval are the reviewer's asides: shown, never something to answer.
+  const notes = last.findings.filter((f) => !f.resolution).length;
+  return { checks, review: { text: `Approved by ${who}${notes ? ` · ${plural(notes, "note")}` : ""}`, tone } };
 }
 
-// The line on an approval's card, for work that went through the loop; null for anything else.
-export function reviewLine(approval: Approval, state: State): Review | null {
+// The same two as one line, for a terminal row or a tooltip. Red only for failing checks; green exactly when the
+// result is clean by the one rule (needs.ts); amber otherwise.
+export function loopLine(loop: Loop): Review {
+  const { checks, review } = loopChips(loop);
+  const tone = loop.checks === "failed" ? "bad" : cleanResult({ outcome: "done", loop }) ? "ok" : "waiting";
+  return { text: [checks.text, review?.text].filter(Boolean).join(" · "), tone };
+}
+
+// The loop behind an approval's card, for repo work that went through it; null for anything else.
+function loopOf(approval: Approval, state: State): Loop | null {
   const loop = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId)?.loop : null;
   const space = state.spaces.find((s) => s.id === approval.spaceId);
-  return loop && space?.kind === "repo" ? loopLine(loop) : null;
+  return loop && space?.kind === "repo" ? loop : null;
+}
+
+export function reviewLine(approval: Approval, state: State): Review | null {
+  const loop = loopOf(approval, state);
+  return loop ? loopLine(loop) : null;
+}
+
+export function reviewChips(approval: Approval, state: State): ReturnType<typeof loopChips> | null {
+  const loop = loopOf(approval, state);
+  return loop ? loopChips(loop) : null;
 }
 
 export const reviewerName = (choice: Space["reviewBy"]) => (choice === "off" ? "Off" : agentName(choice));

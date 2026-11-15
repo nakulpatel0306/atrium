@@ -2,7 +2,7 @@
 // in engine/needs.ts. The terminal app reads the same lines, so both say the same thing.
 import { askLine, attentionQueue, batchApprovable, cleanResult, type QueueItem, type QueueKind } from "../engine/needs";
 import type { State } from "../engine/state";
-import { reviewLine, summaryLine } from "./summary";
+import { reviewChips, summaryLine } from "./summary";
 
 export type { QueueItem, QueueKind };
 export { attentionQueue };
@@ -35,7 +35,10 @@ export function itemLine(state: State, i: QueueItem): string {
   if (i.kind === "review" || i.kind === "approval") {
     const a = approvalOf(state, i);
     if (!a) return "";
-    return reviewLine(a, state)?.text ?? summaryLine(a.detail);
+    // The reviewer's half leads, so a narrow row cuts the checks (green or red at a glance elsewhere), never "1 open
+    // finding".
+    const chips = reviewChips(a, state);
+    return chips ? [chips.review?.text, chips.checks.text].filter(Boolean).join(" · ") : summaryLine(a.detail);
   }
   if (i.kind === "suggestion") {
     const p = state.proposals.find((x) => x.id === i.key);

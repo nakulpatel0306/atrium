@@ -91,6 +91,12 @@ export function cleanResult(t: { outcome: string | null; loop: LoopState | null 
   const loop = t?.loop;
   if (t?.outcome !== "done" || !loop) return false;
   if (loop.noChanges || loop.checks !== "passed" || loop.unverified || loop.attention.length > 0 || loop.alreadyFailing.length > 0) return false;
+  return reviewSettled(loop);
+}
+
+// The review's half of that rule, which its own chip shows: the last review approved, and nothing medium or high from
+// any round is left unfixed.
+export function reviewSettled(loop: LoopState): boolean {
   const last = loop.reviews.at(-1);
   if (!last || last.skipped || last.verdict !== "approve") return false;
   return loop.reviews.every((r) => !r.skipped && r.findings.every((f) => f.severity === "low" || f.resolution?.action === "fixed"));

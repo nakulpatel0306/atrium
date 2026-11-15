@@ -4,7 +4,7 @@ import { post, type State } from "../api";
 import { showToast } from "../toast";
 import { isRisky, shownSha } from "../queue";
 import { HELD_ASKS } from "../../engine/needs";
-import { reviewLine } from "../summary";
+import { reviewChips } from "../summary";
 import { approveLabel } from "./OutcomeBanner";
 
 type Approval = State["approvals"][number];
@@ -106,6 +106,22 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
   );
 }
 
+// What the checks said and what the reviewer said, as two chips that never cut each other off: each keeps its whole
+// text and wraps to a line of its own when the row is narrow.
+export function Chips({ chips }: { chips: NonNullable<ReturnType<typeof reviewChips>> }) {
+  return (
+    <span className="chips">
+      <span className={`chip${chips.checks.tone ? ` ${chips.checks.tone}` : ""}`}>{chips.checks.text}</span>
+      {chips.review && (
+        <span className={`chip${chips.review.tone ? ` ${chips.review.tone}` : ""}`}>
+          <SearchCheck />
+          {chips.review.text}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // The one layout for deciding on a result, wherever it's decided: the queue's screen, a task's own page and a row in a
 // list. Left to right: what the checks and the reviewer said, a way to the full screen when there is one, then Send
 // back and Approve. Below them, a line that names the keys, or, once a risky Approve has had one press of a, asks for
@@ -113,19 +129,12 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
 export function DecisionBar({ approval, state, open, armed = false, keys = false }: { approval: Approval; state: State; open?: () => void; armed?: boolean; keys?: boolean }) {
   const task = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const d = useDecision(approval, shownSha(state, approval));
-  const review = reviewLine(approval, state);
+  const chips = reviewChips(approval, state);
   const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
   return (
     <div className="decision">
       <div className="decision-row">
-        {review ? (
-          <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>
-            <SearchCheck />
-            <span className="review-text">{review.text}</span>
-          </span>
-        ) : (
-          <span className="review-line">Waiting for your decision</span>
-        )}
+        {chips ? <Chips chips={chips} /> : <span className="review-line">Waiting for your decision</span>}
         <span className="decision-acts">
           {open && (
             <button className="btn" data-act="open" onClick={open}>

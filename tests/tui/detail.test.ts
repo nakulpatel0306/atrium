@@ -59,7 +59,7 @@ test("approval detail shows what the checks and the reviewer said, and anything 
     loop: { ...newLoop(SIZE_BUDGETS.medium), checks: "passed", attention: ["This change edits how checks run: package.json."], reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] },
   };
   const all = text(approvalDetail(deriveView(state, { ...initialUi })));
-  expect(all).toContain("Checks passed · reviewed by Codex");
+  expect(all).toContain("Checks passed · Approved by Codex");
   expect(all).toContain("Look closely: This change edits how checks run: package.json.");
   expect(all).toContain("Changed 2 files.");
 });
