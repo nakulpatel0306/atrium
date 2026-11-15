@@ -2,9 +2,10 @@
 // 100 columns).
 import { agentText } from "../../dashboard/agents";
 import { askLine } from "../../engine/needs";
+import { waited } from "../../dashboard/queue";
 import { KIND } from "../../engine/words";
 import { askSteps } from "../keys";
-import { duration, relative } from "../../dashboard/format";
+import { duration } from "../../dashboard/format";
 import { liveStatus, reviewLine } from "../../dashboard/summary";
 import { outcomeText } from "../../engine/outcome";
 import { type Block, box, columns, fit, type Hit, keyRow, label, type Line, rowsOf, shift } from "../canvas";
@@ -28,6 +29,10 @@ type Card = { id: string; glyph: string; tone: Tone; title: string; meta: Line; 
 
 const RIGHT = 36;
 
+// How long an item has waited, from the queue's own time (needs.ts) and in the dashboard's words, so asking a paused
+// task to explain itself doesn't reset it.
+const waiting = (since: number, now: number) => (waited(since, now) === "now" ? "just now" : `waiting ${waited(since, now)}`);
+
 export function cardsOf(view: View, now: number, inner: number): Card[] {
   const { state } = view;
   const names = new Map(state.spaces.map((s, i) => [s.id, { name: s.name, i }]));
@@ -49,7 +54,7 @@ export function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: "?",
         tone: "info",
         title: t.title,
-        meta: [...owner(t.spaceId), dot, { text: `${KIND[item.kind].label} · ${relative(t.updatedAt, now)}`, color: "faint" }],
+        meta: [...owner(t.spaceId), dot, { text: `${KIND[item.kind].label} · ${waiting(item.since, now)}`, color: "faint" }],
         body: wrapStyled([{ text: oneLine(questions.length ? questions.map((q) => q.question).join("  ") : askLine(t)), color: "dim" }], inner).slice(0, 2),
         // A question is answered right here; a pick or a stopped part is decided on its own screen, under the same name.
         keys: askSteps(t).length
@@ -66,7 +71,7 @@ export function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: paused ? GLYPH.notdone : GLYPH.suggestion,
         tone: paused ? "bad" : "info",
         title: t.title,
-        meta: [...owner(t.spaceId), dot, { text: paused ? `${KIND.paused.label} · ${relative(t.updatedAt, now)}` : `${KIND.shape.label} · low priority`, color: "faint" }],
+        meta: [...owner(t.spaceId), dot, { text: paused ? `${KIND.paused.label} · ${waiting(item.since, now)}` : `${KIND.shape.label} · low priority`, color: "faint" }],
         body: wrapStyled([{ text: oneLine(paused ? askLine(t) : (t.loop?.shape?.reason ?? "")), color: paused ? "warn" : "dim" }], inner).slice(0, 2),
         keys: paused
           ? [{ key: "↵", label: KIND.paused.action, input: "\r", hot: true }, { key: "e", label: "Explain the problem", input: "e" }]
@@ -111,7 +116,7 @@ export function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: notDone ? GLYPH.notdone : "◆",
         tone: notDone ? "warn" : "accent",
         title: a.title,
-        meta: [...owner(a.spaceId), dot, { text: task ? `${KIND.review.label} · ${agentText(task, state.runs)}${notDone ? " · says it isn't done" : ""} · ${relative(a.createdAt, now)}` : `${KIND.review.label} · ${relative(a.createdAt, now)}`, color: "faint" }],
+        meta: [...owner(a.spaceId), dot, { text: task ? `${KIND.review.label} · ${agentText(task, state.runs)}${notDone ? " · says it isn't done" : ""} · ${waiting(item.since, now)}` : `${KIND.review.label} · ${waiting(item.since, now)}`, color: "faint" }],
         body: told
           ? wrapStyled([{ text: told, color: "warn" }], inner).slice(0, 2)
           : wrapStyled([{ text: oneLine(review?.text ?? a.detail.split("\n")[0] ?? ""), color: review?.tone === "bad" ? "warn" : "dim" }], inner).slice(0, 1),
@@ -124,7 +129,7 @@ export function cardsOf(view: View, now: number, inner: number): Card[] {
       glyph: "?",
       tone: "info",
       title: a.title,
-      meta: [...owner(a.spaceId), dot, { text: `${KIND.approval.label} · ${relative(a.createdAt, now)}`, color: "faint" }],
+      meta: [...owner(a.spaceId), dot, { text: `${KIND.approval.label} · ${waiting(item.since, now)}`, color: "faint" }],
       body: wrapStyled([{ text: oneLine(a.detail.split("\n").find((l) => l.trim()) ?? ""), color: "dim" }], inner).slice(0, 2),
       keys: [{ key: "a", label: KIND.approval.action, input: "a", hot: true }, { key: "s", label: a.spaceId === null ? "Decline" : "Send back", input: "s" }, open],
     });

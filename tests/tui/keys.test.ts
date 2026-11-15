@@ -337,6 +337,8 @@ test("the asking card and the question box show the questions and numbered answe
   const home = homeScreen(view, initialUi, { briefing, now: Date.now(), frame: 0, lastLine: "" } as unknown as Parameters<typeof homeScreen>[2], 120, 30);
   expect(text(home.lines)).toContain("Add totals");
   expect(text(home.lines)).toContain("Question · ");
+  // Its wait is the queue's own time, in the dashboard's words.
+  expect(text(home.lines)).toMatch(/Question · waiting \d+[mhd]|Question · just now/);
   const box = answerOver(Array.from({ length: 20 }, () => []), { kind: "answer", taskId: "tsk_asks", index: 0, step: 0, answers: [] }, state, 100, 0);
   const shown = text(box.lines);
   expect(shown).toContain("1/2 · Weekly or monthly?");
@@ -372,4 +374,15 @@ test("the detail shows the suggested shape while the task runs as one writer, an
   expect(shown).toContain("Cost: 412k weighted tokens · ~$1.84 est. at list prices · 90% from cache");
   expect(shown).toContain("ready Part A");
   expect(shown).toContain("Open their pull requests or merge them on the dashboard.");
+});
+
+test("a paused card's wait counts from the pause, not from the task's last change", async () => {
+  const { cardsOf } = await import("../../src/tui/screens/home");
+  const state = makeState();
+  const now = Date.now();
+  state.tasks = state.tasks.map((t) =>
+    t.id === ids.blocked ? { ...t, kind: "work", updatedAt: now, loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "Over budget.", at: now - 2 * 3_600_000 } } } : t,
+  );
+  const card = cardsOf(deriveView(state, initialUi), now, 80).find((c) => c.id === ids.blocked)!;
+  expect(card.meta.map((m) => m.text).join("")).toContain("Paused · waiting 2h");
 });
