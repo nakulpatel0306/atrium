@@ -4371,3 +4371,14 @@ kbd {
   color: var(--dim);
   text-decoration: none;
 }
+
+.walkthrough-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.walkthrough-empty svg {
+  width: 14px;
+  height: 14px;
+}

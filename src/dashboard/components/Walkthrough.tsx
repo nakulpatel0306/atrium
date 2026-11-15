@@ -94,16 +94,12 @@ export function WalkthroughCard({ task, space }: { task: Task; space: Space | un
     // A result from before learning was on, or one already decided, doesn't need one any more.
     if (task.status !== "review") return null;
     return (
-      <section className="walkthrough empty">
-        <h4>
-          <BookOpen />
-          Walkthrough
-        </h4>
-        <p className="hint">
-          Not written yet. It's usually on its way as the result arrives. {again("Write it now")}
-        </p>
-        {error && <p className="err">{error}</p>}
-      </section>
+      // One line, not a card: an empty walkthrough shouldn't take the room the diff below needs.
+      <p className="walkthrough-empty hint">
+        <BookOpen />
+        Walkthrough not written yet; it's usually on its way as the result arrives. {again("Write it now")}
+        {error && <span className="err"> {error}</span>}
+      </p>
     );
   }
   const p = w.predict;

@@ -81,7 +81,7 @@ test("the walkthrough shows above the diff with its spots linking into the Chang
 test("no walkthrough yet offers to write one; one for an earlier commit says so; learning off shows nothing", async () => {
   const empty = setup({ walkthrough: null });
   const el = render(<WalkthroughCard task={empty.task} space={empty.space} />);
-  expect(el.textContent).toContain("Not written yet.");
+  expect(el.textContent).toContain("Walkthrough not written yet");
   act(() => button(el, "Write it now")!.click());
   await settle();
   expect(calls.map((c) => c.url)).toEqual([`/api/tasks/${empty.task.id}/walkthrough`]);
