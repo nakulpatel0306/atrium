@@ -538,7 +538,8 @@ h2 {
 .list {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  overflow: hidden;
+  /* Clip, not hidden: hidden would make the list a scroll container and stop a decision card sticking inside it. */
+  overflow: clip;
 }
 .item {
   display: flex;
@@ -4507,6 +4508,10 @@ kbd {
   }
   .item.task .task-open {
     flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  .item.task .task-open .t {
+    flex: 1 1 calc(100% - 60px);
   }
   /* A run's facts stack in two columns rather than four squeezed ones. */
   .runs li {
