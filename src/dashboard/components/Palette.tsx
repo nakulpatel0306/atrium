@@ -25,8 +25,12 @@ export function Palette({ state, spaceId, open, onClose, onAsk, onNewSpace }: { 
     setError(null);
     requestAnimationFrame(() => input.current?.focus());
   }, [open]);
-  useEffect(() => setAt(0), [query]);
-  useEffect(() => document.getElementById(`pal-${found[at]?.id}`)?.scrollIntoView({ block: "nearest" }), [at, found]);
+  useEffect(() => {
+    setAt(0);
+  }, [query]);
+  useEffect(() => {
+    document.getElementById(`pal-${found[at]?.id}`)?.scrollIntoView({ block: "nearest" });
+  }, [at, found]);
 
   if (!open) return null;
 

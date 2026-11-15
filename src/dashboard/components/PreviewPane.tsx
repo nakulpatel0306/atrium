@@ -43,7 +43,9 @@ export function PreviewPane({ preview, rawUrl }: { preview: FilePreview; rawUrl:
   const { kind, text } = preview;
   const ref = useRef<HTMLDivElement>(null);
   // A preview opened near the bottom would otherwise sit under the command bar (main's scroll padding clears it).
-  useEffect(() => ref.current?.scrollIntoView({ block: "nearest" }), []);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   return (
     <div className="preview" ref={ref}>
       {kind === "image" ? (
