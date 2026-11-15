@@ -97,7 +97,7 @@ test("summary counts pending suggestions as things that need you", () => {
 
   const sum = summary(db);
   expect(sum.needsYou).toBe(2);
-  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", files: 0, outcome: null });
+  expect(sum.needs[0]).toEqual({ id: "prp_new", kind: "suggestion", title: `Stop asking about ${labelOf(FP)}?`, spaceName: "Docs", path: "/", files: 0, outcome: null, label: "Suggestion" });
   expect(sum.needs[1]!.id).toBe(a.id);
 });
 
@@ -111,7 +111,7 @@ test("summary skips suggestions in archived spaces", () => {
 test("summary shows an Atrium-wide question as Atrium's", () => {
   const a = createApproval(db, { spaceId: null, kind: "question", title: 'Create GitHub repo "demo"?', detail: "", alwaysAsk: "create_repo" });
   const sum = summary(db);
-  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", files: 0, outcome: null });
+  expect(sum.needs).toContainEqual({ id: a.id, kind: "question", title: 'Create GitHub repo "demo"?', spaceName: "Atrium", path: "/", files: 0, outcome: null, label: "Sign-off" });
   expect(sum.needsYou).toBe(1);
 });
 
@@ -154,7 +154,7 @@ test("a task asking before it starts counts toward the badge and opens on its ta
   setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), stage: "brief", questions: [{ question: "Weekly or monthly?", options: ["Weekly", "Monthly"] }] });
   const sum = summary(db);
   expect(sum.needsYou).toBe(1);
-  expect(sum.needs[0]).toEqual({ id: t.id, kind: "question", title: "Add totals: Weekly or monthly?", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null });
+  expect(sum.needs[0]).toEqual({ id: t.id, kind: "question", title: "Add totals: Weekly or monthly?", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null, label: "Question" });
 });
 
 test("a split waiting on a part that stopped asks too, through the one definition", async () => {
@@ -217,6 +217,6 @@ test("a paused task counts toward the badge once, as a need and not as stopped; 
   db.query("INSERT INTO memory_lines (id, space_id, task_id, source, line, why, status, created_at) VALUES ('mem_1', ?, NULL, 'steer', 'Use the helper.', 'why', 'open', 1)").run(s.id);
   const sum = summary(db);
   expect(sum.needsYou).toBe(1);
-  expect(sum.needs[0]).toEqual({ id: t.id, kind: "paused", title: "Totals: Another turn would go over the 200k token budget.", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null });
+  expect(sum.needs[0]).toEqual({ id: t.id, kind: "paused", title: "Totals: Another turn would go over the 200k token budget.", spaceName: "atrium", path: `/space/${s.id}?task=${t.id}`, files: 0, outcome: null, label: "Paused" });
   expect(sum.stopped).toEqual([]);
 });

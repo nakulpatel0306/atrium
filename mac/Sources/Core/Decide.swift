@@ -35,9 +35,10 @@ func madeText(_ n: Int?) -> String? {
 func noteTitle(_ n: Need) -> String {
   if n.kind == "review" && n.outcome == "couldnt" { return "Couldn't do this" }
   if n.kind == "review" && n.outcome == "partial" { return "Partly done" }
-  if n.kind == "review" { return "Ready for review" }
+  if let label = n.label { return label }
+  if n.kind == "review" { return "Review" }
   if n.kind == "paused" { return "Paused" }
-  return "Atrium has a question"
+  return "Question"
 }
 
 func newNotes(previous: Summary?, next: Summary) -> [Note] {
@@ -52,7 +53,7 @@ func newNotes(previous: Summary?, next: Summary) -> [Note] {
   }
   notes += next.stopped.filter { !seenStopped.contains($0.id) }.map {
     Note(
-      id: $0.id, title: $0.status == "blocked" ? "Blocked" : "Didn't finish",
+      id: $0.id, title: $0.status == "blocked" ? "Stopped" : "Didn't finish",
       body: "\($0.title) · \($0.reason ?? $0.spaceName)", path: $0.path)
   }
   if notes.count > 3 {

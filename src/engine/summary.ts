@@ -5,11 +5,13 @@ import { taskFiles } from "./outputs/store";
 import { getSetting } from "./settings";
 import { listSpaces } from "./spaces";
 import { askLine, attentionQueue } from "./needs";
+import { KIND } from "./words";
 import { openLines } from "./memory";
 import { listTasks } from "./tasks";
 
 // `files` is how many files a review's task made (0 for everything else), so the notification can say so.
-// `outcome` is what a review's agent said when it wasn't plainly done.
+// `outcome` is what a review's agent said when it wasn't plainly done. `label` is the item's kind in the shared words
+// (words.ts), which a notification's title uses.
 export type Need = {
   id: string;
   kind: "review" | "question" | "suggestion" | "paused";
@@ -18,6 +20,7 @@ export type Need = {
   path: string;
   files: number;
   outcome: "partial" | "couldnt" | "unknown" | null;
+  label: string;
 };
 export type Stopped = { id: string; title: string; spaceName: string; status: "failed" | "blocked"; reason: string | null; path: string };
 export type Summary = {
@@ -45,7 +48,8 @@ export function summary(db: Database): Summary {
   // Stable: a tie keeps the queue's order, which keeps each list's own.
   const needs = [...queue]
     .sort((a, b) => b.since - a.since)
-    .map((i): Need => {
+    .map((i): Need => ({ ...need(i), label: KIND[i.kind].label }));
+  function need(i: (typeof queue)[number]): Omit<Need, "label"> {
       const spaceName = i.spaceId === null ? "Atrium" : names.get(i.spaceId)!;
       if (i.kind === "review" || i.kind === "approval") {
         const a = approvals.find((x) => x.id === i.key)!;
@@ -59,7 +63,7 @@ export function summary(db: Database): Summary {
       if (i.kind === "suggestion") return { id: i.key, kind: "suggestion", title: `Stop asking about ${proposals.find((p) => p.id === i.key)!.label}?`, spaceName, path: "/", files: 0, outcome: null };
       const t = byId.get(i.taskId!)!;
       return { id: t.id, kind: i.kind === "paused" ? "paused" : "question", title: `${t.title}: ${askLine(t)}`, spaceName, path: pathFor(t.spaceId, t.id), files: 0, outcome: null };
-    });
+  }
   const asking = new Set(queue.map((i) => i.taskId));
   // A paused task is already in needs; listing it as stopped too would notify twice.
   const stopped = tasks
