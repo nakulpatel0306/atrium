@@ -10,9 +10,10 @@ import { PushRefused } from "./push";
 
 // Where a task's pull request would go. Everything comes from what was recorded before the agent ran (the remote,
 // the branch the work started from, the repo's git settings) or when Nakul decided (`sha`, the commit he approved).
-export type PrTarget = { taskId: string; repoDir: string; branch: string; sha: string; base: string; repo: string; remote: string; fingerprint: string | null };
+// `approvalId` and `status` are what the target was read from, checked again when the push is recorded.
+export type PrTarget = { taskId: string; repoDir: string; branch: string; sha: string; base: string; repo: string; remote: string; fingerprint: string | null; approvalId: string | null; status: string };
 export type PrInfo =
-  | ({ eligible: true; url: string | null; title: string; body: string } & Omit<PrTarget, "taskId" | "repoDir" | "remote" | "fingerprint">)
+  | ({ eligible: true; url: string | null; title: string; body: string } & Omit<PrTarget, "taskId" | "repoDir" | "remote" | "fingerprint" | "approvalId" | "status">)
   | { eligible: false; url: string | null; reason: string };
 
 export class PrFailed extends Error {
@@ -42,12 +43,12 @@ export async function prTarget(db: Database, taskId: string): Promise<PrTarget |
   // A decided review recorded the commit Nakul approved; that is what goes out, even if the branch moved since. An
   // approval he took back doesn't count.
   const approved = db
-    .query("SELECT branch_head FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'approved' AND undone_at IS NULL AND branch_head IS NOT NULL ORDER BY resolved_at DESC, rowid DESC LIMIT 1")
-    .get(task.id) as { branch_head: string } | null;
+    .query("SELECT id, branch_head FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'approved' AND undone_at IS NULL AND branch_head IS NOT NULL ORDER BY resolved_at DESC, rowid DESC LIMIT 1")
+    .get(task.id) as { id: string; branch_head: string } | null;
   const repo = run.remote ? githubSlug(run.remote) : null;
   if (!run.remote || !repo) return { reason: "This repo had no GitHub remote when the task ran, so there's nowhere to open a pull request." };
   if (SHA.test(run.start)) return { reason: "The work started from a commit rather than a branch, so there's no branch to merge it into." };
-  return { taskId, repoDir: space.repoPath, branch: task.branch, sha: approved?.branch_head ?? head, base: run.start, repo, remote: run.remote, fingerprint: run.fingerprint };
+  return { taskId, repoDir: space.repoPath, branch: task.branch, sha: approved?.branch_head ?? head, base: run.start, repo, remote: run.remote, fingerprint: run.fingerprint, approvalId: approved?.id ?? null, status: task.status };
 }
 
 // The newest review's text without Atrium's own "push it when you're ready" line, which a PR has made moot.
@@ -104,11 +105,14 @@ const opening = new Set<string>();
 // Nakul's click on "Push and open PR" is the yes. It's recorded as an always-ask push approval he decided himself, so
 // the audit trail shows it, and re-read before anything leaves the Mac. `sha` is the commit his confirm step showed;
 // if the commit that would go out is a different one, nothing is pushed.
+// `beforeRecord` is a test seam: it runs after the checks and before the push is recorded.
+type PrOptions = { timeoutMs?: number; beforeRecord?: () => void };
+
 export async function openPullRequest(
   db: Database,
   taskId: string,
   input: { title: string; body: string; sha: string },
-  opts: { timeoutMs?: number } = {},
+  opts: PrOptions = {},
 ): Promise<{ url: string }> {
   if (opening.has(taskId)) throw new PushRefused("Already opening a pull request for this task.");
   opening.add(taskId);
@@ -119,7 +123,7 @@ export async function openPullRequest(
   }
 }
 
-async function open(db: Database, taskId: string, input: { title: string; body: string; sha: string }, opts: { timeoutMs?: number }): Promise<{ url: string }> {
+async function open(db: Database, taskId: string, input: { title: string; body: string; sha: string }, opts: PrOptions): Promise<{ url: string }> {
   const t = await prTarget(db, taskId);
   if ("reason" in t) throw new PushRefused(t.reason);
   if (input.sha !== t.sha) throw new PushRefused("The branch has changed since you looked. Check the commit shown, then try again.");
@@ -129,7 +133,13 @@ async function open(db: Database, taskId: string, input: { title: string; body: 
   }
   const task = getTask(db, taskId)!;
   const short = t.sha.slice(0, 7);
+  opts.beforeRecord?.();
   const approval = db.transaction(() => {
+    // An Undo can land while the checks above await; read again in the step that records the push, so a result taken
+    // back to review is never pushed (and once this records, Undo refuses).
+    const now = getTask(db, taskId);
+    const yes = t.approvalId ? (db.query("SELECT undone_at FROM approvals WHERE id = ?").get(t.approvalId) as { undone_at: number | null } | null) : null;
+    if (now?.status !== t.status || (t.approvalId && yes?.undone_at != null)) throw new PushRefused("This result went back to review while the push was getting ready, so nothing was pushed.");
     const a = createApproval(db, {
       spaceId: task.spaceId,
       taskId,

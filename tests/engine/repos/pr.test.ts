@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApproval } from "../../../src/engine/approvals";
+import { createApproval, reopenDecision, resolveApproval } from "../../../src/engine/approvals";
 import { openDb } from "../../../src/engine/db";
 import { gitSettingsFingerprint } from "../../../src/engine/git";
 import { listActivity } from "../../../src/engine/events";
@@ -231,6 +231,19 @@ test("an approval the user took back no longer names the commit that goes out", 
   git(path, "commit", "-q", "-m", "later");
   git(path, "checkout", "-q", "main");
   expect(await prInfo(db, task.id)).toMatchObject({ sha: git(path, "rev-parse", branch) });
+});
+
+test("an Undo that lands while a push gets ready stops the push", async () => {
+  const { task } = await finishedTask();
+  const review = db.query("SELECT id FROM approvals WHERE task_id = ? AND kind = 'review'").get(task.id) as { id: string };
+  resolveApproval(db, review.id, "approve");
+  const sha = await shaFor(db, task.id);
+  const err = await openPullRequest(db, task.id, { title: "t", body: "b", sha }, { beforeRecord: () => void reopenDecision(db, review.id) }).catch((e) => e);
+  expect(err).toBeInstanceOf(PushRefused);
+  expect((err as Error).message).toContain("went back to review");
+  expect(pushApprovals()).toHaveLength(0);
+  expect(gh.argv()).toEqual([]);
+  expect(getTask(db, task.id)!.status).toBe("review");
 });
 
 test("a double submit records one yes and pushes once", async () => {
