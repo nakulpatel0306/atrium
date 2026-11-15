@@ -34,7 +34,7 @@ Anything that leaves the Mac is done by the engine, never an agent, and only aft
 
 ## The dashboard
 
-A React app (`src/dashboard`) served by the engine on the same port and kept live by a WebSocket. It includes Get started (Claude, a projects folder, and an optional sample task that copies `assets/sample-repo` to a temp folder and runs the loop on it), Needs you (the queue beside one decision screen per item), every space view and Settings. ⌘K opens a command palette of every action by name, built from state in `palette.ts`; / goes to the ask bar. Styles are one CSS file on design tokens (colour, type, radius, motion) with a dark and a light set, following the Mac's setting unless the palette picks one. Long lists draw only what's in view, off-screen diff files skip layout, and render budgets for the queue and the diff view are part of the test suite.
+A React app (`src/dashboard`) served by the engine on the same port and kept live by a WebSocket. It includes Get started (Claude, a projects folder, and an optional sample task that copies `assets/sample-repo` under the data folder's `samples/` and runs the loop on it), Needs you (the queue beside one decision screen per item, the diff included; every decision on a result goes through one `DecisionBar`), every space view and Settings. ⌘K opens a command palette of every action by name, built from state in `palette.ts`; / goes to the ask bar. Styles are one CSS file on design tokens (colour, type, radius, motion) with a dark and a light set, following the Mac's setting unless the palette picks one. Long lists draw only what's in view, off-screen diff files skip layout, and render budgets for the queue and the diff view are part of the test suite.
 
 ## The terminal app
 

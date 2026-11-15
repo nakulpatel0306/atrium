@@ -16,20 +16,20 @@ bun install && bun link
 atrium install && atrium open
 ```
 
-Get started checks your Claude CLI (with the install command if it's missing), asks for your projects folder, and offers a sample task: a tiny bundled repo with one failing test, copied to a temp folder, fixed by your Claude CLI on its cheapest model while you watch the whole loop. It takes about a minute and costs around 2¢ at list prices. Skip it if you'd rather start on your own repo.
+Get started checks your Claude CLI (with the install command if it's missing), asks for your projects folder, and offers a sample task: a tiny bundled repo with one failing test, copied into Atrium's own folder, fixed by your Claude CLI on its cheapest model while you watch the whole loop. It takes about a minute and costs around 2¢ at list prices. Skip it if you'd rather start on your own repo.
 
 ## What Atrium does differently
 
 - **The loop, every time.** Brief → write → verify → review → you. The engine runs the repo's own checks after every turn in a sandboxed checkout of their own, and a clean-context reviewer judges mergeability against the brief. Results that couldn't be proven are labelled as such. In published studies, about 44% of agent failures trace to the spec and 24% to verification, and about half of agent PRs that passed a benchmark's tests still weren't mergeable.
 - **The right shape, cheaper.** One writer by default, read-only scouts for broad reading, a split or best-of-N only on your click. A cheap model drafts briefs and explanations, a strong one reviews, sessions stay warm in the prompt cache, and every task shows its tokens and a list-price estimate. Controlled studies found multi-agent setups lose 39–70% on sequential work.
 - **Learning, both kinds.** A walkthrough on every result, "explain this hunk" on any change, the diagnosis first when an agent is stuck, and a director retro built only from measured numbers. Developers who asked for explanations after generating code scored 86% on a follow-up quiz against 39% for pure delegation. Nothing here is a gate.
-- **One queue for everything that needs you.** Approvals, questions, pauses and proposals, longest-blocked first, each opening to one screen with the brief, checks, findings and walkthrough. j/k to move, a to approve, s to send back, Shift-A to approve every clean result at once. The terminal app and the Mac app's badge read the same queue.
+- **One queue for everything that needs you.** Approvals, questions, pauses and proposals, longest-blocked first, each opening to one screen with the walkthrough, the diff, the brief, checks and findings. j/k to move, a to approve (twice when something is open), s to send back, Shift-A to approve every clean result at once at the commit you saw, and a minute to take an approval back. The terminal app and the Mac app's badge read the same queue.
 
 ## What works today
 
 - **Code spaces.** Point a space at a repo on your Mac or on GitHub. Every task runs on its own `atrium/<taskId>` branch, and Atrium never checks out over your uncommitted changes.
 - **Live diff and steer.** Watch the diff grow while the agent works, and send it a note to change course without starting over. Finished work shows each turn's commit on its own, unified or side by side.
-- **Pull requests.** Approve the work and Atrium pushes the branch and opens the PR. Starting a new project creates the GitHub repo too. Both wait for your yes.
+- **Pull requests.** After you approve, one more click pushes the branch and opens the PR. Starting a new project creates the GitHub repo too. Both wait for your yes.
 - **Rules.** When you keep approving one kind of result unchanged, Atrium suggests approving it on its own; you can undo any of those approvals. Pushes, merges, deploys, deletes and anything that costs money always ask.
 - **⌘K for everything.** Every action by name: a new task, any space or task, approving a clean result, switching a task's shape, the learning dial, the theme.
 - **Light and dark**, following your Mac unless you pick one; keyboard everywhere, visible focus, AA contrast in both, and reduced motion respected.
@@ -124,7 +124,7 @@ From a terminal, `atrium doctor` shows the same checks in the same order, with t
 - Checks are evidence, not proof: the writer can still weaken a test's assertion without skipping or deleting it. The reviewer and you see the diff. [docs/loop.md](docs/loop.md) lists every known way a change can alter what its checks mean, and which stay open.
 - Codex's subagents can't be switched off completely in codex-cli 0.147; they run inside the same sandbox as the writer.
 - Atrium sees Claude's five-hour window only when a run reports it, so use in other Claude apps shows up at Atrium's next run.
-- The sample task's repo stays in your temp folder, and its space stays in the sidebar until you archive or delete it.
+- The sample task's space stays in the sidebar until you delete the task or the space, which removes its copy of the demo repo too.
 - An older database keeps the tables of features that were removed (investing, money, mail and calendar, texting) until you remove them (see Privacy and safety).
 
 ## For developers

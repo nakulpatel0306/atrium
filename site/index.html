@@ -69,6 +69,8 @@ nav ul a:hover { color: var(--text); }
 
 /* Hero: the skylight */
 .hero { padding-block: clamp(64px, 10vw, 120px) clamp(64px, 9vw, 112px); overflow: hidden; isolation: isolate; }
+/* The light spills past the column's edges; clipped sideways so a phone never scrolls to it. */
+.hero { overflow-x: clip; }
 .sky { position: absolute; inset: -10% 0 auto; height: 900px; z-index: -1; pointer-events: none;
   background:
     radial-gradient(ellipse 40% 55% at 50% 0%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%),
@@ -307,6 +309,14 @@ footer .foot-r { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
 .m-entry { border-bottom: 1px solid var(--m-line); }
 .m-entry .m-item { border-bottom: 0; }
 .m-entry.done .t { color: var(--m-faint); }
+.m-stages { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--m-faint, #868690); margin: 6px 0 0; padding: 0; }
+.m-stages li::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #34343c; margin-right: 6px; vertical-align: 1px; }
+.m-stages li.past { color: #9c9ca6; }
+.m-stages li.past::before { background: #4cb782; border-color: #4cb782; }
+.m-stages li.on { color: #e6e6ea; font-weight: 500; }
+.m-stages li.on::before { background: #7c7cf5; border-color: #7c7cf5; }
+.m-verdict { color: #4cb782; font-size: 12.5px; margin: 0; }
+.m-item.need .t span.ok { color: #4cb782; }
 .m-detail { background: var(--m-panel); padding: 2px 14px 14px 39px; color: var(--m-dim); font-size: 12.5px; display: flex; flex-direction: column; gap: 10px; animation: m-in .22s ease-out; }
 .m-made { background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 6px; padding: 12px 14px; color: var(--m-text); display: flex; flex-direction: column; gap: 8px; }
 .m-made .lbl { font-size: 11px; color: var(--m-faint); }
@@ -565,7 +575,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
             <form id="m-form" autocomplete="off">
               <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
               <input id="m-ask" type="text" aria-label="Ask Atrium">
-              <span class="k">⌘K</span>
+              <span class="k">/</span>
             </form>
           </div>
           <div class="m-toast" id="m-toast" role="status" aria-live="polite"></div>
@@ -935,23 +945,23 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     // Sample spaces. Every task's output is written the way the real agents write theirs.
     const spaces = [
       { id: "api", name: "lumen-api", kind: "repo", path: "~/Developer/lumen-api", color: C.blue, private: false, last: "1m ago", goal: "The API for Lumen, a made-up photo app. Small fixes, one branch per task.", agents: ["claude", "codex"], tasks: [
-        { id: "tsk_7f3a", title: "Fix the off-by-one in pagination", peek: "The last page dropped a row. Fixed, with a test.", agent: "claude", status: "ready", outcome: "done", when: "9:12 AM", branch: "atrium/tsk_7f3a",
+        { id: "tsk_7f3a", title: "Fix the off-by-one in pagination", peek: "The last page dropped a row. Fixed, with a test.", agent: "claude", review: "codex", status: "ready", outcome: "done", when: "9:12 AM", branch: "atrium/tsk_7f3a",
           diff: [["src/paginate.ts", 4, 2], ["tests/paginate.test.ts", 19, 0]], made: (t) => `
           <p>When the total was a multiple of the page size, the last page came back one row short. <code>paginate</code> used <code>&lt;</code> where it needed <code>&lt;=</code>.</p>
           <ul><li>Fixed the bound and added a test for an exact multiple.</li><li>Ran <code>bun test tests/paginate.test.ts</code>: 9 of 9 pass.</li></ul>
           <p class="m-mono">${filesLine(t.diff)}</p>` },
         { id: "tsk_5d10p", title: "Push atrium/tsk_5d10 and open a pull request?", peek: "Return 404 for unknown project ids", agent: "claude", status: "ready", when: "8:40 AM",
           push: { kind: "pr", branch: "atrium/tsk_5d10", diff: [["src/routes/projects.ts", 11, 3], ["tests/projects.test.ts", 24, 0]] } },
-        { id: "tsk_81c2", title: "Add rate limiting to /v1/search", agent: "codex", status: "run", outcome: "done", when: "Running", branch: "atrium/tsk_81c2", finishIn: 26000,
-          log: ["reading src/routes/search.ts", "no limiter yet, requests go straight to the index", "editing src/middleware/rate-limit.ts", "  token bucket, 30 requests a minute per key", "editing src/routes/search.ts", "$ bun test tests/search.test.ts", "  ✓ 14 of 14 passed", "committed to atrium/tsk_81c2"],
-          diff: [["src/middleware/rate-limit.ts", 38, 0, 3], ["src/routes/search.ts", 6, 1, 5], ["tests/search.test.ts", 22, 0, 6]], made: (t) => `
+        { id: "tsk_81c2", title: "Add rate limiting to /v1/search", agent: "claude", review: "codex", status: "run", outcome: "done", when: "Running", branch: "atrium/tsk_81c2", finishIn: 26000,
+          log: ["brief: 30 requests a minute per key; done when a test covers the 429", "reading src/routes/search.ts", "no limiter yet, requests go straight to the index", "editing src/middleware/rate-limit.ts", "  token bucket, 30 requests a minute per key", "editing src/routes/search.ts", "committed to atrium/tsk_81c2", "Atrium ran the checks: typecheck ✓ tests ✓ (14 of 14)", "Codex reviewed the diff against the brief: approve"],
+          diff: [["src/middleware/rate-limit.ts", 38, 0, 4], ["src/routes/search.ts", 6, 1, 6], ["tests/search.test.ts", 22, 0, 6]], made: (t) => `
           <p>Added a token-bucket limiter, 30 requests a minute per API key, and put it in front of <code>/v1/search</code>. Over the limit, it returns 429 with a <code>Retry-After</code> header.</p>
           <p class="m-mono">${filesLine(t.diff)}</p>` },
         { id: "tsk_9b04", title: "Switch logging to the structured logger", agent: "claude", status: "queued", when: "Queued" },
         { id: "tsk_3e77", title: "Bump dependencies", agent: "codex", status: "done", outcome: "done", when: "Yesterday", branch: "atrium/tsk_3e77", made: () => `<p>Updated 6 packages. Tests pass. Pull request #41 opened after your yes.</p>` },
       ] },
       { id: "web", name: "lumen-web", kind: "repo", path: "example/lumen-web", color: C.green, private: false, last: "8m ago", goal: "Lumen's web app, cloned from GitHub. Fix what users notice first.", agents: ["claude", "codex", "gemini"], tasks: [
-        { id: "tsk_c418", title: "Stop the dark mode flash on first load", peek: "Fixed in Chrome and Safari. Firefox still flashes.", agent: "gemini", status: "ready", outcome: "partial", when: "7:55 AM", branch: "atrium/tsk_c418",
+        { id: "tsk_c418", title: "Stop the dark mode flash on first load", peek: "Fixed in Chrome and Safari. Firefox still flashes.", agent: "claude", review: "gemini", status: "ready", outcome: "partial", when: "7:55 AM", branch: "atrium/tsk_c418",
           diff: [["index.html", 9, 0], ["src/theme.ts", 3, 12]], made: (t) => `
           <p>Moved the theme check into a small inline script in <code>index.html</code>, so the page knows the theme before it paints.</p>
           <ul><li>Fixed in Chrome and Safari.</li><li>Firefox still flashes once. I couldn't find why, so this is partial.</li></ul>
@@ -1039,7 +1049,8 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     // Rows shared by Home and Needs you
     function needRow({ s, t }) {
       const acts = `${t.push ? "" : `<button class="m-btn" type="button" data-open="${s.id}:${t.id}">View</button>`}${decide(t)}`;
-      return `<div class="m-item click need" data-open="${s.id}:${t.id}"><span class="who"><span class="m-sd" style="background:${s.color}"></span><span>${esc(s.name)}</span></span><span class="t">${esc(t.title)}${t.peek ? `<span>${esc(t.peek)}</span>` : ""}</span><span class="acts">${acts}</span></div>`;
+      const line = verdict(t) || t.peek;
+      return `<div class="m-item click need" data-open="${s.id}:${t.id}"><span class="who"><span class="m-sd" style="background:${s.color}"></span><span>${esc(s.name)}</span></span><span class="t">${esc(t.title)}${line ? `<span${verdict(t) ? ' class="ok"' : ""}>${esc(line)}</span>` : ""}</span><span class="acts">${acts}</span></div>`;
     }
     function needsList() {
       const r = ready();
@@ -1108,6 +1119,18 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       if (!t.made) return `<div class="m-made"><p>${t.skipped ? "Not now. Nothing left your Mac." : "Finished and kept."}</p></div>`;
       return `<div class="m-made"><span class="lbl">What it made${t.revised ? " · revised after your note" : ""}</span>${t.made(t)}</div>`;
     }
+    // Where a coding task is in the loop, from its log: the brief, writing, Atrium's checks, the review, then you.
+    const STAGES = ["Brief", "Writing", "Checks", "Review", "Ready"];
+    function stageOf(t) {
+      if (t.status === "ready" || t.status === "done") return 4;
+      const lines = (t.log || []).slice(0, t.shown || 1).join("\n");
+      return /reviewed/.test(lines) ? 3 : /ran the checks/.test(lines) ? 3 : /committed/.test(lines) ? 2 : /editing|reading/.test(lines) ? 1 : 0;
+    }
+    function loopStrip(t) {
+      const at = stageOf(t);
+      return `<ol class="m-stages" aria-label="Where this task is">${STAGES.map((n, i) => `<li class="${i < at ? "past" : i === at ? "on" : ""}">${n}</li>`).join("")}</ol>`;
+    }
+    const verdict = (t) => (t.review ? `Checks passed · reviewed by ${AG[t.review][1]}` : "");
     function entry(s, t) {
       const open = S.open === t.id;
       let acts = "";
@@ -1116,7 +1139,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       const tag = t.status === "ready" ? (t.push ? `<span class="m-tag warn">Always asks</span>` : "") : t.status === "run" ? `<span class="m-tag run">Running</span>` : `<span class="m-tag">${t.when}</span>`;
       const said = t.outcome && t.status !== "run" && t.status !== "queued" ? `<span class="m-tag ${t.outcome === "done" ? "run" : "warn"}">Agent says: ${t.outcome}</span>` : "";
       return `<div class="m-entry${t.status === "done" ? " done" : ""}"><div class="m-item click${t.push && t.status === "ready" ? " tall" : ""}" data-row="${t.id}" aria-expanded="${open}">${st(t.status)}<span class="t">${esc(t.title)}</span>${tag}<span class="acts">${acts}</span></div>
-        ${open ? `<div class="m-detail"><div class="m-meta">${av(t.agent)}<span>${AG[t.agent][1]}</span><span>${esc(t.when)}</span>${t.branch ? `<span class="m-mono">Branch ${esc(t.branch)}</span>` : ""}${said}</div>${made(s, t)}</div>` : ""}</div>`;
+        ${open ? `<div class="m-detail">${t.branch && !t.push ? loopStrip(t) : ""}<div class="m-meta">${av(t.agent)}<span>${AG[t.agent][1]}</span><span>${esc(t.when)}</span>${t.branch ? `<span class="m-mono">Branch ${esc(t.branch)}</span>` : ""}${said}</div>${t.status === "ready" && verdict(t) ? `<p class="m-verdict">${verdict(t)}</p>` : ""}${made(s, t)}</div>` : ""}</div>`;
     }
     function livePanel(s) {
       const r = s.tasks.find((t) => t.status === "run");
@@ -1274,12 +1297,13 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     function addTask(s, text) {
       const title = sentence(text.trim().replace(/[.]+$/, ""));
       if (!title) return;
-      // Routing in miniature: code work goes to Codex, except in a private space, which only Claude may see.
-      const agent = s.kind === "repo" && !s.private ? "codex" : "claude", id = tid();
+      // Routing in miniature: Claude writes, and in a space other agents may see, Codex reviews.
+      const agent = "claude", id = tid();
       const t = { id, title: title.slice(0, 70), agent, status: "run", when: "Running", shown: 1 };
       if (s.kind === "repo") {
-        Object.assign(t, { branch: `atrium/${id}`, log: ["reading the repo", "planning the change", "editing src/index.ts", "editing tests/index.test.ts", "$ bun test", "  ✓ all tests pass", `committed to atrium/${id}`], diff: [["src/index.ts", 31, 6, 2], ["tests/index.test.ts", 15, 0, 3]] });
-        t.made = () => `<p>Done on its own branch. The tests pass.</p><p class="m-mono">${filesLine(t.diff)}</p>`;
+        const reviewer = s.private ? "claude" : "codex";
+        Object.assign(t, { review: reviewer, branch: `atrium/${id}`, log: ["brief: the goal, done when, the files to read first", "reading the repo", "editing src/index.ts", "editing tests/index.test.ts", `committed to atrium/${id}`, "Atrium ran the checks: typecheck ✓ tests ✓", `${AG[reviewer][1]} reviewed the diff against the brief: approve`], diff: [["src/index.ts", 31, 6, 2], ["tests/index.test.ts", 15, 0, 3]] });
+        t.made = () => `<p>Done on its own branch. Atrium's own checks passed and a fresh reviewer approved it.</p><p class="m-mono">${filesLine(t.diff)}</p>`;
       } else t.made = () => `<p>Here's a first pass at <b>${esc(title.toLowerCase())}</b>, ready for you to look over.</p>`;
       s.tasks.unshift(t);
       S.open = id; S.stab = "tasks";
