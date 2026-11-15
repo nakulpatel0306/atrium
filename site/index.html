@@ -1,4 +1,10 @@
-<title>Atrium</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Atrium, the agent workbench for the new way of coding: a brief for every task, your checks run by Atrium itself, a fresh reviewer, and one queue for everything that needs you. Local, on your Mac.">
+<title>Atrium: the agent workbench</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3CclipPath%20id%3D%22c%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2220%22%20height%3D%2220%22%20rx%3D%225%22/%3E%3C/clipPath%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2220%22%20height%3D%2220%22%20rx%3D%225%22%20fill%3D%22%23141417%22/%3E%3Cg%20clip-path%3D%22url%28%23c%29%22%20fill%3D%22%23e6e6ea%22%3E%3Cpath%20d%3D%22M2%202h20l-5.75%205.75h-8.5z%22%20opacity%3D%22.6%22/%3E%3Cpath%20d%3D%22M22%202v20l-5.75-5.75v-8.5z%22%20opacity%3D%22.4%22/%3E%3Cpath%20d%3D%22M22%2022H2l5.75-5.75h8.5z%22%20opacity%3D%22.22%22/%3E%3Cpath%20d%3D%22M2%2022V2l5.75%205.75v8.5z%22%20opacity%3D%22.78%22/%3E%3C/g%3E%3Crect%20x%3D%228.75%22%20y%3D%228.75%22%20width%3D%226.5%22%20height%3D%226.5%22%20rx%3D%221%22%20fill%3D%22%237c7cf5%22/%3E%3C/svg%3E">
 <script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -102,6 +108,10 @@ nav ul a:hover { color: var(--text); }
 
 /* Why */
 .why { border-top: 1px solid var(--line); }
+.sig a { color: var(--accent-hi); text-decoration: none; }
+.sig a:hover { text-decoration: underline; }
+.status { max-width: 640px; margin: 18px auto 0; color: var(--dim); font-size: 15px; line-height: 1.6; text-align: center; }
+.status a { color: var(--accent-hi); }
 .why-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: clamp(32px, 6vw, 96px); align-items: start; }
 .why .side { position: sticky; top: 120px; display: flex; flex-direction: column; gap: 18px; }
 .sig { display: flex; align-items: center; gap: 12px; color: var(--dim); font-size: 15px; }
@@ -526,10 +536,10 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   <div class="wrap">
     <div class="hero-copy">
       <svg class="mark-big" viewBox="0 0 24 24" aria-hidden="true"><clipPath id="c2"><rect x="2" y="2" width="20" height="20" rx="5"/></clipPath><g clip-path="url(#c2)" fill="#e6e6ea"><path d="M2 2h20l-5.75 5.75h-8.5z" opacity=".6"/><path d="M22 2v20l-5.75-5.75v-8.5z" opacity=".4"/><path d="M22 22H2l5.75-5.75h8.5z" opacity=".22"/><path d="M2 22V2l5.75 5.75v8.5z" opacity=".78"/></g><rect class="core" x="8.75" y="8.75" width="6.5" height="6.5" rx="1" fill="#7c7cf5"/><g class="hero-eyes" id="hero-eyes"><rect class="he" x="10.35" y="11.1" width=".8" height="1.3" rx=".4" fill="#0b0b0d"/><rect class="he" x="12.85" y="11.1" width=".8" height="1.3" rx=".4" fill="#0b0b0d"/></g></svg>
-      <h1 class="rise d1">Every agent, in <em>one calm place</em>.</h1>
-      <p class="lede rise d2">Atrium is a workbench for the coding agents on my Mac. I say what I want, an agent writes it on its own branch, and nothing is pushed until I say yes.</p>
+      <h1 class="rise d1">The agent workbench for <em>the new way of coding</em>.</h1>
+      <p class="lede rise d2">Directing agents is the job now. Atrium gives every task a brief, runs your checks itself, has a fresh reviewer read the diff, and puts everything that needs you in one queue. On your Mac, on your own Claude subscription.</p>
       <div class="ctas rise d3">
-        <a class="btn primary" href="#how">See how it works</a>
+        <a class="btn primary" href="#how">See the loop</a>
         <a class="btn" href="https://github.com/nakulpatel0306/atrium">View the code</a>
       </div>
     </div>
@@ -569,15 +579,15 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
 <section class="why" id="why">
   <div class="wrap why-grid">
     <div class="side reveal">
-      <span class="eyebrow">Why I built it</span>
-      <h2>Too many terminals, not enough of me.</h2>
-      <div class="sig"><b>NP</b> Nakul Patel, who built it for himself</div>
-      <div class="threads"><span>Repos</span><span>Side projects</span><span>Claude</span><span>Codex</span><span>Gemini</span><span>Branches</span><span>Pull requests</span></div>
+      <span class="eyebrow">Why it's built this way</span>
+      <h2>Writing the code stopped being the hard part.</h2>
+      <div class="sig"><b>§</b> <a href="https://github.com/nakulpatel0306/atrium/blob/main/docs/why.md">The research, with sources and caveats</a></div>
+      <div class="threads"><span>MAST, NeurIPS 2025</span><span>METR</span><span>Google Research</span><span>Anthropic</span><span>Cognition</span><span>ETH Zürich</span></div>
     </div>
     <div class="story" id="story">
-      <p>I work on a few repos and side projects at once, and more and more of the code in them is written by agents. Claude in one terminal, Codex in another, a branch I meant to look at in a third.</p>
-      <p>Writing the code stopped being the hard part. Knowing what each agent was doing, whether its work was any good, and what was waiting on me was. I kept losing track of which branch held what.</p>
-      <p>I wanted one place to hand work to agents, watch it happen, and judge it before it lands. Every task on its own branch, and nothing pushed without my yes. So I built Atrium.</p>
+      <p>In studies of agent failures, about 44% start with the task spec and 24% with weak checks. So every task starts from a brief, and Atrium runs your tests itself instead of trusting "tests pass".</p>
+      <p>Multi-agent setups lose 39 to 70% on sequential work, and independent agents amplify errors. So one writer is the default, and a split or best-of-N waits for your click.</p>
+      <p>Developers who asked why after generating code scored 86% on a follow-up quiz, against 39% for pure delegation. So every result comes with a walkthrough, and the retro uses only what Atrium measured.</p>
     </div>
   </div>
 </section>
@@ -593,7 +603,7 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
       <ol class="steps" id="steps">
         <li class="on"><div><h3>Ask, and it starts</h3><p>Type what you want, like “fix the off-by-one in pagination”, and press Enter. A quick first pass turns it into a brief on the task: the goal, what done looks like, what to look at. A question only comes back when the ask is really unclear.</p></div></li>
         <li><div><h3>It writes, Atrium checks</h3><p>The agent works on <code>atrium/&lt;taskId&gt;</code> inside a sandbox. Atrium runs your typecheck and tests itself and sends failures back. Then a fresh session, from another vendor when one can work in the space, reviews the diff against the brief.</p></div></li>
-        <li><div><h3>You decide</h3><p>Then the work waits in <b>Needs you</b>, with the checks, the review findings and how each was fixed. Approve it, say yes once more, and Atrium pushes the branch and opens the pull request.</p></div></li>
+        <li><div><h3>You decide, from one queue</h3><p>Then the work waits in <b>Needs you</b>: one queue, longest-waiting first, each item one screen with the walkthrough, the checks, the review findings and how each was answered. <kbd>a</kbd> approves, <kbd>s</kbd> sends it back, and Atrium opens the pull request on your yes.</p></div></li>
       </ol>
       <div class="demo reveal" id="demo" aria-label="Example: asking Atrium to fix a bug on its own branch">
         <div class="ask"><span class="p">›</span><span id="typed">fix the off-by-one in pagination</span><span class="caret"></span></div>
@@ -797,17 +807,18 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
   </svg>
   <div class="wrap">
     <div class="head reveal">
-      <span class="eyebrow">Open source</span>
-      <h2>Built for one person. Free for anyone.</h2>
-      <p class="lede">Atrium is MIT licensed. You'll need a Mac, bun, and the Claude Code CLI signed in to your Claude account.</p>
+      <span class="eyebrow">Quickstart</span>
+      <h2>A minute to install. Another to watch the loop.</h2>
+      <p class="lede">You need a Mac with Apple silicon, bun, and the Claude Code CLI signed in to your Claude account. Get started then offers a sample task: a tiny demo repo with one failing test, fixed on Claude's cheapest model while you watch. About a minute, around 2¢ at list prices, and skippable.</p>
     </div>
     <div class="install reveal">
       <div class="top"><span>zsh</span><button class="btn small" id="copy" type="button">Copy</button></div>
-      <pre id="cmds"><span class="p">$ </span>bun install
-<span class="p">$ </span>bun link             <span class="c"># puts atrium on your PATH</span>
-<span class="p">$ </span>atrium install       <span class="c"># starts Atrium now and at login</span>
-<span class="p">$ </span>atrium app install   <span class="c"># adds Atrium.app</span></pre>
+      <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git &amp;&amp; cd atrium
+<span class="p">$ </span>bun install &amp;&amp; bun link   <span class="c"># puts atrium on your PATH</span>
+<span class="p">$ </span>atrium install           <span class="c"># starts Atrium now and at login</span>
+<span class="p">$ </span>atrium open</pre>
     </div>
+    <p class="status reveal"><b>Status:</b> early, MIT licensed, and used every day by the person who builds it. macOS only. Checks are evidence, not proof: the <a href="https://github.com/nakulpatel0306/atrium/blob/main/docs/loop.md">loop docs</a> list what they can't catch.</p>
     <div class="ctas">
       <a class="btn primary" href="https://github.com/nakulpatel0306/atrium">Get it on GitHub</a>
     </div>
@@ -1365,12 +1376,12 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     if (hidden) { k.hidden = true; back.hidden = false; }
     const LINES = {
       try: "This is a live copy of the app. Click around, or type something into the bar.",
-      why: "I'm the Keeper. I watch every thread so you don't have to.",
+      why: "I'm the Keeper. The numbers here are linked to their sources.",
       how: "Watch: it works on its own branch, then waits. Nothing is pushed without your yes.",
       uses: "Pick one, then press Try it. I'll open it in the demo.",
       ways: "Same Atrium in the Mac app, the browser and the terminal.",
       private: "Your code stays on your Mac until you say push.",
-      end: "Want your own Keeper? It's free and open source.",
+      end: "The sample task takes about a minute. I'll keep you company.",
     };
     const TIPS = ["Psst. Press Approve on something in the demo.", "Try typing \u201cstart a new project called pocket-cli\u201d in the demo.", "I get sleepy if you stop scrolling.", "Every Atrium has one of me in the logo."];
     let tip = 0, sayTimer, moodTimer, sleepTimer, last = "", shown = false;
@@ -1412,6 +1423,19 @@ html.m .hero-eyes, html.m .ghost-eyes { transition: none; }
     document.querySelector(".mark-big")?.addEventListener("click", restore);
     document.getElementById("keeper-x").addEventListener("click", hide);
   })();
+
+  // Copies the install commands as they'd be typed: no prompts, no comments.
+  const copy = document.getElementById("copy");
+  copy.addEventListener("click", async () => {
+    const text = document.getElementById("cmds").textContent.split("\n").map((l) => l.replace(/^\$ /, "").replace(/\s+#.*$/, "").trim()).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      copy.textContent = "Copied";
+    } catch {
+      copy.textContent = "Select and copy";
+    }
+    setTimeout(() => (copy.textContent = "Copy"), 1600);
+  });
 })();
 </script>
 
