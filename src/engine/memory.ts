@@ -142,8 +142,11 @@ const STRUCTURE: [RegExp, string][] = [
   [/^[-*+] /, "Atrium writes it as a bullet itself, so leave out the list marker."],
   [/```|~~~/, "Leave out ``` and ~~~: a code fence would hide the rest of CLAUDE.md in most views."],
   [/<!--|-->/, "Leave out <!-- and -->: a comment would hide the rest of CLAUDE.md in most views."],
-  // Claude Code reads `@path` in CLAUDE.md as an import (measured: a repo file's contents reached the agent).
-  [/(^|\s)@[\w./~-]/, "Leave out @ before a name: Claude reads @path in CLAUDE.md as an import and loads that whole file into every task."],
+  // A tag (`<textarea>`, `<details>`, `</li>`) can hide or reshape what follows; a plain "a < b" stays.
+  [/<[A-Za-z!?/]/, "Leave out HTML tags: one could hide or reshape the rest of CLAUDE.md. A plain < in text, as in a < b, is fine."],
+  // Claude Code reads `@path` in CLAUDE.md as an import (measured: a repo file's contents reached the agent), whatever
+  // characters the path holds.
+  [/(^|\s)@\S/, "Leave out @ before a name: Claude reads @path in CLAUDE.md as an import and loads that whole file into every task."],
 ];
 
 export type LineCheck = { line: string } | { problem: string };
@@ -161,22 +164,56 @@ export function checkLine(raw: string): LineCheck {
 
 export const NOTES_HEADING = "## Notes from Atrium";
 
+// What each line of a markdown file is, for finding sections without being fooled by what looks like a heading inside
+// a code block: whether the line belongs to a fenced block (its fences included), whether it's the fence that closes
+// one, and where headings start. A setext heading is text with a line of === or --- under it; a --- under a list item
+// is a rule, not a heading.
+function outline(lines: string[]): { fenced: boolean[]; closing: boolean[]; heading: boolean[] } {
+  const fenced = lines.map(() => false);
+  const closing = lines.map(() => false);
+  const heading = lines.map(() => false);
+  let fence: string | null = null;
+  lines.forEach((l, i) => {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(l)?.[1];
+    if (fence !== null) {
+      fenced[i] = true;
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length && !l.slice(l.indexOf(marker) + marker.length).trim()) {
+        fence = null;
+        closing[i] = true;
+      }
+      return;
+    }
+    if (marker) {
+      fence = marker;
+      fenced[i] = true;
+      return;
+    }
+    if (/^ {0,3}#{1,6}(\s|$)/.test(l)) heading[i] = true;
+    else if (i > 0 && /^ {0,3}(=+|-+)\s*$/.test(l) && lines[i - 1]!.trim() && !fenced[i - 1] && !/^\s*([-*+]|\d+[.)])\s/.test(lines[i - 1]!)) heading[i - 1] = true;
+  });
+  return { fenced, closing, heading };
+}
+
 // CLAUDE.md with one more note: a "- " bullet at the end of the "## Notes from Atrium" section, which is added once at
 // the end of the file when it's missing. A blank line comes before the bullet unless it continues the section's list,
-// so the note never runs into the paragraph above it.
+// so the note never runs into the paragraph above it. Code blocks are read as code: a "# comment" in one is no heading,
+// and a note never goes inside one. The file keeps its own line endings.
 export function withNote(text: string, line: string): string {
-  const lines = text === "" ? [] : text.replace(/\n$/, "").split("\n");
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text === "" ? [] : text.replace(/\r?\n$/, "").split(/\r?\n/);
   const bullet = `- ${line}`;
-  const at = lines.findIndex((l) => l.trim() === NOTES_HEADING);
+  const { fenced, closing, heading } = outline(lines);
+  const at = lines.findIndex((l, i) => !fenced[i] && l.trim() === NOTES_HEADING);
   if (at < 0) {
     const gap = lines.length && lines.at(-1)!.trim() !== "" ? [""] : [];
-    return `${[...lines, ...gap, NOTES_HEADING, "", bullet].join("\n")}\n`;
+    return `${[...lines, ...gap, NOTES_HEADING, "", bullet].join(eol)}${eol}`;
   }
-  const next = lines.findIndex((l, i) => i > at && /^#{1,6}\s/.test(l));
+  const next = heading.findIndex((h, i) => h && i > at);
+  // The last line of the section that has text and isn't in a code block; the note goes right after it.
   let last = (next < 0 ? lines.length : next) - 1;
-  while (last > at && lines[last]!.trim() === "") last--;
-  lines.splice(last + 1, 0, ...(last > at && /^[-*+] /.test(lines[last]!) ? [bullet] : ["", bullet]));
-  return `${lines.join("\n")}\n`;
+  while (last > at && (lines[last]!.trim() === "" || (fenced[last] && !closing[last]))) last--;
+  lines.splice(last + 1, 0, ...(last > at && !fenced[last] && /^[-*+] /.test(lines[last]!) ? [bullet] : ["", bullet]));
+  return `${lines.join(eol)}${eol}`;
 }
 
 const alreadySays = (file: string, line: string) => file.split("\n").some((l) => l.replace(/^[\s*-]+/, "").trim().toLowerCase() === line.replace(/^[\s*-]+/, "").trim().toLowerCase());

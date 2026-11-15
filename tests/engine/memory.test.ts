@@ -236,10 +236,28 @@ describe("accepting", () => {
     expect(withNote("## Notes from Atrium\n", "One.")).toBe("## Notes from Atrium\n\n- One.\n");
   });
 
+  test("a code block in or after the notes is read as code, a setext heading ends the section, and line endings are kept", () => {
+    // "# install" in a code block is a comment, not a heading: the note goes before the block, never inside it.
+    const fenced = "## Notes from Atrium\n\n- a\n\nExample:\n```sh\n# install\nbun i\n```\n";
+    expect(withNote(fenced, "b")).toBe("## Notes from Atrium\n\n- a\n\nExample:\n```sh\n# install\nbun i\n```\n\n- b\n");
+    const tilde = "## Notes from Atrium\n\n- a\n~~~\n## not a heading\n~~~\n";
+    expect(withNote(tilde, "b")).toBe("## Notes from Atrium\n\n- a\n~~~\n## not a heading\n~~~\n\n- b\n");
+    // An unclosed block runs to the end of the file: the note goes before it.
+    expect(withNote("## Notes from Atrium\n\n- a\n```\nstill code", "b")).toBe("## Notes from Atrium\n\n- a\n- b\n```\nstill code\n");
+    // A heading written with === or --- under it ends the notes section.
+    expect(withNote("## Notes from Atrium\n\n- a\n\nOther\n=====\nText", "b")).toBe("## Notes from Atrium\n\n- a\n- b\n\nOther\n=====\nText\n");
+    expect(withNote("## Notes from Atrium\n\n- a\n\nOther\n---\nText", "b")).toBe("## Notes from Atrium\n\n- a\n- b\n\nOther\n---\nText\n");
+    // A notes heading inside a code block is only an example of one.
+    expect(withNote("```\n## Notes from Atrium\n```\n", "b")).toBe("```\n## Notes from Atrium\n```\n\n## Notes from Atrium\n\n- b\n");
+    expect(withNote("# P\r\nRun.\r\n", "x")).toBe("# P\r\nRun.\r\n\r\n## Notes from Atrium\r\n\r\n- x\r\n");
+    expect(withNote("# P\r\n\r\n## Notes from Atrium\r\n\r\n- a\r\n", "b")).toBe("# P\r\n\r\n## Notes from Atrium\r\n\r\n- a\r\n- b\r\n");
+  });
+
   test("a line that would restructure CLAUDE.md is refused with what to do instead; a leading bullet is taken off", () => {
     expect(checkLine("- Money is cents.")).toEqual({ line: "Money is cents." });
     expect(checkLine("* Money is cents.")).toEqual({ line: "Money is cents." });
     expect(checkLine("Run `bun test` before finishing; email me@example.com")).toEqual({ line: "Run `bun test` before finishing; email me@example.com" });
+    expect(checkLine("Retry only while attempts < 3 and a < b")).toEqual({ line: "Retry only while attempts < 3 and a < b" });
     const refused: [string, string][] = [
       ["# Rules", "heading"],
       ["## Rules", "heading"],
@@ -254,6 +272,15 @@ describe("accepting", () => {
       ["@notes.txt", "import"],
       ["Read @docs/rules.md first", "import"],
       ["See @~/secrets", "import"],
+      ["See @é.md", "import"],
+      ["See @(x)", "import"],
+      ["See @+x", "import"],
+      ["@@x", "import"],
+      ["Wrap notes in <details>", "HTML"],
+      ["<textarea>", "HTML"],
+      ["close it </li>", "HTML"],
+      ["<!DOCTYPE html>", "HTML"],
+      ["<?php", "HTML"],
     ];
     for (const [raw, why] of refused) {
       const res = checkLine(raw);
