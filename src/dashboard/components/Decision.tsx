@@ -1,7 +1,6 @@
 import { SearchCheck } from "lucide-react";
 import { useState } from "react";
 import { post, type State } from "../api";
-import { announce } from "../live";
 import { showToast } from "../toast";
 import { isRisky, shownSha } from "../queue";
 import { reviewLine } from "../summary";
@@ -32,7 +31,7 @@ export function useDecision(approval: Approval, sha?: string | null) {
     // On success the row disappears with the next state refresh. An approval can be taken back for a moment, in case
     // a key went to the wrong item.
     if (res.ok) {
-      if (decision === "reject") return announce(`Sent back: ${approval.title}`);
+      if (decision === "reject") return showToast(`Sent back: ${approval.title}`);
       return showToast(`Approved: ${approval.title}`, approval.kind === "review" && approval.taskId ? () => reopen(approval.id) : undefined, approval.taskId ?? undefined);
     }
     setError(res.error);
@@ -42,7 +41,7 @@ export function useDecision(approval: Approval, sha?: string | null) {
   return { busy, setBusy, error, setError, sendingBack, setSendingBack, note, setNote, decide };
 }
 
-async function reopen(id: string): Promise<{ ok: boolean; error?: string }> {
+export async function reopen(id: string): Promise<{ ok: boolean; error?: string }> {
   const res = await post(`/api/approvals/${id}/reopen`);
   return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
@@ -113,7 +112,7 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
         {review ? (
           <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>
             <SearchCheck />
-            {review.text}
+            <span className="review-text">{review.text}</span>
           </span>
         ) : (
           <span className="review-line">Waiting for your decision</span>

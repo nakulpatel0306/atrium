@@ -4,10 +4,11 @@ import { post, type State } from "../api";
 import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
 import { announce } from "../live";
+import { showToast } from "../toast";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { attentionQueue, cleanReviews, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
 import { navigate } from "../route";
-import { DecisionBar } from "./Decision";
+import { DecisionBar, reopen } from "./Decision";
 import { ChangesView } from "./ChangesView";
 import { agentText } from "../agents";
 import { LoopPanel } from "./LoopPanel";
@@ -222,7 +223,15 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
     setBusy(false);
     if (!res.ok) return setError(res.error);
     const skipped = res.data.skipped.map((s) => ({ title: shown.find((x) => x.id === s.id)?.title ?? s.id, reason: s.reason }));
-    announce(`Approved ${res.data.approved.length}.${skipped.length ? ` ${skipped.length} left to read on their own.` : ""}`);
+    // Said on screen, with one Undo that takes the whole batch back while it can.
+    const approved = res.data.approved;
+    if (approved.length) {
+      showToast(`Approved ${approved.length}.${skipped.length ? ` ${skipped.length} left to read on their own.` : ""}`, async () => {
+        const back = await Promise.all(approved.map(reopen));
+        const failed = back.find((b) => !b.ok);
+        return failed ?? { ok: true };
+      });
+    }
     setLeft(skipped);
     if (!skipped.length) setOpen(false);
   };

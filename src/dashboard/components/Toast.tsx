@@ -10,7 +10,7 @@ function One({ toast }: { toast: T }) {
     const res = await toast.undo();
     setBusy(false);
     dismissToast(toast.id);
-    if (!res.ok) showToast(res.error ?? "Atrium couldn't undo that. Try again from Settings.");
+    if (!res.ok) showToast(res.error ?? "Atrium couldn't take that back. Ask for the change again as a new task.");
   };
   return (
     <div className="toast">

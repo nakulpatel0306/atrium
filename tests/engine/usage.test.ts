@@ -35,7 +35,7 @@ describe("list prices", () => {
   test("the estimate says when it covers only part of the work, or none of it", () => {
     expect(spendText({ weighted: 0, usd: 0, unpriced: 0, cacheRead: 0, input: 0 })).toBe("nothing yet");
     expect(spendText({ weighted: 100, usd: 1.234, unpriced: 0, cacheRead: 0, input: 100 })).toBe("~$1.23 est.");
-    expect(spendText({ weighted: 100, usd: 1, unpriced: 40, cacheRead: 0, input: 100 })).toBe("~$1.00 est. (part of it)");
+    expect(spendText({ weighted: 100, usd: 1, unpriced: 40, cacheRead: 0, input: 100 })).toBe("at least ~$1.00 est.");
     expect(spendText({ weighted: 100, usd: 0, unpriced: 100, cacheRead: 0, input: 100 })).toBe("no list price for these agents");
     expect(cacheShare({ weighted: 1, usd: 0, unpriced: 0, cacheRead: 75, input: 100 })).toBe(0.75);
   });

@@ -13,7 +13,7 @@ type PaletteRun =
   | { kind: "navigate"; path: string }
   | { kind: "ask" }
   | { kind: "newSpace" }
-  | { kind: "post"; path: string; body?: unknown; done: string }
+  | { kind: "post"; path: string; body?: unknown; done: string; undo?: string }
   | { kind: "patch"; path: string; body: unknown; done: string }
   | { kind: "theme"; theme: Theme };
 
@@ -38,7 +38,7 @@ export function paletteActions(state: State, here: { spaceId: string | null; the
     // Only a clean result is approvable by name; anything else opens to be read first.
     if (a && batchApprovable(a, state.tasks.find((t) => t.id === a.taskId))) {
       const sha = shownSha(state, a);
-      actions.push({ id: `approve-${a.id}`, group: "Needs you", label: `Approve ${title}`, run: { kind: "post", path: `/api/approvals/${a.id}`, body: { decision: "approve", ...(sha ? { sha } : {}) }, done: `Approved: ${title}` } });
+      actions.push({ id: `approve-${a.id}`, group: "Needs you", label: `Approve ${title}`, run: { kind: "post", path: `/api/approvals/${a.id}`, body: { decision: "approve", ...(sha ? { sha } : {}) }, done: `Approved: ${title}`, undo: a.id } });
     }
   }
 

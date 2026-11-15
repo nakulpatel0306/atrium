@@ -71,5 +71,6 @@ export function dollars(usd: number): string {
 export function spendText(s: Spend): string {
   if (s.weighted === 0) return "nothing yet";
   if (s.unpriced === s.weighted) return "no list price for these agents";
-  return `~${dollars(s.usd)} est.${s.unpriced > 0 ? " (part of it)" : ""}`;
+  // A model with no price counts its tokens only, so the dollars are a floor.
+  return `${s.unpriced > 0 ? "at least " : ""}~${dollars(s.usd)} est.`;
 }

@@ -5,6 +5,7 @@ import { matchActions, type PaletteAction, paletteActions } from "../palette";
 import { navigate } from "../route";
 import { applyTheme, storedTheme } from "../theme";
 import { showToast } from "../toast";
+import { reopen } from "./Decision";
 
 const SHOWN = 60;
 
@@ -43,7 +44,9 @@ export function Palette({ state, spaceId, open, onClose, onAsk, onNewSpace }: { 
     else {
       const res = r.kind === "post" ? await post(r.path, r.body) : await patch(r.path, r.body);
       if (!res.ok) return setError(res.error);
-      showToast(r.done);
+      // An approval made here can be taken back like one made on its screen.
+      if (r.kind === "post" && r.undo) showToast(r.done, () => reopen(r.undo!), state.approvals.find((a) => a.id === r.undo)?.taskId ?? undefined);
+      else showToast(r.done);
     }
     onClose();
   };

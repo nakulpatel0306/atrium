@@ -9,7 +9,7 @@ import { duration } from "../format";
 import { attentionText, STAGE_TEXT } from "../summary";
 import { BriefQuestions } from "./BriefQuestions";
 import { Markdown } from "./Markdown";
-import { asksBeforeStarting } from "../../engine/needs";
+import { asksBeforeStarting, cleanResult } from "../../engine/needs";
 import { Fanout, ShapeLine } from "./Shape";
 
 type Task = State["tasks"][number];
@@ -86,7 +86,10 @@ export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }
   const loop = task.loop;
   if (!loop || loop.noChanges || loop.checks === "pending") return null;
   const text = loop.checks === "running" ? "checking" : loop.checks === "passed" ? "checks passed" : loop.checks === "failed" ? "checks failed" : "unverified";
-  const tone = loop.checks === "failed" ? " bad" : loop.checks === "passed" ? " good" : loop.checks === "none" ? " wait" : "";
+  // A result waiting for you is green only when it's clean by the one rule; passed checks on a result with something
+  // open read amber, as its Approve anyway does.
+  const settled = task.status !== "review" || cleanResult(task);
+  const tone = loop.checks === "failed" ? " bad" : loop.checks === "passed" ? (settled ? " good" : " wait") : loop.checks === "none" ? " wait" : "";
   return (
     <button type="button" className={`tag check-badge${tone}`} title={loop.checks === "none" ? (loop.unverified ?? "Unverified: no checks found") : "Show what the checks said"} onClick={onOpen}>
       {text}

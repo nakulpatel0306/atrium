@@ -2153,6 +2153,25 @@ code {
 .mk-form .mk-input {
   width: 130px;
 }
+/* Every text field in a settings form, styled like the rest rather than left to the browser. */
+.mk-form input:not([type]),
+.mk-form input[type="text"] {
+  min-width: 220px;
+  min-height: 30px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 5px 9px;
+  outline: none;
+}
+.mk-form input:not([type]):focus,
+.mk-form input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
 
 .tag.ok {
   color: var(--green);
@@ -2954,8 +2973,8 @@ code {
   width: 100%;
   table-layout: fixed;
 }
-.chg-lines.split td.chg-no {
-  width: 44px;
+.chg-lines.split col.chg-no-col {
+  width: 52px;
 }
 .chg-lines.split td.chg-text {
   width: auto;
@@ -4306,4 +4325,49 @@ kbd {
 }
 .cmd-copy code {
   font-size: var(--fs-sm);
+}
+
+/* More controls at a hittable 24px: toggles, task rows, check badges, the Brief disclosure. */
+.toggle,
+.task-open,
+.check-badge,
+.brief-view summary {
+  min-height: 24px;
+}
+/* Long prose keeps a readable measure. */
+.finding,
+.memory .hint,
+.brief {
+  max-width: 80ch;
+}
+/* Key hints are for keyboards; a touch screen doesn't show them. */
+@media (pointer: coarse) {
+  .decision-keys:not(.armed) {
+    visibility: hidden;
+  }
+}
+@container main (max-width: 640px) {
+  /* A task row keeps its title: cost and checks give way to it on a phone. */
+  .item.task .tag.cost,
+  .item.task .check-badge {
+    display: none;
+  }
+  .needs-list .item > .decision {
+    max-width: 100%;
+    flex-basis: 100%;
+  }
+  .needs-list .item > .decision .decision-row {
+    flex-wrap: wrap;
+  }
+}
+
+.review-line .review-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.top a.crumb {
+  color: var(--dim);
+  text-decoration: none;
 }

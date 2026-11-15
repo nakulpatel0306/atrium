@@ -283,7 +283,7 @@ export function createRunner(deps: {
         continue;
       }
       if (task.kind === "work" && task.loop?.stage === "brief" && task.loop.questions.length) {
-        waits.push({ taskId: task.id, agent: task.agent, kind: "answers", reason: "Waiting for your answers to its brief's questions, in Needs you." });
+        waits.push({ taskId: task.id, agent: task.agent, kind: "answers", reason: "Its brief has questions for you, in Needs you." });
         continue;
       }
       if (task.kind === "work" && task.loop?.stage === "parts") {

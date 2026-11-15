@@ -164,6 +164,15 @@ function FileDiff({ file, open, onToggle, taskId, focus, mode }: { file: DiffFil
           <p className="chg-note">{file.status === "renamed" ? "Moved without changes." : "No lines changed."}</p>
         ) : (
           <table className={`chg-lines mono ${mode}`}>
+            {/* A fixed layout sizes columns from the first row, a full-width hunk header, so the widths are set here. */}
+            {mode === "split" && (
+              <colgroup>
+                <col className="chg-no-col" />
+                <col />
+                <col className="chg-no-col" />
+                <col />
+              </colgroup>
+            )}
             <tbody>
               {file.hunks.map((h, i) => (
                 // Keyed by what the hunk holds, so on a live diff an explanation stays with its own hunk.

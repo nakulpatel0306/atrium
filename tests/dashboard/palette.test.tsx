@@ -30,6 +30,11 @@ test("every kind of action is there by name", () => {
   expect(l.some((x) => x.startsWith("Learning in"))).toBe(true);
 });
 
+test("approving by name can be taken back like any approval", () => {
+  const action = paletteActions(cleanState(), { spaceId: null, theme: "system" }).find((a) => a.id === `approve-${ids.approval}`)!;
+  expect(action.run).toMatchObject({ kind: "post", undo: ids.approval });
+});
+
 test("a result that isn't clean opens to be read, never approves by name", () => {
   const l = labels(makeState());
   expect(l).toContain("Open Review: Fix login redirect");

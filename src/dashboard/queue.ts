@@ -17,7 +17,7 @@ export const KIND_TEXT: Record<QueueKind, string> = {
   paused: "Paused",
   suggestion: "Suggestion",
   memory: "CLAUDE.md",
-  shape: "Shape",
+  shape: "Could split",
 };
 
 const approvalOf = (state: State, i: QueueItem) => state.approvals.find((a) => a.id === i.key);

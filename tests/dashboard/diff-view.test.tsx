@@ -53,6 +53,8 @@ test("split view pairs each run of removed lines with the added lines after it",
   const html = renderToStaticMarkup(<ChangesList diff={diff([file("one.ts", [HUNK])])} live={null} mode="split" />);
   expect(html).toContain('class="chg-lines mono split"');
   expect(html).toContain('colSpan="4"');
+  // The number gutters are sized by the table's own columns, so the code gets the width.
+  expect(html).toContain('<colgroup><col class="chg-no-col"/><col/><col class="chg-no-col"/><col/></colgroup>');
 });
 
 test("the Changes view offers each turn on its own and remembers the layout", async () => {

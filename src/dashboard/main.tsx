@@ -113,9 +113,17 @@ function App() {
             </>
           ) : (
             <>
-              <button className="crumb" onClick={() => navigate("/")}>
+              <a
+                className="crumb"
+                href="/"
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                  e.preventDefault();
+                  navigate("/");
+                }}
+              >
                 Home
-              </button>
+              </a>
               <ChevronRight className="sep" />
               <b>
                 {route.name === "needs" ? "Needs you" : route.name === "activity" ? "Activity" : route.name === "agents" ? "Agents" : route.name === "rules" ? "Rules" : route.name === "settings" ? "Settings" : route.name === "start" ? "Get started" : (space?.name ?? "Unknown space")}
