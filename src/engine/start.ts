@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { isStep, STEPS, type Progress, type Step } from "./start-steps";
+import { isStep, type Progress, type Step } from "./start-steps";
 import { getSetting, setSetting } from "./settings";
 import { listSpaces } from "./spaces";
 
@@ -17,7 +17,7 @@ export function getProgress(db: Database): Progress {
   } catch {
     // A mangled value starts the list over.
   }
-  return { step: isStep(step) ? step : "welcome", skipped, done: getSetting(db, DONE_KEY) === "1", dismissed: getSetting(db, DISMISSED_KEY) === "1" };
+  return { step: isStep(step) ? step : "claude", skipped, done: getSetting(db, DONE_KEY) === "1", dismissed: getSetting(db, DISMISSED_KEY) === "1" };
 }
 
 export function saveProgress(db: Database, change: { step?: unknown; skip?: unknown; unskip?: unknown; done?: unknown; dismiss?: unknown }, claudeProblem: string | null): Progress {
@@ -25,17 +25,16 @@ export function saveProgress(db: Database, change: { step?: unknown; skip?: unkn
   let { step, skipped } = now;
   if (change.step !== undefined) {
     if (!isStep(change.step)) throw new Error("That isn't a step of Get started.");
-    // Stepping onto Done is finishing, so it follows the same rule.
-    if (change.step === "done" && claudeProblem) throw new Error(`Claude comes first: ${claudeProblem}`);
+    // Every step after Claude's needs it working.
+    if (change.step !== "claude" && claudeProblem) throw new Error(`Claude comes first: ${claudeProblem}`);
     step = change.step;
   }
-  // Agents can't be skipped, since Claude is required.
-  if (isStep(change.skip) && change.skip !== "agents" && !skipped.includes(change.skip)) skipped = [...skipped, change.skip];
+  // Claude's step can't be skipped, since Claude is required.
+  if (isStep(change.skip) && change.skip !== "claude" && !skipped.includes(change.skip)) skipped = [...skipped, change.skip];
   if (isStep(change.unskip)) skipped = skipped.filter((s) => s !== change.unskip);
   if (change.done === true) {
     if (claudeProblem) throw new Error(`Claude comes first: ${claudeProblem}`);
     setSetting(db, DONE_KEY, "1");
-    step = "done";
   }
   if (typeof change.dismiss === "boolean") setSetting(db, DISMISSED_KEY, change.dismiss ? "1" : "0");
   setSetting(db, STEP_KEY, step);

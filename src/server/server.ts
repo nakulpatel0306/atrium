@@ -510,7 +510,7 @@ export function startServer(deps: Deps): Server<WsData> {
     if (files) return files;
     const attached = await attachmentsRoute(db, req, url);
     if (attached) return attached;
-    const start = await startRoute(db, req, url);
+    const start = await startRoute(db, req, url, () => runner.kick());
     if (start) return start;
 
     if (deps.repos) {

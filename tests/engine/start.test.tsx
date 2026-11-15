@@ -63,6 +63,9 @@ test("doctor output names the install and sign-in commands, and never prints sig
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const text = formatDoctor(await doctor(null));
   expect(text).toContain("sign in  Claude");
+  // The same order as Get started: Claude, the folder, then the extras.
+  expect(text.indexOf("Required")).toBeLessThan(text.indexOf("Projects folder"));
+  expect(text.indexOf("Projects folder")).toBeLessThan(text.indexOf("Optional"));
   expect(text).toContain("install:  npm install -g @openai/codex");
   expect(text).toContain("sign in:  claude auth login");
   expect(text).not.toContain("someone@example.com");
@@ -75,44 +78,42 @@ test("nothing in the checks opens a credential file or Keychain item", () => {
   }
 });
 
-test("steps run in order, back goes back, and the ends hold", () => {
-  expect(STEPS).toEqual(["welcome", "agents", "tools", "profile", "done"]);
-  expect(nextStep("welcome")).toBe("agents");
-  expect(nextStep("done")).toBe("done");
-  expect(prevStep("tools")).toBe("agents");
-  expect(prevStep("welcome")).toBe("welcome");
+test("three steps run in order, back goes back, and the ends hold", () => {
+  expect(STEPS).toEqual(["claude", "folder", "sample"]);
+  expect(nextStep("claude")).toBe("folder");
+  expect(nextStep("sample")).toBe("sample");
+  expect(prevStep("sample")).toBe("folder");
+  expect(prevStep("claude")).toBe("claude");
 });
 
-test("skipping is remembered, except for agents, and progress resumes", () => {
-  expect(getProgress(db)).toEqual({ step: "welcome", skipped: [], done: false, dismissed: false });
-  saveProgress(db, { step: "tools" }, null);
-  saveProgress(db, { skip: "tools", step: "profile" }, null);
-  saveProgress(db, { skip: "agents" }, null);
-  saveProgress(db, { skip: "tools" }, null);
+test("skipping is remembered, except for Claude's step, and progress resumes", () => {
+  expect(getProgress(db)).toEqual({ step: "claude", skipped: [], done: false, dismissed: false });
+  saveProgress(db, { skip: "folder", step: "sample" }, null);
+  saveProgress(db, { skip: "claude" }, null);
   db.close();
   // A new connection to the same database, as after closing the app and coming back.
   db = openDb();
-  expect(getProgress(db)).toEqual({ step: "profile", skipped: ["tools"], done: false, dismissed: false });
-  expect(saveProgress(db, { unskip: "tools" }, null).skipped).toEqual([]);
+  expect(getProgress(db)).toEqual({ step: "sample", skipped: ["folder"], done: false, dismissed: false });
+  expect(saveProgress(db, { unskip: "folder" }, null).skipped).toEqual([]);
   expect(() => saveProgress(db, { step: "nowhere" }, null)).toThrow("isn't a step");
 });
 
-test("a stored step or skip from a removed step is ignored, not an error", () => {
-  setSetting(db, "start.step", "investing");
-  setSetting(db, "start.skipped", JSON.stringify(["mail", "tools", "investing"]));
-  expect(getProgress(db)).toMatchObject({ step: "welcome", skipped: ["tools"] });
+test("a step stored by an older install, or a skip of one, is ignored, not an error", () => {
+  setSetting(db, "start.step", "profile");
+  setSetting(db, "start.skipped", JSON.stringify(["mail", "tools", "folder"]));
+  expect(getProgress(db)).toMatchObject({ step: "claude", skipped: ["folder"] });
 });
 
 test("Claude missing blocks Done, and a signed-in Claude lets it finish", async () => {
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "does-not-exist");
   const missing = claudeBlocks(await doctor(db));
   expect(missing).toContain("isn't installed");
-  expect(() => saveProgress(db, { step: "done" }, missing)).toThrow("Claude comes first");
+  expect(() => saveProgress(db, { step: "folder" }, missing)).toThrow("Claude comes first");
   expect(() => saveProgress(db, { done: true }, missing)).toThrow("Claude comes first");
   expect(getProgress(db).done).toBe(false);
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "fake-claude.ts");
   expect(claudeBlocks(await doctor(db))).toBeNull();
-  expect(saveProgress(db, { done: true }, null)).toMatchObject({ step: "done", done: true });
+  expect(saveProgress(db, { done: true }, null)).toMatchObject({ done: true });
 });
 
 test("a failed sign-in check is 'couldn't check', not signed out, and keeps Done blocked until one succeeds", async () => {
@@ -153,30 +154,31 @@ test("it opens by itself only with no spaces and setup not done", () => {
 });
 
 const noop = () => {};
-async function view(over: Partial<Report> = {}, step = "agents" as (typeof STEPS)[number]) {
+async function html(over: Partial<Report> = {}, step = "claude" as (typeof STEPS)[number]) {
   const report = { ...(await doctor(null)), ...over };
-  const html = renderToStaticMarkup(
-    <StartView report={report} progress={{ step, skipped: [], done: false, dismissed: false }} draft={{ name: "", projectsRoot: "" }} message={null} onDraft={noop} onGo={noop} onSkip={noop} onRecheck={noop} onSaveProfile={noop} onFinish={noop} onDismiss={noop} />,
+  return renderToStaticMarkup(
+    <StartView report={report} progress={{ step, skipped: [], done: false, dismissed: false }} folder="~/Developer" sample={{ ask: "Fix the failing cart test", cents: 2, seconds: 60 }} message={null} onFolder={noop} onGo={noop} onRecheck={noop} onSaveFolder={noop} onRunSample={noop} onFinish={noop} />,
   );
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 }
+const view = async (over: Partial<Report> = {}, step = "claude" as (typeof STEPS)[number]) => (await html(over, step)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
-test("the screen shows each step's states, and Next into Done is disabled while Claude is missing", async () => {
-  expect(await view({}, "welcome")).toContain("Step 1 of 5");
-  // Optional steps can be skipped.
-  expect(await view({}, "profile")).toMatch(/Skip(?! for now)/);
-  const agents = await view({}, "agents");
-  expect(agents).toContain("Claude");
-  expect(agents).toContain("Required");
-  expect(agents).toContain("Check again");
-  expect(agents).not.toMatch(/Skip(?! for now)/);
-  expect(await view({}, "tools")).toMatch(/Skip(?! for now)/);
-  expect(agents).toContain("Skip for now");
+test("Claude first, with the install command when it's missing; the extras never hold anything up", async () => {
+  const ready = await view();
+  expect(ready).toContain("Claude Ready");
+  expect(ready).toContain("Optional, any time");
+  expect(ready).toContain("Codex");
+  expect(ready).toContain("GitHub CLI");
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "does-not-exist");
-  const blocked = await view({}, "profile");
-  expect(blocked).toContain("Save");
-  process.env.FAKE_CLAUDE_AUTH = "signed-out";
-  const done = await view({}, "done");
-  expect(done).toContain("Open home");
-  expect(done).toContain("Claude is required before you can finish");
+  const missing = await view();
+  expect(missing).toContain("Install: curl -fsSL https://claude.ai/install.sh | bash");
+  expect(await html()).toContain('<button class="btn primary" disabled="">Next</button>');
+});
+
+test("the folder comes prefilled, and the sample says what it costs before it runs", async () => {
+  expect(await view({}, "folder")).toContain("Projects folder");
+  const sample = await view({}, "sample");
+  expect(sample).toContain("Run it");
+  expect(sample).toContain("around 2¢");
+  expect(sample).toContain("About a minute");
+  expect(sample).toContain("Skip, go to Home");
 });

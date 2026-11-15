@@ -7,6 +7,7 @@ import { config } from "../engine/config";
 import { tildePath } from "../engine/folders";
 import { getProgress, saveProgress, shouldAutoOpen } from "../engine/start";
 import { claudeBlocks, needsClaudeCheck } from "../engine/start-steps";
+import { SAMPLE_ASK, SAMPLE_ESTIMATE, startSample } from "../engine/sample";
 import { HttpError, json, readBody } from "./http";
 
 const profileOf = (db: Database) => ({ name: storedName(db), suggestedName: suggestedName(), projectsRoot: tildePath(config().projectsRoot) });
@@ -19,8 +20,17 @@ function check<T>(fn: () => T): T {
   }
 }
 
-// Get started and the profile fields behind it: the checks, the wizard's saved place, and the user's name and folder.
-export async function startRoute(db: Database, req: Request, url: URL): Promise<Response | null> {
+// Get started and the profile fields behind it: the checks, the wizard's saved place, the user's name and folder, and
+// the sample task. `kick` wakes the runner for the sample.
+export async function startRoute(db: Database, req: Request, url: URL, kick: () => void): Promise<Response | null> {
+  if (url.pathname === "/api/start/sample" && req.method === "POST") {
+    const problem = claudeBlocks(await doctor(db));
+    if (problem) throw new HttpError(409, `Claude comes first: ${problem}`);
+    const { space, task } = await startSample(db);
+    saveProgress(db, { done: true }, null);
+    kick();
+    return json({ spaceId: space.id, taskId: task.id });
+  }
   if (url.pathname === "/api/profile") {
     if (req.method === "GET") return json(profileOf(db));
     if (req.method === "PUT") {
@@ -37,7 +47,7 @@ export async function startRoute(db: Database, req: Request, url: URL): Promise<
     return null;
   }
   if (url.pathname !== "/api/start") return null;
-  if (req.method === "GET") return json({ report: await doctor(db), progress: getProgress(db), autoOpen: shouldAutoOpen(db) });
+  if (req.method === "GET") return json({ report: await doctor(db), progress: getProgress(db), autoOpen: shouldAutoOpen(db), sample: { ask: SAMPLE_ASK, ...SAMPLE_ESTIMATE } });
   if (req.method === "PUT") {
     const b = await readBody(req);
     const problem = needsClaudeCheck(b) ? claudeBlocks(await doctor(db)) : null;

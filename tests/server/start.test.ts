@@ -35,18 +35,18 @@ const put = (path: string, body: unknown) => fetch(base + path, { method: "PUT",
 test("GET /api/start gives the checks, the saved place and whether to open on its own", async () => {
   const r = await (await fetch(base + "/api/start")).json();
   expect(r.report.agents.map((a: { id: string; state: string }) => [a.id, a.state])).toEqual([["claude", "ready"], ["codex", "not_installed"], ["gemini", "not_installed"]]);
-  expect(r.progress).toEqual({ step: "welcome", skipped: [], done: false, dismissed: false });
+  expect(r.progress).toEqual({ step: "claude", skipped: [], done: false, dismissed: false });
   expect(r.autoOpen).toBe(true);
 });
 
-test("PUT /api/start moves and skips steps, and Done waits for Claude", async () => {
-  expect(await (await put("/api/start", { skip: "tools", step: "profile" })).json()).toEqual({ step: "profile", skipped: ["tools"], done: false, dismissed: false });
+test("PUT /api/start moves and skips steps, and finishing waits for Claude", async () => {
+  expect(await (await put("/api/start", { skip: "folder", step: "sample" })).json()).toEqual({ step: "sample", skipped: ["folder"], done: false, dismissed: false });
   process.env.FAKE_CLAUDE_AUTH = "signed-out";
   const blocked = await put("/api/start", { done: true });
   expect(blocked.status).toBe(400);
   expect((await blocked.json()).error).toContain("Claude comes first");
   delete process.env.FAKE_CLAUDE_AUTH;
-  expect(await (await put("/api/start", { done: true })).json()).toMatchObject({ step: "done", done: true });
+  expect(await (await put("/api/start", { done: true })).json()).toMatchObject({ step: "sample", done: true });
   expect((await (await fetch(base + "/api/start")).json()).autoOpen).toBe(false);
 });
 

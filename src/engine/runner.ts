@@ -61,6 +61,7 @@ import { capabilityLines } from "./capabilities";
 import { OUTCOME_INSTRUCTION, type ParsedOutcome, parseOutcome } from "./outcome";
 import { enforceTranscriptCap, openTranscript } from "./storage";
 import { type Tier, tierModel, tierRun } from "./tiers";
+import { isSampleSpace } from "./sample";
 import { recordUsage, runModels, withModels } from "./usage";
 import { planSession, progressNote, type Session } from "./sessions";
 import { costlier, proposeShape, runNow, suggestion, suggestionLine } from "./shape";
@@ -732,7 +733,7 @@ export function createRunner(deps: {
     const watch = task.kind === "work" && !explaining ? toolWatch() : null;
     let result: AgentRunResult;
     // Claude's model for this job; other agents keep their own.
-    const tierName = tierFor(task, explaining);
+    const tierName = tierFor(task, explaining, isSampleSpace(db, task.spaceId));
     const tier = adapter.id === "claude" ? tierRun(db, tierName) : {};
     const asked = tier.model;
     // A Claude writer keeps its session between turns, except in a private space, whose work is never left in
@@ -1495,8 +1496,10 @@ class StoppedEarly extends Error {}
 const hadTurn = (task: Task): boolean => task.loop !== null && (task.loop.said !== null || task.loop.checkedSha !== null);
 
 // Which tier's Claude model a run uses: review judges and an explanation only reads, and a writer the user had to
-// unstick after a pause goes on with the strong model.
-function tierFor(task: Task, explaining: boolean): Tier {
+// unstick after a pause goes on with the strong model. The first-run sample runs everything on the cheap tier, so
+// its cost up front holds.
+export function tierFor(task: Task, explaining: boolean, sample: boolean): Tier {
+  if (sample) return "cheap";
   if (task.kind === "review") return "strong";
   if (explaining) return "cheap";
   return task.loop?.escalated ? "strong" : "default";
