@@ -1,7 +1,10 @@
+import { SearchCheck } from "lucide-react";
 import { useState } from "react";
 import { post, type State } from "../api";
 import { announce } from "../live";
 import { showToast } from "../toast";
+import { isRisky, shownSha } from "../queue";
+import { reviewLine } from "../summary";
 import { approveLabel } from "./OutcomeBanner";
 
 type Approval = State["approvals"][number];
@@ -95,15 +98,48 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
   );
 }
 
-// A task in review, decided from its own detail.
-export function ReviewActions({ approval, outcome, risky = false, sha }: { approval: Approval; outcome: Outcome; risky?: boolean; sha?: string | null }) {
-  const d = useDecision(approval, sha);
+// The one layout for deciding on a result, wherever it's decided: the queue's screen, a task's own page and a row in a
+// list. Left to right: what the checks and the reviewer said, a way to the full screen when there is one, then Send
+// back and Approve. Below them, a line that names the keys, or, once a risky Approve has had one press of a, asks for
+// the second: the same height either way, so nothing moves under the pointer.
+export function DecisionBar({ approval, state, open, armed = false, keys = false }: { approval: Approval; state: State; open?: () => void; armed?: boolean; keys?: boolean }) {
+  const task = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
+  const d = useDecision(approval, shownSha(state, approval));
+  const review = reviewLine(approval, state);
+  const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
   return (
-    <div className="review-acts">
-      <div className="acts">
-        <span className="faint">Waiting for your review</span>
-        <DecideButtons d={d} outcome={outcome} risky={risky} />
+    <div className="decision">
+      <div className="decision-row">
+        {review ? (
+          <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>
+            <SearchCheck />
+            {review.text}
+          </span>
+        ) : (
+          <span className="review-line">Waiting for your decision</span>
+        )}
+        <span className="decision-acts">
+          {open && (
+            <button className="btn" data-act="open" onClick={open}>
+              Open
+            </button>
+          )}
+          <DecideButtons d={d} outcome={outcome} risky={isRisky(state, approval)} />
+        </span>
       </div>
+      {keys && (
+        <p className={`decision-keys${armed ? " armed" : ""}`} role={armed ? "status" : undefined}>
+          {armed ? (
+            <>
+              It has notes or findings that weren't fixed. Press <kbd>a</kbd> again to approve anyway.
+            </>
+          ) : (
+            <>
+              <kbd>a</kbd> approve · <kbd>s</kbd> send back · <kbd>?</kbd> all keys
+            </>
+          )}
+        </p>
+      )}
       <SendBackNote d={d} />
       {d.error && <p className="err">{d.error}</p>}
     </div>

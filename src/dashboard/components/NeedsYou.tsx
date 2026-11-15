@@ -1,34 +1,25 @@
-import { ChevronRight, Inbox, SearchCheck, TriangleAlert } from "lucide-react";
-import { type Ref, useState } from "react";
+import { ChevronRight, Inbox, TriangleAlert } from "lucide-react";
+import type { Ref } from "react";
 import type { State } from "../api";
-import { absolute, relative } from "../format";
 import { navigate } from "../route";
-import { attentionText, reviewLine, summaryLine } from "../summary";
-import { DecideButtons, SendBackNote, useDecision } from "./Decision";
+import { attentionText, summaryLine } from "../summary";
+import { DecisionBar } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { QuestionsRow } from "./BriefQuestions";
 import { needsYouCount } from "../../engine/needs";
-import { isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, shownSha } from "../queue";
+import { itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem } from "../queue";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
-import { Markdown } from "./Markdown";
-import { RetroCard } from "./Retro";
-import { WalkthroughCard } from "./Walkthrough";
-import { WhatItMade } from "./WhatItMade";
 
 type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
+// A result or question in a list: its title and the shared decision layout, with Open going to its full screen in
+// the queue (the diff, the walkthrough, the brief and the review, all in one place).
 function Row({ approval, space, state }: { approval: Approval; space: Space | undefined; state: State }) {
-  const [open, setOpen] = useState(false);
-  const d = useDecision(approval, shownSha(state, approval));
-  const { error } = d;
-  const review = reviewLine(approval, state);
-  // What the agent said about a result that isn't plainly done; only reviews carry one.
   const task = approval.kind === "review" && approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
-  const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
+  const outcome = task?.outcome && task.outcome !== "done" && !task.loop?.noChanges ? task.outcome : null;
   const attention = attentionText(task?.loop);
-
   return (
     <div className="entry">
       <div className="item">
@@ -36,25 +27,9 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
         <span className="who">{space?.name ?? (approval.spaceId === null ? "Atrium" : "Unknown space")}</span>
         <span className="t" title={approval.detail ? `${approval.title}\n${summaryLine(approval.detail)}` : approval.title}>
           {approval.title}
-          {approval.detail && <span>{summaryLine(approval.detail)}</span>}
+          {!task?.loop && approval.detail && <span>{summaryLine(approval.detail)}</span>}
         </span>
-        {review && (
-          <span className={`review-line${review.tone ? ` ${review.tone}` : ""}`} title={review.text}>
-            <SearchCheck />
-            {review.text}
-          </span>
-        )}
-        <div className="acts">
-          {approval.taskId && space?.kind === "repo" && approval.kind === "review" && !task?.loop?.noChanges && (
-            <button className="btn link" onClick={() => navigate(`/space/${space.id}?task=${approval.taskId}&view=changes`)}>
-              See changes
-            </button>
-          )}
-          <button className="btn" data-act="open" onClick={() => setOpen(!open)} aria-expanded={open}>
-            {open ? "Hide" : "View"}
-          </button>
-          <DecideButtons d={d} outcome={outcome} risky={isRisky(state, approval)} />
-        </div>
+        <DecisionBar approval={approval} state={state} open={() => navigate(`/needs-you?item=${encodeURIComponent(approval.id)}`)} />
       </div>
       {attention && (
         <div className="outcome-row">
@@ -69,36 +44,6 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
         </div>
       )}
-      {open && (
-        <div className="detail">
-          {approval.taskId && space ? (
-            <>
-              {task && <WalkthroughCard task={task} space={space} />}
-              {task && <RetroCard task={task} state={state} />}
-              <WhatItMade taskId={approval.taskId} spaceId={space.id} spaceKind={space.kind} noChanges={task?.loop?.noChanges} />
-            </>
-          ) : (
-            <Markdown text={approval.detail || "No further detail."} />
-          )}
-          <div className="meta">
-            <span title={absolute(approval.createdAt)}>Asked {relative(approval.createdAt)}</span>
-            {approval.taskId && space && (
-              // The task shows its runs, transcripts and files in full.
-              <a
-                href={`/space/${space.id}?task=${approval.taskId}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate(`/space/${space.id}?task=${approval.taskId}`);
-                }}
-              >
-                Open the task in {space.name}
-              </a>
-            )}
-          </div>
-        </div>
-      )}
-      <SendBackNote d={d} />
-      {error && <div className="row-err err">{error}</div>}
     </div>
   );
 }

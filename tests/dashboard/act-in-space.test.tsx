@@ -23,7 +23,7 @@ test("a task in review offers Approve and Send back in its own detail", () => {
   const space = s.spaces.find((x) => x.id === ids.atrium)!;
   const html = renderToStaticMarkup(<SpaceView state={s} space={space} focusTask={ids.review} />);
   const detail = html.slice(html.indexOf(`id="task-${ids.review}"`));
-  expect(text(detail)).toContain("Waiting for your review");
+  expect(text(detail)).toContain("Waiting for your decision");
   expect(detail).toContain('data-act="approve"');
 });
 

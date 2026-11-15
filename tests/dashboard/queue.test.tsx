@@ -17,6 +17,7 @@ beforeEach(() => {
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (url.endsWith("/checks")) return Response.json([]);
+    if (url.includes("/diff")) return Response.json({ files: [], totals: { files: 0, additions: 0, deletions: 0 }, truncated: false });
     if (url.endsWith("/batch")) return Response.json({ approved: [], skipped: [] });
     if (url.includes("/outputs")) return Response.json({ files: [], summary: null });
     return Response.json({});
@@ -91,7 +92,8 @@ test("j and k move the selection and the decision beside it follows; a and s pre
   const decided = () => calls.filter((c) => c.url.startsWith("/api/approvals/")).length;
   await press("a");
   expect(decided()).toBe(0);
-  expect(el.querySelector(".q-armed")!.textContent).toContain("Press a again");
+  // The ask takes the key-hint line's place, so the buttons don't move.
+  expect(el.querySelector(".decision-keys.armed")!.textContent).toContain("Press a again");
   await press("a");
   expect(calls.at(-1)).toEqual({ url: "/api/approvals/apr_c", body: { decision: "approve" } });
   await press("j");
@@ -140,12 +142,21 @@ test("approving a result on a branch sends the commit its screen shows", async (
   expect(calls.find((c) => c.url === "/api/approvals/apr_a")!.body).toEqual({ decision: "approve", sha: "sha_a" });
 });
 
+test("a result on a branch shows its diff right in the queue", async () => {
+  const s = queueState();
+  const onBranch = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_a" ? { ...t, branch: "atrium/tsk_a" } : t)) };
+  const el = render(<NeedsPage state={onBranch} item="apr_a" />);
+  await act(async () => new Promise((r) => setTimeout(r, 10)));
+  expect(calls.some((c) => c.url === "/api/tasks/tsk_a/diff")).toBe(true);
+  expect(el.querySelector(".dp .changes-section")).not.toBeNull();
+});
+
 test("a result with no changes says so plainly and offers no diff", () => {
   const s = queueState();
   const empty = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_a" ? { ...t, outcome: "unknown" as const, loop: { ...t.loop!, noChanges: true } } : t)) };
   const el = render(<NeedsPage state={empty} item="apr_a" />);
   expect(el.querySelector(".dp-lead")!.textContent).toBe("It made no changes: its branch holds nothing new.");
-  expect(el.querySelector('[data-act="changes"]')).toBeNull();
+  expect(el.querySelector(".changes-section")).toBeNull();
   expect(el.textContent).not.toContain("can't tell");
 });
 

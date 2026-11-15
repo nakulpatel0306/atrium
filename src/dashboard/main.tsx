@@ -127,26 +127,29 @@ function App() {
             ⌘K
           </button>
         </div>
-        {route.name === "home" ? (
-          <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
-        ) : route.name === "needs" ? (
-          <NeedsPage state={activeOnly(state)} item={route.item} batch={route.batch} />
-        ) : route.name === "activity" ? (
-          <div className="wrap">
-            <Activity state={activeOnly(state)} page />
-          </div>
-        ) : route.name === "agents" ? (
-          <Agents state={state} />
-        ) : route.name === "rules" ? (
-          <Rules state={state} />
-        ) : route.name === "settings" ? (
-          <Settings state={state} />
-        ) : route.name === "start" ? (
-          <GetStarted />
-        ) : (
-          <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} changes={route.changes} at={route.at} />
-        )}
-        <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} askRequest={askRequest} />
+        <div className="page">
+          {route.name === "home" ? (
+            <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
+          ) : route.name === "needs" ? (
+            <NeedsPage state={activeOnly(state)} item={route.item} batch={route.batch} />
+          ) : route.name === "activity" ? (
+            <div className="wrap">
+              <Activity state={activeOnly(state)} page />
+            </div>
+          ) : route.name === "agents" ? (
+            <Agents state={state} />
+          ) : route.name === "rules" ? (
+            <Rules state={state} />
+          ) : route.name === "settings" ? (
+            <Settings state={state} />
+          ) : route.name === "start" ? (
+            <GetStarted />
+          ) : (
+            <SpaceView key={route.id} state={state} space={space} focusTask={route.task} tab={route.tab} changes={route.changes} at={route.at} />
+          )}
+        </div>
+        {/* Get started has its own ask (the sample's); a second box there, before Claude is ready, only confuses. */}
+        {route.name !== "start" && <CommandBar space={route.name === "space" ? (space ?? null) : null} setupRequest={setupRequest} askRequest={askRequest} />}
         <Palette
           state={activeOnly(state)}
           spaceId={route.name === "space" ? route.id : null}

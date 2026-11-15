@@ -32,13 +32,14 @@
   --scrim: rgba(0, 0, 0, 0.5);
   --shadow-1: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 20px 56px rgba(0, 0, 0, 0.5);
-  /* Type: labels and tags, secondary text, body, emphasis, titles. */
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 13px;
-  --fs-lg: 14px;
-  --fs-xl: 16px;
-  --fs-2xl: 22px;
+  /* Type, in real steps: tabular meta and tags, secondary text, body, emphasis, item titles, page titles. Nothing
+     reads below 12px. */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
   /* Radii, from hairline chips to sheets. */
   --r-xs: 3px;
   --r-sm: 5px;
@@ -50,8 +51,8 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 120ms;
   --dur: 180ms;
-  /* What the floating command bar covers at the bottom of the page: 20px gap, its own height, a little air. */
-  --cmd-clear: 88px;
+  /* The docked ask bar's height: scrolling into view stops above it, and toasts sit just over it. */
+  --cmd-clear: 76px;
   color-scheme: dark;
 }
 /* The light theme: the Mac's own setting unless the palette picked one. */
@@ -116,7 +117,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.45 Inter, system-ui, sans-serif;
+  font: 14px/1.5 Inter, system-ui, sans-serif;
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -353,6 +354,9 @@ main {
   container: main / inline-size;
   overflow-y: auto;
   position: relative;
+  /* The page grows to fill the column, so the docked ask bar sits at the bottom even on a short page. */
+  display: flex;
+  flex-direction: column;
   /* So a row scrolled into view (a focused task, an opened preview) stops above the command bar. */
   scroll-padding-bottom: var(--cmd-clear);
 }
@@ -507,7 +511,7 @@ main {
 .wrap {
   max-width: 980px;
   margin: 0 auto;
-  padding: 28px 24px calc(var(--cmd-clear) + 32px);
+  padding: 28px 24px 32px;
 }
 h1 {
   font-size: var(--fs-2xl);
@@ -1135,7 +1139,7 @@ h2 {
 .toasts {
   position: fixed;
   left: calc(50% + 110px);
-  bottom: calc(var(--cmd-clear) + 4px);
+  bottom: calc(var(--cmd-clear) + 8px);
   transform: translateX(-50%);
   z-index: 15;
   display: flex;
@@ -1205,17 +1209,28 @@ h2 {
 }
 
 /* command bar */
+.page {
+  flex: 1 0 auto;
+}
+main > .top {
+  flex: none;
+}
+/* The ask bar, docked at the bottom of the column on a band of its own: content scrolls behind the band, never under
+   a floating box in the middle of what's being read. */
+.cmd-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  padding: 10px 24px 14px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
 .cmd {
-  position: fixed;
-  left: calc(220px + (100vw - 220px) / 2);
-  transform: translateX(-50%);
-  bottom: 20px;
-  width: min(680px, calc(100vw - 280px));
+  max-width: 760px;
+  margin: 0 auto;
   background: var(--raised);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-xl);
-  box-shadow: var(--shadow-1);
-  z-index: 3;
 }
 .cmd:focus-within {
   border-color: var(--accent);
@@ -1264,7 +1279,7 @@ h2 {
 }
 /* Files attached in the bar: chips above the input, and the page-wide drop target. */
 :root.has-attachments {
-  --cmd-clear: 140px;
+  --cmd-clear: 128px;
 }
 .cmd .attach {
   flex: none;
@@ -3515,9 +3530,8 @@ kbd {
   .toast {
     max-width: min(560px, calc(100vw - 92px));
   }
-  .cmd {
-    left: calc(52px + (100vw - 52px) / 2);
-    width: min(680px, calc(100vw - 92px));
+  .cmd-dock {
+    padding: 8px 12px 10px;
   }
 }
 
@@ -4179,4 +4193,117 @@ kbd {
 .dp-lead.bad {
   border-color: color-mix(in srgb, var(--red) 45%, var(--line));
   background: color-mix(in srgb, var(--red) 8%, var(--panel));
+}
+
+/* The one decision layout: status, a way to the full screen, Send back and Approve, and a key line of fixed height. */
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.decision-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.decision-row .review-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.decision-acts {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.decision-keys {
+  height: 22px;
+  line-height: 22px;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.decision-keys.armed {
+  color: var(--yellow);
+}
+.item > .decision {
+  flex: 0 1 auto;
+  max-width: 62%;
+}
+.item > .decision .decision-row {
+  flex-wrap: nowrap;
+}
+.dp-acts .decision {
+  flex: 1;
+}
+.review-acts .decision {
+  padding: 8px 10px;
+}
+/* Every control is at least 24px tall, so it can be hit without aiming. */
+.btn,
+.seg button,
+.pick,
+.top .crumb,
+.btn.link {
+  min-height: 24px;
+}
+.btn.link {
+  vertical-align: middle;
+}
+
+.budget .over {
+  color: var(--red);
+}
+/* At phone width the page heading wraps instead of squeezing, and the stage strip wraps instead of clipping. */
+.page-head {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.stages {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.changes-section:has(> .chg-empty:only-child) {
+  min-height: 520px;
+}
+
+/* Get started: the folder field takes the column, and each command has its copy button beside it. */
+.start-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 500;
+}
+.start-folder input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  padding: 8px 10px;
+  outline: none;
+}
+.start-folder input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.cmd-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cmd-copy code {
+  font-size: var(--fs-sm);
 }

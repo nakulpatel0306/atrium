@@ -285,81 +285,84 @@ export function CommandBar({ space, setupRequest, askRequest = 0 }: Props) {
           </div>
         </div>
       )}
-      <div className="cmd">
-        {draft && !setup && (
-          <BriefCard
-            draft={draft}
-            spaceId={space!.id}
-            repo={repo}
-            busy={busy}
-            onRun={(brief, shape) => void send(text.trim(), brief, shape)}
-            onDiscard={() => {
-              setDraft(null);
-              input.current?.focus();
+      {/* Docked under the page rather than floating over it, so it never covers what's being read. */}
+      <div className="cmd-dock">
+        <div className="cmd">
+          {draft && !setup && (
+            <BriefCard
+              draft={draft}
+              spaceId={space!.id}
+              repo={repo}
+              busy={busy}
+              onRun={(brief, shape) => void send(text.trim(), brief, shape)}
+              onDiscard={() => {
+                setDraft(null);
+                input.current?.focus();
+              }}
+            />
+          )}
+          <AttachChips files={files} onRemove={remove} disabled={busy} />
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit();
             }}
-          />
-        )}
-        <AttachChips files={files} onRemove={remove} disabled={busy} />
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
-          {busy ? <LoaderCircle className="spinner" /> : <Sparkle />}
-          <input
-            ref={input}
-            value={text}
-            readOnly={busy}
-            aria-label={setup ? "Describe a new space" : `Give ${space!.name} a task`}
-            placeholder={placeholder}
-            onChange={(e) => {
-              setText(e.target.value);
-              // A brief is for the ask it was drafted from.
-              setDraft(null);
-              if (message?.kind !== "busy") setMessage(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && drafting.current) cancelDraft();
-              else if (e.key === "Escape") e.currentTarget.blur();
-              else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                void submit(true);
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="attach"
-            aria-label={repo ? REPO_REFUSED : "Attach files"}
-            title={repo ? REPO_REFUSED : "Attach files"}
-            // aria-disabled rather than disabled in a repo space, so the tooltip saying why still shows on hover.
-            aria-disabled={repo || undefined}
-            disabled={busy}
-            onClick={() => (repo ? setMessage({ kind: "info", text: REPO_REFUSED }) : picker.current?.click())}
           >
-            <Paperclip />
-          </button>
-          <input
-            ref={picker}
-            type="file"
-            multiple
-            accept={ACCEPT}
-            hidden
-            tabIndex={-1}
-            onChange={(e) => {
-              attach([...(e.currentTarget.files ?? [])]);
-              e.currentTarget.value = "";
-            }}
-          />
-          {!setup && <AgentPicker value={agent} disabled={busy} onChange={setAgent} label="Agent for the new task" />}
-          <kbd className="k" title="Press / to type here">/</kbd>
-        </form>
-        {message && (
-          <div className={`msg${message.kind === "error" ? " err" : ""}`} role={message.kind === "error" ? "alert" : "status"}>
-            {message.text}
-          </div>
-        )}
+            {busy ? <LoaderCircle className="spinner" /> : <Sparkle />}
+            <input
+              ref={input}
+              value={text}
+              readOnly={busy}
+              aria-label={setup ? "Describe a new space" : `Give ${space!.name} a task`}
+              placeholder={placeholder}
+              onChange={(e) => {
+                setText(e.target.value);
+                // A brief is for the ask it was drafted from.
+                setDraft(null);
+                if (message?.kind !== "busy") setMessage(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && drafting.current) cancelDraft();
+                else if (e.key === "Escape") e.currentTarget.blur();
+                else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void submit(true);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="attach"
+              aria-label={repo ? REPO_REFUSED : "Attach files"}
+              title={repo ? REPO_REFUSED : "Attach files"}
+              // aria-disabled rather than disabled in a repo space, so the tooltip saying why still shows on hover.
+              aria-disabled={repo || undefined}
+              disabled={busy}
+              onClick={() => (repo ? setMessage({ kind: "info", text: REPO_REFUSED }) : picker.current?.click())}
+            >
+              <Paperclip />
+            </button>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              accept={ACCEPT}
+              hidden
+              tabIndex={-1}
+              onChange={(e) => {
+                attach([...(e.currentTarget.files ?? [])]);
+                e.currentTarget.value = "";
+              }}
+            />
+            {!setup && <AgentPicker value={agent} disabled={busy} onChange={setAgent} label="Agent for the new task" />}
+            <kbd className="k" title="Press / to type here">/</kbd>
+          </form>
+          {message && (
+            <div className={`msg${message.kind === "error" ? " err" : ""}`} role={message.kind === "error" ? "alert" : "status"}>
+              {message.text}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

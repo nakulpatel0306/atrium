@@ -5,9 +5,11 @@ import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
-import { cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, shownSha, waited } from "../queue";
+import { cleanReviews, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, waited } from "../queue";
 import { navigate } from "../route";
-import { DecideButtons, SendBackNote, useDecision } from "./Decision";
+import { DecisionBar } from "./Decision";
+import { ChangesView } from "./ChangesView";
+import { agentText } from "../agents";
 import { LoopPanel } from "./LoopPanel";
 import { Markdown } from "./Markdown";
 import { MemoryProposal } from "./Memory";
@@ -101,26 +103,17 @@ export function QueueList({ items, state, selected, onSelect }: { items: QueueIt
   );
 }
 
-// A result or question decided right here, with everything it rests on in view.
-function ApprovalDecision({ approval, task, space, state }: { approval: Approval; task: Task | undefined; space: Space | undefined; state: State }) {
-  const d = useDecision(approval, shownSha(state, approval));
+// A result or question decided right here, with everything it rests on in view, the diff included: a decision never
+// has to leave the queue.
+function ApprovalDecision({ approval, task, space, state, armed }: { approval: Approval; task: Task | undefined; space: Space | undefined; state: State; armed: boolean }) {
   const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
   const repo = space?.kind === "repo";
+  const diff = repo && task?.branch && approval.kind === "review" && !task.loop?.noChanges;
   return (
     <>
       <div className="dp-acts">
-        {approval.taskId && repo && approval.kind === "review" && !task?.loop?.noChanges && (
-          <button className="btn" data-act="changes" onClick={() => navigate(`/space/${space.id}?task=${approval.taskId}&view=changes`)}>
-            See changes
-          </button>
-        )}
-        <DecideButtons d={d} outcome={outcome} risky={isRisky(state, approval)} />
+        <DecisionBar approval={approval} state={state} armed={armed} keys />
       </div>
-      <p className="dp-keys" aria-hidden="true">
-        <kbd>a</kbd> approve · <kbd>s</kbd> send back · <kbd>?</kbd> all keys
-      </p>
-      <SendBackNote d={d} />
-      {d.error && <p className="err">{d.error}</p>}
       {task?.loop?.noChanges ? (
         // Said plainly: an empty result has no commits to read or push, whatever the agent's own words were.
         <p className="dp-lead" role="note">
@@ -131,11 +124,12 @@ function ApprovalDecision({ approval, task, space, state }: { approval: Approval
       )}
       {task && space ? (
         <>
-          {/* What changed and where to look first leads; the brief, checks and findings it rests on follow. */}
+          {/* What changed and where to look first leads; the diff itself next; the brief, checks and findings after. */}
           <WalkthroughCard task={task} space={space} />
-          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen />}
+          {diff && <ChangesView task={task} agent={agentText(task, state.runs)} />}
+          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen={!diff} />}
           <RetroCard task={task} state={state} />
-          <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
+          {!diff && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
         </>
       ) : (
         <Markdown text={approval.detail || "No further detail."} />
@@ -146,7 +140,7 @@ function ApprovalDecision({ approval, task, space, state }: { approval: Approval
 
 // One screen per item: what it is, how long it has waited, and everything needed to decide, with the decision's own
 // buttons. The queue's keys press those buttons, so a key can never do what a click wouldn't.
-export function DecisionPanel({ item, state }: { item: QueueItem; state: State }) {
+export function DecisionPanel({ item, state, armed = false }: { item: QueueItem; state: State; armed?: boolean }) {
   const space = item.spaceId ? state.spaces.find((s) => s.id === item.spaceId) : undefined;
   const task = item.taskId ? state.tasks.find((t) => t.id === item.taskId) : undefined;
   const approval = item.kind === "review" || item.kind === "approval" ? state.approvals.find((a) => a.id === item.key) : undefined;
@@ -157,7 +151,7 @@ export function DecisionPanel({ item, state }: { item: QueueItem; state: State }
   let body;
   if (approval?.alwaysAsk === "create_repo" && action?.draft) body = <div className="list needs-list"><ProjectDraftRow approval={approval} action={action} /></div>;
   else if (approval?.alwaysAsk === "remove_clone") body = <div className="list needs-list"><RemovalRow approval={approval} /></div>;
-  else if (approval) body = <ApprovalDecision approval={approval} task={task} space={space} state={state} />;
+  else if (approval) body = <ApprovalDecision approval={approval} task={task} space={space} state={state} armed={armed} />;
   else if (proposal) body = <div className="list needs-list"><ProposalRow proposal={proposal} space={space} /></div>;
   else if (memory && space) body = <MemoryProposal line={memory} space={space} />;
   else if (task)
@@ -190,7 +184,7 @@ export function DecisionPanel({ item, state }: { item: QueueItem; state: State }
           {item.low && (
             <>
               <span aria-hidden="true">·</span>
-              <span>nothing waits on this</span>
+              <span>low priority: nothing waits on it</span>
             </>
           )}
           {task && space && (
@@ -381,7 +375,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
     <div className="wrap queue-page">
       <div className="page-head">
         <h1>Needs you{count > 0 && ` · ${count}`}</h1>
-        {low > 0 && <span className="low-count">and {low} that nothing waits on</span>}
+        {low > 0 && <span className="low-count">+ {low} low priority</span>}
         <BatchApprove state={state} items={items} open={batch} setOpen={setBatch} />
         <button className="btn link subtle keys-btn" aria-expanded={help} onClick={() => setHelp(!help)}>
           <Keyboard />
@@ -407,16 +401,11 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
             }}
           />
           <div className="q-panel" ref={panel}>
-            {armed === current?.key && (
-              <p className="q-armed" role="status">
-                It has notes or findings that weren't fixed. Press <kbd>a</kbd> again to approve anyway.
-              </p>
-            )}
             <button className="btn link q-back" onClick={() => setOpened(false)}>
               <ChevronLeft />
               All items
             </button>
-            {current && <DecisionPanel key={current.key} item={current} state={state} />}
+            {current && <DecisionPanel key={current.key} item={current} state={state} armed={armed === current.key} />}
           </div>
         </div>
       )}

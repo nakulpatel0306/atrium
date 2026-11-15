@@ -16,8 +16,7 @@ import { spendText } from "../../engine/cost";
 import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
-import { ReviewActions } from "./Decision";
-import { isRisky, shownSha } from "../queue";
+import { DecisionBar } from "./Decision";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -404,7 +403,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
         <div className="detail">
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
-          {review && <ReviewActions approval={review} outcome={task.outcome} risky={isRisky(state, review)} sha={shownSha(state, review)} />}
+          {review && (
+            <div className="review-acts">
+              <DecisionBar approval={review} state={state} />
+            </div>
+          )}
           <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
