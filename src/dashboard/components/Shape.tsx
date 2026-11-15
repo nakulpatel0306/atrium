@@ -156,7 +156,8 @@ export function ShapeLine({ task, state }: { task: Task; state: State }) {
           </button>
         </span>
       )}
-      {!offer && shape.proposed !== shape.kind && <span className="hint">(suggested: {SHAPE_LABEL[shape.proposed]})</span>}
+      {/* Once the work is done, what the pre-pass once suggested is history, not advice. */}
+      {!offer && shape.proposed !== shape.kind && task.status !== "review" && task.status !== "done" && <span className="hint">(suggested: {SHAPE_LABEL[shape.proposed]})</span>}
       {open && (
         <button type="button" className="btn link subtle" aria-expanded={editing} onClick={() => setEditing(!editing)}>
           Change

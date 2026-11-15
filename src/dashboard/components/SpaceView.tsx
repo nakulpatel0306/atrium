@@ -424,7 +424,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {space?.kind === "repo" ? (
             <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} at={at} />
           ) : (
-            space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />
+            space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
           )}
           <div className="meta">
             <span className="agent-meta">

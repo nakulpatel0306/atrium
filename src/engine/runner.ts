@@ -1599,8 +1599,8 @@ async function repoReport(repo: RepoRun): Promise<{ lines: string[]; commits: nu
   } catch (e) {
     summaryLine = `Couldn't summarise the changes on ${repo.branch}: ${(e as Error).message}`;
   }
-  // Atrium never pushes as Nakul; sharing the branch is his call.
-  return { lines: [summaryLine, `Branch ${repo.branch} is on your machine. Push it when you're ready.`], commits };
+  // Atrium never pushes as Nakul; sharing the branch is his call. A branch with nothing on it has nothing to push.
+  return { lines: commits ? [summaryLine, `Branch ${repo.branch} is on your machine. Push it when you're ready.`] : [summaryLine], commits };
 }
 
 type Kept = KeptScratch & { dir: string; failed?: string };

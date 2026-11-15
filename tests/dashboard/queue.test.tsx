@@ -140,6 +140,15 @@ test("approving a result on a branch sends the commit its screen shows", async (
   expect(calls.find((c) => c.url === "/api/approvals/apr_a")!.body).toEqual({ decision: "approve", sha: "sha_a" });
 });
 
+test("a result with no changes says so plainly and offers no diff", () => {
+  const s = queueState();
+  const empty = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_a" ? { ...t, outcome: "unknown" as const, loop: { ...t.loop!, noChanges: true } } : t)) };
+  const el = render(<NeedsPage state={empty} item="apr_a" />);
+  expect(el.querySelector(".dp-lead")!.textContent).toBe("It made no changes: its branch holds nothing new.");
+  expect(el.querySelector('[data-act="changes"]')).toBeNull();
+  expect(el.textContent).not.toContain("can't tell");
+});
+
 test("an empty queue says so", () => {
   const s = makeState({ approvals: [], proposals: [], tasks: [] });
   expect(render(<NeedsPage state={s} />).textContent).toContain("You're all caught up.");

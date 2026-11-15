@@ -109,7 +109,7 @@ function ApprovalDecision({ approval, task, space, state }: { approval: Approval
   return (
     <>
       <div className="dp-acts">
-        {approval.taskId && repo && approval.kind === "review" && (
+        {approval.taskId && repo && approval.kind === "review" && !task?.loop?.noChanges && (
           <button className="btn" data-act="changes" onClick={() => navigate(`/space/${space.id}?task=${approval.taskId}&view=changes`)}>
             See changes
           </button>
@@ -121,14 +121,21 @@ function ApprovalDecision({ approval, task, space, state }: { approval: Approval
       </p>
       <SendBackNote d={d} />
       {d.error && <p className="err">{d.error}</p>}
-      {outcome && <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />}
+      {task?.loop?.noChanges ? (
+        // Said plainly: an empty result has no commits to read or push, whatever the agent's own words were.
+        <p className="dp-lead" role="note">
+          It made no changes: its branch holds nothing new.
+        </p>
+      ) : (
+        outcome && <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
+      )}
       {task && space ? (
         <>
           {/* What changed and where to look first leads; the brief, checks and findings it rests on follow. */}
           <WalkthroughCard task={task} space={space} />
           {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen />}
           <RetroCard task={task} state={state} />
-          <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} />
+          <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
         </>
       ) : (
         <Markdown text={approval.detail || "No further detail."} />

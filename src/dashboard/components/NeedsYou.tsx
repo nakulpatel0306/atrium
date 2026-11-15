@@ -45,7 +45,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
           </span>
         )}
         <div className="acts">
-          {approval.taskId && space?.kind === "repo" && approval.kind === "review" && (
+          {approval.taskId && space?.kind === "repo" && approval.kind === "review" && !task?.loop?.noChanges && (
             <button className="btn link" onClick={() => navigate(`/space/${space.id}?task=${approval.taskId}&view=changes`)}>
               See changes
             </button>
@@ -75,7 +75,7 @@ function Row({ approval, space, state }: { approval: Approval; space: Space | un
             <>
               {task && <WalkthroughCard task={task} space={space} />}
               {task && <RetroCard task={task} state={state} />}
-              <WhatItMade taskId={approval.taskId} spaceId={space.id} spaceKind={space.kind} />
+              <WhatItMade taskId={approval.taskId} spaceId={space.id} spaceKind={space.kind} noChanges={task?.loop?.noChanges} />
             </>
           ) : (
             <Markdown text={approval.detail || "No further detail."} />

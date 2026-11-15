@@ -379,6 +379,8 @@ test("run with no changes reaches review without a commit", async () => {
   await waitFor(() => status(t.id) === "review");
   expect(git(path, "rev-list", "--count", `main..atrium/${t.id}`)).toBe("0");
   expect(listPending(db)[0]!.detail).toContain("No file changes");
+  // Nothing on the branch, so nothing to push.
+  expect(listPending(db)[0]!.detail).not.toContain("Push it");
 });
 
 test(".env change blocks the task without a commit", async () => {
