@@ -4481,3 +4481,38 @@ kbd {
 .task-more[open] > summary::before {
   content: "▾";
 }
+
+/* The selected queue row's quiet text stays readable on its tint. */
+.q-row.on .q-line,
+.q-row.on .q-meta {
+  color: var(--dim);
+}
+
+/* Changed code reads in the text colour; the row's tint and sign say added or removed. */
+.chg-del td.chg-text,
+.chg-add td.chg-text {
+  color: var(--text);
+}
+
+/* Prose keeps a readable measure. */
+.note-line,
+.spend-line,
+.walkthrough-empty,
+.detail .role {
+  max-width: 80ch;
+}
+
+@container main (max-width: 640px) {
+  /* On a phone a task row's title takes its own line and the tags sit under it, whole. */
+  .item.task {
+    flex-wrap: wrap;
+  }
+  .item.task .task-open {
+    flex: 1 1 100%;
+  }
+  /* A run's facts stack in two columns rather than four squeezed ones. */
+  .runs li {
+    grid-template-columns: 1fr auto;
+    row-gap: 2px;
+  }
+}
