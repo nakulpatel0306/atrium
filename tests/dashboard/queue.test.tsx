@@ -128,6 +128,14 @@ test("a result the agent didn't say it finished is risky too, so it never approv
   expect(isRisky(s, s.approvals.find((a) => a.id === "apr_a")!)).toBe(false);
 });
 
+test("approving a result on a branch sends the commit its screen shows", async () => {
+  const s = queueState();
+  const onBranch = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_a" ? { ...t, branch: "atrium/tsk_a" } : t)) };
+  render(<NeedsPage state={onBranch} item="apr_a" />);
+  await press("a");
+  expect(calls.find((c) => c.url === "/api/approvals/apr_a")!.body).toEqual({ decision: "approve", sha: "sha_a" });
+});
+
 test("an empty queue says so", () => {
   const s = makeState({ approvals: [], proposals: [], tasks: [] });
   expect(render(<NeedsPage state={s} />).textContent).toContain("You're all caught up.");

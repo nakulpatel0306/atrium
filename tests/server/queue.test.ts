@@ -54,6 +54,14 @@ test("batch approval takes only clean results, whatever the page asked for", asy
   expect((await post("/api/approvals/batch", { items: [{ id: ok.a.id }] })).status).toBe(400);
 });
 
+test("approving names the commit shown; a branch that moved since is refused in plain words", async () => {
+  const { a } = result("Moved", clean);
+  const res = await post(`/api/approvals/${a.id}`, { decision: "approve", sha: "0".repeat(40) });
+  expect(res.status).toBe(409);
+  expect(((await res.json()) as { error: string }).error).toContain("changed since you looked");
+  expect(listPending(db).map((x) => x.id)).toContain(a.id);
+});
+
 test("a just-given approval can be taken back from the toast", async () => {
   const { t, a } = result("Clean", clean);
   expect((await post(`/api/approvals/${a.id}`, { decision: "approve" })).status).toBe(200);

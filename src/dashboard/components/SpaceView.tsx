@@ -17,7 +17,7 @@ import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ReviewActions } from "./Decision";
-import { isRisky } from "../queue";
+import { isRisky, shownSha } from "../queue";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -404,7 +404,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
         <div className="detail">
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
-          {review && <ReviewActions approval={review} outcome={task.outcome} risky={isRisky(state, review)} />}
+          {review && <ReviewActions approval={review} outcome={task.outcome} risky={isRisky(state, review)} sha={shownSha(state, review)} />}
           <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (

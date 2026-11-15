@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
 import { STEER_NOTE_MAX, type SteerOutcome, type StopOutcome } from "../engine/runner";
-import { AlreadyResolved, approveClean, BATCH_MAX, getApproval, reopenDecision, resolveApproval } from "../engine/approvals";
+import { AlreadyResolved, approveClean, BATCH_MAX, getApproval, HeadMoved, reopenDecision, resolveApproval } from "../engine/approvals";
 import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
 import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
 import { markSeen } from "../engine/briefing";
@@ -366,7 +366,15 @@ export function startServer(deps: Deps): Server<WsData> {
       }
       const current = getApproval(db, id);
       if (!current) throw new HttpError(404, "No such approval.");
-      const approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"));
+      // The commit the page showed, when it showed one: the approval binds to exactly that, or to nothing.
+      const sha = opt(b.sha, isString, "sha");
+      let approval;
+      try {
+        approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"), undefined, b.decision === "approve" && sha ? { atHead: sha } : {});
+      } catch (e) {
+        if (e instanceof HeadMoved) throw new HttpError(409, e.message);
+        throw e;
+      }
       // Nakul's decision stands whatever happens here; a suggestion is only ever extra.
       if (b.decision === "approve") {
         try {

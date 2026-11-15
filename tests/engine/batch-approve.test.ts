@@ -58,6 +58,27 @@ test("a result whose branch moved since it was shown, checked or reviewed is lef
   expect(approveClean(db, [{ id: shown.a.id, sha: head }]).approved).toEqual([]);
 });
 
+test("a branch that moves between the check and the decision is refused and reported, never approved", () => {
+  const shown = result("Racing", clean);
+  const res = approveClean(db, [{ id: shown.a.id, sha: shown.sha }], {
+    beforeResolve: () => {
+      Bun.spawnSync(["git", "commit", "--allow-empty", "-q", "-m", "racing", "--no-verify"], { cwd: repo.path });
+      branchAt(repo.path, `atrium/${shown.t.id}`);
+    },
+  });
+  expect(res.approved).toEqual([]);
+  expect(res.skipped).toEqual([{ id: shown.a.id, reason: "Its branch changed since it was checked, reviewed or shown, so it needs another look." }]);
+  expect(getApproval(db, shown.a.id)!.status).toBe("pending");
+});
+
+test("a single approval names the commit shown and records exactly that one", () => {
+  const ok = result("Shown", clean);
+  expect(resolveApproval(db, ok.a.id, "approve", undefined, undefined, { atHead: ok.sha }).branchHead).toBe(ok.sha);
+  const moved = result("Moved", clean);
+  expect(() => resolveApproval(db, moved.a.id, "approve", undefined, undefined, { atHead: "0".repeat(40) })).toThrow("changed since you looked");
+  expect(getApproval(db, moved.a.id)!.status).toBe("pending");
+});
+
 test("an approval made a moment ago can be reopened for review once", () => {
   const { t, a } = result("Clean", clean);
   resolveApproval(db, a.id, "approve");

@@ -8,7 +8,7 @@ import { DecideButtons, SendBackNote, useDecision } from "./Decision";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { QuestionsRow } from "./BriefQuestions";
 import { needsYouCount } from "../../engine/needs";
-import { isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem } from "../queue";
+import { isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, shownSha } from "../queue";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
@@ -21,7 +21,7 @@ type Approval = State["approvals"][number];
 type Space = State["spaces"][number];
 function Row({ approval, space, state }: { approval: Approval; space: Space | undefined; state: State }) {
   const [open, setOpen] = useState(false);
-  const d = useDecision(approval);
+  const d = useDecision(approval, shownSha(state, approval));
   const { error } = d;
   const review = reviewLine(approval, state);
   // What the agent said about a result that isn't plainly done; only reviews carry one.

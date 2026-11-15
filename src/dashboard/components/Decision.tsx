@@ -10,7 +10,9 @@ export type Decision = ReturnType<typeof useDecision>;
 
 // Approve or send back one approval. Needs you, the space's waiting list and a task's detail all decide through
 // this, so a result reads the same and goes to the same endpoint wherever Nakul acts on it.
-export function useDecision(approval: Approval) {
+// `sha` is the commit the screen shows, for a result on a branch: approving binds to exactly that commit, and a branch
+// that moved in the meantime is refused rather than approved unseen.
+export function useDecision(approval: Approval, sha?: string | null) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendingBack, setSendingBack] = useState(false);
@@ -22,6 +24,7 @@ export function useDecision(approval: Approval) {
     const res = await post(`/api/approvals/${approval.id}`, {
       decision,
       ...(decision === "reject" && note.trim() ? { note: note.trim() } : {}),
+      ...(decision === "approve" && sha ? { sha } : {}),
     });
     // On success the row disappears with the next state refresh. An approval can be taken back for a moment, in case
     // a key went to the wrong item.
@@ -93,8 +96,8 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
 }
 
 // A task in review, decided from its own detail.
-export function ReviewActions({ approval, outcome, risky = false }: { approval: Approval; outcome: Outcome; risky?: boolean }) {
-  const d = useDecision(approval);
+export function ReviewActions({ approval, outcome, risky = false, sha }: { approval: Approval; outcome: Outcome; risky?: boolean; sha?: string | null }) {
+  const d = useDecision(approval, sha);
   return (
     <div className="review-acts">
       <div className="acts">

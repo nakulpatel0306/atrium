@@ -4,7 +4,7 @@ import { post, type State } from "../api";
 import { absolute, relative } from "../format";
 import { announce } from "../live";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
-import { cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, waited } from "../queue";
+import { cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, queueOf, type QueueItem, shownSha, waited } from "../queue";
 import { navigate } from "../route";
 import { DecideButtons, SendBackNote, useDecision } from "./Decision";
 import { LoopPanel } from "./LoopPanel";
@@ -102,7 +102,7 @@ export function QueueList({ items, state, selected, onSelect }: { items: QueueIt
 
 // A result or question decided right here, with everything it rests on in view.
 function ApprovalDecision({ approval, task, space, state }: { approval: Approval; task: Task | undefined; space: Space | undefined; state: State }) {
-  const d = useDecision(approval);
+  const d = useDecision(approval, shownSha(state, approval));
   const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
   const repo = space?.kind === "repo";
   return (

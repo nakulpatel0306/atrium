@@ -63,6 +63,14 @@ type ApprovalRow = {
   resolved_at: number | null;
 };
 
+// The branch moved after the user looked: the approval would bind to a commit nobody saw.
+export class HeadMoved extends Error {
+  constructor() {
+    super("The branch has changed since you looked, so nothing was approved. Look at it again, then decide.");
+    this.name = "HeadMoved";
+  }
+}
+
 export class AlreadyResolved extends Error {
   constructor() {
     super("This item was already resolved. Refresh the Needs you list to see its current state.");
@@ -160,18 +168,22 @@ function taskBranchHead(db: Database, taskId: string | null): string | null {
 }
 
 // With `rule`, one of Nakul's rules is deciding in his place, and a rule can only ever approve. Its `head` is the
-// commit the rule checked, recorded as what was approved.
+// commit the rule checked, recorded as what was approved. With `atHead`, the user approved the commit the page showed:
+// the branch is read again inside the decision and, if it moved, nothing is decided (HeadMoved); otherwise exactly that
+// commit is what's recorded.
 export function resolveApproval(
   db: Database,
   id: string,
   decision: "approve" | "reject",
   note?: string,
   rule?: { id: string; label: string; head?: string },
+  opts: { atHead?: string } = {},
 ): Approval {
   if (rule && decision !== "approve") throw new Error("A rule can only approve.");
   if (rule && getApproval(db, id)?.alwaysAsk) throw new Error(RULE_NEVER_DECIDES);
-  const head = rule?.head ?? taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
   const resolve = db.transaction((): Approval => {
+    const head = rule?.head ?? taskBranchHead(db, getApproval(db, id)?.taskId ?? null);
+    if (opts.atHead !== undefined && head !== opts.atHead) throw new HeadMoved();
     const res = db
       .query(
         `UPDATE approvals SET status = ?, note = ?, branch_head = ?, resolved_at = ?, decided_by = ?, rule_id = ? WHERE id = ? AND status = 'pending'${rule ? " AND always_ask IS NULL" : ""}`,
@@ -256,8 +268,13 @@ export const BATCH_MAX = 200;
 
 // Approves several results in one go, each only if it's clean by the one rule (needs.ts) as the database has it now,
 // and only at the commit the page showed: that commit must still be the branch's head and what the checks and the
-// reviewer read. Anything else is left waiting, with why.
-export function approveClean(db: Database, items: readonly { id: string; sha: string }[]): { approved: string[]; skipped: { id: string; reason: string }[] } {
+// reviewer read. Anything else is left waiting, with why. `beforeResolve` is a test seam for a branch moving in
+// between.
+export function approveClean(
+  db: Database,
+  items: readonly { id: string; sha: string }[],
+  seams: { beforeResolve?: (id: string) => void } = {},
+): { approved: string[]; skipped: { id: string; reason: string }[] } {
   const approved: string[] = [];
   const skipped: { id: string; reason: string }[] = [];
   for (const { id, sha } of items.slice(0, BATCH_MAX)) {
@@ -280,7 +297,14 @@ export function approveClean(db: Database, items: readonly { id: string; sha: st
       skipped.push({ id, reason: "Its branch changed since it was checked, reviewed or shown, so it needs another look." });
       continue;
     }
-    resolveApproval(db, id, "approve");
+    seams.beforeResolve?.(id);
+    try {
+      resolveApproval(db, id, "approve", undefined, undefined, { atHead: sha });
+    } catch (e) {
+      if (!(e instanceof HeadMoved)) throw e;
+      skipped.push({ id, reason: "Its branch changed since it was checked, reviewed or shown, so it needs another look." });
+      continue;
+    }
     approved.push(id);
   }
   return { approved, skipped };

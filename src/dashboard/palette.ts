@@ -3,7 +3,7 @@
 import { batchApprovable } from "../engine/needs";
 import { SHAPE_LABEL, suggestion, switchOpen } from "../engine/shape";
 import type { State } from "../engine/state";
-import { cleanReviews, itemTitle, queueOf } from "./queue";
+import { cleanReviews, itemTitle, queueOf, shownSha } from "./queue";
 import { shownTitle } from "./summary";
 
 type PaletteGroup = "Do" | "Go to" | "Spaces" | "Tasks" | "Needs you" | "Settings";
@@ -37,7 +37,8 @@ export function paletteActions(state: State, here: { spaceId: string | null; the
     const a = item.kind === "review" ? state.approvals.find((x) => x.id === item.key) : undefined;
     // Only a clean result is approvable by name; anything else opens to be read first.
     if (a && batchApprovable(a, state.tasks.find((t) => t.id === a.taskId))) {
-      actions.push({ id: `approve-${a.id}`, group: "Needs you", label: `Approve ${title}`, run: { kind: "post", path: `/api/approvals/${a.id}`, body: { decision: "approve" }, done: `Approved: ${title}` } });
+      const sha = shownSha(state, a);
+      actions.push({ id: `approve-${a.id}`, group: "Needs you", label: `Approve ${title}`, run: { kind: "post", path: `/api/approvals/${a.id}`, body: { decision: "approve", ...(sha ? { sha } : {}) }, done: `Approved: ${title}` } });
     }
   }
 

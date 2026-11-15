@@ -73,3 +73,10 @@ export function isRisky(state: State, a: State["approvals"][number]): boolean {
   const task = a.kind === "review" && a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
   return !!task?.loop && !cleanResult(task);
 }
+
+// The commit a result's screen shows: the one its checks and review read. Approving sends it, so the approval binds to
+// what the user looked at.
+export function shownSha(state: State, a: State["approvals"][number]): string | null {
+  const task = a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
+  return task?.branch ? (task.loop?.checkedSha ?? null) : null;
+}
