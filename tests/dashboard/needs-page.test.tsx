@@ -20,9 +20,9 @@ test("the sidebar marks Needs you and Activity active on their pages", () => {
   const s = makeState();
   const on = (path: string, label: string) =>
     renderToStaticMarkup(<Sidebar state={s} archived={0} route={parseRoute(path)} onNewSpace={() => {}} />)
-      .split("<button")
+      .split("<a ")
       .find((b) => text(b).includes(label))!
-      .startsWith(' class="nav on"');
+      .startsWith('class="nav on"');
   expect(on("/needs-you", "Needs you")).toBe(true);
   expect(on("/activity", "Activity")).toBe(true);
   expect(on("/", "Needs you")).toBe(false);

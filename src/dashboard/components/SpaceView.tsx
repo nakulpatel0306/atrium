@@ -1,4 +1,4 @@
-import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, Wrench } from "lucide-react";
+import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
@@ -17,6 +17,7 @@ import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ReviewActions } from "./Decision";
+import { isRisky } from "../queue";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -153,6 +154,8 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
   const [goal, setGoal] = useState(space.goal);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // How the space runs (path, review, learning, checks, archive) stays folded so the work comes first.
+  const [settings, setSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -187,14 +190,9 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
         <span className="sd" style={{ background: space.color }} />
         <h1>{space.name}</h1>
         {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
-        {space.repoPath && (
-          <span className="tag mono path" title={space.repoPath}>
-            {space.repoPath}
-          </span>
-        )}
         {spend && (
-          <span className="tag cost" title="Weighted tokens, with an estimate at Anthropic's list prices. A subscription doesn't bill per token.">
-            today {compact(spend.today.weighted)} · {spendText(spend.today)} · this week {compact(spend.week.weighted)} · {spendText(spend.week)}
+          <span className="tag cost" title={`Weighted tokens, with an estimate at Anthropic's list prices. A subscription doesn't bill per token. This week: ${compact(spend.week.weighted)} · ${spendText(spend.week)}.`}>
+            today {compact(spend.today.weighted)} · {spendText(spend.today)}
           </span>
         )}
         <div className="head-acts">
@@ -212,26 +210,10 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
             </button>
             <span className="hint">{space.unknownKind ? STAYS_PRIVATE : "Private spaces only use Claude"}</span>
           </div>
-          {confirmArchive ? (
-            <>
-              <span className="hint">Archive this space? Its agents stop picking up tasks.</span>
-              <button className="btn" onClick={() => setConfirmArchive(false)}>
-                Cancel
-              </button>
-              <button className="btn danger" disabled={busy} onClick={() => void archive()}>
-                Archive
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="btn" onClick={() => setConfirmArchive(true)}>
-                Archive
-              </button>
-              <button className="btn" onClick={() => setDeleting(true)}>
-                Delete…
-              </button>
-            </>
-          )}
+          <button className="btn" aria-expanded={settings} aria-controls={`settings-${space.id}`} onClick={() => setSettings(!settings)}>
+            <SlidersHorizontal />
+            Settings
+          </button>
         </div>
       </div>
       {editing ? (
@@ -271,8 +253,39 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
         </button>
       )}
       {error && <div className="err">{error}</div>}
-      {/* Checks and reviews read the branch, so only repo spaces have them. */}
-      {space.kind === "repo" && <LoopSettings space={space} />}
+      {settings && (
+        <div className="space-settings" id={`settings-${space.id}`}>
+          {space.repoPath && (
+            <p className="hint">
+              Repo <span className="mono">{space.repoPath}</span>
+            </p>
+          )}
+          {/* Checks and reviews read the branch, so only repo spaces have them. */}
+          {space.kind === "repo" && <LoopSettings space={space} />}
+          <div className="acts">
+            {confirmArchive ? (
+              <>
+                <span className="hint">Archive this space? Its agents stop picking up tasks.</span>
+                <button className="btn" onClick={() => setConfirmArchive(false)}>
+                  Cancel
+                </button>
+                <button className="btn danger" disabled={busy} onClick={() => void archive()}>
+                  Archive
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn" onClick={() => setConfirmArchive(true)}>
+                  Archive
+                </button>
+                <button className="btn" onClick={() => setDeleting(true)}>
+                  Delete…
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {deleting && <DeleteSpace space={space} onClose={() => setDeleting(false)} onDeleted={() => navigate("/")} />}
     </div>
   );
@@ -357,9 +370,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
               waiting
             </span>
           ) : (
+            // One word on the row; why it's blocked or not done is in the tooltip and the detail.
             <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
-              {notDone ?? STATUS_TEXT[task.status]}
-              {task.status === "blocked" && task.blockedReason && `: ${task.blockedReason}`}
+              {notDone ?? (task.status === "blocked" && task.loop?.paused ? "paused" : STATUS_TEXT[task.status])}
             </span>
           )}
         </button>
@@ -391,7 +404,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
         <div className="detail">
           {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
-          {review && <ReviewActions approval={review} outcome={task.outcome} />}
+          {review && <ReviewActions approval={review} outcome={task.outcome} risky={isRisky(state, review)} />}
           <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
@@ -571,6 +584,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
       <SpaceNeeds state={state} spaceId={space.id} />
+      {/* A proposed CLAUDE.md line is edited right here; the waiting list above leaves it to this card. */}
       <MemoryProposals state={state} space={space} />
       <div className="cols">
         <div>

@@ -89,8 +89,9 @@ export function liveStatus(state: State): string {
   if (pending > 0) parts.push(`${pending} ${pending === 1 ? "thing needs" : "things need"} you`);
   const blocked = state.tasks.filter((t) => t.status === "blocked");
   if (blocked.length > 0) {
-    const reason = blocked[0]!.blockedReason;
-    parts.push(`${blocked.length} blocked${reason ? ` (${reason})` : ""}`);
+    // Its reason after a colon, not in brackets: reasons have brackets and stops of their own.
+    const reason = blocked[0]!.blockedReason?.replace(/\.$/, "");
+    parts.push(`${blocked.length} blocked${reason ? `${blocked.length > 1 ? ", the first" : ""}: ${reason}` : ""}`);
   }
   // Queueing behind a running task is the normal case, not news.
   const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy");

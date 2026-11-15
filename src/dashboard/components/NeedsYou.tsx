@@ -133,7 +133,8 @@ function OpenRow({ item, space, state }: { item: QueueItem; space: Space | undef
 // space shows its share of the same rows.
 function Items({ state, spaceId }: { state: State; spaceId?: string }) {
   const spaces = new Map(state.spaces.map((s) => [s.id, s]));
-  const items = queueOf(state).filter((i) => !spaceId || i.spaceId === spaceId);
+  // In a space, its CLAUDE.md proposal has a card of its own under the list.
+  const items = queueOf(state).filter((i) => !spaceId || (i.spaceId === spaceId && i.kind !== "memory"));
   return (
     <>
       {items.map((i) => {
@@ -158,14 +159,14 @@ export const waitingIn = (state: State, spaceId: string) => queueOf(state).filte
 // At the top of a space: what's waiting on Nakul there, answered right where the work is.
 export function SpaceNeeds({ state, spaceId }: { state: State; spaceId: string }) {
   const count = waitingIn(state, spaceId);
-  if (!queueOf(state).some((i) => i.spaceId === spaceId)) return null;
+  if (!queueOf(state).some((i) => i.spaceId === spaceId && i.kind !== "memory")) return null;
   return (
     <>
       <h2>
         <Inbox />
         Waiting for you · {count}
       </h2>
-      <div className="list needs-list">
+      <div className="list needs-list space-needs">
         <Items state={state} spaceId={spaceId} />
       </div>
     </>

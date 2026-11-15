@@ -85,7 +85,7 @@ export function WhatItMadeList({ outputs, spaceId, taskId, spaceKind }: { output
       <section>
         <h4>What it made</h4>
         {files.length === 0 ? (
-          <p className="made-none">No files. This run answered in text only.</p>
+          <p className="made-none">{spaceKind === "repo" ? "Its changes are commits on its branch: Changes shows them." : "No files. This run answered in text only."}</p>
         ) : (
           <ul className="made-files">
             {files.map((f) => (
