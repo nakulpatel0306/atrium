@@ -2,7 +2,7 @@
 // queue of files to remove; the files go after it commits (see delete-files.ts). Nothing here touches a repo
 // Nakul made, his branches, or GitHub.
 import type { Database } from "bun:sqlite";
-import { existsSync, lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config";
 import { fileNow, finishPendingDeletes, notesOf, queueDelete } from "./delete-files";
@@ -11,6 +11,7 @@ import { spaceFolder, tildePath } from "./folders";
 import { pendingKey } from "./memory";
 import { presentCloneForPath } from "./repos/store";
 import { legacyDelete, LEGACY, legacyUnlinkTasks } from "./legacy";
+import { sampleFolder } from "./sample";
 import { getSpace, type Space } from "./spaces";
 import { getTask } from "./tasks";
 
@@ -251,6 +252,9 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
     if (clone) queueDelete(db, "clone", clone.path, config().projectsRoot, { cloneId: clone.id });
     return space;
   })();
+  // A sample's repo is Atrium's own copy of a bundled toy, never the user's code, so it's removed outright.
+  const copy = sampleFolder(space);
+  if (copy) rmSync(copy, { recursive: true, force: true });
   bus.emit({ type: "changed" });
   const done = await finishPendingDeletes(db);
   // The result says plainly where the visible folder went, or that it's still there.
@@ -331,7 +335,7 @@ function taskRoot(db: Database, task: { spaceId: string }): string | null {
 }
 
 export async function deleteTask(db: Database, id: string): Promise<{ title: string; kept: string[] }> {
-  const { title, edited } = db.transaction(() => {
+  const { title, edited, sample } = db.transaction(() => {
     const task = getTask(db, id);
     if (!task) throw new DeleteRefused(404, TASK_GONE);
     const tasks = taskClosure(db, [id]);
@@ -344,8 +348,12 @@ export async function deleteTask(db: Database, id: string): Promise<{ title: str
     if (brokenLinks(db) > linksBefore) throw new DeleteRefused(409, BROKE);
     queueTranscripts(db, transcripts);
     for (const f of files.remove) queueDelete(db, "file", f.path, root!, { size: f.size, mtimeMax: f.mtimeMax });
-    return { title: task.title, edited: files.edited };
+    // The sample's space exists only for its one task, so it goes with it, copy and all.
+    const space = getSpace(db, task.spaceId);
+    const sample = sampleFolder(space) && !db.query("SELECT 1 FROM tasks WHERE space_id = ?").get(task.spaceId) ? space : null;
+    return { title: task.title, edited: files.edited, sample };
   })();
+  if (sample) await deleteSpace(db, sample.id, sample.name);
   bus.emit({ type: "changed" });
   const kept = notesOf(await finishPendingDeletes(db));
   return { title, kept: [...(edited.length ? [keptEdited(edited)] : []), ...kept] };
