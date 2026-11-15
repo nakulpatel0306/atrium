@@ -2739,6 +2739,43 @@ code {
 .chg-del td {
   background: color-mix(in srgb, var(--red) 12%, transparent);
 }
+.chg-lines td.chg-add {
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+.chg-lines td.chg-del {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.chg-lines td.chg-gap {
+  background: color-mix(in srgb, var(--line) 35%, transparent);
+}
+/* Side by side: two equal halves, long lines wrap instead of scrolling either half out of view. */
+.chg-lines.split {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+.chg-lines.split td.chg-no {
+  width: 44px;
+}
+.chg-lines.split td.chg-text {
+  width: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chg-lines.split td.chg-text + td.chg-no {
+  border-left: 1px solid var(--line);
+}
+/* Files off screen skip layout and paint, so a long diff scrolls smoothly. */
+.chg-file {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
+}
+.chg-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .chg-hunk td {
   padding: 3px 8px;
   color: var(--dim);

@@ -320,7 +320,7 @@ export function startServer(deps: Deps): Server<WsData> {
     }
 
     const diffM = hit("GET", /^\/api\/tasks\/([^/]+)\/diff$/);
-    if (diffM) return json(await taskChanges(db, diffM[1]!));
+    if (diffM) return json(await taskChanges(db, diffM[1]!, url.searchParams.get("turn") ?? undefined));
 
     const msgM = hit("GET", /^\/api\/tasks\/([^/]+)\/messages$/);
     if (msgM) {
