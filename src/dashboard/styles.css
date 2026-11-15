@@ -4382,3 +4382,12 @@ kbd {
   width: 14px;
   height: 14px;
 }
+
+/* Get started: a projects folder that isn't there yet, and the button that makes it. */
+.start-missing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--yellow);
+}

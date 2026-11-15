@@ -9,7 +9,7 @@ export function Profile() {
   const [p, setP] = useState<ProfileData | null>(null);
   const [name, setName] = useState("");
   const [root, setRoot] = useState("");
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; create?: boolean } | null>(null);
   useEffect(() => {
     void fetch("/api/profile")
       .then((r) => r.json() as Promise<ProfileData>)
@@ -20,8 +20,9 @@ export function Profile() {
       });
   }, []);
   if (!p) return <div className="list"><div className="empty-row">Loading…</div></div>;
-  const save = async () => {
-    const res = await put<ProfileData>("/api/profile", { name, projectsRoot: root });
+  const save = async (create = false) => {
+    const res = await put<ProfileData & { missing?: string }>("/api/profile", { name, projectsRoot: root, ...(create ? { create: true } : {}) });
+    if (res.ok && res.data.missing) return setMsg({ ok: false, text: `${res.data.missing} doesn't exist yet.`, create: true });
     if (res.ok) {
       setP(res.data);
       setRoot(res.data.projectsRoot);
@@ -49,6 +50,11 @@ export function Profile() {
           Save
         </button>
         {msg && <span className={`hint${msg.ok ? "" : " bad"}`}>{msg.text}</span>}
+        {msg?.create && (
+          <button className="btn" type="button" onClick={() => void save(true)}>
+            Create it
+          </button>
+        )}
       </form>
       <button className="btn link" onClick={() => navigate("/start")}>
         Get started

@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { doctor } from "../engine/doctor";
+import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { checkProjectsRoot, cleanUserName, expandHome, NAME_KEY, setProjectsRoot, storedName, suggestedName } from "../engine/profile";
 import { setSetting } from "../engine/settings";
@@ -40,6 +41,12 @@ export async function startRoute(db: Database, req: Request, url: URL, kick: () 
       // Sending back the folder already in use isn't a choice; it must not pin a default.
       const same = b.projectsRoot !== undefined && resolve(expandHome(String(b.projectsRoot).trim())) === config().projectsRoot;
       const root = b.projectsRoot !== undefined && !same ? check(() => checkProjectsRoot(String(b.projectsRoot))) : null;
+      // A folder that isn't there yet is made only when asked; otherwise nothing is saved and the page offers to make it.
+      const folder = root ?? (b.projectsRoot !== undefined ? config().projectsRoot : null);
+      if (folder !== null && !existsSync(folder)) {
+        if (b.create !== true) return json({ ...profileOf(db), missing: tildePath(folder) });
+        mkdirSync(folder, { recursive: true });
+      }
       if (name !== null) setSetting(db, NAME_KEY, name);
       if (root !== null) setProjectsRoot(db, root);
       return json(profileOf(db));

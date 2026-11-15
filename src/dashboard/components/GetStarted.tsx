@@ -92,10 +92,12 @@ type ViewProps = {
   sample: Sample;
   message: string | null;
   busy?: boolean;
+  // The folder Next found isn't there yet, as the engine wrote it.
+  missing?: string | null;
   onFolder(path: string): void;
   onGo(step: Step): void;
   onRecheck(): void;
-  onSaveFolder(): void;
+  onSaveFolder(create?: boolean): void;
   onRunSample(): void;
   onFinish(): void;
 };
@@ -145,6 +147,14 @@ export function StartView(p: ViewProps) {
             <input value={p.folder} spellCheck={false} onChange={(e) => p.onFolder(e.target.value)} />
           </label>
           <p className="hint">Where your repos live: Atrium finds them here, and new projects and clones go here. Change it later in Settings.</p>
+          {p.missing && (
+            <p className="start-missing" role="status">
+              {p.missing} doesn't exist yet.
+              <button type="button" className="btn p" disabled={p.busy} onClick={() => p.onSaveFolder(true)}>
+                Create it
+              </button>
+            </p>
+          )}
         </form>
       )}
 
@@ -199,6 +209,7 @@ export function GetStarted() {
   const [data, setData] = useState<{ report: Report; progress: Progress; sample: Sample } | null>(null);
   const [folder, setFolder] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [missing, setMissing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -228,12 +239,19 @@ export function GetStarted() {
       sample={data.sample}
       message={message}
       busy={busy}
-      onFolder={setFolder}
+      onFolder={(path) => {
+        setFolder(path);
+        setMissing(null);
+      }}
       onGo={(step) => void go(step)}
       onRecheck={() => void load()}
-      onSaveFolder={async () => {
-        const res = await put("/api/profile", { projectsRoot: folder });
+      missing={missing}
+      onSaveFolder={async (create) => {
+        const res = await put<{ missing?: string }>("/api/profile", { projectsRoot: folder, ...(create ? { create: true } : {}) });
         if (!res.ok) return setMessage(res.error);
+        // Not there yet: nothing was saved, and the step offers to make it before moving on.
+        if (res.data.missing) return setMissing(res.data.missing);
+        setMissing(null);
         await go("sample");
       }}
       onRunSample={async () => {

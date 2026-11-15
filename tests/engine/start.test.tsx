@@ -160,6 +160,15 @@ async function html(over: Partial<Report> = {}, step = "claude" as (typeof STEPS
     <StartView report={report} progress={{ step, skipped: [], done: false, dismissed: false }} folder="~/Developer" sample={{ ask: "Fix the failing cart test", cents: 2, seconds: 60 }} message={null} onFolder={noop} onGo={noop} onRecheck={noop} onSaveFolder={noop} onRunSample={noop} onFinish={noop} />,
   );
 }
+test("a folder that isn't there yet is offered to be made before moving on", async () => {
+  const report = await doctor(null);
+  const el = renderToStaticMarkup(
+    <StartView report={report} progress={{ step: "folder", skipped: [], done: false, dismissed: false }} folder="~/Code" missing="~/Code" sample={{ ask: "x", cents: 2, seconds: 60 }} message={null} onFolder={noop} onGo={noop} onRecheck={noop} onSaveFolder={noop} onRunSample={noop} onFinish={noop} />,
+  );
+  expect(el).toContain("~/Code doesn&#x27;t exist yet.");
+  expect(el).toContain(">Create it</button>");
+});
+
 const view = async (over: Partial<Report> = {}, step = "claude" as (typeof STEPS)[number]) => (await html(over, step)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
 test("Claude first, with the install command when it's missing; the extras never hold anything up", async () => {
@@ -176,6 +185,7 @@ test("Claude first, with the install command when it's missing; the extras never
 
 test("the folder comes prefilled, and the sample says what it costs before it runs", async () => {
   expect(await view({}, "folder")).toContain("Projects folder");
+  expect(await view({}, "folder")).not.toContain("Create it");
   const sample = await view({}, "sample");
   expect(sample).toContain("Run it");
   expect(sample).toContain("around 2¢");
