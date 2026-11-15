@@ -204,39 +204,65 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
   const clean = cleanReviews(state, items);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (clean.length < 2) return null;
+  const [left, setLeft] = useState<{ title: string; reason: string }[]>([]);
+  if (clean.length < 2 && !left.length) return null;
   const approve = async () => {
     setBusy(true);
     setError(null);
-    const res = await post<{ approved: string[]; skipped: { id: string; reason: string }[] }>("/api/approvals/batch", { ids: clean.map((i) => i.key) });
+    // Each one at the commit this list shows; the engine leaves any that moved since.
+    const shown = clean.map((i) => ({ id: i.key, sha: state.tasks.find((t) => t.id === i.taskId)?.loop?.checkedSha ?? "", title: itemTitle(state, i) }));
+    const res = await post<{ approved: string[]; skipped: { id: string; reason: string }[] }>("/api/approvals/batch", { items: shown.map(({ id, sha }) => ({ id, sha })) });
     setBusy(false);
     if (!res.ok) return setError(res.error);
-    const left = res.data.skipped.length;
-    announce(`Approved ${res.data.approved.length}.${left ? ` ${left} left to read on their own.` : ""}`);
-    setOpen(false);
+    const skipped = res.data.skipped.map((s) => ({ title: shown.find((x) => x.id === s.id)?.title ?? s.id, reason: s.reason }));
+    announce(`Approved ${res.data.approved.length}.${skipped.length ? ` ${skipped.length} left to read on their own.` : ""}`);
+    setLeft(skipped);
+    if (!skipped.length) setOpen(false);
   };
   return (
     <div className="batch">
-      <button className="btn" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <CheckCheck />
-        Approve {clean.length} clean results
-      </button>
-      {open && (
+      {clean.length >= 2 && (
+        <button className="btn" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <CheckCheck />
+          Approve {clean.length} clean results
+        </button>
+      )}
+      {(open || left.length > 0) && (
         <div className="batch-sheet" role="dialog" aria-label="Approve clean results">
-          <p>Each of these passed its checks, has no attention notes and no open review findings:</p>
-          <ul>
-            {clean.map((i) => (
-              <li key={i.key}>{itemTitle(state, i)}</li>
-            ))}
-          </ul>
-          <div className="acts">
-            <button className="btn" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button className="btn p" autoFocus disabled={busy} onClick={() => void approve()}>
-              Approve all {clean.length}
-            </button>
-          </div>
+          {left.length > 0 ? (
+            <>
+              <p>These were left for you to read on their own:</p>
+              <ul>
+                {left.map((l) => (
+                  <li key={l.title}>
+                    {l.title}: <span className="hint">{l.reason}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="acts">
+                <button className="btn" onClick={() => setLeft([])}>
+                  OK
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>Each of these passed its checks, was approved by its reviewer, and has no notes or open findings:</p>
+              <ul>
+                {clean.map((i) => (
+                  <li key={i.key}>{itemTitle(state, i)}</li>
+                ))}
+              </ul>
+              <div className="acts">
+                <button className="btn" onClick={() => setOpen(false)}>
+                  Cancel
+                </button>
+                <button className="btn p" autoFocus disabled={busy} onClick={() => void approve()}>
+                  Approve all {clean.length}
+                </button>
+              </div>
+            </>
+          )}
           {error && <p className="err">{error}</p>}
         </div>
       )}
@@ -267,14 +293,14 @@ function KeysSheet({ onClose }: { onClose: () => void }) {
 
 // Everything waiting on the user as one queue, longest-blocked first, worked through from the keyboard: the list on
 // the left, the selected item's whole decision on the right (or full width on a narrow window once opened).
-export function NeedsPage({ state, item = null }: { state: State; item?: string | null }) {
+export function NeedsPage({ state, item = null, batch: batchAsked = false }: { state: State; item?: string | null; batch?: boolean }) {
   const items = queueOf(state);
   const count = items.filter((i) => !i.low).length;
   const low = items.length - count;
   const [selected, setSelected] = useState<string | null>(item);
   const [opened, setOpened] = useState(item !== null);
   const [help, setHelp] = useState(false);
-  const [batch, setBatch] = useState(false);
+  const [batch, setBatch] = useState(batchAsked);
   // The item whose risky Approve the a key has been pressed once for; a second a approves it.
   const [armed, setArmed] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement>(null);

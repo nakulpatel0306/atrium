@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import index from "../dashboard/index.html";
 import type { Registry } from "../engine/agents/registry";
 import { STEER_NOTE_MAX, type SteerOutcome, type StopOutcome } from "../engine/runner";
-import { AlreadyResolved, approveClean, getApproval, reopenDecision, resolveApproval } from "../engine/approvals";
+import { AlreadyResolved, approveClean, BATCH_MAX, getApproval, reopenDecision, resolveApproval } from "../engine/approvals";
 import { answerProposal, considerProposal, getProposal, suggestAgain } from "../engine/autonomy/proposals";
 import { getRule, renewRule, revokeRule, ruleApprovals, ruleEvents, RuleRefused, undoAutoApproval } from "../engine/autonomy/rules";
 import { markSeen } from "../engine/briefing";
@@ -331,8 +331,18 @@ export function startServer(deps: Deps): Server<WsData> {
     // Before the single approval's route, which would read "batch" as an id.
     if (hit("POST", /^\/api\/approvals\/batch$/)) {
       const b = await readBody(req);
-      if (!Array.isArray(b.ids) || !b.ids.every(isString)) throw new HttpError(400, "ids must be a list of approval ids.");
-      const res = approveClean(db, b.ids as string[]);
+      const items = b.items;
+      const pair = (x: unknown): x is { id: string; sha: string } => !!x && typeof x === "object" && isString((x as { id?: unknown }).id) && isString((x as { sha?: unknown }).sha);
+      if (!Array.isArray(items) || !items.every(pair) || items.length > BATCH_MAX) throw new HttpError(400, `items must be a list of up to ${BATCH_MAX} { id, sha } pairs.`);
+      const res = approveClean(db, items);
+      // Each one counts toward "stop asking about this?" as a single approval does.
+      for (const id of res.approved) {
+        try {
+          considerProposal(db, id);
+        } catch (e) {
+          console.error("Couldn't consider a rule suggestion:", e);
+        }
+      }
       runner.kick();
       return json(res);
     }

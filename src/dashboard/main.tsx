@@ -130,7 +130,7 @@ function App() {
         {route.name === "home" ? (
           <Home state={activeOnly(state)} briefing={briefing.current ?? state.briefing} onNewSpace={newSpace} />
         ) : route.name === "needs" ? (
-          <NeedsPage state={activeOnly(state)} item={route.item} />
+          <NeedsPage state={activeOnly(state)} item={route.item} batch={route.batch} />
         ) : route.name === "activity" ? (
           <div className="wrap">
             <Activity state={activeOnly(state)} page />

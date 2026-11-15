@@ -59,3 +59,11 @@ test("the palette filters as you type and Enter runs the pick", async () => {
   expect(location.pathname).toBe("/activity");
   expect(closed).toBe(1);
 });
+
+test("approving every clean result from the palette opens the list to look at first", () => {
+  const s = cleanState();
+  const second = { ...s.tasks.find((t) => t.id === ids.review)!, id: "tsk_two" };
+  const two = { ...s, tasks: [...s.tasks, second], approvals: [...s.approvals, { ...s.approvals[0]!, id: "apr_two", taskId: "tsk_two" }] };
+  const action = paletteActions(two, { spaceId: null, theme: "system" }).find((a) => a.id === "approve-clean")!;
+  expect(action.run).toEqual({ kind: "navigate", path: "/needs-you?batch=1" });
+});

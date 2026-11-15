@@ -251,19 +251,33 @@ export function onApprovalResolved(fn: (a: Approval, decision: "approve" | "reje
   return () => resolvedListeners.delete(fn);
 }
 
-// Approves several results in one go, each only if it's clean by the one rule (needs.ts batchApprovable), checked
-// here against the database rather than what the page last saw. Anything else is left waiting, with why.
-export function approveClean(db: Database, ids: readonly string[]): { approved: string[]; skipped: { id: string; reason: string }[] } {
+// The most a batch may name at once; the page never shows more than this many clean results together.
+export const BATCH_MAX = 200;
+
+// Approves several results in one go, each only if it's clean by the one rule (needs.ts) as the database has it now,
+// and only at the commit the page showed: that commit must still be the branch's head and what the checks and the
+// reviewer read. Anything else is left waiting, with why.
+export function approveClean(db: Database, items: readonly { id: string; sha: string }[]): { approved: string[]; skipped: { id: string; reason: string }[] } {
   const approved: string[] = [];
   const skipped: { id: string; reason: string }[] = [];
-  for (const id of ids) {
+  for (const { id, sha } of items.slice(0, BATCH_MAX)) {
     const a = getApproval(db, id);
-    if (!a || a.status !== "pending") {
+    if (!a) {
+      skipped.push({ id, reason: "No such approval." });
+      continue;
+    }
+    if (a.status !== "pending") {
       skipped.push({ id, reason: "It was already decided." });
       continue;
     }
-    if (!batchApprovable(a, a.taskId ? (getTask(db, a.taskId) ?? undefined) : undefined)) {
+    const task = a.taskId ? getTask(db, a.taskId) : null;
+    if (!batchApprovable(a, task ?? undefined)) {
       skipped.push({ id, reason: "It has something to read on its own first: a note, a check that didn't pass, or a finding that wasn't fixed." });
+      continue;
+    }
+    const head = taskBranchHead(db, a.taskId);
+    if (!head || head !== sha || task!.loop!.checkedSha !== sha || task!.loop!.reviewedSha !== sha) {
+      skipped.push({ id, reason: "Its branch changed since it was checked, reviewed or shown, so it needs another look." });
       continue;
     }
     resolveApproval(db, id, "approve");
@@ -276,7 +290,7 @@ export function approveClean(db: Database, ids: readonly string[]): { approved: 
 export const UNDO_MS = 60_000;
 
 // Takes back the user's own approval of a result a moment ago: the task goes back to review with a fresh approval,
-// as long as nothing has happened to it since (no pull request, no other change of status).
+// as long as nothing has left the Mac since (no push or pull request started for it) and nothing else happened to it.
 export function reopenDecision(db: Database, id: string, now = Date.now()): Approval {
   const reopened = db.transaction((): Approval => {
     const a = getApproval(db, id);
@@ -284,7 +298,9 @@ export function reopenDecision(db: Database, id: string, now = Date.now()): Appr
     if (a.undoneAt !== null) throw new Error("This approval was already taken back.");
     if (now - (a.resolvedAt ?? 0) > UNDO_MS) throw new Error("This was approved too long ago to take back. Ask for the change again as a new task.");
     const task = getTask(db, a.taskId);
-    if (task?.prUrl) throw new Error("A pull request is already open for this result, so it can't go back to review.");
+    // The push's own approval is recorded before anything is sent, so a push still in flight counts too.
+    const pushed = db.query("SELECT 1 FROM approvals WHERE task_id = ? AND always_ask = 'push' AND created_at >= ?").get(a.taskId, a.resolvedAt ?? 0);
+    if (task?.prUrl || pushed) throw new Error("This result has already left your Mac (a push or pull request started), so it can't go back to review.");
     if (task?.status !== "done" || task.kind !== "work") throw new Error("This task changed after it was approved, so it can't go back to review.");
     db.query("UPDATE approvals SET undone_at = ? WHERE id = ?").run(now, a.id);
     reopenForReview(db, task.id);

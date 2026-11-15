@@ -39,9 +39,10 @@ export async function prTarget(db: Database, taskId: string): Promise<PrTarget |
   if (!task.branch || !run) return { reason: "This task has no branch to open a pull request from." };
   const head = await branchSha(space.repoPath, task.branch);
   if (!head) return { reason: `The branch ${task.branch} isn't in the repo anymore.` };
-  // A decided review recorded the commit Nakul approved; that is what goes out, even if the branch moved since.
+  // A decided review recorded the commit Nakul approved; that is what goes out, even if the branch moved since. An
+  // approval he took back doesn't count.
   const approved = db
-    .query("SELECT branch_head FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'approved' AND branch_head IS NOT NULL ORDER BY resolved_at DESC, rowid DESC LIMIT 1")
+    .query("SELECT branch_head FROM approvals WHERE task_id = ? AND kind = 'review' AND status = 'approved' AND undone_at IS NULL AND branch_head IS NOT NULL ORDER BY resolved_at DESC, rowid DESC LIMIT 1")
     .get(task.id) as { branch_head: string } | null;
   const repo = run.remote ? githubSlug(run.remote) : null;
   if (!run.remote || !repo) return { reason: "This repo had no GitHub remote when the task ran, so there's nowhere to open a pull request." };

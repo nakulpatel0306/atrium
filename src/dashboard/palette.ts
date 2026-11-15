@@ -6,10 +6,10 @@ import type { State } from "../engine/state";
 import { cleanReviews, itemTitle, queueOf } from "./queue";
 import { shownTitle } from "./summary";
 
-export type PaletteGroup = "Do" | "Go to" | "Spaces" | "Tasks" | "Needs you" | "Settings";
+type PaletteGroup = "Do" | "Go to" | "Spaces" | "Tasks" | "Needs you" | "Settings";
 
 // `run` names what the page does on Enter, so the component stays one switch and a test can read the intent.
-export type PaletteRun =
+type PaletteRun =
   | { kind: "navigate"; path: string }
   | { kind: "ask" }
   | { kind: "newSpace" }
@@ -29,7 +29,8 @@ export function paletteActions(state: State, here: { spaceId: string | null; the
   actions.push({ id: "new-space", group: "Do", label: "New space", run: { kind: "newSpace" } });
 
   const clean = cleanReviews(state);
-  if (clean.length >= 2) actions.push({ id: "approve-clean", group: "Needs you", label: `Approve ${clean.length} clean results`, hint: "Passed checks, no notes, no open findings", run: { kind: "post", path: "/api/approvals/batch", body: { ids: clean.map((i) => i.key) }, done: `Approved ${clean.length} results.` } });
+  // Opens the same list the queue shows, so a batch is always approved after one look at what's in it.
+  if (clean.length >= 2) actions.push({ id: "approve-clean", group: "Needs you", label: `Approve ${clean.length} clean results`, hint: "Shows the list first", run: { kind: "navigate", path: "/needs-you?batch=1" } });
   for (const item of queueOf(state)) {
     const title = itemTitle(state, item);
     actions.push({ id: `open-${item.key}`, group: "Needs you", label: `Open ${title}`, hint: "Needs you", run: { kind: "navigate", path: `/needs-you?item=${encodeURIComponent(item.key)}` } });

@@ -11,8 +11,9 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "
 const key = (k: string, target: unknown = { tagName: "DIV" }, mods: { metaKey?: boolean; ctrlKey?: boolean } = {}) => needsKey({ key: k, target: target as EventTarget, ...mods });
 
 test("/needs-you and /activity are routes of their own", () => {
-  expect(parseRoute("/needs-you")).toEqual({ name: "needs", item: null });
-  expect(parseRoute("/needs-you?item=apr_1")).toEqual({ name: "needs", item: "apr_1" });
+  expect(parseRoute("/needs-you")).toEqual({ name: "needs", item: null, batch: false });
+  expect(parseRoute("/needs-you?item=apr_1")).toEqual({ name: "needs", item: "apr_1", batch: false });
+  expect(parseRoute("/needs-you?batch=1")).toEqual({ name: "needs", item: null, batch: true });
   expect(parseRoute("/activity")).toEqual({ name: "activity" });
 });
 

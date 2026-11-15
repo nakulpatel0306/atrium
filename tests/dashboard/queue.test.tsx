@@ -57,8 +57,8 @@ function queueState(): State {
     proposals: [],
     approvals: [review("apr_a", "tsk_a", 5), review("apr_b", "tsk_b", 30), review("apr_c", "tsk_c", 60)],
     tasks: [
-      result("tsk_a", clean),
-      result("tsk_b", clean),
+      result("tsk_a", { ...clean, checkedSha: "sha_a" }),
+      result("tsk_b", { ...clean, checkedSha: "sha_b" }),
       result("tsk_c", { ...clean, attention: ["The change edits check config: bunfig.toml."] }),
       task({ id: "tsk_p", spaceId: repo.id, title: "Ranking", status: "blocked", updatedAt: now - 90 * min, loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "Another turn would go over the budget." } } }),
     ],
@@ -117,7 +117,7 @@ test("batch approval offers only the clean results, and Shift A opens it", async
   const sheet = el.querySelector(".batch-sheet")!;
   expect([...sheet.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Review tsk_b", "Review tsk_a"]);
   await act(async () => [...sheet.querySelectorAll("button")].find((b) => b.textContent === "Approve all 2")!.click());
-  expect(calls.at(-1)).toEqual({ url: "/api/approvals/batch", body: { ids: ["apr_b", "apr_a"] } });
+  expect(calls.at(-1)).toEqual({ url: "/api/approvals/batch", body: { items: [{ id: "apr_b", sha: "sha_b" }, { id: "apr_a", sha: "sha_a" }] } });
 });
 
 test("a result the agent didn't say it finished is risky too, so it never approves on one key", async () => {

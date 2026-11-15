@@ -7,14 +7,16 @@ import { newLoop, SIZE_BUDGETS, type LoopState } from "../../src/engine/loop";
 import { createSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskLoop, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { startServer, type WsData } from "../../src/server/server";
-import { tempHome } from "../helpers";
+import { branchAt, tempHome, tempRepo } from "../helpers";
 
 let home: ReturnType<typeof tempHome>;
 let db: Database;
 let server: Server<WsData>;
 let base: string;
+let repo: ReturnType<typeof tempRepo>;
 beforeEach(() => {
   home = tempHome();
+  repo = tempRepo();
   db = openDb();
   server = startServer({ db, runner: { kick() {} }, setup: async () => Promise.reject(new Error("not stubbed")), port: 0 });
   base = `http://127.0.0.1:${server.port}`;
@@ -22,31 +24,34 @@ beforeEach(() => {
 afterEach(() => {
   server.stop(true);
   db.close();
+  repo.cleanup();
   home.cleanup();
 });
 const post = (path: string, body?: unknown) => fetch(base + path, { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
 const clean: Partial<LoopState> = { stage: "ready", checks: "passed", reviews: [{ reviewer: "claude", verdict: "approve", findings: [], skipped: null }] };
 function result(title: string, loop: Partial<LoopState>) {
-  const s = createSpace(db, { name: "Kite", kind: "repo", goal: "g", repoPath: "/tmp/kite-example" });
+  const s = createSpace(db, { name: "Kite", kind: "repo", goal: "g", repoPath: repo.path });
   const t = createTask(db, { spaceId: s.id, title });
-  setTaskStatus(db, t.id, "running");
+  const sha = branchAt(repo.path, `atrium/${t.id}`);
+  setTaskStatus(db, t.id, "running", { branch: `atrium/${t.id}` });
   setTaskStatus(db, t.id, "review");
   setTaskOutcome(db, t.id, "done", null);
-  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), ...loop });
-  return { t, a: createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title, detail: "" }) };
+  setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), checkedSha: sha, reviewedSha: sha, ...loop });
+  return { t, sha, a: createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title, detail: "" }) };
 }
 
 test("batch approval takes only clean results, whatever the page asked for", async () => {
   const ok = result("Clean", clean);
   const failing = result("Failing", { ...clean, checks: "failed" });
-  const res = await post("/api/approvals/batch", { ids: [ok.a.id, failing.a.id] });
+  const res = await post("/api/approvals/batch", { items: [{ id: ok.a.id, sha: ok.sha }, { id: failing.a.id, sha: failing.sha }] });
   expect(res.status).toBe(200);
   const body = (await res.json()) as { approved: string[]; skipped: { id: string }[] };
   expect(body.approved).toEqual([ok.a.id]);
   expect(body.skipped.map((s) => s.id)).toEqual([failing.a.id]);
   expect(listPending(db).map((a) => a.id)).toEqual([failing.a.id]);
-  expect((await post("/api/approvals/batch", { ids: "all" })).status).toBe(400);
+  expect((await post("/api/approvals/batch", { ids: [ok.a.id] })).status).toBe(400);
+  expect((await post("/api/approvals/batch", { items: [{ id: ok.a.id }] })).status).toBe(400);
 });
 
 test("a just-given approval can be taken back from the toast", async () => {

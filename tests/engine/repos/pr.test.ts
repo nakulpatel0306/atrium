@@ -221,6 +221,18 @@ test("the approved commit is what goes out, named in the approval, and a stale c
   expect((db.query("SELECT detail FROM approvals WHERE always_ask = 'push'").get() as { detail: string }).detail).toBe(`Commit ${approved.slice(0, 7)}, pull request into main: t`);
 });
 
+test("an approval the user took back no longer names the commit that goes out", async () => {
+  const { path, task, branch } = await finishedTask();
+  const approved = git(path, "rev-parse", branch);
+  db.query("UPDATE approvals SET status = 'approved', branch_head = ?, resolved_at = 2, undone_at = 3 WHERE task_id = ? AND kind = 'review'").run(approved, task.id);
+  git(path, "checkout", "-q", branch);
+  writeFileSync(join(path, "later.txt"), "later\n");
+  git(path, "add", "-A");
+  git(path, "commit", "-q", "-m", "later");
+  git(path, "checkout", "-q", "main");
+  expect(await prInfo(db, task.id)).toMatchObject({ sha: git(path, "rev-parse", branch) });
+});
+
 test("a double submit records one yes and pushes once", async () => {
   const { task } = await finishedTask();
   const [a, b] = await Promise.allSettled([openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) }), openPullRequest(db, task.id, { title: "t", body: "b", sha: await shaFor(db, task.id) })]);
