@@ -1,6 +1,6 @@
-import { CircleCheck, CircleDashed, CircleX, Play } from "lucide-react";
+import { Check, CircleCheck, CircleDashed, CircleX, Copy, Play } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Check, Report } from "../../engine/doctor";
+import type { Check as Probe, Report } from "../../engine/doctor";
 import { claudeBlocks, nextStep, prevStep, STEPS, type Progress, type Step } from "../../engine/start-steps";
 import { post, put } from "../api";
 import { navigate } from "../route";
@@ -13,9 +13,34 @@ export const STEP_TITLES: Record<Step, string> = {
 
 export type Sample = { ask: string; cents: number; seconds: number };
 
-const STATE_TEXT: Record<Check["state"], string> = { ready: "Ready", not_installed: "Not installed", too_old: "Too old", signed_out: "Signed out", unknown: "Couldn't check" };
+// A command to paste, with one-click copy; an instruction that isn't a command ("Install Antigravity…") stays text.
+function Command({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  if (/^[A-Z]/.test(text)) return <span>{text}</span>;
+  return (
+    <span className="cmd-copy">
+      <code>{text}</code>
+      <button
+        type="button"
+        className="btn link subtle"
+        aria-label={`Copy ${text}`}
+        onClick={() =>
+          void navigator.clipboard.writeText(text).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          )
+        }
+      >
+        {copied ? <Check /> : <Copy />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </span>
+  );
+}
 
-function CheckRow({ check }: { check: Check }) {
+const STATE_TEXT: Record<Probe["state"], string> = { ready: "Ready", not_installed: "Not installed", too_old: "Too old", signed_out: "Signed out", unknown: "Couldn't check" };
+
+function CheckRow({ check }: { check: Probe }) {
   const Icon = check.state === "ready" ? CircleCheck : check.required ? CircleX : CircleDashed;
   return (
     <div className={`set-card start-check ${check.state}`}>
@@ -30,12 +55,12 @@ function CheckRow({ check }: { check: Check }) {
       {check.state !== "ready" && <p className="hint">{check.message}</p>}
       {check.state === "not_installed" && (
         <p className="hint">
-          Install: <code>{check.install}</code>
+          Install: <Command text={check.install} />
         </p>
       )}
       {check.state !== "ready" && check.state !== "too_old" && (
         <p className="hint">
-          Sign in: <code>{check.signIn}</code>
+          Sign in: <Command text={check.signIn} />
         </p>
       )}
     </div>
@@ -43,7 +68,7 @@ function CheckRow({ check }: { check: Check }) {
 }
 
 // The extras, one line each: what they add and how to get them. Nothing waits on them.
-function Optional({ checks }: { checks: Check[] }) {
+function Optional({ checks }: { checks: Probe[] }) {
   const adds: Record<string, string> = { codex: "a second-vendor reviewer", gemini: "another reviewer", gh: "pull requests and GitHub repos" };
   return (
     <ul className="start-optional">
@@ -53,7 +78,7 @@ function Optional({ checks }: { checks: Check[] }) {
           <span>
             <b>{c.label}</b> <span className="hint">· {adds[c.id] ?? "optional"}</span>
           </span>
-          {c.state === "ready" ? <span className="tag ok">Ready</span> : c.state === "not_installed" ? <code>{c.install}</code> : <code>{c.signIn}</code>}
+          {c.state === "ready" ? <span className="tag ok">Ready</span> : <Command text={c.state === "not_installed" ? c.install : c.signIn} />}
         </li>
       ))}
     </ul>
@@ -115,9 +140,9 @@ export function StartView(p: ViewProps) {
             p.onSaveFolder();
           }}
         >
-          <label>
+          <label className="start-folder">
             Projects folder
-            <input value={p.folder} onChange={(e) => p.onFolder(e.target.value)} />
+            <input value={p.folder} spellCheck={false} onChange={(e) => p.onFolder(e.target.value)} />
           </label>
           <p className="hint">Where your repos live: Atrium finds them here, and new projects and clones go here. Change it later in Settings.</p>
         </form>

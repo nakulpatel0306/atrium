@@ -154,11 +154,14 @@ function Budget({ task }: { task: Task }) {
     if (res.ok) setEditing(false);
     else setError(res.error);
   };
-  const used = `${compact(loop.usage.tokens)}${loop.usage.unreported ? "+" : ""} of ${compact(loop.budget.tokens)} weighted tokens · ${Math.round(loop.usage.ms / 60_000)} of ${loop.budget.minutes} min`;
+  const over = loop.usage.tokens - loop.budget.tokens;
+  const used = `${compact(loop.usage.tokens)}${loop.usage.unreported ? "+" : ""} of ${compact(loop.budget.tokens)} tokens${over > 0 ? `, over by ${compact(over)}` : ""} · ${Math.round(loop.usage.ms / 60_000)} of ${loop.budget.minutes} min`;
   return (
     <div className="budget">
       <span>
-        <span title="Weighted as the API prices them: cache reads count 0.1×, cache writes 1.25×, fresh input and output 1×.">Budget since you last stepped in: {used}</span>
+        <span className={over > 0 ? "over" : undefined} title="Tokens are counted the way the API prices them: a read from Claude's prompt cache counts a tenth, a cache write 1.25×, everything else in full.">
+          Budget since your last hint: {used}
+        </span>
         {loop.usage.unreported && <span className="hint"> (an agent didn't report its tokens, so this is at least)</span>}
       </span>
       {task.status !== "done" &&

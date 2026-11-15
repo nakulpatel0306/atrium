@@ -62,7 +62,7 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: paused ? GLYPH.notdone : GLYPH.suggestion,
         tone: paused ? "bad" : "info",
         title: t.title,
-        meta: [...owner(t.spaceId), dot, { text: paused ? `paused · ${relative(t.updatedAt, now)}` : "running · a suggestion, nothing waits on it", color: "faint" }],
+        meta: [...owner(t.spaceId), dot, { text: paused ? `paused · ${relative(t.updatedAt, now)}` : "running · low priority suggestion", color: "faint" }],
         body: wrapStyled([{ text: oneLine(paused ? askLine(t) : (t.loop?.shape?.reason ?? "")), color: paused ? "warn" : "dim" }], inner).slice(0, 2),
         keys: paused
           ? [{ key: "e", label: "Explain the problem", input: "e", hot: true }, { key: "↵", label: "Open", input: "\r" }]
@@ -77,7 +77,7 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: GLYPH.suggestion,
         tone: "info",
         title: "Add a line to CLAUDE.md?",
-        meta: [...owner(m.spaceId), dot, { text: "nothing waits on it", color: "faint" }],
+        meta: [...owner(m.spaceId), dot, { text: "low priority", color: "faint" }],
         body: wrapStyled([{ text: oneLine(m.line), color: "dim" }], inner).slice(0, 2),
         keys: [{ key: "y", label: "Add it", input: "y", hot: true }, { key: "n", label: "Not this", input: "n" }],
       });
