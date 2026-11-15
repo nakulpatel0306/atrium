@@ -10,7 +10,7 @@ import { duration } from "../format";
 import { answeredText, attentionText, STAGE_TEXT } from "../summary";
 import { BriefQuestions } from "./BriefQuestions";
 import { Markdown } from "./Markdown";
-import { asksBeforeStarting } from "../../engine/needs";
+import { asksBeforeStarting, cleanResult } from "../../engine/needs";
 import { Fanout, ShapeLine } from "./Shape";
 
 type Task = State["tasks"][number];
@@ -21,13 +21,15 @@ const STRIP: (Stage | "brief")[] = ["brief", "writing", "checks", "review", "rea
 export function StageStrip({ task }: { task: Task }) {
   const now = shownStage(task.status, task.loop);
   const at = now === "paused" ? STRIP.indexOf(task.loop!.stage) : STRIP.indexOf(now);
+  // Ready with something open reads amber, like its Approve anyway: one rule (needs.ts) for both.
+  const notes = now === "ready" && task.status === "review" && !cleanResult(task);
   return (
     <ol className="stages" aria-label="Where this task is">
       {STRIP.map((s, i) => {
         const here = i === at;
-        const label = here && now === "paused" ? "Paused" : STAGE_TEXT[s];
+        const label = here && now === "paused" ? "Paused" : here && notes ? "Ready, with notes" : STAGE_TEXT[s];
         return (
-          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && now === "paused" ? " bad" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
+          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
             {label}
           </li>
         );
@@ -148,6 +150,15 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
   );
 }
 
+// How a round's findings ended, counted as the review chip counts them, so "asked for changes" and "1 open finding"
+// tell one story.
+const stillOpen = (r: { findings: { resolution: { action: string } | null }[] }): string => {
+  const declined = r.findings.filter((f) => f.resolution?.action === "declined").length;
+  const open = r.findings.filter((f) => !f.resolution).length;
+  const parts = [declined && `${declined} declined`, open && `${open} open`].filter(Boolean);
+  return parts.length ? `: ${parts.join(", ")}` : ": all fixed";
+};
+
 function Budget({ task }: { task: Task }) {
   const loop = task.loop!;
   const [editing, setEditing] = useState(false);
@@ -254,7 +265,7 @@ export function LoopPanel({ task, state, repo, showChecks, briefOpen = false }: 
             {loop.reviews.length > 1 ? `Review round ${i + 1}` : "Review"} by {agentName(r.reviewer)}
           </b>
           <span className="hint">
-            {r.skipped ? ` didn't happen: ${r.skipped}` : r.verdict === "approve" ? " · ready to merge" : r.verdict === "changes" ? " · asked for changes" : " · no verdict"}
+            {r.skipped ? ` didn't happen: ${r.skipped}` : r.verdict === "approve" ? " · ready to merge" : r.verdict === "changes" ? ` · asked for changes${stillOpen(r)}` : " · no verdict"}
           </span>
           {r.findings.length > 0 && (
             <ol>

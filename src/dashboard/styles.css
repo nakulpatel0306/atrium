@@ -888,7 +888,6 @@ h2 {
   color: var(--green);
 }
 .stat.blocked,
-.stat.paused,
 .stat.failed {
   color: var(--red);
 }
@@ -4574,4 +4573,35 @@ kbd {
   .chg-list li + li {
     border-top: 0;
   }
+}
+
+/* A pause, or a result ready with something open, is a normal stop that waits on you: amber, never the red of a failure. */
+.stages li.on.wait {
+  color: var(--yellow);
+}
+.stages li.on.wait::before {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 25%, transparent);
+}
+.q-kind.k-paused {
+  color: var(--yellow);
+}
+.stat.paused {
+  color: var(--yellow);
+}
+.dp-lead.wait {
+  color: var(--yellow);
+}
+
+/* "Why it needs a look": severity as a tag, the place in code, the finding, then the writer's reply on its own line. */
+.open-points .tag.sev-high,
+.open-points .tag.sev-medium {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
+}
+.open-points .reply {
+  display: block;
+  color: var(--dim);
+  font-size: var(--fs-sm);
 }

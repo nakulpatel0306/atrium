@@ -7,8 +7,7 @@ import { announce } from "../live";
 import { showToast } from "../toast";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
-import { answeredText, attentionText } from "../summary";
-import { findingLine } from "../../engine/loop";
+import { answeredText } from "../summary";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
 import { DecisionBar, reopen } from "./Decision";
@@ -118,10 +117,10 @@ function riskyItem(state: State, item: QueueItem): boolean {
 function OpenPoints({ task }: { task: Task }) {
   const loop = task.loop;
   if (!loop) return null;
-  const attention = attentionText(loop);
+  const attention = loop.attention;
   const open = loop.reviews.flatMap((r) => r.findings.filter((f) => f.resolution?.action !== "fixed").map((f) => ({ f, asked: r.verdict === "changes" })));
   const notes = [loop.unverified, ...loop.alreadyFailing.map((c) => `${c.name} was already failing before the change.`)].filter((x): x is string => !!x);
-  if (!attention && !open.length && !notes.length) return null;
+  if (!attention.length && !open.length && !notes.length) return null;
   return (
     <section className="open-points" aria-label="Why it needs a look">
       <h4>
@@ -129,14 +128,16 @@ function OpenPoints({ task }: { task: Task }) {
         Why it needs a look
       </h4>
       <ul>
-        {attention && <li>{attention}</li>}
+        {attention.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
         {notes.map((n) => (
           <li key={n}>{n}</li>
         ))}
         {open.map(({ f, asked }, i) => (
           <li key={i} className={`finding ${f.severity}`}>
-            {findingLine(f, i + 1).replace(/^\d+\. /, "")}
-            <span className="hint"> · {answeredText(f, asked)}</span>
+            <span className={`tag sev-${f.severity}`}>{f.severity}</span> {f.file && <code>{f.file}{f.line ? `:${f.line}` : ""}</code>} {f.reason}
+            <span className="reply">{answeredText(f, asked)}</span>
           </li>
         ))}
       </ul>
@@ -201,7 +202,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
     body = (
       <>
         {/* Why it waits, first: the pause's own diagnosis, or what the split or attempts need. */}
-        <p className={`dp-lead${item.kind === "paused" ? " bad" : ""}`} role="note">
+        <p className={`dp-lead${item.kind === "paused" ? " wait" : ""}`} role="note">
           {item.kind === "paused" ? `Paused: ${askLine(task)}` : askLine(task)}
         </p>
         {item.kind === "shape" && (
@@ -388,8 +389,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
   }, [current?.key]);
 
   // Live values for the key handler, which is attached once.
-  const live = useRef({ items, current, opened, armed });
-  live.current = { items, current, opened, armed };
+  const live = useRef({ items, current, opened, armed, clean: 0 });
+  live.current = { items, current, opened, armed, clean: cleanReviews(state, items).length };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = needsKey(e);
@@ -409,7 +410,10 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
         if (next) setSelected(next.key);
         return;
       }
-      if (key === "batch") return setBatch(true);
+      if (key === "batch") {
+        if (live.current.clean < 2) return announce("Shift A approves two or more clean results at once; fewer than two are clean right now.");
+        return setBatch(true);
+      }
       // Enter on a button or link is that control's own press.
       if (key === "open") {
         if (document.activeElement && document.activeElement !== document.body && !document.activeElement.closest(".q-list")) return;

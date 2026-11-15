@@ -173,7 +173,7 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
             <>
               {risky ? (
                 <>
-                  <kbd>a</kbd> <kbd>a</kbd> approve anyway
+                  <kbd>a</kbd> twice: approve anyway
                 </>
               ) : (
                 <>

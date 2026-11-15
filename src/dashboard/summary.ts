@@ -235,8 +235,8 @@ export const summaryLine = (text: string): string => plainText(text.trim().split
 
 // How a review finding ended, naming who answered it. A note on an approval was never put to the writer.
 export function answeredText(f: { resolution: { action: "fixed" | "declined"; note: string } | null }, asked: boolean): string {
-  if (!asked) return "a note on an approval, nothing to answer";
-  if (!f.resolution) return "the writer didn't answer it";
-  const note = f.resolution.note ? `: ${f.resolution.note}` : "";
-  return f.resolution.action === "fixed" ? `the writer fixed it${note}` : `the writer declined it${note}`;
+  if (!asked) return "A note on an approval, nothing to answer.";
+  if (!f.resolution) return "The writer didn't answer it.";
+  const note = f.resolution.note ? `: ${f.resolution.note}` : ".";
+  return f.resolution.action === "fixed" ? `The writer fixed it${note}` : `The writer declined it${note}`;
 }

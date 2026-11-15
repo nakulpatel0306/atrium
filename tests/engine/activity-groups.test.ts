@@ -66,7 +66,7 @@ test("once decided, the line says what happened instead of waiting", () => {
     ),
     { now: NOW, tasks: [{ id: "tsk_g", title: "Groceries", status: "done" }] },
   );
-  expect(g).toMatchObject({ text: "ran, ready for review, approved", tone: "routine" });
+  expect(g).toMatchObject({ text: "ran, went to review, approved", tone: "routine" });
 });
 
 test("a failure after finished work stays apart from that work", () => {
@@ -152,7 +152,7 @@ test("older lines without a task id group by the title they name", () => {
   );
   expect(groups.map((g) => [g.title, g.text])).toEqual([
     ["Laundry", "started"],
-    ["Groceries", "ran, ready for review"],
+    ["Groceries", "ran, went to review"],
   ]);
 });
 
@@ -161,7 +161,7 @@ test("a rule's approval is always named", () => {
     now: NOW,
     tasks: [{ id: "t", title: "Docs", status: "done" }],
   });
-  expect(g!.text).toBe("ran, ready for review, approved by your rule");
+  expect(g!.text).toBe("ran, went to review, approved by your rule");
 });
 
 test("partly done lines stand alone", () => {

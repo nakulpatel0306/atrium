@@ -7,7 +7,8 @@ import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
 import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
-import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
+import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, reviewLine, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
+import { isRisky } from "../queue";
 import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
 import { MemorySize } from "./Memory";
 import { RetroCard, RollupCard } from "./Retro";
@@ -353,6 +354,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   // A finished task the agent said it couldn't or only partly do is labelled that way, never plain done.
   const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
   const review = task.status === "review" ? state.approvals.find((a) => a.taskId === task.id && a.kind === "review") : undefined;
+  const risky = !!review && isRisky(state, review);
   const attached = state.attachments.filter((a) => a.taskId === task.id);
 
   const act = async (fn: () => ReturnType<typeof post>) => {
@@ -383,7 +385,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </span>
           ) : (
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
-            <span className={`tag${stuck || word === "paused" ? " bad" : asks ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
+            <span className={`tag${stuck ? " bad" : word === "paused" || asks ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
               {notDone ?? (asks ? QUEUE_KIND[asks].label : taskLabel(word))}
             </span>
           )}
@@ -399,8 +401,14 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             Run now
           </button>
         )}
+        {/* A result waiting on you that isn't clean says so on its row, as everywhere else (needs.ts, one rule). */}
+        {risky && (
+          <span className="tag wait" title={review ? (reviewLine(review, state)?.text ?? undefined) : undefined}>
+            Needs a look
+          </span>
+        )}
         {/* Open on a decision, the checks have their chip right below; the row doesn't say it twice. */}
-        {space?.kind === "repo" && task.kind === "work" && !(open && review) && (
+        {space?.kind === "repo" && task.kind === "work" && !(open && review) && !risky && (
           <ChecksBadge
             task={task}
             onOpen={() => {

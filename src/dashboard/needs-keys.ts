@@ -44,7 +44,7 @@ export const ACT: Partial<Record<NeedsKey, string>> = { approve: "approve", send
 export const KEY_HELP: [string, string][] = [
   ["j / k", "Next / previous item"],
   ["Enter", "Open the item"],
-  ["a", "Approve"],
+  ["a", "Approve; twice on a result with something open"],
   ["s", "Send back with a note"],
   ["x", "Stop a running task"],
   ["e", "Explain the problem, on a paused task"],

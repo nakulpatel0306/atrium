@@ -130,7 +130,8 @@ export function dayLabel(t: number, now = Date.now()): string {
 }
 
 const PHRASE: Partial<Record<ActivityKind, (message: string) => string>> = {
-  ready: () => "ready for review",
+  // Past tense: the one still waiting now says "waiting for review" instead.
+  ready: () => "went to review",
   rule: () => "approved by your rule",
   skipped: () => "review skipped",
   requeued: () => "back in the queue",

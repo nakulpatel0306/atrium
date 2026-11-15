@@ -86,7 +86,7 @@ export function WalkthroughCard({ task, space }: { task: Task; space: Space | un
     if (!res.ok) setError(res.error);
   };
   const again = (label: string) => (
-    <button className="btn link subtle" disabled={busy} onClick={() => void write()}>
+    <button className="btn" disabled={busy} onClick={() => void write()}>
       {busy ? "Writing…" : label}
     </button>
   );
