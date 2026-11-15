@@ -5,6 +5,7 @@ import { type AgentChoice, agentName } from "../agents";
 import { post, type State } from "../api";
 import { draggingFiles, filesOf, pastedName, renamed, setupWithFiles, sortFiles, uploadAttachments } from "../attachments";
 import { announce } from "../live";
+import { isTyping } from "../needs-keys";
 import { navigate } from "../route";
 import { AgentPicker } from "./AgentPicker";
 import { AttachChips } from "./AttachChips";
@@ -20,13 +21,15 @@ type Props = {
   space: Space | null;
   // Bumped by the sidebar "+" and the "New space" card to switch into setup mode and focus.
   setupRequest: number;
+  // Bumped by the command palette's "New task" to focus the ask.
+  askRequest?: number;
 };
 
 type Message = { kind: "busy" | "error" | "info"; text: string } | null;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-export function CommandBar({ space, setupRequest }: Props) {
+export function CommandBar({ space, setupRequest, askRequest = 0 }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
@@ -49,7 +52,8 @@ export function CommandBar({ space, setupRequest }: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      // ⌘K is the command palette's; / goes straight to the ask, unless something else is being typed in.
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !isTyping(e.target)) {
         e.preventDefault();
         input.current?.focus();
       }
@@ -57,6 +61,10 @@ export function CommandBar({ space, setupRequest }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    if (askRequest > 0) input.current?.focus();
+  }, [askRequest]);
 
   useEffect(() => {
     if (setupRequest === 0) return;
@@ -345,7 +353,7 @@ export function CommandBar({ space, setupRequest }: Props) {
             }}
           />
           {!setup && <AgentPicker value={agent} disabled={busy} onChange={setAgent} label="Agent for the new task" />}
-          <span className="k">⌘K</span>
+          <kbd className="k" title="Press / to type here">/</kbd>
         </form>
         {message && (
           <div className={`msg${message.kind === "error" ? " err" : ""}`} role={message.kind === "error" ? "alert" : "status"}>
