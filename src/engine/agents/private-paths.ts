@@ -123,8 +123,11 @@ function denyExports(root: string, keep: string, closeAll: (dir: string) => bool
 
 export type PrivateReads = { denyRead: string[]; allowRead: string[] };
 
+// The user's home folder; ATRIUM_USER_HOME stands in for it, as for the projects folder check (profile.ts).
+const userHome = (): string => process.env.ATRIUM_USER_HOME ?? homedir();
+
 export function privateReads(cwd: string, opts: { bash: boolean; home?: string }): PrivateReads {
-  const home = real(opts.home ?? homedir());
+  const home = real(opts.home ?? userHome());
   const keep = real(cwd);
   const privateFolders = PRIVATE_FOLDERS.map((f) => join(home, f));
   const cloud = CLOUD_FOLDERS.map((f) => join(home, f)).filter((f) => !inside(keep, f));
@@ -144,7 +147,7 @@ export function privateReads(cwd: string, opts: { bash: boolean; home?: string }
 // Read deny rules (they cover Read, Glob and Grep) beside the working-directory fence, so a CLI that ignored the fence
 // would still be kept out: the whole of /Users/Shared and /Volumes, and everything in the home folder beside the
 // way down to the cwd. A deny can't be re-opened, so none of them ever covers the cwd.
-export function privateReadRules(cwd: string, home: string = homedir()): string[] {
+export function privateReadRules(cwd: string, home: string = userHome()): string[] {
   const keep = real(cwd);
   const rule = (p: string) => [`Read(/${p})`, `Read(/${p}/**)`];
   const out: string[] = [];

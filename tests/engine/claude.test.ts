@@ -438,7 +438,18 @@ const argvOf = async (over: Partial<AgentRunInput>) => {
 };
 
 test("card data: a private run has no Bash, reads only its own folder, and keeps the pinned settings", async () => {
-  const argv = await argvOf({ allowedTools: ["Read", "Edit", "Write", "Glob", "Grep"], privateData: true });
+  // A home of its own with the run's folder inside it, so the rules don't depend on where this repo is checked out.
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "atrium-cardhome-")));
+  const work = join(home, "Atrium", "budget");
+  mkdirSync(work, { recursive: true });
+  mkdirSync(join(home, "Downloads"));
+  process.env.ATRIUM_USER_HOME = home;
+  let argv: string[];
+  try {
+    argv = await argvOf({ allowedTools: ["Read", "Edit", "Write", "Glob", "Grep"], privateData: true, cwd: work });
+  } finally {
+    delete process.env.ATRIUM_USER_HOME;
+  }
   const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]!);
   expect(argv[argv.indexOf("--setting-sources") + 1]).toBe("");
   expect(settings.disableAllHooks).toBe(true);
@@ -450,11 +461,12 @@ test("card data: a private run has no Bash, reads only its own folder, and keeps
   expect(allowed.every((t) => !t.includes("("))).toBe(true);
   const denied = argv.slice(argv.indexOf("--disallowedTools") + 1);
   expect(denied).toContain("Bash");
-  expect(denied).toContain(`Read(/${join(realpathSync(homedir()), "Downloads")}/**)`);
+  expect(denied).toContain(`Read(/${join(home, "Downloads")}/**)`);
   // The sandbox denies the whole home folder and re-opens only this run's folder.
-  expect(settings.sandbox.filesystem.denyRead).toContain(realpathSync(homedir()));
+  expect(settings.sandbox.filesystem.denyRead).toContain(home);
   expect(settings.sandbox.filesystem.denyRead).toContain("/Users/Shared");
-  expect(settings.sandbox.filesystem.allowRead).toEqual([realpathSync(process.cwd())]);
+  expect(settings.sandbox.filesystem.allowRead).toEqual([work]);
+  rmSync(home, { recursive: true, force: true });
 });
 
 test("card data: an ordinary run is unchanged", async () => {
