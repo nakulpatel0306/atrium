@@ -9,7 +9,7 @@ const state = makeState();
 type Row = { intent: Intent; method: string; path: string; body?: unknown; text: string; data?: unknown };
 
 const rows: Row[] = [
-  { intent: { type: "approve", approvalId: ids.approval, title: "Review: Fix login redirect" }, method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "approve" }, text: 'Approved "Review: Fix login redirect".' },
+  { intent: { type: "approve", approvalId: ids.approval, title: "Review: Fix login redirect", sha: null }, method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "approve" }, text: 'Approved "Review: Fix login redirect".' },
   { intent: { type: "reject", approvalId: ids.approval, note: " tighten it " }, method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "reject", note: "tighten it" }, text: "Sent back with your note." },
   { intent: { type: "reject", approvalId: ids.approval, note: "  " }, method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "reject" }, text: "Sent back." },
   { intent: { type: "retry", taskId: ids.blocked }, method: "POST", path: `/api/tasks/${ids.blocked}/retry`, text: 'Queued "Summarize postings" again.' },
@@ -48,7 +48,7 @@ for (const row of rows) {
 test("a decision made elsewhere reads plainly", async () => {
   const client = fakeClient(state);
   client.respond(`/api/approvals/${ids.approval}`, { ok: false, error: "Already handled" });
-  expect(await runIntent(client, { type: "approve", approvalId: ids.approval, title: "x" }, state)).toEqual({
+  expect(await runIntent(client, { type: "approve", approvalId: ids.approval, title: "x", sha: null }, state)).toEqual({
     tone: "bad",
     text: "Already handled. It was decided somewhere else.",
   });
@@ -80,4 +80,11 @@ test("a stop that came too late says so in the engine's words", async () => {
   const client = fakeClient(state);
   client.respond(`/api/tasks/${ids.running}/stop`, { ok: false, error: "It finished before it could be stopped, so its result stands." });
   expect(await runIntent(client, { type: "stop", taskId: ids.running }, state)).toEqual({ tone: "bad", text: "It finished before it could be stopped, so its result stands." });
+});
+
+test("approving sends the commit the screen showed, so the engine binds to it or refuses", async () => {
+  const state = makeState();
+  const client = fakeClient(state);
+  await runIntent(client, { type: "approve", approvalId: ids.approval, title: "x", sha: "abc1234" }, state);
+  expect(client.calls).toContainEqual({ method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "approve", sha: "abc1234" } });
 });

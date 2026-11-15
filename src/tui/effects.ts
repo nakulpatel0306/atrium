@@ -37,7 +37,8 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
 
   switch (intent.type) {
     case "approve":
-      return said(await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "approve" }), () => `Approved "${intent.title}".`);
+      // The commit this screen showed, as the dashboard sends: the approval binds to it, or is refused if it moved.
+      return said(await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "approve", ...(intent.sha ? { sha: intent.sha } : {}) }), () => `Approved "${intent.title}".`);
     case "reject": {
       const note = intent.note.trim();
       const res = await client.post(`/api/approvals/${enc(intent.approvalId)}`, { decision: "reject", ...(note ? { note } : {}) });

@@ -4,14 +4,14 @@ import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import { asksBeforeStarting } from "../engine/needs";
-import { cleanReviews, isRisky, itemTitle } from "../dashboard/queue";
+import { cleanReviews, isRisky, itemTitle, shownSha } from "../dashboard/queue";
 import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
 import { type Action, type Answering, type Ask, type AskPurpose, listPaneOf, type ListPane, type Overlay, TABS, type Ui } from "./ui";
 
 export type Intent =
-  | { type: "approve"; approvalId: string; title: string }
+  | { type: "approve"; approvalId: string; title: string; sha: string | null }
   | { type: "reject"; approvalId: string; note: string }
   | { type: "retry"; taskId: string }
   | { type: "runNow"; taskId: string }
@@ -202,7 +202,7 @@ function approve(u: Ui, view: View): Command {
   const approval = approvalOf(u, view);
   if (!approval) return nothingHere(u, view, u.tab === "home" ? "Nothing to approve here." : "Nothing to approve here. Pick a task in review.");
   if (isRisky(view.state, approval)) return open({ kind: "confirm", purpose: "accept", targetId: approval.id });
-  return intent({ type: "approve", approvalId: approval.id, title: approval.title });
+  return intent({ type: "approve", approvalId: approval.id, title: approval.title, sha: shownSha(view.state, approval) });
 }
 
 function sendBack(u: Ui, view: View): Command {
@@ -602,7 +602,7 @@ function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): 
       return [intent({ type: "stop", taskId: overlay.targetId })];
     case "accept": {
       const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
-      return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];
+      return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title, sha: shownSha(view.state, approval) })] : [info("Already handled. It was decided somewhere else.")];
     }
     case "batch":
       return [intent({ type: "batch", items: cleanItems(view) })];

@@ -62,9 +62,19 @@ test("approving names the commit shown; a branch that moved since is refused in 
   expect(listPending(db).map((x) => x.id)).toContain(a.id);
 });
 
+test("a result on a branch can't be approved without the commit its screen showed", async () => {
+  const { a, sha } = result("Unpinned", clean);
+  const res = await post(`/api/approvals/${a.id}`, { decision: "approve" });
+  expect(res.status).toBe(400);
+  expect(((await res.json()) as { error: string }).error).toContain("needs the commit you looked at");
+  expect(listPending(db).map((x) => x.id)).toContain(a.id);
+  // With the commit it shows, it goes through.
+  expect((await post(`/api/approvals/${a.id}`, { decision: "approve", sha })).status).toBe(200);
+});
+
 test("a just-given approval can be taken back from the toast", async () => {
-  const { t, a } = result("Clean", clean);
-  expect((await post(`/api/approvals/${a.id}`, { decision: "approve" })).status).toBe(200);
+  const { t, a, sha } = result("Clean", clean);
+  expect((await post(`/api/approvals/${a.id}`, { decision: "approve", sha })).status).toBe(200);
   const res = await post(`/api/approvals/${a.id}/reopen`);
   expect(res.status).toBe(200);
   expect(getTask(db, t.id)!.status).toBe("review");

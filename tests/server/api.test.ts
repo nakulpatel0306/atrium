@@ -451,10 +451,12 @@ afterEach(() => {
   while (repos.length) repos.pop()!.cleanup();
 });
 const FP = "v1:code:docs:small:claude";
-function reviewItem(spaceId: string, title = "Add a note") {
+// A result to decide by hand has no branch here (one on a branch needs its commit to approve); a rule's own result
+// has one, as rules only cover code on a branch.
+function reviewItem(spaceId: string, title = "Add a note", onBranch = false) {
   const t = createTask(db, { spaceId, title });
   setTaskStatus(db, t.id, "running");
-  setTaskStatus(db, t.id, "review", { branch: `atrium/${t.id}` });
+  setTaskStatus(db, t.id, "review", onBranch ? { branch: `atrium/${t.id}` } : {});
   return createApproval(db, { spaceId, taskId: t.id, kind: "review", title, detail: "", fingerprint: FP });
 }
 
@@ -568,7 +570,7 @@ async function appliedRule() {
   const { rule } = (await (await post(`/api/proposals/${p.id}`, { answer: "yes" })).json()) as { rule: RuleBody };
   // Approvals made in the same millisecond as the rule would count as already waiting.
   await Bun.sleep(5);
-  const a = reviewItem(s.id, "Auto one");
+  const a = reviewItem(s.id, "Auto one", true);
   setTaskOutcome(db, a.taskId!, "done", null);
   const facts = { domain: "code" as const, agent: "claude", branch: `atrium/${a.taskId}`, sha: branchAt(repo.path, `atrium/${a.taskId}`), content: PLAIN_DOCS, files: [{ path: "docs/a.md", status: "A" as const, added: 2, deleted: 0, oldMode: "000000", newMode: "100644" }] };
   expect(applyRule(db, a.id, facts)).not.toBeNull();

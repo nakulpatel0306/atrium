@@ -63,8 +63,12 @@ test("numbers switch tabs; tab and arrows move between Spaces panes", () => {
 });
 
 test("a approves the selected card on Home, or the selected task in review", () => {
-  const approve = { type: "approve" as const, approvalId: ids.approval, title: "Review: Fix login redirect" };
+  const approve = { type: "approve" as const, approvalId: ids.approval, title: "Review: Fix login redirect", sha: null };
   expect(play(["a"]).intents).toEqual([approve]);
+  // A result whose checks read a commit sends that commit, as the dashboard does.
+  const checked = makeState();
+  checked.tasks = checked.tasks.map((t) => (t.id === ids.review ? { ...t, loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", checks: "passed", checkedSha: "abc1234", reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] }, outcome: "done" } : t));
+  expect(play(["a"], undefined, checked).intents).toEqual([{ ...approve, sha: "abc1234" }]);
   expect(play(["a"], onTask(1, ids.review)).intents).toEqual([approve]);
   const queued = play(["a"], onTask(2, ids.queued));
   expect(queued.intents).toEqual([]);

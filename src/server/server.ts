@@ -366,8 +366,13 @@ export function startServer(deps: Deps): Server<WsData> {
       }
       const current = getApproval(db, id);
       if (!current) throw new HttpError(404, "No such approval.");
-      // The commit the page showed, when it showed one: the approval binds to exactly that, or to nothing.
+      // The commit the page showed: the approval binds to exactly that, or to nothing. A result whose checks read a
+      // commit on its branch (every result through the loop) can only be approved with it, so no client approves
+      // whatever the head happens to be. A result from before the loop has no such commit to show.
       const sha = opt(b.sha, isString, "sha");
+      const task = current.kind === "review" && current.taskId ? getTask(db, current.taskId) : null;
+      const onBranch = !!task?.branch && !!task.loop?.checkedSha;
+      if (b.decision === "approve" && onBranch && !sha) throw new HttpError(400, "Approving a result on a branch needs the commit you looked at. Reload it and approve again.");
       let approval;
       try {
         approval = resolveApproval(db, id, b.decision, opt(b.note, isString, "note"), undefined, b.decision === "approve" && sha ? { atHead: sha } : {});
