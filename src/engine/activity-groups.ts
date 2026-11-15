@@ -67,7 +67,7 @@ const KINDS: [RegExp, ActivityKind][] = [
   [/^Paused: /, "paused"],
   [/^Partly done: /, "partial"],
   [/^Couldn't do: /, "couldnt"],
-  [/^Blocked: /, "blocked"],
+  [/^(Blocked|Stopped): /, "blocked"],
   [/^(Couldn't |Atrium hit a problem|Discarded the result|Kept the local copy)/, "failed"],
   [/^(Atrium left |Atrium kept |Kept |Removed the local copy |Removed the new copy )/, "note"],
 ];

@@ -1,3 +1,4 @@
+import { TASK_WORD, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
@@ -332,7 +333,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   const [busy, setBusy] = useState(false);
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const stuck = task.status === "blocked" || task.status === "failed";
+  const word = taskWord(task);
+  const stuck = word === "stopped" || word === "failed";
   const runs = state.runs.filter((r) => r.taskId === task.id);
   const wait = waitOf(task, state);
   const parent = task.parentTaskId ? state.tasks.find((t) => t.id === task.parentTaskId) : undefined;
@@ -359,19 +361,20 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
       {/* The summary is the row's one button; its actions sit beside it, so no control is nested in another. */}
       <div className={`item task${task.status === "done" ? " done" : ""}`}>
         <button className="task-open" aria-expanded={open} onClick={onToggle}>
-          <StatusIcon status={task.status} outcome={task.outcome} />
+          <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} />
           <KindBadge kind={task.kind} />
           <span className="t" title={shownTitle(task)}>
             {shownTitle(task)}
           </span>
           {wait ? (
+            // Still queued: what holds it back is in the tooltip.
             <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
-              waiting
+              {TASK_WORD.queued}
             </span>
           ) : (
-            // One word on the row; why it's blocked or not done is in the tooltip and the detail.
-            <span className={`tag${stuck ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.outcomeReason ?? undefined}>
-              {notDone ?? (task.status === "blocked" && task.loop?.paused ? "paused" : STATUS_TEXT[task.status])}
+            // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
+            <span className={`tag${stuck || word === "paused" ? " bad" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
+              {notDone ?? TASK_WORD[word]}
             </span>
           )}
         </button>

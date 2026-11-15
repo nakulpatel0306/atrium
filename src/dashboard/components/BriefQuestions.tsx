@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
 import { askLine } from "../../engine/needs";
@@ -38,9 +39,9 @@ export function BriefQuestions({ task }: { task: Task }) {
       ))}
       <div className="acts">
         <button type="button" className="btn p" disabled={busy} onClick={() => void start()}>
-          Start
+          {KIND.question.action}
         </button>
-        <span className="hint">Unanswered questions are left to the agent.</span>
+        <span className="hint">It starts then; unanswered questions are left to the agent.</span>
       </div>
       {error && <p className="err">{error}</p>}
     </div>

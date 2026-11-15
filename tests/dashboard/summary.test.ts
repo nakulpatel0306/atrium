@@ -49,7 +49,7 @@ test("spaceStatus says who is running", () => {
   expect(s.text).toBe("Claude is signed out.");
 
   const blocked = task({ status: "blocked", blockedReason: "No repo" });
-  expect(spaceStatus(space, [blocked], state({ tasks: [blocked] })).text).toBe("Blocked: No repo");
+  expect(spaceStatus(space, [blocked], state({ tasks: [blocked] })).text).toBe("Stopped: No repo");
 
   expect(spaceStatus(space, [], state()).text.startsWith("Idle · last activity ")).toBe(true);
 });

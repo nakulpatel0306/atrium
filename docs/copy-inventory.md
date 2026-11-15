@@ -18,7 +18,7 @@ this page is the record of the reading pass.
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
 | Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier" |
-| Views | `src/dashboard/components/BriefCard.tsx`, `BriefQuestions.tsx`, `LoopPanel.tsx` | brief fields, gap hints, stage strip, checks badge, pause actions | yes | New with the loop; "Give it a hint", "Explain the problem instead", "Unverified: no checks found" |
+| Views | `src/dashboard/components/BriefCard.tsx`, `BriefQuestions.tsx`, `LoopPanel.tsx` | brief fields, gap hints, stage strip, checks badge, pause actions | yes | New with the loop; "Give it a hint", "Explain the problem", "Unverified: no checks found" |
 | Views | `src/dashboard/components/Shape.tsx` | shape line and override, cost chip, parts and attempts | yes | New with shapes: "Single writer: …", "Change", "Open 2 pull requests", "Merge into one branch", "Pick this one", "None of these", estimates labelled "est." |
 | Views | `src/dashboard/components/Agents.tsx` | models by job, plan gauge, spend | yes | "Models by job", "Atrium ran … in this window", what the gauge can't see |
 | Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |

@@ -152,7 +152,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
     for (const q of task.loop.questions) lines.push(plain(`Asks: ${q.question}${q.options.length ? ` (${q.options.join(" / ")})` : ""}`, { color: color.info }));
     if (askSteps(task).length && task.status === "queued") lines.push(muted("a answers it"));
     if (task.loop.paused && task.status === "blocked" && task.loop.paused.kind === "loop" && !task.loop.explanation && space?.learning !== "off") {
-      lines.push(plain("Want the diagnosis instead of another attempt? Choose Explain the problem instead on the dashboard.", { color: color.info }));
+      lines.push(plain("Want the diagnosis instead of another attempt? Choose Explain the problem on the dashboard, or e on Home.", { color: color.info }));
     }
     if (task.loop.explanation) lines.push(blank, muted("What it says is wrong"), ...block(task.loop.explanation));
     lines.push(...walkthroughLines(task, space, width));

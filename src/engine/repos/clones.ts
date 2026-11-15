@@ -20,7 +20,7 @@ export function createCloner(db: Database, kick: () => void): { request(space: S
   function blockQueued(space: Space, reason: string) {
     for (const task of listTasks(db, { spaceId: space.id, status: ["queued"] })) {
       setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
-      logActivity(db, space.id, "atrium", `Blocked: ${task.title}. ${reason}`);
+      logActivity(db, space.id, "atrium", `Stopped: ${task.title}. ${reason}`);
     }
   }
 

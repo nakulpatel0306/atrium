@@ -140,13 +140,14 @@ test("each hunk offers an explanation from the engine, shown under its header", 
   expect(button(render(<ChangesList diff={diff} live={null} />), "Explain this hunk")).toBeUndefined();
 });
 
-test("a loop pause on a repeated failure leads with the diagnosis; a budget pause leads with the hint", () => {
+test("a loop pause on a repeated failure offers the diagnosis first; every pause's primary step is the hint", () => {
   const paused = { paused: { kind: "loop" as const, diagnosis: "The same check failed the same way twice in a row (test)." } };
   const loop = setup(paused, "blocked");
   const el = render(<LoopPanel task={loop.task} state={loop.state} repo showChecks={false} />);
   expect(el.textContent).toContain("Want the diagnosis instead of another attempt?");
-  expect(button(el, "Explain the problem instead")!.className).toBe("btn p");
-  expect(button(el, "Give it a hint")!.className).toBe("btn");
+  // The diagnosis is offered first here, but the primary step stays the hint, as on every surface.
+  expect(button(el, "Explain the problem")!.className).toBe("btn");
+  expect(button(el, "Give it a hint")!.className).toBe("btn p");
   act(() => root!.unmount());
   root = null;
   const budget = setup({ paused: { kind: "budget", diagnosis: "It worked for 45 minutes, its budget." } }, "blocked");

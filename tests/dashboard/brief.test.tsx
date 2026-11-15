@@ -161,7 +161,7 @@ test("the stage strip shows where the task is, and a pause where it stopped", ()
   act(() => root!.render(<LoopPanel task={loopTask({ stage: "writing", paused: { kind: "loop", diagnosis: "x" } }, "blocked")} state={makeState()} repo showChecks={false} />));
   expect(el.querySelector('.stages [aria-current="step"]')!.textContent).toBe("Paused");
   expect(button(el, "Give it a hint")).toBeTruthy();
-  expect(button(el, "Explain the problem instead")).toBeTruthy();
+  expect(button(el, "Explain the problem")).toBeTruthy();
 });
 
 test("failing check output is one click away; findings show how each was answered", async () => {
@@ -182,9 +182,10 @@ test("failing check output is one click away; findings show how each was answere
   expect(el.querySelector(".check-rows pre")!.textContent).toBe("(fail) adds totals");
 });
 
-test("a task asking before it starts is in Needs you and its counts, and Start sends the one-tap answers", async () => {
+test("a task asking before it starts is in Needs you and its counts, and Answer sends the one-tap answers", async () => {
   const { NeedsYou } = await import("../../src/dashboard/components/NeedsYou");
   const { Sidebar } = await import("../../src/dashboard/components/Sidebar");
+  const { NeedsPage } = await import("../../src/dashboard/components/NeedsPage");
   const state = makeState();
   const asking = { ...state.tasks[0]!, id: "tsk_asks", title: "Add totals", status: "queued" as const, loop: { ...newLoop(SIZE_BUDGETS.small), stage: "brief" as const, questions: [{ question: "Weekly or monthly?", options: ["Weekly", "Monthly"] }] } };
   const s = { ...state, approvals: [], proposals: [], tasks: [...state.tasks, asking] };
@@ -192,12 +193,13 @@ test("a task asking before it starts is in Needs you and its counts, and Start s
     <>
       <Sidebar state={s} archived={0} route={{ name: "home" } as never} onNewSpace={() => {}} />
       <NeedsYou state={s} />
+      <NeedsPage state={s} item="tsk_asks" />
     </>,
   );
   expect(el.querySelector(".nav .ct.hot")!.textContent).toBe("1");
   expect(el.textContent).toContain("Needs you · 1");
-  expect(el.textContent).toContain("has a question before it starts");
+  expect(el.textContent).toContain("Answer…");
   await act(async () => button(el, "Monthly").click());
-  await act(async () => button(el, "Start").click());
+  await act(async () => button(el, "Answer").click());
   expect(calls.findLast((c) => c.url === "/api/tasks/tsk_asks/answers")).toEqual({ url: "/api/tasks/tsk_asks/answers", body: { answers: [{ question: "Weekly or monthly?", answer: "Monthly" }] } });
 });

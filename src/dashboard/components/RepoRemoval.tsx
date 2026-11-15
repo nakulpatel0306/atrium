@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { useState } from "react";
 import { post, type State } from "../api";
 import { approvedToast } from "./Decision";
@@ -40,7 +41,7 @@ export function RemovalRow({ approval }: { approval: Approval }) {
             Keep it
           </button>
           <button className="btn p" disabled={busy} onClick={() => void decide("approve")}>
-            Remove copy
+            {KIND.approval.action}
           </button>
         </div>
       </div>

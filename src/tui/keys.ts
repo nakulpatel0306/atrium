@@ -416,7 +416,7 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
       return [ui({ type: "column", dir: "right" })];
     case "R":
       if (!task) return [nothingHere(u, view, NO_TASK)];
-      if (task.status !== "blocked" && task.status !== "failed") return [info("Retry is for blocked or failed tasks.")];
+      if (task.status !== "blocked" && task.status !== "failed") return [info("Retry is for a stopped or failed task.")];
       if (task.legacyPurpose !== null) return [info(REMOVED_FEATURE_RETRY)];
       return [intent({ type: "retry", taskId: task.id })];
     case "s":

@@ -25,7 +25,7 @@ test("task detail has the dashboard's facts", () => {
   expect(view.task?.id).toBe(ids.review);
   const lines = taskDetail(view, [msg("claude", "codex", "Please review."), msg("codex", "claude", "Fine.\nVERDICT: approve")]);
   const all = text(lines);
-  for (const s of ["in review", "Branch atrium/", "Heavy · runs when plugged in", "Claude → Codex", "approves", "finished after", "t transcript"]) {
+  for (const s of ["ready for review", "Branch atrium/", "Heavy · runs when plugged in", "Claude → Codex", "approves", "finished after", "t transcript"]) {
     expect(all).toContain(s);
   }
 });

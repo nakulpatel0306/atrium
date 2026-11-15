@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
@@ -110,9 +111,9 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
     else setHint("");
   };
   const explain = (
-    <button className={`btn${nudge ? " p" : ""}`} type="button" data-act="explain" disabled={busy} onClick={() => void act("explain")}>
+    <button className="btn" type="button" data-act="explain" disabled={busy} onClick={() => void act("explain")}>
       <MessageSquareText />
-      Explain the problem instead
+      Explain the problem
     </button>
   );
   return (
@@ -132,9 +133,10 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
       >
         <textarea rows={2} aria-label="Hint for the agent" placeholder="What should it try, or what is it missing?" value={hint} onChange={(e) => setHint(e.target.value)} />
         <div className="acts">
-          <button className={`btn${nudge ? "" : " p"}`} type="submit" disabled={busy || !hint.trim()}>
+          {/* A pause's one primary step, named as on every surface (engine/words.ts); the diagnosis is the other way on. */}
+          <button className="btn p" type="submit" disabled={busy || !hint.trim()}>
             <Lightbulb />
-            Give it a hint
+            {KIND.paused.action}
           </button>
           {!nudge && explain}
         </div>

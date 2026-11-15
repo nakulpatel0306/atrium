@@ -888,6 +888,7 @@ h2 {
   color: var(--green);
 }
 .stat.blocked,
+.stat.paused,
 .stat.failed {
   color: var(--red);
 }

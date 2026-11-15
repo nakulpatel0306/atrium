@@ -219,7 +219,7 @@ export function startServer(deps: Deps): Server<WsData> {
       if (!current) throw new HttpError(404, "No such task.");
       // Requeueing a running or in-review task would start a second run or orphan its review.
       if (current.status !== "blocked" && current.status !== "failed") {
-        throw new HttpError(409, "This task isn't blocked or failed, so there's nothing to retry.");
+        throw new HttpError(409, "This task isn't stopped or failed, so there's nothing to retry.");
       }
       // The runner would only fail it again.
       if (current.legacyPurpose !== null) throw new HttpError(409, REMOVED_FEATURE_RETRY);

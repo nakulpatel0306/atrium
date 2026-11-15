@@ -1,6 +1,7 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
 import type { Stage } from "../engine/loop";
 import { cleanResult, needsYouCount, pausedForYou, reviewSettled } from "../engine/needs";
+import { TASK_WORD, taskWord } from "../engine/words";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
@@ -24,14 +25,17 @@ export function activeOnly(state: State): State {
   };
 }
 
+// A task's one word, from engine/words.ts: "blocked" splits into paused (waits for your hint) and stopped (waits for a
+// retry).
 export const STATUS_TEXT: Record<Task["status"], string> = {
-  queued: "queued",
-  running: "running",
-  review: "in review",
-  done: "done",
-  failed: "failed",
-  blocked: "blocked",
+  queued: TASK_WORD.queued,
+  running: TASK_WORD.running,
+  review: TASK_WORD.review,
+  done: TASK_WORD.done,
+  failed: TASK_WORD.failed,
+  blocked: TASK_WORD.stopped,
 };
+export const taskText = (t: Task): string => TASK_WORD[taskWord(t)];
 
 export const KIND_PREFIX: Record<Exclude<Task["kind"], "work">, string> = { review: "Review: ", fix: "Fix: " };
 
@@ -71,7 +75,9 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
   if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait };
   const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
   if (stuck.length === 1 && stuck[0]!.status === "blocked") {
-    return { text: `Blocked: ${stuck[0]!.blockedReason ?? stuck[0]!.title}`, tone: "blocked" };
+    const t = stuck[0]!;
+    const paused = pausedForYou(t);
+    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason) ?? t.title}`, tone: "blocked" };
   }
   if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
   const review = tasks.filter((t) => t.status === "review").length;
@@ -91,8 +97,8 @@ export function liveStatus(state: State): string {
   const blocked = state.tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
   if (blocked.length === 1) {
     const reason = blocked[0]!.blockedReason?.replace(/\.$/, "");
-    parts.push(`1 blocked${reason ? `: ${reason}` : ""}`);
-  } else if (blocked.length > 1) parts.push(`${blocked.length} blocked`);
+    parts.push(`1 stopped${reason ? `: ${reason}` : ""}`);
+  } else if (blocked.length > 1) parts.push(`${blocked.length} stopped`);
   // Queueing behind a running task is the normal case, not news.
   const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy");
   if (waits.length > 0) {

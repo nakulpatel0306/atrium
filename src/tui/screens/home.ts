@@ -2,6 +2,7 @@
 // 100 columns).
 import { agentText } from "../../dashboard/agents";
 import { askLine } from "../../engine/needs";
+import { KIND } from "../../engine/words";
 import { askSteps } from "../keys";
 import { duration, relative } from "../../dashboard/format";
 import { liveStatus, reviewLine } from "../../dashboard/summary";
@@ -27,7 +28,7 @@ type Card = { id: string; glyph: string; tone: Tone; title: string; meta: Line; 
 
 const RIGHT = 36;
 
-function cardsOf(view: View, now: number, inner: number): Card[] {
+export function cardsOf(view: View, now: number, inner: number): Card[] {
   const { state } = view;
   const names = new Map(state.spaces.map((s, i) => [s.id, { name: s.name, i }]));
   const owner = (spaceId: string | null): Line => {
@@ -48,9 +49,12 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: "?",
         tone: "info",
         title: t.title,
-        meta: [...owner(t.spaceId), dot, { text: `asks before it starts · ${relative(t.updatedAt, now)}`, color: "faint" }],
+        meta: [...owner(t.spaceId), dot, { text: `${KIND[item.kind].label} · ${relative(t.updatedAt, now)}`, color: "faint" }],
         body: wrapStyled([{ text: oneLine(questions.length ? questions.map((q) => q.question).join("  ") : askLine(t)), color: "dim" }], inner).slice(0, 2),
-        keys: [{ key: "a", label: askSteps(t).length > 1 ? "Answer them" : "Answer", input: "a", hot: true }, { key: "↵", label: "Open", input: "\r" }],
+        // A question is answered right here; a pick or a stopped part is decided on its own screen, under the same name.
+        keys: askSteps(t).length
+          ? [{ key: "a", label: KIND.question.action, input: "a", hot: true }, { key: "↵", label: "Open", input: "\r" }]
+          : [{ key: "↵", label: KIND[item.kind].action, input: "\r", hot: true }],
       });
       continue;
     }
@@ -62,10 +66,10 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: paused ? GLYPH.notdone : GLYPH.suggestion,
         tone: paused ? "bad" : "info",
         title: t.title,
-        meta: [...owner(t.spaceId), dot, { text: paused ? `paused · ${relative(t.updatedAt, now)}` : "running · low priority suggestion", color: "faint" }],
+        meta: [...owner(t.spaceId), dot, { text: paused ? `${KIND.paused.label} · ${relative(t.updatedAt, now)}` : `${KIND.shape.label} · low priority`, color: "faint" }],
         body: wrapStyled([{ text: oneLine(paused ? askLine(t) : (t.loop?.shape?.reason ?? "")), color: paused ? "warn" : "dim" }], inner).slice(0, 2),
         keys: paused
-          ? [{ key: "e", label: "Explain the problem", input: "e", hot: true }, { key: "↵", label: "Open", input: "\r" }]
+          ? [{ key: "↵", label: KIND.paused.action, input: "\r", hot: true }, { key: "e", label: "Explain the problem", input: "e" }]
           : [{ key: "↵", label: "Open", input: "\r" }, { key: "x", label: "Stop", input: "x" }],
       });
       continue;
@@ -77,9 +81,9 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: GLYPH.suggestion,
         tone: "info",
         title: "Add a line to CLAUDE.md?",
-        meta: [...owner(m.spaceId), dot, { text: "low priority", color: "faint" }],
+        meta: [...owner(m.spaceId), dot, { text: `${KIND.memory.label} · low priority`, color: "faint" }],
         body: wrapStyled([{ text: oneLine(m.line), color: "dim" }], inner).slice(0, 2),
-        keys: [{ key: "y", label: "Add it", input: "y", hot: true }, { key: "n", label: "Not this", input: "n" }],
+        keys: [{ key: "y", label: KIND.memory.action, input: "y", hot: true }, { key: "n", label: "Not this", input: "n" }],
       });
       continue;
     }
@@ -90,9 +94,9 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: GLYPH.suggestion,
         tone: "info",
         title: `Stop asking about ${p.label}?`,
-        meta: [...owner(p.spaceId), dot, { text: `You approved the last ${p.evidence.length} without changes`, color: "faint" }],
+        meta: [...owner(p.spaceId), dot, { text: `${KIND.suggestion.label} · you approved the last ${p.evidence.length} without changes`, color: "faint" }],
         body: [[{ text: "Atrium would approve these on its own. It still never merges or pushes.", color: "dim" }]],
-        keys: [{ key: "y", label: "Yes", input: "y", hot: true }, { key: "n", label: "Not now", input: "n" }, { key: "N", label: "Never", input: "N" }, open],
+        keys: [{ key: "y", label: KIND.suggestion.action, input: "y", hot: true }, { key: "n", label: "Not now", input: "n" }, { key: "N", label: "Never", input: "N" }, open],
       });
       continue;
     }
@@ -107,11 +111,11 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
         glyph: notDone ? GLYPH.notdone : "◆",
         tone: notDone ? "warn" : "accent",
         title: a.title,
-        meta: [...owner(a.spaceId), dot, { text: task ? `${agentText(task, state.runs)} · ${notDone ? "says it isn't done" : "ready for review"} · ${relative(a.createdAt, now)}` : `ready for review · ${relative(a.createdAt, now)}`, color: "faint" }],
+        meta: [...owner(a.spaceId), dot, { text: task ? `${KIND.review.label} · ${agentText(task, state.runs)}${notDone ? " · says it isn't done" : ""} · ${relative(a.createdAt, now)}` : `${KIND.review.label} · ${relative(a.createdAt, now)}`, color: "faint" }],
         body: told
           ? wrapStyled([{ text: told, color: "warn" }], inner).slice(0, 2)
           : wrapStyled([{ text: oneLine(review?.text ?? a.detail.split("\n")[0] ?? ""), color: review?.tone === "bad" ? "warn" : "dim" }], inner).slice(0, 1),
-        keys: [{ key: "a", label: notDone ? "Accept" : "Approve", input: "a", hot: true }, { key: "s", label: "Send back", input: "s" }, { key: "↵", label: "Open", input: "\r" }, { key: "t", label: "Transcript", input: "t" }],
+        keys: [{ key: "a", label: notDone ? "Accept" : KIND.review.action, input: "a", hot: true }, { key: "s", label: "Send back", input: "s" }, { key: "↵", label: "Open", input: "\r" }, { key: "t", label: "Transcript", input: "t" }],
       });
       continue;
     }
@@ -120,9 +124,9 @@ function cardsOf(view: View, now: number, inner: number): Card[] {
       glyph: "?",
       tone: "info",
       title: a.title,
-      meta: [...owner(a.spaceId), dot, { text: `asks you · ${relative(a.createdAt, now)}`, color: "faint" }],
+      meta: [...owner(a.spaceId), dot, { text: `${KIND.approval.label} · ${relative(a.createdAt, now)}`, color: "faint" }],
       body: wrapStyled([{ text: oneLine(a.detail.split("\n").find((l) => l.trim()) ?? ""), color: "dim" }], inner).slice(0, 2),
-      keys: [{ key: "a", label: "Approve", input: "a", hot: true }, { key: "s", label: a.spaceId === null ? "Decline" : "Send back", input: "s" }, open],
+      keys: [{ key: "a", label: KIND.approval.action, input: "a", hot: true }, { key: "s", label: a.spaceId === null ? "Decline" : "Send back", input: "s" }, open],
     });
   }
   return cards;

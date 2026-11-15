@@ -54,7 +54,7 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
       lines: [
         ...wrap(`Stop "${task?.title ?? "this task"}" now?`, cols, { bold: true }),
         [],
-        ...wrap("The agent stops right away. Its edits so far are kept (on its branch in a repo), and the task waits as blocked until you retry it.", cols, { color: "dim" }),
+        ...wrap("The agent stops right away. Its edits so far are kept (on its branch in a repo), and the task waits as stopped until you retry it.", cols, { color: "dim" }),
       ],
       keys: [{ key: "y", label: "Stop it", input: "y", hot: true }, no("Keep running")],
     };

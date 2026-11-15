@@ -8,13 +8,15 @@ import { ids, makeState } from "../tui/fixtures";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
-test("a space lists what's waiting on you there, with the same answers as Needs you", () => {
+test("a space lists what's waiting on you there as summaries; the decision itself shows once, in the task's row", () => {
   const s = makeState();
-  const t = text(renderToStaticMarkup(<SpaceNeeds state={s} spaceId={ids.atrium} />));
+  const html = renderToStaticMarkup(<SpaceNeeds state={s} spaceId={ids.atrium} />);
+  const t = text(html);
   expect(t).toContain("Waiting for you · 1");
   expect(t).toContain("Review: Fix login redirect");
-  expect(t).toContain("Send back");
-  expect(t).toContain("Approve");
+  expect(t).toContain("Approve…");
+  expect(html).not.toContain('data-act="approve"');
+  expect(t).not.toContain("Send back");
   expect(renderToStaticMarkup(<SpaceNeeds state={s} spaceId={ids.jobHunt} />)).toBe("");
 });
 

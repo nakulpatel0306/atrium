@@ -85,8 +85,19 @@ export function SendBackNote({ d }: { d: Decision }) {
 
 // The two answers to a result. `data-act` lets the Needs you keys press them on the focused row. A `risky` result
 // (a note, a check that didn't pass, a finding left open) gets a quieter Approve that says so.
-export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outcome: Outcome; risky?: boolean }) {
+// What a result's Approve says: plain, "Approve anyway" when something needs a look, or the not-done wording. A
+// summary row's way to it says the same.
+const approveWord = (outcome: Outcome, risky: boolean): string => {
   const label = approveLabel(outcome && outcome !== "done" ? outcome : null);
+  return risky && label === "Approve" ? "Approve anyway" : label;
+};
+
+export function approveText(state: State, approval: Approval): string {
+  const task = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
+  return approveWord(task?.outcome ?? null, isRisky(state, approval));
+}
+
+export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outcome: Outcome; risky?: boolean }) {
   return (
     <>
       <button className="btn" data-act="send-back" disabled={d.busy} onClick={() => d.setSendingBack(!d.sendingBack)}>
@@ -100,7 +111,7 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
         title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
         onClick={() => void d.decide("approve")}
       >
-        {risky && label === "Approve" ? "Approve anyway" : label}
+        {approveWord(outcome, risky)}
       </button>
     </>
   );

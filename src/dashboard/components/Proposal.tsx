@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { post, type State } from "../api";
@@ -43,7 +44,7 @@ export function ProposalRow({ proposal, space }: { proposal: Proposal; space: Sp
             Not now
           </button>
           <button className="btn p" disabled={busy} onClick={() => void answer("yes")}>
-            Yes
+            {KIND.suggestion.action}
           </button>
         </div>
       </div>

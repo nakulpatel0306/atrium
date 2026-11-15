@@ -2,23 +2,14 @@
 // in engine/needs.ts. The terminal app reads the same lines, so both say the same thing.
 import { askLine, attentionQueue, batchApprovable, cleanResult, type QueueItem, type QueueKind } from "../engine/needs";
 import type { State } from "../engine/state";
+import { KIND } from "../engine/words";
 import { reviewChips, summaryLine } from "./summary";
 
 export type { QueueItem, QueueKind };
 export { attentionQueue };
 
-// What kind of decision each item is, as its row's label.
-export const KIND_TEXT: Record<QueueKind, string> = {
-  review: "Review",
-  approval: "Question",
-  question: "Question",
-  pick: "Choose",
-  stuck: "Part stopped",
-  paused: "Paused",
-  suggestion: "Suggestion",
-  memory: "CLAUDE.md",
-  shape: "Could split",
-};
+// What kind of decision each item is, as its row's label: the shared words (engine/words.ts).
+export const KIND_TEXT = Object.fromEntries(Object.entries(KIND).map(([k, v]) => [k, v.label])) as Record<QueueKind, string>;
 
 const approvalOf = (state: State, i: QueueItem) => state.approvals.find((a) => a.id === i.key);
 const taskOf = (state: State, i: QueueItem) => (i.taskId ? state.tasks.find((t) => t.id === i.taskId) : undefined);

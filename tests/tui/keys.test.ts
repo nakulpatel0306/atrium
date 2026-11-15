@@ -93,7 +93,7 @@ test("retry and run now only where the dashboard offers them", () => {
   expect(play(["R"], blocked).intents).toEqual([{ type: "retry", taskId: ids.blocked }]);
   const running = play(["R"], onTask(0, ids.running));
   expect(running.intents).toEqual([]);
-  expect(flashText(running.all)).toEqual(["Retry is for blocked or failed tasks."]);
+  expect(flashText(running.all)).toEqual(["Retry is for a stopped or failed task."]);
   const old = makeState();
   old.tasks = old.tasks.map((t) => (t.id === ids.blocked ? { ...t, status: "failed", legacyPurpose: "money" } : t));
   const removed = play(["R"], blocked, old);
@@ -270,7 +270,7 @@ test("f picks a made file, then o opens it and R reveals it", () => {
 test("with no file picked, o and R keep their usual meaning", () => {
   const start = inDetail(1, ids.review);
   expect(play(["o"], start, makeState(), withFiles()).intents[0]?.type).toBe("overnight");
-  expect(flashText(play(["R"], start, makeState(), withFiles()).all)).toContain("Retry is for blocked or failed tasks.");
+  expect(flashText(play(["R"], start, makeState(), withFiles()).all)).toContain("Retry is for a stopped or failed task.");
   expect(flashText(play(["f"], start, makeState(), withFiles([])).all)).toContain("This task didn't make any files.");
 });
 
@@ -332,7 +332,7 @@ test("the asking card and the question box show the questions and numbered answe
   const briefing = { greeting: "Hi.", summary: "" } as Parameters<typeof homeScreen>[2]["briefing"];
   const home = homeScreen(view, initialUi, { briefing, now: Date.now(), frame: 0, lastLine: "" } as unknown as Parameters<typeof homeScreen>[2], 120, 30);
   expect(text(home.lines)).toContain("Add totals");
-  expect(text(home.lines)).toContain("asks before it starts");
+  expect(text(home.lines)).toContain("Question · ");
   const box = answerOver(Array.from({ length: 20 }, () => []), { kind: "answer", taskId: "tsk_asks", index: 0, step: 0, answers: [] }, state, 100, 0);
   const shown = text(box.lines);
   expect(shown).toContain("1/2 · Weekly or monthly?");

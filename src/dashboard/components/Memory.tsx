@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { NotebookPen } from "lucide-react";
 import { useState } from "react";
 import type { MemoryFile, MemoryLine } from "../../engine/memory";
@@ -41,7 +42,7 @@ export function MemoryProposal({ line, space }: { line: MemoryLine; space: Space
       <input aria-label="Line to add to CLAUDE.md" value={text} maxLength={300} onChange={(e) => setText(e.target.value)} />
       <div className="acts">
         <button className="btn p" disabled={busy || !text.trim()} onClick={() => void answer({ action: "accept", line: text })}>
-          Add it
+          {KIND.memory.action}
         </button>
         <button className="btn" disabled={busy} onClick={() => void answer({ action: "dismiss" })}>
           Not this

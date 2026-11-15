@@ -158,7 +158,7 @@ test("retry requeues a failed or blocked task; other statuses are 409", async ()
   const t = createTask(db, { spaceId: s.id, title: "T" });
   const bad = await post(`/api/tasks/${t.id}/retry`);
   expect(bad.status).toBe(409);
-  expect(await bad.json()).toEqual({ error: "This task isn't blocked or failed, so there's nothing to retry." });
+  expect(await bad.json()).toEqual({ error: "This task isn't stopped or failed, so there's nothing to retry." });
   setTaskStatus(db, t.id, "running");
   setTaskStatus(db, t.id, "failed");
   const ok = await post(`/api/tasks/${t.id}/retry`);

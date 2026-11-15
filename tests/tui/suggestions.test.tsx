@@ -89,7 +89,7 @@ test("a suggestion in the app: card, full text, and y", async () => {
   const app = openApp(client);
   const f = await app.frame((f) => f.includes("NEEDS YOU  2"));
   expect(f).toContain("✦ Stop asking about docs-only changes?");
-  expect(f).toContain(" y  Yes");
+  expect(f).toContain(" y  Stop asking");
   await app.type("\r");
   await app.frame((f) => f.includes("Suggestion · docs-only changes") && f.includes("never merges or pushes"));
   await app.type("y");

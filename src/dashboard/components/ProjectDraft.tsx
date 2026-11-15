@@ -1,3 +1,4 @@
+import { KIND } from "../../engine/words";
 import { useState } from "react";
 import type { ProjectDraft } from "../../engine/repos/names";
 import { TEMPLATE_LABELS, type TemplateId } from "../../engine/repos/rules";
@@ -66,7 +67,7 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
             Don't create
           </button>
           <button className="btn p" disabled={busy || invalid} onClick={() => void create()}>
-            {busy ? "Creating…" : "Create repo"}
+            {busy ? "Creating…" : KIND.approval.action}
           </button>
         </div>
       </div>

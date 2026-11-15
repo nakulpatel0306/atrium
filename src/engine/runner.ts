@@ -143,7 +143,7 @@ const JUDGE_SYSTEM_PROMPT = [
 
 // Asked for after a pause: a diagnosis in place of another attempt, so the agent reads and changes nothing.
 const EXPLAIN_SYSTEM_PROMPT = [
-  "You are helping the user understand why a task got stuck, through Atrium.",
+  "You are helping the user understand why a task was paused, through Atrium.",
   "Don't change any files and don't try another fix. Read what you need, then explain.",
   "Never read, print, or edit .env files, keys, or tokens.",
 ].join("\n");
@@ -390,7 +390,7 @@ export function createRunner(deps: {
     steerMarkers.delete(task.id);
     const full = saved ? `${sentence(reason)} ${savedNote(task, saved)}` : reason;
     setTaskStatus(db, task.id, "blocked", { blockedReason: full });
-    logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${full}`, { taskId: task.id });
+    logActivity(db, task.spaceId, "atrium", `Stopped: ${task.title}. ${full}`, { taskId: task.id });
     settleChild(getTask(db, task.id) ?? task);
     if (task.kind === "review") void reviewEnded(task, resolvedAgent(db, task), { status: "error", kind: "failed", message: reason }).catch(report);
   }
@@ -1576,7 +1576,7 @@ function explainPrompt(task: Task, branch: string | null): string {
   return [
     `Task: ${task.title}`,
     ...(task.brief ? briefSections(task.brief, null) : task.detail.trim() ? [task.detail.trim()] : []),
-    `Atrium paused this task: ${loop.paused?.diagnosis ?? "it looked stuck."}`,
+    `Atrium paused this task: ${loop.paused?.diagnosis ?? "it kept failing the same way."}`,
     ...(loop.feedback ? [`What it was last told:\n${loop.feedback}`] : []),
     ...(branch ? [branch] : []),
     "The work so far is on this branch. Don't try again. Explain in a few short paragraphs what is actually going wrong, what you'd need to know or change to get past it, and what the user could tell you that would help.",
@@ -1686,7 +1686,7 @@ export async function recoverOnBoot(db: Database): Promise<number> {
       if (!(await settingsUnchanged(path, last.fingerprint))) {
         const reason = tamperedReason(path);
         setTaskStatus(db, task.id, "blocked", { blockedReason: reason });
-        logActivity(db, task.spaceId, "atrium", `Blocked: ${task.title}. ${reason}`, { taskId: task.id });
+        logActivity(db, task.spaceId, "atrium", `Stopped: ${task.title}. ${reason}`, { taskId: task.id });
         continue;
       }
       // A crash mid-run leaves the repo on the task branch. A clean one goes back now; a dirty one
