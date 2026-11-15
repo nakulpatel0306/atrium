@@ -120,6 +120,14 @@ test("batch approval offers only the clean results, and Shift A opens it", async
   expect(calls.at(-1)).toEqual({ url: "/api/approvals/batch", body: { ids: ["apr_b", "apr_a"] } });
 });
 
+test("a result the agent didn't say it finished is risky too, so it never approves on one key", async () => {
+  const { isRisky } = await import("../../src/dashboard/queue");
+  const s = queueState();
+  const unclear = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_a" ? { ...t, outcome: "unknown" as const } : t)) };
+  expect(isRisky(unclear, unclear.approvals.find((a) => a.id === "apr_a")!)).toBe(true);
+  expect(isRisky(s, s.approvals.find((a) => a.id === "apr_a")!)).toBe(false);
+});
+
 test("an empty queue says so", () => {
   const s = makeState({ approvals: [], proposals: [], tasks: [] });
   expect(render(<NeedsPage state={s} />).textContent).toContain("You're all caught up.");

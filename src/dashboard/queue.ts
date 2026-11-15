@@ -67,8 +67,9 @@ export function waited(since: number, now = Date.now()): string {
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
-// A result that went through the loop but isn't clean: its Approve is quieter and says "anyway".
+// A result that went through the loop but isn't clean, including one the agent didn't say it finished: its Approve is
+// quieter and the a key asks twice.
 export function isRisky(state: State, a: State["approvals"][number]): boolean {
   const task = a.kind === "review" && a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
-  return !!task?.loop && task.outcome === "done" && !batchApprovable(a, task);
+  return !!task?.loop && !batchApprovable(a, task);
 }
