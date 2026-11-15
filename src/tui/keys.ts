@@ -4,6 +4,7 @@ import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import { asksBeforeStarting } from "../engine/needs";
+import { cleanReviews, isRisky, itemTitle } from "../dashboard/queue";
 import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
 import { listOf, pick, type View } from "./select";
@@ -31,6 +32,7 @@ export type Intent =
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
   | { type: "explain"; taskId: string; title: string }
   | { type: "memory"; lineId: string; accept: boolean; line: string }
+  | { type: "batch"; items: { id: string; sha: string; title: string }[] }
 
 
 // A file the selected task made, as the keys need it.
@@ -60,7 +62,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Everywhere", keys: "? q", does: "help, close, quit" },
   // Mouse reporting takes plain drags, so selecting text needs the terminal's own modifier.
   { section: "Everywhere", keys: "Opt/Shift", does: "drag to select text" },
-  { section: "Home", keys: "a s", does: "approve, send back (r too)" },
+  { section: "Home", keys: "a A s", does: "approve, approve all clean, send back" },
   { section: "Home", keys: "e", does: "explain a paused task's problem" },
   { section: "Home", keys: "x", does: "stop a running task" },
   { section: "Home", keys: "a 1-9", does: "answer a task's questions" },
@@ -111,7 +113,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
     return keys;
   }
   if (ui.overlay?.kind === "confirm") {
-    const yes = { accept: "accept", archive: "archive", stop: "stop it" }[ui.overlay.purpose];
+    const yes = { accept: "approve", archive: "archive", stop: "stop it", batch: "approve all" }[ui.overlay.purpose];
     return [k("y", yes), k("n", ui.overlay.purpose === "stop" ? "keep running" : "not now")];
   }
   const overlay = ui.overlay && OVERLAY_KEYS[ui.overlay.kind];
@@ -194,12 +196,12 @@ function stop(u: Ui, view: View): Command {
   return open({ kind: "confirm", purpose: "stop", targetId: task.id });
 }
 
-// Approve: a result the agent said it didn't finish asks first.
+// Approve: a result that isn't clean by the one rule (needs.ts), or that the agent said it didn't finish, asks first;
+// a second a (or y) approves it, as in the dashboard.
 function approve(u: Ui, view: View): Command {
   const approval = approvalOf(u, view);
   if (!approval) return nothingHere(u, view, u.tab === "home" ? "Nothing to approve here." : "Nothing to approve here. Pick a task in review.");
-  const outcome = approval.kind === "review" && approval.taskId ? view.state.tasks.find((t) => t.id === approval.taskId)?.outcome : null;
-  if (outcome === "couldnt" || outcome === "partial") return open({ kind: "confirm", purpose: "accept", targetId: approval.id });
+  if (isRisky(view.state, approval)) return open({ kind: "confirm", purpose: "accept", targetId: approval.id });
   return intent({ type: "approve", approvalId: approval.id, title: approval.title });
 }
 
@@ -255,6 +257,7 @@ function answerKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "a
 }
 
 function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
+  if (input === "A") return [cleanItems(view).length >= 2 ? open({ kind: "confirm", purpose: "batch", targetId: "" }) : info("Shift-A approves clean results together once there are two or more.")];
   const asking = pinned(u, "needs", view.askingTask);
   if (asking) {
     // Picking between parts or attempts needs their diffs side by side, which the dashboard shows.
@@ -585,6 +588,12 @@ function detailKey(input: string, key: Key, overlay: Extract<Overlay, { kind: "d
   return scroll === null ? [] : [ui({ type: "setOverlay", overlay: { ...overlay, scroll } })];
 }
 
+// The clean results the queue holds, each at the commit its checks and review read, so the engine can refuse any that
+// moved before the yes lands.
+export function cleanItems(view: View): { id: string; sha: string; title: string }[] {
+  return cleanReviews(view.state).map((i) => ({ id: i.key, sha: view.state.tasks.find((t) => t.id === i.taskId)?.loop?.checkedSha ?? "", title: itemTitle(view.state, i) }));
+}
+
 function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): Command[] {
   switch (overlay.purpose) {
     case "archive":
@@ -595,6 +604,8 @@ function confirmed(overlay: Extract<Overlay, { kind: "confirm" }>, view: View): 
       const approval = view.state.approvals.find((a) => a.id === overlay.targetId);
       return approval ? [intent({ type: "approve", approvalId: approval.id, title: approval.title })] : [info("Already handled. It was decided somewhere else.")];
     }
+    case "batch":
+      return [intent({ type: "batch", items: cleanItems(view) })];
   }
 }
 
@@ -607,7 +618,8 @@ function overlayKey(input: string, key: Key, overlay: Overlay, u: Ui, view: View
     case "delete":
       return deleteKey(input, key, overlay, view);
     case "confirm":
-      if (input === "y") return [close, ...confirmed(overlay, view)];
+      // A risky approval takes a second a, as the dashboard's does; a batch takes Shift-A again.
+      if (input === "y" || (input === "a" && overlay.purpose === "accept") || (input === "A" && overlay.purpose === "batch")) return [close, ...confirmed(overlay, view)];
       return input === "n" || input === "q" || key.escape ? [close] : [];
     case "help":
       return input === "?" || input === "q" || key.escape ? [close] : [];

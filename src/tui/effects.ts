@@ -116,6 +116,13 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
             : `Atrium won't suggest a rule for ${intent.label} again.`,
       );
     }
+    case "batch": {
+      const res = await client.post<{ approved: string[]; skipped: { id: string; reason: string }[] }>("/api/approvals/batch", { items: intent.items.map(({ id, sha }) => ({ id, sha })) });
+      return said(res, (d) => {
+        const left = d.skipped.map((s) => intent.items.find((i) => i.id === s.id)?.title ?? s.id);
+        return `Approved ${d.approved.length}.${left.length ? ` Left for you to read: ${left.join(", ")}.` : ""}`;
+      });
+    }
     case "explain":
       return said(await client.post(`/api/tasks/${enc(intent.taskId)}/explain`), () => `Asked for the diagnosis of "${intent.title}". It reads the branch without trying again.`);
     case "memory": {

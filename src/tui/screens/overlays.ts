@@ -15,6 +15,8 @@ import { askSteps, helpFor } from "../keys";
 import { truncate, width } from "../text";
 import { GLYPH, windowGauge } from "../theme";
 import type { Overlay, Ui } from "../ui";
+import { cleanReviews, itemTitle } from "../../dashboard/queue";
+import { reviewLine } from "../../dashboard/summary";
 
 const wrap = (text: string, cols: number, style: Omit<Line[number], "text"> = {}) => wrapStyled([{ text, ...style }], cols);
 
@@ -26,11 +28,23 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
   if (c.purpose === "accept") {
     const a = state.approvals.find((x) => x.id === c.targetId);
     const task = a?.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
+    const said = task?.outcome === "partial" || task?.outcome === "couldnt";
     const partial = task?.outcome === "partial";
+    const review = a ? reviewLine(a, state) : null;
     return {
-      title: partial ? "Accept as is" : "Accept anyway",
-      lines: [...wrap(partial ? "Accept as is? It says it's only partly done." : "Accept anyway? It says it couldn't do this.", cols), ...(task?.outcomeReason ? wrap(task.outcomeReason, cols, { color: "warn" }) : [])],
-      keys: [{ key: "y", label: "Accept", input: "y", hot: true }, no()],
+      title: partial ? "Accept as is" : said ? "Accept anyway" : "Approve anyway",
+      lines: said
+        ? [...wrap(partial ? "Accept as is? It says it's only partly done." : "Accept anyway? It says it couldn't do this.", cols), ...(task?.outcomeReason ? wrap(task.outcomeReason, cols, { color: "warn" }) : [])]
+        : [...wrap("It has something to read first: a note, a check that didn't pass, or a finding that wasn't fixed.", cols), ...(review ? wrap(review.text, cols, { color: "warn" }) : []), ...(task?.loop?.attention.length ? wrap(task.loop.attention.join(" "), cols, { color: "warn" }) : [])],
+      keys: [{ key: "a", label: said ? "Accept" : "Approve anyway", input: "a", hot: true }, no()],
+    };
+  }
+  if (c.purpose === "batch") {
+    const items = cleanReviews(state);
+    return {
+      title: "Approve clean results",
+      lines: [...wrap(`Each of these ${items.length} passed its checks, was approved by its reviewer, and has no notes or open findings:`, cols), ...items.flatMap((i) => wrap(`• ${itemTitle(state, i)}`, cols, { color: "dim" }))],
+      keys: [{ key: "A", label: `Approve all ${items.length}`, input: "A", hot: true }, no("Cancel")],
     };
   }
   if (c.purpose === "stop") {
