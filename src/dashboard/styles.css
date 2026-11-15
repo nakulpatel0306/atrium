@@ -3577,7 +3577,8 @@ kbd {
 .loop textarea:focus,
 .loop-settings textarea:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .brief-head {
   display: flex;
@@ -4014,6 +4015,17 @@ kbd {
 }
 .memory input {
   width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font: inherit;
+  padding: 5px 8px;
+  outline: none;
+}
+.memory input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .nudge {
   margin-bottom: 6px;
@@ -4123,4 +4135,26 @@ kbd {
 .page-head .low-count {
   font-size: var(--fs-sm);
   color: var(--faint);
+}
+
+/* Reading text keeps a comfortable measure however wide the column gets. */
+.walkthrough p,
+.walkthrough li,
+.loop .hint,
+.dp-body p {
+  max-width: 80ch;
+}
+.private .hint {
+  font-size: var(--fs-sm);
+}
+/* On a narrow window the turn picker and layout toggle get a line of their own. */
+@container main (max-width: 640px) {
+  .chg-controls {
+    margin-left: 0;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+  .chg-list button {
+    min-width: 0;
+  }
 }
