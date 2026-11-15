@@ -132,7 +132,7 @@ test("CLAUDE.md's size is reported, and a proposal is accepted with the user's t
   expect([hidden.status, ((await hidden.json()) as { error: string }).error]).toEqual([409, "Keep it to one line of plain text, 300 characters or fewer, with no hidden characters."]);
   const accepted = await send("POST", "/api/memory/mem_a", { action: "accept", line: "Money is integer cents." });
   expect(await accepted.json()).toMatchObject({ status: "accepted", branch: "atrium/tsk_cart" });
-  expect(git("show", "atrium/tsk_cart:CLAUDE.md")).toBe("Money is integer cents.");
+  expect(git("show", "atrium/tsk_cart:CLAUDE.md")).toBe("## Notes from Atrium\n\n- Money is integer cents.");
   expect((await send("POST", "/api/memory/mem_a", { action: "accept", line: "x" })).status).toBe(409);
   expect(await (await send("POST", "/api/memory/mem_b", { action: "dismiss" })).json()).toMatchObject({ status: "dismissed" });
   expect((await send("POST", "/api/memory/mem_b", { action: "maybe" })).status).toBe(400);

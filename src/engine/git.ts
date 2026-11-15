@@ -892,11 +892,11 @@ export async function deleteAtriumBranch(path: string, branch: string): Promise<
   return (await git(path, ["branch", "-D", "--", branch])).code === 0;
 }
 
-// A commit that adds one line to the end of `file` on top of `tip`, made without touching any checkout: the blob is
-// hashed without filters and the tree built in a throwaway index. Signed like the engine's merges when the repo signs
-// its commits. The file must be a plain file at `tip` (or missing, when it's created) and at most `cap` bytes.
-// Returns the new commit; moving a branch to it is the caller's.
-export async function appendLineCommit(path: string, tip: string, file: string, line: string, message: string, cap = 256 * 1024): Promise<string> {
+// A commit that changes one file on top of `tip`, made without touching any checkout: `edit` gets the file's text
+// ("" when it's missing) and returns the new text, the blob is hashed without filters and the tree built in a throwaway
+// index. Signed like the engine's merges when the repo signs its commits. The file must be a plain file at `tip` (or
+// missing, when it's created) and at most `cap` bytes. Returns the new commit; moving a branch to it is the caller's.
+export async function editFileCommit(path: string, tip: string, file: string, edit: (text: string) => string, message: string, cap = 256 * 1024): Promise<string> {
   const entry = await git(path, ["ls-tree", "-z", tip, "--", file]);
   if (entry.code !== 0) throw new Error(`Couldn't read ${file}: ${entry.err.trim()}`);
   const mode = entry.out ? entry.out.slice(0, entry.out.indexOf(" ")) : null;
@@ -907,7 +907,7 @@ export async function appendLineCommit(path: string, tip: string, file: string, 
     if (size.code !== 0 || Number(size.out.trim()) > cap) throw new Error(`${file} is too large for Atrium to change (over ${Math.round(cap / 1024)} KB).`);
     text = (await fileAt(path, tip, file, cap)).text;
   }
-  const next = `${text}${text && !text.endsWith("\n") ? "\n" : ""}${line}\n`;
+  const next = edit(text);
   const blob = await git(path, ["hash-object", "-w", "--no-filters", "--stdin"], undefined, { stdin: next });
   if (blob.code !== 0) throw new Error(`Couldn't write ${file}: ${blob.err.trim()}`);
   const dir = mkdtempSync(join(tmpdir(), "atrium-index-"));
@@ -933,6 +933,13 @@ export async function appendLineCommit(path: string, tip: string, file: string, 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// Whether any checkout of the repo (its own folder or a worktree) has `branch` checked out. Moving such a branch would
+// leave that checkout's files behind its HEAD, so a failure to tell counts as checked out.
+export async function checkedOut(path: string, branch: string): Promise<boolean> {
+  const res = await git(path, ["for-each-ref", "--format=%(worktreepath)", `refs/heads/${branch}`]);
+  return res.code !== 0 || res.out.trim() !== "";
 }
 
 // Moves an Atrium branch from `from` to `to`, only if nothing moved it meanwhile.

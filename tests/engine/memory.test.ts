@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { claudeAdapter } from "../../src/engine/agents/claude";
 import { newLoop, SIZE_BUDGETS, type Finding } from "../../src/engine/loop";
-import { acceptLine, cleanLine, dismissLine, getLine, MEMORY_BUDGET, memoryFile, noticePatterns, openLines, parseProposal, proposeLine, steerEvidence } from "../../src/engine/memory";
+import { acceptLine, checkLine, cleanLine, dismissLine, getLine, MEMORY_BUDGET, withNote, memoryFile, noticePatterns, openLines, parseProposal, proposeLine, steerEvidence } from "../../src/engine/memory";
 import { getSpace, updateSpace } from "../../src/engine/spaces";
 import { createTask, getTask, setTaskLoop, setTaskStatus } from "../../src/engine/tasks";
 import { git, loopHarness } from "./loop-harness";
@@ -164,7 +164,7 @@ describe("accepting", () => {
     proposal(s.id, t.id);
     const done = await acceptLine(h.db, "mem_one", "  Money is integer cents; use the cents helpers. ");
     expect(done).toMatchObject({ status: "accepted", branch: "atrium/tsk_a", line: "Money is integer cents; use the cents helpers." });
-    expect(git(repo, "show", "atrium/tsk_a:CLAUDE.md")).toBe("# Rules\nMoney is integer cents; use the cents helpers.");
+    expect(git(repo, "show", "atrium/tsk_a:CLAUDE.md")).toBe("# Rules\n\n## Notes from Atrium\n\n- Money is integer cents; use the cents helpers.");
     expect(git(repo, "rev-parse", "atrium/tsk_a^")).toBe(before);
     expect(git(repo, "log", "-1", "--format=%s", "atrium/tsk_a")).toBe("Add a line to CLAUDE.md");
     expect(getTask(h.db, t.id)!.loop!.headSha).toBe(done.commitSha);
@@ -175,14 +175,83 @@ describe("accepting", () => {
     await expect(acceptLine(h.db, "mem_one", "again")).rejects.toThrow("already answered");
   });
 
+  test("a blocked task whose leftovers keep the checkout on its branch gets a branch of its own, and the checkout is left alone", async () => {
+    const repo = h.repo();
+    const s = h.space(repo);
+    const t = createTask(h.db, { spaceId: s.id, title: "A" });
+    h.db.query("UPDATE tasks SET branch = 'atrium/tsk_a' WHERE id = ?").run(t.id);
+    setTaskLoop(h.db, t.id, newLoop(SIZE_BUDGETS.small));
+    // As leaveRepo leaves it: the checkout still on the task's branch, with the agent's leftovers in it.
+    git(repo, "checkout", "-qb", "atrium/tsk_a");
+    writeFileSync(join(repo, "leftover.txt"), "half done\n");
+    setTaskStatus(h.db, t.id, "blocked");
+    const tip = git(repo, "rev-parse", "atrium/tsk_a");
+    proposal(s.id, t.id);
+    const done = await acceptLine(h.db, "mem_one", "Money is integer cents.");
+    expect(done.branch).toBe("atrium/memory-one");
+    expect(git(repo, "rev-parse", "atrium/tsk_a")).toBe(tip);
+    expect(git(repo, "status", "--porcelain")).toBe("?? leftover.txt");
+  });
+
+  test("a task in review whose branch some checkout has open gets a branch of its own too", async () => {
+    const repo = h.repo();
+    const s = h.space(repo);
+    const t = createTask(h.db, { spaceId: s.id, title: "A" });
+    h.db.query("UPDATE tasks SET branch = 'atrium/tsk_a' WHERE id = ?").run(t.id);
+    setTaskLoop(h.db, t.id, newLoop(SIZE_BUDGETS.small));
+    setTaskStatus(h.db, t.id, "review");
+    git(repo, "branch", "atrium/tsk_a");
+    const wt = join(h.repo(), "wt");
+    git(repo, "worktree", "add", "-q", wt, "atrium/tsk_a");
+    proposal(s.id, t.id);
+    expect((await acceptLine(h.db, "mem_one", "Money is integer cents.")).branch).toBe("atrium/memory-one");
+    git(repo, "worktree", "remove", "--force", wt);
+  });
+
   test("with no open task the line goes on a small branch of its own, creating CLAUDE.md", async () => {
     const repo = h.repo();
     const s = h.space(repo);
     proposal(s.id, null);
     const done = await acceptLine(h.db, "mem_one", "Money is integer cents.");
     expect(done.branch).toBe("atrium/memory-one");
-    expect(git(repo, "show", "atrium/memory-one:CLAUDE.md")).toBe("Money is integer cents.");
+    expect(git(repo, "show", "atrium/memory-one:CLAUDE.md")).toBe("## Notes from Atrium\n\n- Money is integer cents.");
     expect(git(repo, "rev-parse", "atrium/memory-one^")).toBe(git(repo, "rev-parse", "main"));
+  });
+
+  test("a note goes under one Notes from Atrium section, after a blank line, continuing its list", () => {
+    expect(withNote("", "One.")).toBe("## Notes from Atrium\n\n- One.\n");
+    expect(withNote("# Rules\nRun bun test.\n", "One.")).toBe("# Rules\nRun bun test.\n\n## Notes from Atrium\n\n- One.\n");
+    const once = withNote("# Rules\n", "One.");
+    expect(withNote(once, "Two.")).toBe("# Rules\n\n## Notes from Atrium\n\n- One.\n- Two.\n");
+    // A section the user moved up keeps its notes, before the next heading.
+    expect(withNote("## Notes from Atrium\n\nA paragraph.\n\n## Later\nText", "Two.")).toBe("## Notes from Atrium\n\nA paragraph.\n\n- Two.\n\n## Later\nText\n");
+    expect(withNote("## Notes from Atrium\n", "One.")).toBe("## Notes from Atrium\n\n- One.\n");
+  });
+
+  test("a line that would restructure CLAUDE.md is refused with what to do instead; a leading bullet is taken off", () => {
+    expect(checkLine("- Money is cents.")).toEqual({ line: "Money is cents." });
+    expect(checkLine("* Money is cents.")).toEqual({ line: "Money is cents." });
+    expect(checkLine("Run `bun test` before finishing; email me@example.com")).toEqual({ line: "Run `bun test` before finishing; email me@example.com" });
+    const refused: [string, string][] = [
+      ["# Rules", "heading"],
+      ["## Rules", "heading"],
+      ["> quoted", "quote"],
+      ["===", "heading"],
+      ["--- rule", "heading"],
+      ["- - nested", "bullet itself"],
+      ["Wrap it in ``` fences", "code fence"],
+      ["Use ~~~ blocks", "code fence"],
+      ["Hide <!-- this", "comment"],
+      ["end -->", "comment"],
+      ["@notes.txt", "import"],
+      ["Read @docs/rules.md first", "import"],
+      ["See @~/secrets", "import"],
+    ];
+    for (const [raw, why] of refused) {
+      const res = checkLine(raw);
+      expect("problem" in res && res.problem).toContain(why);
+      expect(parseProposal(`LINE ${raw}`)).toBeNull();
+    }
   });
 
   test("a CLAUDE.md that's a link is left alone, and an edit that isn't one line is refused", async () => {
