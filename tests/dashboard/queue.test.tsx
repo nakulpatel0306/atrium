@@ -82,8 +82,14 @@ test("j and k move the selection and the decision beside it follows; a and s pre
   expect(title()).toBe("Ranking");
   await press("j");
   expect(title()).toBe("Review tsk_c");
-  // A result with a note gets the quieter "Approve anyway".
+  // A result with a note gets the quieter "Approve anyway", and the key asks twice.
   expect(el.querySelector('[data-act="approve"]')!.textContent).toBe("Approve anyway");
+  const decided = () => calls.filter((c) => c.url.startsWith("/api/approvals/")).length;
+  await press("a");
+  expect(decided()).toBe(0);
+  expect(el.querySelector(".q-armed")!.textContent).toContain("Press a again");
+  await press("a");
+  expect(calls.at(-1)).toEqual({ url: "/api/approvals/apr_c", body: { decision: "approve" } });
   await press("j");
   expect(title()).toBe("Review tsk_b");
   await press("a");

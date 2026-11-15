@@ -122,11 +122,17 @@ export function loopLine(loop: Loop): Review {
   else if (last) {
     const who = agentName(last.reviewer);
     const asked = loop.reviews.flatMap((r) => (r.verdict === "changes" ? r.findings : []));
-    const fixed = asked.filter((f) => f.resolution?.action === "fixed").length;
-    if (asked.length) parts.push(`${who} found ${asked.length} to fix, ${fixed} fixed`);
+    // How each finding ended, so "asked for changes" and a result waiting for you don't read as a contradiction.
+    const count = (action: "fixed" | "declined") => asked.filter((f) => f.resolution?.action === action).length;
+    const open = asked.filter((f) => !f.resolution).length;
+    const ended = [count("fixed") && `${count("fixed")} fixed`, count("declined") && `${count("declined")} declined`, open && `${open} open`].filter(Boolean).join(", ");
+    if (asked.length) parts.push(`${who}: ${asked.length} finding${asked.length === 1 ? "" : "s"}${ended ? `, ${ended}` : ""}`);
     else parts.push(last.verdict === "approve" ? `reviewed by ${who}` : `${who} gave no verdict`);
   }
-  const tone = loop.attention.length || loop.checks === "failed" ? "bad" : loop.checks === "passed" && !loop.noChanges ? "ok" : "waiting";
+  // Red only for failing checks; anything else that wants a look (a note, an unproven result, a finding not fixed) is
+  // amber, and green means there's nothing left to read first.
+  const unsettled = loop.attention.length > 0 || loop.reviews.some((r) => r.skipped || r.findings.some((f) => f.resolution?.action !== "fixed"));
+  const tone = loop.checks === "failed" ? "bad" : loop.checks === "passed" && !loop.noChanges && !unsettled ? "ok" : "waiting";
   return { text: parts.join(" · "), tone };
 }
 

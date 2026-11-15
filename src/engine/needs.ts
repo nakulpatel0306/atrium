@@ -70,13 +70,14 @@ export function attentionQueue(s: QueueInput): QueueItem[] {
 
 export const needsYouCount = (s: QueueInput): number => attentionQueue(s).filter((i) => !i.low).length;
 
-// Whether a result may be approved together with others in one go: only a finished result whose checks passed, with
-// no attention note, nothing unverified, every review finding fixed and no review that failed to happen. Anything
+// Whether a result may be approved together with others in one go: only a finished result that changed something,
+// whose checks passed, with no attention note, nothing unverified, every review finding fixed and no review that
+// failed to happen. Anything
 // else waits to be read on its own; the engine checks this again before it approves.
 export function batchApprovable(a: { kind: string; alwaysAsk: string | null }, t: { outcome: string | null; loop: LoopState | null } | undefined): boolean {
   const loop = t?.loop;
   if (a.kind !== "review" || a.alwaysAsk || t?.outcome !== "done" || !loop) return false;
-  if (loop.checks !== "passed" || loop.attention.length > 0 || loop.unverified || loop.alreadyFailing.length > 0) return false;
+  if (loop.noChanges || loop.checks !== "passed" || loop.attention.length > 0 || loop.unverified || loop.alreadyFailing.length > 0) return false;
   return loop.reviews.every((r) => !r.skipped && r.findings.every((f) => f.resolution?.action === "fixed"));
 }
 

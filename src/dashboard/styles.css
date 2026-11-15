@@ -3119,11 +3119,16 @@ code {
   color: var(--faint);
 }
 /* a task in review, decided from its detail */
+/* Stays in view under the top bar while the diff below it is read, so deciding never means scrolling back. */
 .review-acts {
   margin: 10px 0;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--bg);
+  position: sticky;
+  top: 52px;
+  z-index: 3;
+  box-shadow: var(--shadow-1);
 }
 .review-acts .acts {
   display: flex;
@@ -4040,9 +4045,12 @@ kbd {
 .space-needs .item .who {
   display: none;
 }
-/* A task row's title keeps its room; status, checks and cost tags give way first. */
+/* A task row's title keeps some room, and nothing in the row's summary spills under the actions beside it. */
+.task-open {
+  overflow: hidden;
+}
 .task-open .t {
-  min-width: 140px;
+  min-width: 80px;
 }
 .item.task .tag {
   flex: none;
@@ -4087,4 +4095,32 @@ kbd {
     flex: 1 1 100%;
     white-space: normal;
   }
+}
+
+/* A brief's own headings sit under the item's title, never above it in size. */
+.brief-view h1,
+.brief-view h2,
+.brief-view h3 {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--dim);
+  margin: 10px 0 4px;
+}
+.q-armed {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, var(--line));
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--yellow) 10%, var(--panel));
+  color: var(--text);
+}
+.dp-keys {
+  margin-top: -4px;
+  font-size: var(--fs-sm);
+  color: var(--faint);
+  text-align: right;
+}
+.page-head .low-count {
+  font-size: var(--fs-sm);
+  color: var(--faint);
 }

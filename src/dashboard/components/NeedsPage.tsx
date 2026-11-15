@@ -115,6 +115,9 @@ function ApprovalDecision({ approval, task, space, state }: { approval: Approval
         )}
         <DecideButtons d={d} outcome={outcome} risky={isRisky(state, approval)} />
       </div>
+      <p className="dp-keys" aria-hidden="true">
+        <kbd>a</kbd> approve · <kbd>s</kbd> send back · <kbd>?</kbd> all keys
+      </p>
       <SendBackNote d={d} />
       {d.error && <p className="err">{d.error}</p>}
       {outcome && <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />}
@@ -267,10 +270,13 @@ function KeysSheet({ onClose }: { onClose: () => void }) {
 export function NeedsPage({ state, item = null }: { state: State; item?: string | null }) {
   const items = queueOf(state);
   const count = items.filter((i) => !i.low).length;
+  const low = items.length - count;
   const [selected, setSelected] = useState<string | null>(item);
   const [opened, setOpened] = useState(item !== null);
   const [help, setHelp] = useState(false);
   const [batch, setBatch] = useState(false);
+  // The item whose risky Approve the a key has been pressed once for; a second a approves it.
+  const [armed, setArmed] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   // Where the selection was, so when the item there is answered and leaves, the next one takes its place.
   const at = useRef(0);
@@ -281,15 +287,18 @@ export function NeedsPage({ state, item = null }: { state: State; item?: string 
   useEffect(() => {
     if (item) setSelected(item);
   }, [item]);
+  useEffect(() => {
+    setArmed(null);
+  }, [current?.key]);
 
   // Live values for the key handler, which is attached once.
-  const live = useRef({ items, current, opened });
-  live.current = { items, current, opened };
+  const live = useRef({ items, current, opened, armed });
+  live.current = { items, current, opened, armed };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = needsKey(e);
       if (!key) return;
-      const { items, current, opened } = live.current;
+      const { items, current, opened, armed } = live.current;
       const i = current ? items.indexOf(current) : -1;
       if (key === "help") return setHelp((h) => !h);
       if (key === "close") {
@@ -317,6 +326,12 @@ export function NeedsPage({ state, item = null }: { state: State; item?: string 
       if (!button || button.disabled) return;
       // Keeps the letter out of the note field that s is about to focus.
       e.preventDefault();
+      // A result with notes or open findings takes a second a: one key shouldn't approve what asks to be read.
+      if (key === "approve" && button.dataset.risky && armed !== current?.key) {
+        setArmed(current?.key ?? null);
+        return announce("Press a again to approve anyway.");
+      }
+      setArmed(null);
       button.click();
     };
     window.addEventListener("keydown", onKey);
@@ -327,6 +342,7 @@ export function NeedsPage({ state, item = null }: { state: State; item?: string 
     <div className="wrap queue-page">
       <div className="page-head">
         <h1>Needs you{count > 0 && ` · ${count}`}</h1>
+        {low > 0 && <span className="low-count">and {low} that nothing waits on</span>}
         <BatchApprove state={state} items={items} open={batch} setOpen={setBatch} />
         <button className="btn link subtle keys-btn" aria-expanded={help} onClick={() => setHelp(!help)}>
           <Keyboard />
@@ -352,6 +368,11 @@ export function NeedsPage({ state, item = null }: { state: State; item?: string 
             }}
           />
           <div className="q-panel" ref={panel}>
+            {armed === current?.key && (
+              <p className="q-armed" role="status">
+                It has notes or findings that weren't fixed. Press <kbd>a</kbd> again to approve anyway.
+              </p>
+            )}
             <button className="btn link q-back" onClick={() => setOpened(false)}>
               <ChevronLeft />
               All items

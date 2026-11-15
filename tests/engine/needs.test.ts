@@ -113,6 +113,7 @@ describe("batchApprovable", () => {
   test("never takes anything with notes, unverified or failed checks, open findings or a review that didn't happen", () => {
     const cases: LoopState[] = [
       { ...clean, attention: ["The change edits check config: bunfig.toml."] },
+      { ...clean, noChanges: true },
       { ...clean, checks: "none" },
       { ...clean, checks: "failed" },
       { ...clean, unverified: "the install didn't happen" },

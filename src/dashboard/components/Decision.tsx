@@ -81,6 +81,7 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
       <button
         className={`btn${risky ? "" : " p"}`}
         data-act="approve"
+        data-risky={risky || undefined}
         disabled={d.busy}
         title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
         onClick={() => void d.decide("approve")}
