@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { getApproval, listPending, reopenDecision, resolveApproval } from "../../../src/engine/approvals";
+import { getApproval, listPending, onApprovalResolved, reopenDecision, resolveApproval } from "../../../src/engine/approvals";
 import { bootRepos } from "../../../src/engine/boot";
 import { openDb } from "../../../src/engine/db";
 import { askToRemove } from "../../../src/engine/repos/cleanup";
@@ -91,4 +91,22 @@ test("a removal whose hold ran out while the engine was down removes the copy on
   expect(action.error).toBeNull();
   expect(existsSync(clone.path)).toBe(false);
   expect(listClones(db)[0]!.status).toBe("removed");
+});
+
+test("a yes to a new repo waits out its hold before anything reaches GitHub", async () => {
+  const repos = createRepos({ db, kick: () => {}, holdMs: 200 });
+  const off = onApprovalResolved(repos.onDecision);
+  try {
+    const { action, approval } = draftProject(db, draft);
+    resolveApproval(db, approval.id, "approve");
+    await Bun.sleep(50);
+    expect(getRepoAction(db, action.id)!.status).toBe("draft");
+    expect(gh.argv()).toEqual([]);
+    await Bun.sleep(300);
+    await repos.settle();
+    expect(getRepoAction(db, action.id)!.status).toBe("done");
+    expect(existsSync(join(gh.remotes, "fakeuser", "demo.git"))).toBe(true);
+  } finally {
+    off();
+  }
 });

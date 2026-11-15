@@ -30,15 +30,15 @@ afterEach(() => {
 const post = (path: string, body?: unknown) => fetch(base + path, { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
 const clean: Partial<LoopState> = { stage: "ready", checks: "passed", reviews: [{ reviewer: "claude", verdict: "approve", findings: [], skipped: null }] };
-function result(title: string, loop: Partial<LoopState>) {
-  const s = createSpace(db, { name: "Kite", kind: "repo", goal: "g", repoPath: repo.path });
+function result(title: string, loop: Partial<LoopState>, fingerprint?: string, space?: string) {
+  const s = space ? { id: space } : createSpace(db, { name: "Kite", kind: "repo", goal: "g", repoPath: repo.path });
   const t = createTask(db, { spaceId: s.id, title });
   const sha = branchAt(repo.path, `atrium/${t.id}`);
   setTaskStatus(db, t.id, "running", { branch: `atrium/${t.id}` });
   setTaskStatus(db, t.id, "review");
   setTaskOutcome(db, t.id, "done", null);
   setTaskLoop(db, t.id, { ...newLoop(SIZE_BUDGETS.small), checkedSha: sha, reviewedSha: sha, ...loop });
-  return { t, sha, a: createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title, detail: "" }) };
+  return { t, sha, a: createApproval(db, { spaceId: s.id, taskId: t.id, kind: "review", title, detail: "", ...(fingerprint ? { fingerprint } : {}) }) };
 }
 
 test("batch approval takes only clean results, whatever the page asked for", async () => {
@@ -81,4 +81,14 @@ test("a just-given approval can be taken back from the toast", async () => {
   const again = await post(`/api/approvals/${a.id}/reopen`);
   expect(again.status).toBe(409);
   expect(((await again.json()) as { error: string }).error).toContain("already");
+});
+
+test("approving clean results in one batch teaches rules as approving them one by one does", async () => {
+  const FP = "v1:code:docs:small:claude";
+  const space = createSpace(db, { name: "Docs", kind: "repo", goal: "g", repoPath: repo.path });
+  const five = Array.from({ length: 5 }, (_, i) => result(`Docs ${i}`, clean, FP, space.id));
+  const res = await post("/api/approvals/batch", { items: five.map((r) => ({ id: r.a.id, sha: r.sha })) });
+  expect(((await res.json()) as { approved: string[] }).approved).toHaveLength(5);
+  const state = (await (await fetch(`${base}/api/state`)).json()) as { proposals: { spaceId: string; fingerprint: string }[] };
+  expect(state.proposals).toEqual([expect.objectContaining({ spaceId: space.id, fingerprint: FP })]);
 });
