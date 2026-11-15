@@ -156,12 +156,22 @@ test("on a narrow window, a key never presses a decision the list is hiding", as
 test("a risky result leads with why it needs a look, and its keys say a second a approves anyway", () => {
   const el = render(<NeedsPage state={queueState()} item="apr_c" />);
   const points = el.querySelector(".open-points")!;
-  expect(points.textContent).toContain("Why it needs a look");
+  expect(points.textContent).toContain("Needs a look: why");
   expect(points.textContent).toContain("The change edits check config: bunfig.toml.");
   // Before the walkthrough and the diff, right under the decision.
   expect(el.querySelector(".dp-acts")!.nextElementSibling).toBe(points);
   expect(el.querySelector(".decision-keys")!.textContent).toContain("a twice: approve anyway");
   expect(el.querySelector(".q-kind.risky")).not.toBeNull();
+});
+
+test("a risky result takes two clicks too: the first arms Approve, the second approves", async () => {
+  const el = render(<NeedsPage state={queueState()} item="apr_c" />);
+  const button = () => el.querySelector<HTMLButtonElement>('.dp-acts [data-act="approve"]')!;
+  await act(async () => button().click());
+  expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
+  expect(button().textContent).toBe("Click again to approve");
+  await act(async () => button().click());
+  expect(calls.find((c) => c.url === "/api/approvals/apr_c")!.body).toMatchObject({ decision: "approve" });
 });
 
 test("a result on a branch shows its diff right in the queue", async () => {

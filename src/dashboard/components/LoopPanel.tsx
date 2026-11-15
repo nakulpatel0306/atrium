@@ -1,4 +1,4 @@
-import { KIND } from "../../engine/words";
+import { KIND, RISKY } from "../../engine/words";
 import { Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
@@ -27,7 +27,7 @@ export function StageStrip({ task }: { task: Task }) {
     <ol className="stages" aria-label="Where this task is">
       {STRIP.map((s, i) => {
         const here = i === at;
-        const label = here && now === "paused" ? "Paused" : here && notes ? "Ready, with notes" : STAGE_TEXT[s];
+        const label = here && now === "paused" ? "Paused" : here && notes ? RISKY : STAGE_TEXT[s];
         return (
           <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
             {label}

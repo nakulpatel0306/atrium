@@ -75,7 +75,7 @@ test("reviewLine says what the checks and the reviewer made of the work", () => 
   const flagged = task({ loop: loop({ checks: "passed", attention: ["This change edits how checks run: package.json."] }) });
   expect(reviewLine(approval, state({ tasks: [flagged], spaces: [repo] }))?.tone).toBe("waiting");
   expect(reviewLine(approval, state({ tasks: [task({ loop: loop({ checks: "failed" }) })], spaces: [repo] }))?.tone).toBe("bad");
-  expect(attentionText(flagged.loop)).toBe("Look closely: This change edits how checks run: package.json.");
+  expect(attentionText(flagged.loop)).toBe("Needs a look: This change edits how checks run: package.json.");
 
   // Work outside the loop has no line.
   expect(reviewLine(approval, state({ tasks: [task()], spaces: [repo] }))).toBeNull();

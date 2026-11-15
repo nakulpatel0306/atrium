@@ -1,14 +1,19 @@
 import { SearchCheck, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { announce } from "../live";
 import { post, type State } from "../api";
 import { showToast } from "../toast";
 import { isRisky, shownSha } from "../queue";
 import { HELD_ASKS } from "../../engine/needs";
-import { attentionText, reviewChips } from "../summary";
+import { answeredText, attentionText, reviewChips } from "../summary";
+import { RISKY } from "../../engine/words";
 import { approveLabel } from "./OutcomeBanner";
 
 type Approval = State["approvals"][number];
-type Outcome = State["tasks"][number]["outcome"];
+const ARM_MS = 4000;
+
+type Task = State["tasks"][number];
+type Outcome = Task["outcome"];
 export type Decision = ReturnType<typeof useDecision>;
 
 // Approve or send back one approval. Needs you, the space's waiting list and a task's detail all decide through
@@ -97,7 +102,23 @@ export function approveText(state: State, approval: Approval): string {
   return approveWord(task?.outcome ?? null, isRisky(state, approval));
 }
 
-export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outcome: Outcome; risky?: boolean }) {
+// A risky Approve takes two presses with the mouse as with the keys: the first arms it (or the queue's first a did,
+// `armed`), the second approves. It disarms by itself after a few seconds.
+export function DecideButtons({ d, outcome, risky = false, armed = false }: { d: Decision; outcome: Outcome; risky?: boolean; armed?: boolean }) {
+  const [clicked, setClicked] = useState(false);
+  useEffect(() => {
+    if (!clicked) return;
+    const t = setTimeout(() => setClicked(false), ARM_MS);
+    return () => clearTimeout(t);
+  }, [clicked]);
+  const approve = () => {
+    if (risky && !armed && !clicked) {
+      setClicked(true);
+      return announce("Click again to approve anyway.");
+    }
+    setClicked(false);
+    void d.decide("approve");
+  };
   return (
     <>
       <button className="btn" data-act="send-back" disabled={d.busy} onClick={() => d.setSendingBack(!d.sendingBack)}>
@@ -109,9 +130,9 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
         data-risky={risky || undefined}
         disabled={d.busy}
         title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
-        onClick={() => void d.decide("approve")}
+        onClick={approve}
       >
-        {approveWord(outcome, risky)}
+        {clicked ? "Click again to approve" : approveWord(outcome, risky)}
       </button>
     </>
   );
@@ -119,14 +140,14 @@ export function DecideButtons({ d, outcome, risky = false }: { d: Decision; outc
 
 // What the checks said and what the reviewer said, as two chips that never cut each other off: each keeps its whole
 // text and wraps to a line of its own when the row is narrow.
-// `attention` adds a third: "Look closely", with what to look at on hover.
+// `attention` adds a third, the risky word (engine/words.ts), with what to look at on hover.
 export function Chips({ chips, attention = null }: { chips: NonNullable<ReturnType<typeof reviewChips>>; attention?: string | null }) {
   return (
     <span className="chips">
       {attention && (
         <span className="chip waiting" title={attention} aria-label={attention}>
           <TriangleAlert />
-          Look closely
+          {RISKY}
         </span>
       )}
       <span className={`chip${chips.checks.tone ? ` ${chips.checks.tone}` : ""}`}>{chips.checks.text}</span>
@@ -137,6 +158,39 @@ export function Chips({ chips, attention = null }: { chips: NonNullable<ReturnTy
         </span>
       )}
     </span>
+  );
+}
+
+// A risky result's reasons, in one place above the walkthrough and the diff: the attention note and every finding the
+// writer didn't fix, with what it said.
+export function OpenPoints({ task }: { task: Task }) {
+  const loop = task.loop;
+  if (!loop) return null;
+  const attention = loop.attention;
+  const open = loop.reviews.flatMap((r) => r.findings.filter((f) => f.resolution?.action !== "fixed").map((f) => ({ f, asked: r.verdict === "changes" })));
+  const notes = [loop.unverified, ...loop.alreadyFailing.map((c) => `${c.name} was already failing before the change.`)].filter((x): x is string => !!x);
+  if (!attention.length && !open.length && !notes.length) return null;
+  return (
+    <section className="open-points" aria-label={`${RISKY}: why`}>
+      <h4>
+        <TriangleAlert />
+        {RISKY}: why
+      </h4>
+      <ul>
+        {attention.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+        {notes.map((n) => (
+          <li key={n}>{n}</li>
+        ))}
+        {open.map(({ f, asked }, i) => (
+          <li key={i} className={`finding ${f.severity}`}>
+            <span className={`tag sev-${f.severity}`}>{f.severity}</span> {f.file && <code>{f.file}{f.line ? `:${f.line}` : ""}</code>} {f.reason}
+            <span className="reply">{answeredText(f, asked)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -160,7 +214,7 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
               Open
             </button>
           )}
-          <DecideButtons d={d} outcome={outcome} risky={risky} />
+          <DecideButtons d={d} outcome={outcome} risky={risky} armed={armed} />
         </span>
       </div>
       {keys && (

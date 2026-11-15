@@ -37,6 +37,10 @@ export const KIND: Record<QueueKind, { label: string; action: string; means: str
   shape: { label: "Could split", action: "Split instead", means: "A running task that could run as parts. Low priority." },
 };
 
+// A result waiting on you that isn't clean (needs.ts): one name wherever it shows, on its chip, its row, its step and
+// the reasons above its diff.
+export const RISKY = "Needs a look";
+
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.
 export const taskLabel = (w: TaskWord): string => TASK_WORD[w][0]!.toUpperCase() + TASK_WORD[w].slice(1);
 

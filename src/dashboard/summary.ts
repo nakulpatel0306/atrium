@@ -1,7 +1,7 @@
 // The one-line summaries both front-ends show, so the dashboard and the terminal app say the same thing.
 import type { Stage } from "../engine/loop";
 import { cleanResult, needsYouCount, pausedForYou, reviewSettled } from "../engine/needs";
-import { TASK_WORD, taskWord } from "../engine/words";
+import { RISKY, TASK_WORD, taskWord } from "../engine/words";
 import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
@@ -186,7 +186,8 @@ export const STAGE_TEXT: Record<Stage, string> = {
   brief: "Brief",
   writing: "Writing",
   checks: "Checks",
-  review: "Review",
+  // The reviewer's pass, not your decision (which the queue calls a Review).
+  review: "Reviewer",
   ready: "Ready",
   paused: "Paused",
   parts: "Parts",
@@ -195,7 +196,7 @@ export const STAGE_TEXT: Record<Stage, string> = {
 };
 
 // Things the change does to the checks themselves, which every card shows before anything else.
-export const attentionText = (loop: Loop | null | undefined): string | null => (loop?.attention.length ? `Look closely: ${loop.attention.join(" ")}` : null);
+export const attentionText = (loop: Loop | null | undefined): string | null => (loop?.attention.length ? `${RISKY}: ${loop.attention.join(" ")}` : null);
 
 // What the router lets each agent do, so a reader knows why work went where it did.
 export const AGENT_ROLES: Record<string, string> = {

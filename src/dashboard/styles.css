@@ -2396,10 +2396,8 @@ code {
 
 /* Task detail: what was asked, and what the task made. */
 .detail h4 {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--dim);
   margin: 12px 0 6px;
 }
@@ -3169,8 +3167,9 @@ code {
   border-radius: var(--r-md);
   background: var(--bg);
   position: sticky;
-  top: 52px;
-  z-index: 3;
+  /* Pins to the top of the page's own scroll area, which already starts under the top bar. */
+  top: 0;
+  z-index: 1;
   box-shadow: var(--shadow-1);
 }
 .review-acts .acts {
@@ -4594,7 +4593,7 @@ kbd {
   color: var(--yellow);
 }
 
-/* "Why it needs a look": severity as a tag, the place in code, the finding, then the writer's reply on its own line. */
+/* The reasons panel: severity as a tag, the place in code, the finding, then the writer's reply on its own line. */
 .open-points .tag.sev-high,
 .open-points .tag.sev-medium {
   color: var(--yellow);
@@ -4604,4 +4603,8 @@ kbd {
   display: block;
   color: var(--dim);
   font-size: var(--fs-sm);
+}
+
+.reason.wait-text {
+  color: var(--yellow);
 }

@@ -60,7 +60,7 @@ test("approval detail shows what the checks and the reviewer said, and anything 
   };
   const all = text(approvalDetail(deriveView(state, { ...initialUi })));
   expect(all).toContain("Checks passed · Approved by Codex");
-  expect(all).toContain("Look closely: This change edits how checks run: package.json.");
+  expect(all).toContain("Needs a look: This change edits how checks run: package.json.");
   expect(all).toContain("Changed 2 files.");
 });
 

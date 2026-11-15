@@ -1,4 +1,4 @@
-import { CheckCheck, ChevronLeft, Keyboard, PartyPopper, TriangleAlert } from "lucide-react";
+import { CheckCheck, ChevronLeft, Keyboard, PartyPopper } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { post, type State } from "../api";
 import { absolute } from "../format";
@@ -7,10 +7,9 @@ import { announce } from "../live";
 import { showToast } from "../toast";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
-import { answeredText } from "../summary";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
-import { DecisionBar, reopen } from "./Decision";
+import { DecisionBar, OpenPoints, reopen } from "./Decision";
 import { ChangesView } from "./ChangesView";
 import { agentText } from "../agents";
 import { LoopPanel } from "./LoopPanel";
@@ -110,39 +109,6 @@ export function QueueList({ items, state, selected, onSelect }: { items: QueueIt
 function riskyItem(state: State, item: QueueItem): boolean {
   const a = item.kind === "review" ? state.approvals.find((x) => x.id === item.key) : undefined;
   return !!a && isRisky(state, a);
-}
-
-// A risky result's reasons, in one place above the walkthrough and the diff: the attention note and every finding the
-// writer didn't fix, with what it said.
-function OpenPoints({ task }: { task: Task }) {
-  const loop = task.loop;
-  if (!loop) return null;
-  const attention = loop.attention;
-  const open = loop.reviews.flatMap((r) => r.findings.filter((f) => f.resolution?.action !== "fixed").map((f) => ({ f, asked: r.verdict === "changes" })));
-  const notes = [loop.unverified, ...loop.alreadyFailing.map((c) => `${c.name} was already failing before the change.`)].filter((x): x is string => !!x);
-  if (!attention.length && !open.length && !notes.length) return null;
-  return (
-    <section className="open-points" aria-label="Why it needs a look">
-      <h4>
-        <TriangleAlert />
-        Why it needs a look
-      </h4>
-      <ul>
-        {attention.map((a) => (
-          <li key={a}>{a}</li>
-        ))}
-        {notes.map((n) => (
-          <li key={n}>{n}</li>
-        ))}
-        {open.map(({ f, asked }, i) => (
-          <li key={i} className={`finding ${f.severity}`}>
-            <span className={`tag sev-${f.severity}`}>{f.severity}</span> {f.file && <code>{f.file}{f.line ? `:${f.line}` : ""}</code>} {f.reason}
-            <span className="reply">{answeredText(f, asked)}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
 
 // A result or question decided right here, with everything it rests on in view, the diff included: a decision never

@@ -1,5 +1,5 @@
 import { attentionQueue } from "../../engine/needs";
-import { KIND as QUEUE_KIND, taskLabel, taskWord } from "../../engine/words";
+import { KIND as QUEUE_KIND, RISKY, taskLabel, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
@@ -19,7 +19,7 @@ import { spendText } from "../../engine/cost";
 import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
-import { DecisionBar } from "./Decision";
+import { DecisionBar, OpenPoints } from "./Decision";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -373,14 +373,17 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
       {/* The summary is the row's one button; its actions sit beside it, so no control is nested in another. */}
       <div className={`item task${task.status === "done" ? " done" : ""}`}>
         <button className="task-open" aria-expanded={open} onClick={onToggle}>
-          <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} />
+          {/* The tag beside it says the state in words; the icon is only for the eye. */}
+          <span aria-hidden="true">
+            <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} />
+          </span>
           <KindBadge kind={task.kind} />
           <span className="t" title={shownTitle(task)}>
             {shownTitle(task)}
           </span>
-          {wait ? (
-            // Still queued: what holds it back is in the tooltip.
-            <span className={`tag ${needsAction(wait) ? "bad" : "wait"}`} title={wait.reason}>
+          {wait && !asks ? (
+            // Still queued: what holds it back is in the tooltip. Only a wait that needs you (a sign-in) is coloured.
+            <span className={`tag${needsAction(wait) ? " bad" : ""}`} title={wait.reason}>
               {taskLabel("queued")}
             </span>
           ) : (
@@ -404,7 +407,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
         {/* A result waiting on you that isn't clean says so on its row, as everywhere else (needs.ts, one rule). */}
         {risky && (
           <span className="tag wait" title={review ? (reviewLine(review, state)?.text ?? undefined) : undefined}>
-            Needs a look
+            {RISKY}
           </span>
         )}
         {/* Open on a decision, the checks have their chip right below; the row doesn't say it twice. */}
@@ -422,13 +425,16 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
       </div>
       {open && (
         <div className="detail">
-          {task.status === "blocked" && task.blockedReason && <p className="err reason">{task.blockedReason}</p>}
+          {/* A pause waits for a hint and reads amber; a stopped task waits for a retry and reads red. */}
+          {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{task.blockedReason}</p>}
           {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
           {review && (
             <div className="review-acts">
               <DecisionBar approval={review} state={state} />
             </div>
           )}
+          {/* The same reasons, in the same place, as on its screen in Needs you. */}
+          {risky && <OpenPoints task={task} />}
           <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
