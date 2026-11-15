@@ -16,9 +16,12 @@ import { initialUi } from "../../src/tui/ui";
 import { ids, makeState, proposal, task } from "../tui/fixtures";
 
 let root: Root | null = null;
+let posted: string[] = [];
 const realFetch = globalThis.fetch;
 beforeEach(() => {
-  globalThis.fetch = (async (url: string) => {
+  posted = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") posted.push(url);
     if (url.endsWith("/checks")) return Response.json([]);
     if (url.includes("/diff")) return Response.json({ files: [], totals: { files: 0, additions: 0, deletions: 0 }, truncated: false });
     if (url.includes("/outputs")) return Response.json({ files: [], summary: null });
@@ -44,7 +47,8 @@ function render(node: React.ReactNode): HTMLElement {
   return el;
 }
 
-// One of every kind that waits on you: a review, a sign-off, a question, a pause, a suggestion and a CLAUDE.md line.
+// One of every kind in the queue: a review, a sign-off, a question, a pause, a suggestion, a CLAUDE.md line and a yes
+// held before it starts.
 function everyKind(): State {
   const s = makeState();
   const now = Date.now();
@@ -52,6 +56,7 @@ function everyKind(): State {
   return {
     ...s,
     approvals: [...s.approvals, signOff],
+    held: [{ id: "apr_held", spaceId: null, title: "Remove the local copy of fakeuser/demo?", approvedAt: now - 10_000, startsAt: now + 50_000 }],
     proposals: [proposal()],
     tasks: [
       ...s.tasks,
@@ -65,7 +70,7 @@ function everyKind(): State {
 const kindsOf = (items: QueueItem[]) => new Set(items.map((i) => i.kind));
 
 test("the fixture covers each kind the surfaces decide on", () => {
-  expect([...kindsOf(attentionQueue(everyKind()))].sort()).toEqual(["approval", "memory", "paused", "question", "review", "suggestion"]);
+  expect([...kindsOf(attentionQueue(everyKind()))].sort()).toEqual(["approval", "memory", "paused", "question", "review", "starting", "suggestion"]);
 });
 
 test("the queue's labels and the task words come from the shared map", () => {
@@ -124,4 +129,14 @@ test("the palette names a task's state in the shared words, never the raw status
   const hint = (id: string) => paletteActions(s, { spaceId: null, theme: "system" }).find((a) => a.id === `task-${id}`)!.hint;
   expect(hint("tsk_paused")).toBe("atrium · Paused");
   expect(hint(ids.blocked)).toBe("job hunt · Stopped");
+});
+
+test("a held yes is in the list as starting, and its Undo takes it back", async () => {
+  const s = everyKind();
+  const item = attentionQueue(s).find((i) => i.kind === "starting")!;
+  expect(item.low).toBe(true);
+  const el = render(<DecisionPanel item={item} state={s} />);
+  expect(el.textContent).toContain("unless you take it back");
+  await act(async () => [...el.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Undo")!.click());
+  expect(posted).toContain("/api/approvals/apr_held/reopen");
 });

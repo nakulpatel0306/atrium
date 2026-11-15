@@ -4,6 +4,7 @@ import { askLine, attentionQueue, batchApprovable, cleanResult, type QueueItem, 
 import type { State } from "../engine/state";
 import { KIND } from "../engine/words";
 import { reviewChips, summaryLine } from "./summary";
+import { clock } from "./format";
 
 export type { QueueItem, QueueKind };
 export { attentionQueue };
@@ -18,6 +19,7 @@ export function itemTitle(state: State, i: QueueItem): string {
   if (i.kind === "review" || i.kind === "approval") return approvalOf(state, i)?.title ?? "";
   if (i.kind === "suggestion") return `Stop asking about ${state.proposals.find((p) => p.id === i.key)?.label ?? "this"}?`;
   if (i.kind === "memory") return "Add a line to CLAUDE.md?";
+  if (i.kind === "starting") return state.held.find((h) => h.id === i.key)?.title ?? "";
   return taskOf(state, i)?.title ?? "";
 }
 
@@ -36,6 +38,10 @@ export function itemLine(state: State, i: QueueItem): string {
     return p ? `You approved the last ${p.evidence.length} without changes.` : "";
   }
   if (i.kind === "memory") return state.learning.memory.find((m) => m.id === i.key)?.line ?? "";
+  if (i.kind === "starting") {
+    const h = state.held.find((x) => x.id === i.key);
+    return h ? `You said yes. It starts at ${clock(h.startsAt)} unless you take it back.` : "";
+  }
   const t = taskOf(state, i);
   if (!t) return "";
   if (i.kind === "shape") return t.loop?.shape?.reason ?? "";

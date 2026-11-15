@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { type Approval, listPending } from "./approvals";
+import { type Approval, type Held, listHeld, listPending } from "./approvals";
 import type { Registry, TaskWait } from "./agents/registry";
 import { listNeverProposals, listPendingProposals, type Proposal } from "./autonomy/proposals";
 import { listRules, type Rule } from "./autonomy/rules";
@@ -50,6 +50,7 @@ export type State = {
   attachments: Attachment[];
   runs: RunSummary[];
   approvals: Approval[];
+  held: Held[];
   // Pending "stop asking about this?" suggestions; every rule, newest first; kinds Nakul said never to suggest.
   proposals: Proposal[];
   rules: Rule[];
@@ -203,6 +204,7 @@ export function snapshot(db: Database, registry?: Registry): State {
       )
       .all() as RunSummary[],
     approvals: listPending(db),
+    held: listHeld(db),
     proposals: listPendingProposals(db),
     rules: listRules(db, now),
     neverAsk: listNeverProposals(db),

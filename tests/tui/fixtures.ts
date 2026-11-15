@@ -102,6 +102,7 @@ export function makeState(over: Partial<State> = {}): State {
     approvals: [
       { id: ids.approval, spaceId: ids.atrium, taskId: ids.review, kind: "review", title: "Review: Fix login redirect", detail: "Changed 2 files.", status: "pending", note: null, branchHead: null, fingerprint: null, decidedBy: "you", ruleId: null, undoneAt: null, alwaysAsk: null, createdAt: now - 3 * min, resolvedAt: null },
     ],
+    held: [],
     proposals: [],
     rules: [],
     neverAsk: [],

@@ -30,7 +30,7 @@ export const suggestsShape = (t: TaskLike): boolean => {
 // split's parts or best-of-N's attempts to decide on; stuck: a split with a part that stopped; paused: a budget or
 // loop pause; suggestion: "stop asking about this?"; memory: a proposed CLAUDE.md line; shape: a suggested split
 // or best-of-N on a running task.
-export type QueueKind = "review" | "approval" | "question" | "pick" | "stuck" | "paused" | "suggestion" | "memory" | "shape";
+export type QueueKind = "review" | "approval" | "question" | "pick" | "stuck" | "paused" | "suggestion" | "memory" | "shape" | "starting";
 
 // `key` is the id that answers it (the approval, proposal or memory line, else the task). `since` is when it started
 // waiting. A `low` item is listed after everything else and never counted: nothing is held up on it.
@@ -41,6 +41,8 @@ export type QueueInput = {
   approvals: readonly (InSpace & { id: string; taskId: string | null; kind: string; alwaysAsk: string | null; createdAt: number })[];
   proposals: readonly (InSpace & { id: string; createdAt: number })[];
   tasks: readonly (TaskLike & { outcome: string | null; updatedAt: number })[];
+  // Yeses held for a minute before they start (a new repo, a removal); missing from an engine before held starts.
+  held?: readonly { id: string; spaceId: string | null; approvedAt: number }[];
   // Open CLAUDE.md proposals, as the state carries them; missing from an engine that predates the queue.
   learning?: { memory: readonly { id: string; spaceId: string; taskId: string | null; createdAt: number }[] };
 };
@@ -62,6 +64,8 @@ export function attentionQueue(s: QueueInput): QueueItem[] {
       : pausedForYou(t) ? "paused" : suggestsShape(t) ? "shape" : null;
     if (kind) items.push({ key: t.id, kind, spaceId: t.spaceId, taskId: t.id, since: blockedSince(t, kind, s.tasks), low: kind === "shape" });
   }
+  // Nothing waits on these: they start by themselves unless taken back, so they're listed low, never counted.
+  for (const h of s.held ?? []) if (active(h.spaceId)) items.push({ key: h.id, kind: "starting", spaceId: h.spaceId, taskId: null, since: h.approvedAt, low: true });
   for (const m of s.learning?.memory ?? []) if (order.has(m.spaceId)) items.push({ key: m.id, kind: "memory", spaceId: m.spaceId, taskId: m.taskId, since: m.createdAt, low: true });
   const rank = (i: QueueItem) => (i.spaceId === null ? -1 : order.get(i.spaceId)!);
   // Stable, so items of one space that started waiting in the same millisecond keep the order they were listed in.

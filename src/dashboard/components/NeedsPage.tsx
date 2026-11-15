@@ -111,6 +111,32 @@ function riskyItem(state: State, item: QueueItem): boolean {
   return !!a && isRisky(state, a);
 }
 
+// A yes held before it starts: what happens when, and the one step left, taking it back.
+function Starting({ id, line }: { id: string; line: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const undo = async () => {
+    setBusy(true);
+    const res = await reopen(id);
+    setBusy(false);
+    if (res.ok) showToast("Taken back. It's waiting for your answer again.");
+    else setError(res.error ?? "Atrium couldn't take that back.");
+  };
+  return (
+    <>
+      <p className="dp-lead" role="note">
+        {line}
+      </p>
+      <div className="acts">
+        <button className="btn p" disabled={busy} onClick={() => void undo()}>
+          {KIND.starting.action}
+        </button>
+      </div>
+      {error && <p className="err">{error}</p>}
+    </>
+  );
+}
+
 // A result or question decided right here, with everything it rests on in view, the diff included: a decision never
 // has to leave the queue.
 function ApprovalDecision({ approval, task, space, state, armed }: { approval: Approval; task: Task | undefined; space: Space | undefined; state: State; armed: boolean }) {
@@ -164,6 +190,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   else if (approval) body = <ApprovalDecision approval={approval} task={task} space={space} state={state} armed={armed} />;
   else if (proposal) body = <div className="list needs-list"><ProposalRow proposal={proposal} space={space} /></div>;
   else if (memory && space) body = <MemoryProposal line={memory} space={space} />;
+  else if (item.kind === "starting") body = <Starting id={item.key} line={itemLine(state, item)} />;
   else if (task)
     body = (
       <>

@@ -77,7 +77,8 @@ export function deriveView(raw: State, ui: Ui): View {
   const tasks = orderedTasks(spaceTasks).filter((t) => matches(ui.filters.tasks, t.title));
   const approvals = state.approvals.filter((a) => matches(ui.filters.needs, a.title, a.spaceId ? names.get(a.spaceId) : "Atrium"));
   const proposals = state.proposals.filter((p) => matches(ui.filters.needs, p.label, names.get(p.spaceId)));
-  const queue = attentionQueue(state).filter((i) => matches(ui.filters.needs, itemTitle(state, i), itemLine(state, i), i.spaceId ? names.get(i.spaceId) : "Atrium"));
+  // The terminal app has no Undo, so a held yes (only Undo can act on it) stays in the dashboard's list.
+  const queue = attentionQueue(state).filter((i) => i.kind !== "starting" && matches(ui.filters.needs, itemTitle(state, i), itemLine(state, i), i.spaceId ? names.get(i.spaceId) : "Atrium"));
   const item = pick(queue.map((i) => ({ ...i, id: i.key })), ui.selected.needs).item;
   const asking = queue.filter((i) => i.kind === "question" || i.kind === "pick" || i.kind === "stuck").map((i) => state.tasks.find((t) => t.id === i.key)!);
   const activity = groupActivity(state.activity, { tasks: state.tasks, files: state.activityFiles }).filter((g) =>

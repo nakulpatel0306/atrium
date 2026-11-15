@@ -314,6 +314,19 @@ export function approveClean(
 // local copy's removal waits this long after the yes before it starts, so its Undo is real.
 export const UNDO_MS = 60_000;
 
+// Yeses to a new repo or a removal still in their hold: shown in Needs you as starting soon, with an Undo, so one that
+// resumed after a restart can be taken back even though its toast is gone.
+export type Held = { id: string; spaceId: string | null; title: string; approvedAt: number; startsAt: number };
+export function listHeld(db: Database): Held[] {
+  const rows = db
+    .query(
+      `SELECT a.id, a.space_id AS spaceId, a.title, a.resolved_at AS approvedAt FROM repo_actions r JOIN approvals a ON a.id = r.approval_id
+       WHERE r.status = 'draft' AND a.status = 'approved' AND a.undone_at IS NULL ORDER BY a.resolved_at`,
+    )
+    .all() as Omit<Held, "startsAt">[];
+  return rows.map((r) => ({ ...r, startsAt: r.approvedAt + UNDO_MS }));
+}
+
 // Takes back a yes to a new repo or a removal that hasn't started: the ask is pending again, under a fresh approval
 // its repo action now points to, so the held start finds no yes and does nothing.
 function reopenHeldAsk(db: Database, a: Approval, now: number): Approval {

@@ -35,6 +35,7 @@ export const KIND: Record<QueueKind, { label: string; action: string; means: str
   suggestion: { label: "Suggestion", action: "Stop asking", means: "A kind of result you always approve unchanged; a rule could approve it for you." },
   memory: { label: "CLAUDE.md", action: "Add it", means: "A line Atrium suggests for the repo's CLAUDE.md. Low priority." },
   shape: { label: "Could split", action: "Split instead", means: "A running task that could run as parts. Low priority." },
+  starting: { label: "Starting", action: "Undo", means: "A yes to a new repo or a removal, held a minute before it starts; it can still be taken back." },
 };
 
 // A result waiting on you that isn't clean (needs.ts): one name wherever it shows, on its chip, its row, its step and
