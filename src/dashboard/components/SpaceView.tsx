@@ -1,4 +1,4 @@
-import { attentionQueue } from "../../engine/needs";
+import { asksBeforeStarting, attentionQueue } from "../../engine/needs";
 import { KIND as QUEUE_KIND, taskLabel, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -542,25 +542,35 @@ function Terminal({ runId }: { runId: string }) {
   );
 }
 
-function Live({ state, tasks }: { state: State; tasks: Task[] }) {
+// A brief's questions, answered from Live with the same form its task shows. The form shows in one place: the
+// task's own row when it's open, else here, whether or not another agent is running.
+function Asking({ tasks, open }: { tasks: Task[]; open: Set<string> }) {
+  const asking = tasks.filter((t) => t.loop?.stage === "brief" && asksBeforeStarting(t) && !open.has(t.id));
+  return (
+    <>
+      {asking.map((t) => (
+        <div className="live-ask" key={t.id}>
+          <p className="live-ask-title">{shownTitle(t)} asks before it starts:</p>
+          <BriefQuestions task={t} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function Live({ state, tasks, open }: { state: State; tasks: Task[]; open: Set<string> }) {
   const live = liveRun(state, tasks);
 
   if (!live) {
     return (
       <div className="idle">
         <p>No agent working right now</p>
-        {distinctWaits(tasks, state).map((w) => {
-          // A brief's questions are answered right here, with the same form as in its task and in Needs you.
-          const asking = w.kind === "answers" ? tasks.find((t) => t.id === w.taskId) : undefined;
-          return asking ? (
-            <div className="live-ask" key={asking.id}>
-              <p className="live-ask-title">{shownTitle(asking)} asks before it starts:</p>
-              <BriefQuestions task={asking} />
-            </div>
-          ) : (
+        <Asking tasks={tasks} open={open} />
+        {distinctWaits(tasks, state)
+          .filter((w) => w.kind !== "answers")
+          .map((w) => (
             <WaitLine key={`${w.reason}:${w.taskId}`} wait={w} />
-          );
-        })}
+          ))}
       </div>
     );
   }
@@ -579,6 +589,7 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
         <KindBadge kind={task.kind} /> {shownTitle(task)}
       </div>
       <Terminal runId={run.id} />
+      <Asking tasks={tasks} open={open} />
     </>
   );
 }
@@ -730,7 +741,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
         </div>
         <div className="live">
           <h2>Live</h2>
-          <Live state={state} tasks={tasks} />
+          <Live state={state} tasks={tasks} open={expanded} />
         </div>
       </div>
       {transcript && (

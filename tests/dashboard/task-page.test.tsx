@@ -206,16 +206,28 @@ test("a question task is called a Question in the palette, and its space's Live 
   const { paletteActions } = await import("../../src/dashboard/palette");
   const s = makeState();
   const loop = { ...newLoop(SIZE_BUDGETS.small), stage: "brief" as const, questions: [{ question: "Weekly or daily?", options: ["Weekly", "Daily"] }] };
-  s.tasks = s.tasks.filter((t) => t.id !== ids.running);
+  // Another agent is running: the questions are still answered from Live.
   s.tasks.push(task({ id: "tsk_ask", spaceId: ids.atrium, title: "Export totals", status: "queued", loop, brief: { goal: "Totals", acceptance: [], verify: "auto", scope: "", nonGoals: [], lookFirst: [], size: "small", answers: [] } }));
   s.waits = { tsk_ask: { taskId: "tsk_ask", agent: "claude", kind: "answers", reason: "The brief has questions for you, in Needs you." } };
   expect(paletteActions(s, { spaceId: null, theme: "system" }).find((a) => a.id === "task-tsk_ask")!.hint).toBe("atrium · Question");
   const el = await page(s, null);
-  const live = el.querySelector(".live")!;
+  const live = el.querySelector("div.live")!;
   expect(live.querySelector(".live-ask")!.textContent).toContain("Weekly or daily?");
   await act(async () => [...live.querySelectorAll<HTMLButtonElement>(".brief-q button")].find((b) => b.textContent === "Weekly")!.click());
   await act(async () => [...live.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Answer")!.click());
   expect(calls.filter((c) => c.url === "/api/tasks/tsk_ask/answers").at(-1)).toEqual({ url: "/api/tasks/tsk_ask/answers", body: { answers: [{ question: "Weekly or daily?", answer: "Weekly" }] } });
+});
+
+test("a brief's questions show in one form: the task's row when it's open, else Live", async () => {
+  const s = makeState();
+  const loop = { ...newLoop(SIZE_BUDGETS.small), stage: "brief" as const, questions: [{ question: "Weekly or daily?", options: ["Weekly", "Daily"] }] };
+  s.tasks.push(task({ id: "tsk_ask", spaceId: ids.atrium, title: "Export totals", status: "queued", loop, brief: { goal: "Totals", acceptance: [], verify: "auto", scope: "", nonGoals: [], lookFirst: [], size: "small", answers: [] } }));
+  const closed = await page(s, null);
+  expect([closed.querySelectorAll(".brief-qs").length, closed.querySelectorAll(".live .brief-qs").length]).toEqual([1, 1]);
+  act(() => root!.unmount());
+  document.body.replaceChildren();
+  const opened = await page(s, "tsk_ask");
+  expect([opened.querySelectorAll(".brief-qs").length, opened.querySelectorAll(".live .brief-qs").length]).toEqual([1, 0]);
 });
 
 test("on a task page, decision keys do nothing while the keys sheet is open", async () => {
