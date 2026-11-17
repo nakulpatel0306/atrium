@@ -9,20 +9,14 @@ import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
-import { ARM_MS, DecisionBar, OpenPoints, reopen } from "./Decision";
-import { ChangesView } from "./ChangesView";
-import { agentText } from "../agents";
+import { ARM_MS, reopen } from "./Decision";
+import { ResultDecision } from "./ResultDecision";
 import { LoopPanel } from "./LoopPanel";
-import { Markdown } from "./Markdown";
 import { MemoryProposal } from "./Memory";
-import { OutcomeBanner } from "./OutcomeBanner";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
-import { RetroCard } from "./Retro";
 import { StopTask } from "./StopTask";
-import { WalkthroughCard } from "./Walkthrough";
-import { WhatItMade } from "./WhatItMade";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -137,43 +131,6 @@ function Starting({ id, line }: { id: string; line: string }) {
   );
 }
 
-// A result or question decided right here, with everything it rests on in view, the diff included: a decision never
-// has to leave the queue.
-function ApprovalDecision({ approval, task, space, state, armed }: { approval: Approval; task: Task | undefined; space: Space | undefined; state: State; armed: boolean }) {
-  const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
-  const repo = space?.kind === "repo";
-  const diff = repo && task?.branch && approval.kind === "review" && !task.loop?.noChanges;
-  return (
-    <>
-      <div className="dp-acts">
-        <DecisionBar approval={approval} state={state} armed={armed} keys />
-      </div>
-      {/* Why a risky result asks for a look, before anything else on its screen. */}
-      {task && isRisky(state, approval) && <OpenPoints task={task} />}
-      {task?.loop?.noChanges ? (
-        // Said plainly: an empty result has no commits to read or push, whatever the agent's own words were.
-        <p className="dp-lead" role="note">
-          It made no changes: its branch holds nothing new.
-        </p>
-      ) : (
-        outcome && <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
-      )}
-      {task && space ? (
-        <>
-          {/* What changed and where to look first leads; the diff itself next; the brief, checks and findings after. */}
-          <WalkthroughCard task={task} space={space} />
-          {diff && <ChangesView task={task} agent={agentText(task, state.runs)} />}
-          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen={!diff} reasonsAbove={isRisky(state, approval)} />}
-          <RetroCard task={task} state={state} />
-          {!diff && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
-        </>
-      ) : (
-        <Markdown text={approval.detail || "No further detail."} />
-      )}
-    </>
-  );
-}
-
 // One screen per item: what it is, how long it has waited, and everything needed to decide, with the decision's own
 // buttons. The queue's keys press those buttons, so a key can never do what a click wouldn't.
 export function DecisionPanel({ item, state, armed = false }: { item: QueueItem; state: State; armed?: boolean }) {
@@ -187,7 +144,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   let body;
   if (approval?.alwaysAsk === "create_repo" && action?.draft) body = <div className="list needs-list"><ProjectDraftRow approval={approval} action={action} /></div>;
   else if (approval?.alwaysAsk === "remove_clone") body = <div className="list needs-list"><RemovalRow approval={approval} /></div>;
-  else if (approval) body = <ApprovalDecision approval={approval} task={task} space={space} state={state} armed={armed} />;
+  else if (approval) body = <ResultDecision approval={approval} task={task} space={space} state={state} armed={armed} keys />;
   else if (proposal) body = <div className="list needs-list"><ProposalRow proposal={proposal} space={space} /></div>;
   else if (memory && space) body = <MemoryProposal line={memory} space={space} />;
   else if (item.kind === "starting") body = <Starting id={item.key} line={itemLine(state, item)} />;

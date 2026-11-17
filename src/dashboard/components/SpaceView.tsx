@@ -19,7 +19,7 @@ import { spendText } from "../../engine/cost";
 import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
-import { DecisionBar, OpenPoints } from "./Decision";
+import { ResultDecision } from "./ResultDecision";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -427,15 +427,17 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
         <div className="detail">
           {/* A pause waits for a hint and reads amber; a stopped task waits for a retry and reads red. */}
           {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{task.blockedReason}</p>}
-          {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
-          {review && (
-            <div className="review-acts">
-              <DecisionBar approval={review} state={state} />
+          {review ? (
+            // The same decision, with the same evidence, as its screen in Needs you.
+            <div className="task-decision">
+              <ResultDecision approval={review} task={task} space={space} state={state} at={at} />
             </div>
+          ) : (
+            <>
+              {task.status === "done" && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
+              <RetroCard task={task} state={state} />
+            </>
           )}
-          {/* The same reasons, in the same place, as on its screen in Needs you. */}
-          {risky && <OpenPoints task={task} />}
-          <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">
@@ -443,8 +445,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
               {followsText(task)} "{parent.title}"
             </p>
           )}
-          {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
-            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} reasonsAbove={risky} />
+          {!review && task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
+            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} />
           )}
           <section className="asked">
             <h4>You asked</h4>
@@ -452,9 +454,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           </section>
           <TaskAttachments attachments={attached} />
           {space?.kind === "repo" ? (
-            <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} at={at} />
+            <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} at={at} decided={!!review} />
           ) : (
-            space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
+            space && !review && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
           )}
           <MoreDetails folded={waitsOnYou}>
           <div className="meta">

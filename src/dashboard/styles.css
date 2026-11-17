@@ -3161,35 +3161,20 @@ code {
 .chg-note-inline {
   color: var(--faint);
 }
-/* a task in review, decided from its detail */
-/* Stays in view under the top bar while the diff below it is read, so deciding never means scrolling back. */
-.review-acts {
-  margin: 10px 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--bg);
-  position: sticky;
-  /* The page scrolls under the sticky top bar, so the decision pins just below it. */
-  top: calc(var(--top-h) + 8px);
-  z-index: 1;
-  box-shadow: var(--shadow-1);
-}
-.review-acts .acts {
+/* a task in review, decided from its detail with the same layout as its screen in Needs you */
+.task-decision {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 12px;
+  margin: 10px 0;
+  container: panel / inline-size;
 }
-.review-acts .acts .faint {
-  margin-right: auto;
-  color: var(--dim);
+.task-decision .loop,
+.task-decision .walkthrough {
+  margin: 0;
 }
-.review-acts .note {
-  background: none;
-  padding: 0 10px 10px;
-}
-.review-acts .err {
-  padding: 0 10px 10px;
+.task-decision p {
+  max-width: 80ch;
 }
 
 /* Needs you and Activity pages */
@@ -4264,9 +4249,6 @@ kbd {
 }
 .dp-acts .decision {
   flex: 1;
-}
-.review-acts .decision {
-  padding: 8px 10px;
 }
 /* Every control is at least 24px tall, so it can be hit without aiming. */
 .btn,
