@@ -3,7 +3,7 @@ import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
-import { asksBeforeStarting } from "../engine/needs";
+import { asksBeforeStarting, pausedForYou } from "../engine/needs";
 import { cleanReviews, isRisky, itemTitle, shownSha } from "../dashboard/queue";
 import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
@@ -72,6 +72,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Spaces", keys: "tab h l", does: "move between panes" },
   { section: "Spaces", keys: "n N", does: "new task, new space" },
   { section: "Spaces", keys: "a r", does: "approve, send back" },
+  { section: "Spaces", keys: "a s x e", does: "on a task's detail: approve, send back, stop, explain" },
   { section: "Spaces", keys: "R s", does: "retry, run now" },
   { section: "Spaces", keys: ".", does: "stop running task" },
   { section: "Spaces", keys: "A", does: "change agent" },
@@ -129,7 +130,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
     case "spaces":
       if (ui.focus === "spaces") return [...lead, k("↵", "tasks", "\r"), k("n", "new task"), k("N", "new space"), k("e", "goal"), k("X", "archive"), k("D", "delete"), HELP_KEY];
       if (ui.focus === "tasks") return [...lead, k("↵", "detail", "\r"), k("n", "new task"), k("R", "retry"), k("s", "run now"), k(".", "stop"), k("A", "agent"), k("t", "transcript"), HELP_KEY];
-      if (ui.focus === "detail") return [k("j k", "scroll", undefined), k("a", "approve"), k("r", "send back"), k("f", "files"), k("t", "transcript"), k("esc", "back", "\x1b"), HELP_KEY];
+      if (ui.focus === "detail") return [k("j k", "scroll", undefined), k("a", "approve"), k("s", "send back"), k("x", "stop"), k("e", "explain"), k("f", "files"), k("t", "transcript"), k("esc", "back", "\x1b"), HELP_KEY];
       return [k("j k", "scroll", undefined), k("g G", "top / follow", undefined), k(".", "stop"), k("esc", "back", "\x1b"), HELP_KEY];
     case "activity":
       return [...lead, k("↵", "open space", "\r"), k("/", "filter"), k("ctrl-d", "scroll lines", undefined), HELP_KEY, k("q", "quit")];
@@ -339,6 +340,18 @@ function fileKey(input: string, u: Ui, view: View, files: MadeFile[]): Command[]
   return null;
 }
 
+// s, x and e on a task's detail, as on its page in the dashboard: send back its result, stop it, explain its pause.
+// Null when the key means something else there (s still runs a task waiting on the reserve now).
+function taskDetailKey(input: string, u: Ui, view: View): Command[] | null {
+  if (u.tab !== "spaces" || u.focus !== "detail" || view.subject !== "task") return null;
+  const task = taskOf(u, view);
+  if (!task) return null;
+  if (input === "s" && approvalOf(u, view)) return [sendBack(u, view)];
+  if (input === "x") return [stop(u, view)];
+  if (input === "e") return [pausedForYou(task) ? intent({ type: "explain", taskId: task.id, title: task.title }) : info("Explain is for a paused task.")];
+  return null;
+}
+
 // One command key, outside any overlay and the Ask box.
 function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext): Command[] {
   if (key.escape) return [ui({ type: "back" })];
@@ -362,6 +375,8 @@ function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext):
   }
   const onFile = fileKey(input, u, view, ctx.files);
   if (onFile) return onFile;
+  const onTask = taskDetailKey(input, u, view);
+  if (onTask) return onTask;
   const tab = "123".indexOf(input);
   if (input && tab >= 0) return [ui({ type: "tab", tab: TABS[tab]! })];
   switch (input) {

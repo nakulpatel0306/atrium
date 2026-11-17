@@ -6,10 +6,12 @@ import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { showToast, undoLatest } from "../toast";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
+import { isShown } from "../page-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
 import { ARM_MS, armLabel, reopen } from "./Decision";
+import { KeysSheet } from "./KeysSheet";
 import { ResultDecision } from "./ResultDecision";
 import { LoopPanel } from "./LoopPanel";
 import { MemoryProposal } from "./Memory";
@@ -282,39 +284,6 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
   );
 }
 
-function KeysSheet({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="keys-sheet" role="dialog" aria-label="Keys">
-      <h3>Keys</h3>
-      <dl>
-        {KEY_HELP.map(([k, what]) => (
-          <div key={k}>
-            <dt>
-              <kbd>{k}</kbd>
-            </dt>
-            <dd>{what}</dd>
-          </div>
-        ))}
-      </dl>
-      {/* The same words every surface uses (engine/words.ts), said once in full. */}
-      <h3>What each item asks</h3>
-      <dl className="kinds">
-        {Object.values(KIND).map((k) => (
-          <div key={k.label}>
-            <dt>{k.label}</dt>
-            <dd>
-              {k.means} <span className="hint">Next: {k.action}.</span>
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <button className="btn" onClick={onClose}>
-        Close
-      </button>
-    </div>
-  );
-}
-
 // Everything waiting on the user as one queue, longest-blocked first, worked through from the keyboard: the list on
 // the left, the selected item's whole decision on the right (or full width on a narrow window once opened).
 export function NeedsPage({ state, item = null, batch: batchAsked = false }: { state: State; item?: string | null; batch?: boolean }) {
@@ -384,9 +353,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
         return;
       }
       // On a narrow window the list hides the decision; a key must never press a button nobody can see.
-      if (panel.current && getComputedStyle(panel.current).display === "none") return;
-      const button = panel.current?.querySelector<HTMLButtonElement>(`[data-act="${ACT[key]}"]`);
-      if (!button || button.disabled) return;
+      const button = panel.current?.querySelector<HTMLButtonElement>(`[data-act="${ACT[key]}"]`) ?? null;
+      if (!button || button.disabled || !isShown(button)) return;
       // Keeps the letter out of the note field that s is about to focus.
       e.preventDefault();
       // A result with notes or open findings takes a second a: one key shouldn't approve what asks to be read.
@@ -412,7 +380,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
           Keys <kbd>?</kbd>
         </button>
       </div>
-      {help && <KeysSheet onClose={() => setHelp(false)} />}
+      {help && <KeysSheet keys={KEY_HELP} kinds onClose={() => setHelp(false)} />}
       {items.length === 0 ? (
         <div className="q-empty">
           <PartyPopper />

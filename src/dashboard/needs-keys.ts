@@ -54,3 +54,24 @@ export const KEY_HELP: [string, string][] = [
   ["Esc", "Back to the list"],
   ["?", "Show or hide these keys"],
 ];
+
+// The keys on a space's page, which act on the task opened in it: only the ones that press a decision's buttons.
+export const PAGE_KEY_HELP: [string, string][] = [
+  ["a", "Approve the open result; twice on one that Needs a look"],
+  ["s", "Send the open result back with a note"],
+  ["x", "Stop the open task while it runs"],
+  ["e", "Explain the problem, on an open paused task"],
+  ["z", "Take back the last approval, within its minute"],
+  ["Esc", "Cancel a first a, or hide these keys"],
+  ["?", "Show or hide these keys"],
+];
+
+export const PAGE_KEY_NOTE = "They act on the task you've opened. With more than one open, click in the one you mean first.";
+
+// What a page key says when no open task shows its button.
+export const NOTHING_FOR: Partial<Record<NeedsKey, string>> = {
+  approve: "Nothing open here to approve. Open a task that's ready for review.",
+  sendBack: "Nothing open here to send back. Open a task that's ready for review.",
+  stop: "No open task is running.",
+  explain: "Explain is for a paused task. Open one first.",
+};

@@ -3,10 +3,11 @@ import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NeedsPage } from "../../src/dashboard/components/NeedsPage";
+import { LiveRegion } from "../../src/dashboard/components/LiveRegion";
 import { SpaceView } from "../../src/dashboard/components/SpaceView";
 import { newLoop, SIZE_BUDGETS, type LoopState } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
-import { ids, makeState } from "../tui/fixtures";
+import { ids, makeState, task } from "../tui/fixtures";
 
 let calls: { url: string; body: unknown }[] = [];
 let root: Root | null = null;
@@ -87,4 +88,112 @@ test("a task page shows a result's decision with the same evidence as its screen
   // The diff isn't behind a tab any more, and isn't shown twice.
   expect(page.querySelectorAll(".changes-section").length).toBe(1);
   expect(page.querySelector(".work-tabs")).toBeNull();
+});
+
+const press = async (key: string, init: KeyboardEventInit = {}) => act(async () => void window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init })));
+const decided = () => calls.filter((c) => c.url.startsWith("/api/approvals/"));
+const said = (el: Element) => el.querySelector('[aria-live="polite"]')!.textContent;
+const shown = (b: Element) => (b.querySelector(".btn-labels .on") ?? b).textContent;
+
+async function page(s: State, focusTask: string | null = ids.review) {
+  const space = s.spaces.find((x) => x.id === ids.atrium)!;
+  return render(
+    <>
+      <LiveRegion />
+      <SpaceView state={s} space={space} focusTask={focusTask} />
+    </>,
+  );
+}
+
+test("on a task page, a approves the open result and s sends it back, as in Needs you", async () => {
+  const s = makeState();
+  s.tasks = s.tasks.map((t) => (t.id === ids.review ? { ...t, loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", checks: "passed", checkedSha: "sha_ok", reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] }, outcome: "done" } : t));
+  const el = await page(s);
+  expect(el.querySelector(".task-decision .decision-keys")!.textContent).toContain("? all keys");
+  await press("s");
+  expect(el.querySelector('input[aria-label="What should change?"]')).not.toBeNull();
+  await press("a");
+  expect(decided()).toEqual([{ url: `/api/approvals/${ids.approval}`, body: { decision: "approve", sha: "sha_ok" } }]);
+});
+
+test("on a task page, the first a on a risky result relabels Approve; Esc disarms it; the second a approves", async () => {
+  const el = await page(riskyState());
+  const button = () => el.querySelector<HTMLButtonElement>('.task-decision [data-act="approve"]')!;
+  await press("a");
+  expect(decided()).toEqual([]);
+  expect(shown(button())).toBe("Press a again to approve");
+  expect(said(el)).toBe("Press a again to approve.");
+  await press("Escape");
+  expect(shown(button())).toBe("Approve anyway");
+  await press("a");
+  await press("a");
+  expect(decided().map((c) => c.url)).toEqual([`/api/approvals/${ids.approval}`]);
+});
+
+test("x asks to stop an open running task, and e asks an open paused one for the diagnosis", async () => {
+  const s = makeState();
+  s.tasks.push(task({ id: "tsk_paused", spaceId: ids.atrium, title: "Ranking", status: "blocked", loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "Another turn would go over the budget." } } }));
+  const running = await page(s, ids.running);
+  await press("x");
+  expect(running.querySelector('[data-act="stop-confirm"]')).not.toBeNull();
+  act(() => root!.unmount());
+  document.body.replaceChildren();
+  await page(s, "tsk_paused");
+  await press("e");
+  expect(calls.at(-1)!.url).toBe("/api/tasks/tsk_paused/explain");
+});
+
+test("a decision that's hidden ignores the keys, and says why", async () => {
+  // A closed row shows no decision at all.
+  const closed = await page(riskyState(), null);
+  await press("a");
+  await press("a");
+  expect(decided()).toEqual([]);
+  expect(said(closed)).toBe("Nothing open here to approve. Open a task that's ready for review.");
+  act(() => root!.unmount());
+  document.body.replaceChildren();
+  // An open row whose decision is hidden (a narrow layout, say) is the same: a key never presses what can't be seen.
+  const s = makeState();
+  s.tasks = s.tasks.map((t) => (t.id === ids.review ? { ...t, outcome: "done" } : t));
+  const el = await page(s);
+  el.querySelector<HTMLElement>(".task-decision")!.style.display = "none";
+  await press("a");
+  await press("s");
+  expect(decided()).toEqual([]);
+  expect(el.querySelector('input[aria-label="What should change?"]')).toBeNull();
+  el.querySelector<HTMLElement>(".task-decision")!.style.display = "";
+  await press("a");
+  expect(decided().length).toBe(1);
+});
+
+test("with two open results, a key waits for the user to pick one rather than guess", async () => {
+  const s = makeState();
+  s.tasks.push(task({ id: "tsk_two", spaceId: ids.atrium, title: "Second", status: "review", outcome: "done" }));
+  s.approvals.push({ ...s.approvals[0]!, id: "apr_two", taskId: "tsk_two", title: "Review: Second" });
+  const el = await page(s);
+  await act(async () => el.querySelector<HTMLButtonElement>("#task-tsk_two .task-open")!.click());
+  await act(async () => (document.activeElement as HTMLElement | null)?.blur());
+  await press("a");
+  expect(decided()).toEqual([]);
+  expect(said(el)).toContain("More than one open task");
+  // Focus inside one of them picks it.
+  el.querySelector<HTMLButtonElement>("#task-tsk_two .task-open")!.focus();
+  await press("a");
+  expect(decided().map((c) => c.url)).toEqual(["/api/approvals/apr_two"]);
+});
+
+test("? lists the keys that work on a space's page, and keys are ignored while typing", async () => {
+  const el = await page(makeState());
+  await press("?");
+  const sheet = el.querySelector(".keys-sheet")!;
+  expect([...sheet.querySelectorAll("kbd")].map((k) => k.textContent)).toEqual(["a", "s", "x", "e", "z", "Esc", "?"]);
+  expect(sheet.textContent).not.toContain("Next / previous item");
+  await press("Escape");
+  expect(el.querySelector(".keys-sheet")).toBeNull();
+  const input = document.createElement("input");
+  document.body.appendChild(input);
+  await act(async () => void input.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true })));
+  expect(decided()).toEqual([]);
+  await press("a");
+  expect(decided().length).toBe(1);
 });

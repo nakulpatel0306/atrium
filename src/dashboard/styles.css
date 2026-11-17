@@ -3406,7 +3406,7 @@ kbd {
 .keys-sheet {
   margin-bottom: 16px;
 }
-.keys-sheet h3 {
+.keys-sheet h2 {
   font-size: var(--fs-md);
   margin-bottom: 8px;
 }

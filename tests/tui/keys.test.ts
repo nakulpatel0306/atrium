@@ -386,3 +386,15 @@ test("a paused card's wait counts from the pause, not from the task's last chang
   const card = cardsOf(deriveView(state, initialUi), now, 80).find((c) => c.id === ids.blocked)!;
   expect(card.meta.map((m) => m.text).join("")).toContain("Paused · waiting 2h");
 });
+
+test("on a task's detail, s sends back, x stops and e explains, as on its page in the dashboard", () => {
+  const review = play(["s"], inDetail(1, ids.review)).all;
+  expect(uiActions(review)).toContainEqual({ type: "ask", ask: { purpose: "reply", value: "", cursor: 0, agent: "auto", targetId: ids.approval } });
+  expect(play(["x"], inDetail(0, ids.running)).all).toContainEqual({ kind: "ui", action: { type: "open", overlay: { kind: "confirm", purpose: "stop", targetId: ids.running } } });
+  const s = makeState();
+  s.tasks.push(task({ id: "tsk_paused", title: "Ranking", status: "blocked", loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "Over budget." } } }));
+  const paused = s.tasks.filter((t) => t.spaceId === ids.atrium).length - 1;
+  expect(play(["e"], inDetail(paused, "tsk_paused"), s).intents).toEqual([{ type: "explain", taskId: "tsk_paused", title: "Ranking" }]);
+  expect(flashText(play(["e"], inDetail(1, ids.review)).all)).toEqual(["Explain is for a paused task."]);
+  expect(strip({ ...initialUi, ...inDetail(1, ids.review) } as Ui, deriveView(makeState(), { ...initialUi, ...inDetail(1, ids.review) } as Ui)).map((k) => k.key)).toEqual(["j k", "a", "s", "x", "e", "f", "t", "esc", "?"]);
+});

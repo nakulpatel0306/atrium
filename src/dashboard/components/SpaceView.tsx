@@ -20,6 +20,12 @@ import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ResultDecision } from "./ResultDecision";
+import { ARM_MS, armLabel } from "./Decision";
+import { KeysSheet } from "./KeysSheet";
+import { ACT, needsKey, NOTHING_FOR, PAGE_KEY_HELP, PAGE_KEY_NOTE } from "../needs-keys";
+import { pressable } from "../page-keys";
+import { announce } from "../live";
+import { undoLatest } from "../toast";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -329,6 +335,8 @@ type TaskRowProps = {
   // Open on its Changes, from a "See changes" link, at one hunk from a walkthrough's link.
   showChanges?: boolean;
   at?: ChangeSpot | null;
+  // The first a on this task's risky result has been pressed; a second approves it.
+  armed?: boolean;
 };
 
 // The queue kind a task waits under when that isn't already its state word: a question, a pick, a stopped part.
@@ -337,7 +345,7 @@ function queueKindOf(state: State, taskId: string) {
   return item && (item.kind === "question" || item.kind === "pick" || item.kind === "stuck") ? item.kind : null;
 }
 
-function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = null }: TaskRowProps) {
+function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = null, armed = false }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -369,7 +377,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   const setAgent = (value: AgentChoice) => act(() => patch(`/api/tasks/${task.id}`, { agent: value }));
 
   return (
-    <div className="entry" id={`task-${task.id}`}>
+    // An open row is where the page's keys act (page-keys.ts): its own buttons, and only those that show.
+    <div className="entry" id={`task-${task.id}`} data-decision={open ? task.id : undefined}>
       {/* The summary is the row's one button; its actions sit beside it, so no control is nested in another. */}
       <div className={`item task${task.status === "done" ? " done" : ""}`}>
         <button className="task-open" aria-expanded={open} onClick={onToggle}>
@@ -430,7 +439,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {review ? (
             // The same decision, with the same evidence, as its screen in Needs you.
             <div className="task-decision">
-              <ResultDecision approval={review} task={task} space={space} state={state} at={at} />
+              <ResultDecision approval={review} task={task} space={space} state={state} at={at} armed={armed} keys />
             </div>
           ) : (
             <>
@@ -593,6 +602,9 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
 export function SpaceView({ state, space, focusTask, tab = "tasks", changes = false, at = null }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
+  const [help, setHelp] = useState(false);
+  // The task whose risky Approve the a key has been pressed once for, as in Needs you.
+  const [armed, setArmed] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const tasks = space ? state.tasks.filter((t) => t.spaceId === space.id) : [];
   const running = tasks.some((t) => t.status === "running");
@@ -602,6 +614,43 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     setExpanded((prev) => new Set(prev).add(focusTask));
     document.getElementById(`task-${focusTask}`)?.scrollIntoView({ block: "center" });
   }, [focusTask]);
+
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(null), ARM_MS);
+    return () => clearTimeout(t);
+  }, [armed]);
+
+  // The decision keys, on whichever open task shows the button (page-keys.ts). Attached once; `live` carries the arm.
+  const live = useRef(armed);
+  live.current = armed;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const key = needsKey(e);
+      if (!key || document.querySelector('[aria-modal="true"]')) return;
+      if (key === "help") return setHelp((h) => !h);
+      if (key === "close") {
+        setArmed(null);
+        return setHelp(false);
+      }
+      if (key === "undo") return void undoLatest();
+      const act = ACT[key];
+      if (!act) return;
+      const found = pressable([...document.querySelectorAll<HTMLElement>("[data-decision]")], act, document.activeElement);
+      if ("many" in found) return announce("More than one open task could take that key. Click in the one you mean, then press it again.");
+      if ("none" in found) return announce(NOTHING_FOR[key] ?? "");
+      e.preventDefault();
+      const id = found.scope.dataset.decision ?? null;
+      if (key === "approve" && found.button.dataset.risky && live.current !== id) {
+        setArmed(id);
+        return announce(`${armLabel(found.button.dataset.word ?? "", "key")}.`);
+      }
+      setArmed(null);
+      found.button.click();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Keeps "running 12m" ticking; only while something runs, so an idle page does no work.
   useEffect(() => {
@@ -619,16 +668,19 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     );
   }
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    setArmed(null);
     setExpanded((prev) => {
       const next = new Set(prev);
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  };
 
   return (
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
+      {help && <KeysSheet keys={PAGE_KEY_HELP} note={PAGE_KEY_NOTE} onClose={() => setHelp(false)} />}
       <SpaceNeeds state={state} spaceId={space.id} />
       <div className="cols">
         <div>
@@ -650,6 +702,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
                   onTranscript={(run) => setTranscript({ run, title: t.title })}
                   showChanges={changes && t.id === focusTask}
                   at={t.id === focusTask ? at : null}
+                  armed={armed === t.id}
                 />
               ))
             )}
