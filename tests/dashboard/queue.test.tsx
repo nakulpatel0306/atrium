@@ -365,3 +365,12 @@ test("a long queue draws only the rows in view, within a render budget", () => {
   // Generous for a slow CI machine; a full 2,000-row render takes several times this.
   expect(ms).toBeLessThan(400);
 });
+
+test("on a phone a risky Approve reserves room only for its click wording, so it stays near its text's width", () => {
+  const real = window.matchMedia;
+  window.matchMedia = ((q: string) => ({ matches: q.includes("max-width: 640px"), media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+  const el = render(<NeedsPage state={queueState()} item="apr_c" />);
+  const labels = [...el.querySelectorAll('.dp-acts [data-act="approve"] .btn-labels > span')].map((x) => x.textContent);
+  expect(labels).toEqual(["Approve anyway", "Click again to approve"]);
+  window.matchMedia = real;
+});

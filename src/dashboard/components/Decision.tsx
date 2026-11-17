@@ -12,6 +12,8 @@ import { approveLabel } from "./OutcomeBanner";
 type Approval = State["approvals"][number];
 // How long a first press of a risky Approve stays armed, by key or by click.
 export const ARM_MS = 4000;
+// Where keys aren't how a decision is made: a touch screen, or a window as narrow as a phone's.
+const TOUCH = "(pointer: coarse), (max-width: 640px)";
 
 type Task = State["tasks"][number];
 type Outcome = Task["outcome"];
@@ -130,6 +132,11 @@ export function DecideButtons({ d, outcome, risky = false, armed = false }: { d:
     return () => clearTimeout(t);
   }, [clicked]);
   const word = approveWord(outcome, risky);
+  // On a phone or a touch screen the button is pressed, not keyed, so it only reserves room for its click wording and
+  // stays close to its text's width.
+  const touch = typeof matchMedia === "function" && matchMedia(TOUCH).matches;
+  const labels = touch ? [word, armLabel(word, "click")] : [word, armLabel(word, "key"), armLabel(word, "click")];
+  const armedLabel = clicked || (touch && armed) ? armLabel(word, "click") : armed ? armLabel(word, "key") : word;
   const approve = () => {
     if (risky && !armed && !clicked) {
       setClicked(true);
@@ -152,7 +159,7 @@ export function DecideButtons({ d, outcome, risky = false, armed = false }: { d:
         title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
         onClick={approve}
       >
-        {risky ? <Labels shown={clicked ? armLabel(word, "click") : armed ? armLabel(word, "key") : word} all={[word, armLabel(word, "key"), armLabel(word, "click")]} /> : word}
+        {risky ? <Labels shown={armedLabel} all={labels} /> : word}
       </button>
     </>
   );
