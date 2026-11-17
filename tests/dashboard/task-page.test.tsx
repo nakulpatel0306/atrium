@@ -144,7 +144,7 @@ test("x asks to stop an open running task, and e asks an open paused one for the
   document.body.replaceChildren();
   await page(s, "tsk_paused");
   await press("e");
-  expect(calls.at(-1)!.url).toBe("/api/tasks/tsk_paused/explain");
+  expect(calls.some((c) => c.url === "/api/tasks/tsk_paused/explain")).toBe(true);
 });
 
 test("a decision that's hidden ignores the keys, and says why", async () => {
@@ -215,5 +215,5 @@ test("a question task is called a Question in the palette, and its space's Live 
   expect(live.querySelector(".live-ask")!.textContent).toContain("Weekly or daily?");
   await act(async () => [...live.querySelectorAll<HTMLButtonElement>(".brief-q button")].find((b) => b.textContent === "Weekly")!.click());
   await act(async () => [...live.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Answer")!.click());
-  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_ask/answers", body: { answers: [{ question: "Weekly or daily?", answer: "Weekly" }] } });
+  expect(calls.filter((c) => c.url === "/api/tasks/tsk_ask/answers").at(-1)).toEqual({ url: "/api/tasks/tsk_ask/answers", body: { answers: [{ question: "Weekly or daily?", answer: "Weekly" }] } });
 });

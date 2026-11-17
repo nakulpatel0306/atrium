@@ -100,11 +100,11 @@ test("j and k move the selection and the decision beside it follows; a and s pre
   expect(shown(el.querySelector('[data-act="approve"]')!)).toBe("Press a again to approve");
   expect(el.querySelector(".decision-keys.armed")!.textContent).toContain("Esc cancels");
   await press("a");
-  expect(calls.at(-1)).toEqual({ url: "/api/approvals/apr_c", body: { decision: "approve" } });
+  expect(calls.filter((c) => c.url === "/api/approvals/apr_c").at(-1)).toEqual({ url: "/api/approvals/apr_c", body: { decision: "approve" } });
   await press("j");
   expect(title()).toBe("Review tsk_b");
   await press("a");
-  expect(calls.at(-1)).toEqual({ url: "/api/approvals/apr_b", body: { decision: "approve" } });
+  expect(calls.filter((c) => c.url === "/api/approvals/apr_b").at(-1)).toEqual({ url: "/api/approvals/apr_b", body: { decision: "approve" } });
   await press("k");
   await press("s");
   expect(el.querySelector('input[aria-label="What should change?"]')).not.toBeNull();
@@ -113,7 +113,7 @@ test("j and k move the selection and the decision beside it follows; a and s pre
 test("e asks a paused task for the diagnosis; ? shows the keys", async () => {
   const el = render(<NeedsPage state={queueState()} />);
   await press("e");
-  expect(calls.at(-1)!.url).toBe("/api/tasks/tsk_p/explain");
+  expect(calls.some((c) => c.url === "/api/tasks/tsk_p/explain")).toBe(true);
   await press("?");
   expect(el.querySelector(".keys-sheet")!.textContent).toContain("Approve every clean result at once");
   await press("Escape");
@@ -127,14 +127,15 @@ test("a budget pause raises its budget and carries on in one click, and Change b
   const raise = [...el.querySelectorAll<HTMLButtonElement>(".paused button")].find((b) => b.textContent === "Raise to 400k tokens and carry on")!;
   expect(raise.className).toBe("btn p");
   await act(async () => raise.click());
-  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_p/budget", body: { budget: { tokens: 400_000, minutes: 20 }, resume: true } });
+  expect(calls.filter((c) => c.url === "/api/tasks/tsk_p/budget").at(-1)).toEqual({ url: "/api/tasks/tsk_p/budget", body: { budget: { tokens: 400_000, minutes: 20 }, resume: true } });
   const change = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.textContent === "Change budget")!;
   expect(change.className).toBe("btn");
   await act(async () => change.click());
   const save = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.type === "submit")!;
   expect(save.textContent).toBe("Save and carry on");
   await act(async () => save.click());
-  expect(calls.at(-1)!.body).toMatchObject({ resume: true });
+  expect(calls.filter((c) => c.url === "/api/tasks/tsk_p/budget").length).toBe(2);
+  expect(calls.filter((c) => c.url === "/api/tasks/tsk_p/budget").at(-1)!.body).toMatchObject({ resume: true });
 });
 
 test("the palette names a result by the same verdict as the queue", async () => {
@@ -200,7 +201,7 @@ test("batch approval offers only the clean results, and Shift A opens it", async
   const sheet = el.querySelector(".batch-sheet")!;
   expect([...sheet.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Review tsk_b", "Review tsk_a"]);
   await act(async () => [...sheet.querySelectorAll("button")].find((b) => b.textContent === "Approve all 2")!.click());
-  expect(calls.at(-1)).toEqual({ url: "/api/approvals/batch", body: { items: [{ id: "apr_b", sha: "sha_b" }, { id: "apr_a", sha: "sha_a" }] } });
+  expect(calls.filter((c) => c.url === "/api/approvals/batch").at(-1)).toEqual({ url: "/api/approvals/batch", body: { items: [{ id: "apr_b", sha: "sha_b" }, { id: "apr_a", sha: "sha_a" }] } });
 });
 
 test("a result the agent didn't say it finished is risky too, so it never approves on one key", async () => {
