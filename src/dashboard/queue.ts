@@ -88,8 +88,9 @@ export function taskVerdict(state: State, t: State["tasks"][number]): string | n
 
 // A task's one word in a list that names tasks (the palette): what it waits on you for when that isn't its state (a
 // question, a pick, a stopped part), a result's verdict, else its state word.
-export function taskTag(state: State, t: State["tasks"][number]): string {
-  const item = attentionQueue(state).find((i) => i.key === t.id);
+// `queue`: the queue built once by a caller listing many tasks, rather than once per task.
+export function taskTag(state: State, t: State["tasks"][number], queue: QueueItem[] = attentionQueue(state)): string {
+  const item = queue.find((i) => i.key === t.id);
   if (item && (item.kind === "question" || item.kind === "pick" || item.kind === "stuck")) return KIND[item.kind].label;
   const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
   return (a && resultWord(state, a)) ?? taskLabel(taskWord(t));

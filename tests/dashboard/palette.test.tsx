@@ -72,3 +72,16 @@ test("approving every clean result from the palette opens the list to look at fi
   const action = paletteActions(two, { spaceId: null, theme: "system" }).find((a) => a.id === "approve-clean")!;
   expect(action.run).toEqual({ kind: "navigate", path: "/needs-you?batch=1" });
 });
+
+test("the palette's task tags, built from one shared queue, match each task's own", async () => {
+  const { paletteActions } = await import("../../src/dashboard/palette");
+  const { taskTag } = await import("../../src/dashboard/queue");
+  const { makeState } = await import("../tui/fixtures");
+  const s = makeState();
+  const hints = paletteActions(s, { spaceId: null, theme: "system" }).filter((a) => a.group === "Tasks");
+  for (const h of hints) {
+    const t = s.tasks.find((x) => `task-${x.id}` === h.id)!;
+    expect(h.hint!.endsWith(taskTag(s, t))).toBe(true);
+  }
+  expect(hints.length).toBe(s.tasks.length);
+});
