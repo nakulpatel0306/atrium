@@ -5,24 +5,20 @@ import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { showToast, undoLatest } from "../toast";
-import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
-import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
+import { ACT, DECISION_KEYS, KEY_HELP, moveFocus, needsKey, NOTHING_HERE, SHEET_OPEN } from "../needs-keys";
+import { isShown } from "../page-keys";
+import { attentionQueue, cleanReviews, isRisky, itemLabel, itemLine, itemTitle, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
-import { ARM_MS, DecisionBar, OpenPoints, reopen } from "./Decision";
-import { ChangesView } from "./ChangesView";
-import { agentText } from "../agents";
-import { LoopPanel } from "./LoopPanel";
-import { Markdown } from "./Markdown";
+import { ARM_MS, armLabel, reopen } from "./Decision";
+import { KeysSheet } from "./KeysSheet";
+import { ResultDecision } from "./ResultDecision";
+import { LoopPanel, StageStrip } from "./LoopPanel";
 import { MemoryProposal } from "./Memory";
-import { OutcomeBanner } from "./OutcomeBanner";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
 import { RemovalRow } from "./RepoRemoval";
-import { RetroCard } from "./Retro";
 import { StopTask } from "./StopTask";
-import { WalkthroughCard } from "./Walkthrough";
-import { WhatItMade } from "./WhatItMade";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -53,7 +49,7 @@ function QueueRow({ item, state, selected, onSelect }: { item: QueueItem; state:
     >
       <span className="q-title">{title}</span>
       <span className="q-line">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{KIND_TEXT[item.kind]}</span> {line}
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{itemLabel(state, item)}</span> {line}
       </span>
       <span className="q-meta">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -137,43 +133,6 @@ function Starting({ id, line }: { id: string; line: string }) {
   );
 }
 
-// A result or question decided right here, with everything it rests on in view, the diff included: a decision never
-// has to leave the queue.
-function ApprovalDecision({ approval, task, space, state, armed }: { approval: Approval; task: Task | undefined; space: Space | undefined; state: State; armed: boolean }) {
-  const outcome = task?.outcome && task.outcome !== "done" ? task.outcome : null;
-  const repo = space?.kind === "repo";
-  const diff = repo && task?.branch && approval.kind === "review" && !task.loop?.noChanges;
-  return (
-    <>
-      <div className="dp-acts">
-        <DecisionBar approval={approval} state={state} armed={armed} keys />
-      </div>
-      {/* Why a risky result asks for a look, before anything else on its screen. */}
-      {task && isRisky(state, approval) && <OpenPoints task={task} />}
-      {task?.loop?.noChanges ? (
-        // Said plainly: an empty result has no commits to read or push, whatever the agent's own words were.
-        <p className="dp-lead" role="note">
-          It made no changes: its branch holds nothing new.
-        </p>
-      ) : (
-        outcome && <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
-      )}
-      {task && space ? (
-        <>
-          {/* What changed and where to look first leads; the diff itself next; the brief, checks and findings after. */}
-          <WalkthroughCard task={task} space={space} />
-          {diff && <ChangesView task={task} agent={agentText(task, state.runs)} />}
-          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen={!diff} reasonsAbove={isRisky(state, approval)} />}
-          <RetroCard task={task} state={state} />
-          {!diff && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
-        </>
-      ) : (
-        <Markdown text={approval.detail || "No further detail."} />
-      )}
-    </>
-  );
-}
-
 // One screen per item: what it is, how long it has waited, and everything needed to decide, with the decision's own
 // buttons. The queue's keys press those buttons, so a key can never do what a click wouldn't.
 export function DecisionPanel({ item, state, armed = false }: { item: QueueItem; state: State; armed?: boolean }) {
@@ -186,8 +145,8 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
 
   let body;
   if (approval?.alwaysAsk === "create_repo" && action?.draft) body = <div className="list needs-list"><ProjectDraftRow approval={approval} action={action} /></div>;
-  else if (approval?.alwaysAsk === "remove_clone") body = <div className="list needs-list"><RemovalRow approval={approval} /></div>;
-  else if (approval) body = <ApprovalDecision approval={approval} task={task} space={space} state={state} armed={armed} />;
+  else if (approval?.alwaysAsk === "remove_clone") body = <div className="list needs-list"><RemovalRow approval={approval} action={action} /></div>;
+  else if (approval) body = <ResultDecision approval={approval} task={task} space={space} state={state} armed={armed} keys />;
   else if (proposal) body = <div className="list needs-list"><ProposalRow proposal={proposal} space={space} /></div>;
   else if (memory && space) body = <MemoryProposal line={memory} space={space} />;
   else if (item.kind === "starting") body = <Starting id={item.key} line={itemLine(state, item)} />;
@@ -196,6 +155,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
       <>
         {/* Why it waits, first: the pause's own diagnosis, or what the split or attempts need. A question needs no lead:
             its answer form below says it. */}
+        {space?.kind === "repo" && task.loop && !task.loop.fanout && <StageStrip task={task} />}
         {item.kind !== "question" && (
           <p className={`dp-lead${item.kind === "paused" ? " wait" : ""}`} role="note">
             {item.kind === "paused" ? `Paused: ${askLine(task)}` : askLine(task)}
@@ -206,15 +166,15 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
             <StopTask task={task} />
           </div>
         )}
-        <LoopPanel task={task} state={state} repo={space?.kind === "repo"} showChecks={task.loop?.checks === "failed"} briefOpen />
+        <LoopPanel task={task} state={state} repo={space?.kind === "repo"} showChecks={task.loop?.checks === "failed"} briefOpen strip={false} />
       </>
     );
 
   return (
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{KIND_TEXT[item.kind]}</span>
-        <h2 id="dp-title">{itemTitle(state, item)}</h2>
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{itemLabel(state, item)}</span>
+        <h3 id="dp-title">{itemTitle(state, item)}</h3>
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
           {space?.name ?? "Atrium"}
@@ -227,15 +187,16 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
               <span>low priority: nothing waits on it</span>
             </>
           )}
-          {task && space && (
+          {space && (
+            // Every item in a space has a way to it: its task, or the space itself when nothing ran as a task.
             <a
-              href={`/space/${space.id}?task=${task.id}`}
+              href={task ? `/space/${space.id}?task=${task.id}` : `/space/${space.id}`}
               onClick={(e) => {
                 e.preventDefault();
-                navigate(`/space/${space.id}?task=${task.id}`);
+                navigate(task ? `/space/${space.id}?task=${task.id}` : `/space/${space.id}`);
               }}
             >
-              Open the task
+              {task ? "Open the task" : "Open the space"}
             </a>
           )}
         </p>
@@ -325,39 +286,6 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
   );
 }
 
-function KeysSheet({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="keys-sheet" role="dialog" aria-label="Keys">
-      <h3>Keys</h3>
-      <dl>
-        {KEY_HELP.map(([k, what]) => (
-          <div key={k}>
-            <dt>
-              <kbd>{k}</kbd>
-            </dt>
-            <dd>{what}</dd>
-          </div>
-        ))}
-      </dl>
-      {/* The same words every surface uses (engine/words.ts), said once in full. */}
-      <h3>What each item asks</h3>
-      <dl className="kinds">
-        {Object.values(KIND).map((k) => (
-          <div key={k.label}>
-            <dt>{k.label}</dt>
-            <dd>
-              {k.means} <span className="hint">Next: {k.action}.</span>
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <button className="btn" onClick={onClose}>
-        Close
-      </button>
-    </div>
-  );
-}
-
 // Everything waiting on the user as one queue, longest-blocked first, worked through from the keyboard: the list on
 // the left, the selected item's whole decision on the right (or full width on a narrow window once opened).
 export function NeedsPage({ state, item = null, batch: batchAsked = false }: { state: State; item?: string | null; batch?: boolean }) {
@@ -388,11 +316,13 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
   }, [item]);
   useEffect(() => {
     setArmed(null);
+    // The address names the item on screen, so a reload, Back or a copied link lands on the same one.
+    if (current && new URLSearchParams(location.search).get("item") !== current.key) history.replaceState(null, "", `/needs-you?item=${encodeURIComponent(current.key)}`);
   }, [current?.key]);
 
   // Live values for the key handler, which is attached once.
-  const live = useRef({ items, current, opened, armed, clean: 0 });
-  live.current = { items, current, opened, armed, clean: cleanReviews(state, items).length };
+  const live = useRef({ items, current, opened, armed, help, clean: 0 });
+  live.current = { items, current, opened, armed, help, clean: cleanReviews(state, items).length };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = needsKey(e);
@@ -401,11 +331,17 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       const i = current ? items.indexOf(current) : -1;
       if (key === "help") return setHelp((h) => !h);
       if (key === "close") {
+        // The live region still holds "Press a again"; it says the arm is off now.
+        if (armed) announce("Cancelled. Approve takes two presses again.");
+        setArmed(null);
         setHelp(false);
         setBatch(false);
         if (opened) setOpened(false);
+        document.querySelector<HTMLElement>(".q-list")?.focus();
         return;
       }
+      // A sheet over the page may cover the button a key would press; it's closed first.
+      if (live.current.help && DECISION_KEYS.includes(key)) return announce(SHEET_OPEN);
       if (key === "next" || key === "prev") {
         e.preventDefault();
         const next = items[moveFocus(i, items.length, key)];
@@ -426,15 +362,15 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
         return;
       }
       // On a narrow window the list hides the decision; a key must never press a button nobody can see.
-      if (panel.current && getComputedStyle(panel.current).display === "none") return;
-      const button = panel.current?.querySelector<HTMLButtonElement>(`[data-act="${ACT[key]}"]`);
-      if (!button || button.disabled) return;
+      const button = panel.current?.querySelector<HTMLButtonElement>(`[data-act="${ACT[key]}"]`) ?? null;
+      // Said, as on a task's page, rather than nothing happening.
+      if (!button || button.disabled || !isShown(button)) return announce(NOTHING_HERE[key] ?? "");
       // Keeps the letter out of the note field that s is about to focus.
       e.preventDefault();
       // A result with notes or open findings takes a second a: one key shouldn't approve what asks to be read.
       if (key === "approve" && button.dataset.risky && armed !== current?.key) {
         setArmed(current?.key ?? null);
-        return announce("Press a again to approve anyway.");
+        return announce(`${armLabel(button.dataset.word ?? "", "key")}.`);
       }
       setArmed(null);
       button.click();
@@ -454,7 +390,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
           Keys <kbd>?</kbd>
         </button>
       </div>
-      {help && <KeysSheet onClose={() => setHelp(false)} />}
+      {help && <KeysSheet keys={KEY_HELP} kinds floating onClose={() => setHelp(false)} />}
       {items.length === 0 ? (
         <div className="q-empty">
           <PartyPopper />
@@ -473,6 +409,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
             }}
           />
           <div className="q-panel" ref={panel}>
+            <h2 className="sr-only">The open item</h2>
             <button className="btn link q-back" onClick={() => setOpened(false)}>
               <ChevronLeft />
               All items

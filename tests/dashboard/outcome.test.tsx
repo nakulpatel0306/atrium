@@ -29,18 +29,19 @@ test("banner copy", () => {
   expect([approveLabel("couldnt"), approveLabel("partial"), approveLabel("unknown"), approveLabel(null)]).toEqual(["Accept anyway", "Accept as is", "Approve", "Approve"]);
 });
 
-test("a Needs you row says couldn't, above the summary, and asks to accept anyway", () => {
+test("a Needs you row says couldn't as its one line, and asks to accept anyway", () => {
   const html = renderToStaticMarkup(<NeedsYou state={withOutcome("couldnt", "the file isn't there.")} />);
   const t = text(html);
   expect(t).toContain("Couldn't do this: the file isn't there.");
   expect(t).toContain("Accept anyway…");
   expect(t).not.toContain("Approve");
-  expect(html.indexOf("outcome-banner")).toBeLessThan(html.indexOf("Send back</button>") + 2000);
+  // It replaces the summary as the row's line rather than adding a second one.
+  expect(t).not.toContain("Changed 2 files.");
   const partial = text(renderToStaticMarkup(<NeedsYou state={withOutcome("partial", "one left.")} />));
   expect(partial).toContain("Partly done: one left.");
   expect(partial).toContain("Accept as is");
   const unknown = renderToStaticMarkup(<NeedsYou state={withOutcome("unknown", null)} />);
-  expect(unknown).toContain("outcome-banner unknown");
+  expect(text(unknown)).toContain("Atrium can't tell whether this was done.");
   expect(text(unknown)).toContain("Approve");
 });
 

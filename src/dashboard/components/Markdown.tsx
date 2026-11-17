@@ -17,10 +17,19 @@ const COMPONENTS: Components = {
   ),
 };
 
-export function Markdown({ text, className }: { text: string; className?: string }) {
+// Headings moved down `demote` levels, so text with its own "## Goal" sits under the page's headings, not beside them.
+const demoted = (by: number): Components =>
+  Object.fromEntries(
+    [1, 2, 3, 4, 5, 6].map((n) => {
+      const Tag = `h${Math.min(6, n + by)}` as "h6";
+      return [`h${n}`, ({ children }: { children?: React.ReactNode }) => <Tag>{children}</Tag>];
+    }),
+  );
+
+export function Markdown({ text, className, demote = 0 }: { text: string; className?: string; demote?: number }) {
   return (
     <div className={className ? `md ${className}` : "md"}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={safeUrl} allowedElements={ALLOWED} unwrapDisallowed components={COMPONENTS}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={safeUrl} allowedElements={ALLOWED} unwrapDisallowed components={demote ? { ...COMPONENTS, ...demoted(demote) } : COMPONENTS}>
         {text}
       </ReactMarkdown>
     </div>

@@ -60,10 +60,27 @@ test("a risky result takes a second a to approve, as in the dashboard", async ()
   await app.type("j");
   await app.type("j");
   await app.type("a");
-  await app.frame((f) => f.includes("Approve anyway") && f.includes("bunfig.toml"));
+  await app.frame((f) => f.includes("again to approve") && f.includes("bunfig.toml"));
   expect(client.calls.some((c) => c.path === "/api/approvals/apr_noted")).toBe(false);
   await app.type("a");
   await app.frame(() => client.calls.some((c) => c.path === "/api/approvals/apr_noted"));
+});
+
+test("Esc or moving away disarms a risky approval, so the next a asks again", async () => {
+  const client = fakeClient(results());
+  const app = openApp(client);
+  await app.frame((f) => f.includes("Review: Noted"));
+  await app.type("j");
+  await app.type("j");
+  await app.type("a");
+  await app.frame((f) => f.includes("again to approve"));
+  await app.type("\x1b");
+  await app.frame((f) => !f.includes("again to approve"));
+  await app.type("a");
+  await app.frame((f) => f.includes("again to approve"));
+  await app.type("k");
+  await app.frame((f) => !f.includes("again to approve"));
+  expect(client.calls.some((c) => c.path === "/api/approvals/apr_noted")).toBe(false);
 });
 
 test("Shift-A lists the clean results and a second Shift-A approves them at the commits shown", async () => {
@@ -80,4 +97,13 @@ test("Shift-A lists the clean results and a second Shift-A approves them at the 
   expect(client.calls.find((c) => c.path === "/api/approvals/batch")!.body).toEqual({ items: [{ id: ids.approval, sha: "sha_1" }, { id: "apr_two", sha: "sha_2" }] });
   // What the engine left is said plainly.
   await app.frame((f) => f.includes("Approved 1. Left for you to read: Review: Second."));
+});
+
+test("results are named by their verdict, the dashboard's words", async () => {
+  const client = fakeClient(results());
+  const app = openApp(client);
+  const f = await app.frame((f) => f.includes("Review: Noted"));
+  expect(f).toContain("Needs a look ·");
+  expect(f).toContain("Clean ·");
+  expect(f).not.toContain("Review · ");
 });

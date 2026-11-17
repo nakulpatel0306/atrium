@@ -14,3 +14,11 @@ test("the ask bar is docked under the page, so it never covers what's being read
   expect(rule("main")).toContain("scroll-padding-bottom: var(--cmd-clear)");
   expect(Number(rule(":root").match(/--cmd-clear:\s*(\d+)px/)?.[1])).toBeGreaterThanOrEqual(10 + 48 + 14);
 });
+
+test("no rule sets a display on every input in the ask bar, which would show its hidden file picker", () => {
+  // Any selector list holding a bare `.cmd input` must not carry a display.
+  for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const selectors = m[1]!.split(",").map((s) => s.trim());
+    if (selectors.includes(".cmd input")) expect(m[2]).not.toMatch(/display\s*:/);
+  }
+});

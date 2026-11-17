@@ -54,3 +54,36 @@ export const KEY_HELP: [string, string][] = [
   ["Esc", "Back to the list"],
   ["?", "Show or hide these keys"],
 ];
+
+// The keys on a space's page, which act on the task opened in it: only the ones that press a decision's buttons.
+export const PAGE_KEY_HELP: [string, string][] = [
+  ["a", "Approve the open result; twice on one that Needs a look"],
+  ["s", "Send the open result back with a note"],
+  ["x", "Stop the open task while it runs"],
+  ["e", "Explain the problem, on an open paused task"],
+  ["z", "Take back the last approval, within its minute"],
+  ["Esc", "Cancel a first a, or hide these keys"],
+  ["?", "Show or hide these keys"],
+];
+
+export const PAGE_KEY_NOTE = "They act on the task you've opened. With more than one open, click in the one you mean first.";
+
+// The keys that act on a decision; none of them does anything while the keys sheet is open over the page.
+export const DECISION_KEYS: NeedsKey[] = ["approve", "sendBack", "stop", "explain", "batch", "undo"];
+export const SHEET_OPEN = "The keys sheet is open. Close it with Esc or ?, then press the key again.";
+
+// What a key says in Needs you when the open item has no such button.
+export const NOTHING_HERE: Partial<Record<NeedsKey, string>> = {
+  approve: "This item has nothing to approve.",
+  sendBack: "This item has nothing to send back.",
+  stop: "This item isn't running, so there's nothing to stop.",
+  explain: "Explain is for a paused task.",
+};
+
+// What a page key says when no open task shows its button.
+export const NOTHING_FOR: Partial<Record<NeedsKey, string>> = {
+  approve: "Nothing open here to approve. Open a task that's ready for review.",
+  sendBack: "Nothing open here to send back. Open a task that's ready for review.",
+  stop: "No open task is running.",
+  explain: "Explain is for a paused task. Open one first.",
+};

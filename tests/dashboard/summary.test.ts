@@ -128,3 +128,11 @@ test("a paused task counts once, as needing you, and isn't also reported as bloc
   expect(liveStatus(state)).toContain("1 thing needs you");
   expect(liveStatus(state)).not.toContain("blocked");
 });
+
+test("Home's line doesn't repeat a brief's questions, which its needs-you count already holds", async () => {
+  const { liveStatus } = await import("../../src/dashboard/summary");
+  const { ids, makeState } = await import("../tui/fixtures");
+  const state = makeState();
+  state.waits = { [ids.queued]: { taskId: ids.queued, agent: "claude", kind: "answers", reason: "The brief has questions for you, in Needs you." } };
+  expect(liveStatus(state)).not.toContain("questions");
+});

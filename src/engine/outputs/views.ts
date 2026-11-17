@@ -6,7 +6,7 @@ import { spaceFolder, tildePath } from "../folders";
 import { git } from "../git";
 import { getSpace, type Space } from "../spaces";
 import { getTask } from "../tasks";
-import { type FileKind, kindOf } from "./files";
+import { type FileKind, kindOf, mayHoldSecret } from "./files";
 import { snapshotFolder } from "./snapshot";
 import { latestMakers, taskFiles } from "./store";
 import type { Outcome } from "../outcome";
@@ -44,6 +44,8 @@ export type SpaceFile = {
   at: number;
   kind: FileKind;
   madeBy: { taskId: string; title: string } | null;
+  // Its name says it may hold a key or secret: listed, never previewed (files.ts).
+  secret: boolean;
 };
 
 // `shown` is the folder as the user would type it ("~/Atrium/weekly-planning").
@@ -117,7 +119,7 @@ export async function spaceFiles(db: Database, spaceId: string): Promise<SpaceFi
   const files = [...snap.files]
     .map(([path, e]): SpaceFile => {
       const maker = makers.get(`space:${path}`);
-      return { root: "space", ref: null, path, absPath: join(folder, path), size: e.size, at: e.mtimeMs, kind: kindOf(path), madeBy: maker ? madeBy(maker.taskId) : null };
+      return { root: "space", ref: null, path, absPath: join(folder, path), size: e.size, at: e.mtimeMs, kind: kindOf(path), madeBy: maker ? madeBy(maker.taskId) : null, secret: mayHoldSecret(path) };
     })
     .sort((a, b) => b.at - a.at);
   return { folder, shown: tildePath(folder), files, truncated: snap.truncated };
@@ -142,6 +144,7 @@ function repoFiles(db: Database, space: Space, madeBy: (taskId: string) => { tas
       at: r.created_at,
       kind: kindOf(r.path),
       madeBy: madeBy(r.task_id),
+      secret: mayHoldSecret(r.path),
     });
   }
   return { folder: space.repoPath, shown: space.repoPath && tildePath(space.repoPath), files, truncated: false };

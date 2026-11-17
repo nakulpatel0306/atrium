@@ -22,8 +22,9 @@ export const removalSize = (detail: string): string | null => /^[^·\n]+· ([\d.
 export function storageRow(r: StorageView["repos"][number], now = Date.now()) {
   const reasons = r.removable && !r.removable.ok ? r.removable.reasons : [];
   const status =
+    // Yours is never removed, which its owner tag already says.
     r.createdBy === "you"
-      ? "Kept"
+      ? null
       : r.pendingApprovalId
         ? "Waiting for you in Needs you"
         : r.removable?.ok
@@ -34,7 +35,7 @@ export function storageRow(r: StorageView["repos"][number], now = Date.now()) {
     path: tildeShown(r.path),
     size: bytes(r.bytes),
     owner: r.createdBy === "atrium" ? "Made by Atrium" : "Yours, never removed",
-    lastUsed: r.lastUsedAt === null ? "—" : relative(r.lastUsedAt, now),
+    lastUsed: r.lastUsedAt === null ? "Not used yet" : `Used ${relative(r.lastUsedAt, now)}`,
     status,
     reasons,
     canAsk: r.createdBy === "atrium" && !r.pendingApprovalId && r.removable?.ok === true,

@@ -24,17 +24,17 @@ function RepoRow({ repo, onAsked }: { repo: Repo; onAsked(): void }) {
       <div className="item storage-row">
         <span className="t">
           <b>{row.name}</b>
-          <span>{row.path}</span>
+          <span title={row.path}>{row.path}</span>
         </span>
         <span className="num">{row.size}</span>
         <span className={`tag${repo.createdBy === "atrium" ? "" : " private"}`}>{row.owner}</span>
-        <span className="faint">Used {row.lastUsed}</span>
+        <span className="faint">{row.lastUsed}</span>
         {row.reasons.length > 0 ? (
           <button className="btn link" onClick={() => setOpen(!open)} aria-expanded={open} title={row.reasons.join(" ")}>
             {row.status}
           </button>
         ) : (
-          <span className="faint">{row.status}</span>
+          row.status && <span className="faint">{row.status}</span>
         )}
         {row.canAsk && (
           <button className="btn" disabled={busy} onClick={() => void ask()}>

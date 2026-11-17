@@ -1,27 +1,32 @@
-import { ChevronRight, Inbox } from "lucide-react";
+import { ChevronRight, Inbox, TriangleAlert } from "lucide-react";
 import type { Ref } from "react";
 import type { State } from "../api";
 import { navigate } from "../route";
 import { attentionText, reviewChips } from "../summary";
-import { approveText, Chips } from "./Decision";
-import { OutcomeBanner } from "./OutcomeBanner";
+import { approveText } from "./Decision";
+import { CostChip } from "./Shape";
+import { outcomeText } from "../../engine/outcome";
+import { raiseFirst } from "../../engine/loop";
 import { needsYouCount } from "../../engine/needs";
-import { goTo, KIND } from "../../engine/words";
-import { attentionQueue, itemLine, itemTitle, type QueueItem } from "../queue";
+import { CLEAN, goTo, KIND, RISKY } from "../../engine/words";
+import { attentionQueue, isRisky, itemLine, itemTitle, type QueueItem } from "../queue";
 
 type Space = State["spaces"][number];
 
-// One item waiting on the user, as a summary: what kind it is, its title, one line (for a result, what the checks and the
-// reviewer said, as two chips), and one way to its screen in Needs you, named for the step it asks (engine/words.ts).
-// Deciding happens there, with the walkthrough and the diff in view, never from a summary.
+// One item waiting on the user, as a summary: its title and one line saying what's going on (for a result, what the
+// reviewer and the checks said), one chip (a result's Needs a look or Clean, else its kind) and its cost, and one way
+// to its screen in Needs you, named for the step it asks (engine/words.ts). The reasons, the walkthrough and the diff
+// are on that screen: nothing is decided from a summary.
 function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | undefined; state: State }) {
   const title = itemTitle(state, item);
   const approval = item.kind === "review" ? state.approvals.find((a) => a.id === item.key) : undefined;
   const task = item.taskId ? state.tasks.find((t) => t.id === item.taskId) : undefined;
-  const chips = approval ? reviewChips(approval, state) : null;
-  const line = chips ? null : itemLine(state, item);
-  const outcome = approval && task?.outcome && task.outcome !== "done" && !task.loop?.noChanges ? task.outcome : null;
-  const attention = approval ? attentionText(task?.loop) : null;
+  // A result the agent didn't say it finished says that first: it's what's going on.
+  const told = approval && task?.outcome && task.outcome !== "done" && !task.loop?.noChanges ? outcomeText(task.outcome, task.outcomeReason) : null;
+  const line = told ?? itemLine(state, item);
+  const looped = approval && reviewChips(approval, state);
+  const risky = !!approval && isRisky(state, approval);
+  const why = [attentionText(task?.loop), line].filter(Boolean).join("\n");
   return (
     <div className="entry">
       <div className={`item summary-row${item.low ? " low" : ""}`}>
@@ -31,20 +36,25 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
           {title}
           {line && <span>{line}</span>}
         </span>
-        {/* A result's chips say what it is; anything else wears its kind. */}
-        {chips ? <Chips chips={chips} attention={attention} /> : <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>}
+        {looped ? (
+          <span className="chips">
+            <span className={`chip ${risky ? "waiting" : "ok"}`} title={risky ? why : line}>
+              {risky && <TriangleAlert />}
+              {risky ? RISKY : CLEAN}
+            </span>
+          </span>
+        ) : (
+          <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>
+        )}
+        {/* What the work cost; a low-priority item (a CLAUDE.md line, a suggestion) costs nothing itself. */}
+        {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} dollars />}
         <div className="acts">
           <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
-            {approval ? `${approveText(state, approval)}…` : goTo(item.kind)}
+            {approval ? `${approveText(state, approval)}…` : goTo(item.kind, raiseFirst(task?.loop))}
             <ChevronRight />
           </button>
         </div>
       </div>
-      {outcome && (
-        <div className="outcome-row">
-          <OutcomeBanner outcome={outcome} reason={task?.outcomeReason ?? null} />
-        </div>
-      )}
     </div>
   );
 }
@@ -62,7 +72,7 @@ function Items({ state, items: shown }: { state: State; items?: QueueItem[] }) {
       {items.filter((i) => !i.low).map(row)}
       {low.length > 0 && (
         <div className="low-head" role="separator">
-          Low priority · {low.length}: nothing waits on {low.length === 1 ? "it" : "them"}
+          Low priority: nothing waits on {low.length === 1 ? "this one" : `these ${low.length}`}
         </div>
       )}
       {low.map(row)}

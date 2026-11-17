@@ -2,15 +2,12 @@
 // in engine/needs.ts. The terminal app reads the same lines, so both say the same thing.
 import { askLine, attentionQueue, batchApprovable, cleanResult, type QueueItem, type QueueKind } from "../engine/needs";
 import type { State } from "../engine/state";
-import { KIND } from "../engine/words";
+import { CLEAN, KIND, RISKY, taskLabel, taskWord } from "../engine/words";
 import { reviewChips, summaryLine } from "./summary";
 import { clock } from "./format";
 
 export type { QueueItem, QueueKind };
 export { attentionQueue };
-
-// What kind of decision each item is, as its row's label: the shared words (engine/words.ts).
-export const KIND_TEXT = Object.fromEntries(Object.entries(KIND).map(([k, v]) => [k, v.label])) as Record<QueueKind, string>;
 
 const approvalOf = (state: State, i: QueueItem) => state.approvals.find((a) => a.id === i.key);
 const taskOf = (state: State, i: QueueItem) => (i.taskId ? state.tasks.find((t) => t.id === i.taskId) : undefined);
@@ -71,6 +68,35 @@ export function waited(since: number, now = Date.now()): string {
 export function isRisky(state: State, a: State["approvals"][number]): boolean {
   const task = a.kind === "review" && a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
   return !!task?.loop && !cleanResult(task);
+}
+
+// A result's one word wherever it's listed (the queue, Home, its space): Needs a look or Clean, by the one rule
+// (needs.ts). Null for anything that didn't go through the loop, which keeps its kind's label.
+export function resultWord(state: State, a: State["approvals"][number]): string | null {
+  if (!reviewChips(a, state)) return null;
+  return isRisky(state, a) ? RISKY : CLEAN;
+}
+
+// A task in review's verdict, for lists that name tasks by state (the terminal app's), else null.
+export function taskVerdict(state: State, t: State["tasks"][number]): string | null {
+  const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
+  return a ? resultWord(state, a) : null;
+}
+
+// A task's one word in a list that names tasks (the palette): what it waits on you for when that isn't its state (a
+// question, a pick, a stopped part), a result's verdict, else its state word.
+// `queue`: the queue built once by a caller listing many tasks, rather than once per task.
+export function taskTag(state: State, t: State["tasks"][number], queue: QueueItem[] = attentionQueue(state)): string {
+  const item = queue.find((i) => i.key === t.id);
+  if (item && (item.kind === "question" || item.kind === "pick" || item.kind === "stuck")) return KIND[item.kind].label;
+  const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
+  return (a && resultWord(state, a)) ?? taskLabel(taskWord(t));
+}
+
+// The label a queue item wears: a result's verdict, else its kind.
+export function itemLabel(state: State, i: QueueItem): string {
+  const a = i.kind === "review" ? approvalOf(state, i) : undefined;
+  return (a && resultWord(state, a)) ?? KIND[i.kind].label;
 }
 
 // The commit a result's screen shows: the one its checks and review read. Approving sends it, so the approval binds to

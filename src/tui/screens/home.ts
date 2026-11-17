@@ -2,8 +2,9 @@
 // 100 columns).
 import { agentText } from "../../dashboard/agents";
 import { askLine } from "../../engine/needs";
-import { waited } from "../../dashboard/queue";
-import { KIND } from "../../engine/words";
+import { resultWord, waited } from "../../dashboard/queue";
+import { BUDGET_STEP, KIND, RISKY } from "../../engine/words";
+import { raiseFirst } from "../../engine/loop";
 import { askSteps } from "../keys";
 import { duration } from "../../dashboard/format";
 import { liveStatus, reviewLine } from "../../dashboard/summary";
@@ -74,7 +75,10 @@ export function cardsOf(view: View, now: number, inner: number): Card[] {
         meta: [...owner(t.spaceId), dot, { text: paused ? `${KIND.paused.label} · ${waiting(item.since, now)}` : `${KIND.shape.label} · low priority`, color: "faint" }],
         body: wrapStyled([{ text: oneLine(paused ? askLine(t) : (t.loop?.shape?.reason ?? "")), color: paused ? "warn" : "dim" }], inner).slice(0, 2),
         keys: paused
-          ? [{ key: "↵", label: KIND.paused.action, input: "\r", hot: true }, { key: "e", label: "Explain the problem", input: "e" }]
+          ? raiseFirst(t.loop)
+            ? // The budget paused it: raising it leads, named as in the dashboard (BUDGET_STEP), with the hint after.
+              [{ key: "b", label: BUDGET_STEP, input: "b", hot: true }, { key: "↵", label: KIND.paused.action, input: "\r" }, { key: "e", label: "Explain the problem", input: "e" }]
+            : [{ key: "↵", label: KIND.paused.action, input: "\r", hot: true }, { key: "e", label: "Explain the problem", input: "e" }]
           : [{ key: "↵", label: "Open", input: "\r" }, { key: "x", label: "Stop", input: "x" }],
       });
       continue;
@@ -111,12 +115,15 @@ export function cardsOf(view: View, now: number, inner: number): Card[] {
       const told = task ? outcomeText(task.outcome, task.outcomeReason) : null;
       const notDone = task?.outcome === "couldnt" || task?.outcome === "partial";
       const review = reviewLine(a, state);
+      // Named by its verdict, as in the dashboard (Needs a look or Clean); a result that didn't go through the loop
+      // keeps the kind's label.
+      const word = resultWord(state, a) ?? KIND.review.label;
       cards.push({
         id: a.id,
         glyph: notDone ? GLYPH.notdone : "◆",
-        tone: notDone ? "warn" : "accent",
+        tone: notDone || word === RISKY ? "warn" : "accent",
         title: a.title,
-        meta: [...owner(a.spaceId), dot, { text: task ? `${KIND.review.label} · ${agentText(task, state.runs)}${notDone ? " · says it isn't done" : ""} · ${waiting(item.since, now)}` : `${KIND.review.label} · ${waiting(item.since, now)}`, color: "faint" }],
+        meta: [...owner(a.spaceId), dot, { text: task ? `${word} · ${agentText(task, state.runs)}${notDone ? " · says it isn't done" : ""} · ${waiting(item.since, now)}` : `${word} · ${waiting(item.since, now)}`, color: "faint" }],
         body: told
           ? wrapStyled([{ text: told, color: "warn" }], inner).slice(0, 2)
           : wrapStyled([{ text: oneLine(review?.text ?? a.detail.split("\n")[0] ?? ""), color: review?.tone === "bad" ? "warn" : "dim" }], inner).slice(0, 1),

@@ -71,6 +71,23 @@ export function ProjectDraftRow({ approval, action }: { approval: Approval; acti
           </button>
         </div>
       </div>
+      {/* What a yes makes, in view before the yes, as the fields stand now. */}
+      {!open && (
+        <dl className="signoff" aria-label="What this creates">
+          <dt>GitHub repo</dt>
+          <dd className="mono">{fields.name}</dd>
+          <dt>Visibility</dt>
+          <dd>{fields.visibility === "public" ? "Public" : "Private"}</dd>
+          <dt>Template</dt>
+          <dd>{TEMPLATE_LABELS[fields.template]}</dd>
+          {folder && (
+            <>
+              <dt>Local folder</dt>
+              <dd className="mono">{folder}</dd>
+            </>
+          )}
+        </dl>
+      )}
       {open && (
         <form
           className="detail repo-form"

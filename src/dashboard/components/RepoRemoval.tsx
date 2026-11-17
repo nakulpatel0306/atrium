@@ -2,14 +2,18 @@ import { KIND } from "../../engine/words";
 import { useState } from "react";
 import { post, type State } from "../api";
 import { approvedToast } from "./Decision";
-import { removalSize } from "../repos";
+import { removalSize, tildeShown } from "../repos";
 
 type Approval = State["approvals"][number];
 
 const CHECKED =
   "Checked just now, and again right before deleting: no uncommitted changes, no untracked files, no ignored files beyond build output, no .env files, no stash or extra worktrees, and every commit is on GitHub.";
 
-export function RemovalRow({ approval }: { approval: Approval }) {
+type Action = State["repoActions"][number];
+
+// What a yes removes is shown before it, the folder, its size and the repo GitHub keeps; the full check is one click
+// away.
+export function RemovalRow({ approval, action }: { approval: Approval; action?: Action }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +49,23 @@ export function RemovalRow({ approval }: { approval: Approval }) {
           </button>
         </div>
       </div>
+      <dl className="signoff" aria-label="What this removes">
+        {action?.path && (
+          <>
+            <dt>Removes</dt>
+            <dd className="mono">
+              {tildeShown(action.path)}
+              {size && ` · ${size}`}
+            </dd>
+          </>
+        )}
+        {action?.github && (
+          <>
+            <dt>GitHub keeps</dt>
+            <dd className="mono">{action.github}</dd>
+          </>
+        )}
+      </dl>
       {open && (
         <div className="detail">
           <pre>{approval.detail}</pre>

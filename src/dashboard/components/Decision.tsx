@@ -12,6 +12,8 @@ import { approveLabel } from "./OutcomeBanner";
 type Approval = State["approvals"][number];
 // How long a first press of a risky Approve stays armed, by key or by click.
 export const ARM_MS = 4000;
+// Where keys aren't how a decision is made: a touch screen, or a window as narrow as a phone's.
+const TOUCH = "(pointer: coarse), (max-width: 640px)";
 
 type Task = State["tasks"][number];
 type Outcome = Task["outcome"];
@@ -103,7 +105,24 @@ export function approveText(state: State, approval: Approval): string {
   return approveWord(task?.outcome ?? null, isRisky(state, approval));
 }
 
-// A risky Approve takes two presses with the mouse as with the keys: the first arms it (or the queue's first a did,
+// Every label a button can show, stacked in one grid cell with only the current one visible, so the button keeps the
+// width of its longest label and nothing moves under the pointer when it changes.
+function Labels({ shown, all }: { shown: string; all: string[] }) {
+  return (
+    <span className="btn-labels">
+      {[...new Set(all)].map((l) => (
+        <span key={l} className={l === shown ? "on" : undefined} aria-hidden={l === shown ? undefined : true}>
+          {l}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// The arm's own words, said on the button itself: by key or by click, approve or accept.
+export const armLabel = (word: string, by: "key" | "click"): string => `${by === "key" ? "Press a" : "Click"} again to ${word.startsWith("Accept") ? "accept" : "approve"}`;
+
+// A risky Approve takes two presses with the mouse as with the keys: the first arms it (or a page's first a did,
 // `armed`), the second approves. It disarms by itself after a few seconds.
 export function DecideButtons({ d, outcome, risky = false, armed = false }: { d: Decision; outcome: Outcome; risky?: boolean; armed?: boolean }) {
   const [clicked, setClicked] = useState(false);
@@ -112,10 +131,16 @@ export function DecideButtons({ d, outcome, risky = false, armed = false }: { d:
     const t = setTimeout(() => setClicked(false), ARM_MS);
     return () => clearTimeout(t);
   }, [clicked]);
+  const word = approveWord(outcome, risky);
+  // On a phone or a touch screen the button is pressed, not keyed, so it only reserves room for its click wording and
+  // stays close to its text's width.
+  const touch = typeof matchMedia === "function" && matchMedia(TOUCH).matches;
+  const labels = touch ? [word, armLabel(word, "click")] : [word, armLabel(word, "key"), armLabel(word, "click")];
+  const armedLabel = clicked || (touch && armed) ? armLabel(word, "click") : armed ? armLabel(word, "key") : word;
   const approve = () => {
     if (risky && !armed && !clicked) {
       setClicked(true);
-      return announce("Click again to approve anyway.");
+      return announce(`${armLabel(word, "click")}.`);
     }
     setClicked(false);
     void d.decide("approve");
@@ -129,11 +154,12 @@ export function DecideButtons({ d, outcome, risky = false, armed = false }: { d:
         className={`btn${risky ? "" : " p"}`}
         data-act="approve"
         data-risky={risky || undefined}
+        data-word={word}
         disabled={d.busy}
         title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
         onClick={approve}
       >
-        {clicked ? "Click again to approve anyway" : approveWord(outcome, risky)}
+        {risky ? <Labels shown={armedLabel} all={labels} /> : word}
       </button>
     </>
   );
@@ -175,7 +201,7 @@ export function OpenPoints({ task }: { task: Task }) {
     <section className="open-points" aria-label={`${RISKY}: why`}>
       <h4>
         <TriangleAlert />
-        {RISKY}: why
+        Why
       </h4>
       <ul>
         {attention.map((a) => (
@@ -197,9 +223,10 @@ export function OpenPoints({ task }: { task: Task }) {
 
 // The one layout for deciding on a result, wherever it's decided: the queue's screen, a task's own page and a row in a
 // list. Left to right: what the checks and the reviewer said, a way to the full screen when there is one, then Send
-// back and Approve. Below them, a line that names the keys, or, once a risky Approve has had one press of a, asks for
-// the second: the same height either way, so nothing moves under the pointer.
-export function DecisionBar({ approval, state, open, armed = false, keys = false }: { approval: Approval; state: State; open?: () => void; armed?: boolean; keys?: boolean }) {
+// back and Approve. Below them, a line that names the keys, or, once a risky Approve has had one press of a (its button
+// then says to press it again), why and how to back out: the same height either way, so nothing moves.
+// `reasonsBelow`: the screen lists why it needs a look right under the bar, so the bar doesn't say it a third time.
+export function DecisionBar({ approval, state, open, armed = false, keys = false, reasonsBelow = false }: { approval: Approval; state: State; open?: () => void; armed?: boolean; keys?: boolean; reasonsBelow?: boolean }) {
   const task = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const d = useDecision(approval, shownSha(state, approval));
   const chips = reviewChips(approval, state);
@@ -208,7 +235,7 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
   return (
     <div className="decision">
       <div className="decision-row">
-        {chips ? <Chips chips={chips} attention={attentionText(task?.loop)} /> : <span className="review-line">Waiting for your decision</span>}
+        {chips ? <Chips chips={chips} attention={reasonsBelow ? null : attentionText(task?.loop)} /> : <span className="review-line">Waiting for your decision</span>}
         <span className="decision-acts">
           {open && (
             <button className="btn" data-act="open" onClick={open}>
@@ -219,10 +246,10 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
         </span>
       </div>
       {keys && (
-        <p className={`decision-keys${armed ? " armed" : ""}`} role={armed ? "status" : undefined}>
+        <p className={`decision-keys${armed ? " armed" : ""}`}>
           {armed ? (
             <>
-              It has notes or findings that weren't fixed. Press <kbd>a</kbd> again to approve anyway.
+              It has notes or findings that weren't fixed. <kbd>Esc</kbd> cancels.
             </>
           ) : (
             <>

@@ -5,7 +5,7 @@ import { draftBrief } from "../engine/brief-draft";
 import { checksFor, detectChecks } from "../engine/checks/detect";
 import { latestChecks } from "../engine/checks/run";
 import { git } from "../engine/git";
-import { type Budget, type LoopState, resumed } from "../engine/loop";
+import { type Budget, type LoopState, MAX_BUDGET, resumed } from "../engine/loop";
 import { getSpace, type Space } from "../engine/spaces";
 import { appendTaskDetail, getTask, setTaskBrief, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
 import { tierModel } from "../engine/tiers";
@@ -27,7 +27,7 @@ export const HINT_MAX = 2000;
 export function budgetField(v: unknown): Budget {
   const b = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
   const ok = (n: unknown, max: number) => typeof n === "number" && Number.isInteger(n) && n > 0 && n <= max;
-  if (!ok(b.tokens, 50_000_000) || !ok(b.minutes, 24 * 60)) throw new HttpError(400, "A budget needs whole tokens (up to 50,000,000) and minutes (up to 1,440).");
+  if (!ok(b.tokens, MAX_BUDGET.tokens) || !ok(b.minutes, MAX_BUDGET.minutes)) throw new HttpError(400, "A budget needs whole tokens (up to 50,000,000) and minutes (up to 1,440).");
   return { tokens: b.tokens as number, minutes: b.minutes as number };
 }
 
@@ -156,7 +156,16 @@ export async function loopRoute(
     const task = getTask(db, budgetM[1]!);
     if (!task?.loop) throw new HttpError(404, "No such task with a budget.");
     if (task.status === "done") throw new HttpError(409, "This task is finished, so its budget no longer applies.");
-    const next = setTaskLoop(db, task.id, { ...task.loop, budget: budgetField((await readBody(req)).budget) });
+    const body = await readBody(req);
+    const loop = { ...task.loop, budget: budgetField(body.budget) };
+    // A budget pause raised with `resume` carries on in the same step, from the branch, with its counters started over.
+    if (body.resume === true && task.status === "blocked" && task.loop.paused?.kind === "budget") {
+      setTaskLoop(db, task.id, resumed(loop));
+      const next = setTaskStatus(db, task.id, "queued");
+      kick();
+      return json(next);
+    }
+    const next = setTaskLoop(db, task.id, loop);
     kick();
     return json(next);
   }

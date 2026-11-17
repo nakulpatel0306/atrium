@@ -1,13 +1,14 @@
+import { raiseFirst } from "../../src/engine/loop";
 import { closeDom, openDom } from "./dom";
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NeedsList } from "../../src/dashboard/components/NeedsYou";
 import { DecisionPanel } from "../../src/dashboard/components/NeedsPage";
-import { attentionQueue, KIND_TEXT, type QueueItem } from "../../src/dashboard/queue";
+import { attentionQueue, itemLabel, type QueueItem } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
-import { goTo, KIND, TASK_WORD } from "../../src/engine/words";
+import { BUDGET_STEP, goTo, KIND, TASK_WORD } from "../../src/engine/words";
 import { STATUS_TEXT } from "../../src/dashboard/summary";
 import { deriveView } from "../../src/tui/select";
 import { cardsOf } from "../../src/tui/screens/home";
@@ -74,7 +75,9 @@ test("the fixture covers each kind the surfaces decide on", () => {
 });
 
 test("the queue's labels and the task words come from the shared map", () => {
-  for (const [kind, { label }] of Object.entries(KIND)) expect(KIND_TEXT[kind as keyof typeof KIND]).toBe(label);
+  // Anything that isn't a result through the loop wears its kind's label.
+  const s = everyKind();
+  for (const i of attentionQueue(s)) if (i.kind !== "review") expect(itemLabel(s, i)).toBe(KIND[i.kind].label);
   expect(STATUS_TEXT.blocked).toBe(TASK_WORD.stopped);
   expect(STATUS_TEXT.review).toBe(TASK_WORD.review);
 });
@@ -86,13 +89,17 @@ test("Home's summary rows: each item's tag is its label and its one button names
   const items = attentionQueue(s);
   expect(rows).toHaveLength(items.length);
   items.forEach((item, i) => {
-    // A result's chips say what it is; every other row wears its kind's label.
-    const tag = rows[i]!.querySelector(".tag");
-    if (rows[i]!.querySelector(".chips")) expect(tag).toBeNull();
+    // At most one status chip, beside the cost: a result's Needs a look or Clean, and every other row its kind's label.
+    const tag = rows[i]!.querySelector(".tag:not(.cost)");
+    const chips = rows[i]!.querySelectorAll(".chip");
+    expect(chips.length + (tag ? 1 : 0)).toBeLessThanOrEqual(1);
+    if (chips.length) expect(tag).toBeNull();
     else expect(tag!.textContent).toBe(KIND[item.kind].label);
+    expect(rows[i]!.querySelectorAll(".tag.cost").length).toBeLessThanOrEqual(1);
     const buttons = [...rows[i]!.querySelectorAll("button")];
     expect(buttons).toHaveLength(1);
-    expect(buttons[0]!.textContent).toBe(goTo(item.kind));
+    const budget = s.tasks.find((t) => t.id === item.taskId)?.loop?.paused?.kind === "budget";
+    expect(buttons[0]!.textContent).toBe(goTo(item.kind, budget));
   });
   // Low-priority items sit under their own divider, so the heading's count is the rows above it.
   const order = [...el.querySelector(".needs-list")!.children].map((c) => (c.classList.contains("low-head") ? "divider" : "row"));
@@ -107,7 +114,10 @@ test("each decision screen's primary button is the step its rows named", () => {
     const el = render(<DecisionPanel item={item} state={s} />);
     expect(el.querySelector(".q-kind")!.textContent).toBe(KIND[item.kind].label);
     const primary = [...el.querySelectorAll<HTMLButtonElement>(".dp-body .btn.p")].map((b) => b.textContent);
-    expect(primary).toContain(KIND[item.kind].action);
+    // A budget pause leads with raising the budget, the step its row names.
+    const budget = s.tasks.find((t) => t.id === item.taskId)?.loop?.paused?.kind === "budget";
+    if (budget) expect(primary.some((p) => p?.startsWith("Raise to"))).toBe(true);
+    else expect(primary).toContain(KIND[item.kind].action);
     act(() => root!.unmount());
     root = null;
   }
@@ -120,7 +130,9 @@ test("the terminal app's cards say each label and offer the same step as their m
   for (const item of view.queue) {
     const card = cards.find((c) => c.id === item.key)!;
     expect(card.meta.map((m) => m.text).join("")).toContain(KIND[item.kind].label);
-    expect(card.keys.find((k) => k.hot)!.label).toBe(KIND[item.kind].action);
+    // A budget pause's first step is raising it, in the shared words; everything else leads with its kind's step.
+    const budget = item.kind === "paused" && raiseFirst(s.tasks.find((t) => t.id === item.key)?.loop);
+    expect(card.keys.find((k) => k.hot)!.label).toBe(budget ? BUDGET_STEP : KIND[item.kind].action);
   }
 });
 

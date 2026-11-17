@@ -187,6 +187,29 @@ export function resumed(loop: LoopState): LoopState {
   return { ...loop, stage: "writing", paused: null, escalated: loop.escalated || loop.paused !== null, explain: false, stalled: 0, failSig: null, usage: { tokens: 0, ms: 0, unreported: false } };
 }
 
+// The most a task's budget may be: limits that keep a typo from meaning "forever".
+export const MAX_BUDGET: Budget = { tokens: 50_000_000, minutes: 24 * 60 };
+
+// What raising a paused task's budget raises it to: double whatever ran out (both when neither did), within the limits.
+export function raisedBudget(loop: Pick<LoopState, "usage" | "budget">): Budget {
+  const tokensOut = loop.usage.tokens >= loop.budget.tokens;
+  const timeOut = loop.usage.ms >= loop.budget.minutes * 60_000;
+  const both = !tokensOut && !timeOut;
+  return {
+    tokens: tokensOut || both ? Math.min(loop.budget.tokens * 2, MAX_BUDGET.tokens) : loop.budget.tokens,
+    minutes: timeOut || both ? Math.min(loop.budget.minutes * 2, MAX_BUDGET.minutes) : loop.budget.minutes,
+  };
+}
+
+// Whether there's anything left to raise: at the limits, a hint is the only way on.
+export const canRaise = (loop: Pick<LoopState, "usage" | "budget">): boolean => {
+  const to = raisedBudget(loop);
+  return to.tokens !== loop.budget.tokens || to.minutes !== loop.budget.minutes;
+};
+
+// A paused task whose budget paused it and can still be raised: its first step is raising it (engine/words.ts).
+export const raiseFirst = (loop: LoopState | null | undefined): boolean => loop?.paused?.kind === "budget" && canRaise(loop);
+
 export function overBudget(loop: LoopState): string | null {
   const { usage, budget } = loop;
   if (usage.tokens >= budget.tokens) return `It used ${compact(usage.tokens)} weighted tokens, its budget.`;

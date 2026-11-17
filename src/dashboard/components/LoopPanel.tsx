@@ -1,9 +1,9 @@
-import { KIND, RISKY } from "../../engine/words";
-import { Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
+import { CLEAN, KIND, RISKY } from "../../engine/words";
+import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
 import type { CheckRow } from "../../engine/checks/run";
-import { compact, findingLine, shownStage, type Stage } from "../../engine/loop";
+import { compact, findingLine, raisedBudget, raiseFirst, shownStage, type Stage } from "../../engine/loop";
 import { agentName } from "../agents";
 import { post, type State, useFetched } from "../api";
 import { duration } from "../format";
@@ -14,6 +14,7 @@ import { asksBeforeStarting, cleanResult } from "../../engine/needs";
 import { Fanout, ShapeLine } from "./Shape";
 
 type Task = State["tasks"][number];
+type Loop = NonNullable<Task["loop"]>;
 
 const STRIP: (Stage | "brief")[] = ["brief", "writing", "checks", "review", "ready"];
 
@@ -23,11 +24,13 @@ export function StageStrip({ task }: { task: Task }) {
   const at = now === "paused" ? STRIP.indexOf(task.loop!.stage) : STRIP.indexOf(now);
   // Ready with something open reads amber, like its Approve anyway: one rule (needs.ts) for both.
   const notes = now === "ready" && task.status === "review" && !cleanResult(task);
+  // A result waiting on you ends on its verdict, the word its row and chip use, rather than a third name.
+  const verdict = now === "ready" && task.status === "review" ? (notes ? RISKY : CLEAN) : null;
   return (
     <ol className="stages" aria-label="Where this task is">
       {STRIP.map((s, i) => {
         const here = i === at;
-        const label = here && now === "paused" ? "Paused" : here && notes ? RISKY : STAGE_TEXT[s];
+        const label = here && now === "paused" ? "Paused" : here && verdict ? verdict : STAGE_TEXT[s];
         return (
           <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
             {label}
@@ -112,6 +115,9 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
     if (!res.ok) setError(res.error);
     else setHint("");
   };
+  // Raising leads only while there's room to raise; at the limits the hint is the way on, and the pause says so.
+  const budget = raiseFirst(task.loop);
+  const atMax = task.loop?.paused?.kind === "budget" && !budget;
   const explain = (
     <button className="btn" type="button" data-act="explain" disabled={busy} onClick={() => void act("explain")}>
       <MessageSquareText />
@@ -126,6 +132,7 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
           {explain}
         </div>
       )}
+      {atMax && <p className="hint">It's at the maximum budget, so give it a hint or explain the problem.</p>}
       <form
         className="hint-form"
         onSubmit={(e) => {
@@ -137,8 +144,16 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
       >
         <textarea rows={2} aria-label="Hint for the agent" placeholder="What should it try, or what is it missing?" value={hint} onChange={(e) => setHint(e.target.value)} />
         <div className="acts">
-          {/* A pause's one primary step, named as on every surface (engine/words.ts); the diagnosis is the other way on. */}
-          <button className="btn p" type="submit" disabled={busy}>
+          {budget && (
+            // When the budget is the cause, raising it is the way on, in one click: what ran out, doubled, and the work
+            // carries on from the branch. A hint is then the other way.
+            <button className="btn p" type="button" disabled={busy} onClick={() => void act("budget", { budget: raisedBudget(task.loop!), resume: true })}>
+              <Gauge />
+              {raiseText(task.loop!)}
+            </button>
+          )}
+          {/* A pause's primary step, named as on every surface (engine/words.ts); the diagnosis is the other way on. */}
+          <button className={`btn${budget ? "" : " p"}`} type="submit" disabled={busy}>
             <Lightbulb />
             {KIND.paused.action}
           </button>
@@ -159,14 +174,22 @@ const stillOpen = (r: { findings: { resolution: { action: string } | null }[] })
   return parts.length ? `: ${parts.join(", ")}` : ": all fixed";
 };
 
+export function raiseText(loop: Loop): string {
+  const to = raisedBudget(loop);
+  const parts = [to.tokens !== loop.budget.tokens && `${compact(to.tokens)} tokens`, to.minutes !== loop.budget.minutes && `${to.minutes} min`].filter(Boolean);
+  return `Raise to ${parts.join(" · ")} and carry on`;
+}
+
 function Budget({ task }: { task: Task }) {
   const loop = task.loop!;
   const [editing, setEditing] = useState(false);
   const [tokens, setTokens] = useState(String(loop.budget.tokens));
   const [minutes, setMinutes] = useState(String(loop.budget.minutes));
   const [error, setError] = useState<string | null>(null);
+  // On a budget pause, saving a new budget is also the way on, so it carries on in the same step.
+  const resume = task.status === "blocked" && loop.paused?.kind === "budget";
   const save = async () => {
-    const res = await post(`/api/tasks/${task.id}/budget`, { budget: { tokens: Number(tokens), minutes: Number(minutes) } });
+    const res = await post(`/api/tasks/${task.id}/budget`, { budget: { tokens: Number(tokens), minutes: Number(minutes) }, ...(resume && { resume: true }) });
     if (res.ok) setEditing(false);
     else setError(res.error);
   };
@@ -175,8 +198,9 @@ function Budget({ task }: { task: Task }) {
   return (
     <div className="budget">
       <span>
-        <span className={over > 0 ? "over" : undefined} title="Tokens are counted the way the API prices them: a read from Claude's prompt cache counts a tenth, a cache write 1.25×, everything else in full.">
-          Budget since your last hint: {used}
+        <span className={over > 0 && !resume ? "over" : undefined} title="Tokens are counted the way the API prices them: a read from Claude's prompt cache counts a tenth, a cache write 1.25×, everything else in full.">
+          {/* A budget pause says what ran out once, in its lead; here only the budget and the way to change it. */}
+          {resume ? `Budget: ${compact(loop.budget.tokens)} tokens · ${loop.budget.minutes} min` : `Budget since you last stepped in: ${used}`}
         </span>
         {loop.usage.unreported && <span className="hint"> (an agent didn't report its tokens, so this is at least)</span>}
       </span>
@@ -192,13 +216,16 @@ function Budget({ task }: { task: Task }) {
             tokens
             <input aria-label="Minutes budget" inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
             min
-            <button className="btn" type="submit">
-              Save
+            <button className="btn" type="button" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+            <button className="btn p" type="submit">
+              {resume ? "Save and carry on" : "Save"}
             </button>
           </form>
         ) : (
-          <button className="btn link subtle" onClick={() => setEditing(true)}>
-            Change
+          <button className="btn" onClick={() => setEditing(true)}>
+            Change budget
           </button>
         ))}
       {error && <span className="err">{error}</span>}
@@ -211,13 +238,14 @@ function Budget({ task }: { task: Task }) {
 // `briefOpen` shows the brief unfolded, as the Needs you queue does: it's what the result is judged against.
 // `reasonsAbove`: a risky result's reasons are already listed above (OpenPoints), so this says them once more only as a
 // count, not as a second and third list.
-export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, reasonsAbove = false }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean; reasonsAbove?: boolean }) {
+// `strip`: false when the decision above already shows where the task is.
+export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, reasonsAbove = false, strip = true }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean; reasonsAbove?: boolean; strip?: boolean }) {
   const [checksOpen, setChecksOpen] = useState(showChecks);
   const loop = task.loop;
   const attention = reasonsAbove ? null : attentionText(loop);
   return (
     <section className="loop">
-      {repo && !loop?.fanout && <StageStrip task={task} />}
+      {repo && strip && !loop?.fanout && <StageStrip task={task} />}
       {repo && <ShapeLine task={task} state={state} />}
       {repo && <Fanout task={task} state={state} />}
       {loop?.paused && task.status === "blocked" && <Paused task={task} nudge={loop.paused.kind === "loop" && !loop.explanation && state.spaces.find((sp) => sp.id === task.spaceId)?.learning !== "off"} />}
@@ -238,7 +266,7 @@ export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, re
       {task.brief && (
         <details className="brief-view" open={briefOpen || loop?.questions.length ? true : undefined}>
           <summary>Brief</summary>
-          <Markdown text={briefSections(task.brief, null).join("\n\n")} />
+          <Markdown text={briefSections(task.brief, null).join("\n\n")} demote={2} />
         </details>
       )}
       {loop?.suggestedVerify && task.status !== "done" && <SuggestedCheck task={task} command={loop.suggestedVerify} />}

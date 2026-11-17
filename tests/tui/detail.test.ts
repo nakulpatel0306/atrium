@@ -201,3 +201,12 @@ test("a result waiting for you shows its retro in the approval's detail too", ()
   expect(all).toContain("How directing it went");
   expect(all).toContain("You steered once");
 });
+
+test("a task in review is named by its verdict in its detail, as in the dashboard", () => {
+  const state = makeState();
+  const at = state.tasks.findIndex((t) => t.id === ids.review);
+  state.tasks[at] = { ...state.tasks[at]!, outcome: "done", loop: { ...newLoop(SIZE_BUDGETS.medium), stage: "ready", checks: "passed", attention: ["This change edits how checks run: package.json."], reviews: [{ reviewer: "codex", verdict: "approve", findings: [], skipped: null }] } };
+  const first = text(taskDetail(deriveView(state, onTask(ids.review, 1)), null)).split("\n")[0]!;
+  expect(first).toContain("needs a look");
+  expect(first).not.toContain("ready for review");
+});

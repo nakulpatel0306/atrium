@@ -1,5 +1,5 @@
-import { attentionQueue } from "../../engine/needs";
-import { KIND as QUEUE_KIND, RISKY, taskLabel, taskWord } from "../../engine/words";
+import { asksBeforeStarting, attentionQueue } from "../../engine/needs";
+import { KIND as QUEUE_KIND, taskLabel, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
@@ -8,7 +8,7 @@ import { absolute, duration, relative, tokens } from "../format";
 import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, reviewLine, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
-import { isRisky } from "../queue";
+import { isRisky, resultWord } from "../queue";
 import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
 import { MemorySize } from "./Memory";
 import { RetroCard, RollupCard } from "./Retro";
@@ -19,7 +19,13 @@ import { spendText } from "../../engine/cost";
 import { compact } from "../../engine/loop";
 import { kindLabel, setArchived } from "../spaces";
 import { Activity, TaskHistory, taskGroups } from "./Activity";
-import { DecisionBar, OpenPoints } from "./Decision";
+import { ResultDecision } from "./ResultDecision";
+import { ARM_MS, armLabel } from "./Decision";
+import { KeysSheet } from "./KeysSheet";
+import { ACT, DECISION_KEYS, needsKey, NOTHING_FOR, PAGE_KEY_HELP, PAGE_KEY_NOTE, SHEET_OPEN } from "../needs-keys";
+import { pressable } from "../page-keys";
+import { announce } from "../live";
+import { undoLatest } from "../toast";
 import { DeleteSpace } from "./DeleteSpace";
 import { DeleteTask } from "./DeleteTask";
 import { StopTask } from "./StopTask";
@@ -35,6 +41,7 @@ import { STAYS_PRIVATE } from "../../engine/legacy";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
+import { BriefQuestions } from "./BriefQuestions";
 import { RepoWork } from "./RepoWork";
 import { WhatItMade } from "./WhatItMade";
 import { TaskAttachments } from "./TaskAttachments";
@@ -329,6 +336,8 @@ type TaskRowProps = {
   // Open on its Changes, from a "See changes" link, at one hunk from a walkthrough's link.
   showChanges?: boolean;
   at?: ChangeSpot | null;
+  // The first a on this task's risky result has been pressed; a second approves it.
+  armed?: boolean;
 };
 
 // The queue kind a task waits under when that isn't already its state word: a question, a pick, a stopped part.
@@ -337,7 +346,7 @@ function queueKindOf(state: State, taskId: string) {
   return item && (item.kind === "question" || item.kind === "pick" || item.kind === "stuck") ? item.kind : null;
 }
 
-function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = null }: TaskRowProps) {
+function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = null, armed = false }: TaskRowProps) {
   const [busy, setBusy] = useState(false);
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -355,6 +364,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
   const review = task.status === "review" ? state.approvals.find((a) => a.taskId === task.id && a.kind === "review") : undefined;
   const risky = !!review && isRisky(state, review);
+  // A result that went through the loop wears its verdict instead of "Ready for review", as in the queue and on Home.
+  const verdict = review ? resultWord(state, review) : null;
   const attached = state.attachments.filter((a) => a.taskId === task.id);
 
   const act = async (fn: () => ReturnType<typeof post>) => {
@@ -369,13 +380,14 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   const setAgent = (value: AgentChoice) => act(() => patch(`/api/tasks/${task.id}`, { agent: value }));
 
   return (
-    <div className="entry" id={`task-${task.id}`}>
+    // An open row is where the page's keys act (page-keys.ts): its own buttons, and only those that show.
+    <div className="entry" id={`task-${task.id}`} data-decision={open ? task.id : undefined}>
       {/* The summary is the row's one button; its actions sit beside it, so no control is nested in another. */}
       <div className={`item task${task.status === "done" ? " done" : ""}`}>
         <button className="task-open" aria-expanded={open} onClick={onToggle}>
           {/* The tag beside it says the state in words; the icon is only for the eye. */}
           <span aria-hidden="true">
-            <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} />
+            <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} verdict={verdict} />
           </span>
           <KindBadge kind={task.kind} />
           <span className="t" title={shownTitle(task)}>
@@ -388,8 +400,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </span>
           ) : (
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
-            <span className={`tag${stuck ? " bad" : word === "paused" ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
-              {notDone ?? (asks ? QUEUE_KIND[asks].label : taskLabel(word))}
+            <span
+              className={`tag${stuck ? " bad" : word === "paused" || risky ? " wait" : verdict ? " good" : ""}${notDone ? " notdone" : ""}`}
+              title={(review && reviewLine(review, state)?.text) || (task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined)}
+            >
+              {notDone ?? (asks ? QUEUE_KIND[asks].label : (verdict ?? taskLabel(word)))}
             </span>
           )}
         </button>
@@ -404,14 +419,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             Run now
           </button>
         )}
-        {/* A result waiting on you that isn't clean says so on its row, as everywhere else (needs.ts, one rule). */}
-        {risky && (
-          <span className="tag wait" title={review ? (reviewLine(review, state)?.text ?? undefined) : undefined}>
-            {RISKY}
-          </span>
-        )}
-        {/* Open on a decision, the checks have their chip right below; the row doesn't say it twice. */}
-        {space?.kind === "repo" && task.kind === "work" && !(open && review) && !risky && (
+        {/* A result's verdict already speaks for its checks, and its decision shows them; the row doesn't say it twice. */}
+        {space?.kind === "repo" && task.kind === "work" && !verdict && (
           <ChecksBadge
             task={task}
             onOpen={() => {
@@ -425,17 +434,21 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
       </div>
       {open && (
         <div className="detail">
+          {/* The open task's sections (the walkthrough, You asked, History) sit under its title. */}
+          <h3 className="sr-only">{shownTitle(task)}</h3>
           {/* A pause waits for a hint and reads amber; a stopped task waits for a retry and reads red. */}
           {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{task.blockedReason}</p>}
-          {(task.status === "review" || task.status === "done") && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
-          {review && (
-            <div className="review-acts">
-              <DecisionBar approval={review} state={state} />
+          {review ? (
+            // The same decision, with the same evidence, as its screen in Needs you.
+            <div className="task-decision">
+              <ResultDecision approval={review} task={task} space={space} state={state} at={at} armed={armed} keys />
             </div>
+          ) : (
+            <>
+              {task.status === "done" && <OutcomeBanner outcome={task.outcome} reason={task.outcomeReason} />}
+              <RetroCard task={task} state={state} />
+            </>
           )}
-          {/* The same reasons, in the same place, as on its screen in Needs you. */}
-          {risky && <OpenPoints task={task} />}
-          <RetroCard task={task} state={state} />
           {wait && <WaitLine wait={wait} />}
           {parent && (
             <p className="follows">
@@ -443,8 +456,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
               {followsText(task)} "{parent.title}"
             </p>
           )}
-          {task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
-            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} reasonsAbove={risky} />
+          {!review && task.kind === "work" && (task.brief || (task.loop && (space?.kind === "repo" || task.loop.paused || task.loop.explanation))) && (
+            <LoopPanel key={String(showChecks)} task={task} state={state} repo={space?.kind === "repo"} showChecks={showChecks} />
           )}
           <section className="asked">
             <h4>You asked</h4>
@@ -452,9 +465,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           </section>
           <TaskAttachments attachments={attached} />
           {space?.kind === "repo" ? (
-            <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} at={at} />
+            <RepoWork task={task} space={space} agent={agentName(ranAgent(task, state.runs))} initial={showChanges ? "changes" : undefined} at={at} decided={!!review} />
           ) : (
-            space && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
+            space && !review && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />
           )}
           <MoreDetails folded={waitsOnYou}>
           <div className="meta">
@@ -529,16 +542,35 @@ function Terminal({ runId }: { runId: string }) {
   );
 }
 
-function Live({ state, tasks }: { state: State; tasks: Task[] }) {
+// A brief's questions, answered from Live with the same form its task shows. The form shows in one place: the
+// task's own row when it's open, else here, whether or not another agent is running.
+function Asking({ tasks, open }: { tasks: Task[]; open: Set<string> }) {
+  const asking = tasks.filter((t) => t.loop?.stage === "brief" && asksBeforeStarting(t) && !open.has(t.id));
+  return (
+    <>
+      {asking.map((t) => (
+        <div className="live-ask" key={t.id}>
+          <p className="live-ask-title">{shownTitle(t)} asks before it starts:</p>
+          <BriefQuestions task={t} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function Live({ state, tasks, open }: { state: State; tasks: Task[]; open: Set<string> }) {
   const live = liveRun(state, tasks);
 
   if (!live) {
     return (
       <div className="idle">
         <p>No agent working right now</p>
-        {distinctWaits(tasks, state).map((w) => (
-          <WaitLine key={w.reason} wait={w} />
-        ))}
+        <Asking tasks={tasks} open={open} />
+        {distinctWaits(tasks, state)
+          .filter((w) => w.kind !== "answers")
+          .map((w) => (
+            <WaitLine key={`${w.reason}:${w.taskId}`} wait={w} />
+          ))}
       </div>
     );
   }
@@ -557,6 +589,7 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
         <KindBadge kind={task.kind} /> {shownTitle(task)}
       </div>
       <Terminal runId={run.id} />
+      <Asking tasks={tasks} open={open} />
     </>
   );
 }
@@ -591,6 +624,9 @@ function Tabs({ space, tab }: { space: Space; tab: SpaceTab }) {
 export function SpaceView({ state, space, focusTask, tab = "tasks", changes = false, at = null }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTask ? [focusTask] : []));
   const [transcript, setTranscript] = useState<{ run: Run; title: string } | null>(null);
+  const [help, setHelp] = useState(false);
+  // The task whose risky Approve the a key has been pressed once for, as in Needs you.
+  const [armed, setArmed] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const tasks = space ? state.tasks.filter((t) => t.spaceId === space.id) : [];
   const running = tasks.some((t) => t.status === "running");
@@ -598,8 +634,50 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
   useEffect(() => {
     if (!focusTask) return;
     setExpanded((prev) => new Set(prev).add(focusTask));
-    document.getElementById(`task-${focusTask}`)?.scrollIntoView({ block: "center" });
+    document.getElementById(`task-${focusTask}`)?.scrollIntoView({ block: "start" });
   }, [focusTask]);
+
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(null), ARM_MS);
+    return () => clearTimeout(t);
+  }, [armed]);
+
+  // The decision keys, on whichever open task shows the button (page-keys.ts). Attached once; `live` carries the arm.
+  const live = useRef(armed);
+  live.current = armed;
+  const helpOpen = useRef(help);
+  helpOpen.current = help;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const key = needsKey(e);
+      if (!key || document.querySelector('[aria-modal="true"]')) return;
+      if (key === "help") return setHelp((h) => !h);
+      if (key === "close") {
+        if (live.current) announce("Cancelled. Approve takes two presses again.");
+        setArmed(null);
+        return setHelp(false);
+      }
+      // A sheet over the page may cover the button a key would press; it's closed first.
+      if (helpOpen.current && DECISION_KEYS.includes(key)) return announce(SHEET_OPEN);
+      if (key === "undo") return void undoLatest();
+      const act = ACT[key];
+      if (!act) return;
+      const found = pressable([...document.querySelectorAll<HTMLElement>("[data-decision]")], act, document.activeElement);
+      if ("many" in found) return announce("More than one open task could take that key. Click in the one you mean, then press it again.");
+      if ("none" in found) return announce(NOTHING_FOR[key] ?? "");
+      e.preventDefault();
+      const id = found.scope.dataset.decision ?? null;
+      if (key === "approve" && found.button.dataset.risky && live.current !== id) {
+        setArmed(id);
+        return announce(`${armLabel(found.button.dataset.word ?? "", "key")}.`);
+      }
+      setArmed(null);
+      found.button.click();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Keeps "running 12m" ticking; only while something runs, so an idle page does no work.
   useEffect(() => {
@@ -617,19 +695,23 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
     );
   }
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    setArmed(null);
     setExpanded((prev) => {
       const next = new Set(prev);
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  };
 
   return (
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
+      {help && <KeysSheet keys={PAGE_KEY_HELP} note={PAGE_KEY_NOTE} floating onClose={() => setHelp(false)} />}
       <SpaceNeeds state={state} spaceId={space.id} />
       <div className="cols">
         <div>
+          <h2 className="sr-only">Tasks</h2>
           <Tabs space={space} tab={tab} />
           {tab === "files" ? (
             <FilesTab space={space} />
@@ -648,6 +730,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
                   onTranscript={(run) => setTranscript({ run, title: t.title })}
                   showChanges={changes && t.id === focusTask}
                   at={t.id === focusTask ? at : null}
+                  armed={armed === t.id}
                 />
               ))
             )}
@@ -658,7 +741,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
         </div>
         <div className="live">
           <h2>Live</h2>
-          <Live state={state} tasks={tasks} />
+          <Live state={state} tasks={tasks} open={expanded} />
         </div>
       </div>
       {transcript && (

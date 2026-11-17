@@ -2,6 +2,8 @@ import { closeDom, openDom } from "./dom";
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { LiveRegion } from "../../src/dashboard/components/LiveRegion";
+import { NeedsList } from "../../src/dashboard/components/NeedsYou";
 import { NeedsPage, visibleRange, ROW_PX } from "../../src/dashboard/components/NeedsPage";
 import { attentionQueue, cleanReviews, itemLine, itemTitle } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS, type LoopState } from "../../src/engine/loop";
@@ -41,6 +43,8 @@ function render(node: React.ReactNode): HTMLElement {
   act(() => root!.render(node));
   return el;
 }
+// The label a button shows: a risky Approve stacks every label it can take and shows one.
+const shown = (b: Element) => (b.querySelector(".btn-labels .on") ?? b).textContent;
 const press = async (key: string, init: KeyboardEventInit = {}) => act(async () => void window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init })));
 
 const now = Date.now();
@@ -88,18 +92,19 @@ test("j and k move the selection and the decision beside it follows; a and s pre
   await press("j");
   expect(title()).toBe("Review tsk_c");
   // A result with a note gets the quieter "Approve anyway", and the key asks twice.
-  expect(el.querySelector('[data-act="approve"]')!.textContent).toBe("Approve anyway");
+  expect(shown(el.querySelector('[data-act="approve"]')!)).toBe("Approve anyway");
   const decided = () => calls.filter((c) => c.url.startsWith("/api/approvals/")).length;
   await press("a");
   expect(decided()).toBe(0);
-  // The ask takes the key-hint line's place, so the buttons don't move.
-  expect(el.querySelector(".decision-keys.armed")!.textContent).toContain("Press a again");
+  // The button itself asks for the second press; the key line under it says how to back out.
+  expect(shown(el.querySelector('[data-act="approve"]')!)).toBe("Press a again to approve");
+  expect(el.querySelector(".decision-keys.armed")!.textContent).toContain("Esc cancels");
   await press("a");
-  expect(calls.at(-1)).toEqual({ url: "/api/approvals/apr_c", body: { decision: "approve" } });
+  expect(calls.filter((c) => c.url === "/api/approvals/apr_c").at(-1)).toEqual({ url: "/api/approvals/apr_c", body: { decision: "approve" } });
   await press("j");
   expect(title()).toBe("Review tsk_b");
   await press("a");
-  expect(calls.at(-1)).toEqual({ url: "/api/approvals/apr_b", body: { decision: "approve" } });
+  expect(calls.filter((c) => c.url === "/api/approvals/apr_b").at(-1)).toEqual({ url: "/api/approvals/apr_b", body: { decision: "approve" } });
   await press("k");
   await press("s");
   expect(el.querySelector('input[aria-label="What should change?"]')).not.toBeNull();
@@ -108,11 +113,130 @@ test("j and k move the selection and the decision beside it follows; a and s pre
 test("e asks a paused task for the diagnosis; ? shows the keys", async () => {
   const el = render(<NeedsPage state={queueState()} />);
   await press("e");
-  expect(calls.at(-1)!.url).toBe("/api/tasks/tsk_p/explain");
+  expect(calls.some((c) => c.url === "/api/tasks/tsk_p/explain")).toBe(true);
   await press("?");
   expect(el.querySelector(".keys-sheet")!.textContent).toContain("Approve every clean result at once");
   await press("Escape");
   expect(el.querySelector(".keys-sheet")).toBeNull();
+});
+
+test("a budget pause raises its budget and carries on in one click, and Change budget is a real button", async () => {
+  const s = queueState();
+  const spent = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_p" ? { ...t, loop: { ...t.loop!, usage: { tokens: 210_000, ms: 60_000, unreported: false } } } : t)) };
+  const el = render(<NeedsPage state={spent} item="tsk_p" />);
+  const raise = [...el.querySelectorAll<HTMLButtonElement>(".paused button")].find((b) => b.textContent === "Raise to 400k tokens and carry on")!;
+  expect(raise.className).toBe("btn p");
+  await act(async () => raise.click());
+  expect(calls.filter((c) => c.url === "/api/tasks/tsk_p/budget").at(-1)).toEqual({ url: "/api/tasks/tsk_p/budget", body: { budget: { tokens: 400_000, minutes: 20 }, resume: true } });
+  const change = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.textContent === "Change budget")!;
+  expect(change.className).toBe("btn");
+  await act(async () => change.click());
+  const save = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.type === "submit")!;
+  expect(save.textContent).toBe("Save and carry on");
+  await act(async () => save.click());
+  expect(calls.filter((c) => c.url === "/api/tasks/tsk_p/budget").length).toBe(2);
+  expect(calls.filter((c) => c.url === "/api/tasks/tsk_p/budget").at(-1)!.body).toMatchObject({ resume: true });
+});
+
+test("the palette names a result by the same verdict as the queue", async () => {
+  const { paletteActions } = await import("../../src/dashboard/palette");
+  const hints = Object.fromEntries(paletteActions(queueState(), { spaceId: null, theme: "system" }).map((a) => [a.id, a.hint]));
+  expect([hints["open-apr_c"], hints["open-apr_a"], hints["open-tsk_p"]]).toEqual(["Needs a look", "Clean", "Paused"]);
+});
+
+test("a key the open item has no button for says so, as on a task's page", async () => {
+  const el = render(
+    <>
+      <LiveRegion />
+      <NeedsPage state={queueState()} item="apr_a" />
+    </>,
+  );
+  await press("x");
+  expect(el.querySelector('[aria-live="polite"]')!.textContent).toBe("This item isn't running, so there's nothing to stop.");
+});
+
+test("while the keys sheet is open, decision keys do nothing until it's closed", async () => {
+  const el = render(
+    <>
+      <LiveRegion />
+      <NeedsPage state={queueState()} item="apr_a" />
+    </>,
+  );
+  await press("?");
+  await press("a");
+  expect(calls.some((c) => c.url === "/api/approvals/apr_a")).toBe(false);
+  expect(el.querySelector('[aria-live="polite"]')!.textContent).toBe("The keys sheet is open. Close it with Esc or ?, then press the key again.");
+  await press("Escape");
+  await press("a");
+  expect(calls.some((c) => c.url === "/api/approvals/apr_a")).toBe(true);
+});
+
+test("a button something else covers at its centre isn't shown, so no key presses it", async () => {
+  const { isShown } = await import("../../src/dashboard/page-keys");
+  const button = document.createElement("button");
+  const sheet = document.createElement("div");
+  document.body.append(button, sheet);
+  button.getBoundingClientRect = () => ({ left: 300, top: 489, width: 120, height: 28, right: 420, bottom: 517, x: 300, y: 489, toJSON() {} }) as DOMRect;
+  const real = document.elementFromPoint;
+  document.elementFromPoint = () => sheet;
+  expect(isShown(button)).toBe(false);
+  document.elementFromPoint = () => button;
+  expect(isShown(button)).toBe(true);
+  button.style.visibility = "hidden";
+  expect(isShown(button)).toBe(false);
+  document.elementFromPoint = real;
+});
+
+test("the address follows the item on screen, so a reload lands on the same one", async () => {
+  render(<NeedsPage state={queueState()} />);
+  expect(location.search).toBe("?item=tsk_p");
+  await press("j");
+  expect(location.search).toBe("?item=apr_c");
+});
+
+test("a result's stepper ends on its verdict, and a list's icon warns when it Needs a look", async () => {
+  const { StatusIcon } = await import("../../src/dashboard/components/StatusIcon");
+  const el = render(<NeedsPage state={queueState()} item="apr_a" />);
+  expect(el.querySelector(".stages li.on")!.textContent).toBe("Clean");
+  act(() => root!.unmount());
+  const icon = render(<StatusIcon status="review" verdict="Needs a look" />);
+  expect(icon.querySelector("[aria-label]")!.getAttribute("aria-label")).toBe("Needs a look");
+  act(() => root!.unmount());
+  const clean = render(<StatusIcon status="review" verdict="Clean" />);
+  expect(clean.querySelector("[aria-label]")!.getAttribute("aria-label")).toBe("Clean");
+  expect(clean.querySelector("svg")!.getAttribute("class")).toContain("clean");
+});
+
+test("the queue lists a result by its verdict, the word Home and its space use", () => {
+  const el = render(<NeedsPage state={queueState()} />);
+  expect(el.querySelector("#q-apr_c .q-kind")!.textContent).toBe("Needs a look");
+  expect(el.querySelector("#q-apr_a .q-kind")!.textContent).toBe("Clean");
+  expect(el.querySelector("#q-tsk_p .q-kind")!.textContent).toBe("Paused");
+});
+
+test("Home's result rows carry one status chip and the cost, and say what's going on in one line", () => {
+  const s = queueState();
+  s.spend.tasks = { tsk_a: { weighted: 41_000, usd: 0.04, unpriced: 0, cacheRead: 0, input: 0 } };
+  const el = render(<NeedsList state={s} />);
+  const row = (title: string) => [...el.querySelectorAll(".summary-row")].find((r) => r.querySelector(".t")!.textContent!.startsWith(title))!;
+  const noted = row("Review tsk_c");
+  expect([...noted.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["Needs a look"]);
+  // The rest is in the chip's tooltip and on the item's screen.
+  expect(noted.querySelector(".chip")!.getAttribute("title")).toContain("bunfig.toml");
+  expect(noted.querySelector(".t span")!.textContent).toBe("Approved by Claude · Checks passed");
+  const clean = row("Review tsk_a");
+  expect([...clean.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["Clean"]);
+  expect(clean.querySelector(".tag.cost")!.textContent).toBe("~$0.04");
+});
+
+test("at the maximum budget there's nothing to raise: the hint leads again and the pause says why", () => {
+  const s = queueState();
+  const maxed = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_p" ? { ...t, loop: { ...t.loop!, budget: { tokens: 50_000_000, minutes: 1440 }, usage: { tokens: 50_000_001, ms: 60_000, unreported: false } } } : t)) };
+  const el = render(<NeedsPage state={maxed} item="tsk_p" />);
+  const buttons = [...el.querySelectorAll<HTMLButtonElement>(".paused button")].map((b) => [b.textContent, b.className]);
+  expect(buttons.some(([t]) => t!.startsWith("Raise"))).toBe(false);
+  expect(buttons).toContainEqual(["Give it a hint", "btn p"]);
+  expect(el.querySelector(".paused")!.textContent).toContain("It's at the maximum budget");
 });
 
 test("batch approval offers only the clean results, and Shift A opens it", async () => {
@@ -123,7 +247,7 @@ test("batch approval offers only the clean results, and Shift A opens it", async
   const sheet = el.querySelector(".batch-sheet")!;
   expect([...sheet.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Review tsk_b", "Review tsk_a"]);
   await act(async () => [...sheet.querySelectorAll("button")].find((b) => b.textContent === "Approve all 2")!.click());
-  expect(calls.at(-1)).toEqual({ url: "/api/approvals/batch", body: { items: [{ id: "apr_b", sha: "sha_b" }, { id: "apr_a", sha: "sha_a" }] } });
+  expect(calls.filter((c) => c.url === "/api/approvals/batch").at(-1)).toEqual({ url: "/api/approvals/batch", body: { items: [{ id: "apr_b", sha: "sha_b" }, { id: "apr_a", sha: "sha_a" }] } });
 });
 
 test("a result the agent didn't say it finished is risky too, so it never approves on one key", async () => {
@@ -156,7 +280,9 @@ test("on a narrow window, a key never presses a decision the list is hiding", as
 test("a risky result leads with why it needs a look, and its keys say a second a approves anyway", () => {
   const el = render(<NeedsPage state={queueState()} item="apr_c" />);
   const points = el.querySelector(".open-points")!;
-  expect(points.textContent).toContain("Needs a look: why");
+  expect(points.querySelector("h4")!.textContent).toBe("Why");
+  // The bar above it doesn't say Needs a look a third time.
+  expect(el.querySelector(".dp-acts .chip.waiting")).toBeNull();
   expect(points.textContent).toContain("The change edits check config: bunfig.toml.");
   // Before the walkthrough and the diff, right under the decision.
   expect(el.querySelector(".dp-acts")!.nextElementSibling).toBe(points);
@@ -169,9 +295,38 @@ test("a risky result takes two clicks too: the first arms Approve, the second ap
   const button = () => el.querySelector<HTMLButtonElement>('.dp-acts [data-act="approve"]')!;
   await act(async () => button().click());
   expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
-  expect(button().textContent).toBe("Click again to approve anyway");
+  expect(shown(button())).toBe("Click again to approve");
   await act(async () => button().click());
   expect(calls.find((c) => c.url === "/api/approvals/apr_c")!.body).toMatchObject({ decision: "approve" });
+});
+
+test("the first a on a risky result relabels Approve in place and says so; Esc or moving away disarms it", async () => {
+  const el = render(
+    <>
+      <LiveRegion />
+      <NeedsPage state={queueState()} item="apr_c" />
+    </>,
+  );
+  const button = () => el.querySelector<HTMLButtonElement>('.dp-acts [data-act="approve"]')!;
+  const labels = () => [...button().querySelectorAll(".btn-labels > span")].map((x) => x.textContent);
+  const before = labels();
+  await press("a");
+  expect(shown(button())).toBe("Press a again to approve");
+  expect(el.querySelector('[aria-live="polite"]')!.textContent).toBe("Press a again to approve.");
+  // Every label was already in the button, so its width is the longest one's before and after: nothing shifts.
+  expect(labels()).toEqual(before);
+  expect(el.querySelector(".decision-keys")!.className).toContain("armed");
+  await press("Escape");
+  expect(shown(button())).toBe("Approve anyway");
+  expect(el.querySelector(".decision-keys.armed")).toBeNull();
+  expect(el.querySelector('[aria-live="polite"]')!.textContent).toBe("Cancelled. Approve takes two presses again.");
+  // A second a after Esc arms again rather than approving.
+  await press("a");
+  expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
+  await press("j");
+  await press("k");
+  expect(shown(button())).toBe("Approve anyway");
+  expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
 });
 
 test("a result on a branch shows its diff right in the queue", async () => {
@@ -209,4 +364,13 @@ test("a long queue draws only the rows in view, within a render budget", () => {
   expect(el.querySelectorAll(".q-row").length).toBeLessThan(80);
   // Generous for a slow CI machine; a full 2,000-row render takes several times this.
   expect(ms).toBeLessThan(400);
+});
+
+test("on a phone a risky Approve reserves room only for its click wording, so it stays near its text's width", () => {
+  const real = window.matchMedia;
+  window.matchMedia = ((q: string) => ({ matches: q.includes("max-width: 640px"), media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+  const el = render(<NeedsPage state={queueState()} item="apr_c" />);
+  const labels = [...el.querySelectorAll('.dp-acts [data-act="approve"] .btn-labels > span')].map((x) => x.textContent);
+  expect(labels).toEqual(["Approve anyway", "Click again to approve"]);
+  window.matchMedia = real;
 });

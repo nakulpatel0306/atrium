@@ -114,7 +114,7 @@ function Tiers({ state }: { state: State }) {
         void save();
       }}
     >
-      <h3>Models by job</h3>
+      <h2>Models by job</h2>
       {TIERS.map((t) => (
         <label key={t}>
           <span>
@@ -207,7 +207,7 @@ function AgentRow({ id, info, state, open, onToggle }: { id: string; info: Info;
           </div>
           {id === "claude" && <ClaudeWindow state={state} />}
           {id === "claude" && <Tiers state={state} />}
-          <h3>Recent runs</h3>
+          <h2>Recent runs</h2>
           <RecentRuns runs={runs} state={state} />
         </div>
       )}
@@ -230,8 +230,9 @@ export function Agents({ state }: { state: State }) {
       <h1>Agents</h1>
       <p className="spend-line">
         Spent today: {compact(state.spend.today.weighted)} weighted tokens, {spendText(state.spend.today)} · this week: {compact(state.spend.week.weighted)},{" "}
-        {/* The amount already ends "est.", so the sentence needs no second stop. */}
-        {spendText(state.spend.week)} All at list prices; a subscription doesn't bill per token.
+        {/* The amount usually ends "est.", which is its stop; "nothing yet" needs one of its own. */}
+        {spendText(state.spend.week)}
+        {spendText(state.spend.week).endsWith(".") ? "" : "."} All at list prices; a subscription doesn't bill per token.
       </p>
       <p className="brief">
         Who can take work right now. Auto sends work to Claude. While Claude's window is being saved, general tasks go to

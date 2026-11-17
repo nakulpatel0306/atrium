@@ -58,3 +58,49 @@ test("the page lists every waiting row with the keys hint", () => {
   expect(t).toContain("Keys ?");
   expect(t).toContain("Review: Fix login redirect");
 });
+
+test("on a narrow window the rail opens over the page and closes on a tap behind it, Esc, or any of its actions", async () => {
+  const { openDom, closeDom } = await import("./dom");
+  const { act } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  openDom();
+  const s = makeState();
+  const el = document.createElement("div");
+  document.body.appendChild(el);
+  const root = createRoot(el);
+  let asked = 0;
+  act(() => root.render(<Sidebar state={s} archived={0} route={parseRoute("/")} onNewSpace={() => asked++} />));
+  const toggle = el.querySelector<HTMLButtonElement>(".rail-toggle")!;
+  const isOpen = () => el.querySelector("aside")!.classList.contains("open");
+  expect(toggle.getAttribute("aria-label")).toBe("Show names");
+  // Each space's link carries its name for a tooltip and a screen reader even while folded.
+  const link = [...el.querySelectorAll("a")].find((a) => a.getAttribute("title") === "job hunt")!;
+  expect(link.textContent).toContain("job hunt");
+  act(() => toggle.click());
+  expect(isOpen()).toBe(true);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  act(() => el.querySelector<HTMLElement>(".rail-scrim")!.click());
+  expect(isOpen()).toBe(false);
+  expect(el.querySelector(".rail-scrim")).toBeNull();
+  act(() => toggle.click());
+  act(() => void window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(isOpen()).toBe(false);
+  act(() => toggle.click());
+  act(() => el.querySelector<HTMLButtonElement>('button[aria-label="New space"]')!.click());
+  expect([isOpen(), asked]).toEqual([false, 1]);
+  act(() => toggle.click());
+  act(() => link.click());
+  expect(isOpen()).toBe(false);
+  act(() => root.unmount());
+  el.remove();
+  closeDom();
+});
+
+test("while the rail is open the page keeps its column: main is pinned to the second column, not the rail's", () => {
+  const css = require("node:fs").readFileSync(require("node:path").join(import.meta.dir, "..", "..", "src", "dashboard", "styles.css"), "utf8") as string;
+  const rail = css.slice(css.indexOf("@media (max-width: 999px)"), css.indexOf("/* The rail's scrim and toggle"));
+  // The open sidebar leaves the grid (fixed), so without this main would fall into the 52px column.
+  expect(rail).toMatch(/aside\.open \{[^}]*position: fixed/);
+  expect(rail).toMatch(/\.app > main \{[^}]*grid-column: 2;/);
+  expect(rail).toMatch(/\.rail-scrim \{[^}]*position: fixed;[^}]*inset: 0;/);
+});

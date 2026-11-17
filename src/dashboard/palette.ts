@@ -1,10 +1,9 @@
 // What the command palette (⌘K) can do, by name: every action in the dashboard, built from the state it's opened on.
 // Pure, so the list and its matching are tested without a page.
-import { KIND, taskLabel, taskWord } from "../engine/words";
 import { batchApprovable } from "../engine/needs";
 import { SHAPE_LABEL, suggestion, switchOpen } from "../engine/shape";
 import type { State } from "../engine/state";
-import { attentionQueue, cleanReviews, itemTitle, shownSha } from "./queue";
+import { attentionQueue, cleanReviews, itemLabel, itemTitle, shownSha, taskTag } from "./queue";
 import { shownTitle } from "./summary";
 
 type PaletteGroup = "Do" | "Go to" | "Spaces" | "Tasks" | "Needs you" | "Settings";
@@ -29,12 +28,14 @@ export function paletteActions(state: State, here: { spaceId: string | null; the
   actions.push({ id: "ask", group: "Do", label: here_ ? `New task in ${here_.name}` : "New task or space", hint: "/", run: { kind: "ask" } });
   actions.push({ id: "new-space", group: "Do", label: "New space", run: { kind: "newSpace" } });
 
-  const clean = cleanReviews(state);
+  // Built once: every Needs you action and every task's tag reads it.
+  const queue = attentionQueue(state);
+  const clean = cleanReviews(state, queue);
   // Opens the same list the queue shows, so a batch is always approved after one look at what's in it.
   if (clean.length >= 2) actions.push({ id: "approve-clean", group: "Needs you", label: `Approve ${clean.length} clean results`, hint: "Shows the list first", run: { kind: "navigate", path: "/needs-you?batch=1" } });
-  for (const item of attentionQueue(state)) {
+  for (const item of queue) {
     const title = itemTitle(state, item);
-    actions.push({ id: `open-${item.key}`, group: "Needs you", label: `Open ${title}`, hint: KIND[item.kind].label, run: { kind: "navigate", path: `/needs-you?item=${encodeURIComponent(item.key)}` } });
+    actions.push({ id: `open-${item.key}`, group: "Needs you", label: `Open ${title}`, hint: itemLabel(state, item), run: { kind: "navigate", path: `/needs-you?item=${encodeURIComponent(item.key)}` } });
     const a = item.kind === "review" ? state.approvals.find((x) => x.id === item.key) : undefined;
     // Only a clean result is approvable by name; anything else opens to be read first.
     if (a && batchApprovable(a, state.tasks.find((t) => t.id === a.taskId))) {
@@ -62,7 +63,7 @@ export function paletteActions(state: State, here: { spaceId: string | null; the
   for (const t of [...open, ...done]) {
     const space = state.spaces.find((s) => s.id === t.spaceId);
     if (!space) continue;
-    actions.push({ id: `task-${t.id}`, group: "Tasks", label: shownTitle(t), hint: `${space.name} · ${taskLabel(taskWord(t))}`, run: { kind: "navigate", path: `/space/${space.id}?task=${t.id}` } });
+    actions.push({ id: `task-${t.id}`, group: "Tasks", label: shownTitle(t), hint: `${space.name} · ${taskTag(state, t, queue)}`, run: { kind: "navigate", path: `/space/${space.id}?task=${t.id}` } });
     const shape = t.loop?.shape;
     const offer = shape && switchOpen(t) ? suggestion(shape, t.brief?.size ?? "medium") : null;
     if (offer) actions.push({ id: `shape-${t.id}`, group: "Tasks", label: `Run ${shownTitle(t)} as ${SHAPE_LABEL[offer].toLowerCase()}`, hint: "Starts over from the brief", run: { kind: "post", path: `/api/tasks/${t.id}/shape`, body: { kind: offer }, done: `Starting ${shownTitle(t)} over as ${SHAPE_LABEL[offer].toLowerCase()}.` } });

@@ -3,7 +3,8 @@ import type { Key } from "ink";
 import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
-import { asksBeforeStarting } from "../engine/needs";
+import { asksBeforeStarting, pausedForYou } from "../engine/needs";
+import { raisedBudget, raiseFirst } from "../engine/loop";
 import { cleanReviews, isRisky, itemTitle, shownSha } from "../dashboard/queue";
 import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
@@ -31,6 +32,7 @@ export type Intent =
   | { type: "answerBrief"; taskId: string; title: string; answers: Answering["answers"] }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
   | { type: "explain"; taskId: string; title: string }
+  | { type: "raise"; taskId: string; title: string; budget: { tokens: number; minutes: number } }
   | { type: "memory"; lineId: string; accept: boolean; line: string }
   | { type: "batch"; items: { id: string; sha: string; title: string }[] }
 
@@ -64,7 +66,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Everywhere", keys: "Opt/Shift", does: "drag to select text" },
   { section: "Home", keys: "a A s", does: "approve, approve all clean, send back" },
   { section: "Home", keys: "e", does: "explain a paused task's problem" },
-  { section: "Home", keys: "x", does: "stop a running task" },
+  { section: "Home", keys: "x b", does: "stop a running task, raise a paused budget" },
   { section: "Home", keys: "a 1-9", does: "answer a task's questions" },
   { section: "Home", keys: "y n N", does: "yes, not now, never; y n on a CLAUDE.md line" },
   { section: "Home", keys: "t", does: "transcript" },
@@ -72,6 +74,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Spaces", keys: "tab h l", does: "move between panes" },
   { section: "Spaces", keys: "n N", does: "new task, new space" },
   { section: "Spaces", keys: "a r", does: "approve, send back" },
+  { section: "Spaces", keys: "a s x e", does: "on a task's detail: approve, send back, stop, explain" },
   { section: "Spaces", keys: "R s", does: "retry, run now" },
   { section: "Spaces", keys: ".", does: "stop running task" },
   { section: "Spaces", keys: "A", does: "change agent" },
@@ -113,7 +116,8 @@ export function strip(ui: Ui, view: View): StripKey[] {
     return keys;
   }
   if (ui.overlay?.kind === "confirm") {
-    const yes = { accept: "approve", archive: "archive", stop: "stop it", batch: "approve all" }[ui.overlay.purpose];
+    if (ui.overlay.purpose === "accept") return [k("a", "again to approve"), k("esc", "cancel", "\x1b")];
+    const yes = { archive: "archive", stop: "stop it", batch: "approve all" }[ui.overlay.purpose];
     return [k("y", yes), k("n", ui.overlay.purpose === "stop" ? "keep running" : "not now")];
   }
   const overlay = ui.overlay && OVERLAY_KEYS[ui.overlay.kind];
@@ -128,7 +132,7 @@ export function strip(ui: Ui, view: View): StripKey[] {
     case "spaces":
       if (ui.focus === "spaces") return [...lead, k("↵", "tasks", "\r"), k("n", "new task"), k("N", "new space"), k("e", "goal"), k("X", "archive"), k("D", "delete"), HELP_KEY];
       if (ui.focus === "tasks") return [...lead, k("↵", "detail", "\r"), k("n", "new task"), k("R", "retry"), k("s", "run now"), k(".", "stop"), k("A", "agent"), k("t", "transcript"), HELP_KEY];
-      if (ui.focus === "detail") return [k("j k", "scroll", undefined), k("a", "approve"), k("r", "send back"), k("f", "files"), k("t", "transcript"), k("esc", "back", "\x1b"), HELP_KEY];
+      if (ui.focus === "detail") return [k("j k", "scroll", undefined), k("a", "approve"), k("s", "send back"), k("x", "stop"), k("e", "explain"), k("f", "files"), k("t", "transcript"), k("esc", "back", "\x1b"), HELP_KEY];
       return [k("j k", "scroll", undefined), k("g G", "top / follow", undefined), k(".", "stop"), k("esc", "back", "\x1b"), HELP_KEY];
     case "activity":
       return [...lead, k("↵", "open space", "\r"), k("/", "filter"), k("ctrl-d", "scroll lines", undefined), HELP_KEY, k("q", "quit")];
@@ -277,6 +281,8 @@ function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
     const task = view.state.tasks.find((t) => t.id === item.key);
     if (!task) return null;
     if (input === "e") return item.kind === "paused" ? [intent({ type: "explain", taskId: task.id, title: task.title })] : [info("Explain is for a paused task.")];
+    // A budget pause's first step, as in the dashboard: what ran out, doubled, and it carries on.
+    if (input === "b") return item.kind === "paused" && raiseFirst(task.loop) ? [intent({ type: "raise", taskId: task.id, title: task.title, budget: raisedBudget(task.loop!) })] : [info("Raising the budget is for a task its budget paused.")];
     if (input === "x") return [task.status === "running" ? open({ kind: "confirm", purpose: "stop", targetId: task.id }) : info("That task isn't running.")];
     if (input === "a" || input === "s" || input === "r") return [info(item.kind === "paused" ? "This task is paused: e explains the problem, enter opens it to give a hint." : "This task is still running: enter opens it, x stops it.")];
     if (key.return) {
@@ -338,6 +344,18 @@ function fileKey(input: string, u: Ui, view: View, files: MadeFile[]): Command[]
   return null;
 }
 
+// s, x and e on a task's detail, as on its page in the dashboard: send back its result, stop it, explain its pause.
+// Null when the key means something else there (s still runs a task waiting on the reserve now).
+function taskDetailKey(input: string, u: Ui, view: View): Command[] | null {
+  if (u.tab !== "spaces" || u.focus !== "detail" || view.subject !== "task") return null;
+  const task = taskOf(u, view);
+  if (!task) return null;
+  if (input === "s" && approvalOf(u, view)) return [sendBack(u, view)];
+  if (input === "x") return [stop(u, view)];
+  if (input === "e") return [pausedForYou(task) ? intent({ type: "explain", taskId: task.id, title: task.title }) : info("Explain is for a paused task.")];
+  return null;
+}
+
 // One command key, outside any overlay and the Ask box.
 function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext): Command[] {
   if (key.escape) return [ui({ type: "back" })];
@@ -361,6 +379,8 @@ function globalKey(input: string, key: Key, u: Ui, view: View, ctx: KeyContext):
   }
   const onFile = fileKey(input, u, view, ctx.files);
   if (onFile) return onFile;
+  const onTask = taskDetailKey(input, u, view);
+  if (onTask) return onTask;
   const tab = "123".indexOf(input);
   if (input && tab >= 0) return [ui({ type: "tab", tab: TABS[tab]! })];
   switch (input) {
@@ -620,6 +640,8 @@ function overlayKey(input: string, key: Key, overlay: Overlay, u: Ui, view: View
     case "confirm":
       // A risky approval takes a second a, as the dashboard's does; a batch takes Shift-A again.
       if (input === "y" || (input === "a" && overlay.purpose === "accept") || (input === "A" && overlay.purpose === "batch")) return [close, ...confirmed(overlay, view)];
+      // Moving away from an armed approval disarms it: any other key closes it, as the dashboard's Esc or j does.
+      if (overlay.purpose === "accept") return [close];
       return input === "n" || input === "q" || key.escape ? [close] : [];
     case "help":
       return input === "?" || input === "q" || key.escape ? [close] : [];

@@ -38,14 +38,14 @@ test("storageRow says who made a folder and whether it can go", () => {
     cloneId: "cln_1", bytes: 3 * 1024 * 1024, lastUsedAt: now - 2 * 86_400_000, removable: { ok: true }, pendingApprovalId: null,
   };
   expect(storageRow(base, now)).toEqual({
-    name: "demo", path: "~/Projects/demo", size: "3.0 MB", owner: "Made by Atrium", lastUsed: "2d ago",
+    name: "demo", path: "~/Projects/demo", size: "3.0 MB", owner: "Made by Atrium", lastUsed: "Used 2d ago",
     status: "Can be removed", reasons: [], canAsk: true,
   });
   const refused = storageRow({ ...base, removable: { ok: false, reasons: ["There are uncommitted changes.", "There are stashed changes."] } }, now);
   expect(refused).toMatchObject({ status: "There are uncommitted changes.", reasons: ["There are uncommitted changes.", "There are stashed changes."], canAsk: false });
   expect(storageRow({ ...base, pendingApprovalId: "apr_1" }, now)).toMatchObject({ status: "Waiting for you in Needs you", canAsk: false });
   const mine = storageRow({ ...base, createdBy: "you", cloneId: null, removable: null, lastUsedAt: null }, now);
-  expect(mine).toMatchObject({ owner: "Yours, never removed", lastUsed: "—", status: "Kept", canAsk: false });
+  expect(mine).toMatchObject({ owner: "Yours, never removed", lastUsed: "Not used yet", status: null, canAsk: false });
 });
 
 test("State carries the repo drafts the form needs", () => {

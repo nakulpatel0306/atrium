@@ -13,12 +13,15 @@ export type WorkView = "made" | "changes";
 
 // A repo task's detail: the walkthrough of a finished change above the agent's changes and What it made, a note to
 // steer it while it runs, and a pull request once it's finished. While it runs the changes are what's worth watching,
-// so they open first; a walkthrough's link opens them at its hunk.
-export function RepoWork({ task, space, agent, initial, at = null }: { task: Task; space: Space; agent: string; initial?: WorkView; at?: ChangeSpot | null }) {
+// so they open first; a walkthrough's link opens them at its hunk. `decided`: a result waiting on the user already shows
+// its walkthrough and changes in its decision (ResultDecision), so only the steer and the pull request are left here.
+export function RepoWork({ task, space, agent, initial, at = null, decided = false }: { task: Task; space: Space; agent: string; initial?: WorkView; at?: ChangeSpot | null; decided?: boolean }) {
   const [view, setView] = useState<WorkView>(initial ?? (at || task.status === "running" ? "changes" : "made"));
   useEffect(() => {
     if (at) setView("changes");
   }, [at?.file, at?.line]);
+  const pr = (task.status === "review" || task.status === "done") && task.kind === "work" && <PullRequest task={task} />;
+  if (decided) return <>{pr}</>;
   return (
     <>
       <SteerTask task={task} />
@@ -32,7 +35,7 @@ export function RepoWork({ task, space, agent, initial, at = null }: { task: Tas
         </button>
       </div>
       {view === "changes" ? <ChangesView task={task} agent={agent} at={at} /> : <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
-      {(task.status === "review" || task.status === "done") && task.kind === "work" && <PullRequest task={task} />}
+      {pr}
     </>
   );
 }

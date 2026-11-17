@@ -54,6 +54,8 @@
   --dur: 180ms;
   /* The docked ask bar's height: scrolling into view stops above it, and toasts sit just over it. */
   --cmd-clear: 76px;
+  /* The reading measure: about 75 characters of Inter at any size (its average letter is close to 0.45em). */
+  --measure: 34em;
   color-scheme: dark;
 }
 /* The light theme: the Mac's own setting unless the palette picked one. */
@@ -556,6 +558,8 @@ h2 {
 }
 .entry {
   border-bottom: 1px solid var(--line);
+  /* A task opened from a link lands with its title and decision just under the top bar. */
+  scroll-margin-top: calc(var(--top-h) + 8px);
 }
 .entry .item {
   border-bottom: 0;
@@ -1257,7 +1261,10 @@ main > .top {
   color: var(--text);
   font: inherit;
 }
-.cmd input::placeholder {
+.cmd input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  /* The browser's own grey misses AA on these panels. */
   color: var(--faint);
 }
 .cmd .k {
@@ -1735,6 +1742,7 @@ code {
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
+.detail h2,
 .detail h3 {
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -1747,7 +1755,6 @@ code {
 .detail .role {
   color: var(--dim);
   margin-bottom: 4px;
-  max-width: 640px;
 }
 .window-bar {
   position: relative;
@@ -2311,7 +2318,7 @@ code {
 .md p,
 .md li,
 .md blockquote {
-  max-width: 72ch;
+  max-width: var(--measure);
 }
 .md h1 {
   font-size: var(--fs-xl);
@@ -2642,10 +2649,6 @@ code {
 .tag.notdone {
   color: var(--yellow);
   border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
-}
-.outcome-row {
-  background: var(--panel);
-  padding: 8px 14px 2px 32px;
 }
 .outcome-banner {
   display: flex;
@@ -3161,35 +3164,20 @@ code {
 .chg-note-inline {
   color: var(--faint);
 }
-/* a task in review, decided from its detail */
-/* Stays in view under the top bar while the diff below it is read, so deciding never means scrolling back. */
-.review-acts {
-  margin: 10px 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--bg);
-  position: sticky;
-  /* The page scrolls under the sticky top bar, so the decision pins just below it. */
-  top: calc(var(--top-h) + 8px);
-  z-index: 1;
-  box-shadow: var(--shadow-1);
-}
-.review-acts .acts {
+/* a task in review, decided from its detail with the same layout as its screen in Needs you */
+.task-decision {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 12px;
+  margin: 10px 0;
+  container: panel / inline-size;
 }
-.review-acts .acts .faint {
-  margin-right: auto;
-  color: var(--dim);
+.task-decision .loop,
+.task-decision .walkthrough {
+  margin: 0;
 }
-.review-acts .note {
-  background: none;
-  padding: 0 10px 10px;
-}
-.review-acts .err {
-  padding: 0 10px 10px;
+.task-decision p {
+  max-width: var(--measure);
 }
 
 /* Needs you and Activity pages */
@@ -3328,7 +3316,7 @@ kbd {
   padding: 16px 18px 12px;
   border-bottom: 1px solid var(--line);
 }
-.dp-head h2 {
+.dp-head h3 {
   font-size: var(--fs-xl);
   font-weight: 600;
   color: var(--text);
@@ -3421,9 +3409,33 @@ kbd {
 .keys-sheet {
   margin-bottom: 16px;
 }
-.keys-sheet h3 {
+.keys-sheet h2 {
   font-size: var(--fs-md);
   margin-bottom: 8px;
+}
+.keys-sheet > h2:first-child {
+  margin-top: 0;
+}
+.keys-sheet.floating {
+  position: fixed;
+  bottom: calc(var(--cmd-clear) + 12px);
+  right: 24px;
+  z-index: 20;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(420px, calc(100vh - var(--top-h) - var(--cmd-clear) - 24px));
+  overflow-y: auto;
+}
+.keys-sheet.floating dl {
+  grid-template-columns: 1fr;
+}
+/* On a phone it's a bottom sheet: the decision's buttons stay pinned at the top, clear of it. */
+@media (max-width: 640px) {
+  .keys-sheet.floating {
+    inset: auto 0 0 0;
+    width: auto;
+    max-height: 45vh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
 }
 .keys-sheet dl {
   display: grid;
@@ -3554,6 +3566,68 @@ kbd {
   .cmd-dock {
     padding: 8px 12px 10px;
   }
+  aside .rail-toggle {
+    display: flex;
+  }
+  /* The page keeps its column while the rail is open over it: the open sidebar leaves the grid, so main is pinned to
+     the second column rather than sliding into the rail's. */
+  .app > main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .rail-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: color-mix(in srgb, var(--bg) 60%, transparent);
+  }
+  /* Opened from the rail: over the page at full width, with every name. */
+  aside.open {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 240px;
+    z-index: 40;
+    padding: 12px 8px;
+    box-shadow: var(--shadow-1);
+  }
+  aside.open .label,
+  aside.open .sec > span {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+  }
+  aside.open .nav,
+  aside.open .ws,
+  aside.open .sec {
+    justify-content: flex-start;
+    padding-left: 8px;
+  }
+  aside.open .nav .ct {
+    position: static;
+    margin-left: auto;
+  }
+}
+/* The rail's scrim and toggle exist only where there's a rail. */
+.rail-scrim {
+  display: none;
+}
+.rail-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+.rail-toggle:hover {
+  color: var(--text);
+  background: var(--raised);
 }
 
 @container main (max-width: 960px) {
@@ -4157,7 +4231,7 @@ kbd {
 /* A brief's own headings sit under the item's title, never above it in size. */
 .brief-view h1,
 .brief-view h2,
-.brief-view h3 {
+.brief-view h4 {
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--dim);
@@ -4187,7 +4261,7 @@ kbd {
 .walkthrough li,
 .loop .hint,
 .dp-body p {
-  max-width: 80ch;
+  max-width: var(--measure);
 }
 .private .hint {
   font-size: var(--fs-sm);
@@ -4252,8 +4326,23 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A button whose label changes (a risky Approve's "Press a again") keeps the width of its longest label. */
+.btn-labels {
+  display: inline-grid;
+  text-align: center;
+}
+.btn-labels > span {
+  grid-area: 1 / 1;
+}
+.btn-labels > span:not(.on) {
+  visibility: hidden;
+}
 .decision-keys.armed {
   color: var(--yellow);
+}
+/* The key line sits under the buttons it names, whatever measure the prose around it keeps. */
+.dp-acts .decision-keys {
+  max-width: none;
 }
 .item > .decision {
   flex: 0 1 auto;
@@ -4264,9 +4353,6 @@ kbd {
 }
 .dp-acts .decision {
   flex: 1;
-}
-.review-acts .decision {
-  padding: 8px 10px;
 }
 /* Every control is at least 24px tall, so it can be hit without aiming. */
 .btn,
@@ -4341,7 +4427,7 @@ kbd {
 .finding,
 .memory .hint,
 .brief {
-  max-width: 80ch;
+  max-width: var(--measure);
 }
 /* Key hints are for keyboards; a touch screen doesn't show them. */
 @media (pointer: coarse) {
@@ -4441,6 +4527,21 @@ kbd {
     flex: 1 1 100%;
     justify-content: flex-start;
   }
+  /* On a phone the row's title takes the width, and its reason gets lines of its own rather than a few letters. */
+  .summary-row {
+    flex-wrap: wrap;
+  }
+  .summary-row .t {
+    flex: 1 1 100%;
+    white-space: normal;
+  }
+  .summary-row .t span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    margin-left: 0;
+    overflow: hidden;
+  }
 }
 
 /* A task row keeps enough of its title to recognise. */
@@ -4459,8 +4560,9 @@ kbd {
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
-.low-head ~ .entry .item {
-  opacity: 0.85;
+/* Dimmed by colour, not opacity, so the quieter text still reads at AA. */
+.low-head ~ .entry .item .t {
+  color: var(--dim);
 }
 
 /* A task waiting on you: who ran it, its history and runs fold under one disclosure. */
@@ -4499,8 +4601,26 @@ kbd {
 .note-line,
 .spend-line,
 .walkthrough-empty,
-.detail .role {
-  max-width: 80ch;
+.role,
+.tiers label > span,
+.review-round,
+.finding .reply,
+.start p,
+.signoff-files,
+.live-ask-title {
+  max-width: var(--measure);
+}
+/* Every link-sized control is at least 24px tall, so it can be hit without aiming. */
+.runs a,
+.dp-meta a,
+a.task-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+/* The ask bar's text field, without touching its hidden file picker. */
+.cmd input:not([type="file"]) {
+  min-height: 24px;
 }
 
 @container main (max-width: 640px) {
@@ -4549,7 +4669,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 80ch;
+  max-width: var(--measure);
 }
 
 /* The Keys sheet's second list: each kind of item with what it means and its next step. */
@@ -4620,10 +4740,97 @@ kbd {
    or a pick is routine, so it takes the accent. */
 .q-kind.k-question,
 .q-kind.k-approval,
-.q-kind.k-pick {
+.q-kind.k-pick,
+.tag.k-question,
+.tag.k-approval,
+.tag.k-pick {
   color: var(--accent);
+}
+/* Home's tags take the queue's colours: one rule for both lists. */
+.tag.k-paused,
+.stat.look {
+  color: var(--yellow);
+}
+.stat.clean {
+  color: var(--green);
 }
 .start-optional .tag {
   justify-self: start;
   align-self: center;
+}
+
+/* On a phone nothing is cut off at the list's edge: the decision's buttons wrap under its chips, an agent's figure
+   shrinks to its text, and long paths ellipsise with the whole path on hover. */
+@container main (max-width: 640px) {
+  .decision-acts {
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+  .dp-acts .decision-keys {
+    display: none;
+  }
+  .item.agent,
+  .storage-row {
+    flex-wrap: wrap;
+  }
+  .item.agent .val {
+    width: auto;
+    flex: 0 1 auto;
+  }
+  .item.agent .status {
+    flex: 1 1 100%;
+    order: 1;
+  }
+  .storage-row .t {
+    flex-basis: 100%;
+  }
+  .storage-row .t span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+/* The model tiers' notes keep the same measure as the rest of the page's prose. */
+.tiers .hint {
+  max-width: var(--measure);
+}
+
+/* A sign-off's preview: what a yes creates or removes, as label and value pairs. */
+.signoff {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  padding: 8px 14px 12px 32px;
+  background: var(--panel);
+  font-size: var(--fs-sm);
+}
+.signoff dt {
+  color: var(--dim);
+}
+.signoff dd {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.signoff-files h4 {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+
+/* A brief's questions answered from a space's Live box. */
+.live-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.live-ask-title {
+  color: var(--text);
+}
+.made-secret {
+  flex: none;
+  color: var(--yellow);
+  font-size: var(--fs-xs);
 }
