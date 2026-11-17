@@ -54,6 +54,8 @@
   --dur: 180ms;
   /* The docked ask bar's height: scrolling into view stops above it, and toasts sit just over it. */
   --cmd-clear: 76px;
+  /* The reading measure: about 75 characters of Inter at any size (its average letter is close to 0.45em). */
+  --measure: 34em;
   color-scheme: dark;
 }
 /* The light theme: the Mac's own setting unless the palette picked one. */
@@ -2316,7 +2318,7 @@ code {
 .md p,
 .md li,
 .md blockquote {
-  max-width: 72ch;
+  max-width: var(--measure);
 }
 .md h1 {
   font-size: var(--fs-xl);
@@ -3175,7 +3177,7 @@ code {
   margin: 0;
 }
 .task-decision p {
-  max-width: 64ch;
+  max-width: var(--measure);
 }
 
 /* Needs you and Activity pages */
@@ -3426,6 +3428,15 @@ kbd {
 .keys-sheet.floating dl {
   grid-template-columns: 1fr;
 }
+/* On a phone it's a bottom sheet: the decision's buttons stay pinned at the top, clear of it. */
+@media (max-width: 640px) {
+  .keys-sheet.floating {
+    inset: auto 0 0 0;
+    width: auto;
+    max-height: 45vh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+}
 .keys-sheet dl {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -3555,6 +3566,52 @@ kbd {
   .cmd-dock {
     padding: 8px 12px 10px;
   }
+  aside .rail-toggle {
+    display: flex;
+  }
+  /* Opened from the rail: over the page at full width, with every name. */
+  aside.open {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 240px;
+    z-index: 40;
+    padding: 12px 8px;
+    box-shadow: var(--shadow-1);
+  }
+  aside.open .label,
+  aside.open .sec > span {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+  }
+  aside.open .nav,
+  aside.open .ws,
+  aside.open .sec {
+    justify-content: flex-start;
+    padding-left: 8px;
+  }
+  aside.open .nav .ct {
+    position: static;
+    margin-left: auto;
+  }
+}
+/* The rail's own toggle exists only where there's a rail. */
+.rail-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+.rail-toggle:hover {
+  color: var(--text);
+  background: var(--raised);
 }
 
 @container main (max-width: 960px) {
@@ -4188,7 +4245,7 @@ kbd {
 .walkthrough li,
 .loop .hint,
 .dp-body p {
-  max-width: 64ch;
+  max-width: var(--measure);
 }
 .private .hint {
   font-size: var(--fs-sm);
@@ -4354,7 +4411,7 @@ kbd {
 .finding,
 .memory .hint,
 .brief {
-  max-width: 60ch;
+  max-width: var(--measure);
 }
 /* Key hints are for keyboards; a touch screen doesn't show them. */
 @media (pointer: coarse) {
@@ -4454,6 +4511,21 @@ kbd {
     flex: 1 1 100%;
     justify-content: flex-start;
   }
+  /* On a phone the row's title takes the width, and its reason gets lines of its own rather than a few letters. */
+  .summary-row {
+    flex-wrap: wrap;
+  }
+  .summary-row .t {
+    flex: 1 1 100%;
+    white-space: normal;
+  }
+  .summary-row .t span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    margin-left: 0;
+    overflow: hidden;
+  }
 }
 
 /* A task row keeps enough of its title to recognise. */
@@ -4509,12 +4581,27 @@ kbd {
   color: var(--text);
 }
 
-/* Prose keeps a readable measure: Inter's 0 is wider than its average letter, so 60ch holds about 75 characters. */
+/* Prose keeps a readable measure. */
 .note-line,
 .spend-line,
 .walkthrough-empty,
-.role {
-  max-width: 60ch;
+.role,
+.tiers label > span,
+.review-round,
+.finding .reply,
+.start p,
+.signoff-files,
+.live-ask-title {
+  max-width: var(--measure);
+}
+/* Every link-sized control is at least 24px tall, so it can be hit without aiming. */
+.runs a,
+.dp-meta a,
+a.task-link,
+.cmd input {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 
 @container main (max-width: 640px) {
@@ -4563,7 +4650,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 64ch;
+  max-width: var(--measure);
 }
 
 /* The Keys sheet's second list: each kind of item with what it means and its next step. */
@@ -4684,7 +4771,7 @@ kbd {
 }
 /* The model tiers' notes keep the same measure as the rest of the page's prose. */
 .tiers .hint {
-  max-width: 60ch;
+  max-width: var(--measure);
 }
 
 /* A sign-off's preview: what a yes creates or removes, as label and value pairs. */

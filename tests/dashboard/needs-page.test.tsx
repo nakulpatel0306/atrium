@@ -58,3 +58,28 @@ test("the page lists every waiting row with the keys hint", () => {
   expect(t).toContain("Keys ?");
   expect(t).toContain("Review: Fix login redirect");
 });
+
+test("on a narrow window the rail opens on tap to show every space's name, and going anywhere closes it", async () => {
+  const { openDom, closeDom } = await import("./dom");
+  const { act } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  openDom();
+  const s = makeState();
+  const el = document.createElement("div");
+  document.body.appendChild(el);
+  const root = createRoot(el);
+  act(() => root.render(<Sidebar state={s} archived={0} route={parseRoute("/")} onNewSpace={() => {}} />));
+  const toggle = el.querySelector<HTMLButtonElement>(".rail-toggle")!;
+  expect(toggle.getAttribute("aria-label")).toBe("Show names");
+  // Each space's link carries its name for a tooltip and a screen reader even while folded.
+  const link = [...el.querySelectorAll("a")].find((a) => a.getAttribute("title") === "job hunt")!;
+  expect(link.textContent).toContain("job hunt");
+  act(() => toggle.click());
+  expect(el.querySelector("aside")!.className).toBe("open");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  act(() => link.click());
+  expect(el.querySelector("aside")!.className).toBe("");
+  act(() => root.unmount());
+  el.remove();
+  closeDom();
+});

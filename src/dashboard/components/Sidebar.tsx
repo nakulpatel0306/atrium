@@ -1,5 +1,5 @@
-import { Activity, Archive, BatteryMedium, Bot, House, Inbox, Moon, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
-import type { ReactNode } from "react";
+import { Activity, Archive, BatteryMedium, Bot, House, Inbox, Moon, PanelLeftClose, PanelLeftOpen, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { agentsHeld } from "../agents";
 import { post, type State } from "../api";
 import { bytes } from "../format";
@@ -41,9 +41,15 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
   const battery = state.power.source === "battery";
   const held = agentsHeld(state);
   const window = state.claudeWindow;
+  // On a narrow window the sidebar is an icon rail; a tap opens it over the page with every name, and going anywhere
+  // closes it again.
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <aside>
+    <aside className={expanded ? "open" : undefined} onClick={(e) => (e.target as Element).closest("a") && setExpanded(false)}>
+      <button className="rail-toggle" aria-expanded={expanded} aria-label={expanded ? "Hide names" : "Show names"} title={expanded ? "Hide names" : "Show names"} onClick={() => setExpanded(!expanded)}>
+        {expanded ? <PanelLeftClose /> : <PanelLeftOpen />}
+      </button>
       <div className="ws">
         <Logo />
         <span className="label">Atrium</span>
