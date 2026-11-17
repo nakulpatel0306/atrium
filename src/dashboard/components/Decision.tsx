@@ -103,7 +103,24 @@ export function approveText(state: State, approval: Approval): string {
   return approveWord(task?.outcome ?? null, isRisky(state, approval));
 }
 
-// A risky Approve takes two presses with the mouse as with the keys: the first arms it (or the queue's first a did,
+// Every label a button can show, stacked in one grid cell with only the current one visible, so the button keeps the
+// width of its longest label and nothing moves under the pointer when it changes.
+function Labels({ shown, all }: { shown: string; all: string[] }) {
+  return (
+    <span className="btn-labels">
+      {[...new Set(all)].map((l) => (
+        <span key={l} className={l === shown ? "on" : undefined} aria-hidden={l === shown ? undefined : true}>
+          {l}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// The arm's own words, said on the button itself: by key or by click, approve or accept.
+export const armLabel = (word: string, by: "key" | "click"): string => `${by === "key" ? "Press a" : "Click"} again to ${word.startsWith("Accept") ? "accept" : "approve"}`;
+
+// A risky Approve takes two presses with the mouse as with the keys: the first arms it (or a page's first a did,
 // `armed`), the second approves. It disarms by itself after a few seconds.
 export function DecideButtons({ d, outcome, risky = false, armed = false }: { d: Decision; outcome: Outcome; risky?: boolean; armed?: boolean }) {
   const [clicked, setClicked] = useState(false);
@@ -112,10 +129,11 @@ export function DecideButtons({ d, outcome, risky = false, armed = false }: { d:
     const t = setTimeout(() => setClicked(false), ARM_MS);
     return () => clearTimeout(t);
   }, [clicked]);
+  const word = approveWord(outcome, risky);
   const approve = () => {
     if (risky && !armed && !clicked) {
       setClicked(true);
-      return announce("Click again to approve anyway.");
+      return announce(`${armLabel(word, "click")}.`);
     }
     setClicked(false);
     void d.decide("approve");
@@ -129,11 +147,12 @@ export function DecideButtons({ d, outcome, risky = false, armed = false }: { d:
         className={`btn${risky ? "" : " p"}`}
         data-act="approve"
         data-risky={risky || undefined}
+        data-word={word}
         disabled={d.busy}
         title={risky ? "Something here needs a look first: read the notes and findings before approving." : undefined}
         onClick={approve}
       >
-        {clicked ? "Click again to approve anyway" : approveWord(outcome, risky)}
+        {risky ? <Labels shown={clicked ? armLabel(word, "click") : armed ? armLabel(word, "key") : word} all={[word, armLabel(word, "key"), armLabel(word, "click")]} /> : word}
       </button>
     </>
   );
@@ -197,8 +216,8 @@ export function OpenPoints({ task }: { task: Task }) {
 
 // The one layout for deciding on a result, wherever it's decided: the queue's screen, a task's own page and a row in a
 // list. Left to right: what the checks and the reviewer said, a way to the full screen when there is one, then Send
-// back and Approve. Below them, a line that names the keys, or, once a risky Approve has had one press of a, asks for
-// the second: the same height either way, so nothing moves under the pointer.
+// back and Approve. Below them, a line that names the keys, or, once a risky Approve has had one press of a (its button
+// then says to press it again), why and how to back out: the same height either way, so nothing moves.
 export function DecisionBar({ approval, state, open, armed = false, keys = false }: { approval: Approval; state: State; open?: () => void; armed?: boolean; keys?: boolean }) {
   const task = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const d = useDecision(approval, shownSha(state, approval));
@@ -219,10 +238,10 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
         </span>
       </div>
       {keys && (
-        <p className={`decision-keys${armed ? " armed" : ""}`} role={armed ? "status" : undefined}>
+        <p className={`decision-keys${armed ? " armed" : ""}`}>
           {armed ? (
             <>
-              It has notes or findings that weren't fixed. Press <kbd>a</kbd> again to approve anyway.
+              It has notes or findings that weren't fixed. <kbd>Esc</kbd> cancels.
             </>
           ) : (
             <>

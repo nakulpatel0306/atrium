@@ -2,6 +2,7 @@ import { closeDom, openDom } from "./dom";
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { LiveRegion } from "../../src/dashboard/components/LiveRegion";
 import { NeedsPage, visibleRange, ROW_PX } from "../../src/dashboard/components/NeedsPage";
 import { attentionQueue, cleanReviews, itemLine, itemTitle } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS, type LoopState } from "../../src/engine/loop";
@@ -41,6 +42,8 @@ function render(node: React.ReactNode): HTMLElement {
   act(() => root!.render(node));
   return el;
 }
+// The label a button shows: a risky Approve stacks every label it can take and shows one.
+const shown = (b: Element) => (b.querySelector(".btn-labels .on") ?? b).textContent;
 const press = async (key: string, init: KeyboardEventInit = {}) => act(async () => void window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init })));
 
 const now = Date.now();
@@ -88,12 +91,13 @@ test("j and k move the selection and the decision beside it follows; a and s pre
   await press("j");
   expect(title()).toBe("Review tsk_c");
   // A result with a note gets the quieter "Approve anyway", and the key asks twice.
-  expect(el.querySelector('[data-act="approve"]')!.textContent).toBe("Approve anyway");
+  expect(shown(el.querySelector('[data-act="approve"]')!)).toBe("Approve anyway");
   const decided = () => calls.filter((c) => c.url.startsWith("/api/approvals/")).length;
   await press("a");
   expect(decided()).toBe(0);
-  // The ask takes the key-hint line's place, so the buttons don't move.
-  expect(el.querySelector(".decision-keys.armed")!.textContent).toContain("Press a again");
+  // The button itself asks for the second press; the key line under it says how to back out.
+  expect(shown(el.querySelector('[data-act="approve"]')!)).toBe("Press a again to approve");
+  expect(el.querySelector(".decision-keys.armed")!.textContent).toContain("Esc cancels");
   await press("a");
   expect(calls.at(-1)).toEqual({ url: "/api/approvals/apr_c", body: { decision: "approve" } });
   await press("j");
@@ -169,9 +173,37 @@ test("a risky result takes two clicks too: the first arms Approve, the second ap
   const button = () => el.querySelector<HTMLButtonElement>('.dp-acts [data-act="approve"]')!;
   await act(async () => button().click());
   expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
-  expect(button().textContent).toBe("Click again to approve anyway");
+  expect(shown(button())).toBe("Click again to approve");
   await act(async () => button().click());
   expect(calls.find((c) => c.url === "/api/approvals/apr_c")!.body).toMatchObject({ decision: "approve" });
+});
+
+test("the first a on a risky result relabels Approve in place and says so; Esc or moving away disarms it", async () => {
+  const el = render(
+    <>
+      <LiveRegion />
+      <NeedsPage state={queueState()} item="apr_c" />
+    </>,
+  );
+  const button = () => el.querySelector<HTMLButtonElement>('.dp-acts [data-act="approve"]')!;
+  const labels = () => [...button().querySelectorAll(".btn-labels > span")].map((x) => x.textContent);
+  const before = labels();
+  await press("a");
+  expect(shown(button())).toBe("Press a again to approve");
+  expect(el.querySelector('[aria-live="polite"]')!.textContent).toBe("Press a again to approve.");
+  // Every label was already in the button, so its width is the longest one's before and after: nothing shifts.
+  expect(labels()).toEqual(before);
+  expect(el.querySelector(".decision-keys")!.className).toContain("armed");
+  await press("Escape");
+  expect(shown(button())).toBe("Approve anyway");
+  expect(el.querySelector(".decision-keys.armed")).toBeNull();
+  // A second a after Esc arms again rather than approving.
+  await press("a");
+  expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
+  await press("j");
+  await press("k");
+  expect(shown(button())).toBe("Approve anyway");
+  expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);
 });
 
 test("a result on a branch shows its diff right in the queue", async () => {

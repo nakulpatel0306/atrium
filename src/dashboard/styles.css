@@ -4237,6 +4237,17 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A button whose label changes (a risky Approve's "Press a again") keeps the width of its longest label. */
+.btn-labels {
+  display: inline-grid;
+  text-align: center;
+}
+.btn-labels > span {
+  grid-area: 1 / 1;
+}
+.btn-labels > span:not(.on) {
+  visibility: hidden;
+}
 .decision-keys.armed {
   color: var(--yellow);
 }

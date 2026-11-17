@@ -36,7 +36,8 @@ export function confirmLines(c: Confirm, state: State, cols: number): { title: s
       lines: said
         ? [...wrap(partial ? "Accept as is? It says it's only partly done." : "Accept anyway? It says it couldn't do this.", cols), ...(task?.outcomeReason ? wrap(task.outcomeReason, cols, { color: "warn" }) : [])]
         : [...wrap("It has something to read first: a note, a check that didn't pass, or a finding that wasn't fixed.", cols), ...(review ? wrap(review.text, cols, { color: "warn" }) : []), ...(task?.loop?.attention.length ? wrap(task.loop.attention.join(" "), cols, { color: "warn" }) : [])],
-      keys: [{ key: "a", label: said ? "Accept" : "Approve anyway", input: "a", hot: true }, no()],
+      // The first a armed it; the box says what the second does, and any other key backs out, as Esc does.
+      keys: [{ key: "a", label: said ? "again to accept" : "again to approve", input: "a", hot: true }, { key: "esc", label: "cancel", input: "\x1b" }],
     };
   }
   if (c.purpose === "batch") {

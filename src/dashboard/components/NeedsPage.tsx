@@ -9,7 +9,7 @@ import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
-import { ARM_MS, reopen } from "./Decision";
+import { ARM_MS, armLabel, reopen } from "./Decision";
 import { ResultDecision } from "./ResultDecision";
 import { LoopPanel } from "./LoopPanel";
 import { MemoryProposal } from "./Memory";
@@ -358,6 +358,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       const i = current ? items.indexOf(current) : -1;
       if (key === "help") return setHelp((h) => !h);
       if (key === "close") {
+        setArmed(null);
         setHelp(false);
         setBatch(false);
         if (opened) setOpened(false);
@@ -391,7 +392,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       // A result with notes or open findings takes a second a: one key shouldn't approve what asks to be read.
       if (key === "approve" && button.dataset.risky && armed !== current?.key) {
         setArmed(current?.key ?? null);
-        return announce("Press a again to approve anyway.");
+        return announce(`${armLabel(button.dataset.word ?? "", "key")}.`);
       }
       setArmed(null);
       button.click();

@@ -113,7 +113,8 @@ export function strip(ui: Ui, view: View): StripKey[] {
     return keys;
   }
   if (ui.overlay?.kind === "confirm") {
-    const yes = { accept: "approve", archive: "archive", stop: "stop it", batch: "approve all" }[ui.overlay.purpose];
+    if (ui.overlay.purpose === "accept") return [k("a", "again to approve"), k("esc", "cancel", "\x1b")];
+    const yes = { archive: "archive", stop: "stop it", batch: "approve all" }[ui.overlay.purpose];
     return [k("y", yes), k("n", ui.overlay.purpose === "stop" ? "keep running" : "not now")];
   }
   const overlay = ui.overlay && OVERLAY_KEYS[ui.overlay.kind];
@@ -620,6 +621,8 @@ function overlayKey(input: string, key: Key, overlay: Overlay, u: Ui, view: View
     case "confirm":
       // A risky approval takes a second a, as the dashboard's does; a batch takes Shift-A again.
       if (input === "y" || (input === "a" && overlay.purpose === "accept") || (input === "A" && overlay.purpose === "batch")) return [close, ...confirmed(overlay, view)];
+      // Moving away from an armed approval disarms it: any other key closes it, as the dashboard's Esc or j does.
+      if (overlay.purpose === "accept") return [close];
       return input === "n" || input === "q" || key.escape ? [close] : [];
     case "help":
       return input === "?" || input === "q" || key.escape ? [close] : [];
