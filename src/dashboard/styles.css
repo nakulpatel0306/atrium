@@ -1735,6 +1735,7 @@ code {
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
+.detail h2,
 .detail h3 {
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -3309,7 +3310,7 @@ kbd {
   padding: 16px 18px 12px;
   border-bottom: 1px solid var(--line);
 }
-.dp-head h2 {
+.dp-head h3 {
   font-size: var(--fs-xl);
   font-weight: 600;
   color: var(--text);
@@ -4138,7 +4139,7 @@ kbd {
 /* A brief's own headings sit under the item's title, never above it in size. */
 .brief-view h1,
 .brief-view h2,
-.brief-view h3 {
+.brief-view h4 {
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--dim);
@@ -4330,7 +4331,7 @@ kbd {
 .finding,
 .memory .hint,
 .brief {
-  max-width: 80ch;
+  max-width: 68ch;
 }
 /* Key hints are for keyboards; a touch screen doesn't show them. */
 @media (pointer: coarse) {
@@ -4484,12 +4485,12 @@ kbd {
   color: var(--text);
 }
 
-/* Prose keeps a readable measure. */
+/* Prose keeps a readable measure: Inter's 0 is wide, so 68ch holds about 80 characters to a line. */
 .note-line,
 .spend-line,
 .walkthrough-empty,
-.detail .role {
-  max-width: 80ch;
+.role {
+  max-width: 68ch;
 }
 
 @container main (max-width: 640px) {

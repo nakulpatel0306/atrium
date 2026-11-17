@@ -173,7 +173,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
         <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{KIND_TEXT[item.kind]}</span>
-        <h2 id="dp-title">{itemTitle(state, item)}</h2>
+        <h3 id="dp-title">{itemTitle(state, item)}</h3>
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
           {space?.name ?? "Atrium"}
@@ -399,6 +399,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
             }}
           />
           <div className="q-panel" ref={panel}>
+            <h2 className="sr-only">The open item</h2>
             <button className="btn link q-back" onClick={() => setOpened(false)}>
               <ChevronLeft />
               All items

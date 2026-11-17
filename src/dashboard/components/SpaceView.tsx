@@ -434,6 +434,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
       </div>
       {open && (
         <div className="detail">
+          {/* The open task's sections (the walkthrough, You asked, History) sit under its title. */}
+          <h3 className="sr-only">{shownTitle(task)}</h3>
           {/* A pause waits for a hint and reads amber; a stopped task waits for a retry and reads red. */}
           {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{task.blockedReason}</p>}
           {review ? (
@@ -684,6 +686,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
       <SpaceNeeds state={state} spaceId={space.id} />
       <div className="cols">
         <div>
+          <h2 className="sr-only">Tasks</h2>
           <Tabs space={space} tab={tab} />
           {tab === "files" ? (
             <FilesTab space={space} />

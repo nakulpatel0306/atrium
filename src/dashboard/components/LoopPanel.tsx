@@ -269,7 +269,7 @@ export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, re
       {task.brief && (
         <details className="brief-view" open={briefOpen || loop?.questions.length ? true : undefined}>
           <summary>Brief</summary>
-          <Markdown text={briefSections(task.brief, null).join("\n\n")} />
+          <Markdown text={briefSections(task.brief, null).join("\n\n")} demote={2} />
         </details>
       )}
       {loop?.suggestedVerify && task.status !== "done" && <SuggestedCheck task={task} command={loop.suggestedVerify} />}

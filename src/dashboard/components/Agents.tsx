@@ -114,7 +114,7 @@ function Tiers({ state }: { state: State }) {
         void save();
       }}
     >
-      <h3>Models by job</h3>
+      <h2>Models by job</h2>
       {TIERS.map((t) => (
         <label key={t}>
           <span>
@@ -207,7 +207,7 @@ function AgentRow({ id, info, state, open, onToggle }: { id: string; info: Info;
           </div>
           {id === "claude" && <ClaudeWindow state={state} />}
           {id === "claude" && <Tiers state={state} />}
-          <h3>Recent runs</h3>
+          <h2>Recent runs</h2>
           <RecentRuns runs={runs} state={state} />
         </div>
       )}
