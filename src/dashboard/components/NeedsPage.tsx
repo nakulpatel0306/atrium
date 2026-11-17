@@ -5,7 +5,7 @@ import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { showToast, undoLatest } from "../toast";
-import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
+import { ACT, KEY_HELP, moveFocus, needsKey, NOTHING_HERE } from "../needs-keys";
 import { isShown } from "../page-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLabel, itemLine, itemTitle, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
@@ -360,7 +360,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       }
       // On a narrow window the list hides the decision; a key must never press a button nobody can see.
       const button = panel.current?.querySelector<HTMLButtonElement>(`[data-act="${ACT[key]}"]`) ?? null;
-      if (!button || button.disabled || !isShown(button)) return;
+      // Said, as on a task's page, rather than nothing happening.
+      if (!button || button.disabled || !isShown(button)) return announce(NOTHING_HERE[key] ?? "");
       // Keeps the letter out of the note field that s is about to focus.
       e.preventDefault();
       // A result with notes or open findings takes a second a: one key shouldn't approve what asks to be read.

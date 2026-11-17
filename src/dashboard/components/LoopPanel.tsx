@@ -206,7 +206,7 @@ function Budget({ task }: { task: Task }) {
     <div className="budget">
       <span>
         <span className={over > 0 ? "over" : undefined} title="Tokens are counted the way the API prices them: a read from Claude's prompt cache counts a tenth, a cache write 1.25×, everything else in full.">
-          Budget since your last hint: {used}
+          Budget since you last stepped in: {used}
         </span>
         {loop.usage.unreported && <span className="hint"> (an agent didn't report its tokens, so this is at least)</span>}
       </span>

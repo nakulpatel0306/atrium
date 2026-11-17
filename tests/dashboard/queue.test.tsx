@@ -143,6 +143,17 @@ test("the palette names a result by the same verdict as the queue", async () => 
   expect([hints["open-apr_c"], hints["open-apr_a"], hints["open-tsk_p"]]).toEqual(["Needs a look", "Clean", "Paused"]);
 });
 
+test("a key the open item has no button for says so, as on a task's page", async () => {
+  const el = render(
+    <>
+      <LiveRegion />
+      <NeedsPage state={queueState()} item="apr_a" />
+    </>,
+  );
+  await press("x");
+  expect(el.querySelector('[aria-live="polite"]')!.textContent).toBe("This item isn't running, so there's nothing to stop.");
+});
+
 test("the address follows the item on screen, so a reload lands on the same one", async () => {
   render(<NeedsPage state={queueState()} />);
   expect(location.search).toBe("?item=tsk_p");

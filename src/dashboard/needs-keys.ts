@@ -68,6 +68,14 @@ export const PAGE_KEY_HELP: [string, string][] = [
 
 export const PAGE_KEY_NOTE = "They act on the task you've opened. With more than one open, click in the one you mean first.";
 
+// What a key says in Needs you when the open item has no such button.
+export const NOTHING_HERE: Partial<Record<NeedsKey, string>> = {
+  approve: "This item has nothing to approve.",
+  sendBack: "This item has nothing to send back.",
+  stop: "This item isn't running, so there's nothing to stop.",
+  explain: "Explain is for a paused task.",
+};
+
 // What a page key says when no open task shows its button.
 export const NOTHING_FOR: Partial<Record<NeedsKey, string>> = {
   approve: "Nothing open here to approve. Open a task that's ready for review.",

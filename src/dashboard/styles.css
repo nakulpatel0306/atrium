@@ -3420,7 +3420,7 @@ kbd {
   right: 24px;
   z-index: 20;
   width: min(440px, calc(100vw - 32px));
-  max-height: calc(100vh - var(--top-h) - var(--cmd-clear) - 24px);
+  max-height: min(420px, calc(100vh - var(--top-h) - var(--cmd-clear) - 24px));
   overflow-y: auto;
 }
 .keys-sheet.floating dl {

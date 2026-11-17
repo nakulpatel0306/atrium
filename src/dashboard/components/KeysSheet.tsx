@@ -26,7 +26,9 @@ export function KeysSheet({ keys, kinds = false, note, floating = false, onClose
       </dl>
       {kinds && (
         <>
-          <h2>What each item asks</h2>
+          {/* Folded, so the sheet stays short enough to leave the decision in view. */}
+          <details>
+            <summary>What each item asks</summary>
           <dl className="kinds">
             {Object.values(KIND).map((k) => (
               <div key={k.label}>
@@ -46,6 +48,7 @@ export function KeysSheet({ keys, kinds = false, note, floating = false, onClose
               <dd>A Review with a note, a check that didn't pass or a finding left open. Read why first; a takes two presses.</dd>
             </div>
           </dl>
+          </details>
         </>
       )}
       <button className="btn" onClick={onClose}>
