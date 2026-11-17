@@ -4248,6 +4248,10 @@ kbd {
 .decision-keys.armed {
   color: var(--yellow);
 }
+/* The key line sits under the buttons it names, whatever measure the prose around it keeps. */
+.dp-acts .decision-keys {
+  max-width: none;
+}
 .item > .decision {
   flex: 0 1 auto;
   max-width: 62%;
