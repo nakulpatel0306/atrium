@@ -2643,10 +2643,6 @@ code {
   color: var(--yellow);
   border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
 }
-.outcome-row {
-  background: var(--panel);
-  padding: 8px 14px 2px 32px;
-}
 .outcome-banner {
   display: flex;
   gap: 8px;

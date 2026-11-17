@@ -86,10 +86,13 @@ test("Home's summary rows: each item's tag is its label and its one button names
   const items = attentionQueue(s);
   expect(rows).toHaveLength(items.length);
   items.forEach((item, i) => {
-    // A result's chips say what it is; every other row wears its kind's label.
-    const tag = rows[i]!.querySelector(".tag");
-    if (rows[i]!.querySelector(".chips")) expect(tag).toBeNull();
+    // At most one status chip, beside the cost: a result's Needs a look or Clean, and every other row its kind's label.
+    const tag = rows[i]!.querySelector(".tag:not(.cost)");
+    const chips = rows[i]!.querySelectorAll(".chip");
+    expect(chips.length + (tag ? 1 : 0)).toBeLessThanOrEqual(1);
+    if (chips.length) expect(tag).toBeNull();
     else expect(tag!.textContent).toBe(KIND[item.kind].label);
+    expect(rows[i]!.querySelectorAll(".tag.cost").length).toBeLessThanOrEqual(1);
     const buttons = [...rows[i]!.querySelectorAll("button")];
     expect(buttons).toHaveLength(1);
     expect(buttons[0]!.textContent).toBe(goTo(item.kind));

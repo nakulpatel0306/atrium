@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { LiveRegion } from "../../src/dashboard/components/LiveRegion";
+import { NeedsList } from "../../src/dashboard/components/NeedsYou";
 import { NeedsPage, visibleRange, ROW_PX } from "../../src/dashboard/components/NeedsPage";
 import { attentionQueue, cleanReviews, itemLine, itemTitle } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS, type LoopState } from "../../src/engine/loop";
@@ -134,6 +135,21 @@ test("a budget pause raises its budget and carries on in one click, and Change b
   expect(save.textContent).toBe("Save and carry on");
   await act(async () => save.click());
   expect(calls.at(-1)!.body).toMatchObject({ resume: true });
+});
+
+test("Home's result rows carry one status chip and the cost, and say what's going on in one line", () => {
+  const s = queueState();
+  s.spend.tasks = { tsk_a: { weighted: 41_000, usd: 0.04, unpriced: 0, cacheRead: 0, input: 0 } };
+  const el = render(<NeedsList state={s} />);
+  const row = (title: string) => [...el.querySelectorAll(".summary-row")].find((r) => r.querySelector(".t")!.textContent!.startsWith(title))!;
+  const noted = row("Review tsk_c");
+  expect([...noted.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["Needs a look"]);
+  // The rest is in the chip's tooltip and on the item's screen.
+  expect(noted.querySelector(".chip")!.getAttribute("title")).toContain("bunfig.toml");
+  expect(noted.querySelector(".t span")!.textContent).toBe("Approved by Claude · Checks passed");
+  const clean = row("Review tsk_a");
+  expect([...clean.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["Clean"]);
+  expect(clean.querySelector(".tag.cost")!.textContent).toBe("41k · ~$0.04");
 });
 
 test("batch approval offers only the clean results, and Shift A opens it", async () => {
