@@ -4810,3 +4810,8 @@ a.task-link {
 .live-ask-title {
   color: var(--text);
 }
+.made-secret {
+  flex: none;
+  color: var(--yellow);
+  font-size: var(--fs-xs);
+}

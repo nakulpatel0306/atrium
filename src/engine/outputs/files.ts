@@ -4,6 +4,7 @@ import { showBlob } from "../git";
 import { bytes as sizeText } from "../text";
 import { extOf, type FileKind, IMAGE_TYPES, kindOf, looksLikeText } from "./kinds";
 import { isHiddenPath } from "./snapshot";
+import { SECRET } from "../autonomy/kinds";
 
 export { type FileKind, kindOf } from "./kinds";
 
@@ -35,6 +36,14 @@ function checkRel(rel: string) {
 }
 
 export const CHANGED = "That file changed while Atrium was checking it. Try again.";
+
+// A file whose name says it may hold a key or secret (the same names the ask bar won't attach) is listed but never
+// read into a preview, whatever asked for it.
+export const mayHoldSecret = (rel: string): boolean => SECRET.test(rel);
+export const SECRET_FILE = "Atrium doesn't show this file because its name says it may hold a key or a secret. Open it yourself from Finder if you need it.";
+const refuseSecret = (rel: string) => {
+  if (mayHoldSecret(rel)) throw new FileRefused(403, SECRET_FILE);
+};
 
 // A checked file: its real path and the identity it had when checked, so a later open can tell whether the path
 // still names the same file (an agent's leftover process could swap it for a link in between).
@@ -138,6 +147,7 @@ export function readBytes(fd: number, length: number): Uint8Array {
 }
 
 export function readPreview(root: string, rel: string): FilePreview {
+  refuseSecret(rel);
   const t = resolveTarget(root, rel);
   return readOpen(t, (fd, { size }) => {
     const kind = kindOf(rel);
@@ -148,6 +158,7 @@ export function readPreview(root: string, rel: string): FilePreview {
 }
 
 export function readRaw(root: string, rel: string): { bytes: Uint8Array; type: string } {
+  refuseSecret(rel);
   const t = resolveTarget(root, rel);
   const type = IMAGE_TYPES[extOf(rel)];
   if (!type) throw new FileRefused(400, "Only images can be shown inline.");
@@ -167,6 +178,7 @@ async function blob(repo: string, ref: string, rel: string, cap: number) {
 }
 
 export async function branchPreview(repo: string, ref: string, rel: string): Promise<FilePreview> {
+  refuseSecret(rel);
   const kind = kindOf(rel);
   const b = await blob(repo, ref, rel, kind === "image" ? 0 : RAW_CAP);
   return previewOf(rel, join(repo, rel), b.size, b.bytes);
@@ -175,6 +187,7 @@ export async function branchPreview(repo: string, ref: string, rel: string): Pro
 export async function branchRaw(repo: string, ref: string, rel: string): Promise<{ bytes: Uint8Array; type: string }> {
   const type = IMAGE_TYPES[extOf(rel)];
   checkRel(rel);
+  refuseSecret(rel);
   if (!type) throw new FileRefused(400, "Only images can be shown inline.");
   const b = await blob(repo, ref, rel, RAW_CAP);
   if (!b.bytes) throw new FileRefused(413, "This image is too big to show here. Open it instead.");

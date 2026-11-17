@@ -8,18 +8,23 @@ import type { State } from "../../src/engine/state";
 import { ids, makeState } from "../tui/fixtures";
 
 let root: Root | null = null;
+let fetched: string[] = [];
 const realFetch = globalThis.fetch;
 const now = Date.now();
 beforeEach(() => {
+  fetched = [];
   globalThis.fetch = (async (url: string) => {
+    fetched.push(url);
     if (url.endsWith(`/spaces/${ids.jobHunt}/files`))
       return Response.json({
         folder: "/Users/me/Atrium/job-hunt",
         shown: "~/Atrium/job-hunt",
         truncated: false,
         files: [
-          { root: "space", ref: null, path: "notes/changelog-0.9.md", absPath: "/Users/me/Atrium/job-hunt/notes/changelog-0.9.md", size: 120, at: now, kind: "markdown", madeBy: null },
-          { root: "space", ref: null, path: "other.md", absPath: "/Users/me/Atrium/job-hunt/other.md", size: 40, at: now, kind: "markdown", madeBy: null },
+          { root: "space", ref: null, path: "notes/changelog-0.9.md", absPath: "/Users/me/Atrium/job-hunt/notes/changelog-0.9.md", size: 120, at: now, kind: "markdown", madeBy: null, secret: false },
+          { root: "space", ref: null, path: "other.md", absPath: "/Users/me/Atrium/job-hunt/other.md", size: 40, at: now, kind: "markdown", madeBy: null, secret: false },
+          { root: "space", ref: null, path: "a", absPath: "/Users/me/Atrium/job-hunt/a", size: 1, at: now, kind: "other", madeBy: null, secret: false },
+          { root: "space", ref: null, path: "server.pem", absPath: "/Users/me/Atrium/job-hunt/server.pem", size: 1, at: now, kind: "other", madeBy: null, secret: true },
         ],
       });
     if (url.includes("/file?path=")) return Response.json({ kind: "markdown", text: "# 0.9\n\n- Faster search", truncated: false, size: 120 });
@@ -79,4 +84,31 @@ test("a removal's sign-off says what goes and what GitHub keeps, without a View 
   const dl = el.querySelector('dl.signoff[aria-label="What this removes"]')!;
   expect(dl.textContent).toContain("~/Projects/demo · 3.0 MB");
   expect(dl.textContent).toContain("example/demo");
+});
+
+test("a file is named by a whole word with a path or extension, never by a letter inside one", async () => {
+  const { namesFile, pathTokens } = await import("../../src/dashboard/components/SignOff");
+  const t = pathTokens("Publish the draft at notes/changelog-0.9.md, as a release?");
+  expect(namesFile(t, "notes/changelog-0.9.md")).toBe(true);
+  expect(namesFile(t, "changelog-0.9.md")).toBe(true);
+  expect(namesFile(t, "a")).toBe(false);
+  expect(namesFile(t, "notes")).toBe(false);
+  expect(namesFile(pathTokens("Ship README now"), "README")).toBe(false);
+  expect(namesFile(pathTokens("Ship docs/README now"), "docs/README")).toBe(true);
+  // In the panel the one-letter file isn't listed, so the draft is the only match and opens.
+  const s = makeState({ approvals: [ask({ id: "apr_pub", spaceId: ids.jobHunt, title: "Publish a draft?", detail: "It's in notes/changelog-0.9.md." })] });
+  const el = await panel(s, "apr_pub");
+  expect([...el.querySelectorAll(".signoff-files .made-path")].map((p) => p.textContent)).toEqual(["notes/changelog-0.9.md"]);
+});
+
+test("a key file a sign-off names is listed as hidden and never read", async () => {
+  const s = makeState({ approvals: [ask({ id: "apr_key", spaceId: ids.jobHunt, title: "Upload server.pem to the host?", detail: "" })] });
+  const el = await panel(s, "apr_key");
+  const row = el.querySelector(".signoff-files .made-row")!;
+  expect(row.textContent).toContain("hidden: may hold a secret");
+  expect(row.querySelector(".preview, pre")).toBeNull();
+  expect(fetched.some((u) => u.includes("server.pem"))).toBe(false);
+  await act(async () => row.querySelector<HTMLElement>(".made-line")!.click());
+  expect(fetched.some((u) => u.includes("server.pem"))).toBe(false);
+  expect([...row.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Reveal in Finder", "Copy path"]);
 });

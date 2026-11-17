@@ -53,7 +53,7 @@ test("what a task made, files and threads read cleanly", () => {
   const file = { id: "rf1", runId: "r", root: "space" as const, ref: null, path: "grocery-list.md", absPath: "/a/grocery-list.md", change: "created" as const, size: 2662, insertions: null, deletions: null, kind: "markdown" as const, exists: true, at: Date.now() };
   expectClean(readable(renderToStaticMarkup(<WhatItMadeList outputs={{ summary: { text: MD, status: "approved", decidedBy: "rule", at: Date.now() }, files: [file, { ...file, id: "rf2", path: "gone.md", exists: false }] }} spaceId="s" taskId="t" spaceKind="general" />)));
   const space = makeState().spaces[0]!;
-  expectClean(readable(renderToStaticMarkup(<FilesList files={{ folder: "/a", shown: "~/Atrium/a", truncated: true, files: [{ root: "space", ref: null, path: "grocery-list.md", absPath: "/a/grocery-list.md", size: 10, at: Date.now(), kind: "markdown", madeBy: null }] }} space={space} />)));
+  expectClean(readable(renderToStaticMarkup(<FilesList files={{ folder: "/a", shown: "~/Atrium/a", truncated: true, files: [{ root: "space", ref: null, path: "grocery-list.md", absPath: "/a/grocery-list.md", size: 10, at: Date.now(), kind: "markdown", madeBy: null, secret: false }] }} space={space} />)));
   expectClean(readable(renderToStaticMarkup(<FilesList files={{ folder: "/a", shown: "~/Atrium/a", truncated: false, files: [] }} space={space} />)));
   expectClean(readable(renderToStaticMarkup(<ThreadList messages={[{ id: "m", spaceId: "s", taskId: "t", fromAgent: "codex", toAgent: "claude", body: MD, createdAt: Date.now() }]} />)));
 });

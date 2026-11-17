@@ -14,7 +14,8 @@ const ICON = { markdown: FileText, text: FileText, image: Image, calendar: Calen
 const KEPT = /^runs\/[^/]+\//;
 
 export function FileRow({ file, space, open: initial = false }: { file: SpaceFile; space: Space; open?: boolean }) {
-  const [open, setOpen] = useState(initial);
+  // A file whose name says it may hold a key or secret is listed, never opened for reading here.
+  const [open, setOpen] = useState(initial && !file.secret);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   const ref = { spaceId: space.id, taskId: file.madeBy?.taskId ?? "", root: file.root, path: file.path };
   const preview = useFilePreview(open ? ref : null, file.at);
@@ -23,12 +24,13 @@ export function FileRow({ file, space, open: initial = false }: { file: SpaceFil
   const act = async (a: FileAction) => setSaid(await runFileAction(a, { ...ref, absPath: file.absPath }));
   return (
     <li className="made-row">
-      <div className="made-line" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <div className="made-line" onClick={() => !file.secret && setOpen(!open)} aria-expanded={file.secret ? undefined : open}>
         <Icon className="made-icon" />
         <span className="made-path mono" title={file.absPath}>
           {kept && <span className="kept">kept from a run · </span>}
           {middle(kept ? file.path.replace(KEPT, "") : file.path)}
         </span>
+        {file.secret && <span className="made-secret">hidden: may hold a secret</span>}
         <span className="made-size">{sizeText(file.size)}</span>
         <span className="made-size" title={absolute(file.at)}>
           {relative(file.at)}
@@ -50,7 +52,9 @@ export function FileRow({ file, space, open: initial = false }: { file: SpaceFil
           )}
         </span>
         <span className="made-acts">
-          {fileActions({ ...file, exists: true }, space.kind).map((a) => (
+          {fileActions({ ...file, exists: true }, space.kind)
+            .filter((a) => !file.secret || a === "reveal" || a === "copyPath")
+            .map((a) => (
             <button
               key={a}
               className="btn"

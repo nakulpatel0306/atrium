@@ -146,6 +146,7 @@ const file = (path: string, over: Partial<SpaceFile> = {}): SpaceFile => ({
   at: Date.now() - 120_000,
   kind: "markdown",
   madeBy: { taskId: "tsk_1", title: "Make a grocery list" },
+  secret: false,
   ...over,
 });
 
