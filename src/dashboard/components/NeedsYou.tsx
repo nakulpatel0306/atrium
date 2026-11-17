@@ -49,7 +49,7 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
         {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} dollars />}
         <div className="acts">
           <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
-            {approval ? `${approveText(state, approval)}…` : goTo(item.kind)}
+            {approval ? `${approveText(state, approval)}…` : goTo(item.kind, task?.loop?.paused?.kind === "budget")}
             <ChevronRight />
           </button>
         </div>

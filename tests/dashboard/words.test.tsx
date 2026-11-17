@@ -95,7 +95,8 @@ test("Home's summary rows: each item's tag is its label and its one button names
     expect(rows[i]!.querySelectorAll(".tag.cost").length).toBeLessThanOrEqual(1);
     const buttons = [...rows[i]!.querySelectorAll("button")];
     expect(buttons).toHaveLength(1);
-    expect(buttons[0]!.textContent).toBe(goTo(item.kind));
+    const budget = s.tasks.find((t) => t.id === item.taskId)?.loop?.paused?.kind === "budget";
+    expect(buttons[0]!.textContent).toBe(goTo(item.kind, budget));
   });
   // Low-priority items sit under their own divider, so the heading's count is the rows above it.
   const order = [...el.querySelector(".needs-list")!.children].map((c) => (c.classList.contains("low-head") ? "divider" : "row"));
@@ -110,7 +111,10 @@ test("each decision screen's primary button is the step its rows named", () => {
     const el = render(<DecisionPanel item={item} state={s} />);
     expect(el.querySelector(".q-kind")!.textContent).toBe(KIND[item.kind].label);
     const primary = [...el.querySelectorAll<HTMLButtonElement>(".dp-body .btn.p")].map((b) => b.textContent);
-    expect(primary).toContain(KIND[item.kind].action);
+    // A budget pause leads with raising the budget, the step its row names.
+    const budget = s.tasks.find((t) => t.id === item.taskId)?.loop?.paused?.kind === "budget";
+    if (budget) expect(primary.some((p) => p?.startsWith("Raise to"))).toBe(true);
+    else expect(primary).toContain(KIND[item.kind].action);
     act(() => root!.unmount());
     root = null;
   }

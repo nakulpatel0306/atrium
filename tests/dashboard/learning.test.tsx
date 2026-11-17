@@ -140,7 +140,7 @@ test("each hunk offers an explanation from the engine, shown under its header", 
   expect(button(render(<ChangesList diff={diff} live={null} />), "Explain this hunk")).toBeUndefined();
 });
 
-test("a loop pause on a repeated failure offers the diagnosis first; every pause's primary step is the hint", () => {
+test("a loop pause on a repeated failure offers the diagnosis first; a budget pause leads with raising the budget", () => {
   const paused = { paused: { kind: "loop" as const, diagnosis: "The same check failed the same way twice in a row (test)." } };
   const loop = setup(paused, "blocked");
   const el = render(<LoopPanel task={loop.task} state={loop.state} repo showChecks={false} />);
@@ -153,7 +153,12 @@ test("a loop pause on a repeated failure offers the diagnosis first; every pause
   const budget = setup({ paused: { kind: "budget", diagnosis: "It worked for 45 minutes, its budget." } }, "blocked");
   const b = render(<LoopPanel task={budget.task} state={budget.state} repo showChecks={false} />);
   expect(b.textContent).not.toContain("Want the diagnosis");
-  expect(button(b, "Give it a hint")!.className).toBe("btn p");
+  // The budget is the cause, so raising it is the primary step and the hint the other way on.
+  expect(button(b, "Give it a hint")!.className).toBe("btn");
+  expect([...b.querySelectorAll<HTMLButtonElement>(".paused .btn.p")].map((x) => x.textContent)).toEqual([expect.stringMatching(/^Raise to .* and carry on$/)]);
+  // The overage is said once, in the pause's lead; the budget line only names the budget.
+  expect(b.querySelector(".budget")!.textContent).toMatch(/^Budget: /);
+  expect(b.querySelector(".budget .over")).toBeNull();
 });
 
 test("the retro and the roll-up show only the measured lines the engine sent", () => {

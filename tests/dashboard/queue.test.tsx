@@ -125,7 +125,7 @@ test("a budget pause raises its budget and carries on in one click, and Change b
   const spent = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_p" ? { ...t, loop: { ...t.loop!, usage: { tokens: 210_000, ms: 60_000, unreported: false } } } : t)) };
   const el = render(<NeedsPage state={spent} item="tsk_p" />);
   const raise = [...el.querySelectorAll<HTMLButtonElement>(".paused button")].find((b) => b.textContent === "Raise to 400k tokens and carry on")!;
-  expect(raise.className).toBe("btn");
+  expect(raise.className).toBe("btn p");
   await act(async () => raise.click());
   expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_p/budget", body: { budget: { tokens: 400_000, minutes: 20 }, resume: true } });
   const change = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.textContent === "Change budget")!;

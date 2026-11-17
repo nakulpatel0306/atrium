@@ -115,6 +115,7 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
     if (!res.ok) setError(res.error);
     else setHint("");
   };
+  const budget = task.loop?.paused?.kind === "budget";
   const explain = (
     <button className="btn" type="button" data-act="explain" disabled={busy} onClick={() => void act("explain")}>
       <MessageSquareText />
@@ -140,19 +141,20 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
       >
         <textarea rows={2} aria-label="Hint for the agent" placeholder="What should it try, or what is it missing?" value={hint} onChange={(e) => setHint(e.target.value)} />
         <div className="acts">
-          {/* A pause's one primary step, named as on every surface (engine/words.ts); the diagnosis is the other way on. */}
-          <button className="btn p" type="submit" disabled={busy}>
+          {budget && (
+            // When the budget is the cause, raising it is the way on, in one click: what ran out, doubled, and the work
+            // carries on from the branch. A hint is then the other way.
+            <button className="btn p" type="button" disabled={busy} onClick={() => void act("budget", { budget: raisedBudget(task.loop!), resume: true })}>
+              <Gauge />
+              {raiseText(task.loop!)}
+            </button>
+          )}
+          {/* A pause's primary step, named as on every surface (engine/words.ts); the diagnosis is the other way on. */}
+          <button className={`btn${budget ? "" : " p"}`} type="submit" disabled={busy}>
             <Lightbulb />
             {KIND.paused.action}
           </button>
           {!nudge && explain}
-          {task.loop?.paused?.kind === "budget" && (
-            // The budget's own way on, in one click: what ran out, doubled, and the work carries on from the branch.
-            <button className="btn" type="button" disabled={busy} onClick={() => void act("budget", { budget: raisedBudget(task.loop!), resume: true })}>
-              <Gauge />
-              {raiseText(task.loop)}
-            </button>
-          )}
         </div>
       </form>
       {error && <p className="err">{error}</p>}
@@ -205,8 +207,9 @@ function Budget({ task }: { task: Task }) {
   return (
     <div className="budget">
       <span>
-        <span className={over > 0 ? "over" : undefined} title="Tokens are counted the way the API prices them: a read from Claude's prompt cache counts a tenth, a cache write 1.25×, everything else in full.">
-          Budget since you last stepped in: {used}
+        <span className={over > 0 && !resume ? "over" : undefined} title="Tokens are counted the way the API prices them: a read from Claude's prompt cache counts a tenth, a cache write 1.25×, everything else in full.">
+          {/* A budget pause says what ran out once, in its lead; here only the budget and the way to change it. */}
+          {resume ? `Budget: ${compact(loop.budget.tokens)} tokens · ${loop.budget.minutes} min` : `Budget since you last stepped in: ${used}`}
         </span>
         {loop.usage.unreported && <span className="hint"> (an agent didn't report its tokens, so this is at least)</span>}
       </span>
