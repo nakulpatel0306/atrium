@@ -80,12 +80,6 @@ export function resultWord(state: State, a: State["approvals"][number]): string 
   return isRisky(state, a) ? RISKY : CLEAN;
 }
 
-// Whether a task waits on you with a result that Needs a look, for its status icon.
-export function taskNeedsLook(state: State, t: State["tasks"][number]): boolean {
-  const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
-  return !!a && isRisky(state, a);
-}
-
 // A task in review's verdict, for lists that name tasks by state (the terminal app's), else null.
 export function taskVerdict(state: State, t: State["tasks"][number]): string | null {
   const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;

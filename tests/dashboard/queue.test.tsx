@@ -199,8 +199,12 @@ test("a result's stepper ends on its verdict, and a list's icon warns when it Ne
   const el = render(<NeedsPage state={queueState()} item="apr_a" />);
   expect(el.querySelector(".stages li.on")!.textContent).toBe("Clean");
   act(() => root!.unmount());
-  const icon = render(<StatusIcon status="review" look />);
+  const icon = render(<StatusIcon status="review" verdict="Needs a look" />);
   expect(icon.querySelector("[aria-label]")!.getAttribute("aria-label")).toBe("Needs a look");
+  act(() => root!.unmount());
+  const clean = render(<StatusIcon status="review" verdict="Clean" />);
+  expect(clean.querySelector("[aria-label]")!.getAttribute("aria-label")).toBe("Clean");
+  expect(clean.querySelector("svg")!.getAttribute("class")).toContain("clean");
 });
 
 test("the queue lists a result by its verdict, the word Home and its space use", () => {

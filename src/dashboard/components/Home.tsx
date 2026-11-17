@@ -3,7 +3,7 @@ import { ArrowDown, Plus } from "lucide-react";
 import { ranAgent } from "../agents";
 import type { State } from "../api";
 import { navigate } from "../route";
-import { taskNeedsLook } from "../queue";
+import { taskVerdict } from "../queue";
 import { kindLabel } from "../spaces";
 import { emptyHome, liveStatus, spaceStatus } from "../summary";
 import { Activity } from "./Activity";
@@ -59,7 +59,7 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
         <ul className="tasks">
           {open.slice(0, SHOWN_TASKS).map((t) => (
             <li key={t.id}>
-              <StatusIcon status={t.status} paused={pausedForYou(t)} look={taskNeedsLook(state, t)} />
+              <StatusIcon status={t.status} paused={pausedForYou(t)} verdict={taskVerdict(state, t)} />
               <span>{t.title}</span>
             </li>
           ))}

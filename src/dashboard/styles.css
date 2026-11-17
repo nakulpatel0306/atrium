@@ -4751,6 +4751,9 @@ a.task-link {
 .stat.look {
   color: var(--yellow);
 }
+.stat.clean {
+  color: var(--green);
+}
 .start-optional .tag {
   justify-self: start;
   align-self: center;
