@@ -145,7 +145,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
 
   let body;
   if (approval?.alwaysAsk === "create_repo" && action?.draft) body = <div className="list needs-list"><ProjectDraftRow approval={approval} action={action} /></div>;
-  else if (approval?.alwaysAsk === "remove_clone") body = <div className="list needs-list"><RemovalRow approval={approval} /></div>;
+  else if (approval?.alwaysAsk === "remove_clone") body = <div className="list needs-list"><RemovalRow approval={approval} action={action} /></div>;
   else if (approval) body = <ResultDecision approval={approval} task={task} space={space} state={state} armed={armed} keys />;
   else if (proposal) body = <div className="list needs-list"><ProposalRow proposal={proposal} space={space} /></div>;
   else if (memory && space) body = <MemoryProposal line={memory} space={space} />;
@@ -187,15 +187,16 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
               <span>low priority: nothing waits on it</span>
             </>
           )}
-          {task && space && (
+          {space && (
+            // Every item in a space has a way to it: its task, or the space itself when nothing ran as a task.
             <a
-              href={`/space/${space.id}?task=${task.id}`}
+              href={task ? `/space/${space.id}?task=${task.id}` : `/space/${space.id}`}
               onClick={(e) => {
                 e.preventDefault();
-                navigate(`/space/${space.id}?task=${task.id}`);
+                navigate(task ? `/space/${space.id}?task=${task.id}` : `/space/${space.id}`);
               }}
             >
-              Open the task
+              {task ? "Open the task" : "Open the space"}
             </a>
           )}
         </p>

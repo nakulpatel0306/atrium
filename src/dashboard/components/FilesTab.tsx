@@ -13,8 +13,8 @@ type Space = State["spaces"][number];
 const ICON = { markdown: FileText, text: FileText, image: Image, calendar: CalendarDays, other: File };
 const KEPT = /^runs\/[^/]+\//;
 
-function Row({ file, space }: { file: SpaceFile; space: Space }) {
-  const [open, setOpen] = useState(false);
+export function FileRow({ file, space, open: initial = false }: { file: SpaceFile; space: Space; open?: boolean }) {
+  const [open, setOpen] = useState(initial);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   const ref = { spaceId: space.id, taskId: file.madeBy?.taskId ?? "", root: file.root, path: file.path };
   const preview = useFilePreview(open ? ref : null, file.at);
@@ -108,7 +108,7 @@ export function FilesList({ files, space }: { files: SpaceFiles; space: Space })
       ) : (
         <ul className="made-files">
           {files.files.map((f) => (
-            <Row key={`${f.root}:${f.path}`} file={f} space={space} />
+            <FileRow key={`${f.root}:${f.path}`} file={f} space={space} />
           ))}
         </ul>
       )}

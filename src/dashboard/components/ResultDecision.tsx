@@ -8,6 +8,7 @@ import { LoopPanel, StageStrip } from "./LoopPanel";
 import { Markdown } from "./Markdown";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { RetroCard } from "./Retro";
+import { SignOffFiles } from "./SignOff";
 import { WalkthroughCard } from "./Walkthrough";
 import { WhatItMade } from "./WhatItMade";
 
@@ -51,7 +52,11 @@ export function ResultDecision({ approval, task, space, state, armed = false, ke
           {!diff && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
         </>
       ) : (
-        <Markdown text={approval.detail || "No further detail."} />
+        <>
+          <Markdown text={approval.detail || "No further detail."} />
+          {/* A sign-off is read before the yes: the files it names open right here. */}
+          {space && <SignOffFiles approval={approval} space={space} />}
+        </>
       )}
     </>
   );

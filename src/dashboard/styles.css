@@ -4686,3 +4686,26 @@ kbd {
 .tiers .hint {
   max-width: 60ch;
 }
+
+/* A sign-off's preview: what a yes creates or removes, as label and value pairs. */
+.signoff {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  padding: 8px 14px 12px 32px;
+  background: var(--panel);
+  font-size: var(--fs-sm);
+}
+.signoff dt {
+  color: var(--dim);
+}
+.signoff dd {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.signoff-files h4 {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
