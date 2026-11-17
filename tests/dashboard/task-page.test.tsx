@@ -88,6 +88,10 @@ test("a task page shows a result's decision with the same evidence as its screen
   // The diff isn't behind a tab any more, and isn't shown twice.
   expect(page.querySelectorAll(".changes-section").length).toBe(1);
   expect(page.querySelector(".work-tabs")).toBeNull();
+  // The row wears the verdict, once, as the queue does, and the decision leads with where the task is.
+  const tags = [...page.querySelectorAll(`#task-${ids.review} .task-open .tag`)].map((t) => t.textContent);
+  expect(tags).toEqual(["Needs a look"]);
+  expect(page.querySelector(".task-decision")!.firstElementChild!.className).toBe("stages");
 });
 
 const press = async (key: string, init: KeyboardEventInit = {}) => act(async () => void window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init })));

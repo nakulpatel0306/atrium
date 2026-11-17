@@ -1,10 +1,17 @@
+import { useEffect, useRef } from "react";
 import { KIND } from "../../engine/words";
 
 // The keys that work on this page, and on Needs you what each kind of item asks, in the words every surface uses
 // (engine/words.ts).
-export function KeysSheet({ keys, kinds = false, note, onClose }: { keys: [string, string][]; kinds?: boolean; note?: string; onClose: () => void }) {
+// `floating`: over a long page it opens where the user is, not at the top they scrolled away from.
+export function KeysSheet({ keys, kinds = false, note, floating = false, onClose }: { keys: [string, string][]; kinds?: boolean; note?: string; floating?: boolean; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  // Focus goes to the sheet, so a screen reader says it opened; Esc closes it as before.
+  useEffect(() => {
+    box.current?.focus();
+  }, []);
   return (
-    <div className="keys-sheet" role="dialog" aria-label="Keys">
+    <div className={`keys-sheet${floating ? " floating" : ""}`} role="dialog" aria-label="Keys" tabIndex={-1} ref={box}>
       <h2>Keys</h2>
       {note && <p className="hint">{note}</p>}
       <dl>

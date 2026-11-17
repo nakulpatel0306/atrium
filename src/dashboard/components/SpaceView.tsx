@@ -1,5 +1,5 @@
 import { attentionQueue } from "../../engine/needs";
-import { KIND as QUEUE_KIND, RISKY, taskLabel, taskWord } from "../../engine/words";
+import { KIND as QUEUE_KIND, taskLabel, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
@@ -8,7 +8,7 @@ import { absolute, duration, relative, tokens } from "../format";
 import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, reviewLine, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
-import { isRisky } from "../queue";
+import { isRisky, resultWord } from "../queue";
 import { type Learning, LEARNING_LEVELS, REVIEW_CHOICES } from "../../engine/spaces";
 import { MemorySize } from "./Memory";
 import { RetroCard, RollupCard } from "./Retro";
@@ -363,6 +363,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
   const notDone = task.status === "done" && task.outcome ? outcomeLabel(task.outcome) : null;
   const review = task.status === "review" ? state.approvals.find((a) => a.taskId === task.id && a.kind === "review") : undefined;
   const risky = !!review && isRisky(state, review);
+  // A result that went through the loop wears its verdict instead of "Ready for review", as in the queue and on Home.
+  const verdict = review ? resultWord(state, review) : null;
   const attached = state.attachments.filter((a) => a.taskId === task.id);
 
   const act = async (fn: () => ReturnType<typeof post>) => {
@@ -397,8 +399,11 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             </span>
           ) : (
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
-            <span className={`tag${stuck ? " bad" : word === "paused" ? " wait" : ""}${notDone ? " notdone" : ""}`} title={task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined}>
-              {notDone ?? (asks ? QUEUE_KIND[asks].label : taskLabel(word))}
+            <span
+              className={`tag${stuck ? " bad" : word === "paused" || risky ? " wait" : verdict ? " good" : ""}${notDone ? " notdone" : ""}`}
+              title={(review && reviewLine(review, state)?.text) || (task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined)}
+            >
+              {notDone ?? (asks ? QUEUE_KIND[asks].label : (verdict ?? taskLabel(word)))}
             </span>
           )}
         </button>
@@ -413,14 +418,8 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             Run now
           </button>
         )}
-        {/* A result waiting on you that isn't clean says so on its row, as everywhere else (needs.ts, one rule). */}
-        {risky && (
-          <span className="tag wait" title={review ? (reviewLine(review, state)?.text ?? undefined) : undefined}>
-            {RISKY}
-          </span>
-        )}
-        {/* Open on a decision, the checks have their chip right below; the row doesn't say it twice. */}
-        {space?.kind === "repo" && task.kind === "work" && !(open && review) && !risky && (
+        {/* A result's verdict already speaks for its checks, and its decision shows them; the row doesn't say it twice. */}
+        {space?.kind === "repo" && task.kind === "work" && !verdict && (
           <ChecksBadge
             task={task}
             onOpen={() => {
@@ -614,7 +613,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
   useEffect(() => {
     if (!focusTask) return;
     setExpanded((prev) => new Set(prev).add(focusTask));
-    document.getElementById(`task-${focusTask}`)?.scrollIntoView({ block: "center" });
+    document.getElementById(`task-${focusTask}`)?.scrollIntoView({ block: "start" });
   }, [focusTask]);
 
   useEffect(() => {
@@ -632,6 +631,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
       if (!key || document.querySelector('[aria-modal="true"]')) return;
       if (key === "help") return setHelp((h) => !h);
       if (key === "close") {
+        if (live.current) announce("Cancelled. Approve takes two presses again.");
         setArmed(null);
         return setHelp(false);
       }
@@ -682,7 +682,7 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
   return (
     <div className="wrap">
       <Header key={space.id} space={space} spend={state.spend.spaces[space.id]} />
-      {help && <KeysSheet keys={PAGE_KEY_HELP} note={PAGE_KEY_NOTE} onClose={() => setHelp(false)} />}
+      {help && <KeysSheet keys={PAGE_KEY_HELP} note={PAGE_KEY_NOTE} floating onClose={() => setHelp(false)} />}
       <SpaceNeeds state={state} spaceId={space.id} />
       <div className="cols">
         <div>

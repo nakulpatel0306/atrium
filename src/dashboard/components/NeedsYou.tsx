@@ -45,7 +45,8 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
         ) : (
           <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>
         )}
-        {task && <CostChip spend={state.spend.tasks[task.id]} />}
+        {/* What the work cost; a low-priority item (a CLAUDE.md line, a suggestion) costs nothing itself. */}
+        {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} />}
         <div className="acts">
           <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
             {approval ? `${approveText(state, approval)}…` : goTo(item.kind)}

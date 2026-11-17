@@ -137,6 +137,13 @@ test("a budget pause raises its budget and carries on in one click, and Change b
   expect(calls.at(-1)!.body).toMatchObject({ resume: true });
 });
 
+test("the queue lists a result by its verdict, the word Home and its space use", () => {
+  const el = render(<NeedsPage state={queueState()} />);
+  expect(el.querySelector("#q-apr_c .q-kind")!.textContent).toBe("Needs a look");
+  expect(el.querySelector("#q-apr_a .q-kind")!.textContent).toBe("Clean");
+  expect(el.querySelector("#q-tsk_p .q-kind")!.textContent).toBe("Paused");
+});
+
 test("Home's result rows carry one status chip and the cost, and say what's going on in one line", () => {
   const s = queueState();
   s.spend.tasks = { tsk_a: { weighted: 41_000, usd: 0.04, unpriced: 0, cacheRead: 0, input: 0 } };
@@ -230,6 +237,7 @@ test("the first a on a risky result relabels Approve in place and says so; Esc o
   await press("Escape");
   expect(shown(button())).toBe("Approve anyway");
   expect(el.querySelector(".decision-keys.armed")).toBeNull();
+  expect(el.querySelector('[aria-live="polite"]')!.textContent).toBe("Cancelled. Approve takes two presses again.");
   // A second a after Esc arms again rather than approving.
   await press("a");
   expect(calls.some((c) => c.url === "/api/approvals/apr_c")).toBe(false);

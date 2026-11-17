@@ -24,7 +24,7 @@ function RepoRow({ repo, onAsked }: { repo: Repo; onAsked(): void }) {
       <div className="item storage-row">
         <span className="t">
           <b>{row.name}</b>
-          <span>{row.path}</span>
+          <span title={row.path}>{row.path}</span>
         </span>
         <span className="num">{row.size}</span>
         <span className={`tag${repo.createdBy === "atrium" ? "" : " private"}`}>{row.owner}</span>

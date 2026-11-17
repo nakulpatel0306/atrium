@@ -2,7 +2,7 @@
 // in engine/needs.ts. The terminal app reads the same lines, so both say the same thing.
 import { askLine, attentionQueue, batchApprovable, cleanResult, type QueueItem, type QueueKind } from "../engine/needs";
 import type { State } from "../engine/state";
-import { KIND } from "../engine/words";
+import { CLEAN, KIND, RISKY } from "../engine/words";
 import { reviewChips, summaryLine } from "./summary";
 import { clock } from "./format";
 
@@ -71,6 +71,19 @@ export function waited(since: number, now = Date.now()): string {
 export function isRisky(state: State, a: State["approvals"][number]): boolean {
   const task = a.kind === "review" && a.taskId ? state.tasks.find((t) => t.id === a.taskId) : undefined;
   return !!task?.loop && !cleanResult(task);
+}
+
+// A result's one word wherever it's listed (the queue, Home, its space): Needs a look or Clean, by the one rule
+// (needs.ts). Null for anything that didn't go through the loop, which keeps its kind's label.
+export function resultWord(state: State, a: State["approvals"][number]): string | null {
+  if (!reviewChips(a, state)) return null;
+  return isRisky(state, a) ? RISKY : CLEAN;
+}
+
+// The label a queue item wears: a result's verdict, else its kind.
+export function itemLabel(state: State, i: QueueItem): string {
+  const a = i.kind === "review" ? approvalOf(state, i) : undefined;
+  return (a && resultWord(state, a)) ?? KIND_TEXT[i.kind];
 }
 
 // The commit a result's screen shows: the one its checks and review read. Approving sends it, so the approval binds to

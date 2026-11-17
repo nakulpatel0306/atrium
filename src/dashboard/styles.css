@@ -556,6 +556,8 @@ h2 {
 }
 .entry {
   border-bottom: 1px solid var(--line);
+  /* A task opened from a link lands with its title and decision just under the top bar. */
+  scroll-margin-top: calc(var(--top-h) + 8px);
 }
 .entry .item {
   border-bottom: 0;
@@ -1748,7 +1750,6 @@ code {
 .detail .role {
   color: var(--dim);
   margin-bottom: 4px;
-  max-width: 640px;
 }
 .window-bar {
   position: relative;
@@ -3407,6 +3408,21 @@ kbd {
   font-size: var(--fs-md);
   margin-bottom: 8px;
 }
+.keys-sheet > h2:first-child {
+  margin-top: 0;
+}
+.keys-sheet.floating {
+  position: fixed;
+  top: calc(var(--top-h) + 12px);
+  right: 24px;
+  z-index: 20;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--top-h) - 24px);
+  overflow-y: auto;
+}
+.keys-sheet.floating dl {
+  grid-template-columns: 1fr;
+}
 .keys-sheet dl {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -4335,7 +4351,7 @@ kbd {
 .finding,
 .memory .hint,
 .brief {
-  max-width: 68ch;
+  max-width: 60ch;
 }
 /* Key hints are for keyboards; a touch screen doesn't show them. */
 @media (pointer: coarse) {
@@ -4453,8 +4469,9 @@ kbd {
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
-.low-head ~ .entry .item {
-  opacity: 0.85;
+/* Dimmed by colour, not opacity, so the quieter text still reads at AA. */
+.low-head ~ .entry .item .t {
+  color: var(--dim);
 }
 
 /* A task waiting on you: who ran it, its history and runs fold under one disclosure. */
@@ -4489,12 +4506,12 @@ kbd {
   color: var(--text);
 }
 
-/* Prose keeps a readable measure: Inter's 0 is wide, so 68ch holds about 80 characters to a line. */
+/* Prose keeps a readable measure: Inter's 0 is wider than its average letter, so 60ch holds about 75 characters. */
 .note-line,
 .spend-line,
 .walkthrough-empty,
 .role {
-  max-width: 68ch;
+  max-width: 60ch;
 }
 
 @container main (max-width: 640px) {
@@ -4620,4 +4637,27 @@ kbd {
 .start-optional .tag {
   justify-self: start;
   align-self: center;
+}
+
+/* On a phone nothing is cut off at the list's edge: the decision's buttons wrap under its chips, an agent's figure
+   shrinks to its text, and long paths ellipsise with the whole path on hover. */
+@container main (max-width: 640px) {
+  .decision-acts {
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+  .dp-acts .decision-keys {
+    display: none;
+  }
+  .item.agent .val {
+    width: auto;
+    flex: 0 1 auto;
+  }
+  .storage-row .t span,
+  .storage-row .faint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

@@ -4,7 +4,7 @@ import { isRisky } from "../queue";
 import type { ChangeSpot } from "../route";
 import { ChangesView } from "./ChangesView";
 import { DecisionBar, OpenPoints } from "./Decision";
-import { LoopPanel } from "./LoopPanel";
+import { LoopPanel, StageStrip } from "./LoopPanel";
 import { Markdown } from "./Markdown";
 import { OutcomeBanner } from "./OutcomeBanner";
 import { RetroCard } from "./Retro";
@@ -26,6 +26,8 @@ export function ResultDecision({ approval, task, space, state, armed = false, ke
   const risky = isRisky(state, approval);
   return (
     <>
+      {/* Where it is first, as on a paused item's screen: then the decision, its reasons and its evidence. */}
+      {repo && task?.loop && !task.loop.fanout && <StageStrip task={task} />}
       <div className="dp-acts">
         <DecisionBar approval={approval} state={state} armed={armed} keys={keys} />
       </div>
@@ -44,7 +46,7 @@ export function ResultDecision({ approval, task, space, state, armed = false, ke
           {/* What changed and where to look first leads; the diff itself next; the brief, checks and findings after. */}
           <WalkthroughCard task={task} space={space} />
           {diff && <ChangesView task={task} agent={agentText(task, state.runs)} at={at} />}
-          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen={!diff} reasonsAbove={risky} />}
+          {task.loop && <LoopPanel task={task} state={state} repo={repo} showChecks={task.loop.checks === "failed"} briefOpen={!diff} reasonsAbove={risky} strip={false} />}
           <RetroCard task={task} state={state} />
           {!diff && <WhatItMade taskId={task.id} spaceId={space.id} spaceKind={space.kind} noChanges={task.loop?.noChanges} />}
         </>

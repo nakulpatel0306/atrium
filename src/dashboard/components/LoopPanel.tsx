@@ -242,13 +242,14 @@ function Budget({ task }: { task: Task }) {
 // `briefOpen` shows the brief unfolded, as the Needs you queue does: it's what the result is judged against.
 // `reasonsAbove`: a risky result's reasons are already listed above (OpenPoints), so this says them once more only as a
 // count, not as a second and third list.
-export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, reasonsAbove = false }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean; reasonsAbove?: boolean }) {
+// `strip`: false when the decision above already shows where the task is.
+export function LoopPanel({ task, state, repo, showChecks, briefOpen = false, reasonsAbove = false, strip = true }: { task: Task; state: State; repo: boolean; showChecks: boolean; briefOpen?: boolean; reasonsAbove?: boolean; strip?: boolean }) {
   const [checksOpen, setChecksOpen] = useState(showChecks);
   const loop = task.loop;
   const attention = reasonsAbove ? null : attentionText(loop);
   return (
     <section className="loop">
-      {repo && !loop?.fanout && <StageStrip task={task} />}
+      {repo && strip && !loop?.fanout && <StageStrip task={task} />}
       {repo && <ShapeLine task={task} state={state} />}
       {repo && <Fanout task={task} state={state} />}
       {loop?.paused && task.status === "blocked" && <Paused task={task} nudge={loop.paused.kind === "loop" && !loop.explanation && state.spaces.find((sp) => sp.id === task.spaceId)?.learning !== "off"} />}

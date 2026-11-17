@@ -7,7 +7,7 @@ import { announce } from "../live";
 import { showToast, undoLatest } from "../toast";
 import { ACT, KEY_HELP, moveFocus, needsKey } from "../needs-keys";
 import { isShown } from "../page-keys";
-import { attentionQueue, cleanReviews, isRisky, itemLine, itemTitle, KIND_TEXT, type QueueItem, waited } from "../queue";
+import { attentionQueue, cleanReviews, isRisky, itemLabel, itemLine, itemTitle, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
 import { navigate } from "../route";
 import { ARM_MS, armLabel, reopen } from "./Decision";
@@ -49,7 +49,7 @@ function QueueRow({ item, state, selected, onSelect }: { item: QueueItem; state:
     >
       <span className="q-title">{title}</span>
       <span className="q-line">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{KIND_TEXT[item.kind]}</span> {line}
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{itemLabel(state, item)}</span> {line}
       </span>
       <span className="q-meta">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -172,7 +172,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   return (
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{KIND_TEXT[item.kind]}</span>
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{itemLabel(state, item)}</span>
         <h3 id="dp-title">{itemTitle(state, item)}</h3>
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -327,6 +327,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       const i = current ? items.indexOf(current) : -1;
       if (key === "help") return setHelp((h) => !h);
       if (key === "close") {
+        // The live region still holds "Press a again"; it says the arm is off now.
+        if (armed) announce("Cancelled. Approve takes two presses again.");
         setArmed(null);
         setHelp(false);
         setBatch(false);
