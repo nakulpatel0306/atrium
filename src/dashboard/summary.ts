@@ -100,8 +100,8 @@ export function liveStatus(state: State): string {
     const reason = blocked[0]!.blockedReason?.replace(/\.$/, "");
     parts.push(`1 stopped${reason ? `: ${reason}` : ""}`);
   } else if (blocked.length > 1) parts.push(`${blocked.length} stopped`);
-  // Queueing behind a running task is the normal case, not news.
-  const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy");
+  // Queueing behind a running task is the normal case, not news, and a brief's questions are already counted above.
+  const waits = waitsOf(state.tasks, state).filter((w) => w.kind !== "busy" && w.kind !== "answers");
   if (waits.length > 0) {
     const more = waits.length - 1;
     parts.push(`${waits[0]!.reason.replace(/\.$/, "")}${more > 0 ? ` (${more} more ${more === 1 ? "task" : "tasks"} waiting)` : ""}`);
