@@ -5,7 +5,7 @@ import { draftBrief } from "../engine/brief-draft";
 import { checksFor, detectChecks } from "../engine/checks/detect";
 import { latestChecks } from "../engine/checks/run";
 import { git } from "../engine/git";
-import { type Budget, type LoopState, resumed } from "../engine/loop";
+import { type Budget, type LoopState, MAX_BUDGET, resumed } from "../engine/loop";
 import { getSpace, type Space } from "../engine/spaces";
 import { appendTaskDetail, getTask, setTaskBrief, setTaskLoop, setTaskStatus, type Task } from "../engine/tasks";
 import { tierModel } from "../engine/tiers";
@@ -27,7 +27,7 @@ export const HINT_MAX = 2000;
 export function budgetField(v: unknown): Budget {
   const b = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
   const ok = (n: unknown, max: number) => typeof n === "number" && Number.isInteger(n) && n > 0 && n <= max;
-  if (!ok(b.tokens, 50_000_000) || !ok(b.minutes, 24 * 60)) throw new HttpError(400, "A budget needs whole tokens (up to 50,000,000) and minutes (up to 1,440).");
+  if (!ok(b.tokens, MAX_BUDGET.tokens) || !ok(b.minutes, MAX_BUDGET.minutes)) throw new HttpError(400, "A budget needs whole tokens (up to 50,000,000) and minutes (up to 1,440).");
   return { tokens: b.tokens as number, minutes: b.minutes as number };
 }
 

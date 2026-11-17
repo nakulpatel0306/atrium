@@ -118,3 +118,14 @@ describe("loop rules", () => {
     expect(shownStage("review", loop)).toBe("ready");
   });
 });
+
+test("raising a paused budget doubles what ran out, stops at the limits, and has nothing to raise there", async () => {
+  const { canRaise, MAX_BUDGET, raisedBudget, raiseFirst } = await import("../../src/engine/loop");
+  const spent = (tokens: number, ms: number, budget = { tokens: 200_000, minutes: 20 }) => ({ budget, usage: { tokens, ms, unreported: false } });
+  expect(raisedBudget(spent(210_000, 60_000))).toEqual({ tokens: 400_000, minutes: 20 });
+  expect(raisedBudget(spent(10, 21 * 60_000))).toEqual({ tokens: 200_000, minutes: 40 });
+  expect(raisedBudget(spent(40_000_000, 0, { tokens: 30_000_000, minutes: 20 }))).toEqual({ tokens: MAX_BUDGET.tokens, minutes: 20 });
+  expect(canRaise(spent(MAX_BUDGET.tokens, 0, { ...MAX_BUDGET, minutes: 20 }))).toBe(false);
+  expect(raiseFirst({ ...spent(MAX_BUDGET.tokens, 0, { ...MAX_BUDGET, minutes: 20 }), paused: { kind: "budget", diagnosis: "x" } } as never)).toBe(false);
+  expect(raiseFirst({ ...spent(210_000, 0), paused: { kind: "loop", diagnosis: "x" } } as never)).toBe(false);
+});

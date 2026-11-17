@@ -6,6 +6,7 @@ import { attentionText, reviewChips } from "../summary";
 import { approveText } from "./Decision";
 import { CostChip } from "./Shape";
 import { outcomeText } from "../../engine/outcome";
+import { raiseFirst } from "../../engine/loop";
 import { needsYouCount } from "../../engine/needs";
 import { CLEAN, goTo, KIND, RISKY } from "../../engine/words";
 import { attentionQueue, isRisky, itemLine, itemTitle, type QueueItem } from "../queue";
@@ -49,7 +50,7 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
         {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} dollars />}
         <div className="acts">
           <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
-            {approval ? `${approveText(state, approval)}…` : goTo(item.kind, task?.loop?.paused?.kind === "budget")}
+            {approval ? `${approveText(state, approval)}…` : goTo(item.kind, raiseFirst(task?.loop))}
             <ChevronRight />
           </button>
         </div>

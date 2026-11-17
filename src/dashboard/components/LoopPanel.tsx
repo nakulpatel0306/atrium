@@ -3,7 +3,7 @@ import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
 import type { CheckRow } from "../../engine/checks/run";
-import { compact, findingLine, shownStage, type Stage } from "../../engine/loop";
+import { compact, findingLine, raisedBudget, raiseFirst, shownStage, type Stage } from "../../engine/loop";
 import { agentName } from "../agents";
 import { post, type State, useFetched } from "../api";
 import { duration } from "../format";
@@ -115,7 +115,9 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
     if (!res.ok) setError(res.error);
     else setHint("");
   };
-  const budget = task.loop?.paused?.kind === "budget";
+  // Raising leads only while there's room to raise; at the limits the hint is the way on, and the pause says so.
+  const budget = raiseFirst(task.loop);
+  const atMax = task.loop?.paused?.kind === "budget" && !budget;
   const explain = (
     <button className="btn" type="button" data-act="explain" disabled={busy} onClick={() => void act("explain")}>
       <MessageSquareText />
@@ -130,6 +132,7 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
           {explain}
         </div>
       )}
+      {atMax && <p className="hint">It's at the maximum budget, so give it a hint or explain the problem.</p>}
       <form
         className="hint-form"
         onSubmit={(e) => {
@@ -170,18 +173,6 @@ const stillOpen = (r: { findings: { resolution: { action: string } | null }[] })
   const parts = [declined && `${declined} declined`, open && `${open} open`].filter(Boolean);
   return parts.length ? `: ${parts.join(", ")}` : ": all fixed";
 };
-
-// What raising a paused task's budget raises it to: double whatever ran out (both when neither did), within the limits
-// the engine takes.
-export function raisedBudget(loop: Loop): { tokens: number; minutes: number } {
-  const tokensOut = loop.usage.tokens >= loop.budget.tokens;
-  const timeOut = loop.usage.ms >= loop.budget.minutes * 60_000;
-  const both = !tokensOut && !timeOut;
-  return {
-    tokens: tokensOut || both ? Math.min(loop.budget.tokens * 2, 50_000_000) : loop.budget.tokens,
-    minutes: timeOut || both ? Math.min(loop.budget.minutes * 2, 24 * 60) : loop.budget.minutes,
-  };
-}
 
 export function raiseText(loop: Loop): string {
   const to = raisedBudget(loop);

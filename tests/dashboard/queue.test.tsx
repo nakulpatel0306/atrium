@@ -225,6 +225,16 @@ test("Home's result rows carry one status chip and the cost, and say what's goin
   expect(clean.querySelector(".tag.cost")!.textContent).toBe("~$0.04");
 });
 
+test("at the maximum budget there's nothing to raise: the hint leads again and the pause says why", () => {
+  const s = queueState();
+  const maxed = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_p" ? { ...t, loop: { ...t.loop!, budget: { tokens: 50_000_000, minutes: 1440 }, usage: { tokens: 50_000_001, ms: 60_000, unreported: false } } } : t)) };
+  const el = render(<NeedsPage state={maxed} item="tsk_p" />);
+  const buttons = [...el.querySelectorAll<HTMLButtonElement>(".paused button")].map((b) => [b.textContent, b.className]);
+  expect(buttons.some(([t]) => t!.startsWith("Raise"))).toBe(false);
+  expect(buttons).toContainEqual(["Give it a hint", "btn p"]);
+  expect(el.querySelector(".paused")!.textContent).toContain("It's at the maximum budget");
+});
+
 test("batch approval offers only the clean results, and Shift A opens it", async () => {
   const s = queueState();
   expect(cleanReviews(s).map((i) => i.key)).toEqual(["apr_b", "apr_a"]);
