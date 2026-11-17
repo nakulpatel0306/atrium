@@ -62,7 +62,11 @@ const waitsOf = (tasks: Task[], state: State): Wait[] =>
 // One per distinct reason, so three tasks held by the same limit don't repeat it.
 export function distinctWaits(tasks: Task[], state: State): Wait[] {
   const waits = new Map<string, Wait>();
-  for (const wait of waitsOf(tasks, state)) if (!waits.has(wait.reason)) waits.set(wait.reason, wait);
+  // A brief's questions are one per task, each answered on its own; other waits read the same for every task they hold.
+  for (const wait of waitsOf(tasks, state)) {
+    const key = wait.kind === "answers" ? `${wait.reason}:${wait.taskId}` : wait.reason;
+    if (!waits.has(key)) waits.set(key, wait);
+  }
   return [...waits.values()];
 }
 

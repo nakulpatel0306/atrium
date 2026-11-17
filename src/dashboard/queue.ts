@@ -2,7 +2,7 @@
 // in engine/needs.ts. The terminal app reads the same lines, so both say the same thing.
 import { askLine, attentionQueue, batchApprovable, cleanResult, type QueueItem, type QueueKind } from "../engine/needs";
 import type { State } from "../engine/state";
-import { CLEAN, KIND, RISKY } from "../engine/words";
+import { CLEAN, KIND, RISKY, taskLabel, taskWord } from "../engine/words";
 import { reviewChips, summaryLine } from "./summary";
 import { clock } from "./format";
 
@@ -84,6 +84,15 @@ export function resultWord(state: State, a: State["approvals"][number]): string 
 export function taskNeedsLook(state: State, t: State["tasks"][number]): boolean {
   const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
   return !!a && isRisky(state, a);
+}
+
+// A task's one word in a list that names tasks (the palette): what it waits on you for when that isn't its state (a
+// question, a pick, a stopped part), a result's verdict, else its state word.
+export function taskTag(state: State, t: State["tasks"][number]): string {
+  const item = attentionQueue(state).find((i) => i.key === t.id);
+  if (item && (item.kind === "question" || item.kind === "pick" || item.kind === "stuck")) return KIND[item.kind].label;
+  const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
+  return (a && resultWord(state, a)) ?? taskLabel(taskWord(t));
 }
 
 // The label a queue item wears: a result's verdict, else its kind.

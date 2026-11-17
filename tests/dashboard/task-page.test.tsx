@@ -201,3 +201,19 @@ test("? lists the keys that work on a space's page, and keys are ignored while t
   await press("a");
   expect(decided().length).toBe(1);
 });
+
+test("a question task is called a Question in the palette, and its space's Live box answers it in place", async () => {
+  const { paletteActions } = await import("../../src/dashboard/palette");
+  const s = makeState();
+  const loop = { ...newLoop(SIZE_BUDGETS.small), stage: "brief" as const, questions: [{ question: "Weekly or daily?", options: ["Weekly", "Daily"] }] };
+  s.tasks = s.tasks.filter((t) => t.id !== ids.running);
+  s.tasks.push(task({ id: "tsk_ask", spaceId: ids.atrium, title: "Export totals", status: "queued", loop, brief: { goal: "Totals", acceptance: [], verify: "auto", scope: "", nonGoals: [], lookFirst: [], size: "small", answers: [] } }));
+  s.waits = { tsk_ask: { taskId: "tsk_ask", agent: "claude", kind: "answers", reason: "The brief has questions for you, in Needs you." } };
+  expect(paletteActions(s, { spaceId: null, theme: "system" }).find((a) => a.id === "task-tsk_ask")!.hint).toBe("atrium · Question");
+  const el = await page(s, null);
+  const live = el.querySelector(".live")!;
+  expect(live.querySelector(".live-ask")!.textContent).toContain("Weekly or daily?");
+  await act(async () => [...live.querySelectorAll<HTMLButtonElement>(".brief-q button")].find((b) => b.textContent === "Weekly")!.click());
+  await act(async () => [...live.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Answer")!.click());
+  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_ask/answers", body: { answers: [{ question: "Weekly or daily?", answer: "Weekly" }] } });
+});

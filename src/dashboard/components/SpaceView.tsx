@@ -41,6 +41,7 @@ import { STAYS_PRIVATE } from "../../engine/legacy";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
 import { WaitLine } from "./WaitLine";
+import { BriefQuestions } from "./BriefQuestions";
 import { RepoWork } from "./RepoWork";
 import { WhatItMade } from "./WhatItMade";
 import { TaskAttachments } from "./TaskAttachments";
@@ -548,9 +549,18 @@ function Live({ state, tasks }: { state: State; tasks: Task[] }) {
     return (
       <div className="idle">
         <p>No agent working right now</p>
-        {distinctWaits(tasks, state).map((w) => (
-          <WaitLine key={w.reason} wait={w} />
-        ))}
+        {distinctWaits(tasks, state).map((w) => {
+          // A brief's questions are answered right here, with the same form as in its task and in Needs you.
+          const asking = w.kind === "answers" ? tasks.find((t) => t.id === w.taskId) : undefined;
+          return asking ? (
+            <div className="live-ask" key={asking.id}>
+              <p className="live-ask-title">{shownTitle(asking)} asks before it starts:</p>
+              <BriefQuestions task={asking} />
+            </div>
+          ) : (
+            <WaitLine key={`${w.reason}:${w.taskId}`} wait={w} />
+          );
+        })}
       </div>
     );
   }

@@ -4709,3 +4709,14 @@ kbd {
   color: var(--dim);
   margin-bottom: 6px;
 }
+
+/* A brief's questions answered from a space's Live box. */
+.live-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.live-ask-title {
+  color: var(--text);
+}
