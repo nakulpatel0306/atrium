@@ -3569,6 +3569,19 @@ kbd {
   aside .rail-toggle {
     display: flex;
   }
+  /* The page keeps its column while the rail is open over it: the open sidebar leaves the grid, so main is pinned to
+     the second column rather than sliding into the rail's. */
+  .app > main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .rail-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: color-mix(in srgb, var(--bg) 60%, transparent);
+  }
   /* Opened from the rail: over the page at full width, with every name. */
   aside.open {
     position: fixed;
@@ -3596,7 +3609,10 @@ kbd {
     margin-left: auto;
   }
 }
-/* The rail's own toggle exists only where there's a rail. */
+/* The rail's scrim and toggle exist only where there's a rail. */
+.rail-scrim {
+  display: none;
+}
 .rail-toggle {
   display: none;
   align-items: center;

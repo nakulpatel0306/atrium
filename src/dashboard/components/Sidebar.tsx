@@ -1,5 +1,5 @@
 import { Activity, Archive, BatteryMedium, Bot, House, Inbox, Moon, PanelLeftClose, PanelLeftOpen, Plug, Plus, Settings, ShieldCheck } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { agentsHeld } from "../agents";
 import { post, type State } from "../api";
 import { bytes } from "../format";
@@ -41,12 +41,29 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
   const battery = state.power.source === "battery";
   const held = agentsHeld(state);
   const window = state.claudeWindow;
-  // On a narrow window the sidebar is an icon rail; a tap opens it over the page with every name, and going anywhere
-  // closes it again.
+  // On a narrow window the sidebar is an icon rail; a tap opens it over the page with every name. Any of its actions,
+  // a tap on the page behind it, or Esc closes it again.
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    // `window` here is Claude's usage window, so the page's is reached through globalThis.
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [expanded]);
 
   return (
-    <aside className={expanded ? "open" : undefined} onClick={(e) => (e.target as Element).closest("a") && setExpanded(false)}>
+    <>
+    {expanded && <div className="rail-scrim" aria-hidden="true" onClick={() => setExpanded(false)} />}
+    <aside
+      className={expanded ? "open" : undefined}
+      onClick={(e) => {
+        const hit = (e.target as Element).closest("a, button");
+        if (hit && !hit.classList.contains("rail-toggle")) setExpanded(false);
+      }}
+    >
       <button className="rail-toggle" aria-expanded={expanded} aria-label={expanded ? "Hide names" : "Show names"} title={expanded ? "Hide names" : "Show names"} onClick={() => setExpanded(!expanded)}>
         {expanded ? <PanelLeftClose /> : <PanelLeftOpen />}
       </button>
@@ -154,5 +171,6 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
         </div>
       </div>
     </aside>
+    </>
   );
 }
