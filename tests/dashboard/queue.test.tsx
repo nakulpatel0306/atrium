@@ -137,6 +137,12 @@ test("a budget pause raises its budget and carries on in one click, and Change b
   expect(calls.at(-1)!.body).toMatchObject({ resume: true });
 });
 
+test("the palette names a result by the same verdict as the queue", async () => {
+  const { paletteActions } = await import("../../src/dashboard/palette");
+  const hints = Object.fromEntries(paletteActions(queueState(), { spaceId: null, theme: "system" }).map((a) => [a.id, a.hint]));
+  expect([hints["open-apr_c"], hints["open-apr_a"], hints["open-tsk_p"]]).toEqual(["Needs a look", "Clean", "Paused"]);
+});
+
 test("the address follows the item on screen, so a reload lands on the same one", async () => {
   render(<NeedsPage state={queueState()} />);
   expect(location.search).toBe("?item=tsk_p");

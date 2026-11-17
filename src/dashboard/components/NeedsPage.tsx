@@ -13,7 +13,7 @@ import { navigate } from "../route";
 import { ARM_MS, armLabel, reopen } from "./Decision";
 import { KeysSheet } from "./KeysSheet";
 import { ResultDecision } from "./ResultDecision";
-import { LoopPanel } from "./LoopPanel";
+import { LoopPanel, StageStrip } from "./LoopPanel";
 import { MemoryProposal } from "./Memory";
 import { ProjectDraftRow } from "./ProjectDraft";
 import { ProposalRow } from "./Proposal";
@@ -155,6 +155,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
       <>
         {/* Why it waits, first: the pause's own diagnosis, or what the split or attempts need. A question needs no lead:
             its answer form below says it. */}
+        {space?.kind === "repo" && task.loop && !task.loop.fanout && <StageStrip task={task} />}
         {item.kind !== "question" && (
           <p className={`dp-lead${item.kind === "paused" ? " wait" : ""}`} role="note">
             {item.kind === "paused" ? `Paused: ${askLine(task)}` : askLine(task)}
@@ -165,7 +166,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
             <StopTask task={task} />
           </div>
         )}
-        <LoopPanel task={task} state={state} repo={space?.kind === "repo"} showChecks={task.loop?.checks === "failed"} briefOpen />
+        <LoopPanel task={task} state={state} repo={space?.kind === "repo"} showChecks={task.loop?.checks === "failed"} briefOpen strip={false} />
       </>
     );
 
@@ -385,7 +386,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
           Keys <kbd>?</kbd>
         </button>
       </div>
-      {help && <KeysSheet keys={KEY_HELP} kinds onClose={() => setHelp(false)} />}
+      {help && <KeysSheet keys={KEY_HELP} kinds floating onClose={() => setHelp(false)} />}
       {items.length === 0 ? (
         <div className="q-empty">
           <PartyPopper />

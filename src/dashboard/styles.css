@@ -3413,11 +3413,11 @@ kbd {
 }
 .keys-sheet.floating {
   position: fixed;
-  top: calc(var(--top-h) + 12px);
+  bottom: calc(var(--cmd-clear) + 12px);
   right: 24px;
   z-index: 20;
   width: min(440px, calc(100vw - 32px));
-  max-height: calc(100vh - var(--top-h) - 24px);
+  max-height: calc(100vh - var(--top-h) - var(--cmd-clear) - 24px);
   overflow-y: auto;
 }
 .keys-sheet.floating dl {
