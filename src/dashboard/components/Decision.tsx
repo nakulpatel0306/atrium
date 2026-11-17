@@ -194,7 +194,7 @@ export function OpenPoints({ task }: { task: Task }) {
     <section className="open-points" aria-label={`${RISKY}: why`}>
       <h4>
         <TriangleAlert />
-        {RISKY}: why
+        Why
       </h4>
       <ul>
         {attention.map((a) => (
@@ -218,7 +218,8 @@ export function OpenPoints({ task }: { task: Task }) {
 // list. Left to right: what the checks and the reviewer said, a way to the full screen when there is one, then Send
 // back and Approve. Below them, a line that names the keys, or, once a risky Approve has had one press of a (its button
 // then says to press it again), why and how to back out: the same height either way, so nothing moves.
-export function DecisionBar({ approval, state, open, armed = false, keys = false }: { approval: Approval; state: State; open?: () => void; armed?: boolean; keys?: boolean }) {
+// `reasonsBelow`: the screen lists why it needs a look right under the bar, so the bar doesn't say it a third time.
+export function DecisionBar({ approval, state, open, armed = false, keys = false, reasonsBelow = false }: { approval: Approval; state: State; open?: () => void; armed?: boolean; keys?: boolean; reasonsBelow?: boolean }) {
   const task = approval.taskId ? state.tasks.find((t) => t.id === approval.taskId) : undefined;
   const d = useDecision(approval, shownSha(state, approval));
   const chips = reviewChips(approval, state);
@@ -227,7 +228,7 @@ export function DecisionBar({ approval, state, open, armed = false, keys = false
   return (
     <div className="decision">
       <div className="decision-row">
-        {chips ? <Chips chips={chips} attention={attentionText(task?.loop)} /> : <span className="review-line">Waiting for your decision</span>}
+        {chips ? <Chips chips={chips} attention={reasonsBelow ? null : attentionText(task?.loop)} /> : <span className="review-line">Waiting for your decision</span>}
         <span className="decision-acts">
           {open && (
             <button className="btn" data-act="open" onClick={open}>

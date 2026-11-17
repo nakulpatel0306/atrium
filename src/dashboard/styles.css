@@ -4631,8 +4631,16 @@ kbd {
    or a pick is routine, so it takes the accent. */
 .q-kind.k-question,
 .q-kind.k-approval,
-.q-kind.k-pick {
+.q-kind.k-pick,
+.tag.k-question,
+.tag.k-approval,
+.tag.k-pick {
   color: var(--accent);
+}
+/* Home's tags take the queue's colours: one rule for both lists. */
+.tag.k-paused,
+.stat.look {
+  color: var(--yellow);
 }
 .start-optional .tag {
   justify-self: start;
@@ -4649,15 +4657,25 @@ kbd {
   .dp-acts .decision-keys {
     display: none;
   }
+  .item.agent,
+  .storage-row {
+    flex-wrap: wrap;
+  }
   .item.agent .val {
     width: auto;
     flex: 0 1 auto;
   }
-  .storage-row .t span,
-  .storage-row .faint {
+  .storage-row .t {
+    flex-basis: 100%;
+  }
+  .storage-row .t span {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+/* The model tiers' notes keep the same measure as the rest of the page's prose. */
+.tiers .hint {
+  max-width: 60ch;
 }

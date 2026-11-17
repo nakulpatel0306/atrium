@@ -46,7 +46,7 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
           <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>
         )}
         {/* What the work cost; a low-priority item (a CLAUDE.md line, a suggestion) costs nothing itself. */}
-        {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} />}
+        {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} dollars />}
         <div className="acts">
           <button className="btn" data-act="open" onClick={() => navigate(`/needs-you?item=${encodeURIComponent(item.key)}`)}>
             {approval ? `${approveText(state, approval)}…` : goTo(item.kind)}
@@ -71,7 +71,7 @@ function Items({ state, items: shown }: { state: State; items?: QueueItem[] }) {
       {items.filter((i) => !i.low).map(row)}
       {low.length > 0 && (
         <div className="low-head" role="separator">
-          Low priority · {low.length}: nothing waits on {low.length === 1 ? "it" : "them"}
+          Low priority: nothing waits on {low.length === 1 ? "this one" : `these ${low.length}`}
         </div>
       )}
       {low.map(row)}

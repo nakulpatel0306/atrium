@@ -386,7 +386,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
         <button className="task-open" aria-expanded={open} onClick={onToggle}>
           {/* The tag beside it says the state in words; the icon is only for the eye. */}
           <span aria-hidden="true">
-            <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} />
+            <StatusIcon status={task.status} outcome={task.outcome} paused={word === "paused"} look={risky} />
           </span>
           <KindBadge kind={task.kind} />
           <span className="t" title={shownTitle(task)}>

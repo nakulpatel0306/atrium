@@ -314,6 +314,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
   }, [item]);
   useEffect(() => {
     setArmed(null);
+    // The address names the item on screen, so a reload, Back or a copied link lands on the same one.
+    if (current && new URLSearchParams(location.search).get("item") !== current.key) history.replaceState(null, "", `/needs-you?item=${encodeURIComponent(current.key)}`);
   }, [current?.key]);
 
   // Live values for the key handler, which is attached once.
@@ -333,6 +335,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
         setHelp(false);
         setBatch(false);
         if (opened) setOpened(false);
+        document.querySelector<HTMLElement>(".q-list")?.focus();
         return;
       }
       if (key === "next" || key === "prev") {

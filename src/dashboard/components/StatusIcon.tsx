@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, CircleDashed, CircleDot, CirclePause, CircleSlash, CircleX, LoaderCircle, type LucideIcon } from "lucide-react";
 import type { Outcome } from "../../engine/outcome";
 import type { State } from "../api";
+import { RISKY } from "../../engine/words";
 
 type Status = State["tasks"][number]["status"];
 
@@ -23,8 +24,11 @@ const UNFINISHED = {
 // A stopped task the loop paused itself waits for a hint, not a retry, and says so (engine/words.ts).
 const PAUSED = { icon: CirclePause, label: "Paused", cls: "paused" } as const;
 
-export function StatusIcon({ status, outcome = null, paused = false }: { status: Status; outcome?: Outcome | null; paused?: boolean }) {
-  const odd = status === "done" && (outcome === "couldnt" || outcome === "partial") ? UNFINISHED[outcome] : status === "blocked" && paused ? PAUSED : null;
+// A result waiting on you that Needs a look wears the same warning as its chip, not the plain ready ring.
+const LOOK = { icon: CircleAlert, label: RISKY, cls: "look" } as const;
+
+export function StatusIcon({ status, outcome = null, paused = false, look = false }: { status: Status; outcome?: Outcome | null; paused?: boolean; look?: boolean }) {
+  const odd = status === "done" && (outcome === "couldnt" || outcome === "partial") ? UNFINISHED[outcome] : status === "blocked" && paused ? PAUSED : status === "review" && look ? LOOK : null;
   const { icon: Icon, label } = odd ?? ICONS[status];
   return (
     <Icon className={`stat ${odd?.cls ?? status}`} role="img" aria-label={label}>

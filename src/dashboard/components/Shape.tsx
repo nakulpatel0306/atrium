@@ -25,7 +25,9 @@ import { get, post, type State } from "../api";
 type Task = State["tasks"][number];
 
 // The cost chip: weighted tokens and the estimate at list prices, with the cache's share one hover away.
-export function CostChip({ spend }: { spend: Spend | undefined }) {
+// `dollars`: a summary row shows only the estimate, so its count can't be read against a budget's (which counts since
+// the last hint); the tokens stay in the tooltip.
+export function CostChip({ spend, dollars = false }: { spend: Spend | undefined; dollars?: boolean }) {
   if (!spend || spend.weighted === 0) return null;
   const share = cacheShare(spend);
   const title = [
@@ -35,7 +37,7 @@ export function CostChip({ spend }: { spend: Spend | undefined }) {
   ].join(" ");
   return (
     <span className="tag cost" title={title}>
-      {compact(spend.weighted)} · {spendText(spend).replace(/ est\.$/, "")}
+      {dollars ? spendText(spend).replace(/ est\.$/, "") : `${compact(spend.weighted)} · ${spendText(spend).replace(/ est\.$/, "")}`}
     </span>
   );
 }

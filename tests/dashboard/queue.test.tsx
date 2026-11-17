@@ -137,6 +137,22 @@ test("a budget pause raises its budget and carries on in one click, and Change b
   expect(calls.at(-1)!.body).toMatchObject({ resume: true });
 });
 
+test("the address follows the item on screen, so a reload lands on the same one", async () => {
+  render(<NeedsPage state={queueState()} />);
+  expect(location.search).toBe("?item=tsk_p");
+  await press("j");
+  expect(location.search).toBe("?item=apr_c");
+});
+
+test("a result's stepper ends on its verdict, and a list's icon warns when it Needs a look", async () => {
+  const { StatusIcon } = await import("../../src/dashboard/components/StatusIcon");
+  const el = render(<NeedsPage state={queueState()} item="apr_a" />);
+  expect(el.querySelector(".stages li.on")!.textContent).toBe("Clean");
+  act(() => root!.unmount());
+  const icon = render(<StatusIcon status="review" look />);
+  expect(icon.querySelector("[aria-label]")!.getAttribute("aria-label")).toBe("Needs a look");
+});
+
 test("the queue lists a result by its verdict, the word Home and its space use", () => {
   const el = render(<NeedsPage state={queueState()} />);
   expect(el.querySelector("#q-apr_c .q-kind")!.textContent).toBe("Needs a look");
@@ -156,7 +172,7 @@ test("Home's result rows carry one status chip and the cost, and say what's goin
   expect(noted.querySelector(".t span")!.textContent).toBe("Approved by Claude · Checks passed");
   const clean = row("Review tsk_a");
   expect([...clean.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["Clean"]);
-  expect(clean.querySelector(".tag.cost")!.textContent).toBe("41k · ~$0.04");
+  expect(clean.querySelector(".tag.cost")!.textContent).toBe("~$0.04");
 });
 
 test("batch approval offers only the clean results, and Shift A opens it", async () => {
@@ -200,7 +216,9 @@ test("on a narrow window, a key never presses a decision the list is hiding", as
 test("a risky result leads with why it needs a look, and its keys say a second a approves anyway", () => {
   const el = render(<NeedsPage state={queueState()} item="apr_c" />);
   const points = el.querySelector(".open-points")!;
-  expect(points.textContent).toContain("Needs a look: why");
+  expect(points.querySelector("h4")!.textContent).toBe("Why");
+  // The bar above it doesn't say Needs a look a third time.
+  expect(el.querySelector(".dp-acts .chip.waiting")).toBeNull();
   expect(points.textContent).toContain("The change edits check config: bunfig.toml.");
   // Before the walkthrough and the diff, right under the decision.
   expect(el.querySelector(".dp-acts")!.nextElementSibling).toBe(points);

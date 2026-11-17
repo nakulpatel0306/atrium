@@ -29,7 +29,7 @@ export function ResultDecision({ approval, task, space, state, armed = false, ke
       {/* Where it is first, as on a paused item's screen: then the decision, its reasons and its evidence. */}
       {repo && task?.loop && !task.loop.fanout && <StageStrip task={task} />}
       <div className="dp-acts">
-        <DecisionBar approval={approval} state={state} armed={armed} keys={keys} />
+        <DecisionBar approval={approval} state={state} armed={armed} keys={keys} reasonsBelow={!!task && risky} />
       </div>
       {/* Why a risky result asks for a look, before anything else on its screen. */}
       {task && risky && <OpenPoints task={task} />}

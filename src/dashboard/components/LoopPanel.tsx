@@ -1,4 +1,4 @@
-import { KIND, RISKY } from "../../engine/words";
+import { CLEAN, KIND, RISKY } from "../../engine/words";
 import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
@@ -24,11 +24,13 @@ export function StageStrip({ task }: { task: Task }) {
   const at = now === "paused" ? STRIP.indexOf(task.loop!.stage) : STRIP.indexOf(now);
   // Ready with something open reads amber, like its Approve anyway: one rule (needs.ts) for both.
   const notes = now === "ready" && task.status === "review" && !cleanResult(task);
+  // A result waiting on you ends on its verdict, the word its row and chip use, rather than a third name.
+  const verdict = now === "ready" && task.status === "review" ? (notes ? RISKY : CLEAN) : null;
   return (
     <ol className="stages" aria-label="Where this task is">
       {STRIP.map((s, i) => {
         const here = i === at;
-        const label = here && now === "paused" ? "Paused" : here && notes ? RISKY : STAGE_TEXT[s];
+        const label = here && now === "paused" ? "Paused" : here && verdict ? verdict : STAGE_TEXT[s];
         return (
           <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
             {label}

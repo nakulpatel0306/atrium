@@ -72,7 +72,7 @@ test("the walkthrough shows above the diff with its spots linking into the Chang
   const { task, space } = setup({ walkthrough: walkthrough() });
   const el = render(<WalkthroughCard task={task} space={space} />);
   const all = el.textContent!;
-  for (const s of ["Walkthrough", "by Codex, in its review", "It adds an optional coupon", "Clamp the percentage · over throwing on bad input", "Risky spots", "Where to look first", "src/cart.ts:9 the rounding"]) expect(all).toContain(s);
+  for (const s of ["Walkthrough", "by Codex, in its review", "It adds an optional coupon", "Clamp the percentage · over throwing on bad input", "Spots to check", "Where to look first", "src/cart.ts:9 the rounding"]) expect(all).toContain(s);
   expect(spotLink(task, { file: "src/a b.ts", line: 9, note: "" })).toBe(`/space/${task.spaceId}?task=${task.id}&view=changes&file=src%2Fa%20b.ts&line=9`);
   act(() => button(el, "src/cart.ts:9")!.click());
   expect(location.search).toBe(`?task=${task.id}&view=changes&file=src%2Fcart.ts&line=9`);

@@ -134,7 +134,7 @@ export function WalkthroughCard({ task, space }: { task: Task; space: Space | un
               </ul>
             </div>
           )}
-          <Spots task={task} title="Risky spots" spots={w.risks} />
+          <Spots task={task} title="Spots to check" spots={w.risks} />
           <Spots task={task} title="Where to look first" spots={w.look} />
         </>
       )}

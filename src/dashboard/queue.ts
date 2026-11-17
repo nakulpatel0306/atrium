@@ -80,6 +80,12 @@ export function resultWord(state: State, a: State["approvals"][number]): string 
   return isRisky(state, a) ? RISKY : CLEAN;
 }
 
+// Whether a task waits on you with a result that Needs a look, for its status icon.
+export function taskNeedsLook(state: State, t: State["tasks"][number]): boolean {
+  const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
+  return !!a && isRisky(state, a);
+}
+
 // The label a queue item wears: a result's verdict, else its kind.
 export function itemLabel(state: State, i: QueueItem): string {
   const a = i.kind === "review" ? approvalOf(state, i) : undefined;
