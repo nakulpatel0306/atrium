@@ -68,6 +68,10 @@ export const PAGE_KEY_HELP: [string, string][] = [
 
 export const PAGE_KEY_NOTE = "They act on the task you've opened. With more than one open, click in the one you mean first.";
 
+// The keys that act on a decision; none of them does anything while the keys sheet is open over the page.
+export const DECISION_KEYS: NeedsKey[] = ["approve", "sendBack", "stop", "explain", "batch", "undo"];
+export const SHEET_OPEN = "The keys sheet is open. Close it with Esc or ?, then press the key again.";
+
 // What a key says in Needs you when the open item has no such button.
 export const NOTHING_HERE: Partial<Record<NeedsKey, string>> = {
   approve: "This item has nothing to approve.",

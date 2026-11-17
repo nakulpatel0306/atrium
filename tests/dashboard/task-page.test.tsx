@@ -217,3 +217,16 @@ test("a question task is called a Question in the palette, and its space's Live 
   await act(async () => [...live.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Answer")!.click());
   expect(calls.filter((c) => c.url === "/api/tasks/tsk_ask/answers").at(-1)).toEqual({ url: "/api/tasks/tsk_ask/answers", body: { answers: [{ question: "Weekly or daily?", answer: "Weekly" }] } });
 });
+
+test("on a task page, decision keys do nothing while the keys sheet is open", async () => {
+  const s = makeState();
+  s.tasks = s.tasks.map((t) => (t.id === ids.review ? { ...t, outcome: "done" } : t));
+  const el = await page(s);
+  await press("?");
+  await press("a");
+  expect(decided()).toEqual([]);
+  expect(said(el)).toContain("The keys sheet is open.");
+  await press("?");
+  await press("a");
+  expect(decided().length).toBe(1);
+});

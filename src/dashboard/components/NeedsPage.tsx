@@ -5,7 +5,7 @@ import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
 import { announce } from "../live";
 import { showToast, undoLatest } from "../toast";
-import { ACT, KEY_HELP, moveFocus, needsKey, NOTHING_HERE } from "../needs-keys";
+import { ACT, DECISION_KEYS, KEY_HELP, moveFocus, needsKey, NOTHING_HERE, SHEET_OPEN } from "../needs-keys";
 import { isShown } from "../page-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLabel, itemLine, itemTitle, type QueueItem, waited } from "../queue";
 import { KIND } from "../../engine/words";
@@ -321,8 +321,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
   }, [current?.key]);
 
   // Live values for the key handler, which is attached once.
-  const live = useRef({ items, current, opened, armed, clean: 0 });
-  live.current = { items, current, opened, armed, clean: cleanReviews(state, items).length };
+  const live = useRef({ items, current, opened, armed, help, clean: 0 });
+  live.current = { items, current, opened, armed, help, clean: cleanReviews(state, items).length };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = needsKey(e);
@@ -340,6 +340,8 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
         document.querySelector<HTMLElement>(".q-list")?.focus();
         return;
       }
+      // A sheet over the page may cover the button a key would press; it's closed first.
+      if (live.current.help && DECISION_KEYS.includes(key)) return announce(SHEET_OPEN);
       if (key === "next" || key === "prev") {
         e.preventDefault();
         const next = items[moveFocus(i, items.length, key)];

@@ -22,7 +22,7 @@ import { Activity, TaskHistory, taskGroups } from "./Activity";
 import { ResultDecision } from "./ResultDecision";
 import { ARM_MS, armLabel } from "./Decision";
 import { KeysSheet } from "./KeysSheet";
-import { ACT, needsKey, NOTHING_FOR, PAGE_KEY_HELP, PAGE_KEY_NOTE } from "../needs-keys";
+import { ACT, DECISION_KEYS, needsKey, NOTHING_FOR, PAGE_KEY_HELP, PAGE_KEY_NOTE, SHEET_OPEN } from "../needs-keys";
 import { pressable } from "../page-keys";
 import { announce } from "../live";
 import { undoLatest } from "../toast";
@@ -635,6 +635,8 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
   // The decision keys, on whichever open task shows the button (page-keys.ts). Attached once; `live` carries the arm.
   const live = useRef(armed);
   live.current = armed;
+  const helpOpen = useRef(help);
+  helpOpen.current = help;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = needsKey(e);
@@ -645,6 +647,8 @@ export function SpaceView({ state, space, focusTask, tab = "tasks", changes = fa
         setArmed(null);
         return setHelp(false);
       }
+      // A sheet over the page may cover the button a key would press; it's closed first.
+      if (helpOpen.current && DECISION_KEYS.includes(key)) return announce(SHEET_OPEN);
       if (key === "undo") return void undoLatest();
       const act = ACT[key];
       if (!act) return;
