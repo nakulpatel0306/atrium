@@ -119,6 +119,23 @@ test("e asks a paused task for the diagnosis; ? shows the keys", async () => {
   expect(el.querySelector(".keys-sheet")).toBeNull();
 });
 
+test("a budget pause raises its budget and carries on in one click, and Change budget is a real button", async () => {
+  const s = queueState();
+  const spent = { ...s, tasks: s.tasks.map((t) => (t.id === "tsk_p" ? { ...t, loop: { ...t.loop!, usage: { tokens: 210_000, ms: 60_000, unreported: false } } } : t)) };
+  const el = render(<NeedsPage state={spent} item="tsk_p" />);
+  const raise = [...el.querySelectorAll<HTMLButtonElement>(".paused button")].find((b) => b.textContent === "Raise to 400k tokens and carry on")!;
+  expect(raise.className).toBe("btn");
+  await act(async () => raise.click());
+  expect(calls.at(-1)).toEqual({ url: "/api/tasks/tsk_p/budget", body: { budget: { tokens: 400_000, minutes: 20 }, resume: true } });
+  const change = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.textContent === "Change budget")!;
+  expect(change.className).toBe("btn");
+  await act(async () => change.click());
+  const save = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.type === "submit")!;
+  expect(save.textContent).toBe("Save and carry on");
+  await act(async () => save.click());
+  expect(calls.at(-1)!.body).toMatchObject({ resume: true });
+});
+
 test("batch approval offers only the clean results, and Shift A opens it", async () => {
   const s = queueState();
   expect(cleanReviews(s).map((i) => i.key)).toEqual(["apr_b", "apr_a"]);

@@ -156,7 +156,16 @@ export async function loopRoute(
     const task = getTask(db, budgetM[1]!);
     if (!task?.loop) throw new HttpError(404, "No such task with a budget.");
     if (task.status === "done") throw new HttpError(409, "This task is finished, so its budget no longer applies.");
-    const next = setTaskLoop(db, task.id, { ...task.loop, budget: budgetField((await readBody(req)).budget) });
+    const body = await readBody(req);
+    const loop = { ...task.loop, budget: budgetField(body.budget) };
+    // A budget pause raised with `resume` carries on in the same step, from the branch, with its counters started over.
+    if (body.resume === true && task.status === "blocked" && task.loop.paused?.kind === "budget") {
+      setTaskLoop(db, task.id, resumed(loop));
+      const next = setTaskStatus(db, task.id, "queued");
+      kick();
+      return json(next);
+    }
+    const next = setTaskLoop(db, task.id, loop);
     kick();
     return json(next);
   }

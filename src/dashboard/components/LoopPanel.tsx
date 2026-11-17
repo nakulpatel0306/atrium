@@ -1,5 +1,5 @@
 import { KIND, RISKY } from "../../engine/words";
-import { Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
+import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
 import type { CheckRow } from "../../engine/checks/run";
@@ -14,6 +14,7 @@ import { asksBeforeStarting, cleanResult } from "../../engine/needs";
 import { Fanout, ShapeLine } from "./Shape";
 
 type Task = State["tasks"][number];
+type Loop = NonNullable<Task["loop"]>;
 
 const STRIP: (Stage | "brief")[] = ["brief", "writing", "checks", "review", "ready"];
 
@@ -143,6 +144,13 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
             {KIND.paused.action}
           </button>
           {!nudge && explain}
+          {task.loop?.paused?.kind === "budget" && (
+            // The budget's own way on, in one click: what ran out, doubled, and the work carries on from the branch.
+            <button className="btn" type="button" disabled={busy} onClick={() => void act("budget", { budget: raisedBudget(task.loop!), resume: true })}>
+              <Gauge />
+              {raiseText(task.loop)}
+            </button>
+          )}
         </div>
       </form>
       {error && <p className="err">{error}</p>}
@@ -159,14 +167,34 @@ const stillOpen = (r: { findings: { resolution: { action: string } | null }[] })
   return parts.length ? `: ${parts.join(", ")}` : ": all fixed";
 };
 
+// What raising a paused task's budget raises it to: double whatever ran out (both when neither did), within the limits
+// the engine takes.
+export function raisedBudget(loop: Loop): { tokens: number; minutes: number } {
+  const tokensOut = loop.usage.tokens >= loop.budget.tokens;
+  const timeOut = loop.usage.ms >= loop.budget.minutes * 60_000;
+  const both = !tokensOut && !timeOut;
+  return {
+    tokens: tokensOut || both ? Math.min(loop.budget.tokens * 2, 50_000_000) : loop.budget.tokens,
+    minutes: timeOut || both ? Math.min(loop.budget.minutes * 2, 24 * 60) : loop.budget.minutes,
+  };
+}
+
+export function raiseText(loop: Loop): string {
+  const to = raisedBudget(loop);
+  const parts = [to.tokens !== loop.budget.tokens && `${compact(to.tokens)} tokens`, to.minutes !== loop.budget.minutes && `${to.minutes} min`].filter(Boolean);
+  return `Raise to ${parts.join(" · ")} and carry on`;
+}
+
 function Budget({ task }: { task: Task }) {
   const loop = task.loop!;
   const [editing, setEditing] = useState(false);
   const [tokens, setTokens] = useState(String(loop.budget.tokens));
   const [minutes, setMinutes] = useState(String(loop.budget.minutes));
   const [error, setError] = useState<string | null>(null);
+  // On a budget pause, saving a new budget is also the way on, so it carries on in the same step.
+  const resume = task.status === "blocked" && loop.paused?.kind === "budget";
   const save = async () => {
-    const res = await post(`/api/tasks/${task.id}/budget`, { budget: { tokens: Number(tokens), minutes: Number(minutes) } });
+    const res = await post(`/api/tasks/${task.id}/budget`, { budget: { tokens: Number(tokens), minutes: Number(minutes) }, ...(resume && { resume: true }) });
     if (res.ok) setEditing(false);
     else setError(res.error);
   };
@@ -192,13 +220,16 @@ function Budget({ task }: { task: Task }) {
             tokens
             <input aria-label="Minutes budget" inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
             min
-            <button className="btn" type="submit">
-              Save
+            <button className="btn" type="button" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+            <button className="btn p" type="submit">
+              {resume ? "Save and carry on" : "Save"}
             </button>
           </form>
         ) : (
-          <button className="btn link subtle" onClick={() => setEditing(true)}>
-            Change
+          <button className="btn" onClick={() => setEditing(true)}>
+            Change budget
           </button>
         ))}
       {error && <span className="err">{error}</span>}

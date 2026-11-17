@@ -110,7 +110,7 @@ Atrium pauses a task with a one-line diagnosis when:
 - the agent makes the same edit three times in a run, or the same tool call three times in a row (it's stopped mid-run);
 - the same check fails the same way twice in a row, three turns pass without a check newly passing, or a turn changes nothing after the checks failed.
 
-A paused task offers two ways on: **Give it a hint**, which carries on from the branch with your note, and **Explain the problem**, a read-only run (no edits, no commands; the branch's commits and diff are handed to it) that says what's going wrong rather than trying again. When loop detection paused it and the space's learning is on, the explanation is the first choice, asked as "Want the diagnosis instead of another attempt?" (see Learning).
+A paused task offers two ways on: **Give it a hint**, which carries on from the branch with your note, and **Explain the problem**, a read-only run (no edits, no commands; the branch's commits and diff are handed to it) that says what's going wrong rather than trying again. A budget pause adds a third, **Raise to … and carry on**, which doubles what ran out and goes on from the branch in one click; a budget changed by hand on a budget pause carries on the same way (**Save and carry on**). When loop detection paused it and the space's learning is on, the explanation is the first choice, asked as "Want the diagnosis instead of another attempt?" (see Learning).
 
 ## Shapes: one writer, scouts, a split or best-of-N
 

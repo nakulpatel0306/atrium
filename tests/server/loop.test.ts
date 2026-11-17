@@ -119,6 +119,20 @@ test("retrying a paused task starts its budget over; a budget can be changed unt
   expect(getTask(db, t.id)!.loop!.usage.tokens).toBe(0);
 });
 
+test("raising a budget pause's budget with resume carries on in one step; anything else only sets the budget", async () => {
+  const t = pausedTask();
+  setTaskLoop(db, t.id, { ...getTask(db, t.id)!.loop!, paused: { kind: "budget", diagnosis: "It used 200k weighted tokens, its budget." } });
+  expect((await post(`/api/tasks/${t.id}/budget`, { budget: { tokens: 400000, minutes: 20 }, resume: true })).status).toBe(200);
+  const raised = getTask(db, t.id)!;
+  expect(raised.status).toBe("queued");
+  expect([raised.loop!.budget, raised.loop!.paused, raised.loop!.usage.tokens]).toEqual([{ tokens: 400000, minutes: 20 }, null, 0]);
+  expect(kicks).toBe(1);
+  // A loop pause isn't a budget's to end: resume is ignored and it stays paused for a hint.
+  const loopPaused = pausedTask();
+  expect((await post(`/api/tasks/${loopPaused.id}/budget`, { budget: { tokens: 400000, minutes: 20 }, resume: true })).status).toBe(200);
+  expect(getTask(db, loopPaused.id)!.status).toBe("blocked");
+});
+
 test("accepting a suggested check is what sets the brief's verify; without a suggestion there's nothing to accept", async () => {
   const s = createSpace(db, { name: "App", kind: "repo", goal: "", repoPath: "/tmp/x" });
   const t = createTask(db, { spaceId: s.id, title: "Fix", brief: normalizeBrief({ goal: "Fix" }) });
