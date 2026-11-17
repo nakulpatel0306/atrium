@@ -224,14 +224,14 @@ test("branch files are checked against the branch with one git call, and a file 
 test("files whose names say they may hold a key or secret are listed as such and never read", async () => {
   const s = createSpace(db, { name: "Keys", kind: "general", goal: "" });
   const names = ["id_rsa", "x.pem", "credentials.json", "secrets.yaml", "notes.md"];
-  made(s, "Setup", Object.fromEntries(names.map((n) => [n, "-----BEGIN PRIVATE KEY-----\n"])));
+  made(s, "Setup", Object.fromEntries(names.map((n) => [n, "invented key material for a test\n"])));
   const listed = (await (await get(`/api/spaces/${s.id}/files`)).json()) as { files: { path: string; secret: boolean }[] };
   expect(Object.fromEntries(listed.files.map((f) => [f.path, f.secret]))).toEqual({ id_rsa: true, "x.pem": true, "credentials.json": true, "secrets.yaml": true, "notes.md": false });
   for (const n of names.slice(0, 4)) {
     for (const route of ["file", "file/raw"]) {
       const res = await get(`/api/spaces/${s.id}/${route}?path=${encodeURIComponent(n)}`);
       expect(res.status).toBe(403);
-      expect(await res.text()).not.toContain("PRIVATE KEY");
+      expect(await res.text()).not.toContain("invented key material");
     }
   }
   expect((await get(`/api/spaces/${s.id}/file?path=notes.md`)).status).toBe(200);
