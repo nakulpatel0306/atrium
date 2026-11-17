@@ -88,3 +88,9 @@ test("approving sends the commit the screen showed, so the engine binds to it or
   await runIntent(client, { type: "approve", approvalId: ids.approval, title: "x", sha: "abc1234" }, state);
   expect(client.calls).toContainEqual({ method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "approve", sha: "abc1234" } });
 });
+
+test("raising a paused budget posts the raised budget with resume", async () => {
+  const client = fakeClient(makeState());
+  await runIntent(client, { type: "raise", taskId: "tsk_spent", title: "Ranking", budget: { tokens: 400_000, minutes: 20 } }, makeState());
+  expect(client.calls).toContainEqual({ method: "POST", path: "/api/tasks/tsk_spent/budget", body: { budget: { tokens: 400_000, minutes: 20 }, resume: true } });
+});

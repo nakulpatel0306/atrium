@@ -1,3 +1,4 @@
+import { raiseFirst } from "../../src/engine/loop";
 import { closeDom, openDom } from "./dom";
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
@@ -7,7 +8,7 @@ import { DecisionPanel } from "../../src/dashboard/components/NeedsPage";
 import { attentionQueue, KIND_TEXT, type QueueItem } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
-import { goTo, KIND, TASK_WORD } from "../../src/engine/words";
+import { BUDGET_STEP, goTo, KIND, TASK_WORD } from "../../src/engine/words";
 import { STATUS_TEXT } from "../../src/dashboard/summary";
 import { deriveView } from "../../src/tui/select";
 import { cardsOf } from "../../src/tui/screens/home";
@@ -127,7 +128,9 @@ test("the terminal app's cards say each label and offer the same step as their m
   for (const item of view.queue) {
     const card = cards.find((c) => c.id === item.key)!;
     expect(card.meta.map((m) => m.text).join("")).toContain(KIND[item.kind].label);
-    expect(card.keys.find((k) => k.hot)!.label).toBe(KIND[item.kind].action);
+    // A budget pause's first step is raising it, in the shared words; everything else leads with its kind's step.
+    const budget = item.kind === "paused" && raiseFirst(s.tasks.find((t) => t.id === item.key)?.loop);
+    expect(card.keys.find((k) => k.hot)!.label).toBe(budget ? BUDGET_STEP : KIND[item.kind].action);
   }
 });
 

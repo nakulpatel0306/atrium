@@ -3,7 +3,8 @@
 import { agentText } from "../../dashboard/agents";
 import { askLine } from "../../engine/needs";
 import { resultWord, waited } from "../../dashboard/queue";
-import { KIND, RISKY } from "../../engine/words";
+import { BUDGET_STEP, KIND, RISKY } from "../../engine/words";
+import { raiseFirst } from "../../engine/loop";
 import { askSteps } from "../keys";
 import { duration } from "../../dashboard/format";
 import { liveStatus, reviewLine } from "../../dashboard/summary";
@@ -74,7 +75,10 @@ export function cardsOf(view: View, now: number, inner: number): Card[] {
         meta: [...owner(t.spaceId), dot, { text: paused ? `${KIND.paused.label} · ${waiting(item.since, now)}` : `${KIND.shape.label} · low priority`, color: "faint" }],
         body: wrapStyled([{ text: oneLine(paused ? askLine(t) : (t.loop?.shape?.reason ?? "")), color: paused ? "warn" : "dim" }], inner).slice(0, 2),
         keys: paused
-          ? [{ key: "↵", label: KIND.paused.action, input: "\r", hot: true }, { key: "e", label: "Explain the problem", input: "e" }]
+          ? raiseFirst(t.loop)
+            ? // The budget paused it: raising it leads, named as in the dashboard (BUDGET_STEP), with the hint after.
+              [{ key: "b", label: BUDGET_STEP, input: "b", hot: true }, { key: "↵", label: KIND.paused.action, input: "\r" }, { key: "e", label: "Explain the problem", input: "e" }]
+            : [{ key: "↵", label: KIND.paused.action, input: "\r", hot: true }, { key: "e", label: "Explain the problem", input: "e" }]
           : [{ key: "↵", label: "Open", input: "\r" }, { key: "x", label: "Stop", input: "x" }],
       });
       continue;

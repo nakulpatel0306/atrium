@@ -124,6 +124,8 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
         return `Approved ${d.approved.length}.${left.length ? ` Left for you to read: ${left.join(", ")}.` : ""}`;
       });
     }
+    case "raise":
+      return said(await client.post(`/api/tasks/${enc(intent.taskId)}/budget`, { budget: intent.budget, resume: true }), () => `Raised the budget of "${intent.title}". It carries on from its branch.`);
     case "explain":
       return said(await client.post(`/api/tasks/${enc(intent.taskId)}/explain`), () => `Asked for the diagnosis of "${intent.title}". It reads the branch without trying again.`);
     case "memory": {

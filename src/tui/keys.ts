@@ -4,6 +4,7 @@ import { AGENT_CHOICES, type AgentChoice, waitOf } from "../dashboard/agents";
 import { nameMatches } from "../dashboard/deletion";
 import { REMOVED_FEATURE_RETRY, STAYS_PRIVATE } from "../engine/legacy";
 import { asksBeforeStarting, pausedForYou } from "../engine/needs";
+import { raisedBudget, raiseFirst } from "../engine/loop";
 import { cleanReviews, isRisky, itemTitle, shownSha } from "../dashboard/queue";
 import { REVIEW_CHOICES, type ReviewChoice } from "../engine/spaces";
 import { editLine } from "./edit";
@@ -31,6 +32,7 @@ export type Intent =
   | { type: "answerBrief"; taskId: string; title: string; answers: Answering["answers"] }
   | { type: "openFile"; spaceId: string; path: string; how: "open" | "reveal"; name: string }
   | { type: "explain"; taskId: string; title: string }
+  | { type: "raise"; taskId: string; title: string; budget: { tokens: number; minutes: number } }
   | { type: "memory"; lineId: string; accept: boolean; line: string }
   | { type: "batch"; items: { id: string; sha: string; title: string }[] }
 
@@ -64,7 +66,7 @@ export const HELP: { section: Section; keys: string; does: string }[] = [
   { section: "Everywhere", keys: "Opt/Shift", does: "drag to select text" },
   { section: "Home", keys: "a A s", does: "approve, approve all clean, send back" },
   { section: "Home", keys: "e", does: "explain a paused task's problem" },
-  { section: "Home", keys: "x", does: "stop a running task" },
+  { section: "Home", keys: "x b", does: "stop a running task, raise a paused budget" },
   { section: "Home", keys: "a 1-9", does: "answer a task's questions" },
   { section: "Home", keys: "y n N", does: "yes, not now, never; y n on a CLAUDE.md line" },
   { section: "Home", keys: "t", does: "transcript" },
@@ -279,6 +281,8 @@ function homeKey(input: string, key: Key, u: Ui, view: View): Command[] | null {
     const task = view.state.tasks.find((t) => t.id === item.key);
     if (!task) return null;
     if (input === "e") return item.kind === "paused" ? [intent({ type: "explain", taskId: task.id, title: task.title })] : [info("Explain is for a paused task.")];
+    // A budget pause's first step, as in the dashboard: what ran out, doubled, and it carries on.
+    if (input === "b") return item.kind === "paused" && raiseFirst(task.loop) ? [intent({ type: "raise", taskId: task.id, title: task.title, budget: raisedBudget(task.loop!) })] : [info("Raising the budget is for a task its budget paused.")];
     if (input === "x") return [task.status === "running" ? open({ kind: "confirm", purpose: "stop", targetId: task.id }) : info("That task isn't running.")];
     if (input === "a" || input === "s" || input === "r") return [info(item.kind === "paused" ? "This task is paused: e explains the problem, enter opens it to give a hint." : "This task is still running: enter opens it, x stops it.")];
     if (key.return) {
