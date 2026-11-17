@@ -9,9 +9,6 @@ import { clock } from "./format";
 export type { QueueItem, QueueKind };
 export { attentionQueue };
 
-// What kind of decision each item is, as its row's label: the shared words (engine/words.ts).
-export const KIND_TEXT = Object.fromEntries(Object.entries(KIND).map(([k, v]) => [k, v.label])) as Record<QueueKind, string>;
-
 const approvalOf = (state: State, i: QueueItem) => state.approvals.find((a) => a.id === i.key);
 const taskOf = (state: State, i: QueueItem) => (i.taskId ? state.tasks.find((t) => t.id === i.taskId) : undefined);
 
@@ -99,7 +96,7 @@ export function taskTag(state: State, t: State["tasks"][number], queue: QueueIte
 // The label a queue item wears: a result's verdict, else its kind.
 export function itemLabel(state: State, i: QueueItem): string {
   const a = i.kind === "review" ? approvalOf(state, i) : undefined;
-  return (a && resultWord(state, a)) ?? KIND_TEXT[i.kind];
+  return (a && resultWord(state, a)) ?? KIND[i.kind].label;
 }
 
 // The commit a result's screen shows: the one its checks and review read. Approving sends it, so the approval binds to

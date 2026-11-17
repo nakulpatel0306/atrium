@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NeedsList } from "../../src/dashboard/components/NeedsYou";
 import { DecisionPanel } from "../../src/dashboard/components/NeedsPage";
-import { attentionQueue, KIND_TEXT, type QueueItem } from "../../src/dashboard/queue";
+import { attentionQueue, itemLabel, type QueueItem } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
 import { BUDGET_STEP, goTo, KIND, TASK_WORD } from "../../src/engine/words";
@@ -75,7 +75,9 @@ test("the fixture covers each kind the surfaces decide on", () => {
 });
 
 test("the queue's labels and the task words come from the shared map", () => {
-  for (const [kind, { label }] of Object.entries(KIND)) expect(KIND_TEXT[kind as keyof typeof KIND]).toBe(label);
+  // Anything that isn't a result through the loop wears its kind's label.
+  const s = everyKind();
+  for (const i of attentionQueue(s)) if (i.kind !== "review") expect(itemLabel(s, i)).toBe(KIND[i.kind].label);
   expect(STATUS_TEXT.blocked).toBe(TASK_WORD.stopped);
   expect(STATUS_TEXT.review).toBe(TASK_WORD.review);
 });
