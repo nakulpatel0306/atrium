@@ -13,6 +13,7 @@ import type { Message } from "../engine/messages";
 import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import { outcomeText } from "../engine/outcome";
+import { taskVerdict } from "../dashboard/queue";
 import { fileSize, plural } from "../engine/text";
 import { markdownLines } from "./markdown";
 import type { Learning } from "../engine/spaces";
@@ -120,7 +121,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
   const lines: DetailLine[] = [
     [
       { text: `${glyph.glyph} `, color: glyph.color },
-      { text: wait ? "waiting" : STATUS_TEXT[task.status], color: wait ? (needsAction(wait) ? color.bad : color.warn) : glyph.color, bold: true },
+      { text: wait ? "waiting" : (taskVerdict(state, task)?.toLowerCase() ?? STATUS_TEXT[task.status]), color: wait ? (needsAction(wait) ? color.bad : color.warn) : glyph.color, bold: true },
       { text: ` · ${agentText(task, state.runs)}`, color: color.muted },
     ],
   ];

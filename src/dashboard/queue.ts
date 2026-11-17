@@ -86,6 +86,12 @@ export function taskNeedsLook(state: State, t: State["tasks"][number]): boolean 
   return !!a && isRisky(state, a);
 }
 
+// A task in review's verdict, for lists that name tasks by state (the terminal app's), else null.
+export function taskVerdict(state: State, t: State["tasks"][number]): string | null {
+  const a = t.status === "review" ? state.approvals.find((x) => x.taskId === t.id && x.kind === "review" && x.status === "pending") : undefined;
+  return a ? resultWord(state, a) : null;
+}
+
 // A task's one word in a list that names tasks (the palette): what it waits on you for when that isn't its state (a
 // question, a pick, a stopped part), a result's verdict, else its state word.
 export function taskTag(state: State, t: State["tasks"][number]): string {

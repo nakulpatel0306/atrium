@@ -4,6 +4,8 @@ import { agentText, needsAction, waitOf } from "../../dashboard/agents";
 import { duration } from "../../dashboard/format";
 import { distinctWaits, shownTitle, spaceStatus, STATUS_TEXT } from "../../dashboard/summary";
 import { outcomeLabel } from "../../engine/outcome";
+import { taskVerdict } from "../../dashboard/queue";
+import { RISKY } from "../../engine/words";
 import { type Block, columns, fit, type Hit, label, type Line, rowsOf, rule, type Seg } from "../canvas";
 import { type DetailLine, wrapStyled } from "../detail";
 import { pick, type View } from "../select";
@@ -70,8 +72,10 @@ function taskRow(view: View, cols: number, frame: number) {
     // A finished task the agent said it couldn't or only partly do never wears the done check.
     const glyph = notDone ? { glyph: GLYPH.notdone, color: "warn" as Tone } : task.status === "running" ? { glyph: SPINNER[frame % SPINNER.length]!, color: "ok" as Tone } : STATUS_GLYPH[task.status];
     const wait = waitOf(task, view.state);
-    const word = wait ? "waiting" : (notDone ?? STATUS_TEXT[task.status]);
-    const tone: Tone = wait ? (needsAction(wait) ? "bad" : "warn") : notDone ? "warn" : task.status === "blocked" || task.status === "failed" ? "bad" : task.status === "running" ? "ok" : "faint";
+    // A result waiting on you says its verdict, the dashboard's word for it.
+    const verdict = taskVerdict(view.state, task);
+    const word = wait ? "waiting" : (notDone ?? verdict?.toLowerCase() ?? STATUS_TEXT[task.status]);
+    const tone: Tone = wait ? (needsAction(wait) ? "bad" : "warn") : notDone || verdict === RISKY ? "warn" : verdict ? "ok" : task.status === "blocked" || task.status === "failed" ? "bad" : task.status === "running" ? "ok" : "faint";
     const kind = task.kind === "work" ? "" : `${task.kind} · `;
     const room = Math.max(1, cols - 4 - width(word) - 1 - width(kind));
     return [

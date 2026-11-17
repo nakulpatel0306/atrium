@@ -98,3 +98,12 @@ test("Shift-A lists the clean results and a second Shift-A approves them at the 
   // What the engine left is said plainly.
   await app.frame((f) => f.includes("Approved 1. Left for you to read: Review: Second."));
 });
+
+test("results are named by their verdict, the dashboard's words", async () => {
+  const client = fakeClient(results());
+  const app = openApp(client);
+  const f = await app.frame((f) => f.includes("Review: Noted"));
+  expect(f).toContain("Needs a look ·");
+  expect(f).toContain("Clean ·");
+  expect(f).not.toContain("Review · ");
+});
