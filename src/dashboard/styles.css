@@ -1259,7 +1259,10 @@ main > .top {
   color: var(--text);
   font: inherit;
 }
-.cmd input::placeholder {
+.cmd input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  /* The browser's own grey misses AA on these panels. */
   color: var(--faint);
 }
 .cmd .k {
@@ -3172,7 +3175,7 @@ code {
   margin: 0;
 }
 .task-decision p {
-  max-width: 80ch;
+  max-width: 64ch;
 }
 
 /* Needs you and Activity pages */
@@ -4185,7 +4188,7 @@ kbd {
 .walkthrough li,
 .loop .hint,
 .dp-body p {
-  max-width: 80ch;
+  max-width: 64ch;
 }
 .private .hint {
   font-size: var(--fs-sm);
@@ -4560,7 +4563,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 80ch;
+  max-width: 64ch;
 }
 
 /* The Keys sheet's second list: each kind of item with what it means and its next step. */
@@ -4664,6 +4667,10 @@ kbd {
   .item.agent .val {
     width: auto;
     flex: 0 1 auto;
+  }
+  .item.agent .status {
+    flex: 1 1 100%;
+    order: 1;
   }
   .storage-row .t {
     flex-basis: 100%;

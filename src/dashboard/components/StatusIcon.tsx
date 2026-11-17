@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, CircleDashed, CircleDot, CirclePause, CircleSlash, CircleX, LoaderCircle, type LucideIcon } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleDashed, CircleDot, CirclePause, CircleSlash, CircleX, LoaderCircle, type LucideIcon, TriangleAlert } from "lucide-react";
 import type { Outcome } from "../../engine/outcome";
 import type { State } from "../api";
 import { RISKY } from "../../engine/words";
@@ -25,7 +25,7 @@ const UNFINISHED = {
 const PAUSED = { icon: CirclePause, label: "Paused", cls: "paused" } as const;
 
 // A result waiting on you that Needs a look wears the same warning as its chip, not the plain ready ring.
-const LOOK = { icon: CircleAlert, label: RISKY, cls: "look" } as const;
+const LOOK = { icon: TriangleAlert, label: RISKY, cls: "look" } as const;
 
 export function StatusIcon({ status, outcome = null, paused = false, look = false }: { status: Status; outcome?: Outcome | null; paused?: boolean; look?: boolean }) {
   const odd = status === "done" && (outcome === "couldnt" || outcome === "partial") ? UNFINISHED[outcome] : status === "blocked" && paused ? PAUSED : status === "review" && look ? LOOK : null;
