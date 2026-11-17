@@ -4597,10 +4597,13 @@ kbd {
 /* Every link-sized control is at least 24px tall, so it can be hit without aiming. */
 .runs a,
 .dp-meta a,
-a.task-link,
-.cmd input {
+a.task-link {
   display: inline-flex;
   align-items: center;
+  min-height: 24px;
+}
+/* The ask bar's text field, without touching its hidden file picker. */
+.cmd input:not([type="file"]) {
   min-height: 24px;
 }
 
