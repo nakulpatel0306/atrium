@@ -1141,8 +1141,11 @@ h2 {
   place-items: center;
   padding: 24px;
 }
+/* A long list scrolls inside the dialog, so its buttons stay on screen however short the window is. */
 .dialog {
   width: min(520px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-xl);
@@ -1213,6 +1216,11 @@ h2 {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  position: sticky;
+  bottom: -16px;
+  margin-bottom: -16px;
+  padding: 12px 0 16px;
+  background: var(--panel);
 }
 /* Toasts stack upward above the ask bar, newest at the bottom. */
 .toasts {

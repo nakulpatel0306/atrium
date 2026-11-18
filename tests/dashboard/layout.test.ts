@@ -22,3 +22,10 @@ test("no rule sets a display on every input in the ask bar, which would show its
     if (selectors.includes(".cmd input")) expect(m[2]).not.toMatch(/display\s*:/);
   }
 });
+
+test("a long dialog scrolls inside itself and keeps its buttons on screen in a short window", () => {
+  expect(rule(".dialog")).toContain("max-height: calc(100dvh - 48px)");
+  expect(rule(".dialog")).toContain("overflow-y: auto");
+  expect(rule(".dialog-acts")).toContain("position: sticky");
+  expect(rule(".dialog-acts")).toContain("background: var(--panel)");
+});
