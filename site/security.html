@@ -55,7 +55,7 @@
   <p><strong>Claude</strong> runs inside Claude Code's own sandbox, with settings Atrium passes on every run: the sandbox is required and no command may run outside it, no settings file from your repo or your home folder is loaded, hooks are off, and only the built-in tools Atrium allows are there at all. <strong>Codex and Gemini</strong> run inside a macOS sandbox profile (<code>sandbox-exec</code>) that Atrium writes for every run.</p>
   <h3>What agents can't read</h3>
   <ul class="plain">
-    <li><strong>Every agent:</strong> SSH, AWS and GPG keys, the GitHub CLI's login, Messages and Contacts, and Atrium's own database, transcripts and log, and every space's folder but the task's own.</li>
+    <li><strong>Every agent:</strong> SSH, AWS and GPG keys, the GitHub CLI's login, Messages and Contacts, Atrium's own database, transcripts, log and other folders, and every other general space's folder.</li>
     <li><strong>Every agent, any <code>.env</code> file, anywhere:</strong> every name that starts or ends with <code>.env</code>, in any case, and everything inside a folder named that way.</li>
     <li><strong>Codex and Gemini, also:</strong> the other credential files (<code>.netrc</code>, <code>.npmrc</code>, <code>.pypirc</code>, git credentials, Docker, Kubernetes, Google Cloud and Azure logins, password stores), shell history, browser data, Mail, Claude's folder, each other's sign-in folder, and your Keychain files, except the one login keychain file Antigravity signs in through. Claude's shell can't read the Keychain files either.</li>
   </ul>
@@ -67,7 +67,7 @@
     <li>The Keychain command, <code>security</code>.</li>
   </ul>
   <h3>What agents can't change</h3>
-  <p>No agent can write the repo's <code>node_modules</code> or <code>.venv</code>: Atrium's checks run tools from those, so only the engine installs into them. Codex and Gemini can write only inside the task's folder, their own state and a temp folder of the run's own, and never the repo's <code>.git</code> or its agent settings in <code>.claude</code> and <code>.agents</code>. Claude's file tools can't edit <code>.git</code> or <code>.claude</code> either.</p>
+  <p>No agent can write the <code>node_modules</code> or <code>.venv</code> at the repo's top level: Atrium's checks run tools from those, so only the engine installs into them. Claude's file tools can't edit any <code>node_modules</code> or <code>.venv</code>, deeper ones included; the shell's block covers the top-level two. Codex and Gemini can write only inside the task's folder, their own state and a temp folder of the run's own, and never the repo's <code>.git</code> or its agent settings in <code>.claude</code> and <code>.agents</code>. Claude's file tools can't edit <code>.git</code> or <code>.claude</code> either.</p>
   <h3>Private spaces</h3>
   <p>A private space only ever uses Claude. Its file tools are fenced to the space's own folder, it gets no shell unless it's a private repo's test commands, and Downloads, Desktop, Documents and bank exports (CSV, OFX, PDF and the like) are closed to it.</p>
 </section>
@@ -75,13 +75,13 @@
 <section id="yes">
   <h2>Only Atrium pushes, and only after your yes</h2>
   <p>Agents never push or create repos, and have no GitHub login to do it with. The engine does, with your own git identity and GitHub login, and only after you said yes: a push is refused unless the yes on it is yours, not a rule's.</p>
-  <p>Rules can approve a repeated kind of result for you, but a few things always wait for you, whatever a rule says:</p>
+  <p>Rules can approve a repeated kind of result for you, and only two kinds at that: a change to Markdown or reStructuredText docs alone (in <code>docs/</code> or a README, changelog, contributing or history file, up to 200 changed lines, with nothing in it a docs tool would run), or a general space's text answer that keeps no files. A few things always wait for you, whatever a rule says:</p>
   <ul class="plain">
     <li>pushing a branch, and merging to main (any work not on its own <code>atrium/</code> branch);</li>
     <li>deleting files;</li>
     <li>touching secrets: <code>.env</code> files, keys and credential files;</li>
     <li>deploy settings such as CI workflows and Dockerfiles;</li>
-    <li>creating a GitHub repo, spending money, and removing a clone.</li>
+    <li>creating a GitHub repo, and removing a clone.</li>
   </ul>
   <p>Every approval a rule makes is logged and can be undone. And an agent's own word never counts: Atrium runs your checks itself, in a checkout of their own, under a sandbox profile of their own, with the commands taken from the commit the task started on.</p>
 </section>
@@ -92,6 +92,8 @@
     <li><strong>Agents are online.</strong> Each CLI has to reach its maker, so the sandbox doesn't cut off the internet, and what an agent can read can be sent there. Claude's shell commands may reach only the npm registry; the Codex and Gemini processes keep their network, and Antigravity's server-side web search can't be switched off.</li>
     <li><strong>Prompt injection.</strong> An agent reading a repo, an issue or a web page can be talked into a bad change inside its sandbox. That's why nothing leaves your Mac without your yes, and why the reviewer and you read the diff.</li>
     <li><strong>Checks are evidence, not proof.</strong> A change can still weaken a test without skipping it. The <a href="https://github.com/nakulpatel0306/atrium/blob/main/docs/loop.md#known-limits-of-the-gate">loop docs</a> list every known way a change can alter what its checks mean, and which stay open.</li>
+    <li><strong>Your other files are readable.</strong> Outside what's listed above, an agent can read what you can, other repos in your projects folder included. Only a private space fences reads to its own folder.</li>
+    <li><strong>Claude's shell can write <code>.git</code>.</strong> Its file tools can't, and Codex and Gemini can't at all, but a command Claude runs could change the repo's git config or hooks. Atrium's own git commands run with hooks off; yours in that repo don't.</li>
     <li><strong>Codex's subagents</strong> can't be switched off completely; they run inside the same sandbox as the writer.</li>
     <li><strong>The sandboxes are macOS's and Claude Code's.</strong> A flaw in either is a flaw here. Atrium runs as you, so it can't protect anything from programs you run outside it.</li>
   </ul>
