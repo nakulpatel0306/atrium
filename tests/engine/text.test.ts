@@ -27,5 +27,7 @@ test("shortCommand collapses whitespace and caps at 80 characters", () => {
 test("a bare exit code from an older stop becomes what happened and what to try; anything else is left as it is", () => {
   expect(plainStop("Codex exited with code 3")).toBe("Codex stopped with an error and didn't say why (exit code 3). Retry the task; if it stops again, run `codex` once in a terminal to see the error.");
   expect(plainStop("Gemini exited with code 1.")).toContain("run `agy` once");
+  // An Activity line quotes it after the task's title.
+  expect(plainStop("Stopped: Move the toolbar. Claude Code exited with code 1")).toBe(`Stopped: Move the toolbar. ${plainStop("Claude Code exited with code 1")}`);
   expect(plainStop("The repo has uncommitted changes. Commit or stash them, then retry.")).toBe("The repo has uncommitted changes. Commit or stash them, then retry.");
 });

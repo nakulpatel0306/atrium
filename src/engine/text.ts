@@ -8,11 +8,10 @@ export const silentExit = (name: string, exitCode: number, cli: string): string 
   `${name} stopped with an error and didn't say why (exit code ${exitCode}). Retry the task; if it stops again, run \`${cli}\` once in a terminal to see the error.`;
 
 const CLIS: Record<string, string> = { "Claude Code": "claude", Codex: "codex", Gemini: "agy" };
-// A stop recorded before that wording ("Claude Code exited with code 1") reads the same way now.
-export const plainStop = (reason: string): string => {
-  const m = /^(Claude Code|Codex|Gemini) exited with code (\d+)\.?$/.exec(reason.trim());
-  return m ? silentExit(m[1]!, Number(m[2]), CLIS[m[1]!]!) : reason;
-};
+// A stop recorded before that wording ("Claude Code exited with code 1"), on its own or ending an Activity line,
+// reads the same way now.
+export const plainStop = (text: string): string =>
+  text.replace(/\b(Claude Code|Codex|Gemini) exited with code (\d+)\.?$/, (_, name: string, code: string) => silentExit(name, Number(code), CLIS[name]!));
 
 export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 

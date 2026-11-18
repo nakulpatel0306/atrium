@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ACTIVITY_MORE, ACTIVITY_PAGE, type ActivityGroup, byDay, groupActivity, leadOf, visibleGroups } from "../../engine/activity-groups";
 import type { State } from "../api";
 import { absolute, clock, relative } from "../format";
+import { plainStop } from "../../engine/text";
 import { actorName } from "../summary";
 
 type Task = State["tasks"][number];
@@ -24,7 +25,7 @@ function Group({ group, spaceName, showTitle = true }: { group: ActivityGroup; s
         <span className="msg">
           {src && <span className="src">{src}</span>}
           {src && " · "}
-          {group.text}
+          {plainStop(group.text)}
         </span>
         {group.count > 1 && (
           <span className="more-n" title={`${group.count} lines`}>
@@ -41,7 +42,7 @@ function Group({ group, spaceName, showTitle = true }: { group: ActivityGroup; s
                 {clock(e.createdAt)}
               </span>
               <span>
-                <span className="src">{actorName(e.actor)}</span>: {e.message}
+                <span className="src">{actorName(e.actor)}</span>: {plainStop(e.message)}
               </span>
             </li>
           ))}
