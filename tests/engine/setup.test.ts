@@ -157,7 +157,7 @@ test("setupSpace cycles the six palette colors by space count", async () => {
   const plan = JSON.stringify({ name: "S", kind: "general", goal: "g", private: true, tasks: [] });
   const colors: string[] = [];
   for (let i = 0; i < 7; i++) colors.push(asSpace(await setupSpace(db, fake(ok(plan)), "d", home.home)).space.color);
-  expect(colors.slice(0, 6)).toEqual(["#7c7cf5", "#4cb782", "#4ea7fc", "#f2c94c", "#b07cf5", "#eb5757"]);
+  expect(colors.slice(0, 6)).toEqual(["#9b84ff", "#5fb98a", "#5f9fe0", "#d9a944", "#c07ad6", "#e07070"]);
   expect(colors[6]).toBe(colors[0]!);
 });
 
