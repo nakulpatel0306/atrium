@@ -5258,6 +5258,10 @@ a.task-link {
   .queue-page .dp-lead {
     padding: var(--space-6) var(--space-12);
   }
+  .queue-page .dp-body .memory {
+    padding: var(--space-8) var(--space-12);
+    gap: var(--space-4);
+  }
 }
 /* A queue row is one line by design (the list draws by row height); on a phone the space's name goes, its dot stays. */
 @media (max-width: 479px) {
