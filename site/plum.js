@@ -30,6 +30,22 @@ export function canDrawWebGL() {
   }
 }
 
+// The "ready" pose hops once every HOP_SECONDS; the first HOP_RISE of each hop is Plum going up.
+export const HOP_SECONDS = 1.8;
+const HOP_RISE = 0.32;
+
+// Given the animation clock in seconds, says true once as each hop starts. A hop already past its rise (Plum coming
+// back on screen mid-air) doesn't count.
+export function hopper(period = HOP_SECONDS) {
+  let last = -1;
+  return (t) => {
+    const n = Math.floor(t / period);
+    if (n === last) return false;
+    last = n;
+    return t - n * period < period * HOP_RISE;
+  };
+}
+
 export const stillSrc = (pose) => new URL(`plum/${pose}.webp`, import.meta.url).href;
 
 // The page finishes loading before any WebGL starts, and a Plum further down starts about a screen and a half ahead
@@ -53,7 +69,8 @@ const near = (el) =>
 // pose live, or swaps the still when there's no live Plum. Options: pose, interactive (looks at the pointer, a click
 // boops it, a mouse drag turns it), still (holds each pose with no motion; follows the reduced-motion setting, even
 // when it changes, unless given), lazy (waits until it's nearly on screen), load (how three.js is fetched, for tests),
-// onLive (called once the live Plum is drawing). If the browser loses the WebGL context, the still comes back.
+// onLive (called once the live Plum is drawing), onHop (called as each "ready" hop starts; where the still image
+// stays, on the same cadence). If the browser loses the WebGL context, the still comes back.
 export function mountPlum(el, opts = {}) {
   let pose = POSES.includes(opts.pose) ? opts.pose : "quiet";
   const img = el.querySelector("img.plum-still");
@@ -61,9 +78,18 @@ export function mountPlum(el, opts = {}) {
   let still = opts.still ?? motion.matches;
   let live = null;
   let gone = false;
+  // The still can't hop, so its hops are kept by a timer instead, firing only when a live Plum would be hopping.
+  let hopTimer = 0;
+  const keepHops = () => {
+    if (!opts.onHop || hopTimer) return;
+    hopTimer = setInterval(() => {
+      if (!gone && !live && !still && pose === "ready") opts.onHop();
+    }, HOP_SECONDS * 1000);
+  };
   const showStill = () => {
     el.classList.remove("plum-live");
     if (img) img.src = stillSrc(pose);
+    keepHops();
   };
   const onMotion = (e) => {
     still = e.matches;
@@ -89,6 +115,7 @@ export function mountPlum(el, opts = {}) {
     },
     destroy() {
       gone = true;
+      clearInterval(hopTimer);
       motion?.removeEventListener?.("change", onMotion);
       live?.destroy();
       live = null;
@@ -105,19 +132,21 @@ export function mountPlum(el, opts = {}) {
         still,
         interactive: !!opts.interactive,
         pose: () => pose,
+        onHop: opts.onHop,
         lost: () => {
           live?.destroy();
           live = null;
           showStill();
         },
       });
-      if (!live) return;
+      if (!live) return keepHops();
       el.classList.add("plum-live");
       opts.onLive?.();
     })
     .catch((e) => {
       // No three.js or no WebGL: the still image is Plum.
       handle.error = e;
+      if (!gone) keepHops();
     });
   return handle;
 }
@@ -140,7 +169,7 @@ function build(T, el, opts) {
   }
 }
 
-function draw(T, el, renderer, { still: startStill, interactive, pose: currentPose, lost }) {
+function draw(T, el, renderer, { still: startStill, interactive, pose: currentPose, onHop, lost }) {
   let still = startStill;
   let state = currentPose();
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -394,6 +423,7 @@ function draw(T, el, renderer, { still: startStill, interactive, pose: currentPo
 
   const clock = new T.Clock();
   const ease = (cur, target, k) => cur + (target - cur) * k;
+  const hopped = hopper();
   let nextBlink = 2, look = { x: 0, y: 0 }, pose = { tiltZ: 0, tiltX: 0, eyeOpen: 1, lift: 0 };
   function frame() {
     raf = 0;
@@ -406,9 +436,10 @@ function draw(T, el, renderer, { still: startStill, interactive, pose: currentPo
     if (state === "work") { lift = 0.03 * Math.sin(t * 5) * a; tiltZ = 0.04 * Math.sin(t * 1.7) * a; lookX = 0.018; lookY = 0.026; }
     if (state === "checks") { lookX = 0.03 * Math.sin(t * 3) * (a || 0); }
     if (state === "ready") {
-      const ph = (t % 1.8) / 1.8;
-      if (a && ph < 0.32) lift = Math.sin((ph / 0.32) * Math.PI) * 0.28;
-      if (a && ph >= 0.32 && ph < 0.44) sy = 1 - 0.07 * Math.sin(((ph - 0.32) / 0.12) * Math.PI);
+      const ph = (t % HOP_SECONDS) / HOP_SECONDS;
+      if (a && ph < HOP_RISE) lift = Math.sin((ph / HOP_RISE) * Math.PI) * 0.28;
+      if (a && ph >= HOP_RISE && ph < HOP_RISE + 0.12) sy = 1 - 0.07 * Math.sin(((ph - HOP_RISE) / 0.12) * Math.PI);
+      if (a && hopped(t)) onHop?.();
       wave = 1;
     }
     if (state === "look") { tiltZ = 0.2; tiltX = 0.1; eyeOpen = 0.78; lookX = 0.022; }

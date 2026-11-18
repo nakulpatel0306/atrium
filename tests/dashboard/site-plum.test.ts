@@ -1,9 +1,9 @@
 // The site's Plum (site/plum.js): the still image is Plum until the live one draws, and stays Plum without WebGL.
 import { openDom } from "./dom";
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { mountPlum, POSES, stillSrc } from "../../site/plum.js";
+import { HOP_SECONDS, hopper, mountPlum, POSES, stillSrc } from "../../site/plum.js";
 
 openDom();
 
@@ -67,4 +67,53 @@ test("a browser that can't draw WebGL never downloads three.js", async () => {
   expect(String(plum.error)).toContain("can't draw WebGL");
   expect(document.querySelectorAll("script").length).toBe(before);
   expect(img(el)).toEndWith("plum/look.webp");
+});
+
+test("the hop clock fires once as each hop starts, and not for a hop already under way", () => {
+  const hop = hopper();
+  expect(hop(0)).toBe(true);
+  expect(hop(0.3)).toBe(false);
+  expect(hop(1.79)).toBe(false);
+  expect(hop(HOP_SECONDS + 0.02)).toBe(true);
+  expect(hop(HOP_SECONDS + 0.5)).toBe(false);
+  // Coming back on screen in the middle of a hop isn't the start of one.
+  const late = hopper();
+  expect(late(HOP_SECONDS * 3 + 1)).toBe(false);
+  expect(late(HOP_SECONDS * 4 + 0.01)).toBe(true);
+});
+
+test("with the still image, onHop keeps the hop's cadence while the pose is ready, and stops with destroy", async () => {
+  jest.useFakeTimers();
+  try {
+    let hops = 0;
+    const plum = mountPlum(host("ready"), { pose: "ready", still: false, load: () => Promise.reject(new Error("x")), onHop: () => hops++ });
+    await plum.ready;
+    jest.advanceTimersByTime(HOP_SECONDS * 1000 * 2 + 100);
+    expect(hops).toBe(2);
+    plum.set("quiet");
+    jest.advanceTimersByTime(HOP_SECONDS * 1000 * 2);
+    expect(hops).toBe(2);
+    plum.set("ready");
+    jest.advanceTimersByTime(HOP_SECONDS * 1000);
+    expect(hops).toBe(3);
+    plum.destroy();
+    jest.advanceTimersByTime(HOP_SECONDS * 1000 * 3);
+    expect(hops).toBe(3);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("a Plum held still never hops, so onHop never fires", async () => {
+  jest.useFakeTimers();
+  try {
+    let hops = 0;
+    const plum = mountPlum(host("ready"), { pose: "ready", still: true, load: () => Promise.reject(new Error("x")), onHop: () => hops++ });
+    await plum.ready;
+    jest.advanceTimersByTime(HOP_SECONDS * 1000 * 4);
+    expect(hops).toBe(0);
+    plum.destroy();
+  } finally {
+    jest.useRealTimers();
+  }
 });
