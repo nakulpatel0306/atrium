@@ -70,7 +70,8 @@ const near = (el) =>
 // boops it, a mouse drag turns it), still (holds each pose with no motion; follows the reduced-motion setting, even
 // when it changes, unless given), lazy (waits until it's nearly on screen), load (how three.js is fetched, for tests),
 // onLive (called once the live Plum is drawing), onHop (called as each "ready" hop starts; where the still image
-// stays, on the same cadence). If the browser loses the WebGL context, the still comes back.
+// stays, on the same cadence), hopOnClick (a "ready" Plum hops only when clicked or pressed with Enter or Space; the
+// still fires onHop on the press). If the browser loses the WebGL context, the still comes back.
 export function mountPlum(el, opts = {}) {
   let pose = POSES.includes(opts.pose) ? opts.pose : "quiet";
   const img = el.querySelector("img.plum-still");
@@ -81,7 +82,7 @@ export function mountPlum(el, opts = {}) {
   // The still can't hop, so its hops are kept by a timer instead, firing only when a live Plum would be hopping.
   let hopTimer = 0;
   const keepHops = () => {
-    if (!opts.onHop || hopTimer) return;
+    if (!opts.onHop || opts.hopOnClick || hopTimer) return;
     hopTimer = setInterval(() => {
       if (!gone && !live && !still && pose === "ready") opts.onHop();
     }, HOP_SECONDS * 1000);
@@ -96,6 +97,20 @@ export function mountPlum(el, opts = {}) {
     live?.still(still);
   };
   motion?.addEventListener?.("change", onMotion);
+  const hop = () => {
+    if (gone || still || pose !== "ready") return;
+    if (live) live.hop();
+    else opts.onHop?.();
+  };
+  const onPress = (e) => {
+    if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+    if (e.type === "keydown") e.preventDefault();
+    hop();
+  };
+  if (opts.hopOnClick) {
+    el.addEventListener("click", onPress);
+    el.addEventListener("keydown", onPress);
+  }
 
   const handle = {
     // Settles once Plum is live, or once it's clear the still stays.
@@ -116,6 +131,8 @@ export function mountPlum(el, opts = {}) {
     destroy() {
       gone = true;
       clearInterval(hopTimer);
+      el.removeEventListener("click", onPress);
+      el.removeEventListener("keydown", onPress);
       motion?.removeEventListener?.("change", onMotion);
       live?.destroy();
       live = null;
@@ -133,6 +150,7 @@ export function mountPlum(el, opts = {}) {
         interactive: !!opts.interactive,
         pose: () => pose,
         onHop: opts.onHop,
+        hopOnClick: !!opts.hopOnClick,
         lost: () => {
           live?.destroy();
           live = null;
@@ -169,7 +187,7 @@ function build(T, el, opts) {
   }
 }
 
-function draw(T, el, renderer, { still: startStill, interactive, pose: currentPose, onHop, lost }) {
+function draw(T, el, renderer, { still: startStill, interactive, pose: currentPose, onHop, hopOnClick, lost }) {
   let still = startStill;
   let state = currentPose();
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -424,6 +442,8 @@ function draw(T, el, renderer, { still: startStill, interactive, pose: currentPo
   const clock = new T.Clock();
   const ease = (cur, target, k) => cur + (target - cur) * k;
   const hopped = hopper();
+  // With hopOnClick, a hop runs once from the press instead of on the clock.
+  let hopAt = -10;
   let nextBlink = 2, look = { x: 0, y: 0 }, pose = { tiltZ: 0, tiltX: 0, eyeOpen: 1, lift: 0 };
   function frame() {
     raf = 0;
@@ -436,10 +456,10 @@ function draw(T, el, renderer, { still: startStill, interactive, pose: currentPo
     if (state === "work") { lift = 0.03 * Math.sin(t * 5) * a; tiltZ = 0.04 * Math.sin(t * 1.7) * a; lookX = 0.018; lookY = 0.026; }
     if (state === "checks") { lookX = 0.03 * Math.sin(t * 3) * (a || 0); }
     if (state === "ready") {
-      const ph = (t % HOP_SECONDS) / HOP_SECONDS;
-      if (a && ph < HOP_RISE) lift = Math.sin((ph / HOP_RISE) * Math.PI) * 0.28;
+      const ph = hopOnClick ? (t - hopAt) / HOP_SECONDS : (t % HOP_SECONDS) / HOP_SECONDS;
+      if (a && ph >= 0 && ph < HOP_RISE) lift = Math.sin((ph / HOP_RISE) * Math.PI) * 0.28;
       if (a && ph >= HOP_RISE && ph < HOP_RISE + 0.12) sy = 1 - 0.07 * Math.sin(((ph - HOP_RISE) / 0.12) * Math.PI);
-      if (a && hopped(t)) onHop?.();
+      if (a && !hopOnClick && hopped(t)) onHop?.();
       wave = 1;
     }
     if (state === "look") { tiltZ = 0.2; tiltX = 0.1; eyeOpen = 0.78; lookX = 0.022; }
@@ -517,6 +537,11 @@ function draw(T, el, renderer, { still: startStill, interactive, pose: currentPo
   return {
     pose(next) {
       state = next;
+      wake();
+    },
+    hop() {
+      hopAt = clock.getElapsedTime();
+      onHop?.();
       wake();
     },
     still(next) {

@@ -117,3 +117,41 @@ test("a Plum held still never hops, so onHop never fires", async () => {
     jest.useRealTimers();
   }
 });
+
+test("with hopOnClick, Plum never hops by itself; a click or Enter/Space on it fires onHop once each", async () => {
+  jest.useFakeTimers();
+  try {
+    let hops = 0;
+    const el = host("ready");
+    const plum = mountPlum(el, { pose: "ready", still: false, hopOnClick: true, load: () => Promise.reject(new Error("x")), onHop: () => hops++ });
+    await plum.ready;
+    jest.advanceTimersByTime(HOP_SECONDS * 1000 * 4);
+    expect(hops).toBe(0);
+    el.click();
+    expect(hops).toBe(1);
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    expect(hops).toBe(3);
+    plum.destroy();
+    el.click();
+    expect(hops).toBe(3);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("with hopOnClick, a Plum held still or in another pose doesn't hop on a click", async () => {
+  let hops = 0;
+  const held = host("ready");
+  const a = mountPlum(held, { pose: "ready", still: true, hopOnClick: true, load: () => Promise.reject(new Error("x")), onHop: () => hops++ });
+  await a.ready;
+  held.click();
+  const other = host("quiet");
+  const b = mountPlum(other, { pose: "quiet", still: false, hopOnClick: true, load: () => Promise.reject(new Error("x")), onHop: () => hops++ });
+  await b.ready;
+  other.click();
+  expect(hops).toBe(0);
+  a.destroy();
+  b.destroy();
+});

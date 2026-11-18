@@ -238,8 +238,9 @@ section { position: relative; padding-block: var(--space-section); }
 .start { position: relative; border-top: 1px solid var(--line); text-align: center; overflow: clip; padding-bottom: calc(var(--space-section) + var(--end-plum) * 0.5); --end-plum: clamp(200px, 24vw, 300px); }
 .start > .wrap { position: relative; z-index: 1; }
 /* Plum stands at the page's last edge, cut off at the middle and waving, so the page ends on the character. */
-.start-plum { position: absolute; left: 50%; bottom: 0; width: var(--end-plum); aspect-ratio: 1; transform: translate(-50%, 34%); }
-/* Each hop throws a burst of confetti from Plum (landing.js), on a canvas under it that never takes a click. */
+.start-plum { position: absolute; z-index: 2; left: 50%; bottom: 0; width: var(--end-plum); aspect-ratio: 1; transform: translate(-50%, 34%); cursor: pointer; border-radius: 50%; -webkit-tap-highlight-color: transparent; }
+.start-plum:focus-visible { outline: 2px solid var(--accent); outline-offset: -12%; }
+/* A click on Plum makes it hop and throw a burst of confetti (landing.js), on a canvas under it that never takes a click. */
 .start .confetti { position: absolute; left: 0; bottom: 0; width: 100%; height: calc(var(--end-plum) * 2.6); pointer-events: none; }
 .start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .start .head { margin-inline: auto; align-items: center; }
@@ -518,7 +519,7 @@ section { position: relative; padding-block: var(--space-section); }
 </section>
 
 <section class="start" id="start" aria-labelledby="start-h">
-  <div class="plum start-plum" id="start-plum" role="img" aria-label="Plum, waving goodbye"><img class="plum-still" src="plum/ready.webp" alt="" width="300" height="300" loading="lazy"></div>
+  <div class="plum start-plum" id="start-plum" role="button" tabindex="0" aria-label="Plum, waving goodbye. Press for confetti"><img class="plum-still" src="plum/ready.webp" alt="" width="300" height="300" loading="lazy"></div>
   <div class="wrap">
     <div class="head">
       <span class="label">Get Atrium</span>
