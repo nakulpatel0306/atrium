@@ -52,3 +52,17 @@ test("type comes from one scale: every font size is a token", () => {
   // Inline code is sized against the text it sits in, so it keeps a relative size.
   expect(sizes.filter((v) => !/^var\(--fs-[a-z0-9]+\)$/.test(v) && !/^\d*\.?\d+em$/.test(v))).toEqual([]);
 });
+
+test("a Home row shows its whole reason on a line under the title, never cut to a few letters", () => {
+  expect(rule(".summary-row > .t")).toContain("white-space: normal");
+  expect(rule(".summary-row > .t span")).toContain("display: block");
+  expect(rule(".summary-row > .t span")).not.toContain("line-clamp");
+  // Every row's status, cost and button share columns, so they line up down the list.
+  expect(rule(".needs-list .summary-row")).toContain('grid-template-areas: "dot who t state cost acts"');
+});
+
+test("buttons take their height from the control scale, so one row never mixes two heights", () => {
+  expect(rule(".btn")).toContain("min-height: var(--control-sm)");
+  expect(rule(".mk-form .btn")).toContain("min-height: var(--control)");
+  expect(rule(".decision-acts .btn")).toContain("min-height: var(--control-lg)");
+});
