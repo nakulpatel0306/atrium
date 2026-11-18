@@ -1057,8 +1057,11 @@ h2 {
 .feed .tone-failure .msg {
   color: var(--text);
 }
+/* What went wrong is the point of a failure line, so it wraps instead of ending in an ellipsis. */
 .feed .tone-failure .msg {
   color: color-mix(in srgb, var(--red) 70%, var(--text));
+  white-space: normal;
+  word-break: break-word;
 }
 .feed .more-n {
   display: flex;

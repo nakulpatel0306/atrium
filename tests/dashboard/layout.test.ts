@@ -82,3 +82,7 @@ test("a short window gives the queue's height to the decision, so its buttons ar
   expect(short).toMatch(/\.queue-page \.paused \.hint-form \.acts \{\s*order: -1;/);
   expect(short).toMatch(/\.queue-page \.paused \.hint-form \{\s*display: contents;/);
 });
+
+test("a failure line in Activity and History wraps rather than cutting off what went wrong", () => {
+  expect(css).toMatch(/\n\.feed \.tone-failure \.msg \{[^}]*white-space: normal;/);
+});
