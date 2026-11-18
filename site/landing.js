@@ -90,7 +90,7 @@ follow();
 // Privacy: Plum stands in its checks ring, the sandbox drawn as a fence it scans up and down.
 mountPlum($("private-plum"), { pose: "checks", lazy: true });
 
-// The end: Plum waves you off from the page's last edge, and hops and throws confetti when you click it.
+// The end: Plum bounces at the page's last edge, waving, and jumps and throws confetti when you click it.
 const confetti = mountConfetti(document.querySelector(".start"), { from: $("start-plum") });
 mountPlum($("start-plum"), { pose: "ready", lazy: true, hopOnClick: true, onHop: confetti.burst });
 

@@ -70,8 +70,8 @@ const near = (el) =>
 // boops it, a mouse drag turns it), still (holds each pose with no motion; follows the reduced-motion setting, even
 // when it changes, unless given), lazy (waits until it's nearly on screen), load (how three.js is fetched, for tests),
 // onLive (called once the live Plum is drawing), onHop (called as each "ready" hop starts; where the still image
-// stays, on the same cadence), hopOnClick (a "ready" Plum hops only when clicked or pressed with Enter or Space; the
-// still fires onHop on the press). If the browser loses the WebGL context, the still comes back.
+// stays, on the same cadence), hopOnClick (a "ready" Plum bounces gently and makes its full hop only when clicked or
+// pressed with Enter or Space; the still fires onHop on the press). If the browser loses the WebGL context, the still comes back.
 export function mountPlum(el, opts = {}) {
   let pose = POSES.includes(opts.pose) ? opts.pose : "quiet";
   const img = el.querySelector("img.plum-still");
@@ -459,6 +459,12 @@ function draw(T, el, renderer, { still: startStill, interactive, pose: currentPo
       const ph = hopOnClick ? (t - hopAt) / HOP_SECONDS : (t % HOP_SECONDS) / HOP_SECONDS;
       if (a && ph >= 0 && ph < HOP_RISE) lift = Math.sin((ph / HOP_RISE) * Math.PI) * 0.28;
       if (a && ph >= HOP_RISE && ph < HOP_RISE + 0.12) sy = 1 - 0.07 * Math.sin(((ph - HOP_RISE) / 0.12) * Math.PI);
+      // Between presses, a hopOnClick Plum keeps a small bounce going, so it reads as alive and ready to jump.
+      if (a && hopOnClick && !(ph >= 0 && ph < HOP_RISE + 0.12)) {
+        const b = Math.sin(t * 5.2);
+        lift = 0.06 * Math.abs(b);
+        sy = 1 - 0.025 * Math.max(0, 1 - Math.abs(b) * 4);
+      }
       if (a && !hopOnClick && hopped(t)) onHop?.();
       wave = 1;
     }
