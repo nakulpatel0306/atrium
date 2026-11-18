@@ -1,4 +1,4 @@
-import { CheckCheck, ChevronLeft, Keyboard, PartyPopper } from "lucide-react";
+import { CheckCheck, ChevronLeft, Inbox, Keyboard } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { post, type State } from "../api";
 import { absolute } from "../format";
@@ -399,7 +399,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       {help && <KeysSheet keys={KEY_HELP} kinds floating onClose={() => setHelp(false)} />}
       {items.length === 0 ? (
         <div className="q-empty">
-          <PartyPopper />
+          <Inbox />
           {state.spaces.length ? <p>You're all caught up.</p> : <p>Nothing has run yet.</p>}
           <p className="hint">Results, questions, sign-offs and paused tasks land here when they need you.</p>
           {!state.spaces.length && (
