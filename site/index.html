@@ -17,8 +17,8 @@
 <style>
 /* The landing page: a still hero where Plum lives, then the loop told on scroll with Plum beside the product, then
    the live demo, the evidence, and the ways in. */
-section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
-.head { display: flex; flex-direction: column; gap: 18px; margin-bottom: clamp(44px, 6vw, 80px); max-width: 820px; }
+section { position: relative; padding-block: var(--space-section); }
+.head { display: flex; flex-direction: column; gap: 18px; margin-bottom: var(--space-head); max-width: 820px; }
 
 /* Hero */
 .hero { min-height: min(calc(100svh - 72px), 900px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px max(20px, env(safe-area-inset-right, 0px)) 28px max(20px, env(safe-area-inset-left, 0px)); overflow-x: clip; isolation: isolate; }
@@ -186,7 +186,6 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .grid .go:hover { text-decoration: underline; text-underline-offset: 4px; }
 .grid .k2 { font: 13px var(--mono); color: var(--faint); }
 @media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } .grid > li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); } }
-.why, .uses, .private, .start { padding-block: clamp(64px, 8vw, 96px); }
 /* Privacy: Plum inside its ring, as a fence, beside four plain promises. */
 .private { border-top: 1px solid var(--line); }
 .private-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); align-items: center; }
@@ -202,7 +201,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .doors code { font: 14px var(--mono); color: var(--text); }
 .doors a { color: var(--accent); font-weight: 500; text-decoration: none; }
 .doors a:hover { text-decoration: underline; text-underline-offset: 4px; }
-.also { margin-top: clamp(80px, 10vw, 128px); }
+.also { margin-top: var(--space-block); }
 .also > .label { display: block; font-weight: 500; margin-bottom: 18px; }
 
 /* Get it */

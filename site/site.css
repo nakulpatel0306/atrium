@@ -34,6 +34,12 @@
   --sans: "Inter Tight", system-ui, -apple-system, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --col: 1160px;
+  /* Vertical rhythm, used by every page: a section's padding, a section head to what it introduces, a sub-block inside
+     a section, and the top of a page's first section under the bar. */
+  --space-section: clamp(72px, 9vw, 128px);
+  --space-head: clamp(36px, 4.5vw, 56px);
+  --space-block: clamp(64px, 8vw, 104px);
+  --space-hero: clamp(48px, 7vw, 88px);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-color-scheme: light) {
