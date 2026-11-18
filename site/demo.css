@@ -15,6 +15,10 @@
 }
 .mac * { box-sizing: border-box; }
 .mac button { font: inherit; color: inherit; }
+/* The page's own .label (mono section labels) must not reach the copy of the app. */
+.mac .label { font: inherit; color: inherit; }
+/* The ask bar shows focus on its pill, so the input itself draws no second ring. */
+.m-cmd input:focus-visible { outline: none; }
 .mac svg.i { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .mac :focus-visible { outline: 1px solid var(--m-accent); outline-offset: 1px; border-radius: 4px; }
 

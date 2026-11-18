@@ -442,6 +442,11 @@
     });
     spaces.flatMap((s) => s.tasks).filter((t) => t.finishIn).forEach((t) => finish(t, t.finishIn));
     render(false);
+    // The landing page's hero ask arrives here: open its space and put the line in the ask bar.
+    addEventListener("atrium:ask", (e) => {
+      go(e.detail.space);
+      $("m-ask").value = e.detail.text;
+    });
     return { go, template: (key) => newSpace("", key) };
   })();
 

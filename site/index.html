@@ -73,7 +73,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .now li.on { color: var(--text); }
 .beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: clamp(96px, 14vh, 160px); }
 .beat { display: flex; flex-direction: column; gap: 22px; min-height: 60vh; justify-content: center; }
-.beat .label { color: var(--accent); }
+.beat .label { color: var(--faint); }
 .beat h3 { font-size: clamp(28px, 3.2vw, 40px); letter-spacing: -0.04em; line-height: 1.05; }
 .beat p { color: var(--body); max-width: 52ch; }
 .beat kbd { font: 500 0.82em var(--mono); border: 1px solid var(--line-strong); border-radius: 6px; padding: 1px 6px; color: var(--text); }
@@ -82,14 +82,16 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 @media (max-width: 860px) {
   .story { grid-template-columns: minmax(0, 1fr); }
   .story-side { top: 64px; z-index: 2; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-  .story-side .plum { width: 72px; flex: none; }
+  .story-side .plum { width: 104px; flex: none; }
   .story-side .glow { display: none; }
   .now { flex-wrap: wrap; gap: 4px 12px; }
   .beat { min-height: 0; }
 }
 
 /* Panels: pieces of the real product, drawn in its own type and colours. */
-.panel { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; font-size: 15px; box-shadow: 0 40px 80px -60px var(--glow); }
+.panel { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; font-size: 15px; }
+/* The glow marks only the last panel: the result that reaches you. */
+.beat[data-pose="ready"] .panel { box-shadow: 0 40px 80px -60px var(--glow); }
 .panel .meta { font: 13px var(--mono); color: var(--faint); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .panel .t { color: var(--text); font-size: 22px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.2; }
 .panel dl { margin: 0; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 16px; }
@@ -97,7 +99,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .panel dd { margin: 0; color: var(--text); }
 .panel dd code { font-size: 13.5px; }
 .panel .hint { font-size: 14px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 12px; }
-.panel .hint b { color: var(--accent); font-weight: 500; }
+.panel .hint b { color: var(--text); font-weight: 600; }
 .panel pre { margin: 0; font: 13px/1.75 var(--mono); color: var(--body); overflow-x: auto; white-space: pre; }
 .panel pre .add { color: var(--green); } .panel pre .del { color: var(--red); } .panel pre .f { color: var(--faint); }
 .panel .live { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 14px; }
@@ -126,8 +128,10 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 /* Try it */
 .try { border-top: 1px solid var(--line); }
 .try .head { max-width: 760px; }
-.try-plum { position: absolute; right: max(20px, calc((100vw - var(--col)) / 2 + 20px)); top: clamp(60px, 9vw, 120px); width: 150px; aspect-ratio: 1; }
-@media (max-width: 960px) { .try-plum { display: none; } }
+#try { position: relative; }
+/* Plum perches on the demo's window, so its reactions happen where you click. */
+.try-plum { position: absolute; right: 32px; top: -84px; width: 120px; aspect-ratio: 1; z-index: 2; }
+@media (max-width: 760px) { .try-plum { width: 84px; top: -60px; right: 12px; } }
 
 /* Evidence: one typographic band. Each finding reads as a sentence, its number set large, and the choice it led to. */
 .why { border-top: 1px solid var(--line); }
@@ -136,7 +140,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .facts b { font-size: clamp(56px, 8vw, 112px); font-weight: 600; letter-spacing: -0.06em; line-height: 0.9; }
 .facts .fact { font-size: clamp(20px, 2.1vw, 26px); line-height: 1.3; letter-spacing: -0.02em; color: var(--text); max-width: 34ch; }
 .facts .fact span { display: block; margin-top: 10px; font-size: 16px; letter-spacing: 0; color: var(--body); }
-.facts .fact span::before { content: "So "; color: var(--accent); font-weight: 600; }
+.facts .fact span::before { content: "So "; color: var(--text); font-weight: 600; }
 .sources { margin-top: 28px; font-size: 15px; color: var(--dim); }
 .sources a { color: var(--text); text-underline-offset: 4px; }
 @media (max-width: 760px) { .facts li { grid-template-columns: minmax(0, 1fr); } }
@@ -158,8 +162,8 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .who-panel code { font-size: 0.88em; }
 .asks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .asks li { font: 14px var(--mono); padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--text); }
-.asks li::before { content: "› "; color: var(--accent); }
-.lands { border-left: 2px solid var(--accent); padding: 2px 0 2px 16px; display: flex; flex-direction: column; gap: 4px; }
+.asks li::before { content: "› "; color: var(--faint); }
+.lands { border-left: 2px solid var(--line-strong); padding: 2px 0 2px 16px; display: flex; flex-direction: column; gap: 4px; }
 .lands span { font: 13px var(--mono); color: var(--faint); }
 .lands p { color: var(--text); }
 .who-panel .btn { align-self: flex-start; height: 44px; font-size: 15px; }
@@ -241,8 +245,8 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   <div class="plum hero-plum pop" id="hero-plum" role="img" aria-label="Plum, Atrium's character, at work"><img class="plum-still" src="plum/work.webp" alt="" width="240" height="240" fetchpriority="high"></div>
   <h1 class="display" id="hero-h"><span class="ln in d1">Direct the agents.</span> <span class="ln em in d2">Keep the judgment.</span></h1>
   <p class="lede in d3">Atrium runs coding agents on your Mac and brings every result back checked, reviewed and waiting for your yes.</p>
-  <a class="ask in d4" href="#try-it" id="hero-ask" aria-label="Try this ask in the demo below: add a dark mode toggle to storefront">
-    <span class="q" aria-hidden="true"><span id="typed">Add a dark mode toggle to storefront</span><span class="caret"></span></span>
+  <a class="ask in d4" href="#try-it" id="hero-ask" aria-label="Try this ask in the demo below: add a dark mode toggle to lumen-web">
+    <span class="q" aria-hidden="true"><span id="typed">Add a dark mode toggle to lumen-web</span><span class="caret"></span></span>
     <span class="meta" aria-hidden="true">small · 200k tokens</span>
     <span class="go" id="go" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span>
   </a>
@@ -257,7 +261,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   <div class="wrap">
     <div class="head">
       <span class="label">How it works</span>
-      <h2 class="display" id="loop-h">Brief, write, checks, review, <span class="em">you</span>.</h2>
+      <h2 class="display" id="loop-h">Brief, write, checks, review, you.</h2>
       <p class="lede">Every coding task runs the same loop. A result reaches you after Atrium's own checks and a fresh reviewer, labelled when either couldn't vouch for it.</p>
     </div>
     <div class="story">
@@ -272,7 +276,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
           <h3>Ask in a line. It starts with a brief.</h3>
           <p>Press Enter and the task starts. A quick read-only pass turns the line into a brief: the goal, what has to be true when it's done, how to check it, and what to look at first. It asks only when the line could mean two different things, and <kbd>⌘↩</kbd> lets you edit the brief before anything runs.</p>
           <div class="panel" aria-label="Example brief">
-            <div class="meta"><span>storefront · brief</span><span>small · 200k tokens · 20 min</span></div>
+            <div class="meta"><span>lumen-web · brief</span><span>small · 200k tokens · 20 min</span></div>
             <dl>
               <dt>Goal</dt><dd>Add a light and dark theme toggle to the header.</dd>
               <dt>Done when</dt><dd>The choice survives a reload, and the first paint uses it.</dd>
@@ -325,7 +329,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
           <h3>You decide, from one queue.</h3>
           <p>The result waits in <b>Needs you</b> with everything on one screen: what the checks said, what the reviewer said, a short walkthrough and the diff. <kbd>a</kbd> approves, <kbd>s</kbd> sends it back with a note. A push or a pull request happens only after your yes, and Atrium does it, never the agent.</p>
           <div class="panel" aria-label="Example result waiting for you">
-            <div class="meta"><span>storefront · 3 files · 9m · ~$0.04</span><span>Clean</span></div>
+            <div class="meta"><span>lumen-web · 3 files · 9m · ~$0.04</span><span>Clean</span></div>
             <p class="t">Add a dark mode toggle</p>
             <div class="verdict"><span>Checks <b>passed</b></span><span>Review <b>approved</b></span></div>
             <p>A theme module reads the system setting, remembers your choice and sets it before the first paint. The toggle sits in the header. <span class="spot">theme.ts:18</span></p>
@@ -346,7 +350,6 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 </section>
 
 <section class="try" id="try-it" aria-labelledby="try-h">
-  <div class="plum try-plum" id="try-plum" role="img" aria-label="Plum, reacting to the demo"><img class="plum-still" src="plum/quiet.webp" alt="" width="150" height="150" loading="lazy"></div>
   <div class="wrap">
     <div class="head">
       <span class="label">Try it</span>
@@ -354,6 +357,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
       <p class="lede">A working copy of the Mac app. Open a space, approve a result, send one back, or type a new task in the ask bar.</p>
     </div>
     <div id="try">
+      <div class="plum try-plum" id="try-plum" role="img" aria-label="Plum, reacting to the demo"><img class="plum-still" src="plum/quiet.webp" alt="" width="120" height="120" loading="lazy"></div>
       <div class="try-note"><span class="pulse"></span> Click around. Nothing here is saved.</div>
       <div class="mac" id="mac">
         <aside class="m-side" aria-label="Atrium sidebar">
@@ -462,7 +466,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
     <div>
       <div class="head">
         <span class="label">Private by design</span>
-        <h2 class="display" id="private-h">Your code stays <span class="em">on your Mac.</span></h2>
+        <h2 class="display" id="private-h">Your code stays on your Mac.</h2>
         <p class="lede">No sign-up and no Atrium cloud. It runs on your Mac, uses your own Claude subscription, and listens only on 127.0.0.1.</p>
       </div>
       <ul class="promises">

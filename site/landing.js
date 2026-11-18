@@ -27,24 +27,30 @@ async function heroMoment() {
   await wait(180);
   go.classList.remove("pressed");
   for (let i = 0; i < LOOP.length; i++) {
-    flow.forEach((li, j) => li.classList.toggle("on", j === i));
+    flow.forEach((li, j) => {
+      li.classList.toggle("on", j === i);
+      li.toggleAttribute("aria-current", j === i);
+    });
     hero.set(LOOP[i]);
     await wait(1150);
   }
   await wait(1800);
-  flow.forEach((li) => li.classList.remove("on"));
+  flow.forEach((li) => {
+    li.classList.remove("on");
+    li.removeAttribute("aria-current");
+  });
   hero.set("work");
 }
 heroMoment();
 
-// The ask in the hero is the demo's ask: a click carries it down into the working copy of the app, ready to send.
+// The ask in the hero is the demo's ask: a click opens the matching space in the working copy of the app, with the
+// line in its ask bar, ready to send.
 $("hero-ask").addEventListener("click", (e) => {
-  const ask = $("m-ask");
-  if (!ask) return;
+  if (!$("m-ask")) return;
   e.preventDefault();
-  ask.value = $("typed").dataset.phrase || $("typed").textContent;
+  dispatchEvent(new CustomEvent("atrium:ask", { detail: { space: "web", text: $("typed").dataset.phrase || $("typed").textContent } }));
   $("try").scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
-  ask.focus({ preventScroll: true });
+  $("m-ask").focus({ preventScroll: true });
 });
 
 // The story: the step nearest the middle of the screen sets Plum's pose and the step list beside it.
