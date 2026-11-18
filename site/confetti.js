@@ -71,14 +71,17 @@ export function mountConfetti(host, { from, motion = matchMedia("(prefers-reduce
     canvas.width = Math.round(canvas.clientWidth * dpr);
     canvas.height = Math.round(canvas.clientHeight * dpr);
   };
-  // The canvas is made on the first burst, so a visitor with reduced motion never gets one.
+  // The canvas is made on the first burst, so a visitor with reduced motion never gets one. It's kept only once it can
+  // draw, so a browser with no 2D canvas never gets one either.
   const make = () => {
-    canvas = document.createElement("canvas");
-    canvas.className = "confetti";
-    canvas.setAttribute("aria-hidden", "true");
-    canvas.style.pointerEvents = "none";
-    ctx = canvas.getContext("2d");
-    if (!ctx) return false;
+    const c = document.createElement("canvas");
+    const x = c.getContext("2d");
+    if (!x) return false;
+    c.className = "confetti";
+    c.setAttribute("aria-hidden", "true");
+    c.style.pointerEvents = "none";
+    canvas = c;
+    ctx = x;
     host.prepend(canvas);
     size();
     ro.observe(canvas);

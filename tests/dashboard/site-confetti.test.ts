@@ -134,3 +134,14 @@ test("off screen, the pieces are cleared and a hop adds none until the section i
   expect(c.count).toBe(PER_BURST);
   c.destroy();
 });
+
+test("a browser with no 2D canvas gets no confetti, and later hops still add nothing and don't throw", () => {
+  HTMLCanvasElement.prototype.getContext = (() => null) as unknown as typeof realGetContext;
+  const { host, plum } = section();
+  const c = mountConfetti(host, { from: plum, motion: query(false) });
+  c.burst();
+  expect(() => c.burst()).not.toThrow();
+  expect(c.count).toBe(0);
+  expect(host.querySelector("canvas")).toBeNull();
+  c.destroy();
+});
