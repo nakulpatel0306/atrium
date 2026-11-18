@@ -3315,9 +3315,14 @@ kbd {
 .queue-page.wrap {
   max-width: 1320px;
 }
+/* The queue is a working page, so its title is a step smaller and the decision starts higher. */
+.queue-page h1 {
+  font-size: var(--fs-2xl);
+  letter-spacing: -0.03em;
+}
 .queue-page .page-head {
   align-items: center;
-  margin-bottom: var(--space-24);
+  margin-bottom: var(--space-16);
 }
 .keys-btn {
   margin-left: auto;
@@ -5103,10 +5108,10 @@ a.task-link {
   font-size: var(--fs-xs);
 }
 
-/* Why a task paused, said once above its ways on. */
+/* Why a task paused, said once under its ways on. */
 .paused .pause-why {
   max-width: var(--measure);
-  margin-bottom: var(--space-8);
+  margin-top: var(--space-8);
 }
 /* Changing the budget is a detail of the budget line, so it reads as that line's link, in the colour actions use. */
 .budget .btn.link {
@@ -5165,5 +5170,62 @@ a.task-link {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+  }
+}
+
+/* A short window (a laptop split screen, a small window beside the editor): the queue gives its height to the decision,
+   so a result's Approve and a pause's ways on are on screen without scrolling. What goes is what's said elsewhere: the
+   kind's meaning (its chip's hover) and the stage strip (the kind label says where it is). */
+@media (max-height: 640px) {
+  .queue-page.wrap {
+    padding-top: var(--space-12);
+  }
+  .queue-page .page-head {
+    margin-bottom: var(--space-8);
+  }
+  .queue-page .dp-head {
+    padding: var(--space-8) var(--space-16);
+  }
+  .queue-page .dp-head h3 {
+    font-size: var(--fs-xl);
+    margin: var(--space-2) 0 var(--space-4);
+  }
+  .queue-page .dp-means,
+  .queue-page .dp-body > .stages,
+  .queue-page .nudge p {
+    display: none;
+  }
+  .queue-page .dp-body {
+    padding: var(--space-8) var(--space-16) var(--space-16);
+    gap: var(--space-8);
+  }
+  .queue-page .paused textarea {
+    min-height: 0;
+    height: calc(var(--control) + var(--space-8));
+  }
+  /* Every way on shares one row above the hint box (Give it a hint with the box empty goes to the box, as it always
+     does), and the lead's box is tighter. */
+  .queue-page .paused {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-8);
+  }
+  .queue-page .paused .hint-form {
+    display: contents;
+  }
+  .queue-page .paused .nudge {
+    order: -2;
+    margin: 0;
+  }
+  .queue-page .paused .hint-form .acts {
+    order: -1;
+  }
+  .queue-page .paused > :not(.nudge):not(form),
+  .queue-page .paused textarea {
+    flex: 1 1 100%;
+  }
+  .queue-page .dp-lead {
+    padding: var(--space-6) var(--space-12);
   }
 }

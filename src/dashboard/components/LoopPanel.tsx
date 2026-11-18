@@ -130,7 +130,6 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
   );
   return (
     <div className="paused">
-      {task.loop?.paused && <p className="hint pause-why">{PAUSE_WHY[task.loop.paused.kind]}</p>}
       {nudge && (
         <div className="nudge">
           <p>Want the diagnosis instead of another attempt? It reads the branch and says what's actually going wrong, without trying again.</p>
@@ -166,6 +165,8 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
         </div>
       </form>
       {error && <p className="err">{error}</p>}
+      {/* Why it paused, under the ways on, so the choices come first on a short window. */}
+      {task.loop?.paused && <p className="hint pause-why">{PAUSE_WHY[task.loop.paused.kind]}</p>}
     </div>
   );
 }

@@ -72,3 +72,13 @@ test("a stage it got past but that failed draws a red dot, not the green one pas
   expect(rule(".stages li.past.bad::before")).toContain("border-color: var(--red)");
   expect(rule(".stages li.past.bad")).toContain("color: var(--red)");
 });
+
+test("a short window gives the queue's height to the decision, so its buttons are on screen at 900×420", () => {
+  // Measured in a browser at 900×420: a clean result's Approve and every way on from a loop or budget pause sit above the
+  // ask bar. These are the rules that make that so.
+  expect(rule(".queue-page h1")).toContain("font-size: var(--fs-2xl)");
+  const short = css.slice(css.indexOf("@media (max-height: 640px)"));
+  expect(short).toMatch(/\.queue-page \.dp-means,\s*\.queue-page \.dp-body > \.stages,\s*\.queue-page \.nudge p \{\s*display: none;/);
+  expect(short).toMatch(/\.queue-page \.paused \.hint-form \.acts \{\s*order: -1;/);
+  expect(short).toMatch(/\.queue-page \.paused \.hint-form \{\s*display: contents;/);
+});
