@@ -8,7 +8,7 @@ final class OfflineView: NSView {
   private let onStarted: () -> Void
   private let button = NSButton(title: "Start it", target: nil, action: nil)
   private let manual = OfflineView.label("", size: 13, color: .atriumMuted)
-  private let error = OfflineView.label("", size: 13, color: NSColor(srgbRed: 0xeb / 255, green: 0x57 / 255, blue: 0x57 / 255, alpha: 1))
+  private let error = OfflineView.label("", size: 13, color: NSColor(srgbRed: 0xf0 / 255, green: 0x8a / 255, blue: 0x8a / 255, alpha: 1))
 
   init(port: Int, onStarted: @escaping () -> Void) {
     self.port = port
@@ -17,15 +17,14 @@ final class OfflineView: NSView {
     wantsLayer = true
     layer?.backgroundColor = NSColor.atriumBackground.cgColor
 
+    // Plum, resting, as on the dashboard's connecting screen.
     let logo = NSImageView()
-    if let url = Bundle.main.url(forResource: "logo-mark", withExtension: "svg"), let image = NSImage(contentsOf: url) {
-      image.isTemplate = true
-      image.size = NSSize(width: 40, height: 40)
+    if let url = Bundle.main.url(forResource: "plum-quiet", withExtension: "png"), let image = NSImage(contentsOf: url) {
+      image.size = NSSize(width: 72, height: 72)
       logo.image = image
     }
-    logo.contentTintColor = .atriumMuted
-    logo.widthAnchor.constraint(equalToConstant: 40).isActive = true
-    logo.heightAnchor.constraint(equalToConstant: 40).isActive = true
+    logo.widthAnchor.constraint(equalToConstant: 72).isActive = true
+    logo.heightAnchor.constraint(equalToConstant: 72).isActive = true
 
     let title = OfflineView.label("Atrium engine isn't running", size: 15, color: .atriumText, weight: .semibold)
     let detail = OfflineView.label("Nothing is lost. Your spaces and tasks are waiting for it.", size: 13, color: .atriumMuted)
@@ -93,8 +92,8 @@ final class OfflineView: NSView {
 }
 
 extension NSColor {
-  static var atriumText: NSColor { NSColor(srgbRed: 0xe6 / 255, green: 0xe6 / 255, blue: 0xea / 255, alpha: 1) }
-  static var atriumMuted: NSColor { NSColor(srgbRed: 0x8a / 255, green: 0x8a / 255, blue: 0x94 / 255, alpha: 1) }
+  static var atriumText: NSColor { NSColor(srgbRed: 0xf4 / 255, green: 0xf1 / 255, blue: 0xff / 255, alpha: 1) }
+  static var atriumMuted: NSColor { NSColor(srgbRed: 0x9c / 255, green: 0x92 / 255, blue: 0xb8 / 255, alpha: 1) }
 }
 
 // Runs off the main thread: launchctl and `atrium install` can take a few seconds.

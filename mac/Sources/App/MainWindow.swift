@@ -2,7 +2,7 @@ import AppKit
 
 extension NSColor {
   // The dashboard's --bg, so the strip above the web view and the web view read as one surface.
-  static var atriumBackground: NSColor { NSColor(srgbRed: 0x0d / 255, green: 0x0d / 255, blue: 0x0f / 255, alpha: 1) }
+  static var atriumBackground: NSColor { NSColor(srgbRed: 0x0c / 255, green: 0x0a / 255, blue: 0x14 / 255, alpha: 1) }
 }
 
 @MainActor
