@@ -4238,6 +4238,7 @@ kbd {
 .retro h4,
 .rollup h4 {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-6);
   font-size: var(--fs-sm);
@@ -4770,15 +4771,32 @@ kbd {
       ". state cost acts";
   }
 }
+/* On a phone there's no room for three columns: the status and cost follow the reason, and the button sits at the
+   right of that line, or on its own line when it doesn't fit beside them. */
 @container main (max-width: 640px) {
-  .needs-list .summary-row {
-    grid-template-areas:
-      "dot t t t"
-      ". state cost acts";
+  .needs-list .summary-row,
+  .needs-list.space-needs .summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-12);
+    row-gap: var(--space-6);
+    padding-left: var(--space-32);
+    position: relative;
   }
   .summary-row > .sd {
-    align-self: start;
-    margin-top: var(--space-6);
+    position: absolute;
+    left: var(--space-16);
+    top: calc(var(--space-12) + var(--space-6));
+  }
+  .summary-row > .t {
+    flex: 1 1 100%;
+  }
+  .needs-list .summary-row > .acts {
+    margin: 0 0 0 auto;
+  }
+  .summary-row > .acts .btn {
+    width: auto;
   }
 }
 
@@ -4866,12 +4884,15 @@ a.task-link {
   .item.task {
     flex-wrap: wrap;
   }
+  /* The title wraps rather than pushing its state word and the agent onto lines of their own. */
   .item.task .task-open {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
+    flex: 1 1 0;
+    flex-wrap: nowrap;
   }
   .item.task .task-open .t {
-    flex: 1 1 calc(100% - 60px);
+    flex: 1 1 auto;
+    min-width: 8em;
+    white-space: normal;
   }
   /* A run's facts stack in two columns rather than four squeezed ones. */
   .runs li {
