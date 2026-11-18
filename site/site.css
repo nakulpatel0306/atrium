@@ -1,6 +1,19 @@
 /* Monolith Violet: near-black tinted violet, stark tight type, pill buttons, hairlines, and purple only where you act
    or where one line matters. Light is the same system on violet-tinted paper. Every page of the site links this file;
    a page's own <style> holds only its layout. */
+/* Both faces are served from site/vendor, so the pages fetch nothing from another site. */
+@font-face {
+  font-family: "Inter Tight";
+  src: url("vendor/inter-tight-5.3.0-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("vendor/geist-mono-5.3.0-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
 :root {
   color-scheme: dark;
   /* Surfaces, darkest to lightest, and the hairlines between them. */
@@ -31,6 +44,8 @@
   --orange: #e39a7b;
   --pink: #c8a2f0;
   --teal: #5fcfbf;
+  /* Pure white or black, for marks whose owners allow no other colour (the OpenAI Blossom). */
+  --mark: #ffffff;
   --sans: "Inter Tight", system-ui, -apple-system, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --col: 1160px;
@@ -70,6 +85,7 @@
     --orange: #a8543a;
     --pink: #7a3fa8;
     --teal: #136b60;
+    --mark: #000000;
   }
 }
 :root[data-theme="light"] {
@@ -98,6 +114,7 @@
   --orange: #a8543a;
   --pink: #7a3fa8;
   --teal: #136b60;
+  --mark: #000000;
 }
 
 * { box-sizing: border-box; }
@@ -178,8 +195,20 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 footer a { color: var(--dim); text-decoration: none; }
 footer a:hover { color: var(--text); }
 footer nav { display: flex; gap: 20px; flex-wrap: wrap; }
+/* On a narrow screen the line above wraps between its parts, never leaving one word alone, and the links sit in a
+   grid of four: the site's pages and GitHub on the first row, the policies on the second. */
+footer .wrap > span { text-wrap: balance; }
+@media (max-width: 720px) {
+  footer .wrap { flex-direction: column; gap: 18px; }
+  footer nav { display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 12px 16px; width: 100%; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }
 }
+
+/* A dated note at the top of an essay whose product details have since changed. */
+.update { margin: 0 0 var(--space-head); padding: 14px 18px; border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 12px; background: var(--surface); color: var(--dim); font-size: 15px; line-height: 1.6; }
+.update b { color: var(--text); font-weight: 600; }
+.update a { color: var(--accent); }

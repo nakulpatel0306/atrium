@@ -6,12 +6,11 @@
 <meta name="color-scheme" content="dark light">
 <title>Atrium · Draft and wait</title>
 <meta name="description" content="Approve, send back with a note, rules for what may skip the wait, and honest labels for work that's only partly done. Why an agent that can act should ask first.">
+<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/note-draft-and-wait.html">
 <link rel="icon" type="image/png" href="plum/icon.png">
 <script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<link rel="preload" href="vendor/inter-tight-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
 <link rel="stylesheet" href="notes.css">
 </head>
@@ -53,6 +52,7 @@
 <div class="layout single">
   <div class="col">
     <article>
+    <p class="update"><b>Update, November 13, 2026.</b> Atrium has since narrowed to coding agents. Anything here about texting, mail or markets describes features that were removed; the rest still holds. <a href="notes.html">All notes</a></p>
 <section id="intro">
   <p>A plain chatbot can't act. It writes an answer, and you carry it into the world yourself: paste the code, send the email, rename the files. Safe, but you're doing the last and most tedious step every time.</p>
   <p>An agent with tools can act. It edits files, runs commands, maybe sends things. That saves the tedious step, but now mistakes happen in the real world, often while you're looking elsewhere, and a permission prompt every thirty seconds trains you to click “allow” without reading.</p>
@@ -153,9 +153,9 @@ Say done only if you did everything the task title asks. Drafting something is n
   <h2>What always asks</h2>
   <p>Some actions never get a rule, however many times I've approved them. They're on a fixed always-ask list, and the rule system has no words for them. Among them:</p>
   <ul class="chips">
-    <li>sending a text</li><li>pushing</li><li>creating a repo</li><li>merging to main</li><li>deploying</li><li>deleting</li><li>spending money</li><li>secrets</li>
+    <li>pushing</li><li>creating a repo</li><li>merging to main</li><li>deploying</li><li>deleting</li><li>removing a clone</li><li>secrets</li>
   </ul>
-  <p>Every text Atrium sends as me goes out only after I press Send on that exact text. If I edit the draft first, the edited words are what's sent, and the card shows them before I confirm.</p>
+  <p>Every push goes out only after I say yes to that exact result. If I send it back first, what gets pushed is the version I approved after that, never an earlier draft.</p>
   <p class="pull">An assistant that can act is only useful if I can trust what it did. Draft and wait is how I get to trust it without watching it.</p>
 </section>
     </article>
@@ -169,7 +169,7 @@ Say done only if you did everything the task title asks. Drafting something is n
 </div>
 
 <footer>
-  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+  <div class="wrap"><span>Atrium&nbsp;· made by Nakul&nbsp;Patel&nbsp;· MIT&nbsp;License&nbsp;·&nbsp;2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a></nav></div>
 </footer>
 
 <script>

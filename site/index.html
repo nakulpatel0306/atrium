@@ -6,12 +6,11 @@
 <meta name="color-scheme" content="dark light">
 <title>Atrium</title>
 <meta name="description" content="Atrium runs coding agents on your Mac: a brief for every task, your checks run by Atrium itself, a fresh reviewer, and one queue for everything that needs you.">
+<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/">
 <link rel="icon" type="image/png" href="plum/icon.png">
 <script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<link rel="preload" href="vendor/inter-tight-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
 <link rel="stylesheet" href="demo.css">
 <style>
@@ -47,6 +46,14 @@ section { position: relative; padding-block: var(--space-section); }
 .hero .alt a { color: var(--text); text-underline-offset: 4px; text-decoration-color: var(--line-strong); }
 .hero .alt a:hover { text-decoration-color: var(--accent); }
 .hero-foot { position: absolute; left: 0; right: 0; bottom: 24px; display: flex; justify-content: space-between; gap: 16px; padding-inline: max(20px, calc((100% - var(--col)) / 2 + 20px)); font: 13px var(--mono); color: var(--faint); }
+/* The agents Atrium runs, by name, with the maker's mark where its owner allows one (vendor/README.md says where each
+   came from; terms.html whose they are). OpenAI allows its Blossom only in plain black or white, so the marks are drawn
+   in --mark and quieted with opacity alone; Google's mark isn't used, so Antigravity is its name. */
+.works { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 16px; margin: 0; }
+.works .agent { display: inline-flex; align-items: center; gap: 7px; color: var(--dim); transition: color 0.2s; }
+.works .agent:hover { color: var(--text); }
+.works svg { width: 18px; height: 18px; flex: none; fill: var(--mark); opacity: 0.7; transition: opacity 0.2s; }
+.works .agent:hover svg { opacity: 1; }
 @media (max-width: 720px) {
   .ask { border-radius: 26px; padding-left: 20px; flex-wrap: wrap; }
   .ask .q { font-size: 16px; flex-basis: calc(100% - 64px); }
@@ -213,6 +220,9 @@ section { position: relative; padding-block: var(--space-section); }
 .promises li:last-child { border-bottom: 1px solid var(--line); }
 .promises b { font-size: 20px; font-weight: 600; letter-spacing: -0.025em; }
 .promises p { color: var(--body); font-size: 16px; }
+.private .more { margin-top: 22px; font-size: 15px; color: var(--dim); }
+.private .more a { color: var(--text); text-underline-offset: 4px; text-decoration-color: var(--line-strong); }
+.private .more a:hover { text-decoration-color: var(--accent); }
 /* On one column Plum leads the text it stands for, on the same left edge. */
 @media (max-width: 860px) { .private-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; } .private-plum { width: 168px; margin-inline: -18px 0; } }
 /* Three ways in, as one line under the install. */
@@ -229,6 +239,8 @@ section { position: relative; padding-block: var(--space-section); }
 .start > .wrap { position: relative; z-index: 1; }
 /* Plum stands at the page's last edge, cut off at the middle and waving, so the page ends on the character. */
 .start-plum { position: absolute; left: 50%; bottom: 0; width: var(--end-plum); aspect-ratio: 1; transform: translate(-50%, 34%); }
+/* Each hop throws a burst of confetti from Plum (landing.js), on a canvas under it that never takes a click. */
+.start .confetti { position: absolute; left: 0; bottom: 0; width: 100%; height: calc(var(--end-plum) * 2.6); pointer-events: none; }
 .start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .start .head { margin-inline: auto; align-items: center; }
 .install { max-width: 720px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; overflow: hidden; }
@@ -276,7 +288,7 @@ section { position: relative; padding-block: var(--space-section); }
     <li>brief</li><li>write</li><li>checks</li><li>review</li><li>you</li>
   </ol>
   <p class="alt in d5">Live in the terminal? <a href="terminal.html">See the terminal app</a></p>
-  <div class="hero-foot"><span>runs on your Mac · 127.0.0.1</span><span>Claude Code · Codex · Gemini</span></div>
+  <div class="hero-foot"><span>runs on your Mac · 127.0.0.1</span><p class="works"><span>Works with</span><span class="agent"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z"/></svg>Claude Code</span><span class="agent"><svg viewBox="176 176 364 364" aria-hidden="true"><path d="M508.749 317.399C516.777 287.314 508.991 253.884 485.389 230.282C461.788 206.681 428.36 198.895 398.273 206.923C376.231 184.928 343.39 174.956 311.148 183.596C278.906 192.234 255.45 217.292 247.36 247.361C217.291 255.451 192.233 278.91 183.595 311.149C174.957 343.391 184.927 376.232 206.924 398.274C198.896 428.359 206.683 461.789 230.284 485.391C253.885 508.992 287.313 516.779 317.401 508.75C339.442 530.745 372.286 540.717 404.525 532.079C436.767 523.441 460.223 498.384 468.313 468.315C498.383 460.224 523.44 436.766 532.078 404.526C540.716 372.285 530.747 339.443 508.749 317.402V317.399ZM470.899 244.776C486.892 260.77 493.488 282.601 490.687 303.412L415.577 260.046C412.411 258.218 408.509 258.218 405.345 260.046L317.401 310.82V277.526C317.401 275.191 318.652 273.005 320.676 271.837L387.644 233.174C414.178 218.353 448.346 222.223 470.901 244.776H470.899ZM357.837 311.144L398.275 334.491V381.185L357.837 404.532L317.398 381.185V334.491L357.837 311.144ZM264.776 269.693C265.207 239.305 285.644 211.649 316.453 203.393C338.3 197.54 360.505 202.744 377.127 215.573L302.014 258.937C298.848 260.764 296.898 264.144 296.898 267.798V369.346L268.065 352.699C266.043 351.531 264.776 349.353 264.776 347.017V269.691V269.693ZM203.391 316.454C209.244 294.608 224.854 277.978 244.276 269.999V356.73C244.276 360.384 246.226 363.763 249.392 365.591L337.337 416.365L308.503 433.013C306.481 434.181 303.961 434.188 301.939 433.02L234.971 394.357C208.868 378.789 195.138 347.261 203.391 316.454ZM244.775 470.9C228.781 454.906 222.186 433.075 224.986 412.264L300.096 455.63C303.263 457.457 307.164 457.457 310.328 455.63L398.273 404.856V438.149C398.273 440.485 397.022 442.671 394.997 443.839L328.029 482.502C301.495 497.322 267.327 493.452 244.772 470.9H244.775ZM450.897 445.982C450.466 476.371 430.029 504.027 399.22 512.283C377.373 518.136 355.168 512.932 338.547 500.102L413.659 456.738C416.826 454.911 418.775 451.532 418.775 447.877V346.329L447.609 362.977C449.631 364.145 450.897 366.323 450.897 368.659V445.985V445.982ZM512.282 399.221C506.429 421.068 490.819 437.697 471.397 445.676V358.946C471.397 355.292 469.448 351.912 466.281 350.085L378.336 299.311L407.17 282.663C409.192 281.495 411.712 281.487 413.734 282.655L480.702 321.318C506.805 336.887 520.536 368.415 512.282 399.221Z"/></svg>Codex</span><span class="agent">Gemini (Antigravity)</span></p></div>
 </section>
 
 <section class="loop" id="loop" aria-labelledby="loop-h">
@@ -500,6 +512,7 @@ section { position: relative; padding-block: var(--space-section); }
         <li><b>Nothing counts without a yes.</b><p>Rules can approve repeated kinds of work, but never a push, a merge to main, a delete, secrets or a new repo.</p></li>
         <li><b>Only Atrium pushes.</b><p>After your yes, Atrium itself pushes the branch or opens the pull request. Private spaces only ever use Claude.</p></li>
       </ul>
+      <p class="more">The details: <a href="privacy.html">what Atrium keeps and sends</a> · <a href="security.html">how agents are kept in</a></p>
     </div>
   </div>
 </section>
@@ -532,7 +545,7 @@ section { position: relative; padding-block: var(--space-section); }
 </main>
 
 <footer>
-  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+  <div class="wrap"><span>Atrium&nbsp;· made by Nakul&nbsp;Patel&nbsp;· MIT&nbsp;License&nbsp;·&nbsp;2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a></nav></div>
 </footer>
 
 <script>

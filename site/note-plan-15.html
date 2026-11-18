@@ -6,12 +6,11 @@
 <meta name="color-scheme" content="dark light">
 <title>Atrium · Plan 15</title>
 <meta name="description" content="Two mockups, one builder, two reviews and 1,881 passing tests: what a real feature cost in tokens, and the bugs only the review caught.">
+<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/note-plan-15.html">
 <link rel="icon" type="image/png" href="plum/icon.png">
 <script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<link rel="preload" href="vendor/inter-tight-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
 <link rel="stylesheet" href="notes.css">
 </head>
@@ -65,6 +64,7 @@
 
   <div class="col">
     <article>
+    <p class="update"><b>Update, November 13, 2026.</b> Atrium has since narrowed to coding agents. Anything here about texting, mail or markets describes features that were removed; the rest still holds. <a href="notes.html">All notes</a></p>
 <section id="intro">
   <p>Plan 15 was a redesign of Atrium's terminal app, plus a way to stop a running task. The terminal app is built with <dfn>Ink</dfn>, a library that lets you write terminal interfaces in React. It went from plan to merge today.</p>
   <p>It went through the pipeline I described in <a href="note-one-agent.html">Why one agent isn't enough</a>: a plan, one builder in its own worktree, a fresh reviewer, a fix wave, a scoped re-review, every test group, then me. Here's how each step went, with the real numbers.</p>
@@ -227,7 +227,7 @@
 </div>
 
 <footer>
-  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+  <div class="wrap"><span>Atrium&nbsp;· made by Nakul&nbsp;Patel&nbsp;· MIT&nbsp;License&nbsp;·&nbsp;2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a></nav></div>
 </footer>
 
 <script>
