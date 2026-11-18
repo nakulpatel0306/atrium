@@ -205,13 +205,14 @@ section { position: relative; padding-block: var(--space-section); }
 /* Privacy: Plum inside its ring, as a fence, beside four plain promises. */
 .private { border-top: 1px solid var(--line); }
 .private-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); align-items: center; }
-.private-plum { width: min(320px, 100%); aspect-ratio: 1; margin-inline: auto; }
+.private-plum { width: min(300px, 100%); aspect-ratio: 1; margin-inline: auto; }
 .promises { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .promises li { padding: 18px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
 .promises li:last-child { border-bottom: 1px solid var(--line); }
 .promises b { font-size: 20px; font-weight: 600; letter-spacing: -0.025em; }
 .promises p { color: var(--body); font-size: 16px; }
-@media (max-width: 860px) { .private-grid { grid-template-columns: minmax(0, 1fr); } .private-plum { width: 200px; } }
+/* On one column Plum leads the text it stands for, on the same left edge. */
+@media (max-width: 860px) { .private-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; } .private-plum { width: 168px; margin-inline: -18px 0; } }
 /* Three ways in, as one line under the install. */
 .doors { max-width: 720px; margin: 22px auto 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px; font-size: 15px; color: var(--dim); list-style: none; padding: 0; }
 .doors code { font: 14px var(--mono); color: var(--text); }
@@ -479,7 +480,7 @@ section { position: relative; padding-block: var(--space-section); }
 
 <section class="private" id="private" aria-labelledby="private-h">
   <div class="wrap private-grid">
-    <div class="plum private-plum" id="private-plum" role="img" aria-label="Plum inside its ring, as the sandbox around every agent"><img class="plum-still" src="plum/checks.webp" alt="" width="320" height="320" loading="lazy"></div>
+    <div class="plum private-plum" id="private-plum" role="img" aria-label="Plum inside its ring, as the sandbox around every agent"><img class="plum-still" src="plum/checks.webp" alt="" width="300" height="300" loading="lazy"></div>
     <div>
       <div class="head">
         <span class="label">Private by design</span>
