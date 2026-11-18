@@ -1,20 +1,14 @@
 import AppKit
 
-// Renders the dashboard's logo mark as a 1024 px app icon, so the icon has one source and needs no Xcode.
+// Renders the app icon at 1024 px from a still of Plum (mac/Tools/plum.png, rendered from the site's 3D model), on
+// the dashboard's violet ground, so the icon needs no Xcode.
 let args = CommandLine.arguments
 guard args.count == 3 else {
-  FileHandle.standardError.write("Usage: icon <logo.svg> <out.png>\n".data(using: .utf8)!)
+  FileHandle.standardError.write("Usage: icon <plum.png> <out.png>\n".data(using: .utf8)!)
   exit(2)
 }
-
-// NSImage ignores the SVG's <style>, so the color the dashboard picks per theme is fixed here.
-var svg = try String(contentsOfFile: args[1], encoding: .utf8)
-svg = svg.replacingOccurrences(of: "<style>[\\s\\S]*?</style>", with: "", options: .regularExpression)
-svg = svg.replacingOccurrences(of: "fill=\"currentColor\"", with: "fill=\"#e6e6ea\"")
-// The center square is the mark's one spot of the accent, as in the dashboard and on the site.
-svg = svg.replacingOccurrences(of: "<rect x=\"8.75\"", with: "<rect fill=\"#7c7cf5\" x=\"8.75\"")
-guard let mark = NSImage(data: Data(svg.utf8)) else {
-  FileHandle.standardError.write("Couldn't read \(args[1]) as an SVG.\n".data(using: .utf8)!)
+guard let plum = NSImage(contentsOfFile: args[1]) else {
+  FileHandle.standardError.write("Couldn't read \(args[1]) as an image.\n".data(using: .utf8)!)
   exit(1)
 }
 
@@ -25,9 +19,14 @@ let rep = NSBitmapImageRep(
 rep.size = NSSize(width: size, height: size)
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-NSColor(srgbRed: 0x14 / 255, green: 0x14 / 255, blue: 0x17 / 255, alpha: 1).setFill()
-NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185).fill()
-mark.draw(in: NSRect(x: 252, y: 252, width: 520, height: 520))
+let tile = NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185)
+NSColor(srgbRed: 0x0c / 255, green: 0x0a / 255, blue: 0x14 / 255, alpha: 1).setFill()
+tile.fill()
+// The soft purple pool Plum stands in on the site, clipped to the tile.
+tile.addClip()
+let glow = NSGradient(colors: [NSColor(srgbRed: 140 / 255, green: 110 / 255, blue: 1, alpha: 0.55), NSColor(srgbRed: 140 / 255, green: 110 / 255, blue: 1, alpha: 0)])!
+glow.draw(in: NSBezierPath(ovalIn: NSRect(x: 192, y: 170, width: 640, height: 220)), relativeCenterPosition: .zero)
+plum.draw(in: NSRect(x: 242, y: 214, width: 540, height: 540))
 NSGraphicsContext.restoreGraphicsState()
 
 guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
