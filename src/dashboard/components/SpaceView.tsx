@@ -1,5 +1,5 @@
 import { asksBeforeStarting, attentionQueue } from "../../engine/needs";
-import { KIND as QUEUE_KIND, taskLabel, taskWord } from "../../engine/words";
+import { KIND as QUEUE_KIND, tagWord, taskLabel, taskWord } from "../../engine/words";
 import { CornerDownRight, GraduationCap, Lock, Play, SearchCheck, SlidersHorizontal, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
@@ -203,7 +203,7 @@ function Header({ space, spend }: { space: Space; spend: State["spend"]["spaces"
       <div className="title-row">
         <span className="sd" style={{ background: space.color }} />
         <h1>{space.name}</h1>
-        {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
+        {kindLabel(space.kind) && <span className="tag">{tagWord(kindLabel(space.kind)!)}</span>}
         {spend && (
           <span className="tag cost" title={`Weighted tokens, with an estimate at Anthropic's list prices. A subscription doesn't bill per token. This week: ${compact(spend.week.weighted)} · ${spendText(spend.week)}.`}>
             today {compact(spend.today.weighted)} · {spendText(spend.today)}
@@ -401,7 +401,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {wait && !asks ? (
             // Still queued: what holds it back is in the tooltip. Only a wait that needs you (a sign-in) is coloured.
             <span className={`tag${needsAction(wait) ? " bad" : ""}`} title={wait.reason}>
-              {taskLabel("queued")}
+              {tagWord(taskLabel("queued"))}
             </span>
           ) : (
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
@@ -409,7 +409,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
               className={`tag${stuck ? " bad" : word === "paused" || risky ? " wait" : verdict ? " good" : ""}${notDone ? " notdone" : ""}`}
               title={(review && reviewLine(review, state)?.text) || ((task.blockedReason && plainStop(task.blockedReason)) ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined)}
             >
-              {notDone ?? (asks ? QUEUE_KIND[asks].label : (verdict ?? taskLabel(word)))}
+              {tagWord(notDone ?? (asks ? QUEUE_KIND[asks].label : (verdict ?? taskLabel(word))))}
             </span>
           )}
         </button>

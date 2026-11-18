@@ -50,6 +50,10 @@ export const VERDICT_MEANS = {
   risky: "A Review with a note, a check that didn't pass or a finding left open. Read why before you approve it.",
 };
 
+// A status tag or kind chip shows its word lowercase, per the copy rules ("paused", "needs a look"); a name that is
+// capitalised all through (CLAUDE.md) keeps its case.
+export const tagWord = (label: string): string => (/^[A-Z][A-Z]/.test(label) ? label : label[0]!.toLowerCase() + label.slice(1));
+
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.
 export const taskLabel = (w: TaskWord): string => TASK_WORD[w][0]!.toUpperCase() + TASK_WORD[w].slice(1);
 

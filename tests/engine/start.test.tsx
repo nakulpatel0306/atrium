@@ -173,7 +173,7 @@ const view = async (over: Partial<Report> = {}, step = "claude" as (typeof STEPS
 
 test("Claude first, with the install command when it's missing; the extras never hold anything up", async () => {
   const ready = await view();
-  expect(ready).toContain("Claude Ready");
+  expect(ready).toContain("Claude ready");
   expect(ready).toContain("Optional, any time");
   expect(ready).toContain("Codex");
   expect(ready).toContain("GitHub CLI");

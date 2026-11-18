@@ -1,3 +1,4 @@
+import { tagWord } from "../../engine/words";
 import { pausedForYou } from "../../engine/needs";
 import { ArrowDown, Plus } from "lucide-react";
 import { ranAgent } from "../agents";
@@ -45,8 +46,8 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
           {space.name}
         </span>
         <span className="tags">
-          {space.private && <span className="tag private">Private</span>}
-          {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
+          {space.private && <span className="tag private">private</span>}
+          {kindLabel(space.kind) && <span className="tag">{tagWord(kindLabel(space.kind)!)}</span>}
         </span>
       </div>
       {/* Home lists what waits on you just above, so a card doesn't say it a second time. */}

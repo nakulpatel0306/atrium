@@ -210,9 +210,9 @@ test("a result's stepper ends on its verdict, and a list's icon warns when it Ne
 
 test("the queue lists a result by its verdict, the word Home and its space use", () => {
   const el = render(<NeedsPage state={queueState()} />);
-  expect(el.querySelector("#q-apr_c .q-kind")!.textContent).toBe("Needs a look");
-  expect(el.querySelector("#q-apr_a .q-kind")!.textContent).toBe("Clean");
-  expect(el.querySelector("#q-tsk_p .q-kind")!.textContent).toBe("Paused");
+  expect(el.querySelector("#q-apr_c .q-kind")!.textContent).toBe("needs a look");
+  expect(el.querySelector("#q-apr_a .q-kind")!.textContent).toBe("clean");
+  expect(el.querySelector("#q-tsk_p .q-kind")!.textContent).toBe("paused");
 });
 
 test("Home's result rows carry one status chip and the cost, and say what's going on in one line", () => {
@@ -221,12 +221,12 @@ test("Home's result rows carry one status chip and the cost, and say what's goin
   const el = render(<NeedsList state={s} />);
   const row = (title: string) => [...el.querySelectorAll(".summary-row")].find((r) => r.querySelector(".t")!.textContent!.startsWith(title))!;
   const noted = row("Review tsk_c");
-  expect([...noted.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["Needs a look"]);
+  expect([...noted.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["needs a look"]);
   // The rest is in the chip's tooltip and on the item's screen.
   expect(noted.querySelector(".chip")!.getAttribute("title")).toContain("bunfig.toml");
   expect(noted.querySelector(".t span")!.textContent).toBe("Approved by Claude · Checks passed");
   const clean = row("Review tsk_a");
-  expect([...clean.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["Clean"]);
+  expect([...clean.querySelectorAll(".chip")].map((c) => c.textContent)).toEqual(["clean"]);
   expect(clean.querySelector(".tag.cost")!.textContent).toBe("~$0.04");
 });
 

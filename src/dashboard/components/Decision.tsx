@@ -6,7 +6,7 @@ import { showToast } from "../toast";
 import { isRisky, shownSha } from "../queue";
 import { HELD_ASKS } from "../../engine/needs";
 import { answeredText, attentionText, reviewChips } from "../summary";
-import { RISKY } from "../../engine/words";
+import { RISKY, tagWord } from "../../engine/words";
 import { approveLabel } from "./OutcomeBanner";
 
 type Approval = State["approvals"][number];
@@ -174,14 +174,14 @@ export function Chips({ chips, attention = null }: { chips: NonNullable<ReturnTy
       {attention && (
         <span className="chip waiting" title={attention} aria-label={attention}>
           <TriangleAlert />
-          {RISKY}
+          {tagWord(RISKY)}
         </span>
       )}
-      <span className={`chip${chips.checks.tone ? ` ${chips.checks.tone}` : ""}`}>{chips.checks.text}</span>
+      <span className={`chip${chips.checks.tone ? ` ${chips.checks.tone}` : ""}`}>{tagWord(chips.checks.text)}</span>
       {chips.review && (
         <span className={`chip${chips.review.tone ? ` ${chips.review.tone}` : ""}`}>
           <SearchCheck />
-          {chips.review.text}
+          {tagWord(chips.review.text)}
         </span>
       )}
     </span>

@@ -53,7 +53,7 @@ test("an item's screen says in plain words what its kind means, so Sign-off and 
   const state = makeState();
   state.approvals.push({ ...state.approvals[0]!, id: "apr_q", taskId: null, kind: "question", title: "Publish the changelog?", detail: "" });
   const el = render(<NeedsPage state={state} item="apr_q" />);
-  expect(el.querySelector(".dp-head .q-kind")!.textContent).toBe("Sign-off");
+  expect(el.querySelector(".dp-head .q-kind")!.textContent).toBe("sign-off");
   expect(el.querySelector(".dp-means")!.textContent).toBe(KIND.approval.means);
 });
 

@@ -1,3 +1,4 @@
+import { tagWord } from "../../engine/words";
 import { Check, CircleCheck, CircleDashed, CircleX, Copy, Play } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { Check as Probe, Report } from "../../engine/doctor";
@@ -48,7 +49,7 @@ function CheckRow({ check }: { check: Probe }) {
         <Icon className={check.state === "ready" ? "ok" : check.required ? "bad" : "faint"} />
         <b>{check.label}</b>
         <span className={`tag${check.state === "ready" ? " ok" : ""}`}>
-          {STATE_TEXT[check.state]}
+          {tagWord(STATE_TEXT[check.state])}
           {check.state === "ready" && check.version ? ` · ${check.version}` : ""}
         </span>
       </div>
@@ -78,7 +79,7 @@ function Optional({ checks }: { checks: Probe[] }) {
           <span>
             <b>{c.label}</b> <span className="hint">· {adds[c.id] ?? "optional"}</span>
           </span>
-          {c.state === "ready" ? <span className="tag ok">Ready</span> : <Command text={c.state === "not_installed" ? c.install : c.signIn} />}
+          {c.state === "ready" ? <span className="tag ok">ready</span> : <Command text={c.state === "not_installed" ? c.install : c.signIn} />}
         </li>
       ))}
     </ul>

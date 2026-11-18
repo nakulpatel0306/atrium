@@ -76,7 +76,7 @@ test("the space header names its kind in plain words and the task meta says when
   const s = makeState();
   const space = s.spaces.find((x) => x.id === ids.atrium)!;
   const t = text(renderToStaticMarkup(<SpaceView state={s} space={{ ...space, kind: "repo" }} focusTask={ids.review} />));
-  expect(t).toContain("Code");
+  expect(t).toContain("code");
   expect(t).toContain("Runs when your Mac is plugged in");
   expect(kindLabel("general")).toBeNull();
   expect(kindLabel("repo")).toBe("Code");

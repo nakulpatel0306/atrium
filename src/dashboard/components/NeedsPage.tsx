@@ -8,7 +8,7 @@ import { showToast, undoLatest } from "../toast";
 import { ACT, DECISION_KEYS, KEY_HELP, moveFocus, needsKey, NOTHING_HERE, SHEET_OPEN } from "../needs-keys";
 import { isShown } from "../page-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLabel, itemLine, itemTitle, type QueueItem, waited } from "../queue";
-import { KIND, VERDICT_MEANS } from "../../engine/words";
+import { KIND, tagWord, VERDICT_MEANS } from "../../engine/words";
 import { navigate } from "../route";
 import { ARM_MS, armLabel, reopen } from "./Decision";
 import { KeysSheet } from "./KeysSheet";
@@ -49,7 +49,7 @@ function QueueRow({ item, state, selected, onSelect }: { item: QueueItem; state:
     >
       <span className="q-title">{title}</span>
       <span className="q-line">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{itemLabel(state, item)}</span> {line}
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{tagWord(itemLabel(state, item))}</span> {line}
       </span>
       <span className="q-meta">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -176,7 +176,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   return (
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{itemLabel(state, item)}</span>
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{tagWord(itemLabel(state, item))}</span>
         <h3 id="dp-title">{itemTitle(state, item)}</h3>
         {/* What this kind of item is, in a sentence, so a first-time reader never has to guess at "Sign-off". A pause
             says why it paused in its own words below, which says more. */}

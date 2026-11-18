@@ -1,3 +1,4 @@
+import { tagWord } from "../../engine/words";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type State, useEngineState } from "../api";
@@ -24,7 +25,7 @@ function Row({ space, onDelete }: { space: Space; onDelete(): void }) {
           <b>{space.name}</b>
           <span>{space.goal}</span>
         </span>
-        {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
+        {kindLabel(space.kind) && <span className="tag">{tagWord(kindLabel(space.kind)!)}</span>}
         <span className="faint" title={absolute(space.updatedAt)}>
           Archived {relative(space.updatedAt)}
         </span>
