@@ -21,34 +21,35 @@ body { font-family: var(--mono); font-size: 16px; background-image: linear-gradi
 .btn { border-radius: 10px; font-family: var(--mono); font-size: 15px; }
 .theme, .theme button { border-radius: 8px; }
 .word { font-family: var(--mono); }
-section { position: relative; padding-block: clamp(72px, 10vw, 128px); }
+section { position: relative; padding-block: clamp(64px, 8vw, 96px); }
 .head { display: flex; flex-direction: column; gap: 16px; margin-bottom: clamp(36px, 5vw, 64px); max-width: 780px; }
 h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-height: 1.08; }
 .lede { font-size: 16px; line-height: 1.7; }
 
 .hero { padding-block: clamp(48px, 7vw, 88px) clamp(56px, 8vw, 96px); }
-.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 24px; align-items: end; }
+.hero code, .lede code { color: var(--accent); }
 .hero h1 { font-size: clamp(38px, 6vw, 72px); letter-spacing: -0.045em; line-height: 1.06; }
 .hero h1 .cur { display: inline-block; width: 0.55em; height: 0.09em; background: currentColor; vertical-align: baseline; animation: caret 1s steps(1) infinite; }
 .hero .lede { margin-top: 22px; max-width: 62ch; }
 .hero .ctas { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
-.term-plum { width: 200px; aspect-ratio: 1; justify-self: end; }
-.term-plum::before { content: ""; position: absolute; left: -30%; right: -30%; bottom: 0; height: 45%; border-radius: 50%; background: radial-gradient(closest-side, var(--glow), transparent); z-index: -1; }
+.stage { position: relative; margin-top: clamp(72px, 9vw, 112px); scroll-margin-top: 96px; }
+/* Plum perches on the window's top edge, so each pose change happens next to the screen that caused it. */
+.term-plum { position: absolute; right: clamp(12px, 4vw, 48px); top: -118px; width: 150px; aspect-ratio: 1; z-index: 2; }
 @keyframes caret { 50% { opacity: 0; } }
-@media (max-width: 760px) { .hero-grid { grid-template-columns: minmax(0, 1fr); } .term-plum { width: 120px; justify-self: start; order: -1; } }
+@media (max-width: 760px) { .term-plum { width: 96px; top: -80px; } .stage { margin-top: 88px; } }
 
 /* The window: always a dark terminal, as the app is drawn on one, in the app's own colours. */
-.window { width: fit-content; max-width: 100%; margin: clamp(40px, 6vw, 64px) auto 0; border: 1px solid var(--line-strong); border-radius: 12px; background: #0c0a14; overflow: hidden; box-shadow: 0 40px 100px -50px var(--glow); }
+.window { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; border: 1px solid var(--line-strong); border-radius: 12px; background: #0c0a14; overflow: hidden; box-shadow: 0 40px 100px -50px var(--glow); }
 .window .chrome { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #241d33; background: #120f1b; }
 .window .chrome i { width: 11px; height: 11px; border-radius: 50%; background: #31284a; }
 .window .chrome span { margin-left: 8px; font-size: 12px; color: #8a80a8; }
-.screens { display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid #241d33; background: #120f1b; overflow-x: auto; scrollbar-width: none; }
+.screens { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px; border-bottom: 1px solid #241d33; background: #120f1b; }
 .screens button { flex: none; font: 500 13px var(--mono); color: #9c92b8; background: none; border: 1px solid transparent; border-radius: 7px; padding: 6px 12px; cursor: pointer; }
 .screens button:hover { color: #f4f1ff; }
 .screens button[aria-selected="true"] { color: #f4f1ff; border-color: #31284a; background: #1e1829; }
 .screens button kbd { color: #9b84ff; margin-right: 6px; font: inherit; }
 .screens button:focus-visible { outline: 2px solid #9b84ff; outline-offset: 1px; }
-.tty { margin: 0; padding: 14px 16px; overflow-x: auto; color: #f4f1ff; font: clamp(9px, 1.2vw, 15px)/1.4 var(--mono); font-variant-ligatures: none; scrollbar-width: thin; scrollbar-color: #31284a transparent; }
+.tty { margin: 0; padding: 14px 16px; overflow-x: auto; color: #f4f1ff; font: clamp(9px, 1.2vw, 15px)/1.28 var(--mono); font-variant-ligatures: none; scrollbar-width: thin; scrollbar-color: #31284a transparent; }
 .tty[hidden] { display: none; }
 .tty .bo { font-weight: 600; } .tty .it { font-style: italic; } .tty .dm { opacity: 0.6; }
 .tty .f-dim { color: #9c92b8; } .tty .f-faint { color: #8a80a8; } .tty .f-ln { color: #31284a; } .tty .f-ac { color: #9b84ff; }
@@ -57,7 +58,8 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .tty .b-ac { background: #9b84ff; } .tty .b-soft { background: #2a2140; } .tty .b-key { background: #241d33; }
 .tty .inv { filter: invert(1); }
 .caption { margin: 14px auto 0; font-size: 14px; color: var(--dim); text-align: center; max-width: 70ch; }
-@media (max-width: 760px) { .tty { font-size: 10.5px; } }
+/* On a phone the whole 100-column screen fits the width, small, rather than being cut off mid-word. */
+@media (max-width: 760px) { .window { width: 100%; container-type: inline-size; } .tty { font-size: calc((100cqi - 20px) / 60.5); padding: 10px; overflow-x: hidden; } }
 
 /* Keys */
 .keys { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
@@ -73,7 +75,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .block { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
 .block .top { display: flex; justify-content: space-between; align-items: center; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--faint); }
 .block .top .btn { height: 32px; padding: 0 14px; font-size: 13px; }
-.block pre { margin: 0; padding: 16px; font: 14px/1.9 var(--mono); color: var(--text); overflow-x: auto; }
+.block pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; font: 14px/1.9 var(--mono); color: var(--text); overflow-x: auto; }
 .block .p { color: var(--accent); user-select: none; } .block .c { color: var(--faint); }
 .flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .flags li { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); font-size: 15px; }
@@ -109,20 +111,19 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 <main id="main">
 <section class="hero" aria-labelledby="hero-h">
   <div class="wrap">
-    <div class="hero-grid">
-      <div>
+    <div>
         <span class="label">atrium · the terminal app</span>
         <h1 class="display" id="hero-h" style="margin-top: 18px">&gt; direct the agents<span class="cur" aria-hidden="true"></span><br><span class="em">keep the judgment.</span></h1>
         <p class="lede">Type <code>atrium</code> in Ghostty, iTerm or Terminal. The same queue, the same decisions and the same live state as the Mac app, with every key on screen.</p>
         <div class="ctas"><a class="btn primary" href="#run">Run it</a><a class="btn" href="index.html">The Mac app</a></div>
-      </div>
-      <div class="plum term-plum" id="term-plum" role="img" aria-label="Plum, looking at what needs you"><img class="plum-still" src="plum/look.webp" alt="" width="200" height="200"></div>
     </div>
 
+    <div class="stage" id="screens">
+    <div class="plum term-plum" id="term-plum" role="img" aria-label="Plum, reacting to the screen you picked"><img class="plum-still" src="plum/look.webp" alt="" width="150" height="150"></div>
     <div class="window">
       <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>atrium · 100×30</span></div>
       <div class="screens" role="tablist" aria-label="Screens of the terminal app">
-        <button type="button" role="tab" id="s-needs" aria-controls="p-needs" aria-selected="true" data-pose="look"><kbd>1</kbd>Needs you</button>
+        <button type="button" role="tab" id="s-needs" aria-controls="p-needs" aria-selected="true" data-pose="look"><kbd>1</kbd>Home</button>
         <button type="button" role="tab" id="s-keys" aria-controls="p-keys" aria-selected="false" tabindex="-1" data-pose="ready"><kbd>?</kbd>Keys</button>
         <button type="button" role="tab" id="s-ask" aria-controls="p-ask" aria-selected="false" tabindex="-1" data-pose="brief"><kbd>space</kbd>Ask</button>
         <button type="button" role="tab" id="s-spaces" aria-controls="p-spaces" aria-selected="false" tabindex="-1" data-pose="work"><kbd>2</kbd>Spaces</button>
@@ -248,7 +249,8 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 <span class="f-ln">╰──────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
  <span class="f-onk b-key bo"> ↑↓ </span><span class="f-dim"> move</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> tasks</span>  <span class="f-onk b-key bo"> n </span><span class="f-dim"> new task</span>  <span class="f-onk b-key bo"> N </span><span class="f-dim"> new space</span>  <span class="f-onk b-key bo"> e </span><span class="f-dim"> goal</span>  <span class="f-onk b-key bo"> X </span><span class="f-dim"> archive</span>  <span class="f-onk b-key bo"> D </span><span class="f-dim"> delete</span>  <span class="f-onk b-key bo"> ? </span><span class="f-dim"> help</span></pre>
     </div>
-    <p class="caption">The real terminal app, captured from a test engine with made-up spaces. Truecolor terminals get these colours; others get your terminal's own sixteen.</p>
+    </div>
+    <p class="caption">The real terminal app, captured from a test engine with made-up spaces. With a screen focused, its keys switch screens too. Truecolor terminals get these colours; others get your terminal's own sixteen.</p>
   </div>
 </section>
 
@@ -283,7 +285,8 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
     <div class="run-grid">
       <div class="block">
         <div class="top"><span>zsh</span><button class="btn small" id="copy" type="button">Copy</button></div>
-        <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git &amp;&amp; cd atrium
+        <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git
+<span class="p">$ </span>cd atrium
 <span class="p">$ </span>bun install &amp;&amp; bun link   <span class="c"># puts atrium on your PATH</span>
 <span class="p">$ </span>atrium install           <span class="c"># starts Atrium now and at login</span>
 <span class="p">$ </span>atrium</pre>
@@ -312,9 +315,10 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
       <li><kbd>y n N</kbd><span>Yes, not now or never to a suggestion; add a line to CLAUDE.md.</span></li>
       <li><kbd>/</kbd><span>Filter the list you're on.</span></li>
       <li><kbd>u</kbd><span>Agents and usage: Claude's five-hour window and what the agents cost.</span></li>
-      <li><kbd>A</kbd><span>Change which agent takes a task.</span></li>
+      <li><kbd>A</kbd><span>In Spaces, on a task: change which agent takes it.</span></li>
       <li><kbd>o</kbd><span>Overnight mode: keeps the Mac awake while work is queued.</span></li>
     </ul>
+    <div class="ctas" style="margin-top: 40px; display: flex; gap: 12px; flex-wrap: wrap"><a class="btn primary" href="#run">Install it</a><a class="btn" href="https://github.com/nakulpatel0306/atrium">Read the code</a></div>
   </div>
 </section>
 </main>
