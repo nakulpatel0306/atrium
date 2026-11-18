@@ -21,12 +21,19 @@
 <div class="bar" id="bar">
   <div class="wrap">
     <a class="word" href="index.html">atrium</a>
-    <nav aria-label="Main"><ul>
+    <nav aria-label="Main" class="main-nav"><ul>
       <li><a href="index.html#loop">How it works</a></li>
       <li><a href="terminal.html">Terminal</a></li>
       <li><a href="notes.html" aria-current="page">Notes</a></li>
       <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
-    </ul></nav>
+    </ul>
+    <details class="menu"><summary>Menu</summary><ul>
+        <li><a href="index.html#loop">How it works</a></li>
+        <li><a href="terminal.html">Terminal</a></li>
+        <li><a href="notes.html" aria-current="page">Notes</a></li>
+        <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
+      <li class="get"><a href="index.html#start">Get Atrium</a></li>
+    </ul></details></nav>
     <div class="theme" role="radiogroup" aria-label="Theme" data-theme-switch><button type="button" role="radio" aria-checked="false" data-theme-set="system" aria-label="Match your Mac" title="Match your Mac"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="light" aria-label="Light" title="Light"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="dark" aria-label="Dark" title="Dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button></div>
     <a class="btn small primary" href="index.html#start">Get Atrium</a>
   </div>
@@ -270,5 +277,6 @@ return stoppedByStop.has(taskId) ? "stopped" : "finished";</code></pre>
 })();
 </script>
 <script type="module" src="theme.js"></script>
+<script type="module" src="bar.js"></script>
 </body>
 </html>
