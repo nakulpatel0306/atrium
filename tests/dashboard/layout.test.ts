@@ -97,3 +97,8 @@ test("a short window gives the queue's height to the decision, so its buttons ar
 test("a failure line in Activity and History wraps rather than cutting off what went wrong", () => {
   expect(css).toMatch(/\n\.feed \.tone-failure \.msg \{[^}]*white-space: normal;/);
 });
+
+test("on a phone every Home row wraps the same way: status and cost on one line, the button on the next", () => {
+  const phone = css.slice(css.indexOf("Always two lines under the reason"));
+  expect(phone).toMatch(/^[^}]*\.needs-list \.summary-row > \.acts \{\s*flex: 1 1 100%;/);
+});

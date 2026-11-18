@@ -4825,8 +4825,11 @@ kbd {
   .summary-row > .t {
     flex: 1 1 100%;
   }
+  /* Always two lines under the reason, whatever fits: the status and cost, then the button at the right. */
   .needs-list .summary-row > .acts {
-    margin: 0 0 0 auto;
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    margin: 0;
   }
   .summary-row > .acts .btn {
     width: auto;
