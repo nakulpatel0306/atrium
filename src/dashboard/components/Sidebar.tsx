@@ -6,8 +6,8 @@ import { bytes } from "../format";
 import { navigate, type Route } from "../route";
 import { WindowBar } from "./Agents";
 import { showArchived } from "./ArchivedSpaces";
-import { Logo } from "./Logo";
 import { needsCount, waitingIn } from "./NeedsYou";
+import { PlumStatus } from "./PlumStatus";
 
 type Props = {
   state: State;
@@ -68,8 +68,7 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
         {expanded ? <PanelLeftClose /> : <PanelLeftOpen />}
       </button>
       <div className="ws">
-        <Logo />
-        <span className="label">Atrium</span>
+        <span className="label">atrium</span>
       </div>
       <NavLink className={`nav${route.name === "home" ? " on" : ""}`} title="Home" href="/">
         <House />
@@ -135,6 +134,7 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
       )}
 
       <div className="foot">
+        <PlumStatus state={state} />
         <NavLink className={`nav${route.name === "settings" ? " on" : ""}`} title="Settings" href="/settings">
           <Settings />
           <span className="label">Settings</span>
