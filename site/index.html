@@ -138,11 +138,17 @@ section { position: relative; padding-block: var(--space-section); }
 /* Try it */
 .try { border-top: 1px solid var(--line); }
 .try .head { max-width: 760px; }
-#try { position: relative; }
 #mac { scroll-margin-bottom: 16px; }
-/* Plum perches on the demo's window, so its reactions happen where you click. */
-.try-plum { position: absolute; right: 32px; top: -84px; width: 120px; aspect-ratio: 1; z-index: 2; }
-@media (max-width: 760px) { .try-plum { width: 84px; top: -60px; right: 12px; } }
+/* Plum stands on the demo window's top edge, so its reactions happen where you click. The still's body ends a fifth
+   of the way up its box, which is how far the box hangs over the edge. */
+.perch { position: relative; }
+.try-plum { position: absolute; right: clamp(16px, 4vw, 48px); bottom: calc(100% - 24px); width: 120px; aspect-ratio: 1; z-index: 2; }
+@media (max-width: 760px) {
+  .try-plum { width: 84px; bottom: calc(100% - 17px); right: 12px; }
+  /* The note moves left and wraps short of Plum. */
+  .try .try-note { justify-content: flex-start; padding-right: 108px; align-items: flex-start; }
+  .try .try-note .pulse { margin-top: 5px; }
+}
 
 /* Evidence: one typographic band. Each finding reads as a sentence, its number set large, and the choice it led to. */
 .why { border-top: 1px solid var(--line); }
@@ -366,8 +372,9 @@ section { position: relative; padding-block: var(--space-section); }
       <p class="lede">A working copy of the Mac app. Open a space, approve a result, send one back, or type a new task in the ask bar.</p>
     </div>
     <div id="try">
-      <div class="plum try-plum" id="try-plum" role="img" aria-label="Plum, reacting to the demo"><img class="plum-still" src="plum/quiet.webp" alt="" width="120" height="120" loading="lazy"></div>
       <div class="try-note"><span class="pulse"></span> Click around. Nothing here is saved.</div>
+      <div class="perch">
+      <div class="plum try-plum" id="try-plum" role="img" aria-label="Plum, reacting to the demo"><img class="plum-still" src="plum/quiet.webp" alt="" width="120" height="120" loading="lazy"></div>
       <div class="mac" id="mac">
         <aside class="m-side" aria-label="Atrium sidebar">
           <div class="m-lights" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -393,6 +400,7 @@ section { position: relative; padding-block: var(--space-section); }
           </div>
           <div class="m-toast" id="m-toast" role="status" aria-live="polite"></div>
         </div>
+      </div>
       </div>
     </div>
   </div>
