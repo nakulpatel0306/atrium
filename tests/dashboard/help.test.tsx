@@ -17,7 +17,7 @@ let root: Root | null = null;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   globalThis.fetch = (async (url: string) => {
-    if (url.endsWith("/api/profile")) return Response.json({ name: null, suggestedName: null, projectsRoot: "/Users/sam/Projects" });
+    if (url.endsWith("/api/profile")) return Response.json({ name: null, suggestedName: null, projectsRoot: "~/Projects" });
     if (url.endsWith("/checks")) return Response.json([]);
     // Anything else (storage, archived spaces) stays loading: these tests read only what's above it.
     return new Promise<Response>(() => {});
