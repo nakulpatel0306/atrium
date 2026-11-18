@@ -192,7 +192,8 @@ aside {
   width: 32px;
   height: 32px;
   flex: none;
-  background: url("./assets/plum/quiet.webp") center / contain no-repeat;
+  /* 256px, so the 96px big one stays sharp at 2x. */
+  background: url("./assets/plum/quiet-256.webp") center / contain no-repeat;
 }
 .logo.big {
   width: 96px;
@@ -219,7 +220,17 @@ aside {
   background-image: url("./assets/plum/work.webp");
 }
 .plum-status[data-pose="look"] .plum-pic {
+  position: relative;
   background-image: url("./assets/plum/look.webp");
+}
+/* The still's own "!" is a few pixels at sidebar size, so the look pose gets a legible one beside it. */
+.plum-status[data-pose="look"] .plum-pic::after {
+  content: "!";
+  position: absolute;
+  top: -4px;
+  right: 2px;
+  font: 700 18px/1 var(--sans);
+  color: var(--accent);
 }
 .plum-dot {
   display: inline-block;
