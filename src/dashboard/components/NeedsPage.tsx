@@ -327,23 +327,31 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
   }, [current?.key]);
 
   // Live values for the key handler, which is attached once.
-  const live = useRef({ items, current, opened, armed, help, clean: 0 });
-  live.current = { items, current, opened, armed, help, clean: cleanReviews(state, items).length };
+  const live = useRef({ items, current, opened, armed, help, batch, clean: 0 });
+  live.current = { items, current, opened, armed, help, batch, clean: cleanReviews(state, items).length };
+  // Back to the list: the item closes, and the address stops naming it, so a reload lands on the list.
+  const leave = () => {
+    setOpened(false);
+    history.replaceState(null, "", "/needs-you");
+    document.querySelector<HTMLElement>(".q-list")?.focus();
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = needsKey(e);
       if (!key) return;
-      const { items, current, opened, armed } = live.current;
+      const { items, current, armed } = live.current;
       const i = current ? items.indexOf(current) : -1;
       if (key === "help") return setHelp((h) => !h);
       if (key === "close") {
-        // The live region still holds "Press a again"; it says the arm is off now.
-        if (armed) announce("Cancelled. Approve takes two presses again.");
-        setArmed(null);
-        setHelp(false);
-        setBatch(false);
-        if (opened) setOpened(false);
-        document.querySelector<HTMLElement>(".q-list")?.focus();
+        // One Escape closes one thing, the topmost: the keys sheet, then the batch sheet, then a first a, then the item.
+        if (live.current.help) return setHelp(false);
+        if (live.current.batch) return setBatch(false);
+        if (armed) {
+          // The live region still holds "Press a again"; it says the arm is off now.
+          announce("Cancelled. Approve takes two presses again.");
+          return setArmed(null);
+        }
+        leave();
         return;
       }
       // A sheet over the page may cover the button a key would press; it's closed first.
@@ -431,7 +439,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
           />
           <div className="q-panel" ref={panel}>
             <h2 className="sr-only">The open item</h2>
-            <button className="btn link q-back" onClick={() => setOpened(false)}>
+            <button className="btn link q-back" onClick={leave}>
               <ChevronLeft />
               All items
             </button>

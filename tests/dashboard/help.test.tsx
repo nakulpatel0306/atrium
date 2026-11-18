@@ -153,3 +153,18 @@ test("a result's screen explains its own verdict, so one that Needs a look isn't
   // Prose under a title carries no key letters; those live in the Keys sheet.
   for (const m of Object.values(VERDICT_MEANS)) expect(m).not.toMatch(/\b[as]\b (approves|takes|sends)|press/);
 });
+
+test("Escape closes the keys sheet alone; the next Escape leaves the item and drops it from the address", async () => {
+  const press = async (key: string) => act(async () => void window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })));
+  const el = render(<NeedsPage state={makeState()} item={ids.approval} />);
+  expect(location.search).toBe(`?item=${ids.approval}`);
+  await press("?");
+  expect(el.querySelector(".keys-sheet")).not.toBeNull();
+  await press("Escape");
+  expect(el.querySelector(".keys-sheet")).toBeNull();
+  expect(el.querySelector(".queue")!.className).toContain("opened");
+  expect(location.search).toBe(`?item=${ids.approval}`);
+  await press("Escape");
+  expect(el.querySelector(".queue")!.className).not.toContain("opened");
+  expect(location.search).toBe("");
+});
