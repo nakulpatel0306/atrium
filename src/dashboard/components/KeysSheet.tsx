@@ -41,11 +41,15 @@ export function KeysSheet({ keys, kinds = false, note, floating = false, onClose
             {/* A Review is listed by its verdict, so both words are explained here too. */}
             <div>
               <dt>{CLEAN}</dt>
-              <dd>{VERDICT_MEANS.clean}</dd>
+              <dd>
+                {VERDICT_MEANS.clean} <kbd>a</kbd> approves it.
+              </dd>
             </div>
             <div>
               <dt>{RISKY}</dt>
-              <dd>{VERDICT_MEANS.risky}</dd>
+              <dd>
+                {VERDICT_MEANS.risky} <kbd>a</kbd> takes two presses.
+              </dd>
             </div>
           </dl>
           </details>

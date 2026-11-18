@@ -147,4 +147,9 @@ test("a result's screen explains its own verdict, so one that Needs a look isn't
   state.tasks = state.tasks.map((t) => (t.id === ids.review ? { ...t, outcome: "done", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", checks: "failed" } } : t));
   const el = render(<NeedsPage state={state} item={ids.approval} />);
   expect(el.querySelector(".dp-means")!.textContent).toBe(VERDICT_MEANS.risky);
+  // The kind chip's hover says the same, in the panel and on the item's row.
+  expect(el.querySelector(".dp-head .q-kind")!.getAttribute("title")).toBe(VERDICT_MEANS.risky);
+  expect(el.querySelector(`#q-${ids.approval} .q-kind`)!.getAttribute("title")).toBe(VERDICT_MEANS.risky);
+  // Prose under a title carries no key letters; those live in the Keys sheet.
+  for (const m of Object.values(VERDICT_MEANS)) expect(m).not.toMatch(/\b[as]\b (approves|takes|sends)|press/);
 });

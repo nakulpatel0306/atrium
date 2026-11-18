@@ -46,8 +46,8 @@ export const CLEAN = "Clean";
 // What each verdict means, said wherever a Review is explained, so a result that Needs a look is never described as
 // simply waiting for a yes.
 export const VERDICT_MEANS = {
-  clean: "A Review whose checks passed and whose reviewer approved, with nothing left open. One a approves it.",
-  risky: "A Review with a note, a check that didn't pass or a finding left open. Read why first; a takes two presses.",
+  clean: "A Review whose checks passed and whose reviewer approved, with nothing left open.",
+  risky: "A Review with a note, a check that didn't pass or a finding left open. Read why before you approve it.",
 };
 
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.

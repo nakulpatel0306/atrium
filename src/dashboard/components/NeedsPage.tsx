@@ -49,7 +49,7 @@ function QueueRow({ item, state, selected, onSelect }: { item: QueueItem; state:
     >
       <span className="q-title">{title}</span>
       <span className="q-line">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={KIND[item.kind].means}>{itemLabel(state, item)}</span> {line}
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{itemLabel(state, item)}</span> {line}
       </span>
       <span className="q-meta">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -106,6 +106,9 @@ function riskyItem(state: State, item: QueueItem): boolean {
   const a = item.kind === "review" ? state.approvals.find((x) => x.id === item.key) : undefined;
   return !!a && isRisky(state, a);
 }
+
+// What an item is, in a sentence: a result by its own verdict, anything else by its kind.
+const meansOf = (state: State, item: QueueItem): string => (item.kind === "review" ? VERDICT_MEANS[riskyItem(state, item) ? "risky" : "clean"] : KIND[item.kind].means);
 
 // A yes held before it starts: what happens when, and the one step left, taking it back.
 function Starting({ id, line }: { id: string; line: string }) {
@@ -173,11 +176,11 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   return (
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={KIND[item.kind].means}>{itemLabel(state, item)}</span>
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{itemLabel(state, item)}</span>
         <h3 id="dp-title">{itemTitle(state, item)}</h3>
         {/* What this kind of item is, in a sentence, so a first-time reader never has to guess at "Sign-off". A pause
             says why it paused in its own words below, which says more. */}
-        {item.kind !== "paused" && <p className="dp-means">{item.kind === "review" ? VERDICT_MEANS[riskyItem(state, item) ? "risky" : "clean"] : KIND[item.kind].means}</p>}
+        {item.kind !== "paused" && <p className="dp-means">{meansOf(state, item)}</p>}
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
           {space?.name ?? "Atrium"}
