@@ -28,6 +28,8 @@ tabs.forEach((t, i) => {
 
 document.querySelector(".window").addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Space and Enter on a focused tab press that tab, as on any button.
+  if ((e.key === " " || e.key === "Enter") && e.target.closest("[role=tab]")) return;
   const tab = tabs.find((t) => t.querySelector("kbd").textContent === (e.key === " " ? "space" : e.key));
   if (!tab) return;
   e.preventDefault();

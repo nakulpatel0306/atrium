@@ -28,10 +28,12 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 
 .hero { padding-block: clamp(48px, 7vw, 88px) clamp(56px, 8vw, 96px); }
 .hero code, .lede code { color: var(--accent); }
-.hero h1 { font-size: clamp(38px, 6vw, 72px); letter-spacing: -0.045em; line-height: 1.06; }
+.hero h1 { margin-top: 18px; font-size: clamp(38px, 6vw, 72px); letter-spacing: -0.045em; line-height: 1.06; }
 .hero h1 .cur { display: inline-block; width: 0.55em; height: 0.09em; background: currentColor; vertical-align: baseline; animation: caret 1s steps(1) infinite; }
 .hero .lede { margin-top: 22px; max-width: 62ch; }
-.hero .ctas { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+.ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+.hero .ctas { margin-top: 28px; }
+.ctas.end { margin-top: 40px; }
 .stage { position: relative; margin-top: clamp(72px, 9vw, 112px); scroll-margin-top: 96px; }
 /* Plum perches on the window's top edge, so each pose change happens next to the screen that caused it. */
 .term-plum { position: absolute; right: clamp(12px, 4vw, 48px); top: -118px; width: 150px; aspect-ratio: 1; z-index: 2; }
@@ -49,7 +51,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .screens button[aria-selected="true"] { color: #f4f1ff; border-color: #31284a; background: #1e1829; }
 .screens button kbd { color: #9b84ff; margin-right: 6px; font: inherit; }
 .screens button:focus-visible { outline: 2px solid #9b84ff; outline-offset: 1px; }
-.tty { margin: 0; padding: 14px 16px; overflow-x: auto; color: #f4f1ff; font: clamp(9px, 1.2vw, 15px)/1.28 var(--mono); font-variant-ligatures: none; scrollbar-width: thin; scrollbar-color: #31284a transparent; }
+.tty { margin: 0; padding: 14px 16px; overflow-x: auto; color: #f4f1ff; font: clamp(9px, 1.04vw, 14px)/1.28 var(--mono); font-variant-ligatures: none; scrollbar-width: thin; scrollbar-color: #31284a transparent; }
 .tty[hidden] { display: none; }
 .tty .bo { font-weight: 600; } .tty .it { font-style: italic; } .tty .dm { opacity: 0.6; }
 .tty .f-dim { color: #9c92b8; } .tty .f-faint { color: #8a80a8; } .tty .f-ln { color: #31284a; } .tty .f-ac { color: #9b84ff; }
@@ -58,8 +60,9 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .tty .b-ac { background: #9b84ff; } .tty .b-soft { background: #2a2140; } .tty .b-key { background: #241d33; }
 .tty .inv { filter: invert(1); }
 .caption { margin: 14px auto 0; font-size: 14px; color: var(--dim); text-align: center; max-width: 70ch; }
-/* On a phone the whole 100-column screen fits the width, small, rather than being cut off mid-word. */
-@media (max-width: 760px) { .window { width: 100%; container-type: inline-size; } .tty { font-size: calc((100cqi - 20px) / 60.5); padding: 10px; overflow-x: hidden; } }
+/* On a phone the screen keeps a readable size and scrolls sideways inside its window. */
+.swipe { display: none; }
+@media (max-width: 760px) { .window { width: 100%; } .tty { font-size: 10px; padding: 10px; } .swipe { display: block; padding: 8px 12px 0; font-size: 12px; color: #8a80a8; } }
 
 /* Keys */
 .keys { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
@@ -75,7 +78,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .block { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
 .block .top { display: flex; justify-content: space-between; align-items: center; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--faint); }
 .block .top .btn { height: 32px; padding: 0 14px; font-size: 13px; }
-.block pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; font: 14px/1.9 var(--mono); color: var(--text); overflow-x: auto; }
+.block pre { margin: 0; padding: 16px; font: 14px/1.9 var(--mono); color: var(--text); overflow-x: auto; }
 .block .p { color: var(--accent); user-select: none; } .block .c { color: var(--faint); }
 .flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .flags li { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); font-size: 15px; }
@@ -120,7 +123,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
   <div class="wrap">
     <div>
         <span class="label">atrium · the terminal app</span>
-        <h1 class="display" id="hero-h" style="margin-top: 18px">&gt; direct the agents<span class="cur" aria-hidden="true"></span><br><span class="em">keep the judgment.</span></h1>
+        <h1 class="display" id="hero-h">&gt; direct the agents<span class="cur" aria-hidden="true"></span><br><span class="em">keep the judgment.</span></h1>
         <p class="lede">Type <code>atrium</code> in Ghostty, iTerm or Terminal. The same queue, the same decisions and the same live state as the Mac app, with every key on screen.</p>
         <div class="ctas"><a class="btn primary" href="#run">Run it</a><a class="btn" href="index.html">The Mac app</a></div>
     </div>
@@ -128,132 +131,173 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
     <div class="stage" id="screens">
     <div class="plum term-plum" id="term-plum" role="img" aria-label="Plum, reacting to the screen you picked"><img class="plum-still" src="plum/look.webp" alt="" width="150" height="150"></div>
     <div class="window">
-      <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>atrium · 100×30</span></div>
+      <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>atrium · 120×40</span></div>
       <div class="screens" role="tablist" aria-label="Screens of the terminal app">
         <button type="button" role="tab" id="s-needs" aria-controls="p-needs" aria-selected="true" data-pose="look"><kbd>1</kbd>Home</button>
         <button type="button" role="tab" id="s-keys" aria-controls="p-keys" aria-selected="false" tabindex="-1" data-pose="ready"><kbd>?</kbd>Keys</button>
         <button type="button" role="tab" id="s-ask" aria-controls="p-ask" aria-selected="false" tabindex="-1" data-pose="brief"><kbd>space</kbd>Ask</button>
         <button type="button" role="tab" id="s-spaces" aria-controls="p-spaces" aria-selected="false" tabindex="-1" data-pose="work"><kbd>2</kbd>Spaces</button>
       </div>
-<pre class="tty" role="tabpanel" id="p-needs" aria-labelledby="s-needs" tabindex="0"><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-onf b-ac bo"> 1 Home </span> <span class="f-dim"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                          <span class="f-faint">Claude · no reading yet  ·  AC</span>
-<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────</span>
-<span class="bo">  Good morning, Robin. </span><span class="f-dim">Nothing ran since you were last here. 6 things need you. 1 stopped: Claude C…</span>
+<p class="swipe" aria-hidden="true">Scroll sideways to see all 120 columns →</p>
+<pre class="tty" role="tabpanel" id="p-needs" aria-labelledby="s-needs" tabindex="0"><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-onf b-ac bo"> 1 Home </span> <span class="f-dim"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                                           <span class="f-dim">Claude </span><span class="f-ac">▰▰▰▰</span><span class="f-ln">▱▱▱▱▱▱</span><span class="f-dim"> 42%</span><span class="f-faint">  ·  battery</span>
+<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="bo">  Good morning, Robin. </span><span class="f-dim">Nothing ran since you were last here. 6 things need you.</span>
 
- <span class="f-faint bo">NEEDS YOU</span><span class="f-ac bo">  6</span>                                                <span class="f-ln">│</span> <span class="f-faint bo">RUNNING</span>
-                                                             <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Rewrite the search ranking</span><span class="f-ln"> ──────────────────────────╮</span> <span class="f-ln">│</span> <span class="f-faint">Nothing running.</span>
- <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Paused · waiting 2d</span>                       <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Publish the 0.9 changelog draft?</span><span class="f-ln"> ────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-cl">Launch notes</span><span class="f-faint">  ·  Sign-off · waiting 2d</span>                  <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Fix the flaky date parsing test</span><span class="f-ln"> ─────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Paused · waiting 2d</span>                      <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
- <span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-warn">◆ </span><span class="bo">Retry failed webhook deliveries</span><span class="f-ac"> ─────────────────────</span><span class="f-ac bo">╮</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span> <span class="f-dim">Checks passed · 1 open finding · Codex</span>                  <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Needs a look · Claude · waiting 2d</span>        <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span>                                                         <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span> <span class="f-onf b-ac bo"> a </span><span class="f-dim"> Approve</span>  <span class="f-onk b-key bo"> s </span><span class="f-dim"> Send back</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> Open</span>  <span class="f-onk b-key bo"> t </span><span class="f-dim"> Transcript</span>    <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">╰</span><span class="f-ac">─────────────────────────────────────────────────────────</span><span class="f-ac bo">╯</span> <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Make the CSV export faster</span><span class="f-ln"> ──────────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Question · waiting 2d</span>                    <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
-<span class="f-faint">   ↓ 2 more below · j</span>                                        <span class="f-ln">│</span>
-                                                             <span class="f-ln">│</span>
-<span class="f-ln">╭─ </span><span class="f-dim">Ask Atrium</span><span class="f-ln"> ─────────────────────────────────────────────────────────────────────────────────────╮</span>
-<span class="f-ln">│</span> <span class="f-ac">› </span><span class="f-faint">Describe something new, like "add dark mode to my site" or "start a new project called…".</span>      <span class="f-ln">│</span>
-<span class="f-ln">╰──────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
- <span class="f-onk b-key bo"> ↑↓ </span><span class="f-dim"> move</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> open</span>  <span class="f-onk b-key bo"> a </span><span class="f-dim"> approve</span>  <span class="f-onk b-key bo"> s </span><span class="f-dim"> send back</span>  <span class="f-onk b-key bo"> space </span><span class="f-dim"> ask</span>  <span class="f-onk b-key bo"> / </span><span class="f-dim"> filter</span>  <span class="f-onk b-key bo"> ? </span><span class="f-dim"> help</span></pre>
-<pre class="tty" role="tabpanel" id="p-keys" aria-labelledby="s-keys" tabindex="0" hidden><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-onf b-ac bo"> 1 Home </span> <span class="f-dim"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                          <span class="f-faint">Claude · no reading yet  ·  AC</span>
-<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────</span>
-<span class="bo">  Good morning, Robin. </span><span class="f-dim">Nothing ran since you were last here. 6 things need you. 1 stopped: Claude C…</span>
+ <span class="f-faint bo">NEEDS YOU</span><span class="f-ac bo">  6</span>                                                                    <span class="f-ln">│</span> <span class="f-faint bo">RUNNING</span><span class="f-ok bo">  1</span>
+                                                                                 <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Rewrite the search ranking</span><span class="f-ln"> ──────────────────────────────────────────────╮</span> <span class="f-ln">│</span> <span class="f-ok">⠹ </span><span class="bo">Add a print stylesheet</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Paused · waiting 2d</span>                                           <span class="f-ln">│</span> <span class="f-ln">│</span> <span class="f-faint">  Claude · 3m · running</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Publish the 0.9 changelog draft?</span><span class="f-ln"> ────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-cl">Launch notes</span><span class="f-faint">  ·  Sign-off · waiting 2d</span>                                      <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Fix the flaky date parsing test</span><span class="f-ln"> ─────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Paused · waiting 2d</span>                                          <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-warn">◆ </span><span class="bo">Retry failed webhook deliveries</span><span class="f-ac"> ─────────────────────────────────────────</span><span class="f-ac bo">╮</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">│</span> <span class="f-dim">Checks passed · 1 open finding · Codex</span>                                      <span class="f-ac bo">│</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Needs a look · Claude · waiting 2d</span>                            <span class="f-ac bo">│</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">│</span>                                                                             <span class="f-ac bo">│</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">│</span> <span class="f-onf b-ac bo"> a </span><span class="f-dim"> Approve</span>  <span class="f-onk b-key bo"> s </span><span class="f-dim"> Send back</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> Open</span>  <span class="f-onk b-key bo"> t </span><span class="f-dim"> Transcript</span>                        <span class="f-ac bo">│</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">╰</span><span class="f-ac">─────────────────────────────────────────────────────────────────────────────</span><span class="f-ac bo">╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Make the CSV export faster</span><span class="f-ln"> ──────────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Question · waiting 2d</span>                                        <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-ac">◆ </span><span class="f-dim">Add rate-limit headers to /v1/search</span><span class="f-ln"> ────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Clean · Claude · waiting 2d</span>                                   <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">✦ </span><span class="f-dim">Add a line to CLAUDE.md?</span><span class="f-ln"> ────────────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  CLAUDE.md · low priority</span>                                      <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">✦ </span><span class="f-dim">Add a print stylesheet</span><span class="f-ln"> ──────────────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Could split · low priority</span>                                   <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+<span class="f-ln">╭─ </span><span class="f-dim">Ask Atrium</span><span class="f-ln"> ─────────────────────────────────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="f-ln">│</span> <span class="f-ac">› </span><span class="f-faint">Describe something new, like "add dark mode to my site" or "start a new project called…".</span>                          <span class="f-ln">│</span>
+<span class="f-ln">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+ <span class="f-onk b-key bo"> ↑↓ </span><span class="f-dim"> move</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> open</span>  <span class="f-onk b-key bo"> a </span><span class="f-dim"> approve</span>  <span class="f-onk b-key bo"> s </span><span class="f-dim"> send back</span>  <span class="f-onk b-key bo"> space </span><span class="f-dim"> ask</span>  <span class="f-onk b-key bo"> / </span><span class="f-dim"> filter</span>  <span class="f-onk b-key bo"> ? </span><span class="f-dim"> help</span>  <span class="f-onk b-key bo"> q </span><span class="f-dim"> quit</span></pre>
+<pre class="tty" role="tabpanel" id="p-keys" aria-labelledby="s-keys" tabindex="0" hidden><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-onf b-ac bo"> 1 Home </span> <span class="f-dim"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                                           <span class="f-dim">Claude </span><span class="f-ac">▰▰▰▰</span><span class="f-ln">▱▱▱▱▱▱</span><span class="f-dim"> 42%</span><span class="f-faint">  ·  battery</span>
+<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="bo">  Good morning, Robin. </span><span class="f-dim">Nothing ran since you were last here. 6 things need you.</span>
 
- <span class="f-faint bo">NEEDS YOU</span><span class="f-ac bo">  6</span>                                                <span class="f-ln">│</span> <span class="f-faint bo">RUNNING</span>
-                                                             <span class="f-ln">│</span>
- <span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-bad">! </span><span class="bo">Re</span><span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-ac bo">Keys</span><span class="f-ac"> ───────────────────────────────────────────────────────────────────────────</span><span class="f-ac bo">╮</span>
- <span class="f-ac bo">│</span> <span class="f-warn">Anoth</span><span class="f-ac bo">│</span> <span class="f-ac bo">Everywhere</span>                              <span class="f-ac bo">Home</span>                                     <span class="f-ac bo">│</span>
- <span class="f-ac bo">│</span> <span class="f-warn">used)</span><span class="f-ac bo">│</span> <span class="f-info">1 2 3       </span>switch tab                  <span class="f-info">a A s       </span>approve, approve all clean…  <span class="f-ac bo">│</span>
- <span class="f-ac bo">│</span> <span class="f-info">Lumen</span><span class="f-ac bo">│</span> <span class="f-info">space or :  </span>type in the Ask box         <span class="f-info">e           </span>explain a paused task's pr…  <span class="f-ac bo">│</span>
- <span class="f-ac bo">│</span>      <span class="f-ac bo">│</span> <span class="f-info">j k ↑ ↓     </span>move or scroll              <span class="f-info">x b         </span>stop a running task, raise…  <span class="f-ac bo">│</span>
- <span class="f-ac bo">│</span> <span class="f-onf b-ac bo"> b </span><span class="f-dim"> R</span><span class="f-ac bo">│</span> <span class="f-info">g G         </span>top, bottom                 <span class="f-info">a 1-9       </span>answer a task's questions    <span class="f-ac bo">│</span>
- <span class="f-ac bo">╰</span><span class="f-ac">──────</span><span class="f-ac bo">│</span> <span class="f-info">enter       </span>open                        <span class="f-info">y n N       </span>yes, not now, never; y n o…  <span class="f-ac bo">│</span>
- <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Pu</span><span class="f-ac bo">│</span> <span class="f-info">esc         </span>back, clear filter          <span class="f-info">t           </span>transcript                   <span class="f-ac bo">│</span>
- <span class="f-ln">│</span> <span class="f-cl">Launc</span><span class="f-ac bo">│</span> <span class="f-info">/           </span>filter the list             <span class="f-info">.           </span>stop running task            <span class="f-ac bo">│</span>
- <span class="f-ln">╰──────</span><span class="f-ac bo">│</span> <span class="f-info">u           </span>agents and usage                                                     <span class="f-ac bo">│</span>
- <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Fi</span><span class="f-ac bo">│</span> <span class="f-info">o           </span>overnight on / off          <span class="f-faint">Clicks work on tabs, cards, rows and</span>     <span class="f-ac bo">│</span>
- <span class="f-ln">│</span> <span class="f-ok">Paper</span><span class="f-ac bo">│</span> <span class="f-info">? q         </span>help, close, quit           <span class="f-faint">keys. To select text, drag with Option</span>   <span class="f-ac bo">│</span>
- <span class="f-ln">╰──────</span><span class="f-ac bo">│</span> <span class="f-info">Opt/Shift   </span>drag to select text         <span class="f-faint">held in Terminal, Shift in Ghostty.</span>      <span class="f-ac bo">│</span>
- <span class="f-ln">╭─ </span><span class="f-warn">◆ </span><span class="f-dim">Re</span><span class="f-ac bo">│</span>                                                                                  <span class="f-ac bo">│</span>
- <span class="f-ln">│</span> <span class="f-info">Lumen</span><span class="f-ac bo">│</span> <span class="f-onk b-key bo"> ? </span><span class="f-dim"> Close</span>                                                                        <span class="f-ac bo">│</span>
- <span class="f-ln">╰──────</span><span class="f-ac bo">╰</span><span class="f-ac">──────────────────────────────────────────────────────────────────────────────────</span><span class="f-ac bo">╯</span>
- <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Make the CSV export faster</span><span class="f-ln"> ──────────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Question · waiting 2d</span>                    <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
-<span class="f-faint">   ↓ 2 more below · j</span>                                        <span class="f-ln">│</span>
-<span class="f-ln">╭─ </span><span class="f-dim">Ask Atrium</span><span class="f-ln"> ─────────────────────────────────────────────────────────────────────────────────────╮</span>
-<span class="f-ln">│</span> <span class="f-ac">› </span><span class="f-faint">Describe something new, like "add dark mode to my site" or "start a new project called…".</span>      <span class="f-ln">│</span>
-<span class="f-ln">╰──────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+ <span class="f-faint bo">NEEDS YOU</span><span class="f-ac bo">  6</span>                                                                    <span class="f-ln">│</span> <span class="f-faint bo">RUNNING</span><span class="f-ok bo">  1</span>
+                  <span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-ac bo">Keys</span><span class="f-ac"> ───────────────────────────────────────────────────────────────────────────</span><span class="f-ac bo">╮</span>
+ <span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-bad">! </span><span class="bo">Rewrite the </span><span class="f-ac bo">│</span> <span class="f-ac bo">Everywhere</span>                                                                       <span class="f-ac bo">│</span><span class="bo"> a print styleshe…</span>
+ <span class="f-ac bo">│</span> <span class="f-warn">Another turn wo</span><span class="f-ac bo">│</span> <span class="f-info">1 2 3       </span>switch tab                                                           <span class="f-ac bo">│</span><span class="f-faint">ning</span>
+ <span class="f-ac bo">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  P</span><span class="f-ac bo">│</span> <span class="f-info">space or :  </span>type in the Ask box                                                  <span class="f-ac bo">│</span>
+ <span class="f-ac bo">│</span>                <span class="f-ac bo">│</span> <span class="f-info">j k ↑ ↓     </span>move or scroll                                                       <span class="f-ac bo">│</span>
+ <span class="f-ac bo">│</span> <span class="f-onf b-ac bo"> b </span><span class="f-dim"> Raise the b</span><span class="f-ac bo">│</span> <span class="f-info">g G         </span>top, bottom                                                          <span class="f-ac bo">│</span>
+ <span class="f-ac bo">╰</span><span class="f-ac">────────────────</span><span class="f-ac bo">│</span> <span class="f-info">enter       </span>open                                                                 <span class="f-ac bo">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Publish the </span><span class="f-ac bo">│</span> <span class="f-info">esc         </span>back, clear filter                                                   <span class="f-ac bo">│</span>
+ <span class="f-ln">│</span> <span class="f-cl">Launch notes</span><span class="f-faint">  ·</span><span class="f-ac bo">│</span> <span class="f-info">/           </span>filter the list                                                      <span class="f-ac bo">│</span>
+ <span class="f-ln">╰────────────────</span><span class="f-ac bo">│</span> <span class="f-info">u           </span>agents and usage                                                     <span class="f-ac bo">│</span>
+ <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Fix the flak</span><span class="f-ac bo">│</span> <span class="f-info">o           </span>overnight on / off                                                   <span class="f-ac bo">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  </span><span class="f-ac bo">│</span> <span class="f-info">? q         </span>help, close, quit                                                    <span class="f-ac bo">│</span>
+ <span class="f-ln">╰────────────────</span><span class="f-ac bo">│</span> <span class="f-info">Opt/Shift   </span>drag to select text                                                  <span class="f-ac bo">│</span>
+ <span class="f-ln">╭─ </span><span class="f-warn">◆ </span><span class="f-dim">Retry failed</span><span class="f-ac bo">│</span>                                                                                  <span class="f-ac bo">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  N</span><span class="f-ac bo">│</span> <span class="f-ac bo">Home</span>                                                                             <span class="f-ac bo">│</span>
+ <span class="f-ln">╰────────────────</span><span class="f-ac bo">│</span> <span class="f-info">a A s       </span>approve, approve all clean, send back                                <span class="f-ac bo">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Make the CSV</span><span class="f-ac bo">│</span> <span class="f-info">e           </span>explain a paused task's problem                                      <span class="f-ac bo">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  </span><span class="f-ac bo">│</span> <span class="f-info">x b         </span>stop a running task, raise a paused budget                           <span class="f-ac bo">│</span>
+ <span class="f-ln">╰────────────────</span><span class="f-ac bo">│</span> <span class="f-info">a 1-9       </span>answer a task's questions                                            <span class="f-ac bo">│</span>
+ <span class="f-ln">╭─ </span><span class="f-ac">◆ </span><span class="f-dim">Add rate-lim</span><span class="f-ac bo">│</span> <span class="f-info">y n N       </span>yes, not now, never; y n on a CLAUDE.md line                         <span class="f-ac bo">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  C</span><span class="f-ac bo">│</span> <span class="f-info">t           </span>transcript                                                           <span class="f-ac bo">│</span>
+ <span class="f-ln">╰────────────────</span><span class="f-ac bo">│</span> <span class="f-info">.           </span>stop running task                                                    <span class="f-ac bo">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">✦ </span><span class="f-dim">Add a line t</span><span class="f-ac bo">│</span>                                                                                  <span class="f-ac bo">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  C</span><span class="f-ac bo">│</span> <span class="f-faint">Clicks work on tabs, cards, rows and keys. To select text, drag with Option held</span> <span class="f-ac bo">│</span>
+ <span class="f-ln">╰────────────────</span><span class="f-ac bo">│</span> <span class="f-faint">in Terminal, Shift in Ghostty.</span>                                                   <span class="f-ac bo">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">✦ </span><span class="f-dim">Add dark mod</span><span class="f-ac bo">│</span>                                                                                  <span class="f-ac bo">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  </span><span class="f-ac bo">│</span> <span class="f-onk b-key bo"> ? </span><span class="f-dim"> Close</span>                                                                        <span class="f-ac bo">│</span>
+ <span class="f-ln">╰────────────────</span><span class="f-ac bo">╰</span><span class="f-ac">──────────────────────────────────────────────────────────────────────────────────</span><span class="f-ac bo">╯</span>
+                                                                                 <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+<span class="f-ln">╭─ </span><span class="f-dim">Ask Atrium</span><span class="f-ln"> ─────────────────────────────────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="f-ln">│</span> <span class="f-ac">› </span><span class="f-faint">Describe something new, like "add dark mode to my site" or "start a new project called…".</span>                          <span class="f-ln">│</span>
+<span class="f-ln">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
  <span class="f-onk b-key bo"> ? </span><span class="f-dim"> close</span></pre>
-<pre class="tty" role="tabpanel" id="p-ask" aria-labelledby="s-ask" tabindex="0" hidden><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-onf b-ac bo"> 1 Home </span> <span class="f-dim"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                          <span class="f-faint">Claude · no reading yet  ·  AC</span>
-<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────</span>
-<span class="bo">  Good morning, Robin. </span><span class="f-dim">Nothing ran since you were last here. 6 things need you. 1 stopped: Claude C…</span>
+<pre class="tty" role="tabpanel" id="p-ask" aria-labelledby="s-ask" tabindex="0" hidden><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-onf b-ac bo"> 1 Home </span> <span class="f-dim"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                                           <span class="f-dim">Claude </span><span class="f-ac">▰▰▰▰</span><span class="f-ln">▱▱▱▱▱▱</span><span class="f-dim"> 42%</span><span class="f-faint">  ·  battery</span>
+<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="bo">  Good morning, Robin. </span><span class="f-dim">Nothing ran since you were last here. 6 things need you.</span>
 
- <span class="f-faint bo">NEEDS YOU</span><span class="f-ac bo">  6</span>                                                <span class="f-ln">│</span> <span class="f-faint bo">RUNNING</span>
-                                                             <span class="f-ln">│</span>
- <span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-bad">! </span><span class="bo">Rewrite the search ranking</span><span class="f-ac"> ──────────────────────────</span><span class="f-ac bo">╮</span> <span class="f-ln">│</span> <span class="f-faint">Nothing running.</span>
- <span class="f-ac bo">│</span> <span class="f-warn">Another turn would go over the 600k token budget (612k</span>  <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span> <span class="f-warn">used).</span>                                                  <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Paused · waiting 2d</span>                       <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span>                                                         <span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">│</span> <span class="f-onf b-ac bo"> b </span><span class="f-dim"> Raise the budget</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> Give it a hint</span>  <span class="f-onk b-key bo"> e </span><span class="f-dim"> Explain t…</span><span class="f-ac bo">│</span> <span class="f-ln">│</span>
- <span class="f-ac bo">╰</span><span class="f-ac">─────────────────────────────────────────────────────────</span><span class="f-ac bo">╯</span> <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Publish the 0.9 changelog draft?</span><span class="f-ln"> ────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-cl">Launch notes</span><span class="f-faint">  ·  Sign-off · waiting 2d</span>                  <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Fix the flaky date parsing test</span><span class="f-ln"> ─────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Paused · waiting 2d</span>                      <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-warn">◆ </span><span class="f-dim">Retry failed webhook deliveries</span><span class="f-ln"> ─────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Needs a look · Claude · waiting 2d</span>        <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
- <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Make the CSV export faster</span><span class="f-ln"> ──────────────────────────╮</span> <span class="f-ln">│</span>
- <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Question · waiting 2d</span>                    <span class="f-ln">│</span> <span class="f-ln">│</span>
- <span class="f-ln">╰─────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
-<span class="f-faint">   ↓ 2 more below · j</span>                                        <span class="f-ln">│</span>
-<span class="f-ac">╭─ </span><span class="f-ac bo">Ask Atrium</span><span class="f-ac"> ─────────────────────────────────────────────────────────────────────────────────────╮</span>
-<span class="f-ac">│</span> <span class="f-ac">› </span><span class="bo">add a dark mode toggle to the header</span><span class="inv"> </span>                                                          <span class="f-ac">│</span>
-<span class="f-ac">╰──────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+ <span class="f-faint bo">NEEDS YOU</span><span class="f-ac bo">  6</span>                                                                    <span class="f-ln">│</span> <span class="f-faint bo">RUNNING</span><span class="f-ok bo">  1</span>
+                                                                                 <span class="f-ln">│</span>
+ <span class="f-ac bo">╭─</span><span class="f-ac"> </span><span class="f-bad">! </span><span class="bo">Rewrite the search ranking</span><span class="f-ac"> ──────────────────────────────────────────────</span><span class="f-ac bo">╮</span> <span class="f-ln">│</span> <span class="f-ok">⠼ </span><span class="bo">Add a print stylesheet</span>
+ <span class="f-ac bo">│</span> <span class="f-warn">Another turn would go over the 600k token budget (612k used).</span>               <span class="f-ac bo">│</span> <span class="f-ln">│</span> <span class="f-faint">  Claude · 3m · running</span>
+ <span class="f-ac bo">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Paused · waiting 2d</span>                                           <span class="f-ac bo">│</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">│</span>                                                                             <span class="f-ac bo">│</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">│</span> <span class="f-onf b-ac bo"> b </span><span class="f-dim"> Raise the budget</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> Give it a hint</span>  <span class="f-onk b-key bo"> e </span><span class="f-dim"> Explain the problem</span>           <span class="f-ac bo">│</span> <span class="f-ln">│</span>
+ <span class="f-ac bo">╰</span><span class="f-ac">─────────────────────────────────────────────────────────────────────────────</span><span class="f-ac bo">╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Publish the 0.9 changelog draft?</span><span class="f-ln"> ────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-cl">Launch notes</span><span class="f-faint">  ·  Sign-off · waiting 2d</span>                                      <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-bad">! </span><span class="f-dim">Fix the flaky date parsing test</span><span class="f-ln"> ─────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Paused · waiting 2d</span>                                          <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-warn">◆ </span><span class="f-dim">Retry failed webhook deliveries</span><span class="f-ln"> ─────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Needs a look · Claude · waiting 2d</span>                            <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">? </span><span class="f-dim">Make the CSV export faster</span><span class="f-ln"> ──────────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Question · waiting 2d</span>                                        <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-ac">◆ </span><span class="f-dim">Add rate-limit headers to /v1/search</span><span class="f-ln"> ────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  Clean · Claude · waiting 2d</span>                                   <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">✦ </span><span class="f-dim">Add a line to CLAUDE.md?</span><span class="f-ln"> ────────────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-info">Lumen API</span><span class="f-faint">  ·  CLAUDE.md · low priority</span>                                      <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+ <span class="f-ln">╭─ </span><span class="f-info">✦ </span><span class="f-dim">Add a print stylesheet</span><span class="f-ln"> ──────────────────────────────────────────────────╮</span> <span class="f-ln">│</span>
+ <span class="f-ln">│</span> <span class="f-ok">Paper Kite</span><span class="f-faint">  ·  Could split · low priority</span>                                   <span class="f-ln">│</span> <span class="f-ln">│</span>
+ <span class="f-ln">╰─────────────────────────────────────────────────────────────────────────────╯</span> <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+                                                                                 <span class="f-ln">│</span>
+<span class="f-ac">╭─ </span><span class="f-ac bo">Ask Atrium</span><span class="f-ac"> ─────────────────────────────────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="f-ac">│</span> <span class="f-ac">› </span><span class="bo">add a dark mode toggle to the header</span><span class="inv"> </span>                                                                              <span class="f-ac">│</span>
+<span class="f-ac">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
  <span class="f-onk b-key bo"> enter </span><span class="f-dim"> send</span>  <span class="f-onk b-key bo"> esc </span><span class="f-dim"> cancel</span></pre>
-<pre class="tty" role="tabpanel" id="p-spaces" aria-labelledby="s-spaces" tabindex="0" hidden><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-dim"> 1 Home </span> <span class="f-onf b-ac bo"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                          <span class="f-faint">Claude · no reading yet  ·  AC</span>
-<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────</span>
- <span class="f-ac bo">SPACES</span>                           <span class="f-ln">│</span> <span class="f-faint bo">SPACE</span><span class="bo">  Lumen API</span><span class="f-faint">  ↓ 11 more</span>
-<span class="f-ac">▌</span><span class="b-soft"> </span><span class="f-info b-soft bo">● </span><span class="b-soft bo">Lumen API     </span><span class="f-warn b-soft bo">Paused: Another…</span><span class="f-ln">│</span> <span class="bo">Lumen API</span><span class="f-dim">  repo</span><span class="f-info">  Private · only Claude works here</span>
-  <span class="f-ok">● </span>Paper Kite    <span class="f-warn">The brief has q…</span><span class="f-ln">│</span> <span class="f-dim">~/Developer/lumen-api                                 </span>
-  <span class="f-cl">● </span>Launch notes  <span class="f-faint">Idle · last act…</span><span class="f-ln">│</span> Search service for the Lumen apps
-                                  <span class="f-ln">│</span> <span class="f-warn">Paused: Another turn would go over the 600k token budget (612k</span>
-                                  <span class="f-ln">│</span> <span class="f-warn">used).</span>
-                                  <span class="f-ln">│</span>
-                                  <span class="f-ln">│</span> <span class="f-dim">Reviewer </span>Auto<span class="f-dim">  (v to change)</span>
-                                  <span class="f-ln">│</span> <span class="f-dim">A fresh agent reads each change against its brief before you</span>
-                                  <span class="f-ln">│</span> <span class="f-dim">see it: another vendor when one can work here, else a new</span>
- <span class="f-faint bo">TASKS</span><span class="f-faint"> · Lumen API</span>                <span class="f-ln">│</span> <span class="f-dim">Claude session.</span>
-<span class="f-faint">▌</span> <span class="f-bad">! </span>Rewrite the search ra…<span class="f-bad"> stopped</span><span class="f-ln">│</span> <span class="f-dim">Learning </span>Deep: a question first, and the writer's approach
-  <span class="f-ac">◆ </span>Add rate-limit headers …<span class="f-ok"> clean</span><span class="f-ln">│</span> <span class="f-dim">(change it in the space's settings on the dashboard)</span>
-  <span class="f-ac">◆ </span>Retry failed web…<span class="f-warn"> needs a look</span><span class="f-ln">│─ </span><span class="f-faint bo">LIVE</span> <span class="f-ln">──────────────────────────────────────────────────────────</span>
-  <span class="f-faint">✓ </span>Cache search results for…<span class="f-faint"> done</span><span class="f-ln">│</span><span class="f-faint"> No agent working here right now.</span>
-  <span class="f-faint">✓ </span>Log slow queries over 20…<span class="f-faint"> done</span><span class="f-ln">│</span>
-  <span class="f-faint">✓ </span>Add a /healthz endpoint  <span class="f-faint"> done</span><span class="f-ln">│</span>
-                                  <span class="f-ln">│</span>
-                                  <span class="f-ln">│</span>
-                                  <span class="f-ln">│</span>
-                                  <span class="f-ln">│</span>
-                                  <span class="f-ln">│</span>
-                                  <span class="f-ln">│</span>
-                                  <span class="f-ln">│</span>
-<span class="f-ln">╭─ </span><span class="f-dim">New task in Lumen API</span><span class="f-ln"> ──────────────────────────────────────────────────────────────────────────╮</span>
-<span class="f-ln">│</span> <span class="f-ac">› </span><span class="f-faint">Give Lumen API a task…</span>                                                                         <span class="f-ln">│</span>
-<span class="f-ln">╰──────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
+<pre class="tty" role="tabpanel" id="p-spaces" aria-labelledby="s-spaces" tabindex="0" hidden><span class="f-ac"> ◆ </span><span class="bo">atrium</span>  <span class="f-dim"> 1 Home </span> <span class="f-onf b-ac bo"> 2 Spaces </span> <span class="f-dim"> 3 Activity </span>                                           <span class="f-dim">Claude </span><span class="f-ac">▰▰▰▰</span><span class="f-ln">▱▱▱▱▱▱</span><span class="f-dim"> 42%</span><span class="f-faint">  ·  battery</span>
+<span class="f-ln">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+ <span class="f-ac bo">SPACES</span>                                 <span class="f-ln">│</span> <span class="f-faint bo">SPACE</span><span class="bo">  Lumen API</span><span class="f-faint">  ↓ 1 more</span>
+<span class="f-ac">▌</span><span class="b-soft"> </span><span class="f-info b-soft bo">● </span><span class="b-soft bo">Lumen API     </span><span class="f-warn b-soft bo">Paused: Another turn …</span><span class="f-ln">│</span> <span class="bo">Lumen API</span><span class="f-dim">  repo</span><span class="f-info">  Private · only Claude works here</span>
+  <span class="f-ok">● </span>Paper Kite    <span class="f-faint">Claude running · Add …</span><span class="f-ln">│</span> <span class="f-dim">~/Developer/lumen-api                                 </span>
+  <span class="f-cl">● </span>Launch notes  <span class="f-faint">Idle · last activity …</span><span class="f-ln">│</span> Search service for the Lumen apps
+                                        <span class="f-ln">│</span> <span class="f-warn">Paused: Another turn would go over the 600k token budget (612k used).</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span> <span class="f-dim">Reviewer </span>Auto<span class="f-dim">  (v to change)</span>
+                                        <span class="f-ln">│</span> <span class="f-dim">A fresh agent reads each change against its brief before you see it: another</span>
+                                        <span class="f-ln">│</span> <span class="f-dim">vendor when one can work here, else a new Claude session.</span>
+                                        <span class="f-ln">│</span> <span class="f-dim">Learning </span>Deep: a question first, and the writer's approach<span class="f-dim">  (change it in the</span>
+                                        <span class="f-ln">│</span> <span class="f-dim">space's settings on the dashboard)</span>
+                                        <span class="f-ln">│</span> <span class="f-info">Add to CLAUDE.md? "Use the wait() parameter in tests instead of real timers."</span>
+                                        <span class="f-ln">│</span> <span class="f-info">Edit and accept it on the dashboard.</span>
+                                        <span class="f-ln">│</span>
+ <span class="f-faint bo">TASKS</span><span class="f-faint"> · Lumen API</span>                      <span class="f-ln">│</span> <span class="f-ac bo">Recent activity</span>
+<span class="f-faint">▌</span> <span class="f-bad">! </span>Rewrite the search ranking  <span class="f-bad"> stopped</span><span class="f-ln">│</span> <span class="f-dim">Sun, Nov 15</span>
+  <span class="f-ac">◆ </span>Add rate-limit headers to /v1…<span class="f-ok"> clean</span><span class="f-ln">│</span> <span class="f-dim">  4:33 PM  </span><span class="f-warn">Add rate-limit headers to /v1/search · ran, waiting for review</span>
+  <span class="f-ac">◆ </span>Retry failed webhook d…<span class="f-warn"> needs a look</span><span class="f-ln">│</span> <span class="f-dim">  4:33 PM  </span>Add a /healthz endpoint · ran, went to review
+  <span class="f-faint">✓ </span>Cache search results for 30 se…<span class="f-faint"> done</span><span class="f-ln">│</span> <span class="f-dim">  4:33 PM  </span>Log slow queries over 200 ms · ran, went to review
+  <span class="f-faint">✓ </span>Log slow queries over 200 ms   <span class="f-faint"> done</span><span class="f-ln">│─ </span><span class="f-faint bo">LIVE</span> <span class="f-ln">────────────────────────────────────────────────────────────────────────</span>
+  <span class="f-faint">✓ </span>Add a /healthz endpoint        <span class="f-faint"> done</span><span class="f-ln">│</span><span class="f-faint"> No agent working here right now.</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+                                        <span class="f-ln">│</span>
+<span class="f-ln">╭─ </span><span class="f-dim">New task in Lumen API</span><span class="f-ln"> ──────────────────────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="f-ln">│</span> <span class="f-ac">› </span><span class="f-faint">Give Lumen API a task…</span>                                                                                             <span class="f-ln">│</span>
+<span class="f-ln">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</span>
  <span class="f-onk b-key bo"> ↑↓ </span><span class="f-dim"> move</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> tasks</span>  <span class="f-onk b-key bo"> n </span><span class="f-dim"> new task</span>  <span class="f-onk b-key bo"> N </span><span class="f-dim"> new space</span>  <span class="f-onk b-key bo"> e </span><span class="f-dim"> goal</span>  <span class="f-onk b-key bo"> X </span><span class="f-dim"> archive</span>  <span class="f-onk b-key bo"> D </span><span class="f-dim"> delete</span>  <span class="f-onk b-key bo"> ? </span><span class="f-dim"> help</span></pre>
     </div>
     </div>
@@ -325,7 +369,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
       <li><kbd>A</kbd><span>In Spaces, on a task: change which agent takes it.</span></li>
       <li><kbd>o</kbd><span>Overnight mode: keeps the Mac awake while work is queued.</span></li>
     </ul>
-    <div class="ctas" style="margin-top: 40px; display: flex; gap: 12px; flex-wrap: wrap"><a class="btn primary" href="#run">Install it</a><a class="btn" href="https://github.com/nakulpatel0306/atrium">Read the code</a></div>
+    <div class="ctas end"><a class="btn primary" href="#run">Install it</a><a class="btn" href="https://github.com/nakulpatel0306/atrium">Read the code</a></div>
   </div>
 </section>
 </main>
