@@ -19,9 +19,9 @@ test("something waiting for you: look, with the same count as Needs you", () => 
   expect(st.say).toMatch(/^\d+ needs? you$/);
 });
 
-test("agents running: work, even while something waits, since the badge on Needs you already counts those", () => {
+test("agents running: work, and the words still say what waits", () => {
   const s = makeState({ tasks: [task({ id: "t1", status: "running" }), task({ id: "t2", status: "running" })] });
-  expect(plumState(s)).toEqual({ pose: "work", say: "2 at work" });
+  expect(plumState(s)).toEqual({ pose: "work", say: "2 at work · 1 needs you" });
   expect(plumState(makeState({ tasks: [task({ id: "t1", status: "running" })], approvals: [], proposals: [] }))).toEqual({ pose: "work", say: "1 at work" });
 });
 
@@ -35,7 +35,7 @@ test("one waiting reads as needs, two as need", () => {
 test("the sidebar shows the pose's picture and says the state in words", () => {
   const html = renderToStaticMarkup(<PlumStatus state={makeState({ tasks: [task({ id: "t1", status: "running" })] })} />);
   expect(html).toContain('data-pose="work"');
-  expect(html).toContain("1 at work");
+  expect(html).toContain("1 at work · 1 needs you");
   // The picture is decoration: the words carry the state.
   expect(html).toMatch(/<span class="plum-pic" aria-hidden="true"/);
 });

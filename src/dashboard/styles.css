@@ -22,7 +22,7 @@
   --line-strong: #31284a;
   /* Text. The quietest is still 4.5:1 on every surface, including a hovered row. */
   --text: #f4f1ff;
-  --dim: #9c92b8;
+  --dim: #b2a9cc;
   --faint: #8a80a8;
   /* Purple carries the actions: as text and focus, and as the fill of a primary button with --on-accent on it. */
   --accent: #9b84ff;
@@ -81,7 +81,7 @@
     --line: #e4dfef;
     --line-strong: #d3cce3;
     --text: #120e1f;
-    --dim: #5a5273;
+    --dim: #463f5c;
     --faint: #655d7e;
     --accent: #5b3fd0;
     --accent-fill: #5b3fd0;
@@ -108,7 +108,7 @@
   --line: #e4dfef;
   --line-strong: #d3cce3;
   --text: #120e1f;
-  --dim: #5a5273;
+  --dim: #463f5c;
   --faint: #655d7e;
   --accent: #5b3fd0;
   --accent-fill: #5b3fd0;
@@ -298,8 +298,8 @@ svg.lucide {
   color: var(--faint);
 }
 .nav .ct.hot {
-  color: var(--on-accent);
-  background: var(--accent-fill);
+  color: var(--bg);
+  background: var(--text);
   border-radius: var(--r-lg);
   padding: 0 6px;
   font-weight: 600;
@@ -1912,8 +1912,9 @@ code {
   background: var(--hover);
 }
 .seg button[aria-pressed="true"] {
-  background: var(--accent-fill);
-  color: var(--on-accent);
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .note-line {
   color: var(--faint);
@@ -3906,9 +3907,9 @@ kbd {
   font-weight: 500;
 }
 .stages li.on::before {
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  background: var(--text);
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 18%, transparent);
 }
 .stages li.on.live::before {
   animation: stage-live 1.6s ease-in-out infinite;
@@ -4092,6 +4093,10 @@ kbd {
 .item .tag.cost {
   font-family: var(--mono);
   color: var(--faint);
+}
+.item .chips .chip {
+  border-color: transparent;
+  padding: 1px 2px;
 }
 .fanout {
   display: flex;
@@ -4409,8 +4414,14 @@ kbd {
 }
 .decision-acts {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   margin-left: auto;
+}
+/* The decision is the point of the page: its buttons are the largest on it. */
+.decision-acts .btn {
+  min-height: 36px;
+  padding: 0 18px;
+  font-size: var(--fs-md);
 }
 .decision-keys {
   height: 22px;

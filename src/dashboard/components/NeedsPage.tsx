@@ -49,7 +49,7 @@ function QueueRow({ item, state, selected, onSelect }: { item: QueueItem; state:
     >
       <span className="q-title">{title}</span>
       <span className="q-line">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{itemLabel(state, item)}</span> {line}
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={KIND[item.kind].means}>{itemLabel(state, item)}</span> {line}
       </span>
       <span className="q-meta">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -173,7 +173,7 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   return (
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`}>{itemLabel(state, item)}</span>
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={KIND[item.kind].means}>{itemLabel(state, item)}</span>
         <h3 id="dp-title">{itemTitle(state, item)}</h3>
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
