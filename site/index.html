@@ -227,6 +227,8 @@ section { position: relative; padding-block: var(--space-section); }
 .start > .wrap { position: relative; z-index: 1; }
 /* Plum stands at the page's last edge, cut off at the middle and waving, so the page ends on the character. */
 .start-plum { position: absolute; left: 50%; bottom: 0; width: var(--end-plum); aspect-ratio: 1; transform: translate(-50%, 34%); }
+/* Each hop throws a burst of confetti from Plum (landing.js), on a canvas under it that never takes a click. */
+.start .confetti { position: absolute; left: 0; bottom: 0; width: 100%; height: calc(var(--end-plum) * 2.6); pointer-events: none; }
 .start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .start .head { margin-inline: auto; align-items: center; }
 .install { max-width: 720px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; overflow: hidden; }
