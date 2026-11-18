@@ -217,6 +217,9 @@ section { position: relative; padding-block: var(--space-section); }
 .promises li:last-child { border-bottom: 1px solid var(--line); }
 .promises b { font-size: 20px; font-weight: 600; letter-spacing: -0.025em; }
 .promises p { color: var(--body); font-size: 16px; }
+.private .more { margin-top: 22px; font-size: 15px; color: var(--dim); }
+.private .more a { color: var(--text); text-underline-offset: 4px; text-decoration-color: var(--line-strong); }
+.private .more a:hover { text-decoration-color: var(--accent); }
 /* On one column Plum leads the text it stands for, on the same left edge. */
 @media (max-width: 860px) { .private-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; } .private-plum { width: 168px; margin-inline: -18px 0; } }
 /* Three ways in, as one line under the install. */
@@ -506,6 +509,7 @@ section { position: relative; padding-block: var(--space-section); }
         <li><b>Nothing counts without a yes.</b><p>Rules can approve repeated kinds of work, but never a push, a merge to main, a delete, secrets or a new repo.</p></li>
         <li><b>Only Atrium pushes.</b><p>After your yes, Atrium itself pushes the branch or opens the pull request. Private spaces only ever use Claude.</p></li>
       </ul>
+      <p class="more">The details: <a href="privacy.html">what Atrium keeps and sends</a> · <a href="security.html">how agents are kept in</a></p>
     </div>
   </div>
 </section>
@@ -538,7 +542,7 @@ section { position: relative; padding-block: var(--space-section); }
 </main>
 
 <footer>
-  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
 </footer>
 
 <script>

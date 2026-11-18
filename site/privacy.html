@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Atrium · Privacy</title>
+<meta name="description" content="What Atrium keeps on your Mac and where, what leaves it (only what the agent CLIs send their makers, and GitHub actions you start), how to delete all of it, and what this website loads.">
+<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/privacy.html">
+<link rel="icon" type="image/png" href="plum/icon.png">
+<script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
+<link rel="preload" href="vendor/inter-tight-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="notes.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+<div class="bar" id="bar">
+  <div class="wrap">
+    <a class="word" href="index.html">atrium</a>
+    <nav aria-label="Main" class="main-nav"><ul>
+      <li><a href="index.html#loop">How it works</a></li>
+      <li><a href="terminal.html">Terminal</a></li>
+      <li><a href="notes.html">Notes</a></li>
+      <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
+    </ul>
+    <details class="menu"><summary>Menu</summary><ul>
+        <li><a href="index.html#loop">How it works</a></li>
+        <li><a href="terminal.html">Terminal</a></li>
+        <li><a href="notes.html">Notes</a></li>
+        <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
+      <li class="get"><a href="index.html#start">Get Atrium</a></li>
+    </ul></details></nav>
+    <div class="theme" role="radiogroup" aria-label="Theme" data-theme-switch><button type="button" role="radio" aria-checked="false" data-theme-set="system" aria-label="Auto, follows your Mac" title="Auto, follows your Mac"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path class="half" d="M12 3a9 9 0 0 1 0 18Z"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="light" aria-label="Light" title="Light"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="dark" aria-label="Dark" title="Dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button></div>
+    <a class="btn small primary" href="index.html#start">Get Atrium</a>
+  </div>
+</div>
+
+<header class="top" id="main">
+  <div class="sky"></div>
+  <div class="wrap">
+    <h1 class="rise">Privacy, <em>on your Mac</em>.</h1>
+    <p class="lede rise d1">Atrium is open-source software that runs on your Mac. There's no Atrium account, no Atrium server and no Atrium cloud. This page says what the app keeps and where, what leaves your Mac, how to delete all of it, and what this website does.</p>
+    <p class="byline rise d2">Updated <time datetime="2026-11-18">November 18, 2026</time></p>
+  </div>
+</header>
+
+<div class="layout single">
+  <div class="col">
+    <article>
+<section id="keeps">
+  <h2>What the app keeps, and where</h2>
+  <p>Everything Atrium keeps is a file on your Mac. Run <code>atrium data</code> to see the folders and their sizes.</p>
+  <ul class="plain">
+    <li><strong>Its data folder</strong>, <code>~/Library/Application Support/Atrium</code>: the database <code>atrium.db</code> (spaces, tasks, approvals, rules, settings and token counts), <code>transcripts/</code> (what each agent said and did), the engine's log, and the sample repo Get started copies in if you try it. Each transcript stops at 5 MB, and once they add up to 200 MB the oldest are deleted first.</li>
+    <li><strong>General spaces</strong> keep their files in <code>~/Atrium</code>, a plain folder you can open in Finder. It's outside Documents and Desktop, so iCloud doesn't copy it off your Mac.</li>
+    <li><strong>Code spaces</strong> work in your own repo. Each task's changes go on a branch named <code>atrium/&lt;taskId&gt;</code>, and Atrium won't start one over changes you haven't committed. A repo you point it at on GitHub is cloned into your projects folder. Files you attach to a task are copied into an <code>Attachments</code> folder in the space's folder.</li>
+    <li><strong>Checks</strong> run in a temporary checkout in the system's temp folder, deleted as soon as they finish.</li>
+    <li><strong>Claude Code's own files.</strong> Between turns of one task, Claude Code keeps the writer's session in its own session files, so the next turn can pick up where it left off. Private spaces never keep one.</li>
+  </ul>
+</section>
+
+<section id="reach">
+  <h2>Who can reach it</h2>
+  <p>The engine listens on <code>127.0.0.1</code> only, so nothing else on your network can connect to it. It also turns away a web page in your browser: every request must name <code>127.0.0.1</code> or <code>localhost</code> as its host, a change is accepted only from Atrium's own page, and a read that says it comes from another site is refused. The agents' sandboxes block loopback, so an agent can't call it either.</p>
+</section>
+
+<section id="leaves">
+  <h2>What leaves your Mac</h2>
+  <h3>What the agent CLIs send their makers</h3>
+  <p>Atrium doesn't talk to any AI service itself. It starts the agent CLIs you've installed (Claude Code, Codex, and Antigravity's <code>agy</code> for Gemini) as programs of their own, signed in with your own accounts. What you ask, and the code and files an agent reads to do it, go to that agent's maker under its own terms and privacy policy. Atrium doesn't change what they collect:</p>
+  <ul class="plain">
+    <li>Claude Code, from Anthropic: <a href="https://www.anthropic.com/legal/privacy">Anthropic's privacy policy</a> and <a href="https://code.claude.com/docs/en/data-usage">how Claude Code uses your data</a>.</li>
+    <li>Codex, from OpenAI: <a href="https://openai.com/policies/privacy-policy/">OpenAI's privacy policy</a>.</li>
+    <li>Gemini through Antigravity, from Google: <a href="https://policies.google.com/privacy">Google's privacy policy</a> and <a href="https://antigravity.google/terms">Antigravity's terms</a>.</li>
+  </ul>
+  <p>A space marked private only ever uses Claude.</p>
+  <h3>GitHub, when you ask</h3>
+  <p>Atrium uses git and the GitHub CLI, signed in as you, only for things you start: cloning or fetching a repo you pointed a space at, creating a new repo, and pushing a branch and opening its pull request. A push and a new repo each wait for your yes. Before deleting a clone, it fetches once to check that everything in it is on GitHub.</p>
+  <h3>Nothing else</h3>
+  <p>No telemetry, no analytics, no crash reports and no update checks. Atrium never phones home: updating it is a <code>git pull</code> you run yourself.</p>
+</section>
+
+<section id="delete">
+  <h2>Deleting it</h2>
+  <ul class="plain">
+    <li><strong>One space or task:</strong> delete it in the app, typing its name to confirm. The folders it made go to the Trash.</li>
+    <li><strong>Data from older versions</strong> (mail, texting, money and investing, which Atrium no longer has): <strong>Remove old data</strong> on Home or in Settings → Data, or <code>atrium data remove-old</code>. It shows exactly what will go, including sign-in tokens those features left in your login Keychain, and removes nothing until you confirm.</li>
+    <li><strong>Everything:</strong> run <code>atrium uninstall</code>, which stops Atrium starting at login but deletes nothing. Run <code>atrium app uninstall</code> too if you installed the Mac app. Quit Atrium, then delete <code>~/Library/Application Support/Atrium</code> and <code>~/Atrium</code>.</li>
+  </ul>
+  <p>Your repos, their <code>atrium/</code> branches and the clones in your projects folder are yours, and stay until you delete them. Claude Code, Codex and <code>agy</code> keep their own sign-in and history under their own settings.</p>
+</section>
+
+<section id="website">
+  <h2>This website</h2>
+  <ul class="plain">
+    <li><strong>Hosting.</strong> These pages are served by GitHub Pages. GitHub <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages#data-collection">logs every visitor's IP address for security</a>, signed in to GitHub or not, under the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>.</li>
+    <li><strong>Nothing from anywhere else.</strong> Every font, script and image the pages load is served from this site, fonts included (Inter Tight and Geist Mono, under the SIL Open Font License). No trackers, no embeds. Links to GitHub and other sites load nothing until you click them.</li>
+    <li><strong>No cookies, no analytics.</strong> The one thing stored is your theme choice, under <code>atrium.theme</code> in this browser's local storage. It never leaves your browser, and choosing Auto removes it.</li>
+    <li><strong>The demo</strong> on the home page runs in the page on sample data. Nothing you type there is saved or sent.</li>
+  </ul>
+</section>
+
+<section id="changes">
+  <h2>Questions and changes</h2>
+  <p>Ask in an <a href="https://github.com/nakulpatel0306/atrium/issues">issue on GitHub</a>. Every change to this page is in the <a href="https://github.com/nakulpatel0306/atrium/commits/main/site/privacy.html">repo's history</a>. How agents are kept away from your keys and files is on the <a href="security.html">security page</a>.</p>
+</section>
+    </article>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+</footer>
+
+<script>
+(() => {
+  const bar = document.getElementById("bar");
+  addEventListener("scroll", () => bar.classList.toggle("scrolled", scrollY > 8), { passive: true });
+})();
+</script>
+<script type="module" src="theme.js"></script>
+<script type="module" src="bar.js"></script>
+</body>
+</html>

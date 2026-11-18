@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Atrium · Security</title>
+<meta name="description" content="How Atrium contains its agents: the sandbox around each one, what they can't read or reach, why only Atrium pushes and only after your yes, the limits of all of it, and how to report a vulnerability.">
+<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/security.html">
+<link rel="icon" type="image/png" href="plum/icon.png">
+<script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
+<link rel="preload" href="vendor/inter-tight-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="notes.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+<div class="bar" id="bar">
+  <div class="wrap">
+    <a class="word" href="index.html">atrium</a>
+    <nav aria-label="Main" class="main-nav"><ul>
+      <li><a href="index.html#loop">How it works</a></li>
+      <li><a href="terminal.html">Terminal</a></li>
+      <li><a href="notes.html">Notes</a></li>
+      <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
+    </ul>
+    <details class="menu"><summary>Menu</summary><ul>
+        <li><a href="index.html#loop">How it works</a></li>
+        <li><a href="terminal.html">Terminal</a></li>
+        <li><a href="notes.html">Notes</a></li>
+        <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
+      <li class="get"><a href="index.html#start">Get Atrium</a></li>
+    </ul></details></nav>
+    <div class="theme" role="radiogroup" aria-label="Theme" data-theme-switch><button type="button" role="radio" aria-checked="false" data-theme-set="system" aria-label="Auto, follows your Mac" title="Auto, follows your Mac"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path class="half" d="M12 3a9 9 0 0 1 0 18Z"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="light" aria-label="Light" title="Light"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="dark" aria-label="Dark" title="Dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button></div>
+    <a class="btn small primary" href="index.html#start">Get Atrium</a>
+  </div>
+</div>
+
+<header class="top" id="main">
+  <div class="sky"></div>
+  <div class="wrap">
+    <h1 class="rise">How agents are <em>kept in</em>.</h1>
+    <p class="lede rise d1">Atrium lets AI agents change code on your Mac. The rules that matter most are enforced around each agent, by macOS and by Atrium's engine, where nothing an agent reads can talk them away. Here's what they cover, where they stop, and how to report a hole.</p>
+    <p class="byline rise d2">Updated <time datetime="2026-11-18">November 18, 2026</time></p>
+  </div>
+</header>
+
+<div class="layout single">
+  <div class="col">
+    <article>
+<section id="sandbox">
+  <h2>The sandbox around every agent</h2>
+  <p><strong>Claude</strong> runs inside Claude Code's own sandbox, with settings Atrium passes on every run: the sandbox is required and no command may run outside it, no settings file from your repo or your home folder is loaded, hooks are off, and only the built-in tools Atrium allows are there at all. <strong>Codex and Gemini</strong> run inside a macOS sandbox profile (<code>sandbox-exec</code>) that Atrium writes for every run.</p>
+  <h3>What agents can't read</h3>
+  <ul class="plain">
+    <li><strong>Every agent:</strong> SSH, AWS and GPG keys, the GitHub CLI's login, Messages and Contacts, and Atrium's own database, transcripts and log, and every space's folder but the task's own.</li>
+    <li><strong>Every agent, any <code>.env</code> file, anywhere:</strong> every name that starts or ends with <code>.env</code>, in any case, and everything inside a folder named that way.</li>
+    <li><strong>Codex and Gemini, also:</strong> the other credential files (<code>.netrc</code>, <code>.npmrc</code>, <code>.pypirc</code>, git credentials, Docker, Kubernetes, Google Cloud and Azure logins, password stores), shell history, browser data, Mail, Claude's folder, each other's sign-in folder, and your Keychain files, except the one login keychain file Antigravity signs in through. Claude's shell can't read the Keychain files either.</li>
+  </ul>
+  <h3>What agents can't reach or run</h3>
+  <ul class="plain">
+    <li>Atrium's API: loopback is blocked, so an agent can't approve its own work.</li>
+    <li>Your other apps: no Apple Events, <code>open</code>, <code>osascript</code>, Shortcuts or Automator.</li>
+    <li>GitHub: no <code>gh</code>, no SSH, no SSH agent, and no <code>git push</code> or <code>git clone</code> from Claude. The GitHub tokens in the environment are removed before any agent starts.</li>
+    <li>The Keychain command, <code>security</code>.</li>
+  </ul>
+  <h3>What agents can't change</h3>
+  <p>No agent can write the repo's <code>node_modules</code> or <code>.venv</code>: Atrium's checks run tools from those, so only the engine installs into them. Codex and Gemini can write only inside the task's folder, their own state and a temp folder of the run's own, and never the repo's <code>.git</code> or its agent settings in <code>.claude</code> and <code>.agents</code>. Claude's file tools can't edit <code>.git</code> or <code>.claude</code> either.</p>
+  <h3>Private spaces</h3>
+  <p>A private space only ever uses Claude. Its file tools are fenced to the space's own folder, it gets no shell unless it's a private repo's test commands, and Downloads, Desktop, Documents and bank exports (CSV, OFX, PDF and the like) are closed to it.</p>
+</section>
+
+<section id="yes">
+  <h2>Only Atrium pushes, and only after your yes</h2>
+  <p>Agents never push or create repos, and have no GitHub login to do it with. The engine does, with your own git identity and GitHub login, and only after you said yes: a push is refused unless the yes on it is yours, not a rule's.</p>
+  <p>Rules can approve a repeated kind of result for you, but a few things always wait for you, whatever a rule says:</p>
+  <ul class="plain">
+    <li>pushing a branch, and merging to main (any work not on its own <code>atrium/</code> branch);</li>
+    <li>deleting files;</li>
+    <li>touching secrets: <code>.env</code> files, keys and credential files;</li>
+    <li>deploy settings such as CI workflows and Dockerfiles;</li>
+    <li>creating a GitHub repo, spending money, and removing a clone.</li>
+  </ul>
+  <p>Every approval a rule makes is logged and can be undone. And an agent's own word never counts: Atrium runs your checks itself, in a checkout of their own, under a sandbox profile of their own, with the commands taken from the commit the task started on.</p>
+</section>
+
+<section id="limits">
+  <h2>What this doesn't cover</h2>
+  <ul class="plain">
+    <li><strong>Agents are online.</strong> Each CLI has to reach its maker, so the sandbox doesn't cut off the internet, and what an agent can read can be sent there. Claude's shell commands may reach only the npm registry; the Codex and Gemini processes keep their network, and Antigravity's server-side web search can't be switched off.</li>
+    <li><strong>Prompt injection.</strong> An agent reading a repo, an issue or a web page can be talked into a bad change inside its sandbox. That's why nothing leaves your Mac without your yes, and why the reviewer and you read the diff.</li>
+    <li><strong>Checks are evidence, not proof.</strong> A change can still weaken a test without skipping it. The <a href="https://github.com/nakulpatel0306/atrium/blob/main/docs/loop.md#known-limits-of-the-gate">loop docs</a> list every known way a change can alter what its checks mean, and which stay open.</li>
+    <li><strong>Codex's subagents</strong> can't be switched off completely; they run inside the same sandbox as the writer.</li>
+    <li><strong>The sandboxes are macOS's and Claude Code's.</strong> A flaw in either is a flaw here. Atrium runs as you, so it can't protect anything from programs you run outside it.</li>
+  </ul>
+</section>
+
+<section id="report">
+  <h2>Reporting a vulnerability</h2>
+  <p>Please report it privately, through GitHub: <a href="https://github.com/nakulpatel0306/atrium/security/advisories/new">open a private security advisory</a> on the repo. Don't open a public issue for it. Say what you did, what happened, and the commit you were on. Only the latest <code>main</code> is supported.</p>
+  <p>Fixes land as public commits, and the advisory is published once the fix is in. The same steps are in the repo's <a href="https://github.com/nakulpatel0306/atrium/blob/main/SECURITY.md">SECURITY.md</a>. What Atrium keeps and sends is on the <a href="privacy.html">privacy page</a>.</p>
+</section>
+    </article>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+</footer>
+
+<script>
+(() => {
+  const bar = document.getElementById("bar");
+  addEventListener("scroll", () => bar.classList.toggle("scrolled", scrollY > 8), { passive: true });
+})();
+</script>
+<script type="module" src="theme.js"></script>
+<script type="module" src="bar.js"></script>
+</body>
+</html>

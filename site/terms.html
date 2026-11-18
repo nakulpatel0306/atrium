@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Atrium · Terms</title>
+<meta name="description" content="Atrium's terms in plain words: the MIT License, no warranty, what you're responsible for, the agent CLIs' own terms and costs, and whose trademarks the agents' names are.">
+<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/terms.html">
+<link rel="icon" type="image/png" href="plum/icon.png">
+<script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
+<link rel="preload" href="vendor/inter-tight-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="notes.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+<div class="bar" id="bar">
+  <div class="wrap">
+    <a class="word" href="index.html">atrium</a>
+    <nav aria-label="Main" class="main-nav"><ul>
+      <li><a href="index.html#loop">How it works</a></li>
+      <li><a href="terminal.html">Terminal</a></li>
+      <li><a href="notes.html">Notes</a></li>
+      <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
+    </ul>
+    <details class="menu"><summary>Menu</summary><ul>
+        <li><a href="index.html#loop">How it works</a></li>
+        <li><a href="terminal.html">Terminal</a></li>
+        <li><a href="notes.html">Notes</a></li>
+        <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
+      <li class="get"><a href="index.html#start">Get Atrium</a></li>
+    </ul></details></nav>
+    <div class="theme" role="radiogroup" aria-label="Theme" data-theme-switch><button type="button" role="radio" aria-checked="false" data-theme-set="system" aria-label="Auto, follows your Mac" title="Auto, follows your Mac"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path class="half" d="M12 3a9 9 0 0 1 0 18Z"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="light" aria-label="Light" title="Light"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="dark" aria-label="Dark" title="Dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button></div>
+    <a class="btn small primary" href="index.html#start">Get Atrium</a>
+  </div>
+</div>
+
+<header class="top" id="main">
+  <div class="sky"></div>
+  <div class="wrap">
+    <h1 class="rise">Terms, <em>in plain words</em>.</h1>
+    <p class="lede rise d1">Atrium is free, open-source software, made by one person and shared under the MIT License. There's no company behind it and nothing to sign up for. This is what that means for you.</p>
+    <p class="byline rise d2">Updated <time datetime="2026-11-18">November 18, 2026</time></p>
+  </div>
+</header>
+
+<div class="layout single">
+  <div class="col">
+    <article>
+<section id="license">
+  <h2>The license</h2>
+  <p>Atrium is under the <a href="https://github.com/nakulpatel0306/atrium/blob/main/LICENSE">MIT License</a>. You may use it, copy it, change it, merge it into your own work, publish it, share it, sublicense it and sell copies, for any purpose. The one condition: the copyright notice and the license text stay with every copy or substantial part of it. The license file is the legal text; this page only explains it.</p>
+</section>
+
+<section id="warranty">
+  <h2>No warranty</h2>
+  <p>Atrium comes as is. Nobody promises that it works, that it suits what you want it for, or that it won't break something, and nobody who made it is liable for any harm that comes from using it, from lost work to an unexpected bill. Keep backups of what matters.</p>
+  <p>Its checks and reviews are evidence, not proof. The <a href="https://github.com/nakulpatel0306/atrium/blob/main/docs/loop.md#known-limits-of-the-gate">loop docs</a> list what they can't catch.</p>
+</section>
+
+<section id="you">
+  <h2>What you're responsible for</h2>
+  <ul class="plain">
+    <li><strong>What you approve.</strong> Agents draft and you decide. Anything you approve, push, merge or publish is your own work, so read the diff first.</li>
+    <li><strong>The rules you turn on.</strong> A rule approves a repeated kind of result for you. It can never approve a push, a merge to main, a delete, secrets or a new repo, but what it does approve is still your call.</li>
+    <li><strong>Where it works.</strong> You choose the repos and folders Atrium and its agents work in, and the accounts the agent CLIs and GitHub are signed in to.</li>
+  </ul>
+</section>
+
+<section id="agents">
+  <h2>The agents' own terms and costs</h2>
+  <p>The agents Atrium runs are other companies' products, used through your own accounts and under their terms. Their usage limits and any charges are between you and them. The costs Atrium shows are estimates at list prices, not bills.</p>
+  <ul class="plain">
+    <li>Claude Code: Anthropic's <a href="https://www.anthropic.com/legal/consumer-terms">consumer terms</a>, or its <a href="https://www.anthropic.com/legal/commercial-terms">commercial terms</a> for a work account.</li>
+    <li>Codex: OpenAI's <a href="https://openai.com/policies/terms-of-use/">terms of use</a>.</li>
+    <li>Gemini through Antigravity: Google's <a href="https://policies.google.com/terms">terms of service</a> and <a href="https://antigravity.google/terms">Antigravity's additional terms</a>.</li>
+    <li>GitHub, for clones, pushes and pull requests: <a href="https://docs.github.com/en/site-policy/github-terms/github-terms-of-service">GitHub's terms of service</a>.</li>
+  </ul>
+</section>
+
+<section id="trademarks">
+  <h2>Trademarks</h2>
+  <p>Claude and Claude Code are trademarks of Anthropic. Codex, OpenAI and the OpenAI logo are trademarks of OpenAI. Gemini, Antigravity and Google are trademarks of Google. GitHub is a trademark of GitHub. Their names and marks appear on this site only to say which tools Atrium works with. Atrium isn't affiliated with, sponsored by or endorsed by any of them.</p>
+</section>
+
+<section id="changes">
+  <h2>Changes</h2>
+  <p>This page can change; every change is in the <a href="https://github.com/nakulpatel0306/atrium/commits/main/site/terms.html">repo's history</a>. A copy you already have stays under the license it came with. How Atrium handles your data is on the <a href="privacy.html">privacy page</a>.</p>
+</section>
+    </article>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+</footer>
+
+<script>
+(() => {
+  const bar = document.getElementById("bar");
+  addEventListener("scroll", () => bar.classList.toggle("scrolled", scrollY > 8), { passive: true });
+})();
+</script>
+<script type="module" src="theme.js"></script>
+<script type="module" src="bar.js"></script>
+</body>
+</html>
