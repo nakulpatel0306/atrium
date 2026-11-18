@@ -210,6 +210,12 @@
   .m-item.need { flex-wrap: wrap; row-gap: 8px; }
   .m-item.need .t { flex-basis: 100%; }
   .m-item.need .acts { margin-left: auto; }
+  /* A space's task rows wrap the same way, so Approve stays inside the window. */
+  .m-entry .m-item { flex-wrap: wrap; row-gap: 8px; }
+  .m-entry .m-item .t { flex-basis: calc(100% - 26px); }
+  .m-entry .m-item .acts { margin-left: auto; }
+  .m-scroll { overflow-x: hidden; }
+  .m-made, .m-detail { overflow-wrap: anywhere; }
   .m-wrap { padding: 18px 16px 100px; }
   .m-grid { grid-template-columns: 1fr; }
   .m-item .who { display: none; }

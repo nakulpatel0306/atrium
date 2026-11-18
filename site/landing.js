@@ -49,7 +49,8 @@ $("hero-ask").addEventListener("click", (e) => {
   if (!$("m-ask")) return;
   e.preventDefault();
   dispatchEvent(new CustomEvent("atrium:ask", { detail: { space: "web", text: $("typed").dataset.phrase || $("typed").textContent } }));
-  $("try").scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
+  // Start-aligned under the bar, with room for the note and the Plum perched on the window.
+  $("try").scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
   $("m-ask").focus({ preventScroll: true });
 });
 
