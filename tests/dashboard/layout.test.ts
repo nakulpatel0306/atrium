@@ -109,3 +109,7 @@ test("opening Changes keeps the space page in two columns: the diff takes the ma
   expect(block).toContain("grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr)");
   expect(css).not.toContain(".cols:has(.changes-section) > .live");
 });
+
+test("queue rows stay one line, and below 480px the space's name gives its room to the title", () => {
+  expect(css).toMatch(/@media \(max-width: 479px\) \{\s*\.q-row \.q-space \{\s*display: none;/);
+});

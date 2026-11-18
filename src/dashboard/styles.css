@@ -5249,3 +5249,9 @@ a.task-link {
     padding: var(--space-6) var(--space-12);
   }
 }
+/* A queue row is one line by design (the list draws by row height); on a phone the space's name goes, its dot stays. */
+@media (max-width: 479px) {
+  .q-row .q-space {
+    display: none;
+  }
+}
