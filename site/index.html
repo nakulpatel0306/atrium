@@ -22,10 +22,11 @@ section { position: relative; padding-block: var(--space-section); }
 
 /* Hero */
 .hero { min-height: min(calc(100svh - 72px), 900px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px max(20px, env(safe-area-inset-right, 0px)) 28px max(20px, env(safe-area-inset-left, 0px)); overflow-x: clip; isolation: isolate; }
-.hero-plum { width: clamp(180px, 18vw, 240px); aspect-ratio: 1; margin-bottom: -10px; cursor: pointer; }
+/* Plum and the headline scale with the screen's height too, so a laptop screen holds the ask and the steps. */
+.hero-plum { width: clamp(150px, min(18vw, 24svh), 240px); aspect-ratio: 1; cursor: pointer; }
 /* The light Plum stands in: a soft purple pool under it, breathing. */
 .hero-plum::before { content: ""; position: absolute; left: -45%; right: -45%; bottom: -4%; height: 52%; border-radius: 50%; background: radial-gradient(closest-side, var(--glow), transparent); z-index: -1; animation: glow 4s ease-in-out infinite; }
-.hero h1 { font-size: clamp(46px, 7.4vw, 96px); letter-spacing: -0.055em; line-height: 0.98; }
+.hero h1 { font-size: clamp(44px, min(7.4vw, 10.5svh), 96px); letter-spacing: -0.055em; line-height: 0.98; }
 .hero h1 .ln { display: block; }
 .hero .lede { margin-top: 22px; max-width: 46ch; }
 .ask { margin-top: 30px; width: min(640px, 100%); min-height: 64px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--raised); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 26px; text-decoration: none; text-align: left; transition: border-color 0.3s; }
@@ -45,14 +46,19 @@ section { position: relative; padding-block: var(--space-section); }
 .hero .alt { margin-top: 18px; font-size: 15px; color: var(--dim); }
 .hero .alt a { color: var(--text); text-underline-offset: 4px; text-decoration-color: var(--line-strong); }
 .hero .alt a:hover { text-decoration-color: var(--accent); }
-.hero-foot { position: absolute; left: 0; right: 0; bottom: 24px; display: flex; justify-content: space-between; gap: 16px; padding-inline: max(48px, env(safe-area-inset-left, 0px)); font: 13px var(--mono); color: var(--faint); }
+.hero-foot { position: absolute; left: 0; right: 0; bottom: 24px; display: flex; justify-content: space-between; gap: 16px; padding-inline: max(20px, calc((100% - var(--col)) / 2 + 20px)); font: 13px var(--mono); color: var(--faint); }
 @media (max-width: 720px) {
   .ask { border-radius: 26px; padding-left: 20px; flex-wrap: wrap; }
   .ask .q { font-size: 16px; flex-basis: calc(100% - 64px); }
   .ask .meta { order: 3; flex-basis: 100%; padding-bottom: 6px; }
   .hero-foot { position: static; flex-direction: column; align-items: center; margin-top: 48px; padding: 0; }
 }
-@media (max-height: 820px) and (min-width: 721px) { .hero-foot { position: static; margin-top: 40px; width: 100%; } }
+@media (max-height: 820px) and (min-width: 721px) { .hero-foot { position: static; margin-top: 32px; width: 100%; padding-inline: 0; max-width: calc(var(--col) - 40px); } }
+/* On a tall, narrow screen the hero is as tall as what it holds, so no empty band opens above Plum. */
+@media (max-aspect-ratio: 4/5) {
+  .hero { min-height: 0; padding-block: clamp(40px, 9vw, 88px) clamp(32px, 6vw, 56px); }
+  .hero-foot { position: static; margin-top: 40px; width: 100%; padding-inline: 0; }
+}
 /* The hero's one entrance: Plum and the glow arrive, the headline rises line by line, then the ask. */
 .in { animation: rise 0.9s var(--ease) both; }
 .in.d1 { animation-delay: 0.12s; } .in.d2 { animation-delay: 0.26s; } .in.d3 { animation-delay: 0.42s; } .in.d4 { animation-delay: 0.6s; } .in.d5 { animation-delay: 0.78s; }
