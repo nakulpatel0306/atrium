@@ -7,6 +7,7 @@ import { Home } from "../../src/dashboard/components/Home";
 import { LoopPanel, StageStrip } from "../../src/dashboard/components/LoopPanel";
 import { NeedsPage } from "../../src/dashboard/components/NeedsPage";
 import { Settings } from "../../src/dashboard/components/Settings";
+import { CostChip } from "../../src/dashboard/components/Shape";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
 import { KIND, PAUSE_WHY, VERDICT_MEANS } from "../../src/engine/words";
@@ -167,4 +168,15 @@ test("Escape closes the keys sheet alone; the next Escape leaves the item and dr
   await press("Escape");
   expect(el.querySelector(".queue")!.className).not.toContain("opened");
   expect(location.search).toBe("");
+});
+
+test("a row's cost is one short form; what it means (a floor, or no list price) is in its hover", () => {
+  const chip = (spend: Parameters<typeof CostChip>[0]["spend"]) => render(<CostChip spend={spend} dollars />).querySelector(".tag.cost")!;
+  const floor = chip({ weighted: 10_000, usd: 0.17, unpriced: 2_000, cacheRead: 0, input: 0 });
+  expect(floor.textContent).toBe("~$0.17");
+  expect(floor.getAttribute("title")).toContain("at least $0.17 est.");
+  act(() => root!.unmount());
+  const none = chip({ weighted: 10_000, usd: 0, unpriced: 10_000, cacheRead: 0, input: 0 });
+  expect(none.textContent).toBe("—");
+  expect(none.getAttribute("title")).toContain("no list price for these agents");
 });
