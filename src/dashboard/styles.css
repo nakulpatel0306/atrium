@@ -611,9 +611,10 @@ h1 {
   letter-spacing: -0.045em;
   line-height: 1.05;
 }
+/* A page's head: the title, its one lede under it, then the first section a full step below. */
 .brief {
   color: var(--dim);
-  margin: var(--space-6) 0 var(--space-24);
+  margin: var(--space-8) 0 var(--space-24);
   max-width: 680px;
 }
 h2 {
@@ -2813,7 +2814,8 @@ code {
 }
 
 /* Get started: three steps, one screen each. */
-.start {
+/* Starts at the same left edge as every other page; only its reading column is narrower. */
+.wrap.start > * {
   max-width: 640px;
 }
 .start > p,
@@ -2868,6 +2870,10 @@ code {
 }
 .start-optional li > span {
   flex: 1;
+}
+/* Ready is a status, not a field: it stays its own size at the row's end. */
+.start-optional li > .tag {
+  flex: none;
 }
 .start-optional code {
   font-size: var(--fs-sm);
@@ -3310,7 +3316,7 @@ kbd {
 }
 .queue-page .page-head {
   align-items: center;
-  margin-bottom: var(--space-16);
+  margin-bottom: var(--space-24);
 }
 .keys-btn {
   margin-left: auto;
@@ -3571,6 +3577,9 @@ kbd {
 .keys-sheet dd {
   color: var(--dim);
 }
+.keys-sheet > .btn {
+  margin-top: var(--space-12);
+}
 .item.low .t {
   color: var(--dim);
 }
@@ -3592,7 +3601,7 @@ kbd {
   }
 }
 .page-title {
-  margin-bottom: var(--space-16);
+  margin-bottom: var(--space-24);
 }
 
 /* Touch: every control gets a finger-sized target. */
@@ -4199,9 +4208,15 @@ kbd {
   max-width: 260px;
   font-family: var(--mono);
 }
-.spend-line {
-  color: var(--dim);
+/* Today's and this week's spend, under the lede and a step quieter than it. */
+.brief:has(+ .spend-line) {
   margin-bottom: var(--space-8);
+}
+.spend-line {
+  color: var(--faint);
+  font-size: var(--fs-sm);
+  max-width: var(--measure);
+  margin-bottom: var(--space-24);
 }
 
 /* Learning: the walkthrough above a result's diff, its question, the retro and roll-up, and CLAUDE.md proposals. */
@@ -4243,7 +4258,7 @@ kbd {
   font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--faint);
-  margin-bottom: var(--space-2);
+  margin: var(--space-8) 0 var(--space-2);
 }
 .walkthrough ul,
 .rollup ul {
@@ -4720,6 +4735,11 @@ kbd {
 .summary-row > .acts .btn {
   width: 100%;
 }
+/* A space's own list leaves out the space's name, so its column goes too. */
+.needs-list.space-needs .summary-row {
+  grid-template-columns: 8px minmax(0, 1fr) 104px 112px 160px;
+  grid-template-areas: "dot t state cost acts";
+}
 /* Narrower: the status, cost and button take a line of their own under the reason. On a phone the space's name goes
    (its dot stays), so the title starts beside the dot. */
 @container main (max-width: 860px) {
@@ -4740,6 +4760,14 @@ kbd {
   }
   .needs-list .summary-row > .acts {
     margin-top: var(--space-4);
+  }
+}
+@container main (max-width: 860px) {
+  .needs-list.space-needs .summary-row {
+    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "dot t t t"
+      ". state cost acts";
   }
 }
 @container main (max-width: 640px) {

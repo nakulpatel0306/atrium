@@ -85,8 +85,7 @@ function PlanLines({ state }: { state: State }) {
       </p>
       {sevenDay && <p className="note-line">Weekly limit: {Math.round(sevenDay.utilization * 100)}% used, resets {absolute(sevenDay.resetsAt)}.</p>}
       <p className="note-line">
-        Claude reports these only while Atrium runs it, so your use in other Claude apps shows up at Atrium's next Claude run, and Atrium can't see your plan's
-        exact quota.
+        Only Atrium's own Claude runs report this, so use in other Claude apps shows up after the next one. Your plan's exact quota isn't visible to Atrium.
       </p>
     </>
   );
@@ -228,19 +227,19 @@ export function Agents({ state }: { state: State }) {
   return (
     <div className="wrap">
       <h1>Agents</h1>
+      <p className="brief">
+        Who can take work right now. Auto sends work to Claude. While Claude's window is being saved, general tasks go to
+        Codex or Gemini and repo work waits. Reviews go to the agent each space picks.
+      </p>
       <p className="spend-line">
         Spent today: {compact(state.spend.today.weighted)} weighted tokens, {spendText(state.spend.today)} · this week: {compact(state.spend.week.weighted)},{" "}
         {/* The amount usually ends "est.", which is its stop; "nothing yet" needs one of its own. */}
         {spendText(state.spend.week)}
         {spendText(state.spend.week).endsWith(".") ? "" : "."} All at list prices; a subscription doesn't bill per token.
       </p>
-      <p className="brief">
-        Who can take work right now. Auto sends work to Claude. While Claude's window is being saved, general tasks go to
-        Codex or Gemini and repo work waits. Reviews go to the agent each space picks.
-      </p>
       <div className="list">
         {ids.length === 0 ? (
-          <div className="empty-row">No agents are set up in this engine.</div>
+          <div className="empty-row">No agents are set up yet. Open Get started from Settings to check which agent tools are installed on this Mac.</div>
         ) : (
           ids.map((id) => (
             <AgentRow key={id} id={id} info={state.agents[id]!} state={state} open={expanded.has(id)} onToggle={() => toggle(id)} />
