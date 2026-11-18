@@ -1,12 +1,15 @@
 import { useEffect, useRef } from "react";
 import { CLEAN, KIND, RISKY, VERDICT_MEANS } from "../../engine/words";
+import { useDialogFocus } from "../focus";
 
 // The keys that work on this page, and on Needs you what each kind of item asks, in the words every surface uses
 // (engine/words.ts).
 // `floating`: it opens where the user is, bottom right above the ask bar, clear of the decision buttons at the top.
 export function KeysSheet({ keys, kinds = false, note, floating = false, onClose }: { keys: [string, string][]; kinds?: boolean; note?: string; floating?: boolean; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null);
-  // Focus goes to the sheet, so a screen reader says it opened; Esc closes it as before.
+  // Tab stays in the sheet and focus goes back on closing; the page's own Esc closes it, so the trap leaves Esc alone.
+  useDialogFocus(box, onClose, { escape: false });
+  // Focus goes to the sheet, so a screen reader says it opened.
   useEffect(() => {
     box.current?.focus();
   }, []);

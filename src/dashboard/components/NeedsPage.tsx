@@ -1,5 +1,6 @@
 import { CheckCheck, ChevronLeft, Inbox, Keyboard } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../focus";
 import { post, type State } from "../api";
 import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
@@ -250,7 +251,7 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
         </button>
       )}
       {(open || left.length > 0) && (
-        <div className="batch-sheet" role="dialog" aria-label="Approve clean results">
+        <BatchSheet onClose={() => (left.length ? setLeft([]) : setOpen(false))}>
           {left.length > 0 ? (
             <>
               <p>These were left for you to read on their own:</p>
@@ -286,8 +287,19 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
             </>
           )}
           {error && <p className="err">{error}</p>}
-        </div>
+        </BatchSheet>
       )}
+    </div>
+  );
+}
+
+// The batch sheet keeps Tab inside it and gives focus back on closing; the page's Esc closes it.
+function BatchSheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box, onClose, { escape: false });
+  return (
+    <div ref={box} className="batch-sheet" role="dialog" aria-label="Approve clean results">
+      {children}
     </div>
   );
 }

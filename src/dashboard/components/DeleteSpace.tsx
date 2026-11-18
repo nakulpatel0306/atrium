@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { del, useFetched } from "../api";
 import { nameMatches, type SpaceDeletePreview, spaceDeleteLines } from "../deletion";
+import { useDialogFocus } from "../focus";
 import { showToast } from "../toast";
 
 type Props = { space: { id: string; name: string }; onClose: () => void; onDeleted?: () => void };
@@ -13,13 +14,12 @@ export function DeleteSpace({ space, onClose, onDeleted }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLFormElement>(null);
+  useDialogFocus(box, onClose);
 
   useEffect(() => {
     input.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const ready = nameMatches(typed, space.name) && preview !== null && preview.refusal === null;
   const remove = async () => {
@@ -37,6 +37,7 @@ export function DeleteSpace({ space, onClose, onDeleted }: Props) {
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <form
+        ref={box}
         className="dialog"
         role="dialog"
         aria-modal="true"
