@@ -17,15 +17,16 @@
 <style>
 /* The landing page: a still hero where Plum lives, then the loop told on scroll with Plum beside the product, then
    the live demo, the evidence, and the ways in. */
-section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
-.head { display: flex; flex-direction: column; gap: 18px; margin-bottom: clamp(44px, 6vw, 80px); max-width: 820px; }
+section { position: relative; padding-block: var(--space-section); }
+.head { display: flex; flex-direction: column; gap: 18px; margin-bottom: var(--space-head); max-width: 820px; }
 
 /* Hero */
 .hero { min-height: min(calc(100svh - 72px), 900px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px max(20px, env(safe-area-inset-right, 0px)) 28px max(20px, env(safe-area-inset-left, 0px)); overflow-x: clip; isolation: isolate; }
-.hero-plum { width: clamp(180px, 18vw, 240px); aspect-ratio: 1; margin-bottom: -10px; cursor: pointer; }
+/* Plum and the headline scale with the screen's height too, so a laptop screen holds the ask and the steps. */
+.hero-plum { width: clamp(150px, min(18vw, 24svh), 240px); aspect-ratio: 1; cursor: pointer; }
 /* The light Plum stands in: a soft purple pool under it, breathing. */
 .hero-plum::before { content: ""; position: absolute; left: -45%; right: -45%; bottom: -4%; height: 52%; border-radius: 50%; background: radial-gradient(closest-side, var(--glow), transparent); z-index: -1; animation: glow 4s ease-in-out infinite; }
-.hero h1 { font-size: clamp(46px, 7.4vw, 96px); letter-spacing: -0.055em; line-height: 0.98; }
+.hero h1 { font-size: clamp(44px, min(7.4vw, 10.5svh), 96px); letter-spacing: -0.055em; line-height: 0.98; }
 .hero h1 .ln { display: block; }
 .hero .lede { margin-top: 22px; max-width: 46ch; }
 .ask { margin-top: 30px; width: min(640px, 100%); min-height: 64px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--raised); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 26px; text-decoration: none; text-align: left; transition: border-color 0.3s; }
@@ -45,14 +46,19 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .hero .alt { margin-top: 18px; font-size: 15px; color: var(--dim); }
 .hero .alt a { color: var(--text); text-underline-offset: 4px; text-decoration-color: var(--line-strong); }
 .hero .alt a:hover { text-decoration-color: var(--accent); }
-.hero-foot { position: absolute; left: 0; right: 0; bottom: 24px; display: flex; justify-content: space-between; gap: 16px; padding-inline: max(48px, env(safe-area-inset-left, 0px)); font: 13px var(--mono); color: var(--faint); }
+.hero-foot { position: absolute; left: 0; right: 0; bottom: 24px; display: flex; justify-content: space-between; gap: 16px; padding-inline: max(20px, calc((100% - var(--col)) / 2 + 20px)); font: 13px var(--mono); color: var(--faint); }
 @media (max-width: 720px) {
   .ask { border-radius: 26px; padding-left: 20px; flex-wrap: wrap; }
   .ask .q { font-size: 16px; flex-basis: calc(100% - 64px); }
   .ask .meta { order: 3; flex-basis: 100%; padding-bottom: 6px; }
   .hero-foot { position: static; flex-direction: column; align-items: center; margin-top: 48px; padding: 0; }
 }
-@media (max-height: 820px) and (min-width: 721px) { .hero-foot { position: static; margin-top: 40px; width: 100%; } }
+@media (max-height: 820px) and (min-width: 721px) { .hero-foot { position: static; margin-top: 32px; width: 100%; padding-inline: 0; max-width: calc(var(--col) - 40px); } }
+/* On a tall, narrow screen the hero is as tall as what it holds, so no empty band opens above Plum. */
+@media (max-aspect-ratio: 4/5) {
+  .hero { min-height: 0; padding-block: clamp(40px, 9vw, 88px) clamp(32px, 6vw, 56px); }
+  .hero-foot { position: static; margin-top: 40px; width: 100%; padding-inline: 0; }
+}
 /* The hero's one entrance: Plum and the glow arrive, the headline rises line by line, then the ask. */
 .in { animation: rise 0.9s var(--ease) both; }
 .in.d1 { animation-delay: 0.12s; } .in.d2 { animation-delay: 0.26s; } .in.d3 { animation-delay: 0.42s; } .in.d4 { animation-delay: 0.6s; } .in.d5 { animation-delay: 0.78s; }
@@ -64,15 +70,20 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 
 /* The loop, told on scroll: Plum holds still on one side while the steps pass on the other. */
 .loop { border-top: 1px solid var(--line); }
-.story { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); }
-.story-side { position: sticky; top: 120px; align-self: start; display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.story-side .plum { width: min(340px, 100%); aspect-ratio: 1; }
+/* Plum's stills are 600px, so no Plum draws wider than 300px and each stays sharp on a Retina screen.
+   Each step is one screen-sized band with its content centred, and Plum is held at the middle of the screen, so it
+   always faces the step being read. --side is Plum plus the step list under it. */
+.story { --beat: clamp(560px, 76svh, 760px); --plum: min(300px, 40svh, 30vw); --steps: 22px; --side: calc(var(--plum) + 14px + var(--steps)); display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); }
+.story-side { position: sticky; top: calc(var(--bar-h) / 2 + 50svh - var(--side) / 2); align-self: start; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.story-side .plum { width: var(--plum); aspect-ratio: 1; }
 .story-side .glow { position: absolute; top: 58%; width: 80%; height: 90px; border-radius: 50%; background: radial-gradient(closest-side, var(--glow), transparent); opacity: 0.6; z-index: -1; }
 .now { display: flex; gap: 14px; list-style: none; margin: 0; padding: 0; font: 13px var(--mono); color: var(--faint); }
 .now li { transition: color 0.3s; }
 .now li.on { color: var(--text); }
-.beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: clamp(96px, 14vh, 160px); }
-.beat { display: flex; flex-direction: column; gap: 22px; min-height: 60vh; justify-content: center; }
+.beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.beat { display: flex; flex-direction: column; gap: 22px; min-height: var(--beat); padding-block: 24px; justify-content: center; }
+/* The first step starts right under the section head, level with Plum, instead of centred in a band of its own. */
+.beat:first-child { min-height: 0; padding-top: 0; }
 .beat .label { color: var(--faint); }
 .beat h3 { font-size: clamp(28px, 3.2vw, 40px); letter-spacing: -0.04em; line-height: 1.05; }
 .beat p { color: var(--body); max-width: 52ch; }
@@ -80,12 +91,13 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .beat code { font-size: 0.86em; color: var(--text); }
 .beat .pill kbd { border: 0; padding: 0; color: inherit; }
 @media (max-width: 860px) {
-  .story { grid-template-columns: minmax(0, 1fr); }
-  .story-side { top: 64px; z-index: 2; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-  .story-side .plum { width: 104px; flex: none; }
+  .story { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .story-side { top: var(--bar-h); z-index: 2; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .story-side .plum { width: 96px; flex: none; }
   .story-side .glow { display: none; }
-  .now { flex-wrap: wrap; gap: 4px 12px; }
-  .beat { min-height: 0; }
+  .now { flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+  .beat { min-height: 0; padding-block: clamp(36px, 7vw, 56px); }
+  .beat:first-child { padding-top: clamp(28px, 5vw, 40px); }
 }
 
 /* Panels: pieces of the real product, drawn in its own type and colours. */
@@ -128,11 +140,17 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 /* Try it */
 .try { border-top: 1px solid var(--line); }
 .try .head { max-width: 760px; }
-#try { position: relative; }
 #mac { scroll-margin-bottom: 16px; }
-/* Plum perches on the demo's window, so its reactions happen where you click. */
-.try-plum { position: absolute; right: 32px; top: -84px; width: 120px; aspect-ratio: 1; z-index: 2; }
-@media (max-width: 760px) { .try-plum { width: 84px; top: -60px; right: 12px; } }
+/* Plum stands on the demo window's top edge, so its reactions happen where you click. The still's body ends a fifth
+   of the way up its box, which is how far the box hangs over the edge. */
+.perch { position: relative; }
+.try-plum { --w: 120px; position: absolute; right: clamp(16px, 4vw, 48px); bottom: calc(100% - var(--w) / 5); width: var(--w); aspect-ratio: 1; z-index: 2; }
+@media (max-width: 760px) {
+  .try-plum { --w: 84px; right: 12px; }
+  /* The note moves left and wraps short of Plum. */
+  .try .try-note { justify-content: flex-start; padding-right: 108px; align-items: flex-start; }
+  .try .try-note .pulse { margin-top: 5px; }
+}
 
 /* Evidence: one typographic band. Each finding reads as a sentence, its number set large, and the choice it led to. */
 .why { border-top: 1px solid var(--line); }
@@ -142,7 +160,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .facts .fact { font-size: clamp(20px, 2.1vw, 26px); line-height: 1.3; letter-spacing: -0.02em; color: var(--text); max-width: 34ch; }
 .facts .fact span { display: block; margin-top: 10px; font-size: 16px; letter-spacing: 0; color: var(--body); }
 .facts .fact span::before { content: "So "; color: var(--text); font-weight: 600; }
-.sources { margin-top: 28px; font-size: 15px; color: var(--dim); }
+.sources { margin-top: 28px; font-size: 15px; color: var(--dim); max-width: 72ch; }
 .sources a { color: var(--text); text-underline-offset: 4px; }
 @media (max-width: 760px) { .facts li { grid-template-columns: minmax(0, 1fr); } }
 
@@ -186,23 +204,24 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .grid .go:hover { text-decoration: underline; text-underline-offset: 4px; }
 .grid .k2 { font: 13px var(--mono); color: var(--faint); }
 @media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } .grid > li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); } }
-.why, .uses, .private, .start { padding-block: clamp(64px, 8vw, 96px); }
 /* Privacy: Plum inside its ring, as a fence, beside four plain promises. */
 .private { border-top: 1px solid var(--line); }
 .private-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); align-items: center; }
-.private-plum { width: min(320px, 100%); aspect-ratio: 1; margin-inline: auto; }
+.private-plum { width: min(300px, 100%); aspect-ratio: 1; margin-inline: auto; }
 .promises { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .promises li { padding: 18px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
 .promises li:last-child { border-bottom: 1px solid var(--line); }
 .promises b { font-size: 20px; font-weight: 600; letter-spacing: -0.025em; }
 .promises p { color: var(--body); font-size: 16px; }
-@media (max-width: 860px) { .private-grid { grid-template-columns: minmax(0, 1fr); } .private-plum { width: 200px; } }
+/* On one column Plum leads the text it stands for, on the same left edge. */
+@media (max-width: 860px) { .private-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; } .private-plum { width: 168px; margin-inline: -18px 0; } }
 /* Three ways in, as one line under the install. */
 .doors { max-width: 720px; margin: 22px auto 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px; font-size: 15px; color: var(--dim); list-style: none; padding: 0; }
 .doors code { font: 14px var(--mono); color: var(--text); }
 .doors a { color: var(--accent); font-weight: 500; text-decoration: none; }
 .doors a:hover { text-decoration: underline; text-underline-offset: 4px; }
-.also { margin-top: clamp(80px, 10vw, 128px); }
+/* The last step's band already ends in space, so the grid follows at the head's distance. */
+.also { margin-top: var(--space-head); }
 .also > .label { display: block; font-weight: 500; margin-bottom: 18px; }
 
 /* Get it */
@@ -267,7 +286,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
     <div class="story">
       <div class="story-side">
         <div class="glow" aria-hidden="true"></div>
-        <div class="plum" id="story-plum" role="img" aria-label="Plum, showing the step you're reading"><img class="plum-still" src="plum/brief.webp" alt="" width="340" height="340" loading="lazy"></div>
+        <div class="plum" id="story-plum" role="img" aria-label="Plum, showing the step you're reading"><img class="plum-still" src="plum/brief.webp" alt="" width="300" height="300" loading="lazy"></div>
         <ol class="now" id="now" aria-hidden="true"><li class="on">brief</li><li>write</li><li>checks</li><li>review</li><li>you</li></ol>
       </div>
       <ol class="beats">
@@ -296,6 +315,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 <pre><span class="f">src/theme.ts</span>
 <span class="add">+ const saved = localStorage.getItem("theme");</span>
 <span class="add">+ const system = matchMedia("(prefers-color-scheme: dark)");</span>
+<span class="add">+ const theme = saved ?? (system.matches ? "dark" : "light");</span>
 <span class="del">- document.body.className = "light";</span>
 <span class="add">+ document.documentElement.dataset.theme = theme;</span></pre>
           </div>
@@ -357,32 +377,34 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
       <p class="lede">A working copy of the Mac app. Open a space, approve a result, send one back, or type a new task in the ask bar.</p>
     </div>
     <div id="try">
-      <div class="plum try-plum" id="try-plum" role="img" aria-label="Plum, reacting to the demo"><img class="plum-still" src="plum/quiet.webp" alt="" width="120" height="120" loading="lazy"></div>
       <div class="try-note"><span class="pulse"></span> Click around. Nothing here is saved.</div>
-      <div class="mac" id="mac">
-        <aside class="m-side" aria-label="Atrium sidebar">
-          <div class="m-lights" aria-hidden="true"><i></i><i></i><i></i></div>
-          <div class="m-ws">atrium</div>
-          <div id="m-nav"></div>
-          <div class="m-sec"><span>Spaces</span><button type="button" data-new aria-label="New space"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>
-          <div id="m-spaces"></div>
-          <div class="m-foot">
-            <button class="m-nav" type="button" data-toast="Settings live in the real app."><svg class="i" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>Settings</button>
-            <div class="row"><span>Claude · last 24h</span><span class="val" id="m-tokens">18.2k tokens</span></div>
-            <div class="row"><span class="power"><svg class="i" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>Plugged in · work runs now</span></div>
+      <div class="perch">
+        <div class="plum try-plum" id="try-plum" role="img" aria-label="Plum, reacting to the demo"><img class="plum-still" src="plum/quiet.webp" alt="" width="120" height="120" loading="lazy"></div>
+        <div class="mac" id="mac">
+          <aside class="m-side" aria-label="Atrium sidebar">
+            <div class="m-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="m-ws">atrium</div>
+            <div id="m-nav"></div>
+            <div class="m-sec"><span>Spaces</span><button type="button" data-new aria-label="New space"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>
+            <div id="m-spaces"></div>
+            <div class="m-foot">
+              <button class="m-nav" type="button" data-toast="Settings live in the real app."><svg class="i" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>Settings</button>
+              <div class="row"><span>Claude · last 24h</span><span class="val" id="m-tokens">18.2k tokens</span></div>
+              <div class="row"><span class="power"><svg class="i" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>Plugged in · work runs now</span></div>
+            </div>
+          </aside>
+          <div class="m-main">
+            <div class="m-top" id="m-top"></div>
+            <div class="m-scroll" id="m-scroll"><div class="m-wrap" id="m-view"></div></div>
+            <div class="m-cmd">
+              <form id="m-form" autocomplete="off">
+                <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                <input id="m-ask" type="text" aria-label="Ask Atrium">
+                <span class="k">/</span>
+              </form>
+            </div>
+            <div class="m-toast" id="m-toast" role="status" aria-live="polite"></div>
           </div>
-        </aside>
-        <div class="m-main">
-          <div class="m-top" id="m-top"></div>
-          <div class="m-scroll" id="m-scroll"><div class="m-wrap" id="m-view"></div></div>
-          <div class="m-cmd">
-            <form id="m-form" autocomplete="off">
-              <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
-              <input id="m-ask" type="text" aria-label="Ask Atrium">
-              <span class="k">/</span>
-            </form>
-          </div>
-          <div class="m-toast" id="m-toast" role="status" aria-live="polite"></div>
         </div>
       </div>
     </div>
@@ -462,7 +484,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 
 <section class="private" id="private" aria-labelledby="private-h">
   <div class="wrap private-grid">
-    <div class="plum private-plum" id="private-plum" role="img" aria-label="Plum inside its ring, as the sandbox around every agent"><img class="plum-still" src="plum/checks.webp" alt="" width="320" height="320" loading="lazy"></div>
+    <div class="plum private-plum" id="private-plum" role="img" aria-label="Plum inside its ring, as the sandbox around every agent"><img class="plum-still" src="plum/checks.webp" alt="" width="300" height="300" loading="lazy"></div>
     <div>
       <div class="head">
         <span class="label">Private by design</span>
@@ -491,7 +513,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
       <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git
 <span class="p">$ </span>cd atrium
 <span class="p">$ </span>bun install &amp;&amp; bun link   <span class="c"># puts atrium on your PATH</span>
-<span class="p">$ </span>atrium install           <span class="c"># starts Atrium now and at login</span>
+<span class="p">$ </span>atrium install            <span class="c"># starts Atrium now and at login</span>
 <span class="p">$ </span>atrium open</pre>
     </div>
     <ul class="doors" aria-label="Three ways in, all on the same live state">

@@ -34,6 +34,13 @@
   --sans: "Inter Tight", system-ui, -apple-system, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --col: 1160px;
+  /* Vertical rhythm, used by every page: a section's padding, a section head to what it introduces, a sub-block inside
+     a section, and the top of a page's first section under the bar. */
+  --space-section: clamp(64px, 8vw, 104px);
+  --bar-h: 72px;
+  --space-head: clamp(36px, 4.5vw, 56px);
+  --space-block: clamp(64px, 8vw, 104px);
+  --space-hero: clamp(48px, 7vw, 88px);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-color-scheme: light) {
@@ -117,7 +124,7 @@ h2.display { font-size: clamp(38px, 5.6vw, 72px); }
 /* Top bar: the wordmark, a few quiet links, the theme switch, and one pill. */
 .bar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid transparent; transition: border-color 0.3s; }
 .bar.scrolled { border-bottom-color: var(--line); }
-.bar .wrap { display: flex; align-items: center; gap: 28px; height: 72px; }
+.bar .wrap { display: flex; align-items: center; gap: 28px; height: var(--bar-h); }
 .word { font-weight: 600; font-size: 20px; letter-spacing: -0.03em; text-decoration: none; margin-right: auto; display: inline-flex; align-items: center; min-height: 44px; }
 .main-nav > ul { display: flex; gap: 28px; list-style: none; margin: 0; padding: 0; font-size: 15px; color: var(--dim); }
 .main-nav a { text-decoration: none; transition: color 0.2s; }
@@ -131,9 +138,10 @@ h2.display { font-size: clamp(38px, 5.6vw, 72px); }
 .menu li a { display: flex; align-items: center; min-height: 48px; font-size: 18px; color: var(--dim); border-bottom: 1px solid var(--line); }
 .menu li:last-child a { border-bottom: 0; }
 @media (max-width: 820px) {
+  :root { --bar-h: 64px; }
   .main-nav > ul { display: none; }
   .menu { display: block; }
-  .bar .wrap { gap: 10px; height: 64px; }
+  .bar .wrap { gap: 10px; }
   .bar .btn.small { padding: 0 16px; }
 }
 .menu .get a { color: var(--accent); font-weight: 600; }

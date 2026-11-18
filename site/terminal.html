@@ -19,14 +19,14 @@
 body { font-family: var(--mono); font-size: 16px; background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 40px 40px; }
 :root { --grid: color-mix(in srgb, var(--line) 55%, transparent); }
 .btn { border-radius: 10px; font-family: var(--mono); font-size: 15px; }
-.theme, .theme button { border-radius: 8px; }
+.theme, .theme button, .menu summary { border-radius: 8px; }
 .word { font-family: var(--mono); }
-section { position: relative; padding-block: clamp(64px, 8vw, 96px); }
-.head { display: flex; flex-direction: column; gap: 16px; margin-bottom: clamp(36px, 5vw, 64px); max-width: 780px; }
+section { position: relative; padding-block: var(--space-section); }
+.head { display: flex; flex-direction: column; gap: 16px; margin-bottom: var(--space-head); max-width: 780px; }
 h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-height: 1.08; }
 .lede { font-size: 16px; line-height: 1.7; }
 
-.hero { padding-block: clamp(48px, 7vw, 88px) clamp(56px, 8vw, 96px); }
+.hero { padding-block: var(--space-hero) var(--space-section); }
 .hero code, .lede code { color: var(--accent); }
 .hero h1 { margin-top: 18px; font-size: clamp(38px, 6vw, 72px); letter-spacing: -0.045em; line-height: 1.06; }
 .hero h1 .cur { display: inline-block; width: 0.55em; height: 0.09em; background: currentColor; vertical-align: baseline; animation: caret 1s steps(1) infinite; }
@@ -34,11 +34,14 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
 .hero .ctas { margin-top: 28px; }
 .ctas.end { margin-top: 40px; }
-.stage { position: relative; scroll-margin-top: 140px; margin-top: clamp(72px, 9vw, 112px); scroll-margin-top: 96px; }
-/* Plum perches on the window's top edge, so each pose change happens next to the screen that caused it. */
-.term-plum { position: absolute; right: clamp(12px, 4vw, 48px); top: -118px; width: 150px; aspect-ratio: 1; z-index: 2; }
+/* Clear the head by the usual gap plus the part of Plum that stands above the window. */
+.stage { position: relative; margin-top: calc(var(--space-head) + 96px); scroll-margin-top: 96px; }
+/* Plum stands on the window's top edge, so each pose change happens next to the screen that caused it. The perch is
+   as wide as the window, and the still's body ends a fifth of the way up its box, which is how far the box hangs over. */
+.perch { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; }
+.term-plum { --w: 150px; position: absolute; right: clamp(16px, 4vw, 48px); bottom: calc(100% - var(--w) / 5); width: var(--w); aspect-ratio: 1; z-index: 2; }
 @keyframes caret { 50% { opacity: 0; } }
-@media (max-width: 760px) { .term-plum { width: 96px; top: -80px; } .stage { margin-top: 88px; } }
+@media (max-width: 760px) { .perch { width: 100%; } .term-plum { --w: 96px; right: 12px; } .stage { margin-top: calc(var(--space-head) + 64px); } }
 
 /* The window: always a dark terminal, as the app is drawn on one, in the app's own colours. */
 .window { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; border: 1px solid var(--line-strong); border-radius: 12px; background: #0c0a14; overflow: hidden; box-shadow: 0 40px 100px -50px var(--glow); }
@@ -130,6 +133,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
     </div>
 
     <div class="stage" id="screens">
+    <div class="perch">
     <div class="plum term-plum" id="term-plum" role="img" aria-label="Plum, reacting to the screen you picked"><img class="plum-still" src="plum/look.webp" alt="" width="150" height="150"></div>
     <div class="window">
       <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>atrium · 120×40</span></div>
@@ -302,6 +306,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
  <span class="f-onk b-key bo"> ↑↓ </span><span class="f-dim"> move</span>  <span class="f-onk b-key bo"> ↵ </span><span class="f-dim"> tasks</span>  <span class="f-onk b-key bo"> n </span><span class="f-dim"> new task</span>  <span class="f-onk b-key bo"> N </span><span class="f-dim"> new space</span>  <span class="f-onk b-key bo"> e </span><span class="f-dim"> goal</span>  <span class="f-onk b-key bo"> X </span><span class="f-dim"> archive</span>  <span class="f-onk b-key bo"> D </span><span class="f-dim"> delete</span>  <span class="f-onk b-key bo"> ? </span><span class="f-dim"> help</span></pre>
     </div>
     </div>
+    </div>
     <p class="caption">The real terminal app, captured from a test engine with made-up spaces. With a screen focused, its keys switch screens too. Truecolor terminals get these colours; others get your terminal's own sixteen.</p>
   </div>
 </section>
@@ -340,7 +345,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
         <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git
 <span class="p">$ </span>cd atrium
 <span class="p">$ </span>bun install &amp;&amp; bun link   <span class="c"># puts atrium on your PATH</span>
-<span class="p">$ </span>atrium install           <span class="c"># starts Atrium now and at login</span>
+<span class="p">$ </span>atrium install            <span class="c"># starts Atrium now and at login</span>
 <span class="p">$ </span>atrium</pre>
       </div>
       <ul class="flags">
