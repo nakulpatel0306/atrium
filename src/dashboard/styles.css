@@ -877,6 +877,11 @@ h2 {
 .space .s.waiting {
   color: var(--yellow);
 }
+/* Without a status line (what it would say is a row in Needs you), the list keeps the same step under the name. */
+.space .n + .tasks,
+.space .n + .agents {
+  margin-top: var(--space-12);
+}
 .space .tasks {
   list-style: none;
   font-size: var(--fs-sm);
@@ -5168,7 +5173,7 @@ a.task-link {
 /* Why a task paused, said once under its ways on. */
 .paused .pause-why {
   max-width: var(--measure);
-  margin-top: var(--space-8);
+  margin: var(--space-8) 0 var(--space-12);
 }
 /* Changing the budget is a detail of the budget line, so it reads as that line's link, in the colour actions use. */
 .budget .btn.link {
@@ -5319,5 +5324,6 @@ a.task-link {
   .live:has(.live-ask) .idle {
     display: flex;
     flex-direction: column;
+    gap: var(--space-12);
   }
 }

@@ -137,3 +137,12 @@ test("on a phone a failure line in Activity wraps in full, as on a desktop, whil
   const phone = css.slice(css.indexOf("Activity lines get two lines on a phone"));
   expect(phone).toMatch(/^[^@]*\.feed \.tone-failure \.msg \{\s*display: block;\s*-webkit-line-clamp: unset;/);
 });
+
+test("the small gaps sit on the scale: a card without a status line, Live's idle line beside a question, a pause's reason", () => {
+  // A space card's task list keeps the 12px the status line would have left above it.
+  expect(css).toMatch(/\n\.space \.n \+ \.tasks,\n\.space \.n \+ \.agents \{\s*margin-top: var\(--space-12\);/);
+  // With the question moved first, the idle line keeps a step's distance under its Answer row.
+  expect(css).toMatch(/\.live:has\(\.live-ask\) \.idle \{\s*display: flex;\s*flex-direction: column;\s*gap: var\(--space-12\);/);
+  // The pause's reason keeps a step above the brief that follows it.
+  expect(css).toMatch(/\n\.paused \.pause-why \{[^}]*margin: var\(--space-8\) 0 var\(--space-12\);/);
+});
