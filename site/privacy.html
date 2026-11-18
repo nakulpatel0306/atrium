@@ -76,9 +76,18 @@
     <li>Codex, from OpenAI: <a href="https://openai.com/policies/privacy-policy/">OpenAI's privacy policy</a>.</li>
     <li>Gemini through Antigravity, from Google: <a href="https://policies.google.com/privacy">Google's privacy policy</a> and <a href="https://antigravity.google/terms">Antigravity's terms</a>.</li>
   </ul>
-  <p>A space marked private only ever uses Claude.</p>
+  <h3>One task can reach more than one maker</h3>
+  <p>Each step of a task goes to whichever agent runs it, and they aren't always the same one:</p>
+  <ul class="plain">
+    <li><strong>Briefs, scouts, walkthroughs</strong> and the hunk explanations you ask for always run on Claude.</li>
+    <li><strong>The writer</strong> is Claude unless you pick another agent for the task, or, for work in a general space, Claude's five-hour window is past the reserve you set.</li>
+    <li><strong>The review</strong> of a code task, with Review with left on Auto, goes to another maker's CLI when one is installed and allowed in the space, so the diff and the brief go there too.</li>
+  </ul>
+  <p>To keep a space's work with Claude alone, set its <strong>Review with</strong> to Claude (or Off) and don't pick another writer. Its <strong>Learning</strong> setting at Off stops the walkthroughs too. A space marked private only ever uses Claude, whatever its settings say.</p>
+  <h3>Checking the agents are ready</h3>
+  <p>To show whether each agent CLI is installed and signed in, Atrium asks it: when Get started or <code>atrium doctor</code> runs, and every ten minutes while Atrium is running (<code>claude --version</code>, <code>codex login status</code>, <code>agy models</code>). A CLI may ask its maker to answer. Get started and <code>atrium doctor</code> also run <code>gh auth status</code>, which asks GitHub whether you're signed in.</p>
   <h3>GitHub, when you ask</h3>
-  <p>Atrium uses git and the GitHub CLI, signed in as you, only for things you start: cloning or fetching a repo you pointed a space at, creating a new repo, and pushing a branch and opening its pull request. A push and a new repo each wait for your yes. Before deleting a clone, it fetches once to check that everything in it is on GitHub.</p>
+  <p>Beyond that sign-in check, Atrium uses git and the GitHub CLI, signed in as you, only for things you start: cloning or fetching a repo you pointed a space at, creating a new repo, and pushing a branch and opening its pull request. A push and a new repo each wait for your yes. Before deleting a clone, it fetches once to check that everything in it is on GitHub.</p>
   <h3>Nothing else</h3>
   <p>No telemetry, no analytics, no crash reports and no update checks. Atrium never phones home: updating it is a <code>git pull</code> you run yourself.</p>
 </section>
@@ -88,9 +97,15 @@
   <ul class="plain">
     <li><strong>One space or task:</strong> delete it in the app, typing its name to confirm. The folders it made go to the Trash.</li>
     <li><strong>Data from older versions</strong> (mail, texting, money and investing, which Atrium no longer has): <strong>Remove old data</strong> on Home or in Settings → Data, or <code>atrium data remove-old</code>. It shows exactly what will go, including sign-in tokens those features left in your login Keychain, and removes nothing until you confirm.</li>
-    <li><strong>Everything:</strong> run <code>atrium uninstall</code>, which stops Atrium starting at login but deletes nothing. Run <code>atrium app uninstall</code> too if you installed the Mac app. Quit Atrium, then delete <code>~/Library/Application Support/Atrium</code> and <code>~/Atrium</code>.</li>
+    <li><strong>Everything:</strong> run <code>atrium uninstall</code>. It stops the running engine and removes its login item, <code>~/Library/LaunchAgents/com.atrium.engine.plist</code>, but deletes no data. If you installed the Mac app, <code>atrium app uninstall</code> quits it and removes <code>~/Applications/Atrium.app</code>. Then delete <code>~/Library/Application Support/Atrium</code> and <code>~/Atrium</code>.</li>
   </ul>
-  <p>Your repos, their <code>atrium/</code> branches and the clones in your projects folder are yours, and stay until you delete them. Claude Code, Codex and <code>agy</code> keep their own sign-in and history under their own settings.</p>
+  <p>Even then, some things stay until you delete them yourself:</p>
+  <ul class="plain">
+    <li>Your repos, their <code>atrium/</code> branches, and the clones in your projects folder.</li>
+    <li>The writer sessions Claude Code kept for Atrium's tasks, which sit with your own Claude Code sessions under <code>~/.claude/projects/</code>, in the folder named after each repo's path.</li>
+    <li>The Mac app's web data, under <code>~/Library/WebKit/com.atrium.app</code>.</li>
+    <li>Whatever Claude Code, Codex and <code>agy</code> keep under their own settings, such as your sign-in and history.</li>
+  </ul>
 </section>
 
 <section id="website">
