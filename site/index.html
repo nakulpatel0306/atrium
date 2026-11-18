@@ -78,7 +78,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .beat p { color: var(--body); max-width: 52ch; }
 .beat kbd { font: 500 0.82em var(--mono); border: 1px solid var(--line-strong); border-radius: 6px; padding: 1px 6px; color: var(--text); }
 .beat code { font-size: 0.86em; color: var(--text); }
-.beat .btn kbd { border: 0; padding: 0; color: inherit; }
+.beat .pill kbd { border: 0; padding: 0; color: inherit; }
 @media (max-width: 860px) {
   .story { grid-template-columns: minmax(0, 1fr); }
   .story-side { top: 64px; z-index: 2; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
@@ -117,8 +117,11 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .verdict { display: flex; gap: 22px; flex-wrap: wrap; font-size: 15px; }
 .verdict b { color: var(--green); font-weight: 600; }
 .panel .acts { display: flex; gap: 10px; flex-wrap: wrap; }
-.panel .acts .btn { height: 44px; padding: 0 20px; font-size: 15px; }
-.panel a.spot { color: var(--text); text-underline-offset: 3px; }
+.panel .acts .pill { height: 40px; padding: 0 18px; display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; border: 1px solid var(--line-strong); font-size: 15px; color: var(--dim); }
+/* An illustration, not a control: the filled pill is muted so purple stays for what you can press. */
+.panel .acts .pill.fill { background: var(--hover); color: var(--text); }
+.panel .acts kbd { font: 500 13px var(--mono); opacity: 0.7; }
+.panel .spot { font: 13.5px var(--mono); color: var(--text); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 
 /* Try it */
 .try { border-top: 1px solid var(--line); }
@@ -126,18 +129,17 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .try-plum { position: absolute; right: max(20px, calc((100vw - var(--col)) / 2 + 20px)); top: clamp(60px, 9vw, 120px); width: 150px; aspect-ratio: 1; }
 @media (max-width: 960px) { .try-plum { display: none; } }
 
-/* Evidence: three findings, each with the choice it led to. */
+/* Evidence: one typographic band. Each finding reads as a sentence, its number set large, and the choice it led to. */
 .why { border-top: 1px solid var(--line); }
-.facts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); }
-.facts li { padding: 28px 28px 8px 0; display: flex; flex-direction: column; gap: 14px; }
-.facts li + li { padding-left: 28px; border-left: 1px solid var(--line); }
-.facts b { font-size: clamp(44px, 5vw, 64px); font-weight: 600; letter-spacing: -0.05em; line-height: 1; }
-.facts p { color: var(--body); font-size: 16px; }
-.facts p.so { color: var(--text); }
-.facts p.so::before { content: "So "; color: var(--accent); font-weight: 600; }
-.sources { margin-top: 36px; font-size: 15px; color: var(--dim); }
+.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.facts li { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 8px clamp(24px, 5vw, 72px); align-items: center; padding: clamp(22px, 3vw, 34px) 0; border-top: 1px solid var(--line); }
+.facts b { font-size: clamp(56px, 8vw, 112px); font-weight: 600; letter-spacing: -0.06em; line-height: 0.9; }
+.facts .fact { font-size: clamp(20px, 2.1vw, 26px); line-height: 1.3; letter-spacing: -0.02em; color: var(--text); max-width: 34ch; }
+.facts .fact span { display: block; margin-top: 10px; font-size: 16px; letter-spacing: 0; color: var(--body); }
+.facts .fact span::before { content: "So "; color: var(--accent); font-weight: 600; }
+.sources { margin-top: 28px; font-size: 15px; color: var(--dim); }
 .sources a { color: var(--text); text-underline-offset: 4px; }
-@media (max-width: 860px) { .facts { grid-template-columns: minmax(0, 1fr); } .facts li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); } }
+@media (max-width: 760px) { .facts li { grid-template-columns: minmax(0, 1fr); } }
 
 /* What it's for */
 .who { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: stretch; }
@@ -147,6 +149,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .who-tabs button:hover { color: var(--text); }
 .who-tabs button[aria-selected="true"] { color: var(--text); background: var(--raised); border-color: var(--line); }
 .who-tabs button[aria-selected="true"] i { opacity: 1; }
+.dot-blue { background: var(--blue); } .dot-pink { background: var(--pink); } .dot-green { background: var(--green); } .dot-orange { background: var(--orange); } .dot-yellow { background: var(--yellow); }
 .who-panels { border: 1px solid var(--line); border-radius: 22px; background: var(--surface); padding: clamp(24px, 3.5vw, 40px); min-height: 420px; }
 .who-panel { display: flex; flex-direction: column; gap: 18px; animation: rise 0.45s var(--ease); }
 .who-panel[hidden] { display: none; }
@@ -167,9 +170,8 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   .who-panels { min-height: 0; }
 }
 
-/* Three ways in, privacy and the rest of the loop: hairline grids, no boxes. */
+/* The rest of the loop: a hairline grid, no boxes. */
 .grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); }
-.grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .grid > li { padding: 28px 28px 8px 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .grid > li + li { padding-left: 28px; border-left: 1px solid var(--line); }
 .grid h3 { font-size: 22px; letter-spacing: -0.03em; }
@@ -178,14 +180,29 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .grid .go { margin-top: auto; padding-top: 6px; font-size: 15px; color: var(--accent); text-decoration: none; font-weight: 500; }
 .grid .go:hover { text-decoration: underline; text-underline-offset: 4px; }
 .grid .k2 { font: 13px var(--mono); color: var(--faint); }
-@media (max-width: 960px) { .grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid.four > li:nth-child(3) { padding-left: 0; border-left: 0; } .grid.four > li:nth-child(n + 3) { border-top: 1px solid var(--line); } }
-@media (max-width: 760px) { .grid, .grid.four { grid-template-columns: minmax(0, 1fr); } .grid > li + li, .grid.four > li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); } }
-.ways, .private { padding-top: 0; }
-.also { margin-top: clamp(96px, 12vw, 160px); }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } .grid > li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); } }
+.why, .uses, .private, .start { padding-block: clamp(64px, 8vw, 96px); }
+/* Privacy: Plum inside its ring, as a fence, beside four plain promises. */
+.private { border-top: 1px solid var(--line); }
+.private-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); align-items: center; }
+.private-plum { width: min(320px, 100%); aspect-ratio: 1; margin-inline: auto; }
+.promises { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.promises li { padding: 18px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.promises li:last-child { border-bottom: 1px solid var(--line); }
+.promises b { font-size: 20px; font-weight: 600; letter-spacing: -0.025em; }
+.promises p { color: var(--body); font-size: 16px; }
+@media (max-width: 860px) { .private-grid { grid-template-columns: minmax(0, 1fr); } .private-plum { width: 200px; } }
+/* Three ways in, as one line under the install. */
+.doors { max-width: 720px; margin: 22px auto 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px; font-size: 15px; color: var(--dim); list-style: none; padding: 0; }
+.doors code { font: 14px var(--mono); color: var(--text); }
+.doors a { color: var(--accent); font-weight: 500; text-decoration: none; }
+.doors a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.also { margin-top: clamp(80px, 10vw, 128px); }
 .also > .label { display: block; font-weight: 500; margin-bottom: 18px; }
 
 /* Get it */
 .start { border-top: 1px solid var(--line); text-align: center; overflow-x: clip; }
+.start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .start .head { margin-inline: auto; align-items: center; }
 .start-plum { width: 180px; aspect-ratio: 1; margin: 0 auto 8px; }
 .install { max-width: 720px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; overflow: hidden; }
@@ -194,7 +211,6 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .install .p { color: var(--accent); user-select: none; } .install .c { color: var(--faint); }
 .status { max-width: 640px; margin: 26px auto 0; color: var(--dim); font-size: 15px; }
 .status a { color: var(--text); text-underline-offset: 4px; }
-.start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -312,8 +328,8 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
             <div class="meta"><span>storefront · 3 files · 9m · ~$0.04</span><span>Clean</span></div>
             <p class="t">Add a dark mode toggle</p>
             <div class="verdict"><span>Checks <b>passed</b></span><span>Review <b>approved</b></span></div>
-            <p>A theme module reads the system setting, remembers your choice and sets it before the first paint. The toggle sits in the header. <a class="spot" href="#loop">theme.ts:18</a></p>
-            <div class="acts"><span class="btn primary">Approve <kbd>a</kbd></span><span class="btn">Send back <kbd>s</kbd></span></div>
+            <p>A theme module reads the system setting, remembers your choice and sets it before the first paint. The toggle sits in the header. <span class="spot">theme.ts:18</span></p>
+            <div class="acts" aria-hidden="true"><span class="pill fill">Approve <kbd>a</kbd></span><span class="pill">Send back <kbd>s</kbd></span></div>
           </div>
         </li>
       </ol>
@@ -373,12 +389,12 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   <div class="wrap">
     <div class="head">
       <span class="label">Why it's built this way</span>
-      <h2 class="display" id="why-h">Writing the code stopped being <span class="ghost">the hard part.</span></h2>
+      <h2 class="display" id="why-h">Writing the code stopped being the hard part.</h2>
     </div>
     <ul class="facts">
-      <li><b>44%</b><p>of agent failures in one study started with the task spec, and 24% with weak checks.</p><p class="so">every task starts from a brief, and Atrium runs your tests itself.</p></li>
-      <li><b>39–70%</b><p>lost by multi-agent setups on sequential work, where independent agents amplified errors.</p><p class="so">one writer is the default, and a split waits for your click.</p></li>
-      <li><b>86 vs 39</b><p>quiz scores for developers who asked why after generating code, against pure delegation.</p><p class="so">every result comes with a walkthrough you can read in a minute.</p></li>
+      <li><b>44%</b><p class="fact">of agent failures in one study started with the task spec, and 24% with weak checks.<span>every task starts from a brief, and Atrium runs your tests itself.</span></p></li>
+      <li><b>39–70%</b><p class="fact">lost by multi-agent setups on sequential work, where independent agents amplified errors.<span>one writer is the default, and a split waits for your click.</span></p></li>
+      <li><b>86 vs 39</b><p class="fact">quiz scores for developers who asked why after generating code, against pure delegation.<span>every result comes with a walkthrough you can read in a minute.</span></p></li>
     </ul>
     <p class="sources"><a href="https://github.com/nakulpatel0306/atrium/blob/main/docs/why.md">The research, with sources and caveats</a> · MAST, METR, Google Research, Anthropic, Cognition, ETH Zürich</p>
   </div>
@@ -388,16 +404,16 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   <div class="wrap">
     <div class="head">
       <span class="label">What it's for</span>
-      <h2 class="display" id="uses-h">One workbench, <span class="ghost">a lot of jobs.</span></h2>
+      <h2 class="display" id="uses-h">One workbench for a lot of jobs.</h2>
       <p class="lede">Point a space at a repo on your Mac or on GitHub, or make a general space for the work around the code.</p>
     </div>
     <div class="who">
       <div class="who-tabs" role="tablist" aria-label="Ways to use Atrium">
-        <button role="tab" type="button" aria-selected="true" aria-controls="p-fix" id="t-fix"><i style="background:#4ea7fc"></i>Fix a bug</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-review" id="t-review" tabindex="-1"><i style="background:#c792ea"></i>Review a branch</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-new" id="t-new" tabindex="-1"><i style="background:#4cb782"></i>Start a project</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-agents" id="t-agents" tabindex="-1"><i style="background:#d97757"></i>Use more than one agent</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="p-notes" id="t-notes" tabindex="-1"><i style="background:#f2c94c"></i>The work around code</button>
+        <button role="tab" type="button" aria-selected="true" aria-controls="p-fix" id="t-fix"><i class="dot-blue"></i>Fix a bug</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-review" id="t-review" tabindex="-1"><i class="dot-pink"></i>Review a branch</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-new" id="t-new" tabindex="-1"><i class="dot-green"></i>Start a project</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-agents" id="t-agents" tabindex="-1"><i class="dot-orange"></i>Use more than one agent</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="p-notes" id="t-notes" tabindex="-1"><i class="dot-yellow"></i>The work around code</button>
       </div>
       <div class="who-panels">
         <article class="who-panel" role="tabpanel" id="p-fix" aria-labelledby="t-fix" data-demo="go:api:tsk_7f3a">
@@ -425,7 +441,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
           <h3>Use more than one agent.</h3>
           <p>Claude runs on your Claude subscription. Add Codex or Gemini and Atrium routes code work between them, or you pick one for a task. Private spaces only ever use Claude. Every agent says how it really went: done, partial or couldn't.</p>
           <ul class="asks"><li>Stop the dark mode flash on first load</li><li>Use Codex for this one</li><li>Bump dependencies</li></ul>
-          <div class="lands"><span>What you get back</span><p>Work from every agent in the same Needs you, labeled with who did it and whether it's really done.</p></div>
+          <div class="lands"><span>What you get back</span><p>Work from every agent in the same Needs you, labelled with who did it and whether it's really done.</p></div>
           <button class="btn small" type="button">Try it in the demo →</button>
         </article>
         <article class="who-panel" role="tabpanel" id="p-notes" aria-labelledby="t-notes" data-demo="go:notes" hidden>
@@ -440,34 +456,22 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   </div>
 </section>
 
-<section class="ways" id="ways" aria-labelledby="ways-h">
-  <div class="wrap">
-    <div class="head">
-      <span class="label">Three ways in</span>
-      <h2 class="display" id="ways-h">Wherever you <span class="ghost">already are.</span></h2>
-      <p class="lede">The Mac app, the terminal and the browser show the same live state. Anything you can do in one, you can do in the others.</p>
-    </div>
-    <ul class="grid">
-      <li><span class="k2">mac app</span><h3>A window in your Dock</h3><p>Native, with a badge and notifications when something needs you.</p><code>atrium app install</code></li>
-      <li><span class="k2">terminal</span><h3>Keys, not clicks</h3><p>Type <code>atrium</code> in any terminal. Needs you, decisions and the ask box, all from the keyboard.</p><a class="go" href="terminal.html">See the terminal app →</a></li>
-      <li><span class="k2">browser</span><h3>A second screen</h3><p>The same dashboard at a local address, light or dark.</p><code>atrium open</code></li>
-    </ul>
-  </div>
-</section>
-
 <section class="private" id="private" aria-labelledby="private-h">
-  <div class="wrap">
-    <div class="head">
-      <span class="label">Private by design</span>
-      <h2 class="display" id="private-h">Your code stays <span class="em">on your Mac.</span></h2>
-      <p class="lede">No sign-up and no Atrium cloud. It runs on your Mac, uses your own Claude subscription, and listens only on 127.0.0.1.</p>
+  <div class="wrap private-grid">
+    <div class="plum private-plum" id="private-plum" role="img" aria-label="Plum inside its ring, as the sandbox around every agent"><img class="plum-still" src="plum/checks.webp" alt="" width="320" height="320" loading="lazy"></div>
+    <div>
+      <div class="head">
+        <span class="label">Private by design</span>
+        <h2 class="display" id="private-h">Your code stays <span class="em">on your Mac.</span></h2>
+        <p class="lede">No sign-up and no Atrium cloud. It runs on your Mac, uses your own Claude subscription, and listens only on 127.0.0.1.</p>
+      </div>
+      <ul class="promises">
+        <li><b>Your stuff stays home.</b><p>Spaces, transcripts and files are saved on your Mac. What leaves it is what the agent CLIs send their own vendors, and pushes you said yes to.</p></li>
+        <li><b>Agents can't wander.</b><p>Every agent runs sandboxed. None can read your keys, .env files or passwords, reach Atrium's API, or drive your other apps.</p></li>
+        <li><b>Nothing counts without a yes.</b><p>Rules can approve repeated kinds of work, but never a push, a merge to main, a delete, secrets or a new repo.</p></li>
+        <li><b>Only Atrium pushes.</b><p>After your yes, Atrium itself pushes the branch or opens the pull request. Private spaces only ever use Claude.</p></li>
+      </ul>
     </div>
-    <ul class="grid four">
-      <li><span class="k2">on your mac</span><h3>Your stuff stays home</h3><p>Spaces, transcripts and files are saved on your Mac. What leaves it is what the agent CLIs send their own vendors, and pushes you said yes to.</p></li>
-      <li><span class="k2">fenced in</span><h3>Agents can't wander</h3><p>Every agent runs sandboxed. None can read your keys, .env files or passwords, reach Atrium's API, or drive your other apps.</p></li>
-      <li><span class="k2">you decide</span><h3>Nothing counts without a yes</h3><p>Rules can approve repeated kinds of work, but never a push, a merge to main, a delete, secrets or a new repo.</p></li>
-      <li><span class="k2">only atrium pushes</span><h3>Agents never push</h3><p>After your yes, Atrium itself pushes the branch or opens the pull request. Private spaces only ever use Claude.</p></li>
-    </ul>
   </div>
 </section>
 
@@ -481,11 +485,17 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
     </div>
     <div class="install">
       <div class="top"><span>zsh</span><button class="btn small" id="copy" type="button">Copy</button></div>
-      <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git &amp;&amp; cd atrium
+      <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git
+<span class="p">$ </span>cd atrium
 <span class="p">$ </span>bun install &amp;&amp; bun link   <span class="c"># puts atrium on your PATH</span>
 <span class="p">$ </span>atrium install           <span class="c"># starts Atrium now and at login</span>
 <span class="p">$ </span>atrium open</pre>
     </div>
+    <ul class="doors" aria-label="Three ways in, all on the same live state">
+      <li>Mac app: <code>atrium app install</code></li>
+      <li>Browser: <code>atrium open</code></li>
+      <li>Terminal: <a href="terminal.html">type <code>atrium</code> →</a></li>
+    </ul>
     <p class="status">Early, MIT licensed, and used every day by the person who builds it. macOS only. Checks are evidence, not proof: the <a href="https://github.com/nakulpatel0306/atrium/blob/main/docs/loop.md">loop docs</a> list what they can't catch.</p>
     <div class="ctas"><a class="btn primary" href="https://github.com/nakulpatel0306/atrium">Get it on GitHub</a><a class="btn" href="terminal.html">The terminal app</a></div>
   </div>

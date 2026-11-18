@@ -22,7 +22,8 @@
       branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
     };
     const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
-    const C = { blue: "#4ea7fc", pink: "#c792ea", green: "#4cb782", yellow: "#f2c94c", aqua: "#8ea4a2", accent: "#7c7cf5" };
+    // Space colours are the site's tokens, so the demo follows the theme like the real dashboard.
+    const C = { blue: "var(--blue)", pink: "var(--pink)", green: "var(--green)", yellow: "var(--yellow)", aqua: "var(--teal)", accent: "var(--accent)" };
     const AG = { claude: ["C", "Claude"], codex: ["X", "Codex"], gemini: ["G", "Gemini"], auto: ["A", "Atrium"] };
     const av = (a, live) => `<span class="av ${a}${live ? " live" : ""}" title="${AG[a][1]}">${AG[a][0]}</span>`;
     const hash = (s) => [...s].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0;

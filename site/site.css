@@ -27,6 +27,10 @@
   --yellow: #e8c46a;
   --red: #f08a8a;
   --blue: #8fb8f0;
+  /* Extra hues for tags and figures only. */
+  --orange: #e39a7b;
+  --pink: #c8a2f0;
+  --teal: #5fcfbf;
   --sans: "Inter Tight", system-ui, -apple-system, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --col: 1160px;
@@ -56,6 +60,9 @@
     --yellow: #7a5600;
     --red: #b8322f;
     --blue: #1f5faf;
+    --orange: #a8543a;
+    --pink: #7a3fa8;
+    --teal: #136b60;
   }
 }
 :root[data-theme="light"] {
@@ -81,6 +88,9 @@
   --yellow: #7a5600;
   --red: #b8322f;
   --blue: #1f5faf;
+  --orange: #a8543a;
+  --pink: #7a3fa8;
+  --teal: #136b60;
 }
 
 * { box-sizing: border-box; }

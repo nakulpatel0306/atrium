@@ -30,7 +30,7 @@
 .m-nav.on { background: var(--m-raised); color: var(--m-text); }
 .m-nav .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-nav .ct { margin-left: auto; font-size: 11px; color: var(--m-faint); }
-.m-nav .ct.hot { color: var(--m-bg); background: var(--m-yellow); border-radius: 8px; padding: 0 6px; font-weight: 600; }
+.m-nav .ct.hot { color: var(--on-accent); background: var(--accent-fill); border-radius: 8px; padding: 0 6px; font-weight: 600; }
 .m-nav .ct:empty { display: none; }
 .m-nav.fresh { animation: m-fresh 1.4s ease-out; }
 @keyframes m-fresh { from { background: color-mix(in srgb, var(--m-accent) 30%, transparent); color: var(--m-text); } }

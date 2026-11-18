@@ -1,9 +1,7 @@
 /* The notes: articles in a ~68ch column on the site's tokens (site.css), with the contents pinned beside long ones on
    wide screens. Figures were drawn with fixed colours; the block at the end repaints them from the tokens, so they
    follow the theme. */
-:root { --orange: #e39a7b; --pink: #c8a2f0; --teal: #5fcfbf; --gutter: max(16px, env(safe-area-inset-left, 0px)); }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --orange: #a8543a; --pink: #7a3fa8; --teal: #136b60; } }
-:root[data-theme="light"] { --orange: #a8543a; --pink: #7a3fa8; --teal: #136b60; }
+:root { --gutter: max(16px, env(safe-area-inset-left, 0px)); }
 html { scroll-padding-top: 84px; }
 article, .top h1 { letter-spacing: -.01em; }
 .top h1 { letter-spacing: -.045em; }
