@@ -4,14 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>Picking the right agent for the job · Atrium Notes</title>
+<title>Atrium · Picking agents</title>
 <meta name="description" content="Claude, Codex and Gemini each do some jobs and not others. How Atrium picks one on Auto, why private spaces are Claude-only, and why a second agent reviews code.">
+<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/note-agents.html">
 <link rel="icon" type="image/png" href="plum/icon.png">
 <script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<link rel="preload" href="vendor/inter-tight-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
 <link rel="stylesheet" href="notes.css">
 </head>
@@ -34,7 +33,7 @@
         <li><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></li>
       <li class="get"><a href="index.html#start">Get Atrium</a></li>
     </ul></details></nav>
-    <div class="theme" role="radiogroup" aria-label="Theme" data-theme-switch><button type="button" role="radio" aria-checked="false" data-theme-set="system" aria-label="Match your Mac" title="Match your Mac"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="light" aria-label="Light" title="Light"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="dark" aria-label="Dark" title="Dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button></div>
+    <div class="theme" role="radiogroup" aria-label="Theme" data-theme-switch><button type="button" role="radio" aria-checked="false" data-theme-set="system" aria-label="Auto, follows your Mac" title="Auto, follows your Mac"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path class="half" d="M12 3a9 9 0 0 1 0 18Z"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="light" aria-label="Light" title="Light"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button><button type="button" role="radio" aria-checked="false" data-theme-set="dark" aria-label="Dark" title="Dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button></div>
     <a class="btn small primary" href="index.html#start">Get Atrium</a>
   </div>
 </div>
@@ -53,6 +52,7 @@
 <div class="layout single">
   <div class="col">
     <article>
+    <p class="update"><b>Update, November 13, 2026.</b> Atrium has since narrowed to coding agents. Anything here about texting, mail or markets describes features that were removed; the rest still holds. <a href="notes.html">All notes</a></p>
 <section id="intro">
   <p>In a chat window, the model is whatever tab you opened. In Atrium, every task has an agent, and there are three to choose from: <strong>Claude</strong>, through the Claude Code command-line tool on my subscription; <strong>Codex</strong>; and <strong>Gemini</strong>, through a command-line tool called <code>agy</code>. Each task can name one, or say <strong>Auto</strong> and let Atrium decide when it runs.</p>
   <p>Which agent may do which job isn't a matter of taste. It comes down to what each one can be safely boxed in to do.</p>
@@ -158,7 +158,7 @@
 </div>
 
 <footer>
-  <div class="wrap"><span>Atrium · made by Nakul Patel · MIT License · 2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a></nav></div>
+  <div class="wrap"><span>Atrium&nbsp;· made by Nakul&nbsp;Patel&nbsp;· MIT&nbsp;License&nbsp;·&nbsp;2026</span><nav aria-label="Site"><a href="index.html">Home</a><a href="terminal.html">Terminal</a><a href="notes.html">Notes</a><a href="https://github.com/nakulpatel0306/atrium">GitHub</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="security.html">Security</a></nav></div>
 </footer>
 
 <script>

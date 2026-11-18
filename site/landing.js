@@ -1,5 +1,6 @@
 // The landing page's motion: the hero's one entrance, the loop told on scroll, and Plum reacting to the demo.
 // With reduced motion on, every Plum holds its pose, the ask shows in full, and scrolling only changes the pose.
+import { mountConfetti } from "./confetti.js";
 import { mountPlum } from "./plum.js";
 
 const $ = (id) => document.getElementById(id);
@@ -85,6 +86,13 @@ function follow() {
 addEventListener("scroll", follow, { passive: true });
 addEventListener("resize", follow);
 follow();
+
+// Privacy: Plum stands in its checks ring, the sandbox drawn as a fence it scans up and down.
+mountPlum($("private-plum"), { pose: "checks", lazy: true });
+
+// The end: Plum waves you off from the page's last edge, throwing confetti with every hop.
+const confetti = mountConfetti(document.querySelector(".start"), { from: $("start-plum") });
+mountPlum($("start-plum"), { pose: "ready", lazy: true, onHop: confetti.burst });
 
 // The demo: Plum looks up when something is ready, works while a task runs, waves at a yes, and dozes off after.
 const tryPlum = mountPlum($("try-plum"), { pose: "quiet", lazy: true });
