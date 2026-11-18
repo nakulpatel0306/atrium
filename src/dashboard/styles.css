@@ -5228,6 +5228,11 @@ a.task-link {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
+  /* A failure line is said in full, as on a desktop: what went wrong is the point of it. */
+  .feed .tone-failure .msg {
+    display: block;
+    -webkit-line-clamp: unset;
+  }
 }
 
 /* A short window (a laptop split screen, a small window beside the editor): the queue gives its height to the decision,

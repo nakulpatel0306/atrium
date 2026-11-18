@@ -132,3 +132,8 @@ test("in one column, a waiting question's Answer form comes first on the space p
   // ...and inside it the form comes before the terminal or the idle line.
   expect(one).toMatch(/\.live:has\(\.live-ask\) \.live-ask \{\s*order: -1;/);
 });
+
+test("on a phone a failure line in Activity wraps in full, as on a desktop, while other lines keep two", () => {
+  const phone = css.slice(css.indexOf("Activity lines get two lines on a phone"));
+  expect(phone).toMatch(/^[^@]*\.feed \.tone-failure \.msg \{\s*display: block;\s*-webkit-line-clamp: unset;/);
+});
