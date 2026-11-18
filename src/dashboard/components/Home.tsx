@@ -98,12 +98,30 @@ export function Home({ state, briefing, onNewSpace }: Props) {
     );
   }
 
+  // The line names one stopped task's reason and suggests a retry; the task itself is one click from it.
+  const stopped = state.tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
+  const only = stopped.length === 1 ? stopped[0]! : null;
   return (
     <div className="wrap">
       <h1>{briefing.greeting}</h1>
       <p className="brief">
         {briefing.summary}
         <Plain text={liveStatus(state)} />
+        {only && (
+          <>
+            {" "}
+            <a
+              href={`/space/${only.spaceId}?task=${only.id}`}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                e.preventDefault();
+                navigate(`/space/${only.spaceId}?task=${only.id}`);
+              }}
+            >
+              Open {only.title}
+            </a>
+          </>
+        )}
       </p>
       {state.oldData.present && !state.oldData.dismissed && <OldDataNotice dismissable />}
 

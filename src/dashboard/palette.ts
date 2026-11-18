@@ -44,8 +44,9 @@ export function paletteActions(state: State, here: { spaceId: string | null; the
     }
   }
 
-  const pages: [string, string][] = [["/", "Home"], ["/needs-you", "Needs you"], ["/activity", "Activity"], ["/agents", "Agents"], ["/rules", "Rules"], ["/settings", "Settings"], ["/start", "Get started"]];
-  for (const [path, label] of pages) actions.push({ id: `go-${path}`, group: "Go to", label, run: { kind: "navigate", path } });
+  // Get started is where someone looking for setup or help should land, so it answers to those words too.
+  const pages: [string, string, string?][] = [["/", "Home"], ["/needs-you", "Needs you"], ["/activity", "Activity"], ["/agents", "Agents"], ["/rules", "Rules"], ["/settings", "Settings"], ["/start", "Get started", "Setup and help"]];
+  for (const [path, label, hint] of pages) actions.push({ id: `go-${path}`, group: "Go to", label, ...(hint && { hint }), run: { kind: "navigate", path } });
 
   for (const s of state.spaces) {
     actions.push({ id: `space-${s.id}`, group: "Spaces", label: s.name, hint: s.kind === "repo" ? "Code space" : "Space", run: { kind: "navigate", path: `/space/${s.id}` } });

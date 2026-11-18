@@ -196,7 +196,7 @@ export function StartView(p: ViewProps) {
             Skip, go to Home
           </button>
         ) : (
-          <button className="btn primary" onClick={() => (step === "folder" ? p.onSaveFolder() : p.onGo(nextStep(step)))} disabled={blocked !== null || p.busy}>
+          <button className="btn p primary" onClick={() => (step === "folder" ? p.onSaveFolder() : p.onGo(nextStep(step)))} disabled={blocked !== null || p.busy}>
             Next
           </button>
         )}

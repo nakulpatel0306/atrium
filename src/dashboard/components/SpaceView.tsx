@@ -41,7 +41,7 @@ import { outcomeLabel } from "../../engine/outcome";
 import { STAYS_PRIVATE } from "../../engine/legacy";
 import { Thread } from "./Thread";
 import { Transcript } from "./Transcript";
-import { WaitLine } from "./WaitLine";
+import { Plain, WaitLine } from "./WaitLine";
 import { BriefQuestions } from "./BriefQuestions";
 import { RepoWork } from "./RepoWork";
 import { WhatItMade } from "./WhatItMade";
@@ -442,7 +442,9 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {/* The open task's sections (the walkthrough, You asked, History) sit under its title. */}
           <h3 className="sr-only">{shownTitle(task)}</h3>
           {/* A pause waits for a hint and reads amber; a stopped task waits for a retry and reads red. */}
-          {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{plainStop(task.blockedReason)}</p>}
+          {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>
+              <Plain text={plainStop(task.blockedReason)} />
+            </p>}
           {review ? (
             // The same decision, with the same evidence, as its screen in Needs you.
             <div className="task-decision">

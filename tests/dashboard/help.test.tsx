@@ -3,7 +3,8 @@ import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Activity } from "../../src/dashboard/components/Activity";
-import { LoopPanel } from "../../src/dashboard/components/LoopPanel";
+import { Home } from "../../src/dashboard/components/Home";
+import { LoopPanel, StageStrip } from "../../src/dashboard/components/LoopPanel";
 import { NeedsPage } from "../../src/dashboard/components/NeedsPage";
 import { Settings } from "../../src/dashboard/components/Settings";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
@@ -99,4 +100,44 @@ test("an empty Activity says what will show up and how to start", () => {
   act(() => root!.unmount());
   root = null;
   expect(render(<Activity state={empty} spaceId={ids.atrium} />).querySelector(".empty-row")!.textContent).toContain("Give this space a task in the bar below to start.");
+});
+
+test("Home's line about a stopped task leads to it, so the retry it suggests is one click away", () => {
+  const state = makeState();
+  const briefing = { greeting: "Good morning.", summary: "" };
+  const el = render(<Home state={state} briefing={briefing} onNewSpace={() => {}} />);
+  const link = el.querySelector<HTMLAnchorElement>(".brief a")!;
+  expect(link.textContent).toBe("Open Summarize postings");
+  expect(link.getAttribute("href")).toBe(`/space/${ids.jobHunt}?task=${ids.blocked}`);
+});
+
+test("the stage strip marks checks that failed, rather than a passed stage's dot beside a Checks failed chip", () => {
+  const t = task({ id: "tsk_f", spaceId: ids.atrium, status: "review", outcome: "done", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", checks: "failed" } });
+  const el = render(<StageStrip task={t} />);
+  const checks = [...el.querySelectorAll("li")].find((li) => li.textContent === "Checks")!;
+  expect(checks.className).toContain("bad");
+});
+
+test("an empty queue says everything that lands there, not only results", () => {
+  const el = render(<NeedsPage state={{ ...makeState(), approvals: [], proposals: [], tasks: [] }} />);
+  expect(el.querySelector(".q-empty .hint")!.textContent).toBe("Results, questions, sign-offs and paused tasks land here when they need you.");
+});
+
+test("a stopped task's strip ends on Stopped in red, as a pause ends on Paused", () => {
+  const t = task({ id: "tsk_s", spaceId: ids.atrium, status: "blocked", blockedReason: "Claude Code exited with code 1", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "writing" } });
+  const on = render(<StageStrip task={t} />).querySelector("li.on")!;
+  expect(on.textContent).toBe("Stopped");
+  expect(on.className).toContain("bad");
+});
+
+test("on a fresh install the empty queue points to how to start, not to being caught up", () => {
+  const el = render(<NeedsPage state={{ ...makeState(), spaces: [], approvals: [], proposals: [], tasks: [] }} />);
+  expect(el.querySelector(".q-empty")!.textContent).not.toContain("caught up");
+  expect(el.querySelector<HTMLAnchorElement>(".q-empty a")!.getAttribute("href")).toBe("/start");
+});
+
+test("Get started is found from the palette by help and setup too", async () => {
+  const { paletteActions } = await import("../../src/dashboard/palette");
+  const go = paletteActions(makeState(), { spaceId: null, theme: "system" }).find((a) => a.id === "go-/start")!;
+  expect(go.hint).toBe("Setup and help");
 });

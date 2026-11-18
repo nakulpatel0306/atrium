@@ -397,8 +397,23 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       {items.length === 0 ? (
         <div className="q-empty">
           <PartyPopper />
-          <p>You're all caught up.</p>
-          <p className="hint">Results land here once Atrium's checks and a reviewer have been at them.</p>
+          {state.spaces.length ? <p>You're all caught up.</p> : <p>Nothing has run yet.</p>}
+          <p className="hint">Results, questions, sign-offs and paused tasks land here when they need you.</p>
+          {!state.spaces.length && (
+            <p className="hint">
+              Describe your first space in the bar below, or{" "}
+              <a
+                href="/start"
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate("/start");
+                }}
+              >
+                open Get started
+              </a>
+              .
+            </p>
+          )}
         </div>
       ) : (
         <div className={`queue${opened ? " opened" : ""}`}>

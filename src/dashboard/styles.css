@@ -4524,8 +4524,8 @@ kbd {
 .dp-acts .decision {
   flex: 1;
 }
-/* Every control is at least 24px tall, so it can be hit without aiming. */
-.btn,
+/* Every control is at least 24px tall, so it can be hit without aiming; a .btn takes its height from the control
+   scale instead. */
 .seg button,
 .pick,
 .top .crumb,
@@ -5117,4 +5117,45 @@ a.task-link {
 }
 .start-card p {
   max-width: var(--measure);
+}
+
+/* A pause's ways on and a brief's Answer are the decision on their screen, so they take a decision's height, like
+   Approve and Send back. */
+.paused .acts .btn,
+.brief-qs > .acts .btn {
+  min-height: var(--control-lg);
+  padding: 0 var(--space-16);
+}
+/* Links inside prose and empty states read as links. */
+.brief a,
+.empty-row a,
+.q-empty a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.brief a:hover,
+.empty-row a:hover,
+.q-empty a:hover {
+  text-decoration: underline;
+}
+/* The fold for checks and budget is a control, so it's coloured as one. */
+.review-setting > .btn.link.subtle {
+  color: var(--accent);
+}
+@container main (max-width: 640px) {
+  /* A stopped task's Retry and agent move under the title, so its state word is never painted over. */
+  .item.task .task-open {
+    flex: 1 1 calc(100% - var(--space-24) - var(--space-12));
+  }
+  .item.task > .btn {
+    order: 2;
+    margin-left: calc(var(--space-16) + var(--space-12));
+  }
+  /* Activity lines get two lines on a phone instead of a few words. */
+  .feed .msg {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
 }

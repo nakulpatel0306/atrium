@@ -1,4 +1,4 @@
-import { CLEAN, KIND, PAUSE_WHY, RISKY } from "../../engine/words";
+import { CLEAN, KIND, PAUSE_WHY, RISKY, taskWord } from "../../engine/words";
 import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
@@ -26,13 +26,17 @@ export function StageStrip({ task }: { task: Task }) {
   const notes = now === "ready" && task.status === "review" && !cleanResult(task);
   // A result waiting on you ends on its verdict, the word its row and chip use, rather than a third name.
   const verdict = now === "ready" && task.status === "review" ? (notes ? RISKY : CLEAN) : null;
+  // A task that stopped (not paused) ends where it stopped, in red, so the strip never reads as still going.
+  const stopped = taskWord(task) === "stopped" || task.status === "failed";
   return (
     <ol className="stages" aria-label="Where this task is">
       {STRIP.map((s, i) => {
         const here = i === at;
-        const label = here && now === "paused" ? "Paused" : here && verdict ? verdict : STAGE_TEXT[s];
+        const label = here && now === "paused" ? "Paused" : here && stopped ? "Stopped" : here && verdict ? verdict : STAGE_TEXT[s];
+        // Checks it got past but that failed say so, in the colour their chip uses.
+        const failed = s === "checks" && i < at && task.loop?.checks === "failed";
         return (
-          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
+          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${failed || (here && stopped) ? " bad" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
             {label}
           </li>
         );

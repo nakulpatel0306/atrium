@@ -239,7 +239,19 @@ export function Agents({ state }: { state: State }) {
       </p>
       <div className="list">
         {ids.length === 0 ? (
-          <div className="empty-row">No agents are set up yet. Open Get started from Settings to check which agent tools are installed on this Mac.</div>
+          <div className="empty-row">
+            No agents are set up yet.{" "}
+            <a
+              href="/start"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/start");
+              }}
+            >
+              Get started
+            </a>{" "}
+            checks which agent tools are installed on this Mac.
+          </div>
         ) : (
           ids.map((id) => (
             <AgentRow key={id} id={id} info={state.agents[id]!} state={state} open={expanded.has(id)} onToggle={() => toggle(id)} />
