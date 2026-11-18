@@ -14,3 +14,15 @@ The fonts are the same files the dashboard ships in `src/dashboard/assets/fonts`
 To update Motion: download `https://cdn.jsdelivr.net/npm/motion@<version>/dist/motion.js`, check it matches the same file from `https://unpkg.com/motion@<version>/dist/motion.js`, save it here with the new version in the name, copy its `LICENSE.md` alongside, and change the one `<script src="vendor/...">` line in `site/index.html`.
 
 To update three.js: download `https://cdn.jsdelivr.net/npm/three@<version>/build/three.min.js`, check it matches the same file from `https://unpkg.com/three@<version>/build/three.min.js`, save it here with the new version in the name, copy its `LICENSE` alongside, and change the one path in `site/plum.js` that loads it. Plum was modelled on r128; a newer three.js renames some of the colour settings it uses (`outputEncoding`, `sRGBEncoding`), so check every pose after an update.
+
+# Agent marks
+
+The "Works with" line in the landing page's hero shows each agent's mark as an inline SVG, drawn in `currentColor`. Each mark belongs to its owner (see `terms.html`); the site shows them only to name the CLIs Atrium runs, and Atrium isn't affiliated with or endorsed by any of them.
+
+| Mark | Owner | Source | License |
+|---|---|---|---|
+| Claude Code | Anthropic | [Simple Icons](https://simpleicons.org) 16.38.0, `icons/claudecode.svg` (its data names `https://code.claude.com` as the source). The same file from jsDelivr and unpkg matched. | The drawing is CC0 1.0 through Simple Icons; the mark is Anthropic's trademark. |
+| Codex (the OpenAI Blossom) | OpenAI | OpenAI's brand page, [openai.com/brand](https://openai.com/brand/), "Download logos": `https://cdn.openai.com/brand/openai-logos.zip`, `SVGs/OAI_OpenAI-Blossom_Black.svg`. Simple Icons no longer carries an OpenAI icon. | OpenAI's Marks usage terms on that page: used only next to the OpenAI product it names, not more prominent than Atrium's own name, with no implied endorsement. |
+| Gemini (Antigravity) | Google | Antigravity's press page, [antigravity.google/press](https://antigravity.google/press), "Icon - One Color" SVG: `https://antigravity.google/assets/image/brand/antigravity-icon__one-color.svg`. | Google's trademark. The press page states no separate terms; Google's brand rules apply. |
+
+Each path is copied unchanged. Only the `viewBox` differs: the Blossom's and Antigravity's are cut to the mark's own bounds (the downloads pad it with clear space), so all three draw at the same size; the space around them comes from the page's layout instead. The fill is the page's text colour, so the marks follow the theme.
