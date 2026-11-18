@@ -44,7 +44,7 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
             </span>
           </span>
         ) : (
-          <span className={`tag k-${item.kind}`}>{KIND[item.kind].label}</span>
+          <span className={`tag k-${item.kind}`} title={KIND[item.kind].means}>{KIND[item.kind].label}</span>
         )}
         {/* What the work cost; a low-priority item (a CLAUDE.md line, a suggestion) costs nothing itself. */}
         {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} dollars />}

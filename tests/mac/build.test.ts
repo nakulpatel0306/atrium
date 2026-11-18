@@ -46,7 +46,7 @@ test.skipIf(!canBuild)(
   async () => {
     const path = await app();
     expect(path).toEndWith("/Atrium.app");
-    for (const f of ["Contents/MacOS/Atrium", "Contents/Resources/Atrium.icns", "Contents/Resources/logo-mark.svg"]) {
+    for (const f of ["Contents/MacOS/Atrium", "Contents/Resources/Atrium.icns", "Contents/Resources/logo-mark.svg", "Contents/Resources/plum-quiet.png"]) {
       expect(existsSync(join(path, f))).toBe(true);
     }
     expect(sh(["codesign", "--verify", "--strict", path]).code).toBe(0);

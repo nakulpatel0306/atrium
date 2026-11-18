@@ -1,5 +1,5 @@
-// Painted from assets/logo-mark.svg through a CSS mask (see .logo in styles.css), so the mark takes the
-// surrounding text color and swapping the logo means replacing that one file.
+// Plum, resting, where the dashboard has nothing else to show yet (see .logo in styles.css). The Mac app's menu bar
+// keeps the line mark in assets/logo-mark.svg.
 export function Logo({ className = "", label }: { className?: string; label?: string }) {
   return label ? (
     <span className={`logo ${className}`} role="img" aria-label={label} />

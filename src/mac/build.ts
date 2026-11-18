@@ -57,6 +57,7 @@ export async function buildApp(o: BuildOpts): Promise<string> {
   const tmp = mkdtempSync(join(tmpdir(), "atrium-build-"));
   try {
     const svg = join(root, "src", "dashboard", "assets", "logo-mark.svg");
+    const plum = join(root, "mac", "Tools", "plum.png");
     await step("compile the Mac app", [
       "swiftc",
       "-O",
@@ -70,7 +71,7 @@ export async function buildApp(o: BuildOpts): Promise<string> {
     const iconTool = join(tmp, "icon");
     const png = join(tmp, "icon-1024.png");
     await step("compile the icon renderer", ["swiftc", ...TARGET, join(root, "mac", "Tools", "icon.swift"), "-o", iconTool]);
-    await step("render the app icon", [iconTool, svg, png]);
+    await step("render the app icon", [iconTool, plum, png]);
     const iconset = join(tmp, "Atrium.iconset");
     mkdirSync(iconset);
     for (const size of ICON_SIZES) {
@@ -81,6 +82,7 @@ export async function buildApp(o: BuildOpts): Promise<string> {
     await step("build the icon file", ["iconutil", "-c", "icns", iconset, "-o", join(contents, "Resources", "Atrium.icns")]);
 
     copyFileSync(svg, join(contents, "Resources", "logo-mark.svg"));
+    copyFileSync(join(root, "mac", "Tools", "plum-offline.png"), join(contents, "Resources", "plum-quiet.png"));
     writeFileSync(
       join(contents, "Info.plist"),
       infoPlist({ version: version(), repoPath: o.repoPath ?? root, bunPath: o.bunPath ?? process.execPath, bundleId: o.bundleId }),

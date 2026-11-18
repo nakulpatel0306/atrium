@@ -4,7 +4,7 @@ The agent workbench for the new way of coding, on your Mac.
 
 The job has moved from writing code to directing agents and judging what they wrote. Most tools stop at running agents: a branch per task, a live diff, a PR button. Atrium is about the part that decides whether agent work is any good. Every task gets a brief an agent can finish, Atrium runs your checks itself instead of trusting "tests pass", a fresh reviewer reads the diff before you do, and everything that needs you lands in one keyboard-first queue. Along the way it helps you get better at directing agents, with feedback built only from what it measured. It runs on your Mac, on your own Claude subscription, with only the Claude CLI and a folder.
 
-Site: <https://nakulpatel0306.github.io/atrium/> · Why it works this way: [docs/why.md](docs/why.md)
+Site: <https://nakulpatel0306.github.io/atrium/> · The terminal app: <https://nakulpatel0306.github.io/atrium/terminal.html> · Why it works this way: [docs/why.md](docs/why.md)
 
 ![Needs you: one queue, longest-waiting first, with a result's walkthrough, checks and review on one screen](docs/screenshots/queue.jpg)
 
@@ -73,7 +73,7 @@ Directing agents is a skill, and so is understanding the code they write. Atrium
 
 ## Screenshots
 
-All screenshots come from a throwaway engine with fake agents and made-up repos.
+All screenshots come from a throwaway engine with fake agents and made-up repos. The look is Monolith Violet, dark or light: violet-tinted greys, purple only where you act, and Plum, Atrium's character, at the foot of the sidebar, at work while agents run, looking up when something needs you, asleep when nothing does.
 
 | | |
 |---|---|

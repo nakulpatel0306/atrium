@@ -1,38 +1,49 @@
 @font-face {
-  font-family: Inter;
-  src: url("./assets/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  font-family: "Inter Tight";
+  src: url("./assets/fonts/inter-tight-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/geist-mono-latin-wght-normal.woff2") format("woff2");
   font-weight: 100 900;
   font-display: swap;
 }
 :root {
   --top-h: 44px;
-  /* Surfaces, darkest to lightest, and the lines between them. */
-  --bg: #0d0d0f;
-  --panel: #141417;
-  --raised: #1a1a1e;
-  --hover: #202025;
-  --line: #26262c;
-  --line-strong: #34343c;
+  /* Monolith Violet: near-black tinted violet, the same tokens as the site (site/site.css). Surfaces, darkest to
+     lightest, and the hairlines between them. */
+  --bg: #0c0a14;
+  --panel: #110e19;
+  --raised: #17121f;
+  --hover: #1e1829;
+  --line: #241d33;
+  --line-strong: #31284a;
   /* Text. The quietest is still 4.5:1 on every surface, including a hovered row. */
-  --text: #e6e6ea;
-  --dim: #9c9ca6;
-  --faint: #868690;
-  /* Accent as text and focus; as a fill behind white text it's darker, so a label on it reads at 4.5:1. */
-  --accent: #7c7cf5;
-  --accent-fill: #5e5ce6;
+  --text: #f4f1ff;
+  --dim: #b2a9cc;
+  --faint: #8a80a8;
+  /* Purple carries the actions: as text and focus, and as the fill of a primary button with --on-accent on it. */
+  --accent: #9b84ff;
+  --accent-fill: #9b84ff;
+  --on-accent: #0c0a14;
+  /* White labels sit on the darker fills: danger and Claude. */
   --on-fill: #ffffff;
-  --green: #4cb782;
-  --yellow: #f2c94c;
-  --red: #eb5757;
+  --green: #7fd6a4;
+  --yellow: #e8c46a;
+  --red: #f08a8a;
   --danger-fill: #c93c3c;
-  --blue: #4ea7fc;
+  --blue: #8fb8f0;
   --claude: #d97757;
   --claude-fill: #a8543a;
-  --term-bg: #08080a;
-  --term-text: #9aa59a;
-  --scrim: rgba(0, 0, 0, 0.5);
+  --term-bg: #08070d;
+  --term-text: #a3b8a3;
+  --scrim: rgba(6, 4, 12, 0.6);
   --shadow-1: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 20px 56px rgba(0, 0, 0, 0.5);
+  --sans: "Inter Tight", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   /* Type, in real steps: tabular meta and tags, secondary text, body, emphasis, item titles, page titles. Nothing
      reads below 12px. */
   --fs-xs: 12px;
@@ -41,12 +52,14 @@
   --fs-lg: 15px;
   --fs-xl: 18px;
   --fs-2xl: 24px;
+  /* Page titles: the one big, tight line on each page. */
+  --fs-display: 40px;
   /* Radii, from hairline chips to sheets. */
   --r-xs: 3px;
-  --r-sm: 5px;
-  --r-md: 6px;
-  --r-lg: 8px;
-  --r-xl: 10px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
   --r-pill: 999px;
   /* Motion: quick, and easing out from where the thing already is. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -54,61 +67,63 @@
   --dur: 180ms;
   /* The docked ask bar's height: scrolling into view stops above it, and toasts sit just over it. */
   --cmd-clear: 76px;
-  /* The reading measure: about 75 characters of Inter at any size (its average letter is close to 0.45em). */
+  /* The reading measure: about 75 characters of Inter Tight at any size (its average letter is close to 0.45em). */
   --measure: 34em;
   color-scheme: dark;
 }
 /* The light theme: the Mac's own setting unless the palette picked one. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #f6f6f8;
+    --bg: #faf9fd;
     --panel: #ffffff;
-    --raised: #f1f1f4;
-    --hover: #e9e9ee;
-    --line: #e1e1e7;
-    --line-strong: #cdcdd6;
-    --text: #18181b;
-    --dim: #52525b;
-    --faint: #626270;
-    --accent: #4e4ec8;
-    --accent-fill: #4e4ec8;
-    --green: #16703d;
-    --yellow: #8a6100;
-    --red: #c42b2b;
+    --raised: #f2eff8;
+    --hover: #eae6f3;
+    --line: #e4dfef;
+    --line-strong: #d3cce3;
+    --text: #120e1f;
+    --dim: #463f5c;
+    --faint: #655d7e;
+    --accent: #5b3fd0;
+    --accent-fill: #5b3fd0;
+    --on-accent: #ffffff;
+    --green: #176b41;
+    --yellow: #7a5600;
+    --red: #b8322f;
     --danger-fill: #b42323;
-    --blue: #1a62bd;
+    --blue: #1f5faf;
     --claude: #a8543a;
-    --term-bg: #f4f4f2;
+    --term-bg: #f4f2f8;
     --term-text: #2f5f2f;
-    --scrim: rgba(24, 24, 27, 0.28);
-    --shadow-1: 0 8px 24px rgba(24, 24, 27, 0.1);
-    --shadow-2: 0 20px 56px rgba(24, 24, 27, 0.18);
+    --scrim: rgba(18, 14, 31, 0.28);
+    --shadow-1: 0 8px 24px rgba(18, 14, 31, 0.08);
+    --shadow-2: 0 20px 56px rgba(18, 14, 31, 0.16);
     color-scheme: light;
   }
 }
 :root[data-theme="light"] {
-  --bg: #f6f6f8;
+  --bg: #faf9fd;
   --panel: #ffffff;
-  --raised: #f1f1f4;
-  --hover: #e9e9ee;
-  --line: #e1e1e7;
-  --line-strong: #cdcdd6;
-  --text: #18181b;
-  --dim: #52525b;
-  --faint: #626270;
-  --accent: #4e4ec8;
-  --accent-fill: #4e4ec8;
-  --green: #16703d;
-  --yellow: #8a6100;
-  --red: #c42b2b;
+  --raised: #f2eff8;
+  --hover: #eae6f3;
+  --line: #e4dfef;
+  --line-strong: #d3cce3;
+  --text: #120e1f;
+  --dim: #463f5c;
+  --faint: #655d7e;
+  --accent: #5b3fd0;
+  --accent-fill: #5b3fd0;
+  --on-accent: #ffffff;
+  --green: #176b41;
+  --yellow: #7a5600;
+  --red: #b8322f;
   --danger-fill: #b42323;
-  --blue: #1a62bd;
+  --blue: #1f5faf;
   --claude: #a8543a;
-  --term-bg: #f4f4f2;
+  --term-bg: #f4f2f8;
   --term-text: #2f5f2f;
-  --scrim: rgba(24, 24, 27, 0.28);
-  --shadow-1: 0 8px 24px rgba(24, 24, 27, 0.1);
-  --shadow-2: 0 20px 56px rgba(24, 24, 27, 0.18);
+  --scrim: rgba(18, 14, 31, 0.28);
+  --shadow-1: 0 8px 24px rgba(18, 14, 31, 0.08);
+  --shadow-2: 0 20px 56px rgba(18, 14, 31, 0.16);
   color-scheme: light;
 }
 
@@ -120,7 +135,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 Inter, system-ui, sans-serif;
+  font: 14px/1.5 var(--sans);
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -155,7 +170,7 @@ button {
 
 /* sidebar */
 aside {
-  background: var(--panel);
+  background: var(--bg);
   border-right: 1px solid var(--line);
   padding: 12px 8px;
   display: flex;
@@ -167,30 +182,86 @@ aside {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px 14px;
+  padding: 6px 10px 16px;
   font-weight: 600;
+  font-size: 19px;
+  letter-spacing: -0.03em;
 }
-/* The one place the dashboard reads the mark; replacing that file swaps the logo everywhere, favicon included. */
+/* Plum stands in for a logo where the dashboard has nothing else to show (connecting, an empty Home). */
 .logo {
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   flex: none;
-  position: relative;
-  background: currentColor;
-  mask: url("./assets/logo-mark.svg") center / contain no-repeat;
-}
-/* The mark's center square, the one spot of brand color; it sits inside the mask, so the mark's shape stays one file. */
-.logo::after {
-  content: "";
-  position: absolute;
-  inset: 36.46%;
-  background: var(--accent);
+  /* 256px, so the 96px big one stays sharp at 2x. */
+  background: url("./assets/plum/quiet-256.webp") center / contain no-repeat;
 }
 .logo.big {
-  width: 40px;
-  height: 40px;
-  color: var(--dim);
+  width: 96px;
+  height: 96px;
   margin-bottom: 6px;
+}
+/* The sidebar's Plum: a still of the 3D character in the pose that matches the engine's state. */
+.plum-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 2px;
+  font-size: var(--fs-sm);
+  color: var(--dim);
+}
+.plum-pic {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  background: url("./assets/plum/quiet.webp") center / contain no-repeat;
+  animation: plum-float 3.6s ease-in-out infinite;
+}
+.plum-status[data-pose="work"] .plum-pic {
+  background-image: url("./assets/plum/work.webp");
+}
+.plum-status[data-pose="look"] .plum-pic {
+  position: relative;
+  background-image: url("./assets/plum/look.webp");
+}
+/* The still's own "!" is a few pixels at sidebar size, so the look pose gets a legible one beside it. */
+.plum-status[data-pose="look"] .plum-pic::after {
+  content: "!";
+  position: absolute;
+  top: -4px;
+  right: 2px;
+  font: 700 18px/1 var(--sans);
+  color: var(--accent);
+}
+/* "1 at work" and "6 need you" each on a line of their own, rather than wrapping mid-phrase. */
+.plum-line {
+  display: block;
+  white-space: nowrap;
+}
+.plum-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 7px;
+  vertical-align: 1px;
+  animation: plum-live 1.6s ease-in-out infinite;
+}
+@keyframes plum-float {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes plum-live {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plum-pic,
+  .plum-dot {
+    animation: none;
+  }
 }
 svg.lucide {
   flex: none;
@@ -233,7 +304,7 @@ svg.lucide {
 }
 .nav .ct.hot {
   color: var(--bg);
-  background: var(--accent);
+  background: var(--text);
   border-radius: var(--r-lg);
   padding: 0 6px;
   font-weight: 600;
@@ -517,9 +588,10 @@ main {
   padding: 28px 24px 32px;
 }
 h1 {
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-display);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
 }
 .brief {
   color: var(--dim);
@@ -654,11 +726,11 @@ h2 {
   padding: 0 14px 10px 32px;
 }
 .btn {
-  border: 1px solid var(--line);
-  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  background: transparent;
   color: var(--text);
-  border-radius: var(--r-sm);
-  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  padding: 3px 12px;
   font: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
@@ -681,7 +753,8 @@ h2 {
 .btn.p {
   background: var(--accent-fill);
   border-color: var(--accent-fill);
-  color: var(--on-fill);
+  color: var(--on-accent);
+  font-weight: 600;
 }
 .btn.p:hover {
   filter: brightness(1.08);
@@ -1236,7 +1309,7 @@ main > .top {
   margin: 0 auto;
   background: var(--raised);
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-xl);
+  border-radius: 28px;
 }
 .cmd:focus-within {
   border-color: var(--accent);
@@ -1441,7 +1514,7 @@ textarea::placeholder {
 
 /* space view */
 .mono {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
 }
 .space-head .title-row {
   display: flex;
@@ -1641,7 +1714,7 @@ textarea::placeholder {
   color: var(--red);
 }
 code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 0.92em;
   background: color-mix(in srgb, currentColor 10%, transparent);
   border-radius: var(--r-xs);
@@ -1844,8 +1917,9 @@ code {
   background: var(--hover);
 }
 .seg button[aria-pressed="true"] {
-  background: var(--accent-fill);
-  color: var(--on-fill);
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .note-line {
   color: var(--faint);
@@ -2355,7 +2429,7 @@ code {
   background: var(--raised);
   border-radius: var(--r-sm);
   padding: 1px 4px;
-  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  font: 12px var(--mono);
 }
 .md pre {
   background: var(--raised);
@@ -2536,7 +2610,7 @@ code {
 .preview pre.code {
   max-height: 420px;
   overflow: auto;
-  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  font: 12px/1.5 var(--mono);
   white-space: pre-wrap;
 }
 .preview-note {
@@ -3215,9 +3289,8 @@ kbd {
 }
 .q-list {
   list-style: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--panel);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   overflow-y: auto;
   max-height: calc(100vh - 170px);
   position: sticky;
@@ -3241,8 +3314,10 @@ kbd {
 .q-row:hover {
   background: var(--raised);
 }
+/* The open item: a raised row with a purple edge, as in a hairline list. */
 .q-row.on {
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  background: var(--raised);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .q-row.low .q-title {
   color: var(--dim);
@@ -3308,7 +3383,7 @@ kbd {
 }
 .dp {
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-xl);
   background: var(--panel);
   outline-offset: -2px;
 }
@@ -3317,11 +3392,12 @@ kbd {
   border-bottom: 1px solid var(--line);
 }
 .dp-head h3 {
-  font-size: var(--fs-xl);
+  font-size: 28px;
   font-weight: 600;
+  letter-spacing: -0.035em;
   color: var(--text);
-  margin: 4px 0 6px;
-  line-height: 1.3;
+  margin: 4px 0 8px;
+  line-height: 1.15;
 }
 .dp-meta {
   display: flex;
@@ -3556,6 +3632,22 @@ kbd {
   }
   .toggle svg.lucide {
     display: none;
+  }
+  .plum-status {
+    justify-content: center;
+    padding: 0;
+  }
+  .plum-pic {
+    width: 36px;
+    height: 36px;
+  }
+  aside.open .plum-status {
+    justify-content: flex-start;
+    padding: 4px 4px 2px;
+  }
+  aside.open .plum-pic {
+    width: 56px;
+    height: 56px;
   }
   .toasts {
     left: calc(50% + 26px);
@@ -3820,9 +3912,9 @@ kbd {
   font-weight: 500;
 }
 .stages li.on::before {
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  background: var(--text);
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 18%, transparent);
 }
 .stages li.on.live::before {
   animation: stage-live 1.6s ease-in-out infinite;
@@ -3997,6 +4089,20 @@ kbd {
 .tag.cost {
   font-variant-numeric: tabular-nums;
 }
+/* In a list row only the button is a capsule: the status is coloured text and the cost plain mono, so the one thing
+   to press stands out. */
+.item .tag {
+  border-color: transparent;
+  padding: 1px 2px;
+}
+.item .tag.cost {
+  font-family: var(--mono);
+  color: var(--faint);
+}
+.item .chips .chip {
+  border-color: transparent;
+  padding: 1px 2px;
+}
 .fanout {
   display: flex;
   flex-direction: column;
@@ -4050,7 +4156,7 @@ kbd {
 }
 .tiers input {
   max-width: 260px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
 }
 .spend-line {
   color: var(--dim);
@@ -4162,7 +4268,7 @@ kbd {
 }
 .chg-explained td {
   padding: 8px 12px;
-  font-family: Inter, system-ui, sans-serif;
+  font-family: var(--sans);
   white-space: normal;
   color: var(--text);
   background: var(--raised);
@@ -4313,8 +4419,14 @@ kbd {
 }
 .decision-acts {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   margin-left: auto;
+}
+/* The decision is the point of the page: its buttons are the largest on it. */
+.decision-acts .btn {
+  min-height: 36px;
+  padding: 0 18px;
+  font-size: var(--fs-md);
 }
 .decision-keys {
   height: 22px;
@@ -4396,7 +4508,7 @@ kbd {
   border-radius: var(--r-md);
   color: var(--text);
   font: inherit;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   font-size: var(--fs-sm);
   font-weight: 400;
   padding: 8px 10px;
@@ -4737,14 +4849,14 @@ a.task-link {
 }
 
 /* Amber is kept for the two states that ask for care: a pause and a result that Needs a look. A question, a sign-off
-   or a pick is routine, so it takes the accent. */
+   or a pick is routine, so it reads in the quiet text colour: purple is only for what you can press. */
 .q-kind.k-question,
 .q-kind.k-approval,
 .q-kind.k-pick,
 .tag.k-question,
 .tag.k-approval,
 .tag.k-pick {
-  color: var(--accent);
+  color: var(--dim);
 }
 /* Home's tags take the queue's colours: one rule for both lists. */
 .tag.k-paused,

@@ -49,7 +49,8 @@ export class SetupFailed extends Error {
   }
 }
 
-const PALETTE = ["#7c7cf5", "#4cb782", "#4ea7fc", "#f2c94c", "#b07cf5", "#eb5757"];
+// New spaces take these in turn: mid tones of the Monolith Violet hues, readable as dots on the dark and the light ground.
+const PALETTE = ["#9b84ff", "#5fb98a", "#5f9fe0", "#d9a944", "#c07ad6", "#e07070"];
 const MAX_TASKS = 8;
 const USER_FIXABLE = new Set(["not_installed", "not_logged_in", "rate_limited"]);
 

@@ -14,17 +14,19 @@ test("index.html carries the CSP and loads no Google Fonts", () => {
   expect(html).not.toContain("fonts.gstatic");
 });
 
-test("Inter is self-hosted", () => {
+test("Inter Tight and Geist Mono are self-hosted", () => {
   const css = readFileSync(join(DASH, "styles.css"), "utf8");
-  const face = css.match(/@font-face\s*{[^}]*}/)?.[0] ?? "";
-  expect(face).toContain("font-family: Inter;");
-  expect(face).toContain("font-weight: 100 900;");
-  const src = face.match(/url\("\.\/(assets\/fonts\/[^"]+\.woff2)"\)/)?.[1];
-  expect(src).toBeDefined();
-  const file = join(DASH, src!);
-  expect(existsSync(file)).toBe(true);
-  expect(statSync(file).size).toBeLessThan(400 * 1024);
-  expect(existsSync(join(DASH, "assets/fonts/LICENSE-Inter.txt"))).toBe(true);
+  const faces = css.match(/@font-face\s*{[^}]*}/g) ?? [];
+  for (const [family, license] of [["Inter Tight", "LICENSE-InterTight.txt"], ["Geist Mono", "LICENSE-GeistMono.txt"]] as const) {
+    const face = faces.find((f) => f.includes(`font-family: "${family}";`)) ?? "";
+    expect(face).toContain("font-weight: 100 900;");
+    const src = face.match(/url\("\.\/(assets\/fonts\/[^"]+\.woff2)"\)/)?.[1];
+    expect(src).toBeDefined();
+    const file = join(DASH, src!);
+    expect(existsSync(file)).toBe(true);
+    expect(statSync(file).size).toBeLessThan(400 * 1024);
+    expect(existsSync(join(DASH, "assets/fonts", license))).toBe(true);
+  }
 });
 
 // Loopback URLs (and ones built from the page's own location) are fine. Libraries carry documentation links in their error messages; none is
