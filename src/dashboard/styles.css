@@ -3958,6 +3958,14 @@ kbd {
   background: var(--green);
   border-color: var(--green);
 }
+/* A stage it got past that failed (checks that didn't pass) keeps the red its chip uses. */
+.stages li.past.bad {
+  color: var(--red);
+}
+.stages li.past.bad::before {
+  background: var(--red);
+  border-color: var(--red);
+}
 .stages li.on {
   color: var(--text);
   font-weight: 500;

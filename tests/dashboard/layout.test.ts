@@ -66,3 +66,9 @@ test("buttons take their height from the control scale, so one row never mixes t
   expect(rule(".mk-form .btn")).toContain("min-height: var(--control)");
   expect(rule(".decision-acts .btn")).toContain("min-height: var(--control-lg)");
 });
+
+test("a stage it got past but that failed draws a red dot, not the green one passed stages use", () => {
+  expect(rule(".stages li.past.bad::before")).toContain("background: var(--red)");
+  expect(rule(".stages li.past.bad::before")).toContain("border-color: var(--red)");
+  expect(rule(".stages li.past.bad")).toContain("color: var(--red)");
+});
