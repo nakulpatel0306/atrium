@@ -15,6 +15,7 @@ async function heroMoment() {
   const typed = $("typed"), go = $("go"), flow = [...$("flow").children];
   if (still) return;
   const phrase = typed.textContent;
+  typed.dataset.phrase = phrase;
   typed.textContent = "";
   await wait(1000);
   for (const ch of phrase) {
@@ -35,6 +36,16 @@ async function heroMoment() {
   hero.set("work");
 }
 heroMoment();
+
+// The ask in the hero is the demo's ask: a click carries it down into the working copy of the app, ready to send.
+$("hero-ask").addEventListener("click", (e) => {
+  const ask = $("m-ask");
+  if (!ask) return;
+  e.preventDefault();
+  ask.value = $("typed").dataset.phrase || $("typed").textContent;
+  $("try").scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
+  ask.focus({ preventScroll: true });
+});
 
 // The story: the step nearest the middle of the screen sets Plum's pose and the step list beside it.
 const story = mountPlum($("story-plum"), { pose: "brief", lazy: true });

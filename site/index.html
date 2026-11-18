@@ -21,7 +21,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .head { display: flex; flex-direction: column; gap: 18px; margin-bottom: clamp(44px, 6vw, 80px); max-width: 820px; }
 
 /* Hero */
-.hero { min-height: min(calc(100svh - 72px), 900px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-block: 24px 28px; overflow-x: clip; isolation: isolate; }
+.hero { min-height: min(calc(100svh - 72px), 900px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px max(20px, env(safe-area-inset-right, 0px)) 28px max(20px, env(safe-area-inset-left, 0px)); overflow-x: clip; isolation: isolate; }
 .hero-plum { width: clamp(180px, 18vw, 240px); aspect-ratio: 1; margin-bottom: -10px; cursor: pointer; }
 /* The light Plum stands in: a soft purple pool under it, breathing. */
 .hero-plum::before { content: ""; position: absolute; left: -45%; right: -45%; bottom: -4%; height: 52%; border-radius: 50%; background: radial-gradient(closest-side, var(--glow), transparent); z-index: -1; animation: glow 4s ease-in-out infinite; }
@@ -37,9 +37,11 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .ask .go svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .ask .go.pressed { transform: scale(0.88); background: var(--accent-fill-hi); }
 .flow { list-style: none; margin: 26px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 26px; font: 14px var(--mono); color: var(--faint); }
-.flow li { transition: color 0.4s; }
+.flow li { position: relative; transition: color 0.4s; }
 .flow li.on { color: var(--text); }
-.flow li.on::before { content: "● "; color: var(--accent); }
+/* The dot sits outside the word, so the centred row doesn't shift as it moves. */
+.flow li.on::before { content: ""; position: absolute; left: -13px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--accent); }
+@media (max-width: 600px) { h2.display .ghost { display: block; } }
 .hero .alt { margin-top: 18px; font-size: 15px; color: var(--dim); }
 .hero .alt a { color: var(--text); text-underline-offset: 4px; text-decoration-color: var(--line-strong); }
 .hero .alt a:hover { text-decoration-color: var(--accent); }
@@ -50,7 +52,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   .ask .meta { order: 3; flex-basis: 100%; padding-bottom: 6px; }
   .hero-foot { position: static; flex-direction: column; align-items: center; margin-top: 48px; padding: 0; }
 }
-@media (max-height: 760px) and (min-width: 721px) { .hero-foot { position: static; margin-top: 40px; width: 100%; } }
+@media (max-height: 820px) and (min-width: 721px) { .hero-foot { position: static; margin-top: 40px; width: 100%; } }
 /* The hero's one entrance: Plum and the glow arrive, the headline rises line by line, then the ask. */
 .in { animation: rise 0.9s var(--ease) both; }
 .in.d1 { animation-delay: 0.12s; } .in.d2 { animation-delay: 0.26s; } .in.d3 { animation-delay: 0.42s; } .in.d4 { animation-delay: 0.6s; } .in.d5 { animation-delay: 0.78s; }
@@ -178,7 +180,9 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .grid .k2 { font: 13px var(--mono); color: var(--faint); }
 @media (max-width: 960px) { .grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid.four > li:nth-child(3) { padding-left: 0; border-left: 0; } .grid.four > li:nth-child(n + 3) { border-top: 1px solid var(--line); } }
 @media (max-width: 760px) { .grid, .grid.four { grid-template-columns: minmax(0, 1fr); } .grid > li + li, .grid.four > li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); } }
-.ways, .private, .more { padding-top: 0; }
+.ways, .private { padding-top: 0; }
+.also { margin-top: clamp(96px, 12vw, 160px); }
+.also > .label { display: block; font-weight: 500; margin-bottom: 18px; }
 
 /* Get it */
 .start { border-top: 1px solid var(--line); text-align: center; overflow-x: clip; }
@@ -214,7 +218,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   <div class="plum hero-plum pop" id="hero-plum" role="img" aria-label="Plum, Atrium's character, at work"><img class="plum-still" src="plum/work.webp" alt="" width="240" height="240" fetchpriority="high"></div>
   <h1 class="display" id="hero-h"><span class="ln in d1">Direct the agents.</span> <span class="ln em in d2">Keep the judgment.</span></h1>
   <p class="lede in d3">Atrium runs coding agents on your Mac and brings every result back checked, reviewed and waiting for your yes.</p>
-  <a class="ask in d4" href="#loop" aria-label="See how a task runs, from an example ask: add a dark mode toggle to storefront">
+  <a class="ask in d4" href="#try-it" id="hero-ask" aria-label="Try this ask in the demo below: add a dark mode toggle to storefront">
     <span class="q" aria-hidden="true"><span id="typed">Add a dark mode toggle to storefront</span><span class="caret"></span></span>
     <span class="meta" aria-hidden="true">small · 200k tokens</span>
     <span class="go" id="go" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span>
@@ -306,6 +310,14 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
           </div>
         </li>
       </ol>
+    </div>
+    <div class="also">
+      <h3 class="label" id="more-h">Also in the loop: it knows when to stop</h3>
+      <ul class="grid" aria-labelledby="more-h">
+        <li><span class="k2">budgets</span><h3>Paused, with a reason</h3><p>Each task has a time and token budget. The same edit three times, or no progress, pauses it with a one-line diagnosis. Give it a hint or ask it to explain the problem.</p></li>
+        <li><span class="k2">shapes</span><h3>One writer, unless you click</h3><p>Scouts read first when the work is broad. A split or two or three attempts run only on your click. Every task shows its tokens and an estimate.</p></li>
+        <li><span class="k2">learning</span><h3>A retro from real numbers</h3><p>Explain any hunk in one click. After a merge, three lines on how you directed the agents, built only from what Atrium measured. Optional, never a quiz.</p></li>
+      </ul>
     </div>
   </div>
 </section>
@@ -440,7 +452,7 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
   <div class="wrap">
     <div class="head">
       <span class="label">Private by design</span>
-      <h2 class="display" id="private-h">Your code stays <span class="ghost">on your Mac.</span></h2>
+      <h2 class="display" id="private-h">Your code stays <span class="em">on your Mac.</span></h2>
       <p class="lede">No sign-up and no Atrium cloud. It runs on your Mac, uses your own Claude subscription, and listens only on 127.0.0.1.</p>
     </div>
     <ul class="grid four">
@@ -448,20 +460,6 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
       <li><span class="k2">fenced in</span><h3>Agents can't wander</h3><p>Every agent runs sandboxed. None can read your keys, .env files or passwords, reach Atrium's API, or drive your other apps.</p></li>
       <li><span class="k2">you decide</span><h3>Nothing counts without a yes</h3><p>Rules can approve repeated kinds of work, but never a push, a merge to main, a delete, secrets or a new repo.</p></li>
       <li><span class="k2">only atrium pushes</span><h3>Agents never push</h3><p>After your yes, Atrium itself pushes the branch or opens the pull request. Private spaces only ever use Claude.</p></li>
-    </ul>
-  </div>
-</section>
-
-<section class="more" id="more" aria-labelledby="more-h">
-  <div class="wrap">
-    <div class="head">
-      <span class="label">Also in the loop</span>
-      <h2 class="display" id="more-h">It knows when <span class="ghost">to stop.</span></h2>
-    </div>
-    <ul class="grid">
-      <li><span class="k2">budgets</span><h3>Paused, with a reason</h3><p>Each task has a time and token budget. The same edit three times, or no progress, pauses it with a one-line diagnosis. Give it a hint or ask it to explain the problem.</p></li>
-      <li><span class="k2">shapes</span><h3>One writer, unless you click</h3><p>Scouts read first when the work is broad. A split or two or three attempts run only on your click. Every task shows its tokens and an estimate.</p></li>
-      <li><span class="k2">learning</span><h3>A retro from real numbers</h3><p>Explain any hunk in one click. After a merge, three lines on how you directed the agents, built only from what Atrium measured. Optional, never a quiz.</p></li>
     </ul>
   </div>
 </section>
