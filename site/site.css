@@ -10,8 +10,6 @@
   --hover: #1e1829;
   --line: #241d33;
   --line-strong: #31284a;
-  /* Plum's silhouette at the foot of the landing page. */
-  --shade: #2a2142;
   /* Text. --faint is the quietest small text (4.5:1 on every surface); --ghost is only for display type 24px and up. */
   --text: #f4f1ff;
   --body: #c3bbda;
@@ -54,7 +52,6 @@
     --hover: #eae6f3;
     --line: #e4dfef;
     --line-strong: #d3cce3;
-    --shade: #e3dcf2;
     --text: #120e1f;
     --body: #3d3652;
     --dim: #5a5273;
@@ -83,7 +80,6 @@
   --hover: #eae6f3;
   --line: #e4dfef;
   --line-strong: #d3cce3;
-  --shade: #e3dcf2;
   --text: #120e1f;
   --body: #3d3652;
   --dim: #5a5273;

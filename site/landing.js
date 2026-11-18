@@ -89,6 +89,9 @@ follow();
 // Privacy: Plum stands in its checks ring, the sandbox drawn as a fence it scans up and down.
 mountPlum($("private-plum"), { pose: "checks", lazy: true });
 
+// The end: Plum waves you off from the page's last edge.
+mountPlum($("start-plum"), { pose: "ready", lazy: true });
+
 // The demo: Plum looks up when something is ready, works while a task runs, waves at a yes, and dozes off after.
 const tryPlum = mountPlum($("try-plum"), { pose: "quiet", lazy: true });
 let settle;

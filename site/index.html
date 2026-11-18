@@ -225,10 +225,10 @@ section { position: relative; padding-block: var(--space-section); }
 .also > .label { display: block; font-weight: 500; margin-bottom: 18px; }
 
 /* Get it */
-.start { position: relative; border-top: 1px solid var(--line); text-align: center; overflow: clip; padding-bottom: calc(var(--space-section) + var(--shade-rise)); --shade-w: clamp(260px, 34vw, 460px); --shade-rise: calc(var(--shade-w) * 0.5); }
+.start { position: relative; border-top: 1px solid var(--line); text-align: center; overflow: clip; padding-bottom: calc(var(--space-section) + var(--end-plum) * 0.5); --end-plum: clamp(200px, 24vw, 300px); }
 .start > .wrap { position: relative; z-index: 1; }
-/* Plum's silhouette rises out of the page's last edge, waving, so the page ends on the character. */
-.start-shade { position: absolute; left: 50%; bottom: 0; width: var(--shade-w); aspect-ratio: 1; transform: translate(-50%, 34%); background: var(--shade); -webkit-mask: url(plum/ready.webp) center / contain no-repeat; mask: url(plum/ready.webp) center / contain no-repeat; pointer-events: none; }
+/* Plum stands at the page's last edge, cut off at the middle and waving, so the page ends on the character. */
+.start-plum { position: absolute; left: 50%; bottom: 0; width: var(--end-plum); aspect-ratio: 1; transform: translate(-50%, 34%); }
 .start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .start .head { margin-inline: auto; align-items: center; }
 .install { max-width: 720px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; overflow: hidden; }
@@ -505,7 +505,7 @@ section { position: relative; padding-block: var(--space-section); }
 </section>
 
 <section class="start" id="start" aria-labelledby="start-h">
-  <div class="start-shade" aria-hidden="true"></div>
+  <div class="plum start-plum" id="start-plum" role="img" aria-label="Plum, waving goodbye"><img class="plum-still" src="plum/ready.webp" alt="" width="300" height="300" loading="lazy"></div>
   <div class="wrap">
     <div class="head">
       <span class="label">Get Atrium</span>
