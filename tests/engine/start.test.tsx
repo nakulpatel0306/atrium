@@ -180,7 +180,7 @@ test("Claude first, with the install command when it's missing; the extras never
   process.env.ATRIUM_CLAUDE_BIN = join(FIX, "does-not-exist");
   const missing = await view();
   expect(missing).toContain("Install: curl -fsSL https://claude.ai/install.sh | bash");
-  expect(await html()).toContain('<button class="btn primary" disabled="">Next</button>');
+  expect(await html()).toContain('<button class="btn p primary" disabled="">Next</button>');
 });
 
 test("the folder comes prefilled, and the sample says what it costs before it runs", async () => {
