@@ -4833,6 +4833,11 @@ kbd {
   .summary-row > .t {
     flex: 1 1 100%;
   }
+  /* The status starts the line, whether it's a verdict chip or a kind's word. */
+  .summary-row > .chips {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+  }
   /* Always two lines under the reason, whatever fits: the status and cost, then the button at the right. */
   .needs-list .summary-row > .acts {
     flex: 1 1 100%;
