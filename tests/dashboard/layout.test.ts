@@ -124,3 +124,11 @@ test("on the narrow rail each space shows its name, cut with an ellipsis, under 
   expect(name).toContain("font-size: var(--fs-xs)");
   expect(rail).toMatch(/aside:not\(\.open\) \.space-link \{[^}]*flex-direction: column;/);
 });
+
+test("in one column, a waiting question's Answer form comes first on the space page, above the task list", () => {
+  const one = css.slice(css.indexOf("A question waiting before its task starts is the page's first thing"));
+  // Live, holding the question, moves above the tasks...
+  expect(one).toMatch(/^[^@]*@container main \(max-width: 960px\) \{\s*\.cols > \.live:has\(\.live-ask\) \{\s*order: -1;/);
+  // ...and inside it the form comes before the terminal or the idle line.
+  expect(one).toMatch(/\.live:has\(\.live-ask\) \.live-ask \{\s*order: -1;/);
+});
