@@ -162,6 +162,8 @@ h2.display { font-size: clamp(38px, 5.6vw, 72px); }
 .theme button:hover { color: var(--text); }
 .theme button[aria-checked="true"] { background: var(--hover); color: var(--text); }
 .theme svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* Auto is a half-filled circle: half light, half dark, decided by the Mac. */
+.theme svg .half { fill: currentColor; }
 
 /* Plum: a still image first, the live 3D drawing fades in over it. */
 .plum { position: relative; display: block; }
