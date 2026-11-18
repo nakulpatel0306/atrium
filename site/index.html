@@ -225,7 +225,10 @@ section { position: relative; padding-block: var(--space-section); }
 .also > .label { display: block; font-weight: 500; margin-bottom: 18px; }
 
 /* Get it */
-.start { border-top: 1px solid var(--line); text-align: center; overflow-x: clip; }
+.start { position: relative; border-top: 1px solid var(--line); text-align: center; overflow: clip; padding-bottom: calc(var(--space-section) + var(--shade-rise)); --shade-w: clamp(420px, 72vw, 1000px); --shade-rise: calc(var(--shade-w) * 0.42); }
+.start > .wrap { position: relative; z-index: 1; }
+/* A dim Plum rises out of the page's last edge, cut off below its eyes and fading out, so the page ends on the character. */
+.start-shade { position: absolute; left: 50%; bottom: 0; width: var(--shade-w); aspect-ratio: 1; transform: translate(-50%, 36%); background: url(plum/ready.webp) center / contain no-repeat; filter: var(--shade-filter); opacity: var(--shade-alpha); -webkit-mask: linear-gradient(#000 30%, transparent 78%); mask: linear-gradient(#000 30%, transparent 78%); pointer-events: none; }
 .start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .start .head { margin-inline: auto; align-items: center; }
 .install { max-width: 720px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; overflow: hidden; }
@@ -502,6 +505,7 @@ section { position: relative; padding-block: var(--space-section); }
 </section>
 
 <section class="start" id="start" aria-labelledby="start-h">
+  <div class="start-shade" aria-hidden="true"></div>
   <div class="wrap">
     <div class="head">
       <span class="label">Get Atrium</span>
