@@ -156,3 +156,19 @@ test("a held yes is in the list as starting, and its Undo takes it back", async 
 test("a status tag shows its word lowercase, and a name in capitals keeps its case", () => {
   expect(["Paused", "Needs a look", "Sign-off", "Ready for review", "CLAUDE.md"].map(tagWord)).toEqual(["paused", "needs a look", "sign-off", "ready for review", "CLAUDE.md"]);
 });
+
+test("a tag that starts with an agent's or a product's name keeps it capitalised", () => {
+  expect(["Codex gave no verdict", "Claude: 1 fixed", "Gemini: 2 declined", "Approved by Codex", "GitHub repo"].map(tagWord)).toEqual(["Codex gave no verdict", "Claude: 1 fixed", "Gemini: 2 declined", "approved by Codex", "GitHub repo"]);
+});
+
+test("the review chip keeps the reviewer's name as written, whether it gave no verdict or fixed what it found", async () => {
+  const { Chips } = await import("../../src/dashboard/components/Decision");
+  const { loopChips } = await import("../../src/dashboard/summary");
+  const base = { ...newLoop(SIZE_BUDGETS.small), checks: "passed" as const };
+  const none = loopChips({ ...base, reviews: [{ reviewer: "codex", verdict: null as never, findings: [], skipped: null }] });
+  const fixed = loopChips({ ...base, reviews: [{ reviewer: "claude", verdict: "changes", findings: [{ severity: "medium", file: "a.ts", line: 1, reason: "x", resolution: { action: "fixed", note: "" } }], skipped: null }] });
+  expect(render(<Chips chips={none} />).textContent).toContain("Codex gave no verdict");
+  act(() => root!.unmount());
+  root = null;
+  expect(render(<Chips chips={fixed} />).textContent).toContain("Claude: 1 fixed");
+});

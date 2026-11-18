@@ -50,9 +50,16 @@ export const VERDICT_MEANS = {
   risky: "A Review with a note, a check that didn't pass or a finding left open. Read why before you approve it.",
 };
 
-// A status tag or kind chip shows its word lowercase, per the copy rules ("paused", "needs a look"); a name that is
-// capitalised all through (CLAUDE.md) keeps its case.
-export const tagWord = (label: string): string => (/^[A-Z][A-Z]/.test(label) ? label : label[0]!.toLowerCase() + label.slice(1));
+// Names a tag can start with, which keep their capital: the agents (a review chip says "Codex gave no verdict"), the
+// product and the services it names.
+const NAMES = new Set(["Claude", "Codex", "Gemini", "Auto", "Atrium", "GitHub"]);
+
+// A status tag or kind chip shows its word lowercase, per the copy rules ("paused", "needs a look"). A tag that starts
+// with a name ("Claude: 1 fixed") or a word in capitals all through (CLAUDE.md) keeps its case.
+export const tagWord = (label: string): string => {
+  const first = /^[A-Za-z]+/.exec(label)?.[0] ?? "";
+  return !first || NAMES.has(first) || /^[A-Z][A-Z]/.test(label) ? label : label[0]!.toLowerCase() + label.slice(1);
+};
 
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.
 export const taskLabel = (w: TaskWord): string => TASK_WORD[w][0]!.toUpperCase() + TASK_WORD[w].slice(1);
