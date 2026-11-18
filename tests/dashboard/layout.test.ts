@@ -29,3 +29,26 @@ test("a long dialog scrolls inside itself and keeps its buttons on screen in a s
   expect(rule(".dialog-acts")).toContain("position: sticky");
   expect(rule(".dialog-acts")).toContain("background: var(--panel)");
 });
+
+// Every padding, margin and gap in the dashboard, with the selector it's under.
+const spacing = () =>
+  [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].flatMap((m) =>
+    [...m[2]!.matchAll(/(?:^|;)\s*((?:padding|margin|gap|row-gap|column-gap)[a-z-]*)\s*:\s*([^;]+)/g)].map((d) => ({ at: `${m[1]!.trim()} { ${d[1]}: ${d[2]!.trim()} }`, value: d[2]!.trim() })),
+  );
+
+test("spacing comes from one scale of tokens, not one-off pixel values", () => {
+  const scale = [...rule(":root").matchAll(/--space-(\d+):\s*(\d+)px/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  // Named for their size, on a 4px rhythm with 2 and 6 as the half steps dense controls need.
+  expect(scale).toEqual([2, 4, 6, 8, 12, 16, 20, 24, 32, 48, 64].map((n) => [n, n]));
+  // A hairline (1px), nothing, auto or a viewport share are fine; every other length is a token.
+  // A sum of steps (an indent that lines up with a column) is still the scale.
+  const bare = (v: string) => v.replace(/calc\(([^()]|var\(--space-\d+\))*\)/g, (c) => c.replace(/var\(--space-\d+\)|calc|[\d\s()+*-]/g, "")).replace(/var\(--space-\d+\)|-?1px|\b0\b|auto|\d+vh/g, "").trim();
+  const odd = spacing().filter((d) => bare(d.value) !== "");
+  expect(odd.map((d) => d.at)).toEqual([]);
+});
+
+test("type comes from one scale: every font size is a token", () => {
+  const sizes = [...css.matchAll(/font-size:\s*([^;]+);/g)].map((m) => m[1]!.trim());
+  // Inline code is sized against the text it sits in, so it keeps a relative size.
+  expect(sizes.filter((v) => !/^var\(--fs-[a-z0-9]+\)$/.test(v) && !/^\d*\.?\d+em$/.test(v))).toEqual([]);
+});
