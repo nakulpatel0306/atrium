@@ -148,3 +148,15 @@ test("a stop an older engine recorded as a bare exit code reads as plain words o
   expect(line).toContain("1 stopped: Claude Code exited without a message (exit code 1).");
   expect(line).not.toContain("Retry the task");
 });
+
+test("a stopped task's line shows even when a question waits in the same space; the question is Needs you's to show", () => {
+  const asking = task({ id: "q", status: "queued", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "brief", questions: [{ question: "Big exports or a faster start?", options: [] }] } });
+  const stopped = task({ id: "s", status: "blocked", blockedReason: "No repo" });
+  const waits = { q: { taskId: "q", agent: "claude", kind: "answers", reason: "The brief has questions for you, in Needs you." } } as unknown as State["waits"];
+  const s = spaceStatus(space, [asking, stopped], state({ tasks: [asking, stopped], waits }));
+  expect(s.text).toBe("Stopped: No repo");
+  expect(s.inQueue).toBeFalsy();
+  // A pause beside a stop: the stop is the news, the pause is a row in Needs you.
+  const paused = task({ id: "p", status: "blocked", blockedReason: "Paused: budget", loop: { ...newLoop(SIZE_BUDGETS.small), paused: { kind: "budget", diagnosis: "budget" } } });
+  expect(spaceStatus(space, [paused, stopped], state({ tasks: [paused, stopped] })).text).toBe("Stopped: No repo");
+});
