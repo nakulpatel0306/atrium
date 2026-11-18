@@ -1,6 +1,18 @@
 import { type RefObject, useEffect, useRef } from "react";
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+// Everything Tab can stop on, including a <details> toggle and edited text; the first summary of a details is its toggle.
+const FOCUSABLE = [
+  "a[href]",
+  "button:not([disabled])",
+  'input:not([disabled]):not([type="hidden"])',
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "details > summary:first-of-type",
+  "audio[controls]",
+  "video[controls]",
+  '[contenteditable]:not([contenteditable="false"])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
 
 // A dialog's focus: Tab and Shift Tab go round its own controls rather than out to the page behind it, Escape closes
 // it (unless the page already owns Escape, as Needs you does for its keys sheet), and on closing, focus goes back to

@@ -83,3 +83,15 @@ test("the keys sheet keeps Tab inside it and gives focus back when it closes", (
   root = null;
   expect(document.activeElement === from).toBe(true);
 });
+
+test("Tab in the keys sheet goes round to its What each item asks toggle, not only its Close", () => {
+  opener();
+  const el = mount(<KeysSheet keys={[["j", "Next"]]} kinds onClose={() => {}} />);
+  const summary = el.querySelector<HTMLElement>(".keys-sheet summary")!;
+  const close = [...el.querySelectorAll<HTMLButtonElement>(".keys-sheet button")].at(-1)!;
+  close.focus();
+  key("Tab");
+  expect(document.activeElement === summary).toBe(true);
+  key("Tab", true);
+  expect(document.activeElement === close).toBe(true);
+});
