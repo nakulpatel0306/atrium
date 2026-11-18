@@ -49,12 +49,19 @@ test("every page's footer links Privacy, Terms and Security beside the rest of t
   }
 });
 
-test("the policy pages are titled, described and canonical like the rest of the site", () => {
+test("the policy pages are titled like the rest of the site", () => {
   for (const [page, name] of [["privacy.html", "Privacy"], ["terms.html", "Terms"], ["security.html", "Security"]] as const) {
-    const html = read(page);
-    expect(html).toContain(`<title>Atrium · ${name}</title>`);
-    expect(html).toMatch(/<meta name="description" content="[^"]{60,}">/);
-    expect(html).toContain(`<link rel="canonical" href="https://nakulpatel0306.github.io/atrium/${page}">`);
+    expect(read(page)).toContain(`<title>Atrium · ${name}</title>`);
+  }
+});
+
+test("every page has a description and names its one canonical address", () => {
+  expect(pages.length).toBe(19);
+  for (const page of pages) {
+    const head = read(page).slice(0, read(page).indexOf("</head>"));
+    const url = `https://nakulpatel0306.github.io/atrium/${page === "index.html" ? "" : page}`;
+    expect({ page, description: /<meta name="description" content="[^"]{60,}">/.test(head) }).toEqual({ page, description: true });
+    expect({ page, canonical: head.match(/<link rel="canonical" href="([^"]*)">/g) }).toEqual({ page, canonical: [`<link rel="canonical" href="${url}">`] });
   }
 });
 
