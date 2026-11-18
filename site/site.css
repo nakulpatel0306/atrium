@@ -1,6 +1,19 @@
 /* Monolith Violet: near-black tinted violet, stark tight type, pill buttons, hairlines, and purple only where you act
    or where one line matters. Light is the same system on violet-tinted paper. Every page of the site links this file;
    a page's own <style> holds only its layout. */
+/* Both faces are served from site/vendor, so the pages fetch nothing from another site. */
+@font-face {
+  font-family: "Inter Tight";
+  src: url("vendor/inter-tight-5.3.0-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("vendor/geist-mono-5.3.0-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
 :root {
   color-scheme: dark;
   /* Surfaces, darkest to lightest, and the hairlines between them. */
