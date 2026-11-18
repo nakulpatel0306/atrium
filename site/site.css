@@ -207,3 +207,8 @@ footer .wrap > span { text-wrap: balance; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }
 }
+
+/* A dated note at the top of an essay whose product details have since changed. */
+.update { margin: 0 0 var(--space-head); padding: 14px 18px; border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 12px; background: var(--surface); color: var(--dim); font-size: 15px; line-height: 1.6; }
+.update b { color: var(--text); font-weight: 600; }
+.update a { color: var(--accent); }
