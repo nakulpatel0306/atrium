@@ -120,7 +120,7 @@ function classify(text: string, stderr: string, exitCode: number): AgentRunResul
     };
   }
   const tail = stderr.trim().split("\n").slice(-20).join("\n");
-  return { status: "error", kind: "failed", message: tail || silentExit("Claude Code", exitCode, "claude") };
+  return { status: "error", kind: "failed", message: tail || silentExit("Claude Code", exitCode) };
 }
 
 // resetsAt arrives in epoch seconds. A window without a numeric utilization carries nothing to record.

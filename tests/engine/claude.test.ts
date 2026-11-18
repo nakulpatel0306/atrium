@@ -183,7 +183,7 @@ describe("claudeAdapter", () => {
     const r = await claudeAdapter(FAKE).run(input());
     if (r.status !== "error") throw new Error("expected error");
     expect(r.kind).toBe("failed");
-    expect(r.message).toBe("Claude Code stopped with an error and didn't say why (exit code 1). Retry the task; if it stops again, run `claude` once in a terminal to see the error.");
+    expect(r.message).toBe("Claude Code exited without a message (exit code 1). Retry the task; if it stops again, `claude auth status` in a terminal shows whether Claude Code is still signed in.");
   });
 
   test("a crash is a failure even when the agent was talking about rate limits or logins", async () => {

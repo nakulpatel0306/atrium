@@ -56,7 +56,7 @@ function classify(message: string, stderr: string, exitCode: number): AgentRunRe
     return { status: "error", kind: "not_logged_in", message: SIGN_IN };
   }
   const tail = message || stderr.trim().split("\n").slice(-20).join("\n");
-  return { status: "error", kind: "failed", message: tail || silentExit("Gemini", exitCode, "agy") };
+  return { status: "error", kind: "failed", message: tail || silentExit("Gemini", exitCode) };
 }
 
 export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: string = SANDBOX_EXEC): AgentAdapter {

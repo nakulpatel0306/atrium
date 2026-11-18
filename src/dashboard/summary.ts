@@ -6,7 +6,7 @@ import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
 import { plainText } from "./markdown";
-import { plainStop } from "../engine/text";
+import { plainStop, shortStop } from "../engine/text";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -83,7 +83,7 @@ export function spaceStatus(space: Space, tasks: Task[], state: State, now = Dat
     const t = stuck[0]!;
     const paused = pausedForYou(t);
     // A pause is a normal stop that waits for a hint, so it reads amber; a stopped task needs a retry and reads red.
-    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason && plainStop(t.blockedReason)) ?? t.title}`, tone: paused ? "waiting" : "blocked" };
+    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason && shortStop(t.blockedReason)) ?? t.title}`, tone: paused ? "waiting" : "blocked" };
   }
   if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
   const review = tasks.filter((t) => t.status === "review").length;
@@ -102,7 +102,7 @@ export function liveStatus(state: State): string {
   // A pause is already one of the things that need you; only other stops are news here.
   const blocked = state.tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
   if (blocked.length === 1) {
-    const reason = blocked[0]!.blockedReason && plainStop(blocked[0]!.blockedReason).replace(/\.$/, "");
+    const reason = blocked[0]!.blockedReason && shortStop(blocked[0]!.blockedReason).replace(/\.$/, "");
     parts.push(`1 stopped${reason ? `: ${reason}` : ""}`);
   } else if (blocked.length > 1) parts.push(`${blocked.length} stopped`);
   // Queueing behind a running task is the normal case, not news, and a brief's questions are already counted above.
