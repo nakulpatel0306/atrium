@@ -3676,6 +3676,28 @@ kbd {
     width: 10px;
     height: 10px;
   }
+  /* A space on the rail keeps its name, under its swatch and cut short, so two spaces never read as two colours. */
+  aside:not(.open) .space-link {
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-6) 0;
+  }
+  aside:not(.open) .space-link .label {
+    position: static;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    clip-path: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-xs);
+    line-height: var(--lh-tight);
+    color: var(--dim);
+  }
+  aside:not(.open) .space-link.on .label {
+    color: var(--text);
+  }
   .nav .ct {
     position: absolute;
     top: 1px;

@@ -104,3 +104,9 @@ test("while the rail is open the page keeps its column: main is pinned to the se
   expect(rail).toMatch(/\.app > main \{[^}]*grid-column: 2;/);
   expect(rail).toMatch(/\.rail-scrim \{[^}]*position: fixed;[^}]*inset: 0;/);
 });
+
+test("each space in the sidebar is a named link, so the rail can show its name and not only its colour", () => {
+  const s = makeState();
+  const html = renderToStaticMarkup(<Sidebar state={s} archived={0} route={parseRoute("/")} onNewSpace={() => {}} />);
+  for (const sp of s.spaces) expect(html).toMatch(new RegExp(`class="nav space-link"[^>]*title="${sp.name}"[^>]*>.*?<span class="label">${sp.name}</span>`));
+});

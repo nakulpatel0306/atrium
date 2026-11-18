@@ -113,3 +113,14 @@ test("opening Changes keeps the space page in two columns: the diff takes the ma
 test("queue rows stay one line, and below 480px the space's name gives its room to the title", () => {
   expect(css).toMatch(/@media \(max-width: 479px\) \{\s*\.q-row \.q-space \{\s*display: none;/);
 });
+
+test("on the narrow rail each space shows its name, cut with an ellipsis, under its swatch", () => {
+  const rail = css.slice(css.indexOf("@media (max-width: 999px)"));
+  const name = rail.match(/aside:not\(\.open\) \.space-link \.label \{([^}]*)\}/)?.[1] ?? "";
+  // Undoes the rail's visually-hidden label for spaces only.
+  expect(name).toContain("position: static");
+  expect(name).toContain("clip-path: none");
+  expect(name).toContain("text-overflow: ellipsis");
+  expect(name).toContain("font-size: var(--fs-xs)");
+  expect(rail).toMatch(/aside:not\(\.open\) \.space-link \{[^}]*flex-direction: column;/);
+});

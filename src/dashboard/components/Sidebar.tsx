@@ -111,7 +111,7 @@ export function Sidebar({ state, archived, route, onNewSpace }: Props) {
       {state.spaces.map((s) => {
         const n = waitingIn(state, s.id);
         return (
-          <NavLink key={s.id} className={`nav${route.name === "space" && route.id === s.id ? " on" : ""}`} title={s.name} href={`/space/${s.id}`}>
+          <NavLink key={s.id} className={`nav space-link${route.name === "space" && route.id === s.id ? " on" : ""}`} title={s.name} href={`/space/${s.id}`}>
             <span className="sd" style={{ background: s.color }} />
             <span className="label">{s.name}</span>
             {n > 0 && <span className="ct">{n}</span>}
