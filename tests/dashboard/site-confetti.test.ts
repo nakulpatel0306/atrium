@@ -29,17 +29,19 @@ afterEach(() => {
   globalThis.IntersectionObserver = realIO;
 });
 
+// The reduced-motion query, with only what the confetti reads, and a way to flip it as the setting would.
 const query = (matches: boolean) => {
   const listeners: (() => void)[] = [];
-  return {
+  const q = {
     matches,
-    addEventListener: (_: string, fn: () => void) => listeners.push(fn),
+    addEventListener: (_: string, fn: () => void) => void listeners.push(fn),
     removeEventListener() {},
     change(next: boolean) {
-      this.matches = next;
+      q.matches = next;
       for (const fn of listeners) fn();
     },
   };
+  return q as typeof q & MediaQueryList;
 };
 const section = () => {
   const host = document.createElement("section");

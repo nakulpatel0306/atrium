@@ -56,7 +56,8 @@ export const alphaOf = (p) => Math.max(0, Math.min(1, (p.life - p.age) / (p.life
 
 // Mounts confetti in `host` (positioned, clipped), bursting from the element `from`. Returns burst(), which a hop
 // calls. Options: motion (the reduced-motion query; matchMedia's unless given, for tests).
-export function mountConfetti(host, { from, motion = matchMedia("(prefers-reduced-motion: reduce)") } = {}) {
+/** @param {HTMLElement} host @param {{ from: Element, motion?: MediaQueryList }} opts */
+export function mountConfetti(host, { from, motion = matchMedia("(prefers-reduced-motion: reduce)") }) {
   let canvas = null, ctx = null, pieces = [], raf = 0, last = 0, visible = true, dpr = 1;
 
   const clear = () => {
