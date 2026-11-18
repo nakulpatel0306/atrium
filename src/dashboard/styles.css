@@ -4234,6 +4234,16 @@ kbd {
   flex-direction: column;
   gap: var(--space-4);
 }
+/* A job: its name and meaning, the model it runs on, and a field only when that's another model. */
+.tiers .tier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.tiers select {
+  align-self: flex-start;
+  min-height: var(--control);
+}
 .tiers input {
   max-width: 260px;
   font-family: var(--mono);

@@ -193,3 +193,22 @@ test("a space card drops its status line when what it says is already a row in N
   // A stopped task isn't in Needs you, so its card still says so.
   expect(card(jobs).querySelector(".s")!.textContent).toContain("Stopped");
 });
+
+test("Models by job names each job in plain words and offers the known models, with a custom one still possible", async () => {
+  const { Agents } = await import("../../src/dashboard/components/Agents");
+  const { TIER_WORDS } = await import("../../src/engine/words");
+  const state = makeState();
+  state.tiers = { ...state.tiers, strong: { ...state.tiers.strong, model: "claude-opus-4-1" } };
+  const el = render(<Agents state={state} />);
+  const tiers = el.querySelector(".tiers")!;
+  for (const t of ["cheap", "default", "strong"] as const) {
+    expect(tiers.textContent).toContain(TIER_WORDS[t].name);
+    expect(tiers.textContent).toContain(TIER_WORDS[t].means);
+  }
+  const selects = [...tiers.querySelectorAll<HTMLSelectElement>("select")];
+  expect(selects).toHaveLength(3);
+  expect([...selects[0]!.options].map((o) => o.value)).toEqual(["", "haiku", "sonnet", "opus", "custom"]);
+  // A model that isn't one of the names shows as custom, in its own field, unchanged.
+  expect(selects[2]!.value).toBe("custom");
+  expect(tiers.querySelector<HTMLInputElement>('input[aria-label="Custom model for Judging"]')!.value).toBe("claude-opus-4-1");
+});

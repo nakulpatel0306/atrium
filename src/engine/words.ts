@@ -68,3 +68,10 @@ export const BUDGET_STEP = "Raise the budget";
 
 // A row's way to the item's screen in Needs you: its action, marked as leading somewhere rather than doing it.
 export const goTo = (kind: QueueKind, budget = false): string => `${kind === "paused" && budget ? BUDGET_STEP : KIND[kind].action}…`;
+
+// The Claude model tiers (engine/tiers.ts) as the jobs they do, in plain words, for Agents' Models by job.
+export const TIER_WORDS: Record<"cheap" | "default" | "strong", { name: string; means: string }> = {
+  cheap: { name: "Quick jobs", means: "Reading and summing up: briefs, walkthroughs, explanations and CLAUDE.md lines." },
+  default: { name: "Writing", means: "The agent that makes the change." },
+  strong: { name: "Judging", means: "Reviews, a writer that got stuck, and picking between attempts." },
+};
