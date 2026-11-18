@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { CLEAN, KIND, RISKY } from "../../engine/words";
+import { CLEAN, KIND, RISKY, VERDICT_MEANS } from "../../engine/words";
 
 // The keys that work on this page, and on Needs you what each kind of item asks, in the words every surface uses
 // (engine/words.ts).
@@ -41,11 +41,11 @@ export function KeysSheet({ keys, kinds = false, note, floating = false, onClose
             {/* A Review is listed by its verdict, so both words are explained here too. */}
             <div>
               <dt>{CLEAN}</dt>
-              <dd>A Review whose checks passed and whose reviewer approved, with nothing left open. One a approves it.</dd>
+              <dd>{VERDICT_MEANS.clean}</dd>
             </div>
             <div>
               <dt>{RISKY}</dt>
-              <dd>A Review with a note, a check that didn't pass or a finding left open. Read why first; a takes two presses.</dd>
+              <dd>{VERDICT_MEANS.risky}</dd>
             </div>
           </dl>
           </details>

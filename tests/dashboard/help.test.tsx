@@ -9,7 +9,7 @@ import { NeedsPage } from "../../src/dashboard/components/NeedsPage";
 import { Settings } from "../../src/dashboard/components/Settings";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
-import { KIND, PAUSE_WHY } from "../../src/engine/words";
+import { KIND, PAUSE_WHY, VERDICT_MEANS } from "../../src/engine/words";
 import { ids, makeState, task } from "../tui/fixtures";
 
 type Task = State["tasks"][number];
@@ -107,7 +107,7 @@ test("Home's line about a stopped task leads to it, so the retry it suggests is 
   const briefing = { greeting: "Good morning.", summary: "" };
   const el = render(<Home state={state} briefing={briefing} onNewSpace={() => {}} />);
   const link = el.querySelector<HTMLAnchorElement>(".brief a")!;
-  expect(link.textContent).toBe("Open Summarize postings");
+  expect(link.textContent).toBe("Open the task");
   expect(link.getAttribute("href")).toBe(`/space/${ids.jobHunt}?task=${ids.blocked}`);
 });
 
@@ -140,4 +140,11 @@ test("Get started is found from the palette by help and setup too", async () => 
   const { paletteActions } = await import("../../src/dashboard/palette");
   const go = paletteActions(makeState(), { spaceId: null, theme: "system" }).find((a) => a.id === "go-/start")!;
   expect(go.hint).toBe("Setup and help");
+});
+
+test("a result's screen explains its own verdict, so one that Needs a look isn't described as simply waiting for a yes", () => {
+  const state = makeState();
+  state.tasks = state.tasks.map((t) => (t.id === ids.review ? { ...t, outcome: "done", loop: { ...newLoop(SIZE_BUDGETS.small), stage: "ready", checks: "failed" } } : t));
+  const el = render(<NeedsPage state={state} item={ids.approval} />);
+  expect(el.querySelector(".dp-means")!.textContent).toBe(VERDICT_MEANS.risky);
 });

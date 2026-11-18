@@ -43,6 +43,12 @@ export const KIND: Record<QueueKind, { label: string; action: string; means: str
 export const RISKY = "Needs a look";
 // Its opposite, on a summary row's one chip: checks passed, the reviewer approved, nothing left open.
 export const CLEAN = "Clean";
+// What each verdict means, said wherever a Review is explained, so a result that Needs a look is never described as
+// simply waiting for a yes.
+export const VERDICT_MEANS = {
+  clean: "A Review whose checks passed and whose reviewer approved, with nothing left open. One a approves it.",
+  risky: "A Review with a note, a check that didn't pass or a finding left open. Read why first; a takes two presses.",
+};
 
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.
 export const taskLabel = (w: TaskWord): string => TASK_WORD[w][0]!.toUpperCase() + TASK_WORD[w].slice(1);

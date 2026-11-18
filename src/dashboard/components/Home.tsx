@@ -118,7 +118,7 @@ export function Home({ state, briefing, onNewSpace }: Props) {
                 navigate(`/space/${only.spaceId}?task=${only.id}`);
               }}
             >
-              Open {only.title}
+              Open the task
             </a>
           </>
         )}
