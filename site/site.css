@@ -44,6 +44,8 @@
   --orange: #e39a7b;
   --pink: #c8a2f0;
   --teal: #5fcfbf;
+  /* Pure white or black, for marks whose owners allow no other colour (the OpenAI Blossom). */
+  --mark: #ffffff;
   --sans: "Inter Tight", system-ui, -apple-system, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --col: 1160px;
@@ -83,6 +85,7 @@
     --orange: #a8543a;
     --pink: #7a3fa8;
     --teal: #136b60;
+    --mark: #000000;
   }
 }
 :root[data-theme="light"] {
@@ -111,6 +114,7 @@
   --orange: #a8543a;
   --pink: #7a3fa8;
   --teal: #136b60;
+  --mark: #000000;
 }
 
 * { box-sizing: border-box; }

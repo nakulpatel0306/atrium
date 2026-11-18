@@ -17,12 +17,12 @@ To update three.js: download `https://cdn.jsdelivr.net/npm/three@<version>/build
 
 # Agent marks
 
-The "Works with" line in the landing page's hero shows each agent's mark as an inline SVG, drawn in `currentColor`. Each mark belongs to its owner (see `terms.html`); the site shows them only to name the CLIs Atrium runs, and Atrium isn't affiliated with or endorsed by any of them.
+The "Works with" line in the landing page's hero names each agent Atrium runs, with its maker's mark where the owner allows one, as an inline SVG. Each mark belongs to its owner (see `terms.html`); the site shows them only to name the CLIs Atrium runs, and Atrium isn't affiliated with or endorsed by any of them.
 
 | Mark | Owner | Source | License |
 |---|---|---|---|
 | Claude Code | Anthropic | [Simple Icons](https://simpleicons.org) 16.38.0, `icons/claudecode.svg` (its data names `https://code.claude.com` as the source). The same file from jsDelivr and unpkg matched. | The drawing is CC0 1.0 through Simple Icons; the mark is Anthropic's trademark. |
-| Codex (the OpenAI Blossom) | OpenAI | OpenAI's brand page, [openai.com/brand](https://openai.com/brand/), "Download logos": `https://cdn.openai.com/brand/openai-logos.zip`, `SVGs/OAI_OpenAI-Blossom_Black.svg`. Simple Icons no longer carries an OpenAI icon. | OpenAI's Marks usage terms on that page: used only next to the OpenAI product it names, not more prominent than Atrium's own name, with no implied endorsement. |
-| Gemini (Antigravity) | Google | Antigravity's press page, [antigravity.google/press](https://antigravity.google/press), "Icon - One Color" SVG: `https://antigravity.google/assets/image/brand/antigravity-icon__one-color.svg`. | Google's trademark. The press page states no separate terms; Google's brand rules apply. |
+| Codex (the OpenAI Blossom) | OpenAI | OpenAI's brand page, [openai.com/brand](https://openai.com/brand/), "Download logos": `https://cdn.openai.com/brand/openai-logos.zip`, `SVGs/OAI_OpenAI-Blossom_Black.svg`. Simple Icons no longer carries an OpenAI icon. | OpenAI's Marks usage terms on that page: used only next to the OpenAI product it names, not more prominent than Atrium's own name, with no implied endorsement, and never recoloured. |
+| Gemini (Antigravity) | Google | No mark: Google asks for approval before its marks are used, so the line shows the name alone. | |
 
-Each path is copied unchanged. Only the `viewBox` differs: the Blossom's and Antigravity's are cut to the mark's own bounds (the downloads pad it with clear space), so all three draw at the same size; the space around them comes from the page's layout instead. The fill is the page's text colour, so the marks follow the theme.
+The paths are copied unchanged. Only the Blossom's `viewBox` differs: it's cut to the mark's own bounds (the download pads it with clear space), so both marks draw at the same size, and the space around them comes from the page's layout. Both marks are filled with `--mark` (site.css), which is plain white on the dark theme and plain black on the light one, because OpenAI allows the Blossom in no other colour. They're quieted at rest and brightened on hover with opacity alone.
