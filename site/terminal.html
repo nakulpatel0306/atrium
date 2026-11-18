@@ -19,7 +19,7 @@
 body { font-family: var(--mono); font-size: 16px; background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 40px 40px; }
 :root { --grid: color-mix(in srgb, var(--line) 55%, transparent); }
 .btn { border-radius: 10px; font-family: var(--mono); font-size: 15px; }
-.theme, .theme button { border-radius: 8px; }
+.theme, .theme button, .menu summary { border-radius: 8px; }
 .word { font-family: var(--mono); }
 section { position: relative; padding-block: var(--space-section); }
 .head { display: flex; flex-direction: column; gap: 16px; margin-bottom: var(--space-head); max-width: 780px; }
@@ -344,7 +344,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
         <pre id="cmds"><span class="p">$ </span>git clone https://github.com/nakulpatel0306/atrium.git
 <span class="p">$ </span>cd atrium
 <span class="p">$ </span>bun install &amp;&amp; bun link   <span class="c"># puts atrium on your PATH</span>
-<span class="p">$ </span>atrium install           <span class="c"># starts Atrium now and at login</span>
+<span class="p">$ </span>atrium install            <span class="c"># starts Atrium now and at login</span>
 <span class="p">$ </span>atrium</pre>
       </div>
       <ul class="flags">
