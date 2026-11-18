@@ -10,9 +10,8 @@
   --hover: #1e1829;
   --line: #241d33;
   --line-strong: #31284a;
-  /* The big dim Plum that rises behind the last section. */
-  --shade-filter: brightness(0.34) saturate(1.3);
-  --shade-alpha: 0.9;
+  /* Plum's silhouette at the foot of the landing page. */
+  --shade: #2a2142;
   /* Text. --faint is the quietest small text (4.5:1 on every surface); --ghost is only for display type 24px and up. */
   --text: #f4f1ff;
   --body: #c3bbda;
@@ -55,8 +54,7 @@
     --hover: #eae6f3;
     --line: #e4dfef;
     --line-strong: #d3cce3;
-    --shade-filter: brightness(1.45) saturate(0.8) contrast(0.5);
-    --shade-alpha: 0.5;
+    --shade: #e3dcf2;
     --text: #120e1f;
     --body: #3d3652;
     --dim: #5a5273;
@@ -85,8 +83,7 @@
   --hover: #eae6f3;
   --line: #e4dfef;
   --line-strong: #d3cce3;
-  --shade-filter: brightness(1.45) saturate(0.8) contrast(0.5);
-  --shade-alpha: 0.5;
+  --shade: #e3dcf2;
   --text: #120e1f;
   --body: #3d3652;
   --dim: #5a5273;
