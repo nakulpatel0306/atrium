@@ -26,7 +26,7 @@ export function Settings({ state }: { state: State }) {
       <div className="set-card start-card">
         <p>Checks that Claude is ready, picks your projects folder and runs one small task, so you see the whole loop once.</p>
         <button className="btn" onClick={() => navigate("/start")}>
-          Open Get started
+          Start
         </button>
       </div>
       <h2>You</h2>

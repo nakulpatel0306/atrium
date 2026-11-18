@@ -81,7 +81,7 @@ test("Settings opens with Get started, saying what it does, rather than a bare l
   expect(first.textContent).toBe("Get started");
   const card = first.nextElementSibling!;
   expect(card.textContent).toContain("Checks that Claude is ready");
-  expect([...card.querySelectorAll("button")].map((b) => [b.textContent, b.className])).toEqual([["Open Get started", "btn"]]);
+  expect([...card.querySelectorAll("button")].map((b) => [b.textContent, b.className])).toEqual([["Start", "btn"]]);
   // The profile card keeps only its own fields.
   expect([...el.querySelectorAll(".set-card .mk-form ~ button")].length).toBe(0);
 });
