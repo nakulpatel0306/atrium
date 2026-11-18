@@ -8,7 +8,7 @@
 <meta name="description" content="Atrium runs coding agents on your Mac: a brief for every task, your checks run by Atrium itself, a fresh reviewer, and one queue for everything that needs you.">
 <link rel="icon" type="image/png" href="plum/icon.png">
 <script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
-<script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
+<script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
@@ -128,7 +128,8 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 /* Try it */
 .try { border-top: 1px solid var(--line); }
 .try .head { max-width: 760px; }
-#try { position: relative; scroll-margin-top: 170px; }
+#try { position: relative; }
+#mac { scroll-margin-bottom: 16px; }
 /* Plum perches on the demo's window, so its reactions happen where you click. */
 .try-plum { position: absolute; right: 32px; top: -84px; width: 120px; aspect-ratio: 1; z-index: 2; }
 @media (max-width: 760px) { .try-plum { width: 84px; top: -60px; right: 12px; } }
@@ -208,7 +209,6 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 .start { border-top: 1px solid var(--line); text-align: center; overflow-x: clip; }
 .start .ctas { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .start .head { margin-inline: auto; align-items: center; }
-.start-plum { width: 180px; aspect-ratio: 1; margin: 0 auto 8px; }
 .install { max-width: 720px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: left; overflow: hidden; }
 .install .top { display: flex; justify-content: space-between; align-items: center; padding: 10px 10px 10px 20px; border-bottom: 1px solid var(--line); font: 13px var(--mono); color: var(--faint); }
 .install pre { margin: 0; padding: 18px 20px; font: 14px/1.9 var(--mono); color: var(--text); overflow-x: auto; }
@@ -481,7 +481,6 @@ section { position: relative; padding-block: clamp(88px, 12vw, 160px); }
 
 <section class="start" id="start" aria-labelledby="start-h">
   <div class="wrap">
-    <div class="plum start-plum" id="start-plum" role="img" aria-label="Plum, waving"><img class="plum-still" src="plum/ready.webp" alt="" width="180" height="180" loading="lazy"></div>
     <div class="head">
       <span class="label">Get Atrium</span>
       <h2 class="display" id="start-h">A minute to install. <span class="ghost">Another to watch the loop.</span></h2>

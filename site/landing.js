@@ -49,9 +49,15 @@ $("hero-ask").addEventListener("click", (e) => {
   if (!$("m-ask")) return;
   e.preventDefault();
   dispatchEvent(new CustomEvent("atrium:ask", { detail: { space: "web", text: $("typed").dataset.phrase || $("typed").textContent } }));
-  // Start-aligned under the bar, with room for the note and the Plum perched on the window.
-  $("try").scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
   $("m-ask").focus({ preventScroll: true });
+  // The demo's window ends at the foot of the screen, so the ask bar holding the line is in view. A smooth scroll can
+  // be cut short while the page is still loading, so it's checked once it should have landed and finished if not.
+  const land = () => $("mac").scrollIntoView({ behavior: still ? "auto" : "smooth", block: "end" });
+  land();
+  setTimeout(() => {
+    const r = $("m-ask").getBoundingClientRect();
+    if (r.top < 0 || r.bottom > innerHeight) land();
+  }, still ? 0 : 1200);
 });
 
 // The story: the step nearest the middle of the screen sets Plum's pose and the step list beside it.
