@@ -12,21 +12,22 @@ export type Fill = "accent" | "soft" | "key";
 export type ColorMode = "truecolor" | "ansi" | "none";
 export type Palette = { mode: ColorMode; contrast: boolean; fg: Record<Tone, string | undefined>; bg: Record<Fill, string | undefined> };
 
-// The dashboard's tokens (src/dashboard/styles.css). Lines use --line-strong: --line vanishes on a dark terminal.
+// The dashboard's Monolith Violet tokens (src/dashboard/styles.css), dark set. Lines use --line-strong: --line vanishes
+// on a dark terminal.
 const HEX = {
-  dim: "#9c9ca6",
-  faint: "#868690",
-  line: "#34343c",
-  accent: "#7c7cf5",
-  ok: "#4cb782",
-  warn: "#f2c94c",
-  bad: "#eb5757",
-  info: "#4ea7fc",
+  dim: "#9c92b8",
+  faint: "#8a80a8",
+  line: "#31284a",
+  accent: "#9b84ff",
+  ok: "#7fd6a4",
+  warn: "#e8c46a",
+  bad: "#f08a8a",
+  info: "#8fb8f0",
   claude: "#d97757",
-  soft: "#23234a",
-  key: "#26262c",
-  onFill: "#0d0d0f",
-  onKey: "#e6e6ea",
+  soft: "#2a2140",
+  key: "#241d33",
+  onFill: "#0c0a14",
+  onKey: "#f4f1ff",
 } as const;
 
 export function palette(mode: ColorMode, contrast = false): Palette {

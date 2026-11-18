@@ -59,15 +59,15 @@ test("in a 16-color terminal only the terminal's own colors are used", () => {
 
 test("in a truecolor terminal it uses Atrium's palette and paints no background behind the screen", async () => {
   const tc = await screen({ port, env: TRUECOLOR_ENV, steps: [{ wait: 1500 }] });
-  // The accent, #7c7cf5.
-  expect(tc.raw).toContain("38;2;124;124;245");
+  // The accent, #9b84ff.
+  expect(tc.raw).toContain("38;2;155;132;255");
   // The dashboard's page background is never painted; the terminal's own shows through.
-  expect(tc.raw).not.toContain("48;2;13;13;15");
-  // Faint text, #868690; high contrast draws it in the terminal's own foreground instead.
-  expect(tc.raw).toContain("38;2;134;134;144");
+  expect(tc.raw).not.toContain("48;2;12;10;20");
+  // Faint text, #8a80a8; high contrast draws it in the terminal's own foreground instead.
+  expect(tc.raw).toContain("38;2;138;128;168");
   const hc = await screen({ port, env: { ...TRUECOLOR_ENV, ATRIUM_HIGH_CONTRAST: "1" }, steps: [{ wait: 1500 }] });
-  expect(hc.raw).not.toContain("38;2;134;134;144");
-  expect(hc.raw).toContain("38;2;124;124;245");
+  expect(hc.raw).not.toContain("38;2;138;128;168");
+  expect(hc.raw).toContain("38;2;155;132;255");
 }, 30_000);
 
 test("NO_COLOR drops color but keeps the selected tab readable", async () => {

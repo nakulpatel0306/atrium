@@ -25,9 +25,9 @@ test("truecolor where the terminal says so, 16 colors elsewhere, nothing under N
 
 test("truecolor is Atrium's own palette; text always keeps the terminal's foreground", () => {
   const p = palette("truecolor");
-  expect(p.fg.accent).toBe("#7c7cf5");
-  expect(p.fg.ok).toBe("#4cb782");
-  expect(p.fg.bad).toBe("#eb5757");
+  expect(p.fg.accent).toBe("#9b84ff");
+  expect(p.fg.ok).toBe("#7fd6a4");
+  expect(p.fg.bad).toBe("#f08a8a");
   expect(p.fg.text).toBeUndefined();
   for (const t of TONES) if (p.fg[t]) expect(p.fg[t]).toMatch(/^#[0-9a-f]{6}$/);
 });
@@ -51,7 +51,7 @@ test("high contrast lifts quiet text to the foreground and makes accents bold", 
   const p = palette("truecolor", true);
   expect(p.fg.dim).toBeUndefined();
   expect(p.fg.faint).toBeUndefined();
-  expect(p.fg.line).toBe("#9c9ca6");
+  expect(p.fg.line).toBe("#9c92b8");
   expect(paint({ text: "x", color: "accent" }, p).bold).toBe(true);
   expect(palette("ansi", true).fg.faint).toBeUndefined();
   // ANSI white vanishes on a light terminal; lines keep the terminal's own foreground instead.
