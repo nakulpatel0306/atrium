@@ -8,7 +8,7 @@
 <meta name="description" content="Atrium's terminal app: the queue of everything that needs you, one key per decision, and the ask box, all without leaving the terminal.">
 <link rel="icon" type="image/png" href="plum/icon.png">
 <script>try{var t=localStorage.getItem("atrium.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
-<script>/* A page reached from a link opens at its top, unless the link names a section. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", toTop); addEventListener("DOMContentLoaded", toTop);</script>
+<script>/* A page reached from a link opens at its top, unless the link names a section. Only a page coming back from the cache is moved again on show: a fresh one may already be scrolling by then. */ if ("scrollRestoration" in history) history.scrollRestoration = "manual"; const toTop = () => { if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" }); }; addEventListener("pageshow", (e) => { if (e.persisted) toTop(); }); addEventListener("DOMContentLoaded", toTop);</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
@@ -53,8 +53,6 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .screens button:focus-visible { outline: 2px solid #9b84ff; outline-offset: 1px; }
 .tty { margin: 0; padding: 14px 16px; overflow-x: auto; color: #f4f1ff; font: clamp(9px, 1.04vw, 14px)/1.28 var(--mono); font-variant-ligatures: none; scrollbar-width: thin; scrollbar-color: #31284a transparent; }
 .tty[hidden] { display: none; }
-/* A tall screen scrolls inside the window, so its tabs and Plum stay in view. */
-.tty { max-height: min(72vh, 760px); overflow: auto; }
 .tty .bo { font-weight: 600; } .tty .it { font-style: italic; } .tty .dm { opacity: 0.6; }
 .tty .f-dim { color: #9c92b8; } .tty .f-faint { color: #8a80a8; } .tty .f-ln { color: #31284a; } .tty .f-ac { color: #9b84ff; }
 .tty .f-ok { color: #7fd6a4; } .tty .f-warn { color: #e8c46a; } .tty .f-bad { color: #f08a8a; } .tty .f-info { color: #8fb8f0; }

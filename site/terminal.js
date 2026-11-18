@@ -14,9 +14,6 @@ function pick(tab, focus) {
     document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
   });
   plum.set(tab.dataset.pose);
-  // The Ask box is at the foot of the app, so its screen opens scrolled to it.
-  const panel = document.getElementById(tab.getAttribute("aria-controls"));
-  panel.scrollTop = tab.id === "s-ask" ? panel.scrollHeight : 0;
   if (focus) tab.focus();
 }
 
