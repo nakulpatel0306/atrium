@@ -49,12 +49,15 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
           {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
         </span>
       </div>
-      <div className={`s${s.tone ? ` ${s.tone}` : ""}`} title={s.text}>
-        {WaitIcon && <WaitIcon />}
-        <span>
-          <Plain text={s.text} />
-        </span>
-      </div>
+      {/* Home lists what waits on you just above, so a card doesn't say it a second time. */}
+      {!s.inQueue && (
+        <div className={`s${s.tone ? ` ${s.tone}` : ""}`} title={s.text}>
+          {WaitIcon && <WaitIcon />}
+          <span>
+            <Plain text={s.text} />
+          </span>
+        </div>
+      )}
       {open.length > 0 && (
         <ul className="tasks">
           {open.slice(0, SHOWN_TASKS).map((t) => (

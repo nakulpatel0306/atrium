@@ -180,3 +180,16 @@ test("a row's cost is one short form; what it means (a floor, or no list price) 
   expect(none.textContent).toBe("—");
   expect(none.getAttribute("title")).toContain("no list price for these agents");
 });
+
+test("a space card drops its status line when what it says is already a row in Needs you", () => {
+  const s = makeState();
+  const state = { ...s, tasks: s.tasks.filter((t) => t.spaceId !== ids.atrium || t.id === ids.review) };
+  const el = render(<Home state={state} briefing={{ greeting: "Hi.", summary: "" }} onNewSpace={() => {}} />);
+  const card = (name: string) => [...el.querySelectorAll<HTMLElement>("a.space")].find((c) => c.querySelector(".name")!.textContent === name)!;
+  const atrium = state.spaces.find((sp) => sp.id === ids.atrium)!.name;
+  const jobs = state.spaces.find((sp) => sp.id === ids.jobHunt)!.name;
+  // Its review waits in Needs you, so the card doesn't say it again.
+  expect(card(atrium).querySelector(".s")).toBeNull();
+  // A stopped task isn't in Needs you, so its card still says so.
+  expect(card(jobs).querySelector(".s")!.textContent).toContain("Stopped");
+});

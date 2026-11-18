@@ -71,23 +71,25 @@ export function distinctWaits(tasks: Task[], state: State): Wait[] {
   return [...waits.values()];
 }
 
-export type SpaceStatus = { text: string; tone?: "blocked" | "waiting"; wait?: Wait };
+// `inQueue`: what the line says is already a row in Needs you (a pause, a result, a brief's question), so Home's card
+// can leave it to that row.
+export type SpaceStatus = { text: string; tone?: "blocked" | "waiting"; wait?: Wait; inQueue?: boolean };
 
 export function spaceStatus(space: Space, tasks: Task[], state: State, now = Date.now()): SpaceStatus {
   const running = tasks.find((t) => t.status === "running");
   if (running) return { text: `${agentText(running, state.runs)} running · ${running.title}` };
   const [wait] = waitsOf(tasks, state);
-  if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait };
+  if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait, inQueue: wait.kind === "answers" || wait.kind === "pick" || wait.kind === "parts" };
   const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
   if (stuck.length === 1 && stuck[0]!.status === "blocked") {
     const t = stuck[0]!;
     const paused = pausedForYou(t);
     // A pause is a normal stop that waits for a hint, so it reads amber; a stopped task needs a retry and reads red.
-    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason && shortStop(t.blockedReason)) ?? t.title}`, tone: paused ? "waiting" : "blocked" };
+    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason && shortStop(t.blockedReason)) ?? t.title}`, tone: paused ? "waiting" : "blocked", inQueue: paused };
   }
   if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
   const review = tasks.filter((t) => t.status === "review").length;
-  if (review > 0) return { text: `${review} ready for your review` };
+  if (review > 0) return { text: `${review} ready for your review`, inQueue: true };
   const queued = tasks.filter((t) => t.status === "queued").length;
   if (queued > 0) return { text: `${queued} ${queued === 1 ? "task" : "tasks"} queued` };
   const last = state.activity.find((a) => a.spaceId === space.id)?.createdAt ?? space.updatedAt;
