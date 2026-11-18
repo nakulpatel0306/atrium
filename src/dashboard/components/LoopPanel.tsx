@@ -1,4 +1,4 @@
-import { CLEAN, KIND, PAUSE_WHY, RISKY, taskWord } from "../../engine/words";
+import { CLEAN, KIND, PAUSE_WHY, RISKY, tagWord, taskWord } from "../../engine/words";
 import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
@@ -100,7 +100,7 @@ export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }
   const tone = loop.checks === "failed" ? " bad" : loop.checks === "passed" ? " good" : loop.checks === "none" ? " wait" : "";
   return (
     <button type="button" className={`tag check-badge${tone}`} title={loop.checks === "none" ? (loop.unverified ?? "Unverified: no checks found") : "Show what the checks said"} onClick={onOpen}>
-      {text}
+      {tagWord(text)}
     </button>
   );
 }

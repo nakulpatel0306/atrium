@@ -172,3 +172,9 @@ test("the review chip keeps the reviewer's name as written, whether it gave no v
   root = null;
   expect(render(<Chips chips={fixed} />).textContent).toContain("Claude: 1 fixed");
 });
+
+test("a task row's checks badge is lowercase like every status tag", async () => {
+  const { ChecksBadge } = await import("../../src/dashboard/components/LoopPanel");
+  const t = task({ id: "tsk_c", loop: { ...newLoop(SIZE_BUDGETS.small), checks: "passed" } });
+  expect(render(<ChecksBadge task={t} onOpen={() => {}} />).textContent).toBe("checks passed");
+});
