@@ -67,6 +67,11 @@
   --space-32: 32px;
   --space-48: 48px;
   --space-64: 64px;
+  /* Control heights: a button in a row, a field and the buttons beside it, and a decision's own buttons. One row
+     never mixes two. */
+  --control-sm: 28px;
+  --control: 32px;
+  --control-lg: 36px;
   /* Radii, from hairline chips to sheets. */
   --r-xs: 3px;
   --r-sm: 6px;
@@ -739,11 +744,15 @@ h2 {
   padding: 0 var(--space-16) var(--space-12) var(--space-32);
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-sm);
   border: 1px solid var(--line-strong);
   background: transparent;
   color: var(--text);
   border-radius: var(--r-pill);
-  padding: var(--space-4) var(--space-12);
+  padding: 0 var(--space-12);
   font: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
@@ -2249,6 +2258,9 @@ code {
   font-size: var(--fs-xs);
   color: var(--dim);
 }
+.mk-form .btn {
+  min-height: var(--control);
+}
 .mk-form label.btn {
   flex-direction: row;
   align-items: center;
@@ -2263,7 +2275,7 @@ code {
 .mk-form input[type="text"],
 .tiers input {
   min-width: 220px;
-  min-height: 30px;
+  min-height: var(--control);
   background: var(--bg);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
@@ -3585,7 +3597,7 @@ kbd {
   .toggle,
   input,
   select {
-    min-height: 32px;
+    min-height: var(--control);
   }
   .sec .add {
     width: 32px;
@@ -4446,7 +4458,7 @@ kbd {
 }
 /* The decision is the point of the page: its buttons are the largest on it. */
 .decision-acts .btn {
-  min-height: 36px;
+  min-height: var(--control-lg);
   padding: 0 var(--space-20);
   font-size: var(--fs-md);
 }
@@ -4652,29 +4664,86 @@ kbd {
   color: var(--red);
   border-color: color-mix(in srgb, var(--red) 40%, var(--line));
 }
-.summary-row .chips {
-  flex: 0 1 auto;
+/* A summary row is a grid, so every row's status, cost and button sit in the same columns, and its reason gets a line
+   of its own under the title, in full, rather than a few letters before an ellipsis. */
+.needs-list .summary-row {
+  display: grid;
+  grid-template-columns: 8px 96px minmax(0, 1fr) 104px 112px 160px;
+  grid-template-areas: "dot who t state cost acts";
+  align-items: center;
+  column-gap: var(--space-12);
+  row-gap: var(--space-8);
+  flex-wrap: nowrap;
+}
+.summary-row > .sd {
+  grid-area: dot;
+}
+.summary-row > .who {
+  grid-area: who;
+  width: auto;
+}
+.summary-row > .t {
+  grid-area: t;
+  white-space: normal;
+  overflow: visible;
+}
+.summary-row > .t span {
+  display: block;
+  margin-left: 0;
+  margin-top: var(--space-2);
+  line-height: 1.4;
+}
+.summary-row > .chips,
+.summary-row > .tag:not(.cost) {
+  grid-area: state;
+  justify-self: end;
   justify-content: flex-end;
 }
+.summary-row > .tag.cost {
+  grid-area: cost;
+  justify-self: end;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.needs-list .summary-row > .acts {
+  grid-area: acts;
+  flex-basis: auto;
+}
+.summary-row > .acts .btn {
+  width: 100%;
+}
+/* Narrower: the status, cost and button take a line of their own under the reason. On a phone the space's name goes
+   (its dot stays), so the title starts beside the dot. */
+@container main (max-width: 860px) {
+  .needs-list .summary-row {
+    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "dot who who who"
+      ". t t t"
+      ". state cost acts";
+    row-gap: var(--space-4);
+  }
+  .summary-row > .chips,
+  .summary-row > .tag:not(.cost) {
+    justify-self: start;
+  }
+  .summary-row > .tag.cost {
+    overflow: visible;
+  }
+  .needs-list .summary-row > .acts {
+    margin-top: var(--space-4);
+  }
+}
 @container main (max-width: 640px) {
-  .summary-row .chips {
-    flex: 1 1 100%;
-    justify-content: flex-start;
+  .needs-list .summary-row {
+    grid-template-areas:
+      "dot t t t"
+      ". state cost acts";
   }
-  /* On a phone the row's title takes the width, and its reason gets lines of its own rather than a few letters. */
-  .summary-row {
-    flex-wrap: wrap;
-  }
-  .summary-row .t {
-    flex: 1 1 100%;
-    white-space: normal;
-  }
-  .summary-row .t span {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    margin-left: 0;
-    overflow: hidden;
+  .summary-row > .sd {
+    align-self: start;
+    margin-top: var(--space-6);
   }
 }
 
