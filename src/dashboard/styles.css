@@ -67,11 +67,23 @@
   --space-32: 32px;
   --space-48: 48px;
   --space-64: 64px;
-  /* Control heights: a button in a row, a field and the buttons beside it, and a decision's own buttons. One row
-     never mixes two. */
+  /* Line heights: a single glyph, titles, dense rows and notes, body text, and long reading. */
+  --lh-none: 1;
+  --lh-tight: 1.1;
+  --lh-snug: 1.4;
+  --lh-body: 1.5;
+  --lh-loose: 1.6;
+  /* Control heights: the smallest hit target (a link-styled button), a button in a row, a field and the buttons beside
+     it, and a decision's own buttons. One row never mixes two. */
+  --control-xs: 24px;
   --control-sm: 28px;
   --control: 32px;
   --control-lg: 36px;
+  /* A summary row's columns: the space's name, the status, the cost and the button. Every row shares them. */
+  --col-who: 96px;
+  --col-state: 104px;
+  --col-cost: 112px;
+  --col-acts: 160px;
   /* Radii, from hairline chips to sheets. */
   --r-xs: 3px;
   --r-sm: 6px;
@@ -153,7 +165,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 var(--sans);
+  font: var(--fs-md)/var(--lh-body) var(--sans);
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -247,7 +259,7 @@ aside {
   position: absolute;
   top: -4px;
   right: 2px;
-  font: 700 18px/1 var(--sans);
+  font: 700 var(--fs-xl)/var(--lh-none) var(--sans);
   color: var(--accent);
 }
 /* "1 at work" and "6 need you" each on a line of their own, rather than wrapping mid-phrase. */
@@ -382,7 +394,7 @@ svg.lucide {
   font-size: var(--fs-sm);
   color: var(--faint);
   margin-top: var(--space-4);
-  line-height: 1.4;
+  line-height: var(--lh-snug);
 }
 .foot .power {
   display: flex;
@@ -609,7 +621,7 @@ h1 {
   font-size: var(--fs-display);
   font-weight: 600;
   letter-spacing: -0.045em;
-  line-height: 1.05;
+  line-height: var(--lh-tight);
 }
 /* A page's head: the title, its one lede under it, then the first section a full step below. */
 .brief {
@@ -973,7 +985,7 @@ h2 {
 }
 .new small {
   font-size: var(--fs-sm);
-  line-height: 1.4;
+  line-height: var(--lh-snug);
   max-width: 240px;
   text-wrap: balance;
 }
@@ -1198,7 +1210,7 @@ h2 {
 .dialog ul {
   margin: 0 0 var(--space-12) var(--space-20);
   font-size: var(--fs-md);
-  line-height: 1.6;
+  line-height: var(--lh-loose);
 }
 .dialog ul.stays {
   list-style: none;
@@ -1244,7 +1256,8 @@ h2 {
   justify-content: flex-end;
   gap: var(--space-8);
   position: sticky;
-  bottom: -16px;
+  /* Pinned to the dialog's bottom edge, past its own bottom padding. */
+  bottom: calc(-1 * var(--space-16));
   margin-bottom: calc(-1 * var(--space-16));
   padding: var(--space-12) 0 var(--space-16);
   background: var(--panel);
@@ -1709,7 +1722,7 @@ textarea::placeholder {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   font-size: var(--fs-xs);
-  line-height: 1.6;
+  line-height: var(--lh-loose);
   color: var(--term-text);
   padding: var(--space-12) var(--space-12);
   height: min(420px, calc(100vh - 260px));
@@ -1806,7 +1819,7 @@ code {
   margin: 0;
   padding: var(--space-16) var(--space-16);
   font-size: var(--fs-sm);
-  line-height: 1.6;
+  line-height: var(--lh-loose);
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
@@ -2421,7 +2434,7 @@ code {
 /* Agent text rendered from markdown. */
 .md {
   color: var(--text);
-  line-height: 1.55;
+  line-height: var(--lh-body);
   overflow-wrap: break-word;
 }
 .md > * + * {
@@ -2467,7 +2480,7 @@ code {
   background: var(--raised);
   border-radius: var(--r-sm);
   padding: 1px var(--space-4);
-  font: 12px var(--mono);
+  font: var(--fs-xs) var(--mono);
 }
 .md pre {
   background: var(--raised);
@@ -2648,7 +2661,7 @@ code {
 .preview pre.code {
   max-height: 420px;
   overflow: auto;
-  font: 12px/1.5 var(--mono);
+  font: var(--fs-xs)/var(--lh-body) var(--mono);
   white-space: pre-wrap;
 }
 .preview-note {
@@ -2686,8 +2699,10 @@ code {
   border: 0;
   border-radius: var(--r-md);
   padding: var(--space-4) var(--space-8);
-  font: 500 12px/1.4 inherit;
-  font-family: inherit;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: var(--lh-snug);
   color: var(--dim);
   cursor: pointer;
 }
@@ -2767,7 +2782,7 @@ code {
   gap: var(--space-8);
   align-items: flex-start;
   font-size: var(--fs-sm);
-  line-height: 1.45;
+  line-height: var(--lh-snug);
   color: var(--text);
   background: color-mix(in srgb, var(--yellow) 9%, var(--bg));
   border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line));
@@ -2797,7 +2812,7 @@ code {
   gap: var(--space-8);
   align-items: center;
   font-size: var(--fs-sm);
-  line-height: 1.45;
+  line-height: var(--lh-snug);
   color: var(--text);
   background: var(--raised);
   border: 1px solid var(--line-strong);
@@ -2825,7 +2840,7 @@ code {
 .start-sample > p {
   max-width: var(--measure);
   margin: var(--space-12) 0;
-  line-height: 1.55;
+  line-height: var(--lh-body);
 }
 .start-steps {
   list-style: none;
@@ -3053,7 +3068,7 @@ code {
   overflow-x: auto;
   border-collapse: collapse;
   font-size: var(--fs-sm);
-  line-height: 1.5;
+  line-height: var(--lh-body);
 }
 .chg-lines td {
   padding: 0 var(--space-8);
@@ -3446,7 +3461,7 @@ kbd {
   letter-spacing: -0.035em;
   color: var(--text);
   margin: var(--space-4) 0 var(--space-8);
-  line-height: 1.15;
+  line-height: var(--lh-tight);
 }
 /* The kind's one-line meaning, under the title: quiet, and only as wide as reads easily. */
 .dp-means {
@@ -3668,7 +3683,7 @@ kbd {
     top: 1px;
     right: 3px;
     font-size: var(--fs-xs);
-    line-height: 14px;
+    line-height: var(--lh-tight);
   }
   .nav .ct.hot {
     padding: 0 var(--space-4);
@@ -4503,8 +4518,9 @@ kbd {
   font-size: var(--fs-md);
 }
 .decision-keys {
-  height: 22px;
-  line-height: 22px;
+  height: var(--space-24);
+  padding-top: var(--space-2);
+  line-height: var(--lh-body);
   font-size: var(--fs-xs);
   color: var(--faint);
   text-align: right;
@@ -4546,7 +4562,7 @@ kbd {
 .pick,
 .top .crumb,
 .btn.link {
-  min-height: 24px;
+  min-height: var(--control-xs);
 }
 .btn.link {
   vertical-align: middle;
@@ -4607,7 +4623,7 @@ kbd {
 .task-open,
 .check-badge,
 .brief-view summary {
-  min-height: 24px;
+  min-height: var(--control-xs);
 }
 /* Long prose keeps a readable measure. */
 .finding,
@@ -4682,7 +4698,7 @@ kbd {
   gap: var(--space-4);
   font-size: var(--fs-xs);
   padding: 1px var(--space-8);
-  min-height: 22px;
+  min-height: var(--control-xs);
   border-radius: var(--r-xl);
   border: 1px solid var(--line);
   color: var(--dim);
@@ -4708,7 +4724,7 @@ kbd {
    of its own under the title, in full, rather than a few letters before an ellipsis. */
 .needs-list .summary-row {
   display: grid;
-  grid-template-columns: 8px 96px minmax(0, 1fr) 104px 112px 160px;
+  grid-template-columns: var(--space-8) var(--col-who) minmax(0, 1fr) var(--col-state) var(--col-cost) var(--col-acts);
   grid-template-areas: "dot who t state cost acts";
   align-items: center;
   column-gap: var(--space-12);
@@ -4731,7 +4747,7 @@ kbd {
   display: block;
   margin-left: 0;
   margin-top: var(--space-2);
-  line-height: 1.4;
+  line-height: var(--lh-snug);
 }
 .summary-row > .chips,
 .summary-row > .tag:not(.cost) {
@@ -4755,14 +4771,14 @@ kbd {
 }
 /* A space's own list leaves out the space's name, so its column goes too. */
 .needs-list.space-needs .summary-row {
-  grid-template-columns: 8px minmax(0, 1fr) 104px 112px 160px;
+  grid-template-columns: var(--space-8) minmax(0, 1fr) var(--col-state) var(--col-cost) var(--col-acts);
   grid-template-areas: "dot t state cost acts";
 }
 /* Narrower: the status, cost and button take a line of their own under the reason. On a phone the space's name goes
    (its dot stays), so the title starts beside the dot. */
 @container main (max-width: 860px) {
   .needs-list .summary-row {
-    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    grid-template-columns: var(--space-8) minmax(0, 1fr) auto auto;
     grid-template-areas:
       "dot who who who"
       ". t t t"
@@ -4782,7 +4798,7 @@ kbd {
 }
 @container main (max-width: 860px) {
   .needs-list.space-needs .summary-row {
-    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    grid-template-columns: var(--space-8) minmax(0, 1fr) auto auto;
     grid-template-areas:
       "dot t t t"
       ". state cost acts";
@@ -4843,7 +4859,7 @@ kbd {
   cursor: pointer;
   color: var(--dim);
   font-size: var(--fs-sm);
-  min-height: 24px;
+  min-height: var(--control-xs);
   display: flex;
   align-items: center;
 }
@@ -4889,11 +4905,11 @@ kbd {
 a.task-link {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
+  min-height: var(--control-xs);
 }
 /* The ask bar's text field, without touching its hidden file picker. */
 .cmd input:not([type="file"]) {
-  min-height: 24px;
+  min-height: var(--control-xs);
 }
 
 @container main (max-width: 640px) {

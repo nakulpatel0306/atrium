@@ -47,7 +47,13 @@ test("spacing comes from one scale of tokens, not one-off pixel values", () => {
   expect(odd.map((d) => d.at)).toEqual([]);
 });
 
-test("type comes from one scale: every font size is a token", () => {
+test("type comes from one scale: every font size and line height is a token, in a shorthand too", () => {
+  // A `font:` shorthand's size and line height count as well.
+  const shorthand = [...css.matchAll(/(?:^|[;{\s])font:\s*([^;]+);/g)].map((m) => m[1]!.trim()).filter((v) => v !== "inherit");
+  expect(shorthand.filter((v) => /\d(px|em|rem)\b|\/\s*[\d.]/.test(v.replace(/var\(--[a-z0-9-]+\)/g, "")))).toEqual([]);
+  const heights = [...css.matchAll(/line-height:\s*([^;]+);/g)].map((m) => m[1]!.trim());
+  expect(heights.filter((v) => !/^var\(--lh-[a-z]+\)$/.test(v))).toEqual([]);
+  expect([...rule(":root").matchAll(/--lh-([a-z]+):/g)].map((m) => m[1])).toEqual(["none", "tight", "snug", "body", "loose"]);
   const sizes = [...css.matchAll(/font-size:\s*([^;]+);/g)].map((m) => m[1]!.trim());
   // Inline code is sized against the text it sits in, so it keeps a relative size.
   expect(sizes.filter((v) => !/^var\(--fs-[a-z0-9]+\)$/.test(v) && !/^\d*\.?\d+em$/.test(v))).toEqual([]);
@@ -59,9 +65,14 @@ test("a Home row shows its whole reason on a line under the title, never cut to 
   expect(rule(".summary-row > .t span")).not.toContain("line-clamp");
   // Every row's status, cost and button share columns, so they line up down the list.
   expect(rule(".needs-list .summary-row")).toContain('grid-template-areas: "dot who t state cost acts"');
+  // Its columns are tokens too, so Home's rows and a space's rows can't drift apart.
+  for (const m of css.matchAll(/\.summary-row \{[^}]*grid-template-columns:\s*([^;]+);/g)) expect(m[1]!.replace(/var\(--[a-z0-9-]+\)|minmax\(0, 1fr\)|auto/g, "").trim()).toBe("");
 });
 
 test("buttons take their height from the control scale, so one row never mixes two heights", () => {
+  expect([...rule(":root").matchAll(/--control(-[a-z]+)?:\s*(\d+)px/g)].map((m) => Number(m[2]))).toEqual([24, 28, 32, 36]);
+  // No control sets its own pixel floor.
+  expect(css.match(/min-height:\s*2[0-9]px/g)).toBeNull();
   expect(rule(".btn")).toContain("min-height: var(--control-sm)");
   expect(rule(".mk-form .btn")).toContain("min-height: var(--control)");
   expect(rule(".decision-acts .btn")).toContain("min-height: var(--control-lg)");
