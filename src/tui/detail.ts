@@ -14,7 +14,7 @@ import type { TaskOutputs } from "../engine/outputs/views";
 import type { State } from "../engine/state";
 import { outcomeText } from "../engine/outcome";
 import { taskVerdict } from "../dashboard/queue";
-import { fileSize, plural } from "../engine/text";
+import { fileSize, plainStop, plural } from "../engine/text";
 import { markdownLines } from "./markdown";
 import type { Learning } from "../engine/spaces";
 import { predictOpen, type Spot } from "../engine/walkthrough";
@@ -125,7 +125,7 @@ export function taskDetail(view: View, messages: Message[] | null, outputs: Task
       { text: ` · ${agentText(task, state.runs)}`, color: color.muted },
     ],
   ];
-  if (task.status === "blocked" && task.blockedReason) lines.push(plain(task.blockedReason, { color: color.bad }));
+  if (task.status === "blocked" && task.blockedReason) lines.push(plain(plainStop(task.blockedReason), { color: color.bad }));
   const told = outcomeText(task.outcome, task.outcomeReason);
   if (told && (task.status === "review" || task.status === "done")) lines.push(plain(told, { color: task.outcome === "unknown" ? color.muted : color.warn }));
   // Wait reasons can name a command in backticks; they're kept as written so it can be copied.

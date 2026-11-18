@@ -1,4 +1,4 @@
-import { CLEAN, KIND, RISKY } from "../../engine/words";
+import { CLEAN, KIND, PAUSE_WHY, RISKY, tagWord, taskWord } from "../../engine/words";
 import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
@@ -26,13 +26,17 @@ export function StageStrip({ task }: { task: Task }) {
   const notes = now === "ready" && task.status === "review" && !cleanResult(task);
   // A result waiting on you ends on its verdict, the word its row and chip use, rather than a third name.
   const verdict = now === "ready" && task.status === "review" ? (notes ? RISKY : CLEAN) : null;
+  // A task that stopped (not paused) ends where it stopped, in red, so the strip never reads as still going.
+  const stopped = taskWord(task) === "stopped" || task.status === "failed";
   return (
     <ol className="stages" aria-label="Where this task is">
       {STRIP.map((s, i) => {
         const here = i === at;
-        const label = here && now === "paused" ? "Paused" : here && verdict ? verdict : STAGE_TEXT[s];
+        const label = here && now === "paused" ? "Paused" : here && stopped ? "Stopped" : here && verdict ? verdict : STAGE_TEXT[s];
+        // Checks it got past but that failed say so, in the colour their chip uses.
+        const failed = s === "checks" && i < at && task.loop?.checks === "failed";
         return (
-          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
+          <li key={s} className={`${here ? "on" : i < at ? "past" : ""}${failed || (here && stopped) ? " bad" : ""}${here && (now === "paused" || notes) ? " wait" : ""}${here && task.status === "running" ? " live" : ""}`} aria-current={here ? "step" : undefined}>
             {label}
           </li>
         );
@@ -96,7 +100,7 @@ export function ChecksBadge({ task, onOpen }: { task: Task; onOpen: () => void }
   const tone = loop.checks === "failed" ? " bad" : loop.checks === "passed" ? " good" : loop.checks === "none" ? " wait" : "";
   return (
     <button type="button" className={`tag check-badge${tone}`} title={loop.checks === "none" ? (loop.unverified ?? "Unverified: no checks found") : "Show what the checks said"} onClick={onOpen}>
-      {text}
+      {tagWord(text)}
     </button>
   );
 }
@@ -161,6 +165,8 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
         </div>
       </form>
       {error && <p className="err">{error}</p>}
+      {/* Why it paused, under the ways on, so the choices come first on a short window. */}
+      {task.loop?.paused && <p className="hint pause-why">{PAUSE_WHY[task.loop.paused.kind]}</p>}
     </div>
   );
 }
@@ -224,7 +230,8 @@ function Budget({ task }: { task: Task }) {
             </button>
           </form>
         ) : (
-          <button className="btn" onClick={() => setEditing(true)}>
+          // A detail of the budget line, not one more way on: it reads as a link beside it.
+          <button className="btn link" onClick={() => setEditing(true)}>
             Change budget
           </button>
         ))}

@@ -1,3 +1,4 @@
+import { TIER_WORDS } from "../../engine/words";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { AGENT_IDS, agentName } from "../agents";
@@ -85,8 +86,7 @@ function PlanLines({ state }: { state: State }) {
       </p>
       {sevenDay && <p className="note-line">Weekly limit: {Math.round(sevenDay.utilization * 100)}% used, resets {absolute(sevenDay.resetsAt)}.</p>}
       <p className="note-line">
-        Claude reports these only while Atrium runs it, so your use in other Claude apps shows up at Atrium's next Claude run, and Atrium can't see your plan's
-        exact quota.
+        Only Atrium's own Claude runs report this, so use in other Claude apps shows up after the next one. Your plan's exact quota isn't visible to Atrium.
       </p>
     </>
   );
@@ -98,6 +98,8 @@ const TIERS: Tier[] = ["cheap", "default", "strong"];
 // Which model each Claude tier runs on. Empty means the model the user set in Claude itself.
 function Tiers({ state }: { state: State }) {
   const [models, setModels] = useState<Record<string, string>>(() => Object.fromEntries(TIERS.map((t) => [t, state.tiers[t].model])));
+  // A tier the user chose "Another model…" for keeps its field open even while what's typed matches a known name.
+  const [custom_, setCustom] = useState<Partial<Record<Tier, boolean>>>({});
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ error: boolean; text: string } | null>(null);
   const save = async () => {
@@ -115,19 +117,45 @@ function Tiers({ state }: { state: State }) {
       }}
     >
       <h2>Models by job</h2>
-      {TIERS.map((t) => (
-        <label key={t}>
-          <span>
-            {TIER_NAMES[t]} <span className="hint">{state.tiers[t].jobs}</span>
-          </span>
-          <input
-            className="mono"
-            value={models[t] ?? ""}
-            placeholder={state.tiers[t].stock || "your Claude default"}
-            onChange={(e) => setModels((m) => ({ ...m, [t]: e.target.value }))}
-          />
-        </label>
-      ))}
+      {TIERS.map((t) => {
+        const value = models[t] ?? "";
+        const custom = custom_[t] || !KNOWN_MODELS.includes(value);
+        return (
+          <div className="tier" key={t}>
+            <label>
+              <span>
+                <b>{TIER_WORDS[t].name}</b> <span className="hint">{TIER_WORDS[t].means}</span>
+              </span>
+              <select
+                className="pick"
+                value={custom ? "custom" : value}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCustom((c) => ({ ...c, [t]: v === "custom" }));
+                  if (v !== "custom") setModels((m) => ({ ...m, [t]: v }));
+                }}
+              >
+                {KNOWN_MODELS.map((m) => (
+                  <option key={m} value={m}>
+                    {m ? m[0]!.toUpperCase() + m.slice(1) : "Your Claude default"}
+                    {m === state.tiers[t].stock ? " (Atrium's default)" : ""}
+                  </option>
+                ))}
+                <option value="custom">Another model…</option>
+              </select>
+            </label>
+            {custom && (
+              <input
+                className="mono"
+                aria-label={`Custom model for ${TIER_WORDS[t].name}`}
+                value={value}
+                placeholder="a model name, like claude-sonnet-4-5"
+                onChange={(e) => setModels((m) => ({ ...m, [t]: e.target.value }))}
+              />
+            )}
+          </div>
+        );
+      })}
       <p className="note-line">The defaults work on a plain Claude subscription. When the strong model isn't on your plan, Claude falls back to Sonnet.</p>
       <div className="acts">
         <button className="btn" type="submit" disabled={busy}>
@@ -139,7 +167,8 @@ function Tiers({ state }: { state: State }) {
   );
 }
 
-const TIER_NAMES: Record<Tier, string> = { cheap: "Cheap", default: "Default", strong: "Strong" };
+// The Claude CLI's own aliases (engine/tiers.ts uses them as defaults), and "" for the model set in Claude itself.
+const KNOWN_MODELS = ["", "haiku", "sonnet", "opus"];
 
 function RecentRuns({ runs, state }: { runs: Run[]; state: State }) {
   if (runs.length === 0) return <p className="runs-empty">No runs yet.</p>;
@@ -228,19 +257,31 @@ export function Agents({ state }: { state: State }) {
   return (
     <div className="wrap">
       <h1>Agents</h1>
+      <p className="brief">
+        Who can take work right now. Auto sends work to Claude. While Claude's window is being saved, general tasks go to
+        Codex or Gemini and repo work waits. Reviews go to the agent each space picks.
+      </p>
       <p className="spend-line">
         Spent today: {compact(state.spend.today.weighted)} weighted tokens, {spendText(state.spend.today)} · this week: {compact(state.spend.week.weighted)},{" "}
         {/* The amount usually ends "est.", which is its stop; "nothing yet" needs one of its own. */}
         {spendText(state.spend.week)}
         {spendText(state.spend.week).endsWith(".") ? "" : "."} All at list prices; a subscription doesn't bill per token.
       </p>
-      <p className="brief">
-        Who can take work right now. Auto sends work to Claude. While Claude's window is being saved, general tasks go to
-        Codex or Gemini and repo work waits. Reviews go to the agent each space picks.
-      </p>
       <div className="list">
         {ids.length === 0 ? (
-          <div className="empty-row">No agents are set up in this engine.</div>
+          <div className="empty-row">
+            No agents are set up yet.{" "}
+            <a
+              href="/start"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/start");
+              }}
+            >
+              Get started
+            </a>{" "}
+            checks which agent tools are installed on this Mac.
+          </div>
         ) : (
           ids.map((id) => (
             <AgentRow key={id} id={id} info={state.agents[id]!} state={state} open={expanded.has(id)} onToggle={() => toggle(id)} />

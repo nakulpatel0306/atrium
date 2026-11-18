@@ -90,7 +90,7 @@ test("a task page shows a result's decision with the same evidence as its screen
   expect(page.querySelector(".work-tabs")).toBeNull();
   // The row wears the verdict, once, as the queue does, and the decision leads with where the task is.
   const tags = [...page.querySelectorAll(`#task-${ids.review} .task-open .tag`)].map((t) => t.textContent);
-  expect(tags).toEqual(["Needs a look"]);
+  expect(tags).toEqual(["needs a look"]);
   expect(page.querySelector(".task-decision")!.firstElementChild!.className).toBe("stages");
 });
 

@@ -1,9 +1,10 @@
 import { Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { patch, post, type State } from "../api";
 import { matchActions, type PaletteAction, paletteActions } from "../palette";
 import { navigate } from "../route";
 import { applyTheme, storedTheme } from "../theme";
+import { useDialogFocus } from "../focus";
 import { showToast } from "../toast";
 import { reopen } from "./Decision";
 
@@ -53,7 +54,7 @@ export function Palette({ state, spaceId, open, onClose, onAsk, onNewSpace }: { 
 
   return (
     <div className="palette-scrim" onMouseDown={onClose}>
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette" onMouseDown={(e) => e.stopPropagation()}>
+      <PaletteBox onClose={onClose}>
         <label className="palette-input">
           <Search />
           <input
@@ -91,7 +92,19 @@ export function Palette({ state, spaceId, open, onClose, onAsk, onNewSpace }: { 
           ))}
         </ul>
         {error && <p className="err palette-err">{error}</p>}
-      </div>
+      </PaletteBox>
+    </div>
+  );
+}
+
+// The palette's box, mounted only while it's open, so its focus trap starts on opening and gives focus back on closing.
+// The input's own Escape closes it, so the trap leaves Escape alone.
+function PaletteBox({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box, onClose, { escape: false });
+  return (
+    <div ref={box} className="palette" role="dialog" aria-modal="true" aria-label="Command palette" onMouseDown={(e) => e.stopPropagation()}>
+      {children}
     </div>
   );
 }

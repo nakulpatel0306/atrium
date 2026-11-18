@@ -1,4 +1,3 @@
-import { HardDrive } from "lucide-react";
 import { useState } from "react";
 import type { StorageView } from "../../engine/repos";
 import { post, useFetched } from "../api";
@@ -63,10 +62,7 @@ export function Storage() {
   const view = useFetched<StorageView>("/api/storage", version);
   return (
     <>
-      <h2>
-        <HardDrive />
-        Storage
-      </h2>
+      <h2>Storage</h2>
       {!view ? (
         <div className="list">
           <div className="empty-row">Measuring folders…</div>

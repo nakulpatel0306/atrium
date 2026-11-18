@@ -1,7 +1,7 @@
 import { KIND } from "../../engine/words";
 import { GitMerge, GitPullRequest, Split } from "lucide-react";
 import { useState } from "react";
-import { cacheShare, type Spend, spendText } from "../../engine/cost";
+import { cacheShare, dollars as usd, type Spend, spendText } from "../../engine/cost";
 import { compact, SIZE_BUDGETS } from "../../engine/loop";
 import {
   CHILD_STATE_TEXT,
@@ -37,7 +37,8 @@ export function CostChip({ spend, dollars = false }: { spend: Spend | undefined;
   ].join(" ");
   return (
     <span className="tag cost" title={title}>
-      {dollars ? spendText(spend).replace(/ est\.$/, "") : `${compact(spend.weighted)} · ${spendText(spend).replace(/ est\.$/, "")}`}
+      {/* A row shows one short form; whether it's a floor or has no price at all is in the hover and on the task. */}
+      {dollars ? (spend.unpriced === spend.weighted ? "—" : `~${usd(spend.usd)}`) : `${compact(spend.weighted)} · ${spendText(spend).replace(/ est\.$/, "")}`}
     </span>
   );
 }

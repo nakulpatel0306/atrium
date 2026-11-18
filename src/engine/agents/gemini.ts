@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { silentExit } from "../text";
 import { shortCommand } from "./short";
 import { SANDBOX_EXEC, codexStateDir, geminiStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
@@ -55,7 +56,7 @@ function classify(message: string, stderr: string, exitCode: number): AgentRunRe
     return { status: "error", kind: "not_logged_in", message: SIGN_IN };
   }
   const tail = message || stderr.trim().split("\n").slice(-20).join("\n");
-  return { status: "error", kind: "failed", message: tail || `Gemini exited with code ${exitCode}` };
+  return { status: "error", kind: "failed", message: tail || silentExit("Gemini", exitCode) };
 }
 
 export function geminiAdapter(bin: string = config().geminiBin, sandboxExec: string = SANDBOX_EXEC): AgentAdapter {

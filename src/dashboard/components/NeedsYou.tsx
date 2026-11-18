@@ -8,7 +8,7 @@ import { CostChip } from "./Shape";
 import { outcomeText } from "../../engine/outcome";
 import { raiseFirst } from "../../engine/loop";
 import { needsYouCount } from "../../engine/needs";
-import { CLEAN, goTo, KIND, RISKY } from "../../engine/words";
+import { CLEAN, goTo, KIND, RISKY, tagWord } from "../../engine/words";
 import { attentionQueue, isRisky, itemLine, itemTitle, type QueueItem } from "../queue";
 
 type Space = State["spaces"][number];
@@ -40,11 +40,11 @@ function SummaryRow({ item, space, state }: { item: QueueItem; space: Space | un
           <span className="chips">
             <span className={`chip ${risky ? "waiting" : "ok"}`} title={risky ? why : line}>
               {risky && <TriangleAlert />}
-              {risky ? RISKY : CLEAN}
+              {tagWord(risky ? RISKY : CLEAN)}
             </span>
           </span>
         ) : (
-          <span className={`tag k-${item.kind}`} title={KIND[item.kind].means}>{KIND[item.kind].label}</span>
+          <span className={`tag k-${item.kind}`} title={KIND[item.kind].means}>{tagWord(KIND[item.kind].label)}</span>
         )}
         {/* What the work cost; a low-priority item (a CLAUDE.md line, a suggestion) costs nothing itself. */}
         {task && !item.low && <CostChip spend={state.spend.tasks[task.id]} dollars />}

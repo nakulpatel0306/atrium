@@ -8,7 +8,7 @@ import { DecisionPanel } from "../../src/dashboard/components/NeedsPage";
 import { attentionQueue, itemLabel, type QueueItem } from "../../src/dashboard/queue";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import type { State } from "../../src/engine/state";
-import { BUDGET_STEP, goTo, KIND, TASK_WORD } from "../../src/engine/words";
+import { BUDGET_STEP, goTo, KIND, tagWord, TASK_WORD } from "../../src/engine/words";
 import { STATUS_TEXT } from "../../src/dashboard/summary";
 import { deriveView } from "../../src/tui/select";
 import { cardsOf } from "../../src/tui/screens/home";
@@ -94,7 +94,7 @@ test("Home's summary rows: each item's tag is its label and its one button names
     const chips = rows[i]!.querySelectorAll(".chip");
     expect(chips.length + (tag ? 1 : 0)).toBeLessThanOrEqual(1);
     if (chips.length) expect(tag).toBeNull();
-    else expect(tag!.textContent).toBe(KIND[item.kind].label);
+    else expect(tag!.textContent).toBe(tagWord(KIND[item.kind].label));
     expect(rows[i]!.querySelectorAll(".tag.cost").length).toBeLessThanOrEqual(1);
     const buttons = [...rows[i]!.querySelectorAll("button")];
     expect(buttons).toHaveLength(1);
@@ -112,7 +112,7 @@ test("each decision screen's primary button is the step its rows named", () => {
   const s = everyKind();
   for (const item of attentionQueue(s)) {
     const el = render(<DecisionPanel item={item} state={s} />);
-    expect(el.querySelector(".q-kind")!.textContent).toBe(KIND[item.kind].label);
+    expect(el.querySelector(".q-kind")!.textContent).toBe(tagWord(KIND[item.kind].label));
     const primary = [...el.querySelectorAll<HTMLButtonElement>(".dp-body .btn.p")].map((b) => b.textContent);
     // A budget pause leads with raising the budget, the step its row names.
     const budget = s.tasks.find((t) => t.id === item.taskId)?.loop?.paused?.kind === "budget";
@@ -151,4 +151,30 @@ test("a held yes is in the list as starting, and its Undo takes it back", async 
   expect(el.textContent).toContain("unless you take it back");
   await act(async () => [...el.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Undo")!.click());
   expect(posted).toContain("/api/approvals/apr_held/reopen");
+});
+
+test("a status tag shows its word lowercase, and a name in capitals keeps its case", () => {
+  expect(["Paused", "Needs a look", "Sign-off", "Ready for review", "CLAUDE.md"].map(tagWord)).toEqual(["paused", "needs a look", "sign-off", "ready for review", "CLAUDE.md"]);
+});
+
+test("a tag that starts with an agent's or a product's name keeps it capitalised", () => {
+  expect(["Codex gave no verdict", "Claude: 1 fixed", "Gemini: 2 declined", "Approved by Codex", "GitHub repo"].map(tagWord)).toEqual(["Codex gave no verdict", "Claude: 1 fixed", "Gemini: 2 declined", "approved by Codex", "GitHub repo"]);
+});
+
+test("the review chip keeps the reviewer's name as written, whether it gave no verdict or fixed what it found", async () => {
+  const { Chips } = await import("../../src/dashboard/components/Decision");
+  const { loopChips } = await import("../../src/dashboard/summary");
+  const base = { ...newLoop(SIZE_BUDGETS.small), checks: "passed" as const };
+  const none = loopChips({ ...base, reviews: [{ reviewer: "codex", verdict: null as never, findings: [], skipped: null }] });
+  const fixed = loopChips({ ...base, reviews: [{ reviewer: "claude", verdict: "changes", findings: [{ severity: "medium", file: "a.ts", line: 1, reason: "x", resolution: { action: "fixed", note: "" } }], skipped: null }] });
+  expect(render(<Chips chips={none} />).textContent).toContain("Codex gave no verdict");
+  act(() => root!.unmount());
+  root = null;
+  expect(render(<Chips chips={fixed} />).textContent).toContain("Claude: 1 fixed");
+});
+
+test("a task row's checks badge is lowercase like every status tag", async () => {
+  const { ChecksBadge } = await import("../../src/dashboard/components/LoopPanel");
+  const t = task({ id: "tsk_c", loop: { ...newLoop(SIZE_BUDGETS.small), checks: "passed" } });
+  expect(render(<ChecksBadge task={t} onOpen={() => {}} />).textContent).toBe("checks passed");
 });

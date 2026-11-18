@@ -1,5 +1,6 @@
-import { CheckCheck, ChevronLeft, Keyboard, PartyPopper } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { CheckCheck, ChevronLeft, Inbox, Keyboard } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../focus";
 import { post, type State } from "../api";
 import { absolute } from "../format";
 import { askLine } from "../../engine/needs";
@@ -8,7 +9,7 @@ import { showToast, undoLatest } from "../toast";
 import { ACT, DECISION_KEYS, KEY_HELP, moveFocus, needsKey, NOTHING_HERE, SHEET_OPEN } from "../needs-keys";
 import { isShown } from "../page-keys";
 import { attentionQueue, cleanReviews, isRisky, itemLabel, itemLine, itemTitle, type QueueItem, waited } from "../queue";
-import { KIND } from "../../engine/words";
+import { KIND, tagWord, VERDICT_MEANS } from "../../engine/words";
 import { navigate } from "../route";
 import { ARM_MS, armLabel, reopen } from "./Decision";
 import { KeysSheet } from "./KeysSheet";
@@ -49,7 +50,7 @@ function QueueRow({ item, state, selected, onSelect }: { item: QueueItem; state:
     >
       <span className="q-title">{title}</span>
       <span className="q-line">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={KIND[item.kind].means}>{itemLabel(state, item)}</span> {line}
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{tagWord(itemLabel(state, item))}</span> {line}
       </span>
       <span className="q-meta">
         <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
@@ -106,6 +107,9 @@ function riskyItem(state: State, item: QueueItem): boolean {
   const a = item.kind === "review" ? state.approvals.find((x) => x.id === item.key) : undefined;
   return !!a && isRisky(state, a);
 }
+
+// What an item is, in a sentence: a result by its own verdict, anything else by its kind.
+const meansOf = (state: State, item: QueueItem): string => (item.kind === "review" ? VERDICT_MEANS[riskyItem(state, item) ? "risky" : "clean"] : KIND[item.kind].means);
 
 // A yes held before it starts: what happens when, and the one step left, taking it back.
 function Starting({ id, line }: { id: string; line: string }) {
@@ -173,8 +177,11 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
   return (
     <article className="dp" aria-labelledby="dp-title" tabIndex={-1}>
       <header className="dp-head">
-        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={KIND[item.kind].means}>{itemLabel(state, item)}</span>
+        <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={meansOf(state, item)}>{tagWord(itemLabel(state, item))}</span>
         <h3 id="dp-title">{itemTitle(state, item)}</h3>
+        {/* What this kind of item is, in a sentence, so a first-time reader never has to guess at "Sign-off". A pause
+            says why it paused in its own words below, which says more. */}
+        {item.kind !== "paused" && <p className="dp-means">{meansOf(state, item)}</p>}
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
           {space?.name ?? "Atrium"}
@@ -244,7 +251,7 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
         </button>
       )}
       {(open || left.length > 0) && (
-        <div className="batch-sheet" role="dialog" aria-label="Approve clean results">
+        <BatchSheet onClose={() => (left.length ? setLeft([]) : setOpen(false))}>
           {left.length > 0 ? (
             <>
               <p>These were left for you to read on their own:</p>
@@ -280,8 +287,19 @@ function BatchApprove({ state, items, open, setOpen }: { state: State; items: Qu
             </>
           )}
           {error && <p className="err">{error}</p>}
-        </div>
+        </BatchSheet>
       )}
+    </div>
+  );
+}
+
+// The batch sheet keeps Tab inside it and gives focus back on closing; the page's Esc closes it.
+function BatchSheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box, onClose, { escape: false });
+  return (
+    <div ref={box} className="batch-sheet" role="dialog" aria-label="Approve clean results">
+      {children}
     </div>
   );
 }
@@ -321,23 +339,31 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
   }, [current?.key]);
 
   // Live values for the key handler, which is attached once.
-  const live = useRef({ items, current, opened, armed, help, clean: 0 });
-  live.current = { items, current, opened, armed, help, clean: cleanReviews(state, items).length };
+  const live = useRef({ items, current, opened, armed, help, batch, clean: 0 });
+  live.current = { items, current, opened, armed, help, batch, clean: cleanReviews(state, items).length };
+  // Back to the list: the item closes, and the address stops naming it, so a reload lands on the list.
+  const leave = () => {
+    setOpened(false);
+    history.replaceState(null, "", "/needs-you");
+    document.querySelector<HTMLElement>(".q-list")?.focus();
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = needsKey(e);
       if (!key) return;
-      const { items, current, opened, armed } = live.current;
+      const { items, current, armed } = live.current;
       const i = current ? items.indexOf(current) : -1;
       if (key === "help") return setHelp((h) => !h);
       if (key === "close") {
-        // The live region still holds "Press a again"; it says the arm is off now.
-        if (armed) announce("Cancelled. Approve takes two presses again.");
-        setArmed(null);
-        setHelp(false);
-        setBatch(false);
-        if (opened) setOpened(false);
-        document.querySelector<HTMLElement>(".q-list")?.focus();
+        // One Escape closes one thing, the topmost: the keys sheet, then the batch sheet, then a first a, then the item.
+        if (live.current.help) return setHelp(false);
+        if (live.current.batch) return setBatch(false);
+        if (armed) {
+          // The live region still holds "Press a again"; it says the arm is off now.
+          announce("Cancelled. Approve takes two presses again.");
+          return setArmed(null);
+        }
+        leave();
         return;
       }
       // A sheet over the page may cover the button a key would press; it's closed first.
@@ -393,9 +419,24 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
       {help && <KeysSheet keys={KEY_HELP} kinds floating onClose={() => setHelp(false)} />}
       {items.length === 0 ? (
         <div className="q-empty">
-          <PartyPopper />
-          <p>You're all caught up.</p>
-          <p className="hint">Results land here once Atrium's checks and a reviewer have been at them.</p>
+          <Inbox />
+          {state.spaces.length ? <p>You're all caught up.</p> : <p>Nothing has run yet.</p>}
+          <p className="hint">Results, questions, sign-offs and paused tasks land here when they need you.</p>
+          {!state.spaces.length && (
+            <p className="hint">
+              Describe your first space in the bar below, or{" "}
+              <a
+                href="/start"
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate("/start");
+                }}
+              >
+                open Get started
+              </a>
+              .
+            </p>
+          )}
         </div>
       ) : (
         <div className={`queue${opened ? " opened" : ""}`}>
@@ -410,7 +451,7 @@ export function NeedsPage({ state, item = null, batch: batchAsked = false }: { s
           />
           <div className="q-panel" ref={panel}>
             <h2 className="sr-only">The open item</h2>
-            <button className="btn link q-back" onClick={() => setOpened(false)}>
+            <button className="btn link q-back" onClick={leave}>
               <ChevronLeft />
               All items
             </button>

@@ -43,12 +43,42 @@ export const KIND: Record<QueueKind, { label: string; action: string; means: str
 export const RISKY = "Needs a look";
 // Its opposite, on a summary row's one chip: checks passed, the reviewer approved, nothing left open.
 export const CLEAN = "Clean";
+// What each verdict means, said wherever a Review is explained, so a result that Needs a look is never described as
+// simply waiting for a yes.
+export const VERDICT_MEANS = {
+  clean: "A Review whose checks passed and whose reviewer approved, with nothing left open.",
+  risky: "A Review with a note, a check that didn't pass or a finding left open. Read why before you approve it.",
+};
+
+// Names a tag can start with, which keep their capital: the agents (a review chip says "Codex gave no verdict"), the
+// product and the services it names.
+const NAMES = new Set(["Claude", "Codex", "Gemini", "Auto", "Atrium", "GitHub"]);
+
+// A status tag or kind chip shows its word lowercase, per the copy rules ("paused", "needs a look"). A tag that starts
+// with a name ("Claude: 1 fixed") or a word in capitals all through (CLAUDE.md) keeps its case.
+export const tagWord = (label: string): string => {
+  const first = /^[A-Za-z]+/.exec(label)?.[0] ?? "";
+  return !first || NAMES.has(first) || /^[A-Z][A-Z]/.test(label) ? label : label[0]!.toLowerCase() + label.slice(1);
+};
 
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.
 export const taskLabel = (w: TaskWord): string => TASK_WORD[w][0]!.toUpperCase() + TASK_WORD[w].slice(1);
+
+// Why the loop pauses itself, said beside each pause so the word never stands alone.
+export const PAUSE_WHY: Record<"budget" | "loop", string> = {
+  budget: "Each task has a token and time budget, so a run that goes wrong can't use up your plan; nothing is lost when it pauses.",
+  loop: "Atrium pauses a task when the same check fails the same way twice, rather than letting it try again blind.",
+};
 
 // A pause the budget caused has its own first step, raising it; a hint is then the other way on.
 export const BUDGET_STEP = "Raise the budget";
 
 // A row's way to the item's screen in Needs you: its action, marked as leading somewhere rather than doing it.
 export const goTo = (kind: QueueKind, budget = false): string => `${kind === "paused" && budget ? BUDGET_STEP : KIND[kind].action}…`;
+
+// The Claude model tiers (engine/tiers.ts) as the jobs they do, in plain words, for Agents' Models by job.
+export const TIER_WORDS: Record<"cheap" | "default" | "strong", { name: string; means: string }> = {
+  cheap: { name: "Quick jobs", means: "Reading and summing up: briefs, walkthroughs, explanations and CLAUDE.md lines." },
+  default: { name: "Writing", means: "The agent that makes the change." },
+  strong: { name: "Judging", means: "Reviews, a writer that got stuck, and picking between attempts." },
+};

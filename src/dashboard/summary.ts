@@ -6,6 +6,7 @@ import type { State } from "../engine/state";
 import { agentName, agentText, byPriority, inReserve, needsAction, type Wait, waitOf } from "./agents";
 import { clock, relative } from "./format";
 import { plainText } from "./markdown";
+import { plainStop, shortStop } from "../engine/text";
 
 type Space = State["spaces"][number];
 type Task = State["tasks"][number];
@@ -70,23 +71,35 @@ export function distinctWaits(tasks: Task[], state: State): Wait[] {
   return [...waits.values()];
 }
 
-export type SpaceStatus = { text: string; tone?: "blocked" | "waiting"; wait?: Wait };
+// `inQueue`: what the line says is already a row in Needs you (a pause, a result, a brief's question), so Home's card
+// can leave it to that row.
+export type SpaceStatus = { text: string; tone?: "blocked" | "waiting"; wait?: Wait; inQueue?: boolean };
 
 export function spaceStatus(space: Space, tasks: Task[], state: State, now = Date.now()): SpaceStatus {
   const running = tasks.find((t) => t.status === "running");
   if (running) return { text: `${agentText(running, state.runs)} running · ${running.title}` };
-  const [wait] = waitsOf(tasks, state);
-  if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait };
-  const stuck = tasks.filter((t) => t.status === "blocked" || t.status === "failed");
+  // A stopped task isn't in Needs you, so its line wins over anything that is (a question, a pause), which Home shows
+  // as a row of its own.
+  const stopped = tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
+  const queuedWait = (w: Wait) => w.kind === "answers" || w.kind === "pick" || w.kind === "parts";
+  const wait = waitsOf(tasks, state).find((w) => !(stopped.length && queuedWait(w)));
+  if (wait) return { text: wait.reason, tone: needsAction(wait) ? "blocked" : "waiting", wait, inQueue: queuedWait(wait) };
+  // Stopped and failed tasks are the space's own news; pauses wait in Needs you.
+  const stuck = tasks.filter((t) => (t.status === "blocked" && !pausedForYou(t)) || t.status === "failed");
   if (stuck.length === 1 && stuck[0]!.status === "blocked") {
     const t = stuck[0]!;
-    const paused = pausedForYou(t);
-    // A pause is a normal stop that waits for a hint, so it reads amber; a stopped task needs a retry and reads red.
-    return { text: `${paused ? "Paused" : "Stopped"}: ${(paused ? t.loop?.paused?.diagnosis : t.blockedReason) ?? t.title}`, tone: paused ? "waiting" : "blocked" };
+    // A stopped task needs a retry and reads red.
+    return { text: `Stopped: ${(t.blockedReason && shortStop(t.blockedReason)) || t.title}`, tone: "blocked" };
   }
   if (stuck.length > 0) return { text: `${stuck.length} need${stuck.length === 1 ? "s" : ""} attention`, tone: "blocked" };
+  const paused = tasks.filter((t) => pausedForYou(t));
+  if (paused.length === 1) {
+    // A pause is a normal stop that waits for a hint, so it reads amber.
+    return { text: `Paused: ${paused[0]!.loop?.paused?.diagnosis ?? paused[0]!.title}`, tone: "waiting", inQueue: true };
+  }
+  if (paused.length > 1) return { text: `${paused.length} paused`, tone: "waiting", inQueue: true };
   const review = tasks.filter((t) => t.status === "review").length;
-  if (review > 0) return { text: `${review} ready for your review` };
+  if (review > 0) return { text: `${review} ready for your review`, inQueue: true };
   const queued = tasks.filter((t) => t.status === "queued").length;
   if (queued > 0) return { text: `${queued} ${queued === 1 ? "task" : "tasks"} queued` };
   const last = state.activity.find((a) => a.spaceId === space.id)?.createdAt ?? space.updatedAt;
@@ -101,7 +114,7 @@ export function liveStatus(state: State): string {
   // A pause is already one of the things that need you; only other stops are news here.
   const blocked = state.tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
   if (blocked.length === 1) {
-    const reason = blocked[0]!.blockedReason?.replace(/\.$/, "");
+    const reason = blocked[0]!.blockedReason && shortStop(blocked[0]!.blockedReason).replace(/\.$/, "");
     parts.push(`1 stopped${reason ? `: ${reason}` : ""}`);
   } else if (blocked.length > 1) parts.push(`${blocked.length} stopped`);
   // Queueing behind a running task is the normal case, not news, and a brief's questions are already counted above.

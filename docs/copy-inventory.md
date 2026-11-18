@@ -17,10 +17,11 @@ this page is the record of the reading pass.
 
 | Area | File | String groups | Reviewed | Changed |
 | --- | --- | --- | --- | --- |
-| Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier" |
-| Views | `src/dashboard/components/BriefCard.tsx`, `BriefQuestions.tsx`, `LoopPanel.tsx` | brief fields, gap hints, stage strip, checks badge, pause actions | yes | New with the loop; "Give it a hint", "Explain the problem", "Unverified: no checks found" |
+| Views | `src/dashboard/components/Activity.tsx` | day headings, folded lines, Show more, task History | yes | Plan 13: grouped by day, one line per stretch of a task's work ("ran, wrote 2 files, waiting for review"), repeats folded with ×N, "Show more · N earlier"; App polish: the empty feed says what will show up and how to start (in a space: "Give this space a task"), and older bare exit codes read as plain words |
+| Views | `src/dashboard/components/BriefCard.tsx`, `BriefQuestions.tsx`, `LoopPanel.tsx` | brief fields, gap hints, stage strip, checks badge, pause actions | yes | New with the loop; "Give it a hint", "Explain the problem", "Unverified: no checks found"; App polish: each pause says why it paused (`PAUSE_WHY` in engine/words.ts), and Change budget is the budget line's link |
 | Views | `src/dashboard/components/Shape.tsx` | shape line and override, cost chip, parts and attempts | yes | New with shapes: "Single writer: …", "Change", "Open 2 pull requests", "Merge into one branch", "Pick this one", "None of these", estimates labelled "est." |
-| Views | `src/dashboard/components/Agents.tsx` | models by job, plan gauge, spend | yes | "Models by job", "Atrium ran … in this window", what the gauge can't see |
+| Views | `src/dashboard/components/Agents.tsx` | models by job, plan gauge, spend | yes | "Models by job", "Atrium ran … in this window", what the gauge can't see; App polish: the lede comes before the spend line, a shorter line on what the gauge can't see, and the empty state points to Get started; Models by job names the jobs in plain words (`TIER_WORDS`: Quick jobs, Writing, Judging) and picks a model from the CLI's aliases or Another model… |
+| Views | `src/dashboard/components/NeedsPage.tsx` | queue rows, decision header, keys sheet, batch approve | yes | App polish: each item's screen says what its kind means under the title (`KIND[kind].means`), except a pause, which says why it paused |
 | Views | `src/dashboard/components/ArchivedSpaces.tsx` | Archived spaces heading, rows, Restore, Delete…, empty state | yes | New in Plan 13 |
 | Views | `src/dashboard/components/DeleteSpace.tsx` | Delete "Name" for good?, This removes, what stays, typed-name prompt, Delete forever | yes | New in Plan 13; says plainly that a repo task's branch stays and Atrium never touches your repo or GitHub |
 | Views | `src/dashboard/components/DeleteTask.tsx` | Delete task…, what goes with it | yes | New in Plan 13 |
@@ -42,9 +43,9 @@ this page is the record of the reading pass.
 | Views | `src/dashboard/components/Proposal.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/RepoRemoval.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Rules.tsx` | rule list, rule detail, undo, empty states | yes | Em dash in the prose warning became a comma |
-| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | Market data and accounts sections removed with those features |
+| Views | `src/dashboard/components/Settings.tsx` | section titles, help text, toggles, errors | yes | Market data and accounts sections removed with those features; App polish: Get started is the first section, with one line on what it does |
 | Views | `src/dashboard/components/Sidebar.tsx` | nav labels, footer status | yes | No change needed |
-| Views | `src/dashboard/components/SpaceView.tsx` | tabs, task rows, task detail, not-found page, live column | yes | "Space not found" became "This space isn't here" with what to do; Tasks/Files tabs; "You asked" renders markdown; straight quotes around the parent task; full title on hover |
+| Views | `src/dashboard/components/SpaceView.tsx` | tabs, task rows, task detail, not-found page, live column | yes | "Space not found" became "This space isn't here" with what to do; Tasks/Files tabs; "You asked" renders markdown; straight quotes around the parent task; full title on hover; App polish: Learning says what it is before what each level adds; the budget field says why tasks have one |
 | Views | `src/dashboard/components/StatusIcon.tsx` | labels, buttons, empty states, errors | yes | Plan 11: Not done and Partly done labels for finished tasks |
 | Views | `src/dashboard/components/Storage.tsx` | labels, buttons, empty states, errors | yes | No change needed |
 | Views | `src/dashboard/components/Thread.tsx` | labels, buttons, empty states, errors | yes | Message bodies render as markdown |
@@ -114,7 +115,7 @@ this page is the record of the reading pass.
 | Engine | `src/engine/crash-guard.ts` | restart line | yes | Plan 13: "Atrium restarted after an error. Check engine.log if something looks off." |
 | Runs | `src/engine/handoff.ts` | messages | yes | No change needed |
 | Agents | `src/engine/agents/atrium-paths.ts` | messages | yes | No change needed |
-| Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only; Plan 14: a private space's run on an old Claude Code says to run `claude update` |
+| Agents | `src/engine/agents/claude.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only; Plan 14: a private space's run on an old Claude Code says to run `claude update`; App polish: a crash that prints nothing says what happened and what to try (`silentExit` in engine/text.ts, shared by all three agents) |
 | Agents | `src/engine/agents/codex.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
 | Agents | `src/engine/agents/gemini.ts` | messages | yes | Not-installed message says how to fix it; probe detail is the next step only |
 | Agents | `src/engine/agents/limits.ts` | messages | yes | No change needed |

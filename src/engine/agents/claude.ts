@@ -4,6 +4,7 @@ import { atriumDenyPaths } from "./atrium-paths";
 import { privateReadRules, privateReads } from "./private-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { silentExit } from "../text";
 import { agentEnv, DEPENDENCY_DIRS } from "./seatbelt";
 import { shortCommand } from "./short";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus, AgentUsage, ModelTokens, WindowUsage } from "./types";
@@ -119,7 +120,7 @@ function classify(text: string, stderr: string, exitCode: number): AgentRunResul
     };
   }
   const tail = stderr.trim().split("\n").slice(-20).join("\n");
-  return { status: "error", kind: "failed", message: tail || `Claude Code exited with code ${exitCode}` };
+  return { status: "error", kind: "failed", message: tail || silentExit("Claude Code", exitCode) };
 }
 
 // resetsAt arrives in epoch seconds. A window without a numeric utilization carries nothing to record.

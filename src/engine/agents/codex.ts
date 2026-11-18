@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
+import { silentExit } from "../text";
 import { shortCommand } from "./short";
 import { SANDBOX_EXEC, codexStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
@@ -20,7 +21,7 @@ function classify(message: string, stderr: string, exitCode: number): AgentRunRe
     return { status: "error", kind: "not_logged_in", message: "Codex is logged out. Run `codex login` once in a terminal." };
   }
   const tail = message || stderr.trim().split("\n").slice(-20).join("\n");
-  return { status: "error", kind: "failed", message: tail || `Codex exited with code ${exitCode}` };
+  return { status: "error", kind: "failed", message: tail || silentExit("Codex", exitCode) };
 }
 
 // Codex's own sandbox only limits writes, so it runs inside Atrium's profile instead. macOS refuses to apply a

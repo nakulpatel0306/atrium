@@ -178,6 +178,14 @@ describe("claudeAdapter", () => {
     expect(r.message).toContain("boom: something exploded");
   });
 
+  test("a crash that prints nothing says so in plain words, with what to try", async () => {
+    process.env.FAKE_CLAUDE_MODE = "silent_exit";
+    const r = await claudeAdapter(FAKE).run(input());
+    if (r.status !== "error") throw new Error("expected error");
+    expect(r.kind).toBe("failed");
+    expect(r.message).toBe("Claude Code exited without a message (exit code 1). Retry the task; if it stops again, `claude auth status` in a terminal shows whether Claude Code is still signed in.");
+  });
+
   test("a crash is a failure even when the agent was talking about rate limits or logins", async () => {
     process.env.FAKE_CLAUDE_MODE = "crash_after_text";
     for (const text of ["I'll add rate limiting to the API.", "Building the login page now."]) {

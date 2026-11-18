@@ -1,3 +1,4 @@
+import { tagWord } from "../../engine/words";
 import { pausedForYou } from "../../engine/needs";
 import { ArrowDown, Plus } from "lucide-react";
 import { ranAgent } from "../agents";
@@ -45,16 +46,19 @@ function SpaceCard({ space, state }: { space: Space; state: State }) {
           {space.name}
         </span>
         <span className="tags">
-          {space.private && <span className="tag private">Private</span>}
-          {kindLabel(space.kind) && <span className="tag">{kindLabel(space.kind)}</span>}
+          {space.private && <span className="tag private">private</span>}
+          {kindLabel(space.kind) && <span className="tag">{tagWord(kindLabel(space.kind)!)}</span>}
         </span>
       </div>
-      <div className={`s${s.tone ? ` ${s.tone}` : ""}`} title={s.text}>
-        {WaitIcon && <WaitIcon />}
-        <span>
-          <Plain text={s.text} />
-        </span>
-      </div>
+      {/* Home lists what waits on you just above, so a card doesn't say it a second time. */}
+      {!s.inQueue && (
+        <div className={`s${s.tone ? ` ${s.tone}` : ""}`} title={s.text}>
+          {WaitIcon && <WaitIcon />}
+          <span>
+            <Plain text={s.text} />
+          </span>
+        </div>
+      )}
       {open.length > 0 && (
         <ul className="tasks">
           {open.slice(0, SHOWN_TASKS).map((t) => (
@@ -98,12 +102,30 @@ export function Home({ state, briefing, onNewSpace }: Props) {
     );
   }
 
+  // The line names one stopped task's reason and suggests a retry; the task itself is one click from it.
+  const stopped = state.tasks.filter((t) => t.status === "blocked" && !pausedForYou(t));
+  const only = stopped.length === 1 ? stopped[0]! : null;
   return (
     <div className="wrap">
       <h1>{briefing.greeting}</h1>
       <p className="brief">
         {briefing.summary}
         <Plain text={liveStatus(state)} />
+        {only && (
+          <>
+            {" "}
+            <a
+              href={`/space/${only.spaceId}?task=${only.id}`}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                e.preventDefault();
+                navigate(`/space/${only.spaceId}?task=${only.id}`);
+              }}
+            >
+              Open the task
+            </a>
+          </>
+        )}
       </p>
       {state.oldData.present && !state.oldData.dismissed && <OldDataNotice dismissable />}
 
