@@ -60,13 +60,17 @@ $("hero-ask").addEventListener("click", (e) => {
   }, still ? 0 : 1200);
 });
 
-// The story: the step nearest the middle of the screen sets Plum's pose and the step list beside it.
+// The story: the step crossing the middle of what's visible sets Plum's pose and the step list beside it. That's the
+// middle below the bar, where Plum is held, or below Plum's strip when the story is one column.
 const story = mountPlum($("story-plum"), { pose: "brief", lazy: true });
 const beats = [...document.querySelectorAll(".beat")];
 const now = [...$("now").children];
+const side = document.querySelector(".story-side");
 let active = -1;
 function follow() {
-  const line = innerHeight * 0.55;
+  const strip = getComputedStyle(side).flexDirection === "row";
+  const top = (strip ? side : $("bar")).getBoundingClientRect().bottom;
+  const line = (top + innerHeight) / 2;
   let i = 0;
   beats.forEach((b, j) => {
     if (b.getBoundingClientRect().top < line) i = j;

@@ -70,15 +70,18 @@ section { position: relative; padding-block: var(--space-section); }
 
 /* The loop, told on scroll: Plum holds still on one side while the steps pass on the other. */
 .loop { border-top: 1px solid var(--line); }
-.story { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); }
-.story-side { position: sticky; top: 120px; align-self: start; display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.story-side .plum { width: min(340px, 100%); aspect-ratio: 1; }
+/* Plum's stills are 600px, so no Plum draws wider than 300px and each stays sharp on a Retina screen.
+   Each step is one screen-sized band with its content centred, and Plum is held at the middle of the screen, so it
+   always faces the step being read. --side is Plum plus the step list under it. */
+.story { --beat: clamp(560px, 76vh, 760px); --plum: min(300px, 40vh, 30vw); --side: calc(var(--plum) + 36px); display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); }
+.story-side { position: sticky; top: calc(36px + 50vh - var(--side) / 2); margin-top: calc(var(--beat) / 2 - var(--side) / 2); align-self: start; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.story-side .plum { width: var(--plum); aspect-ratio: 1; }
 .story-side .glow { position: absolute; top: 58%; width: 80%; height: 90px; border-radius: 50%; background: radial-gradient(closest-side, var(--glow), transparent); opacity: 0.6; z-index: -1; }
 .now { display: flex; gap: 14px; list-style: none; margin: 0; padding: 0; font: 13px var(--mono); color: var(--faint); }
 .now li { transition: color 0.3s; }
 .now li.on { color: var(--text); }
-.beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: clamp(96px, 14vh, 160px); }
-.beat { display: flex; flex-direction: column; gap: 22px; min-height: 60vh; justify-content: center; }
+.beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.beat { display: flex; flex-direction: column; gap: 22px; min-height: var(--beat); padding-block: 24px; justify-content: center; }
 .beat .label { color: var(--faint); }
 .beat h3 { font-size: clamp(28px, 3.2vw, 40px); letter-spacing: -0.04em; line-height: 1.05; }
 .beat p { color: var(--body); max-width: 52ch; }
@@ -86,12 +89,13 @@ section { position: relative; padding-block: var(--space-section); }
 .beat code { font-size: 0.86em; color: var(--text); }
 .beat .pill kbd { border: 0; padding: 0; color: inherit; }
 @media (max-width: 860px) {
-  .story { grid-template-columns: minmax(0, 1fr); }
-  .story-side { top: 64px; z-index: 2; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-  .story-side .plum { width: 104px; flex: none; }
+  .story { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .story-side { top: 64px; margin-top: 0; z-index: 2; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .story-side .plum { width: 88px; flex: none; }
   .story-side .glow { display: none; }
-  .now { flex-wrap: wrap; gap: 4px 12px; }
-  .beat { min-height: 0; }
+  .now { flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+  .beat { min-height: 0; padding-block: clamp(36px, 7vw, 56px); }
+  .beat:first-child { padding-top: clamp(28px, 5vw, 40px); }
 }
 
 /* Panels: pieces of the real product, drawn in its own type and colours. */
@@ -272,7 +276,7 @@ section { position: relative; padding-block: var(--space-section); }
     <div class="story">
       <div class="story-side">
         <div class="glow" aria-hidden="true"></div>
-        <div class="plum" id="story-plum" role="img" aria-label="Plum, showing the step you're reading"><img class="plum-still" src="plum/brief.webp" alt="" width="340" height="340" loading="lazy"></div>
+        <div class="plum" id="story-plum" role="img" aria-label="Plum, showing the step you're reading"><img class="plum-still" src="plum/brief.webp" alt="" width="300" height="300" loading="lazy"></div>
         <ol class="now" id="now" aria-hidden="true"><li class="on">brief</li><li>write</li><li>checks</li><li>review</li><li>you</li></ol>
       </div>
       <ol class="beats">
