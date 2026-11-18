@@ -89,4 +89,3 @@ export async function runAgentProcess(
   const [, stderr] = await reading;
   return { stderr, exitCode, aborted: Boolean(opts.signal?.aborted) };
 }
-
