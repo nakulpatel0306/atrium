@@ -32,7 +32,8 @@ export function canDrawWebGL() {
 
 export const stillSrc = (pose) => new URL(`plum/${pose}.webp`, import.meta.url).href;
 
-// The page finishes loading before any WebGL starts, and a Plum further down waits until it's nearly on screen.
+// The page finishes loading before any WebGL starts, and a Plum further down starts about a screen and a half ahead
+// of being reached: building one takes a moment, and a still standing in for it would read as Plum frozen.
 const loaded = () => (document.readyState === "complete" ? Promise.resolve() : new Promise((r) => addEventListener("load", r, { once: true })));
 const near = (el) =>
   new Promise((resolve) => {
@@ -43,7 +44,7 @@ const near = (el) =>
         io.disconnect();
         resolve();
       },
-      { rootMargin: "200px 0px" },
+      { rootMargin: "150% 0px" },
     );
     io.observe(el);
   });
