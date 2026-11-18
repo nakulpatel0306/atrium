@@ -96,4 +96,7 @@ test("an empty Activity says what will show up and how to start", () => {
   expect(render(<Activity state={{ ...empty, spaces: [] }} page />).querySelector(".empty-row")!.textContent).toBe(
     "Nothing has happened yet. When an agent runs or you decide something, it's listed here. Describe your first space in the bar below to start.",
   );
+  act(() => root!.unmount());
+  root = null;
+  expect(render(<Activity state={empty} spaceId={ids.atrium} />).querySelector(".empty-row")!.textContent).toContain("Give this space a task in the bar below to start.");
 });
