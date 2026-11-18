@@ -66,9 +66,11 @@ const story = mountPlum($("story-plum"), { pose: "brief", lazy: true });
 const beats = [...document.querySelectorAll(".beat")];
 const now = [...$("now").children];
 const side = document.querySelector(".story-side");
+// Matches the one-column story rule in index.html.
+const oneColumn = matchMedia("(max-width: 860px)");
 let active = -1;
 function follow() {
-  const strip = getComputedStyle(side).flexDirection === "row";
+  const strip = oneColumn.matches;
   const top = (strip ? side : $("bar")).getBoundingClientRect().bottom;
   const line = (top + innerHeight) / 2;
   let i = 0;

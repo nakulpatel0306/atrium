@@ -34,13 +34,14 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
 .hero .ctas { margin-top: 28px; }
 .ctas.end { margin-top: 40px; }
-.stage { position: relative; margin-top: clamp(112px, 12vw, 152px); scroll-margin-top: 96px; }
+/* Clear the head by the usual gap plus the part of Plum that stands above the window. */
+.stage { position: relative; margin-top: calc(var(--space-head) + 96px); scroll-margin-top: 96px; }
 /* Plum stands on the window's top edge, so each pose change happens next to the screen that caused it. The perch is
    as wide as the window, and the still's body ends a fifth of the way up its box, which is how far the box hangs over. */
 .perch { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; }
-.term-plum { position: absolute; right: clamp(16px, 4vw, 48px); bottom: calc(100% - 30px); width: 150px; aspect-ratio: 1; z-index: 2; }
+.term-plum { --w: 150px; position: absolute; right: clamp(16px, 4vw, 48px); bottom: calc(100% - var(--w) / 5); width: var(--w); aspect-ratio: 1; z-index: 2; }
 @keyframes caret { 50% { opacity: 0; } }
-@media (max-width: 760px) { .perch { width: 100%; } .term-plum { width: 96px; bottom: calc(100% - 19px); right: 12px; } .stage { margin-top: 96px; } }
+@media (max-width: 760px) { .perch { width: 100%; } .term-plum { --w: 96px; right: 12px; } .stage { margin-top: calc(var(--space-head) + 64px); } }
 
 /* The window: always a dark terminal, as the app is drawn on one, in the app's own colours. */
 .window { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; border: 1px solid var(--line-strong); border-radius: 12px; background: #0c0a14; overflow: hidden; box-shadow: 0 40px 100px -50px var(--glow); }
