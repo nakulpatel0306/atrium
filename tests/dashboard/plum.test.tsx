@@ -35,7 +35,8 @@ test("one waiting reads as needs, two as need", () => {
 test("the sidebar shows the pose's picture and says the state in words", () => {
   const html = renderToStaticMarkup(<PlumStatus state={makeState({ tasks: [task({ id: "t1", status: "running" })] })} />);
   expect(html).toContain('data-pose="work"');
-  expect(html).toContain("1 at work · 1 needs you");
+  // Each fact on its own line.
+  expect(html).toMatch(/1 at work<\/span><span class="plum-line">1 needs you<\/span>/);
   // The picture is decoration: the words carry the state.
   expect(html).toMatch(/<span class="plum-pic" aria-hidden="true"/);
 });

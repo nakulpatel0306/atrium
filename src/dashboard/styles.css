@@ -232,6 +232,11 @@ aside {
   font: 700 18px/1 var(--sans);
   color: var(--accent);
 }
+/* "1 at work" and "6 need you" each on a line of their own, rather than wrapping mid-phrase. */
+.plum-line {
+  display: block;
+  white-space: nowrap;
+}
 .plum-dot {
   display: inline-block;
   width: 7px;

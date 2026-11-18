@@ -10,8 +10,12 @@ export function PlumStatus({ state }: { state: State }) {
     <div className="plum-status" data-pose={pose}>
       <span className="plum-pic" aria-hidden="true" />
       <span className="label">
-        {pose !== "quiet" && <span className="plum-dot" aria-hidden="true" />}
-        {say}
+        {say.split(" · ").map((part, i) => (
+          <span key={part} className="plum-line">
+            {i === 0 && pose !== "quiet" && <span className="plum-dot" aria-hidden="true" />}
+            {part}
+          </span>
+        ))}
       </span>
     </div>
   );
