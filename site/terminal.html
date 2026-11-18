@@ -34,7 +34,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
 .hero .ctas { margin-top: 28px; }
 .ctas.end { margin-top: 40px; }
-.stage { position: relative; margin-top: clamp(72px, 9vw, 112px); scroll-margin-top: 96px; }
+.stage { position: relative; scroll-margin-top: 140px; margin-top: clamp(72px, 9vw, 112px); scroll-margin-top: 96px; }
 /* Plum perches on the window's top edge, so each pose change happens next to the screen that caused it. */
 .term-plum { position: absolute; right: clamp(12px, 4vw, 48px); top: -118px; width: 150px; aspect-ratio: 1; z-index: 2; }
 @keyframes caret { 50% { opacity: 0; } }
@@ -53,6 +53,8 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .screens button:focus-visible { outline: 2px solid #9b84ff; outline-offset: 1px; }
 .tty { margin: 0; padding: 14px 16px; overflow-x: auto; color: #f4f1ff; font: clamp(9px, 1.04vw, 14px)/1.28 var(--mono); font-variant-ligatures: none; scrollbar-width: thin; scrollbar-color: #31284a transparent; }
 .tty[hidden] { display: none; }
+/* A tall screen scrolls inside the window, so its tabs and Plum stay in view. */
+.tty { max-height: min(72vh, 760px); overflow: auto; }
 .tty .bo { font-weight: 600; } .tty .it { font-style: italic; } .tty .dm { opacity: 0.6; }
 .tty .f-dim { color: #9c92b8; } .tty .f-faint { color: #8a80a8; } .tty .f-ln { color: #31284a; } .tty .f-ac { color: #9b84ff; }
 .tty .f-ok { color: #7fd6a4; } .tty .f-warn { color: #e8c46a; } .tty .f-bad { color: #f08a8a; } .tty .f-info { color: #8fb8f0; }
@@ -62,6 +64,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
 .caption { margin: 14px auto 0; font-size: 14px; color: var(--dim); text-align: center; max-width: 70ch; }
 /* On a phone the screen keeps a readable size and scrolls sideways inside its window. */
 .swipe { display: none; }
+@media (pointer: coarse) { .screens kbd { display: none; } .screens button { min-height: 44px; } }
 @media (max-width: 760px) { .window { width: 100%; } .tty { font-size: 10px; padding: 10px; } .swipe { display: block; padding: 8px 12px 0; font-size: 12px; color: #8a80a8; } }
 
 /* Keys */
@@ -369,7 +372,7 @@ h2.display { font-size: clamp(32px, 4.4vw, 54px); letter-spacing: -0.04em; line-
       <li><kbd>A</kbd><span>In Spaces, on a task: change which agent takes it.</span></li>
       <li><kbd>o</kbd><span>Overnight mode: keeps the Mac awake while work is queued.</span></li>
     </ul>
-    <div class="ctas end"><a class="btn primary" href="#run">Install it</a><a class="btn" href="https://github.com/nakulpatel0306/atrium">Read the code</a></div>
+    <div class="ctas end"><a class="btn primary" href="#run">Run it</a><a class="btn" href="https://github.com/nakulpatel0306/atrium">Read the code</a></div>
   </div>
 </section>
 </main>

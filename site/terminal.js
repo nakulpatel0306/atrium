@@ -1,5 +1,6 @@
-// The terminal page: tabs between the app's screens, and Plum taking the pose that fits each one. With focus inside the
-// window, the keys printed on the tabs (1, ?, space, 2) switch screens as they do in the app.
+// The terminal page: tabs between the app's screens (arrows, Home and End move between them), and Plum taking the
+// pose that fits each one. With focus inside the window, the keys printed on the tabs (1, ?, space, 2) switch
+// screens as they do in the app.
 import { mountPlum } from "./plum.js";
 
 const plum = mountPlum(document.getElementById("term-plum"), { pose: "look", interactive: true });
@@ -13,16 +14,19 @@ function pick(tab, focus) {
     document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
   });
   plum.set(tab.dataset.pose);
+  // The Ask box is at the foot of the app, so its screen opens scrolled to it.
+  const panel = document.getElementById(tab.getAttribute("aria-controls"));
+  panel.scrollTop = tab.id === "s-ask" ? panel.scrollHeight : 0;
   if (focus) tab.focus();
 }
 
 tabs.forEach((t, i) => {
   t.addEventListener("click", () => pick(t, false));
   t.addEventListener("keydown", (e) => {
-    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
-    if (!step) return;
+    const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (to === undefined) return;
     e.preventDefault();
-    pick(tabs[(i + step + tabs.length) % tabs.length], true);
+    pick(tabs[(to + tabs.length) % tabs.length], true);
   });
 });
 
