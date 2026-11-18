@@ -2818,8 +2818,9 @@ code {
 .wrap.start > * {
   max-width: 640px;
 }
-.start > p,
+.wrap.start > p,
 .start-sample > p {
+  max-width: var(--measure);
   margin: var(--space-12) 0;
   line-height: 1.55;
 }
