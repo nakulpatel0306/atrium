@@ -2,6 +2,18 @@
 const NAMES: Record<string, string> = { auto: "Auto", claude: "Claude", codex: "Codex", gemini: "Gemini", atrium: "Atrium" };
 export const agentName = (id: string) => NAMES[id] ?? id;
 
+// An agent CLI that fails and prints nothing leaves only its exit code, which tells the user nothing: say what happened
+// and the two things to try.
+export const silentExit = (name: string, exitCode: number, cli: string): string =>
+  `${name} stopped with an error and didn't say why (exit code ${exitCode}). Retry the task; if it stops again, run \`${cli}\` once in a terminal to see the error.`;
+
+const CLIS: Record<string, string> = { "Claude Code": "claude", Codex: "codex", Gemini: "agy" };
+// A stop recorded before that wording ("Claude Code exited with code 1") reads the same way now.
+export const plainStop = (reason: string): string => {
+  const m = /^(Claude Code|Codex|Gemini) exited with code (\d+)\.?$/.exec(reason.trim());
+  return m ? silentExit(m[1]!, Number(m[2]), CLIS[m[1]!]!) : reason;
+};
+
 export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
 // Agent and git messages don't always end in a full stop; the next sentence follows them.

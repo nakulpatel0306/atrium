@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { type AgentChoice, agentName, agentText, needsAction, ranAgent, waitOf } from "../agents";
 import { patch, post, type State, useReviewers, useRunOutput } from "../api";
 import { absolute, duration, relative, tokens } from "../format";
+import { plainStop } from "../../engine/text";
 import { type ChangeSpot, navigate, type SpaceTab } from "../route";
 import { useSpaceFiles } from "../files";
 import { distinctWaits, liveRun, orderedTasks, reviewerName, reviewHint, reviewLine, runOutcome, shownTitle, STATUS_TEXT } from "../summary";
@@ -402,7 +403,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             // One word on the row (engine/words.ts); why it stopped or isn't done is in the tooltip and the detail.
             <span
               className={`tag${stuck ? " bad" : word === "paused" || risky ? " wait" : verdict ? " good" : ""}${notDone ? " notdone" : ""}`}
-              title={(review && reviewLine(review, state)?.text) || (task.blockedReason ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined)}
+              title={(review && reviewLine(review, state)?.text) || ((task.blockedReason && plainStop(task.blockedReason)) ?? task.loop?.paused?.diagnosis ?? task.outcomeReason ?? undefined)}
             >
               {notDone ?? (asks ? QUEUE_KIND[asks].label : (verdict ?? taskLabel(word)))}
             </span>
@@ -437,7 +438,7 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
           {/* The open task's sections (the walkthrough, You asked, History) sit under its title. */}
           <h3 className="sr-only">{shownTitle(task)}</h3>
           {/* A pause waits for a hint and reads amber; a stopped task waits for a retry and reads red. */}
-          {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{task.blockedReason}</p>}
+          {task.status === "blocked" && task.blockedReason && <p className={`reason ${word === "paused" ? "wait-text" : "err"}`}>{plainStop(task.blockedReason)}</p>}
           {review ? (
             // The same decision, with the same evidence, as its screen in Needs you.
             <div className="task-decision">

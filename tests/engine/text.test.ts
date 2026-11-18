@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { shortCommand } from "../../src/engine/agents/short";
-import { agentName, plural } from "../../src/engine/text";
+import { agentName, plainStop, plural } from "../../src/engine/text";
 import { verdictOf } from "../../src/engine/verdict";
 
 test("verdictOf reads the last line, with or without formatting", () => {
@@ -22,4 +22,10 @@ test("shortCommand collapses whitespace and caps at 80 characters", () => {
   expect(shortCommand("bun   test\n--watch")).toBe("bun test --watch");
   expect(shortCommand("x".repeat(100))).toBe(`${"x".repeat(77)}...`);
   expect(shortCommand(undefined)).toBe("");
+});
+
+test("a bare exit code from an older stop becomes what happened and what to try; anything else is left as it is", () => {
+  expect(plainStop("Codex exited with code 3")).toBe("Codex stopped with an error and didn't say why (exit code 3). Retry the task; if it stops again, run `codex` once in a terminal to see the error.");
+  expect(plainStop("Gemini exited with code 1.")).toContain("run `agy` once");
+  expect(plainStop("The repo has uncommitted changes. Commit or stash them, then retry.")).toBe("The repo has uncommitted changes. Commit or stash them, then retry.");
 });

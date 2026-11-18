@@ -136,3 +136,14 @@ test("Home's line doesn't repeat a brief's questions, which its needs-you count 
   state.waits = { [ids.queued]: { taskId: ids.queued, agent: "claude", kind: "answers", reason: "The brief has questions for you, in Needs you." } };
   expect(liveStatus(state)).not.toContain("questions");
 });
+
+test("a stop an older engine recorded as a bare exit code reads as plain words on Home", async () => {
+  const { liveStatus } = await import("../../src/dashboard/summary");
+  const { makeState, task } = await import("../tui/fixtures");
+  const s = makeState({ approvals: [], proposals: [] });
+  const stopped = task({ id: "tsk_stopped", status: "blocked", blockedReason: "Claude Code exited with code 1" });
+  const line = liveStatus({ ...s, tasks: [...s.tasks.filter((t) => t.status !== "blocked"), stopped] });
+  expect(line).not.toContain("exited with code");
+  expect(line).toContain("1 stopped: Claude Code stopped with an error and didn't say why (exit code 1)");
+  expect(line).toContain("Retry the task");
+});

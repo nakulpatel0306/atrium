@@ -48,6 +48,7 @@ if (mode === "sandbox_unavailable") {
   console.error("Error: sandbox unavailable: sandbox-exec could not start");
   process.exit(1);
 }
+if (mode === "silent_exit") process.exit(1);
 if (mode === "crash") {
   console.error("line 1\nboom: something exploded");
   process.exit(2);
