@@ -25,11 +25,11 @@ test("agents running: work, even while something waits, since the badge on Needs
   expect(plumState(makeState({ tasks: [task({ id: "t1", status: "running" })], approvals: [], proposals: [] }))).toEqual({ pose: "work", say: "1 at work" });
 });
 
-test("one waiting reads as needs, more as need", () => {
-  expect(plumState(empty).say).toBe("All quiet");
-  const st = plumState(makeState({ tasks: [] }));
-  const n = Number(st.say.split(" ")[0]);
-  expect(st.say).toBe(n === 1 ? "1 needs you" : `${n} need you`);
+test("one waiting reads as needs, two as need", () => {
+  const one = makeState({ tasks: [] });
+  const approval = one.approvals[0]!;
+  expect(plumState({ ...one, approvals: [approval], proposals: [] }).say).toBe("1 needs you");
+  expect(plumState({ ...one, approvals: [approval, { ...approval, id: "apr_second" }], proposals: [] }).say).toBe("2 need you");
 });
 
 test("the sidebar shows the pose's picture and says the state in words", () => {

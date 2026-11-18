@@ -57,3 +57,14 @@ test("a pose that isn't one of the six starts as quiet", async () => {
   await plum.ready;
   expect(plum.pose).toBe("quiet");
 });
+
+test("a browser that can't draw WebGL never downloads three.js", async () => {
+  const before = document.querySelectorAll("script").length;
+  const el = host("look");
+  const plum = mountPlum(el, { pose: "look", still: true });
+  await plum.ready;
+  expect(plum.live).toBe(false);
+  expect(String(plum.error)).toContain("can't draw WebGL");
+  expect(document.querySelectorAll("script").length).toBe(before);
+  expect(img(el)).toEndWith("plum/look.webp");
+});

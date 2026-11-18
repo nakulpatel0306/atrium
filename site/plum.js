@@ -20,6 +20,16 @@ export function loadThree() {
   return threeLoading;
 }
 
+// Whether this browser can draw WebGL at all; when it can't, three.js isn't downloaded.
+export function canDrawWebGL() {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+
 export const stillSrc = (pose) => new URL(`plum/${pose}.webp`, import.meta.url).href;
 
 // The page finishes loading before any WebGL starts, and a Plum further down waits until it's nearly on screen.
@@ -33,22 +43,32 @@ const near = (el) =>
         io.disconnect();
         resolve();
       },
-      { rootMargin: "50% 0px" },
+      { rootMargin: "200px 0px" },
     );
     io.observe(el);
   });
 
 // Mounts Plum into `el`, which already holds an <img class="plum-still">. Returns a handle whose set() changes the
 // pose live, or swaps the still when there's no live Plum. Options: pose, interactive (looks at the pointer, a click
-// boops it, a mouse drag turns it), still (holds each pose with no motion; defaults to the reduced-motion setting),
-// lazy (waits until it's nearly on screen), load (how three.js is fetched, for tests), onLive (called once the live
-// Plum is drawing).
+// boops it, a mouse drag turns it), still (holds each pose with no motion; follows the reduced-motion setting, even
+// when it changes, unless given), lazy (waits until it's nearly on screen), load (how three.js is fetched, for tests),
+// onLive (called once the live Plum is drawing). If the browser loses the WebGL context, the still comes back.
 export function mountPlum(el, opts = {}) {
   let pose = POSES.includes(opts.pose) ? opts.pose : "quiet";
   const img = el.querySelector("img.plum-still");
-  const still = opts.still ?? matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const motion = opts.still === undefined ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+  let still = opts.still ?? motion.matches;
   let live = null;
   let gone = false;
+  const showStill = () => {
+    el.classList.remove("plum-live");
+    if (img) img.src = stillSrc(pose);
+  };
+  const onMotion = (e) => {
+    still = e.matches;
+    live?.still(still);
+  };
+  motion?.addEventListener?.("change", onMotion);
 
   const handle = {
     // Settles once Plum is live, or once it's clear the still stays.
@@ -68,16 +88,28 @@ export function mountPlum(el, opts = {}) {
     },
     destroy() {
       gone = true;
+      motion?.removeEventListener?.("change", onMotion);
       live?.destroy();
+      live = null;
     },
   };
+  const load = opts.load ?? (() => (canDrawWebGL() ? loadThree() : Promise.reject(new Error("This browser can't draw WebGL."))));
 
   handle.ready = loaded()
     .then(() => (opts.lazy ? near(el) : undefined))
-    .then(() => (opts.load ?? loadThree)())
+    .then(() => load())
     .then((T) => {
       if (gone) return;
-      live = build(T, el, { still, interactive: !!opts.interactive, pose: () => pose });
+      live = build(T, el, {
+        still,
+        interactive: !!opts.interactive,
+        pose: () => pose,
+        lost: () => {
+          live?.destroy();
+          live = null;
+          showStill();
+        },
+      });
       if (!live) return;
       el.classList.add("plum-live");
       opts.onLive?.();
@@ -89,13 +121,26 @@ export function mountPlum(el, opts = {}) {
   return handle;
 }
 
-function build(T, el, { still, interactive, pose: currentPose }) {
+function build(T, el, opts) {
   let renderer;
   try {
     renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
   } catch {
     return null;
   }
+  try {
+    return draw(T, el, renderer, opts);
+  } catch {
+    // Half a scene is no Plum: give the context back and keep the still.
+    renderer.dispose();
+    renderer.forceContextLoss();
+    renderer.domElement.remove();
+    return null;
+  }
+}
+
+function draw(T, el, renderer, { still: startStill, interactive, pose: currentPose, lost }) {
+  let still = startStill;
   let state = currentPose();
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputEncoding = T.sRGBEncoding;
@@ -124,7 +169,13 @@ function build(T, el, { still, interactive, pose: currentPose }) {
   softbox(3, 4, 0xd8caff, 3.2, [-4.8, 1, 2]);
   softbox(2, 4, 0xffdcec, 2.2, [4.8, 0.4, 1.5]);
   softbox(5, 2, 0xffffff, 1.2, [0, -0.5, 4.8]);
-  scene.environment = pmrem.fromScene(studio, 0.04).texture;
+  const envMap = pmrem.fromScene(studio, 0.04).texture;
+  scene.environment = envMap;
+  pmrem.dispose();
+  studio.traverse((o) => {
+    o.geometry?.dispose();
+    o.material?.dispose();
+  });
   const key = new T.DirectionalLight(0xffffff, 0.55);
   key.position.set(-2.5, 5, 3);
   scene.add(key);
@@ -378,8 +429,8 @@ function build(T, el, { still, interactive, pose: currentPose }) {
     look.y = ease(look.y, lookY, 0.12);
 
     if (!dragging) dragYaw *= 0.94;
-    turn.rotation.y = ease(turn.rotation.y, px * 0.35 + dragYaw, 0.1);
-    turn.rotation.x = ease(turn.rotation.x, py * 0.08, 0.1);
+    turn.rotation.y = ease(turn.rotation.y, (still ? 0 : px * 0.35) + dragYaw, 0.1);
+    turn.rotation.x = ease(turn.rotation.x, still ? 0 : py * 0.08, 0.1);
     squash.position.y = -HALF + pose.lift;
     squash.scale.set(1 / Math.sqrt(sy), sy, 1 / Math.sqrt(sy));
     body.rotation.set(pose.tiltX, 0, pose.tiltZ);
@@ -425,9 +476,19 @@ function build(T, el, { still, interactive, pose: currentPose }) {
   }
   wake();
 
+  // A GPU reset or a browser reclaiming contexts blanks the canvas; the still takes over.
+  on(renderer.domElement, "webglcontextlost", (e) => {
+    e.preventDefault();
+    lost();
+  });
+
   return {
     pose(next) {
       state = next;
+      wake();
+    },
+    still(next) {
+      still = next;
       wake();
     },
     destroy() {
@@ -435,7 +496,14 @@ function build(T, el, { still, interactive, pose: currentPose }) {
       io.disconnect();
       ro.disconnect();
       for (const off of listeners) off();
+      scene.traverse((o) => {
+        o.geometry?.dispose();
+        o.material?.map?.dispose();
+        o.material?.dispose();
+      });
+      envMap.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       renderer.domElement.remove();
     },
   };
