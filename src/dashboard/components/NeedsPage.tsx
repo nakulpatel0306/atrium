@@ -175,6 +175,9 @@ export function DecisionPanel({ item, state, armed = false }: { item: QueueItem;
       <header className="dp-head">
         <span className={`q-kind k-${item.kind}${riskyItem(state, item) ? " risky" : ""}`} title={KIND[item.kind].means}>{itemLabel(state, item)}</span>
         <h3 id="dp-title">{itemTitle(state, item)}</h3>
+        {/* What this kind of item is, in a sentence, so a first-time reader never has to guess at "Sign-off". A pause
+            says why it paused in its own words below, which says more. */}
+        {item.kind !== "paused" && <p className="dp-means">{KIND[item.kind].means}</p>}
         <p className="dp-meta">
           <span className="sd" style={{ background: space?.color ?? "var(--faint)" }} />
           {space?.name ?? "Atrium"}

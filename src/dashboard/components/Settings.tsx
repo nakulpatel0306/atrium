@@ -1,4 +1,4 @@
-import { Database } from "lucide-react";
+import { navigate } from "../route";
 import type { State } from "../api";
 import { ArchivedSpaces } from "./ArchivedSpaces";
 import { OldDataNotice } from "./OldData";
@@ -10,10 +10,7 @@ export function DataSection({ oldData }: { oldData: State["oldData"] }) {
   if (!oldData.present) return null;
   return (
     <>
-      <h2>
-        <Database />
-        Data
-      </h2>
+      <h2>Data</h2>
       <OldDataNotice />
     </>
   );
@@ -23,7 +20,15 @@ export function Settings({ state }: { state: State }) {
   return (
     <div className="wrap">
       <h1>Settings</h1>
-      <p className="brief">Your name and projects folder, archived spaces and storage.</p>
+      <p className="brief">Setup, your name and projects folder, archived spaces and storage.</p>
+      {/* Where someone new looks first: the walk-through that opened on the first run, any time again. */}
+      <h2>Get started</h2>
+      <div className="set-card start-card">
+        <p>Checks that Claude is ready, picks your projects folder and runs one small task, so you see the whole loop once.</p>
+        <button className="btn" onClick={() => navigate("/start")}>
+          Open Get started
+        </button>
+      </div>
       <h2>You</h2>
       <Profile />
       <ArchivedSpaces />

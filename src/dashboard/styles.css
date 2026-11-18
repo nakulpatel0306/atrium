@@ -3433,6 +3433,13 @@ kbd {
   margin: var(--space-4) 0 var(--space-8);
   line-height: 1.15;
 }
+/* The kind's one-line meaning, under the title: quiet, and only as wide as reads easily. */
+.dp-means {
+  color: var(--dim);
+  font-size: var(--fs-sm);
+  max-width: var(--measure);
+  margin-bottom: var(--space-8);
+}
 .dp-meta {
   display: flex;
   flex-wrap: wrap;
@@ -5036,4 +5043,28 @@ a.task-link {
   flex: none;
   color: var(--yellow);
   font-size: var(--fs-xs);
+}
+
+/* Why a task paused, said once above its ways on. */
+.paused .pause-why {
+  max-width: var(--measure);
+  margin-bottom: var(--space-8);
+}
+/* Changing the budget is a detail of the budget line, so it reads as that line's link, in the colour actions use. */
+.budget .btn.link {
+  color: var(--accent);
+}
+.budget .btn.link:hover {
+  text-decoration: underline;
+}
+/* Get started at the top of Settings: one line on what it does, and the way in. */
+.start-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  flex-wrap: wrap;
+}
+.start-card p {
+  max-width: var(--measure);
 }

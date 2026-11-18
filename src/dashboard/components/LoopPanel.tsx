@@ -1,4 +1,4 @@
-import { CLEAN, KIND, RISKY } from "../../engine/words";
+import { CLEAN, KIND, PAUSE_WHY, RISKY } from "../../engine/words";
 import { Gauge, Lightbulb, MessageSquareText, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { briefSections } from "../../engine/brief";
@@ -126,6 +126,7 @@ function Paused({ task, nudge }: { task: Task; nudge: boolean }) {
   );
   return (
     <div className="paused">
+      {task.loop?.paused && <p className="hint pause-why">{PAUSE_WHY[task.loop.paused.kind]}</p>}
       {nudge && (
         <div className="nudge">
           <p>Want the diagnosis instead of another attempt? It reads the branch and says what's actually going wrong, without trying again.</p>
@@ -224,7 +225,8 @@ function Budget({ task }: { task: Task }) {
             </button>
           </form>
         ) : (
-          <button className="btn" onClick={() => setEditing(true)}>
+          // A detail of the budget line, not one more way on: it reads as a link beside it.
+          <button className="btn link" onClick={() => setEditing(true)}>
             Change budget
           </button>
         ))}

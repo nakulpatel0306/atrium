@@ -86,7 +86,9 @@ export function Activity({ state, spaceId, page = false }: { state: State; space
       {page ? <h1 className="page-title">Activity</h1> : <h2 id="activity">Activity</h2>}
       <div className="list feed">
         {groups.length === 0 ? (
-          <div className="empty-row">No activity yet. Agent runs and your decisions will show up here.</div>
+          <div className="empty-row">
+            Nothing has happened yet. When an agent runs or you decide something, it's listed here. {state.spaces.length ? "Give a space a task" : "Describe your first space"} in the bar below to start.
+          </div>
         ) : (
           <Feed key={spaceId ?? "all"} groups={groups} names={spaceId ? undefined : names} />
         )}

@@ -69,6 +69,8 @@ function KindBadge({ kind }: { kind: Task["kind"] }) {
 }
 
 const LEARNING_LABEL: Record<Learning, string> = { off: "Off", light: "Light", deep: "Deep" };
+// What learning is at all, before what each level adds: the word alone doesn't say.
+const LEARNING_WHAT = "Learning helps you keep up with code you didn't write. It never holds a result back.";
 const LEARNING_HINT: Record<Learning, string> = {
   off: "No walkthroughs, retros, weekly roll-ups or CLAUDE.md suggestions.",
   light: "A walkthrough with each result, a retro once you accept it or open its pull request, a weekly roll-up and CLAUDE.md suggestions.",
@@ -122,7 +124,9 @@ function LoopSettings({ space }: { space: Space }) {
           ))}
         </select>
       </label>
-      <span className="hint">{LEARNING_HINT[space.learning]}</span>
+      <span className="hint">
+        {LEARNING_WHAT} {LEARNING_HINT[space.learning]}
+      </span>
       <MemorySize space={space} version={space.updatedAt} />
       <button className="btn link subtle" aria-expanded={open} onClick={() => setOpen(!open)}>
         Checks and budget
@@ -141,7 +145,7 @@ function LoopSettings({ space }: { space: Space }) {
             <textarea className="mono" rows={2} value={checks} onChange={(e) => setChecks(e.target.value)} />
           </label>
           <label>
-            Budget per task <span className="hint">empty uses the defaults by task size</span>
+            Budget per task <span className="hint">a task pauses before it would go over, so a run that goes wrong can't use up your plan; empty uses the defaults by task size</span>
             <span className="budget-fields">
               <input aria-label="Tokens per task" inputMode="numeric" placeholder="600000" value={tokens} onChange={(e) => setTokens(e.target.value)} />
               tokens

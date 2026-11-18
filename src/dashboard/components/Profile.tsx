@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { put } from "../api";
-import { navigate } from "../route";
 
 type ProfileData = { name: string | null; suggestedName: string | null; projectsRoot: string };
 
@@ -56,9 +55,6 @@ export function Profile() {
           </button>
         )}
       </form>
-      <button className="btn link" onClick={() => navigate("/start")}>
-        Get started
-      </button>
     </div>
   );
 }

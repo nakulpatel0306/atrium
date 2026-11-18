@@ -129,7 +129,8 @@ test("a budget pause raises its budget and carries on in one click, and Change b
   await act(async () => raise.click());
   expect(calls.filter((c) => c.url === "/api/tasks/tsk_p/budget").at(-1)).toEqual({ url: "/api/tasks/tsk_p/budget", body: { budget: { tokens: 400_000, minutes: 20 }, resume: true } });
   const change = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.textContent === "Change budget")!;
-  expect(change.className).toBe("btn");
+  // A real button, styled as the budget line's link in the accent colour: one detail of the budget, not a fourth way on.
+  expect(change.className).toBe("btn link");
   await act(async () => change.click());
   const save = [...el.querySelectorAll<HTMLButtonElement>(".budget button")].find((b) => b.type === "submit")!;
   expect(save.textContent).toBe("Save and carry on");

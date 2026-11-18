@@ -47,6 +47,12 @@ export const CLEAN = "Clean";
 // A state as a row's label: "Paused", "Ready for review"; sentences use TASK_WORD as it is.
 export const taskLabel = (w: TaskWord): string => TASK_WORD[w][0]!.toUpperCase() + TASK_WORD[w].slice(1);
 
+// Why the loop pauses itself, said beside each pause so the word never stands alone.
+export const PAUSE_WHY: Record<"budget" | "loop", string> = {
+  budget: "Every task runs with a budget of tokens and minutes, so a run that goes wrong can't use up your plan. It stopped before going over; nothing is lost, and it carries on from its branch.",
+  loop: "Atrium pauses a task when the same check fails the same way twice, rather than letting it try again blind. Its work so far is kept on its branch.",
+};
+
 // A pause the budget caused has its own first step, raising it; a hint is then the other way on.
 export const BUDGET_STEP = "Raise the budget";
 
