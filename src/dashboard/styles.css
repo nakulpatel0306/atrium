@@ -43,7 +43,7 @@
   --shadow-1: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 20px 56px rgba(0, 0, 0, 0.5);
   --sans: "Inter Tight", system-ui, sans-serif;
-  --mono: "Geist Mono", var(--mono);
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   /* Type, in real steps: tabular meta and tags, secondary text, body, emphasis, item titles, page titles. Nothing
      reads below 12px. */
   --fs-xs: 12px;
@@ -4072,6 +4072,16 @@ kbd {
 .tag.cost {
   font-variant-numeric: tabular-nums;
 }
+/* In a list row only the button is a capsule: the status is coloured text and the cost plain mono, so the one thing
+   to press stands out. */
+.item .tag {
+  border-color: transparent;
+  padding: 1px 2px;
+}
+.item .tag.cost {
+  font-family: var(--mono);
+  color: var(--faint);
+}
 .fanout {
   display: flex;
   flex-direction: column;
@@ -4812,14 +4822,14 @@ a.task-link {
 }
 
 /* Amber is kept for the two states that ask for care: a pause and a result that Needs a look. A question, a sign-off
-   or a pick is routine, so it takes the accent. */
+   or a pick is routine, so it reads in the quiet text colour: purple is only for what you can press. */
 .q-kind.k-question,
 .q-kind.k-approval,
 .q-kind.k-pick,
 .tag.k-question,
 .tag.k-approval,
 .tag.k-pick {
-  color: var(--accent);
+  color: var(--dim);
 }
 /* Home's tags take the queue's colours: one rule for both lists. */
 .tag.k-paused,
