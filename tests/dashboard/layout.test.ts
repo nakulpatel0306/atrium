@@ -102,3 +102,10 @@ test("on a phone every Home row wraps the same way: status and cost on one line,
   const phone = css.slice(css.indexOf("Always two lines under the reason"));
   expect(phone).toMatch(/^[^}]*\.needs-list \.summary-row > \.acts \{\s*flex: 1 1 100%;/);
 });
+
+test("opening Changes keeps the space page in two columns: the diff takes the main one and Live stays beside it", () => {
+  // Two tracks, the first the diff's: never the single column that sent Live under Activity.
+  const block = css.match(/\n\.cols:has\(\.changes-section\) \{([^}]*)\}/)![1]!;
+  expect(block).toContain("grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr)");
+  expect(css).not.toContain(".cols:has(.changes-section) > .live");
+});
