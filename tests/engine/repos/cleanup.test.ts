@@ -27,7 +27,8 @@ beforeEach(async () => {
   home = tempHome();
   db = openDb();
   gh = fakeGitHub();
-  seedRemote(gh, "demo", { ".gitignore": ".env\nsecrets/\ndist/\nnode_modules/\n" });
+  // .DS_Store is listed here rather than left to the machine's global gitignore, which a CI runner doesn't have.
+  seedRemote(gh, "demo", { ".gitignore": ".env\nsecrets/\ndist/\nnode_modules/\n.DS_Store\n" });
   space = createSpace(db, { name: "Demo", kind: "repo", goal: "g", github: "fakeuser/demo" });
   const c = createCloner(db, () => {});
   c.request(space);
