@@ -64,16 +64,22 @@ async function claudeSignedIn(bin: string): Promise<boolean | null> {
 
 type AgentSpec = { id: string; label: string; required: boolean; bin: string; install: string; signIn: string; adapter: AgentAdapter; minimum?: readonly number[] };
 
+// The engine finds a CLI on the PATH it started with, so one installed since stays out of sight until it restarts.
+const notInstalled = (spec: AgentSpec) =>
+  spec.required
+    ? `${spec.label} isn't installed, or Atrium can't find it. Install it, then check again. Installed it after Atrium started? Start Atrium again from a new terminal (atrium install or atrium start) so it finds it.`
+    : `${spec.label} isn't installed.`;
+
 async function agentCheck(spec: AgentSpec): Promise<Check> {
   const base = { id: spec.id, label: spec.label, required: spec.required, install: spec.install, signIn: spec.signIn, minimum: spec.minimum?.join(".") ?? null };
   const { installed, version } = await versionOf(spec.bin);
-  if (!installed) return { ...base, state: "not_installed", version: null, message: `${spec.label} isn't installed.` };
+  if (!installed) return { ...base, state: "not_installed", version: null, message: notInstalled(spec) };
   const v = version?.join(".") ?? null;
   // A version Atrium can't read counts as too old, as it does when a private run starts.
   const tooOld = spec.minimum && (!version || !atLeast(version, spec.minimum));
   if (tooOld) return { ...base, state: "too_old", version: v, message: `${spec.label} ${v ?? "(version unknown)"} is older than ${base.minimum}. Update it.` };
   const signedIn = spec.id === "claude" ? await claudeSignedIn(spec.bin) : (await spec.adapter.probe?.(AbortSignal.timeout(PROBE_MS)))?.loggedIn ?? null;
-  if (signedIn === false) return { ...base, state: "signed_out", version: v, message: `${spec.label} is installed but not signed in.` };
+  if (signedIn === false) return { ...base, state: "signed_out", version: v, message: `${spec.label} is installed but not signed in. Sign in, then check again.` };
   if (signedIn === null) return { ...base, state: "unknown", version: v, message: `Couldn't check whether ${spec.label} is signed in. Try again.` };
   return { ...base, state: "ready", version: v, message: `${spec.label} is installed and signed in.` };
 }
@@ -149,5 +155,12 @@ export function formatDoctor(r: Report): string {
   lines.push("", "Optional: a second reviewer and pull requests");
   r.agents.filter((a) => !a.required).forEach(row);
   row(r.github);
+  const ready = r.agents.find((a) => a.id === "claude")?.state === "ready";
+  lines.push(
+    "",
+    ready
+      ? "Ready. Run atrium start to use Atrium in this terminal, or atrium install to start it at every login, then atrium open."
+      : "Atrium can't run tasks until Claude is ready. Run the commands above, then atrium doctor again.",
+  );
   return lines.join("\n");
 }

@@ -74,6 +74,19 @@ test("doctor output names the install and sign-in commands, and never prints sig
   expect(text).not.toContain("someone@example.com");
 });
 
+test("each Claude problem says what to do next, and doctor ends on the next step", async () => {
+  let r = await doctor(null);
+  expect(formatDoctor(r).trimEnd().split("\n").at(-1)).toBe("Ready. Run atrium start to use Atrium in this terminal, or atrium install to start it at every login, then atrium open.");
+  process.env.FAKE_CLAUDE_AUTH = "signed-out";
+  r = await doctor(null);
+  expect(r.agents[0]!.message).toBe("Claude is installed but not signed in. Sign in, then check again.");
+  expect(formatDoctor(r).trimEnd().split("\n").at(-1)).toBe("Atrium can't run tasks until Claude is ready. Run the commands above, then atrium doctor again.");
+  process.env.ATRIUM_CLAUDE_BIN = join(FIX, "does-not-exist");
+  r = await doctor(null);
+  // Installed after the engine started, it isn't on the engine's PATH until the engine starts again.
+  expect(r.agents[0]!.message).toBe("Claude isn't installed, or Atrium can't find it. Install it, then check again. Installed it after Atrium started? Start Atrium again from a new terminal (atrium install or atrium start) so it finds it.");
+});
+
 test("git without a name and email says commits won't be yours, and how to set them; it never blocks", async () => {
   expect((await doctor(db)).git).toMatchObject({ state: "ready", required: true });
   writeFileSync(process.env.GIT_CONFIG_GLOBAL!, "");
