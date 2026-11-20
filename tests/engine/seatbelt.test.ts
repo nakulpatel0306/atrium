@@ -226,7 +226,8 @@ describe("seatbeltProfile", () => {
       for (const host of ["127.0.0.1", "localhost", "0.0.0.0", "[::ffff:127.0.0.1]"]) {
         const r = sandboxed(profile, `/usr/bin/curl -s --max-time 5 http://${host}:${server.port}/`);
         expect(r.out).not.toContain("engine");
-        expect(r.exitCode).toBe(7);
+        // Refused (7) or dropped until curl gives up (28): which one depends on the Mac, and neither connects.
+        expect([7, 28]).toContain(r.exitCode);
       }
     } finally {
       server.stop(true);
