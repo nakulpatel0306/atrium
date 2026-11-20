@@ -18,6 +18,8 @@ let ansi: Awaited<ReturnType<typeof screen>>;
 // Each run pins its own color mode, whatever terminal the tests run in.
 const ANSI_ENV = { COLORTERM: undefined, TERM: "xterm-256color", TERM_PROGRAM: undefined, NO_COLOR: undefined, FORCE_COLOR: undefined };
 const TRUECOLOR_ENV = { ...ANSI_ENV, COLORTERM: "truecolor" };
+// The app has drawn Home: the queue's header. A fixed pause raced a slow first draw under load.
+const READY = { until: "NEEDS YOU" };
 
 beforeAll(async () => {
   home = tempHome();
@@ -25,7 +27,7 @@ beforeAll(async () => {
   seedReview(db);
   server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no setup"); }, port: 0 });
   port = server.port as number;
-  ansi = await screen({ port, env: ANSI_ENV, steps: [{ wait: 1500 }, "j", { wait: 200 }, "q"] });
+  ansi = await screen({ port, env: ANSI_ENV, steps: [READY, "j", { wait: 200 }, "q"] });
 });
 afterAll(async () => {
   await server.stop(true);
@@ -34,7 +36,7 @@ afterAll(async () => {
 });
 
 test("atrium opens, moves, and quits cleanly under a pty", async () => {
-  const shown = await screen({ port, env: ANSI_ENV, steps: [{ wait: 1500 }, "2", { wait: 300 }, "?", { wait: 300 }] });
+  const shown = await screen({ port, env: ANSI_ENV, steps: [READY, "2", { until: "TASKS" }, "?", { until: "Keys" }] });
   expect(ansi.text).toContain("NEEDS YOU  1");
   expect(ansi.text).toContain("Review: Fix login redirect");
   expect(shown.text).toContain("Keys");
@@ -45,7 +47,7 @@ test("atrium opens, moves, and quits cleanly under a pty", async () => {
 }, 20_000);
 
 test("at 80×24 it lays out on purpose: what is running folds under the cards", async () => {
-  const small = await screen({ port, cols: 80, rows: 24, env: ANSI_ENV, steps: [{ wait: 1500 }] });
+  const small = await screen({ port, cols: 80, rows: 24, env: ANSI_ENV, steps: [READY] });
   expect(small.text).toContain("NEEDS YOU  1");
   expect(small.text).toContain("RUNNING");
   expect(small.text).toContain("Ask Atrium");
@@ -58,27 +60,27 @@ test("in a 16-color terminal only the terminal's own colors are used", () => {
 });
 
 test("in a truecolor terminal it uses Atrium's palette and paints no background behind the screen", async () => {
-  const tc = await screen({ port, env: TRUECOLOR_ENV, steps: [{ wait: 1500 }] });
+  const tc = await screen({ port, env: TRUECOLOR_ENV, steps: [READY] });
   // The accent, #9b84ff.
   expect(tc.raw).toContain("38;2;155;132;255");
   // The dashboard's page background is never painted; the terminal's own shows through.
   expect(tc.raw).not.toContain("48;2;12;10;20");
   // Faint text, #8a80a8; high contrast draws it in the terminal's own foreground instead.
   expect(tc.raw).toContain("38;2;138;128;168");
-  const hc = await screen({ port, env: { ...TRUECOLOR_ENV, ATRIUM_HIGH_CONTRAST: "1" }, steps: [{ wait: 1500 }] });
+  const hc = await screen({ port, env: { ...TRUECOLOR_ENV, ATRIUM_HIGH_CONTRAST: "1" }, steps: [READY] });
   expect(hc.raw).not.toContain("38;2;138;128;168");
   expect(hc.raw).toContain("38;2;155;132;255");
 }, 30_000);
 
 test("NO_COLOR drops color but keeps the selected tab readable", async () => {
-  const plain = await screen({ port, env: { ...TRUECOLOR_ENV, NO_COLOR: "1" }, steps: [{ wait: 1500 }] });
+  const plain = await screen({ port, env: { ...TRUECOLOR_ENV, NO_COLOR: "1" }, steps: [READY] });
   expect(plain.raw).not.toMatch(/\x1b\[(3[0-79]|9[0-7]|38;)/);
   expect(plain.raw).toContain("\x1b[7m");
 }, 20_000);
 
 test("mouse reporting is on while it runs and off when it quits; a click switches tabs", async () => {
   // " ◆ atrium  " is 12 columns at 120 wide; "2 Spaces" starts after " 1 Home " and a space.
-  const clicked = await screen({ port, env: ANSI_ENV, steps: [{ wait: 1500 }, click(24, 0), { wait: 300 }] });
+  const clicked = await screen({ port, env: ANSI_ENV, steps: [READY, click(24, 0), { until: "TASKS · atrium" }] });
   expect(clicked.text).toContain("SPACES");
   expect(clicked.text).toContain("TASKS · atrium");
   expect(clicked.raw).toContain(MOUSE_ON);

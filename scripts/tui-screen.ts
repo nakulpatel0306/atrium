@@ -5,13 +5,15 @@ import { Terminal } from "@xterm/headless";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-export type Step = string | { wait: number };
+// A wait for the screen to show some text beats a fixed pause: under load the app can take far longer to draw.
+export type Step = string | { wait: number } | { until: string; timeout?: number };
 export type Screen = { text: string; raw: string; exitCode: number | null };
 
 const root = resolve(import.meta.dir, "..");
 // Keys sent back to back can merge into one read; a short gap keeps each one its own keypress, as typed.
 const KEY_GAP_MS = 60;
 const EXIT_TIMEOUT_MS = 5000;
+const UNTIL_TIMEOUT_MS = 15_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const NAMED: Record<string, string> = { "<esc>": "\x1b", "<enter>": "\r", "<tab>": "\t", "<space>": " " };
@@ -67,6 +69,10 @@ export async function screen(opts: { port: number; cols?: number; rows?: number;
     if (typeof step === "string") {
       send(step);
       await sleep(KEY_GAP_MS);
+    } else if ("until" in step) {
+      // Gives up quietly: the caller's own assertion then shows what the screen did say.
+      const end = Date.now() + (step.timeout ?? UNTIL_TIMEOUT_MS);
+      while (!(await read()).includes(step.until) && Date.now() < end) await sleep(50);
     } else {
       await sleep(step.wait);
     }

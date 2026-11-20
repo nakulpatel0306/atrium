@@ -19,7 +19,9 @@ export function openApp(client: EngineClient, size = { columns: 120, rows: 36 })
     write(f);
     for (const w of [...waiters]) w();
   };
-  const frame = (pred: (f: string) => boolean, ms = 2000): Promise<string> =>
+  // Just under bun's 5 s test timeout, so a frame that never comes still fails here with the last frame shown. 2 s
+  // was too tight while another suite ran beside this one.
+  const frame = (pred: (f: string) => boolean, ms = 4500): Promise<string> =>
     new Promise((resolve, reject) => {
       const check = () => {
         const f = r.lastFrame() ?? "";
