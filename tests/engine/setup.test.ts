@@ -210,6 +210,15 @@ test("a repo folder that can't be used says which folder and what to do", async 
   }
 });
 
+test("a projects folder that doesn't exist is named as the problem, not the repo", async () => {
+  const projects = join(tmpdir(), `atrium-no-projects-${Date.now()}`);
+  const err = await setupSpace(db, fake(ok(planWith(repo.path))), "my repo", home.home, projects).catch((e) => e);
+  expect(err).toBeInstanceOf(SetupFailed);
+  expect(err.message).toMatch(/projects folder .* doesn't exist/);
+  expect(err.message).toContain("Settings");
+  expect(err.message).not.toContain(`${basename(repo.path)} doesn't exist`);
+});
+
 test("a plain agent failure keeps the try-again message", async () => {
   const bad: AgentRunResult = { status: "error", kind: "failed", message: "boom" };
   const err = await setupSpace(db, fake(bad), "x", home.home).catch((e) => e);

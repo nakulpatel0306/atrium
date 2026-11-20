@@ -97,11 +97,15 @@ function resolveRepoPath(repoPath: string, projectsRoot: string): string {
   if (!isAbsolute(expanded)) throw new BadPlan(`repoPath must be an absolute path: ${repoPath}`);
   const shown = tildePath(expanded);
   const again = "then describe the space again.";
-  let real: string;
   let root: string;
   try {
-    real = realpathSync(expanded);
     root = realpathSync(projectsRoot);
+  } catch {
+    throw new RepoUnusable(`Your projects folder (${tildePath(projectsRoot)}) doesn't exist. Create it, or pick another in Settings, ${again}`);
+  }
+  let real: string;
+  try {
+    real = realpathSync(expanded);
   } catch {
     throw new RepoUnusable(`${shown} doesn't exist. Check the path, or put the repo in your projects folder (${tildePath(projectsRoot)}), ${again}`);
   }
