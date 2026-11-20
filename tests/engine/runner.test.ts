@@ -212,7 +212,7 @@ test("dirty repo blocks the task without touching files", async () => {
   start({ adapter });
   await waitFor(() => status(t.id) === "blocked");
 
-  expect(getTask(db, t.id)!.blockedReason).toBe(`You have uncommitted changes in ${path}`);
+  expect(getTask(db, t.id)!.blockedReason).toBe(`You have uncommitted changes in ${path}. Commit or stash them, then retry: Atrium never works over them.`);
   expect(calls).toHaveLength(0);
   expect(existsSync(join(path, "wip.txt"))).toBe(true);
   expect(git(path, "rev-parse", "HEAD")).toBe(head);
