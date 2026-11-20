@@ -5,6 +5,7 @@ import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { silentExit } from "../text";
 import { shortCommand } from "./short";
+import { homes } from "./account-home";
 import { SANDBOX_EXEC, codexStateDir, geminiStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
 
@@ -36,7 +37,7 @@ export function geminiArgv(bin: string, input: AgentRunInput, tmp: string, sandb
   return wrapInSeatbelt(argv, {
     cwd: input.cwd,
     writable: input.mode === "review" ? [geminiStateDir(), tmp] : [input.cwd, geminiStateDir(), tmp],
-    extraDenyRead: [codexStateDir()],
+    extraDenyRead: [codexStateDir(), ...homes().map((h) => join(h, ".codex"))],
     // agy signs in through the Keychain, so securityd stays reachable (no denyKeychain). Its headless mode runs no
     // shell commands, so it has no way to call `security` or a copy of it.
     allowRead: [LOGIN_KEYCHAIN],

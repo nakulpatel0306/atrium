@@ -93,7 +93,7 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash
         denyRead: [
           ...homeSandboxDenies(),
           // A wildcard entry that matches a folder blocks its contents too.
-          ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
+          ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`, ...(otherAccountHome() ? [`${otherAccountHome()}/**/${g}`] : [])]),
           ...atriumDenyPaths(cwd),
           ...(reads?.denyRead ?? []),
         ],

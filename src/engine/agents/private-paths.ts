@@ -1,5 +1,6 @@
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import { otherAccountHome } from "./account-home";
 import { basename, join, resolve, sep } from "node:path";
 
 // Keeping a private space's Claude run away from bank exports (Downloads, Desktop, Documents, and any
@@ -126,8 +127,18 @@ export type PrivateReads = { denyRead: string[]; allowRead: string[] };
 // The user's home folder; ATRIUM_USER_HOME stands in for it, as for the projects folder check (profile.ts).
 const userHome = (): string => process.env.ATRIUM_USER_HOME ?? homedir();
 
+// With no home given, the account's own home is fenced too when $HOME points elsewhere.
 export function privateReads(cwd: string, opts: { bash: boolean; home?: string }): PrivateReads {
-  const home = real(opts.home ?? userHome());
+  const other = opts.home === undefined ? otherAccountHome() : null;
+  const reads = privateReadsUnder(cwd, opts.bash, opts.home ?? userHome());
+  if (!other) return reads;
+  const more = privateReadsUnder(cwd, opts.bash, other);
+  return { denyRead: [...new Set([...reads.denyRead, ...more.denyRead])], allowRead: [...new Set([...reads.allowRead, ...more.allowRead])] };
+}
+
+function privateReadsUnder(cwd: string, bash: boolean, homePath: string): PrivateReads {
+  const opts = { bash };
+  const home = real(homePath);
   const keep = real(cwd);
   const privateFolders = PRIVATE_FOLDERS.map((f) => join(home, f));
   const cloud = CLOUD_FOLDERS.map((f) => join(home, f)).filter((f) => !inside(keep, f));
@@ -147,7 +158,13 @@ export function privateReads(cwd: string, opts: { bash: boolean; home?: string }
 // Read deny rules (they cover Read, Glob and Grep) beside the working-directory fence, so a CLI that ignored the fence
 // would still be kept out: the whole of /Users/Shared and /Volumes, and everything in the home folder beside the
 // way down to the cwd. A deny can't be re-opened, so none of them ever covers the cwd.
-export function privateReadRules(cwd: string, home: string = userHome()): string[] {
+export function privateReadRules(cwd: string, home?: string): string[] {
+  const other = home === undefined ? otherAccountHome() : null;
+  const rules = privateReadRulesUnder(cwd, home ?? userHome());
+  return other ? [...new Set([...rules, ...privateReadRulesUnder(cwd, other)])] : rules;
+}
+
+function privateReadRulesUnder(cwd: string, home: string): string[] {
   const keep = real(cwd);
   const rule = (p: string) => [`Read(/${p})`, `Read(/${p}/**)`];
   const out: string[] = [];

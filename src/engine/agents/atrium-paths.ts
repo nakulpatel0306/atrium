@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { config } from "../config";
+import { homes } from "./account-home";
 
 // Atrium's data folder holds the database, the transcripts and old spaces' folders; the visible files folder
 // (~/Atrium) holds every general space's work. A run may use only its own space folder (the cwd of a
@@ -14,10 +14,13 @@ export function atriumDenyPaths(cwd: string): string[] {
   const samples = join(home, "samples");
   const paths = new Set([dbPath, `${dbPath}-wal`, `${dbPath}-shm`, transcriptsDir, join(home, "engine.log")]);
   // A dev or test engine with folders of its own must still keep its agents out of the real ones.
-  const realHome = join(homedir(), "Library", "Application Support", "Atrium");
-  const realFiles = join(homedir(), "Atrium");
-  if (realHome !== home) paths.add(realHome);
-  if (realFiles !== filesHome) paths.add(realFiles);
+  // Under $HOME and the account's own home, when HOME points elsewhere.
+  for (const h of homes()) {
+    const realHome = join(h, "Library", "Application Support", "Atrium");
+    const realFiles = join(h, "Atrium");
+    if (realHome !== home) paths.add(realHome);
+    if (realFiles !== filesHome) paths.add(realFiles);
+  }
   // An engine with its own ATRIUM_HOME keeps the files folder inside it; that one is handled below.
   for (const name of list(home)) if (name !== "spaces" && name !== "samples" && join(home, name) !== filesHome) paths.add(join(home, name));
   for (const root of [spaces, filesHome, samples]) {

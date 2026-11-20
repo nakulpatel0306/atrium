@@ -1,10 +1,10 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "../config";
 import { parseRetryAfter } from "./limits";
 import { runAgentProcess } from "./process";
 import { silentExit } from "../text";
 import { shortCommand } from "./short";
+import { homes } from "./account-home";
 import { SANDBOX_EXEC, codexStateDir, sandboxFailed, seatbeltFailure, withPrivateTmp, wrapInSeatbelt } from "./seatbelt";
 import type { AgentAdapter, AgentRunInput, AgentRunResult, AgentStatus } from "./types";
 
@@ -42,7 +42,7 @@ export function codexArgv(bin: string, input: AgentRunInput, tmp: string, sandbo
   return wrapInSeatbelt(argv, {
     cwd: input.cwd,
     writable: input.mode === "review" ? [state, tmp] : [input.cwd, state, tmp],
-    extraDenyRead: [join(homedir(), ".gemini")],
+    extraDenyRead: homes().map((h) => join(h, ".gemini")),
     // Codex signs in with ~/.codex/auth.json, so it never needs the Keychain.
     denyKeychain: true,
     sandboxExec,
