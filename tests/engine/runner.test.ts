@@ -221,8 +221,8 @@ test("dirty repo blocks the task without touching files", async () => {
 });
 
 test("missing repo folder blocks with the folder reason", async () => {
-  const path = repo();
-  rmSync(path, { recursive: true, force: true });
+  // A folder that never existed: deleting a fresh repo races git's own background work, which can leave .git behind.
+  const path = join(tmpdir(), `atrium-missing-${crypto.randomUUID()}`);
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Fix" });
   const { adapter, calls } = fakeAdapter();
