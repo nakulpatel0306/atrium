@@ -6,6 +6,7 @@ import { runAgentProcess } from "./agents/process";
 import type { AgentAdapter } from "./agents/types";
 import { config } from "./config";
 import { tildePath } from "./folders";
+import { git } from "./git";
 import { storedName, suggestedName } from "./profile";
 import { runGh } from "./repos/gh";
 import { listSpaces } from "./spaces";
@@ -27,6 +28,8 @@ export type Check = {
 };
 export type Report = {
   agents: Check[];
+  // Git and the identity commits are made under. Never blocks: git commits without one, as user@host.
+  git: Check;
   github: Check;
   profile: { name: string | null; suggestedName: string | null; projectsRoot: string };
   hasSpaces: boolean;
@@ -85,18 +88,40 @@ async function githubCheck(): Promise<Check> {
   return { ...base, state: "ready", version, message: "The GitHub CLI is installed and signed in." };
 }
 
+async function gitCheck(): Promise<Check> {
+  const base = {
+    id: "git",
+    label: "Git",
+    required: true,
+    minimum: null,
+    install: "xcode-select --install",
+    signIn: 'git config --global user.name "Your Name" && git config --global user.email you@example.com',
+  };
+  // Without the command line tools, /usr/bin/git is a stub that exits non-zero.
+  const ver = await git(process.cwd(), ["--version"], PROBE_MS).catch(() => null);
+  if (!ver || ver.code !== 0) return { ...base, state: "not_installed", version: null, message: "Git isn't set up on this Mac. Install Apple's command line tools, which include it." };
+  const version = ver.out.match(VERSION)?.[0] ?? null;
+  const set = async (key: string) => (await git(process.cwd(), ["config", "--global", "--get", key], PROBE_MS)).out.trim() !== "";
+  if (!(await set("user.name")) || !(await set("user.email"))) {
+    return { ...base, state: "signed_out", version, message: "Git doesn't have your name and email, so commits would carry your Mac's user and host name and GitHub wouldn't link them to you." };
+  }
+  return { ...base, state: "ready", version, message: "Git is installed and has your name and email." };
+}
+
 // With no database (the command line), the profile and space questions use what the Mac itself says.
 export async function doctor(db: Database | null): Promise<Report> {
   const c = config();
-  const [claude, codex, gemini, github] = await Promise.all([
+  const [claude, codex, gemini, gitState, github] = await Promise.all([
     agentCheck({ id: "claude", label: "Claude", required: true, bin: c.claudeBin, install: "curl -fsSL https://claude.ai/install.sh | bash", signIn: "claude auth login", adapter: claudeAdapter(), minimum: MIN_PRIVATE_VERSION }),
     agentCheck({ id: "codex", label: "Codex", required: false, bin: c.codexBin, install: "npm install -g @openai/codex", signIn: "codex login", adapter: codexAdapter() }),
     agentCheck({ id: "gemini", label: "Gemini (Antigravity)", required: false, bin: c.geminiBin, install: "Install Antigravity, which provides the agy command", signIn: "agy", adapter: geminiAdapter() }),
+    gitCheck(),
     githubCheck(),
   ]);
   const spaces = db ? listSpaces(db) : [];
   return {
     agents: [claude, codex, gemini],
+    git: gitState,
     github,
     profile: { name: db ? storedName(db) : null, suggestedName: suggestedName(), projectsRoot: tildePath(c.projectsRoot) },
     hasSpaces: spaces.length > 0,
@@ -104,17 +129,22 @@ export async function doctor(db: Database | null): Promise<Report> {
 }
 
 const MARK: Record<CheckState, string> = { ready: "ok     ", not_installed: "missing", too_old: "old    ", signed_out: "sign in", unknown: "?      " };
+// Git has nothing to sign in to: what it lacks is a name and email to set.
+const mark = (k: Check) => (k.id === "git" && k.state === "signed_out" ? "set up " : MARK[k.state]);
 
 // The same three things as Get started, in its order: Claude, the projects folder, and what only widens the choice.
 export function formatDoctor(r: Report): string {
   const lines = [`Atrium ${ATRIUM_VERSION}`, "", "Required"];
   const row = (k: Check) => {
-    lines.push(`  ${MARK[k.state]}  ${k.label}${k.version ? ` ${k.version}` : ""}${k.required ? " (required)" : " (optional)"}`);
+    lines.push(`  ${mark(k)}  ${k.label}${k.version ? ` ${k.version}` : ""}${k.required ? " (required)" : " (optional)"}`);
     if (k.state === "not_installed") lines.push(`           install:  ${k.install}`);
-    if (k.state === "not_installed" || k.state === "signed_out" || k.state === "unknown") lines.push(`           sign in:  ${k.signIn}`);
+    if (k.id === "git") {
+      if (k.state === "signed_out") lines.push(`           ${k.message}`, `           set:      ${k.signIn}`);
+    } else if (k.state === "not_installed" || k.state === "signed_out" || k.state === "unknown") lines.push(`           sign in:  ${k.signIn}`);
     if (k.state === "too_old") lines.push(`           ${k.message}`);
   };
   r.agents.filter((a) => a.required).forEach(row);
+  row(r.git);
   lines.push("", "Your folders", `  Projects folder: ${r.profile.projectsRoot}`);
   lines.push("", "Optional: a second reviewer and pull requests");
   r.agents.filter((a) => !a.required).forEach(row);
