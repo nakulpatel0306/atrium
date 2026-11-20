@@ -43,8 +43,8 @@ export function fanOut(db: Database, parent: Task & { loop: LoopState }, space: 
       spaceId: parent.spaceId,
       title: kind === "split" ? part!.title : `${parent.title} (attempt ${i + 1} of ${n})`,
       detail: kind === "split" ? `${part!.goal}\n\nPart ${i + 1} of ${n} of: ${parent.title}` : parent.detail,
+      // Not the parent's battery waiver: Run now was pressed for the parent alone.
       weight: "heavy",
-      allowOnBattery: parent.allowOnBattery,
       kind: "work",
       parentTaskId: parent.id,
       agent: agents[i] ?? parent.agent,

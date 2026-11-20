@@ -9,7 +9,7 @@ import { createRegistry } from "../../src/engine/agents/registry";
 import { createRunner } from "../../src/engine/runner";
 import { SetupFailed } from "../../src/engine/setup";
 import { createSpace, getSpace } from "../../src/engine/spaces";
-import { getSetting } from "../../src/engine/settings";
+import { getSetting, setSetting } from "../../src/engine/settings";
 import { createTask, getTask, listTasks, setTaskOutcome, setTaskStatus } from "../../src/engine/tasks";
 import { bus } from "../../src/engine/events";
 import { startServer, type WsData } from "../../src/server/server";
@@ -370,12 +370,24 @@ test("run-now sets ignore_reserve and requires Origin", async () => {
   expect((await post(`/api/tasks/${t.id}/run-now`)).status).toBe(409);
 });
 
-test("run-now lets a heavy task waiting for power start on battery", async () => {
+test("run-now lets only the task waiting for power start on battery", async () => {
   const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
   const t = createTask(db, { spaceId: s.id, title: "T", weight: "heavy", agent: "claude" });
-  expect(getTask(db, t.id)!.allowOnBattery).toBe(false);
+  const other = createTask(db, { spaceId: s.id, title: "Also waiting", weight: "heavy", agent: "claude" });
+  const reserved = createTask(db, { spaceId: s.id, title: "Reserved", weight: "heavy", agent: "claude" });
+  const power = "Waiting for power.";
+  setSetting(db, "runner.waiting", JSON.stringify([
+    { taskId: t.id, agent: "claude", kind: "power", reason: power },
+    { taskId: other.id, agent: "claude", kind: "power", reason: power },
+    { taskId: reserved.id, agent: "claude", kind: "reserve", reason: "Saving Claude's window." },
+  ]));
   expect((await post(`/api/tasks/${t.id}/run-now`)).status).toBe(200);
   expect(getTask(db, t.id)!.allowOnBattery).toBe(true);
+  // The other waiting task is left exactly as it was.
+  expect(getTask(db, other.id)).toMatchObject({ allowOnBattery: false, ignoreReserve: false });
+  // Skipping Claude's reserve says nothing about the charger.
+  expect((await post(`/api/tasks/${reserved.id}/run-now`)).status).toBe(200);
+  expect(getTask(db, reserved.id)).toMatchObject({ allowOnBattery: false, ignoreReserve: true });
 });
 
 test("task creation accepts a valid agent and rejects others", async () => {
