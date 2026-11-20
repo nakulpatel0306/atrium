@@ -44,11 +44,11 @@ const STATE_TEXT: Record<Probe["state"], string> = { ready: "Ready", not_install
 function CheckRow({ check }: { check: Probe }) {
   // Git has nothing to sign in to; what it can lack is the name and email commits carry.
   const isGit = check.id === "git";
-  const Icon = check.state === "ready" ? CircleCheck : check.required && !isGit ? CircleX : CircleDashed;
+  const Icon = check.state === "ready" ? CircleCheck : check.required ? CircleX : CircleDashed;
   return (
     <div className={`set-card start-check ${check.state}`}>
       <div className="set-title">
-        <Icon className={check.state === "ready" ? "ok" : check.required && !isGit ? "bad" : "faint"} />
+        <Icon className={check.state === "ready" ? "ok" : check.required ? "bad" : "faint"} />
         <b>{check.label}</b>
         <span className={`tag${check.state === "ready" ? " ok" : ""}`}>
           {tagWord(isGit && check.state === "signed_out" ? "No name set" : STATE_TEXT[check.state])}

@@ -88,7 +88,11 @@ test("each Claude problem says what to do next, and doctor ends on the next step
 });
 
 test("git without a name and email says commits won't be yours, and how to set them; it never blocks", async () => {
-  expect((await doctor(db)).git).toMatchObject({ state: "ready", required: true });
+  expect((await doctor(db)).git).toMatchObject({ state: "ready", required: false });
+  // A name and email kept in an included file count, as they do for git itself.
+  writeFileSync(join(home.home, "identity"), "[user]\n\tname = Sam Example\n\temail = sam@example.com\n");
+  writeFileSync(process.env.GIT_CONFIG_GLOBAL!, `[include]\n\tpath = ${join(home.home, "identity")}\n`);
+  expect((await doctor(db)).git.state).toBe("ready");
   writeFileSync(process.env.GIT_CONFIG_GLOBAL!, "");
   const r = await doctor(db);
   expect(r.git.state).toBe("signed_out");
@@ -96,7 +100,8 @@ test("git without a name and email says commits won't be yours, and how to set t
   expect(r.git.signIn).toBe('git config --global user.name "Your Name" && git config --global user.email you@example.com');
   expect(claudeBlocks(r)).toBeNull();
   const text = formatDoctor(r);
-  expect(text).toContain("set up   Git");
+  expect(text).toContain("set up   Git 2.");
+  expect(text).toMatch(/Recommended\n  set up   Git [\d.]+ \(recommended\)/);
   expect(text).toContain('set:      git config --global user.name "Your Name"');
   expect(text.indexOf("Git")).toBeLessThan(text.indexOf("Projects folder"));
   const shown = await view({ git: r.git });
