@@ -31,7 +31,7 @@ async function keypresses(bytes: number): Promise<{ openMs: number; times: numbe
   return { openMs, times: times.sort((a, b) => a - b) };
 }
 
-test("a keypress over a 5 MB transcript renders in under 30 ms, as the median of nine", async () => {
+test("a keypress over a 5 MB transcript renders as fast as over 50 KB (or within 30 ms), as the median of nine", async () => {
   // The same presses over a 50 KB transcript, timed just before, are what this machine takes right now for a render
   // whose cost can't depend on the transcript's size. Busy elsewhere (a parallel test run, CI), both slow down together.
   const small = await keypresses(50 * 1024);
