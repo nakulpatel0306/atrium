@@ -947,16 +947,18 @@ test("stopTask stops a running task: blocked with your word, edits saved on its 
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Long job" });
   const seen: string[][] = [];
+  // Stop only once the edit is on disk: "running" is set before the agent starts, so a fixed sleep raced it under load.
+  let edited = false;
   const r = start({
     adapter: fakeAdapter(async (input) => {
       seen.push(readdirSync(input.cwd).filter((f) => f.endsWith(".txt")));
       if (seen.length > 1) return ok("Carried on.");
       writeFileSync(join(input.cwd, "half.txt"), "half done\n");
+      edited = true;
       return untilAborted(input);
     }).adapter,
   });
-  await waitFor(() => status(t.id) === "running");
-  await Bun.sleep(20);
+  await waitFor(() => edited);
   expect(await r.stopTask(t.id)).toBe("stopped");
   const task = getTask(db, t.id)!;
   expect(task.status).toBe("blocked");
@@ -1409,14 +1411,15 @@ test("stopping the engine mid-run saves the agent's edits on its branch and requ
   git(path, "checkout", "-b", "feature");
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Long edit" });
+  let edited = false;
   const r = start({
     adapter: fakeAdapter(async (input) => {
       writeFileSync(join(input.cwd, "partial.txt"), "partial\n");
+      edited = true;
       return untilAborted(input);
     }).adapter,
   });
-  await waitFor(() => status(t.id) === "running");
-  await Bun.sleep(20);
+  await waitFor(() => edited);
   await r.stop();
   runner = null;
   expect(status(t.id)).toBe("queued");
