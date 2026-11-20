@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { accountHome } from "../../src/engine/agents/account-home";
 import { agentEnv, ENV_FILE_PATTERN, SANDBOX_EXEC, seatbeltProfile, wrapInSeatbelt } from "../../src/engine/agents/seatbelt";
 import { tempHome } from "../helpers";
 
@@ -13,6 +14,23 @@ let state: string;
 function sandboxed(profile: string, script: string, dir = cwd) {
   const r = Bun.spawnSync([SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", script], { cwd: dir, stderr: "pipe", stdout: "pipe" });
   return { exitCode: r.exitCode, out: r.stdout.toString(), err: r.stderr.toString() };
+}
+
+// Bun reads $HOME once at startup, so a profile for another HOME is built in a process started with it.
+const SEATBELT_SRC = join(import.meta.dir, "..", "..", "src", "engine", "agents");
+function underHome(home: string, opts: object): { profile: string; account: string | null } {
+  const script = `const { seatbeltProfile } = await import(${JSON.stringify(join(SEATBELT_SRC, "seatbelt.ts"))});
+const { accountHome } = await import(${JSON.stringify(join(SEATBELT_SRC, "account-home.ts"))});
+console.log(JSON.stringify({ profile: seatbeltProfile(${JSON.stringify(opts)}), account: accountHome() }));`;
+  const r = Bun.spawnSync(["bun", "-e", script], { env: { ...process.env, HOME: home }, stdout: "pipe", stderr: "pipe" });
+  if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+  return JSON.parse(r.stdout.toString());
+}
+
+// The account's home as the directory service has it, which is what ssh uses.
+function dsclHome(): string {
+  const user = Bun.spawnSync(["/usr/bin/id", "-un"]).stdout.toString().trim();
+  return /NFSHomeDirectory:\s*(.+)/.exec(Bun.spawnSync(["/usr/bin/dscl", ".", "-read", `/Users/${user}`, "NFSHomeDirectory"]).stdout.toString())![1]!.trim();
 }
 
 // A denied path that is itself a symlink appears in the profile resolved.
@@ -113,8 +131,11 @@ describe("seatbeltProfile", () => {
   });
 
   test("profile denies credential paths and .env names", () => {
-    const home = realpathSync(homedir());
-    const profile = seatbeltProfile({ cwd, writable: [] });
+    // A home of the test's own with the folders in it, so the deny is what answers, not a missing folder (a fresh CI
+    // runner has no ~/.claude).
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "atrium-seatbelt-home-")));
+    for (const d of [".ssh", ".claude", "Library/Keychains"]) mkdirSync(join(home, d), { recursive: true });
+    const { profile } = underHome(home, { cwd, writable: [] });
     expect(profile.startsWith("(version 1)\n(allow default)\n")).toBe(true);
     const secrets = [
       ".ssh", ".aws", ".gnupg", ".config/gh", "Library/Keychains", ".netrc", ".npmrc", ".yarnrc", ".yarnrc.yml", ".docker",
@@ -131,6 +152,26 @@ describe("seatbeltProfile", () => {
       "denied .env", "denied .env.local", "denied .envrc", "denied .ENVRC", "denied prod.env", "denied config/.env.production", "read my.env.txt", "read environment",
     ]);
     for (const d of [".ssh", ".claude", "Library/Keychains"]) expect(sandboxed(profile, `ls "${home}/${d}"`).err).toContain("Operation not permitted");
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  // ssh, git and most tools find the home folder by user id, not $HOME, so an engine started with another HOME must
+  // still deny the account's own ~/.ssh and the rest.
+  test("the account's own home stays denied when HOME points somewhere else", () => {
+    if (process.platform !== "darwin") return;
+    const account = dsclHome();
+    expect(accountHome()).toBe(account);
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "atrium-other-home-")));
+    try {
+      const under = underHome(elsewhere, { cwd, writable: [] });
+      expect(under.account).toBe(account);
+      for (const p of [".ssh", ".aws", ".claude", "Library/Keychains"]) {
+        expect(under.profile).toContain(`"${canonicalUnder(account, p)}")`);
+        expect(under.profile).toContain(`"${canonicalUnder(elsewhere, p)}")`);
+      }
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
   });
 
   test("allowRead reopens single files inside a denied path, after the deny", () => {
@@ -345,13 +386,20 @@ describe("agents can't reach GitHub credentials", () => {
 });
 
 // GitHub also takes SSH on port 443. With ~/.ssh unreadable and no agent, there's no key to offer.
-test("SSH to GitHub over port 443 finds no key under the profile", () => {
+// ssh reads the account's ~/.ssh whatever $HOME says, so the run is checked with HOME pointing elsewhere too.
+test("SSH to GitHub over port 443 finds no key under the profile, with HOME as it is or pointing elsewhere", () => {
   if (process.platform !== "darwin") return;
-  const profile = seatbeltProfile({ cwd, writable: [cwd] });
-  const r = sandboxed(
-    profile,
-    "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -T -p 443 git@ssh.github.com",
-  );
-  expect(r.exitCode).not.toBe(0);
-  expect(r.err).not.toContain("successfully authenticated");
-}, 30_000);
+  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "atrium-ssh-home-")));
+  try {
+    for (const profile of [seatbeltProfile({ cwd, writable: [cwd] }), underHome(elsewhere, { cwd, writable: [cwd] }).profile]) {
+      const r = sandboxed(
+        profile,
+        "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -T -p 443 git@ssh.github.com",
+      );
+      expect(r.exitCode).not.toBe(0);
+      expect(r.err).not.toContain("successfully authenticated");
+    }
+  } finally {
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+}, 60_000);

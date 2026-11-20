@@ -321,6 +321,29 @@ describe("claudeAdapter", () => {
     expect(argv.slice(argv.indexOf("--disallowedTools") + 1)).toContain("Read(~/.ssh/**)");
   });
 
+  // Bun reads $HOME once at startup, so the settings for another HOME are built in a process started with it.
+  test("with HOME pointing elsewhere, the account's own ~/.ssh and the rest are denied too", () => {
+    if (process.platform !== "darwin") return;
+    const elsewhere = mkdtempSync(join(tmpdir(), "atrium-other-home-"));
+    const src = join(import.meta.dir, "..", "..", "src", "engine", "agents");
+    const script = `const c = await import(${JSON.stringify(join(src, "claude.ts"))});
+const { accountHome } = await import(${JSON.stringify(join(src, "account-home.ts"))});
+console.log(JSON.stringify({ settings: JSON.parse(c.sandboxSettings("/x/repo")), rules: c.denyRules("/x/repo"), account: accountHome() }));`;
+    const r = Bun.spawnSync(["bun", "-e", script], { env: { ...process.env, HOME: elsewhere }, stdout: "pipe", stderr: "pipe" });
+    rmSync(elsewhere, { recursive: true });
+    expect(r.stderr.toString()).toBe("");
+    const { settings, rules, account } = JSON.parse(r.stdout.toString()) as { settings: any; rules: string[]; account: string };
+    expect(account).not.toBe(elsewhere);
+    for (const p of [".ssh", ".aws", ".gnupg", ".config/gh", "Library/Keychains"]) {
+      expect(settings.sandbox.filesystem.denyRead).toContain(`~/${p}`);
+      expect(settings.sandbox.filesystem.denyRead).toContain(`${account}/${p}`);
+    }
+    for (const p of [".ssh", ".aws", ".gnupg", ".config/gh"]) {
+      expect(rules).toContain(`Read(~/${p}/**)`);
+      expect(rules).toContain(`Read(/${account}/${p}/**)`);
+    }
+  });
+
   test("run denies gh, pushes, remotes and clones, and drops GitHub credentials from the env", async () => {
     const dir = mkdtempSync(join(tmpdir(), "atrium-argv-"));
     process.env.FAKE_CLAUDE_ARGV = join(dir, "argv.json");
