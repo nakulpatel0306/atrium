@@ -25,7 +25,7 @@ const root = resolve(import.meta.dir, "..");
 const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]|--version]";
+const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install [--dry-run]|uninstall|app install|app uninstall|doctor|data [remove-old]|--version]";
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
@@ -89,27 +89,52 @@ function run(cmd: string[]) {
 const isLoaded = () => run(["launchctl", "print", `${domain}/${LABEL}`]).ok;
 const portListener = () => run(["lsof", `-iTCP:${config().port}`, "-sTCP:LISTEN", "-t"]).out;
 
-function install(): number {
+export type InstallPlan = { plistPath: string; plist: string; commands: string[][] };
+
+// Everything atrium install writes and runs, worked out without touching either, so --dry-run can show it.
+export function installPlan(o: { home: string; uid: number; bunPath: string; claudePath: string; dataDir: string }): InstallPlan {
+  const plistPath = join(o.home, "Library", "LaunchAgents", `${LABEL}.plist`);
+  const pathEnv = [...new Set([dirname(o.claudePath), dirname(o.bunPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin", "/opt/homebrew/bin"])].join(":");
+  const plist = renderPlist({ bunPath: o.bunPath, mainPath: join(root, "src", "main.ts"), logPath: join(o.dataDir, "engine.log"), workingDir: root, pathEnv });
+  // Reinstalling replaces the old job, so it's unloaded first.
+  return { plistPath, plist, commands: [["launchctl", "bootout", `gui/${o.uid}/${LABEL}`], ["launchctl", "bootstrap", `gui/${o.uid}`, plistPath]] };
+}
+
+export function formatInstallPlan(p: InstallPlan): string {
+  const [bootout, bootstrap] = p.commands;
+  return [
+    "Dry run: nothing was written and launchd wasn't touched.",
+    "",
+    `Would write ${p.plistPath}:`,
+    p.plist.trimEnd(),
+    "",
+    "Would run:",
+    `  ${bootout!.join(" ")}   (only if Atrium is already loaded)`,
+    `  ${bootstrap!.join(" ")}`,
+  ].join("\n");
+}
+
+function install(dryRun: boolean): number {
   const bunPath = run(["which", "bun"]).out;
-  const claudePath = run(["which", "claude"]).out;
+  const claudePath = run(["which", config().claudeBin]).out;
   if (!bunPath) return fail("Can't find bun on your PATH, so Atrium can't be installed.");
   if (!claudePath) return fail("Can't find the claude command on your PATH. Install Claude Code first, then run this again. Just installed it? Open a new terminal window first, so your PATH includes it.");
+  const plan = installPlan({ home: homedir(), uid: process.getuid?.() ?? 501, bunPath, claudePath, dataDir: config().home });
+  if (dryRun) {
+    console.log(formatInstallPlan(plan));
+    return 0;
+  }
+  const [bootout, bootstrap] = plan.commands;
 
-  // Reinstalling replaces the old job, so unload it before checking who owns the port.
-  if (isLoaded()) run(["launchctl", "bootout", `${domain}/${LABEL}`]);
+  if (isLoaded()) run(bootout!);
   if (portListener()) {
     return fail(`Something is already listening on port ${config().port}, so Atrium wasn't installed. Stop it first (see: lsof -iTCP:${config().port} -sTCP:LISTEN), then run atrium install again.`);
   }
 
-  const home = config().home;
-  mkdirSync(home, { recursive: true });
-  mkdirSync(dirname(plistPath), { recursive: true });
-  const pathEnv = [...new Set([dirname(claudePath), dirname(bunPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin", "/opt/homebrew/bin"])].join(":");
-  writeFileSync(
-    plistPath,
-    renderPlist({ bunPath, mainPath: join(root, "src", "main.ts"), logPath: join(home, "engine.log"), workingDir: root, pathEnv }),
-  );
-  const r = run(["launchctl", "bootstrap", domain, plistPath]);
+  mkdirSync(config().home, { recursive: true });
+  mkdirSync(dirname(plan.plistPath), { recursive: true });
+  writeFileSync(plan.plistPath, plan.plist);
+  const r = run(bootstrap!);
   if (!r.ok) return fail(`launchctl couldn't start Atrium: ${r.err || r.out}`);
   console.log("Installed. Atrium will start at login and is running now.");
   return 0;
@@ -255,7 +280,8 @@ export async function main(cmd: string | undefined): Promise<number> {
     case "open":
       return openApp();
     case "install":
-      return install();
+      if (process.argv[3] !== undefined && process.argv[3] !== "--dry-run") return fail(USAGE);
+      return install(process.argv[3] === "--dry-run");
     case "uninstall":
       return uninstall();
     case "doctor": {
