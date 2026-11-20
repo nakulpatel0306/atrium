@@ -1,5 +1,7 @@
 # Atrium
 
+[![Tests](https://github.com/nakulpatel0306/atrium/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/nakulpatel0306/atrium/actions/workflows/test.yml)
+
 The agent workbench for the new way of coding, on your Mac.
 
 The job has moved from writing code to directing agents and judging what they wrote. Most tools stop at running agents: a branch per task, a live diff, a PR button. Atrium is about the part that decides whether agent work is any good. Every task gets a brief an agent can finish, Atrium runs your checks itself instead of trusting "tests pass", a fresh reviewer reads the diff before you do, and everything that needs you lands in one keyboard-first queue. Along the way it helps you get better at directing agents, with feedback built only from what it measured. It runs on your Mac, on your own Claude subscription, with only the Claude CLI and a folder.
@@ -8,13 +10,25 @@ Site: <https://nakulpatel0306.github.io/atrium/> · The terminal app: <https://n
 
 ![Needs you: one queue, longest-waiting first, with a result's walkthrough, checks and review on one screen](docs/screenshots/queue.jpg)
 
+## Trying Atrium?
+
+Thanks. It's version 0.1 ([changelog](CHANGELOG.md)): early, used daily by the person who builds it, and new to everyone else.
+
+- **Who it's for right now:** developers on an Apple-silicon Mac (macOS 14 or later) with [bun](https://bun.sh) and the [Claude Code](https://claude.com/claude-code) CLI signed in to a Claude subscription.
+- **What to expect:** rough edges. Everything stays on your Mac, agents run in a sandbox, and nothing is pushed without your yes.
+- **Five minutes:** run the Quickstart below, then `atrium doctor` until Claude shows `ok`. Get started opens in your browser; run its sample task to watch the whole loop once, then give one of your own repos a small task.
+- **Tell us how it went:** [report a bug](https://github.com/nakulpatel0306/atrium/issues/new?template=bug.yml) or [share feedback](https://github.com/nakulpatel0306/atrium/issues/new?template=feedback.yml). Both ask for `atrium --version` and `atrium doctor`. Security problems go to a [private advisory](https://github.com/nakulpatel0306/atrium/security/advisories/new) instead.
+
 ## Quickstart
 
 ```sh
 git clone https://github.com/nakulpatel0306/atrium.git && cd atrium
 bun install && bun link
+atrium doctor        # what's ready, and the command for anything that isn't
 atrium install && atrium open
 ```
+
+Rather not add a login service yet? Run `atrium start` instead of `atrium install`: Atrium runs in that terminal until you press Ctrl-C, and `atrium open` still works from another one. `atrium install --dry-run` shows exactly what the install would write and run, without doing it.
 
 Get started checks your Claude CLI (with the install command if it's missing), asks for your projects folder, and offers a sample task: a tiny bundled repo with one failing test, copied into Atrium's own folder, fixed by your Claude CLI on its cheapest model while you watch the whole loop. It takes about a minute and costs around 2¢ at list prices. Skip it if you'd rather start on your own repo.
 
@@ -88,6 +102,7 @@ All screenshots come from a throwaway engine with fake agents and made-up repos.
 - [bun](https://bun.sh)
 - Xcode command line tools (`xcode-select --install`), needed to build the Mac app
 - The [Claude Code](https://claude.com/claude-code) CLI, signed in to your Claude account (a subscription; no API key)
+- git with your name and email set (`git config --global user.name` and `user.email`), so Atrium's commits are yours
 - Optional: `codex` (Codex CLI), `agy` (Antigravity, for Gemini) and `gh` (GitHub CLI, for code spaces)
 
 ## Install
@@ -105,9 +120,11 @@ Don't move or delete the folder after `atrium install`: the login service points
 
 ## First run
 
-Open the app (or run `atrium open`). On a fresh install, **Get started** has three steps: Claude (required; Codex, Gemini and the GitHub CLI are listed as optional, with their install commands), your projects folder (prefilled), and the sample task, which you can skip. Come back to it from **Settings → Get started**.
+Open the app (or run `atrium open`). The dashboard is at <http://127.0.0.1:7420>. On a fresh install, **Get started** has three steps: Claude (required; Codex, Gemini and the GitHub CLI are listed as optional, with their install commands), your projects folder (prefilled), and the sample task, which you can skip. Come back to it from **Settings → Get started**.
 
 From a terminal, `atrium doctor` shows the same checks in the same order, with the install and sign-in command for anything missing.
+
+On battery, coding tasks wait for a charger so they don't drain it. Press **Run now** on a waiting task to start it anyway.
 
 ## Privacy and safety
 
@@ -126,6 +143,10 @@ From a terminal, `atrium doctor` shows the same checks in the same order, with t
 - Atrium sees Claude's five-hour window only when a run reports it, so use in other Claude apps shows up at Atrium's next run.
 - The sample task's space stays in the sidebar until you delete the task or the space, which removes its copy of the demo repo too.
 - An older database keeps the tables of features that were removed (investing, money, mail and calendar, texting) until you remove them (see Privacy and safety).
+
+## Changes
+
+What's new in each version is in [CHANGELOG.md](CHANGELOG.md). `atrium --version` prints the one you have; Settings shows it too.
 
 ## For developers
 
