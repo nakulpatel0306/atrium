@@ -397,6 +397,25 @@ describe("commitAll", () => {
     await expect(commitAll(path, "Lfs", await gitSettingsFingerprint(path))).rejects.toThrow('defines a "lfs" filter');
   });
 
+  // `git lfs install` writes these to the user's global config; a repo that never selects the filter must still commit.
+  test("a filter in the user's global config doesn't stop a commit", async () => {
+    const path = repo();
+    const globalDir = mkdtempSync(join(tmpdir(), "atrium-global-"));
+    const globalFile = join(globalDir, "gitconfig");
+    writeFileSync(globalFile, '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n');
+    const before = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = globalFile;
+    try {
+      writeFileSync(join(path, "a.txt"), "a\n");
+      await commitAll(path, "Global lfs", await gitSettingsFingerprint(path));
+      expect(git(path, "log", "-1", "--format=%s")).toBe("Global lfs");
+    } finally {
+      if (before === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = before;
+      rmSync(globalDir, { recursive: true, force: true });
+    }
+  });
+
   test("refuses a repo whose .gitattributes selects a filter", async () => {
     const path = repo();
     writeFileSync(join(path, ".gitattributes"), "*.bin filter=lfs diff=lfs merge=lfs -text\n");

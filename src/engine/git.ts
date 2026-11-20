@@ -192,15 +192,20 @@ async function refuseFilterAttributes(path: string, changed: string[]): Promise<
   }
 }
 
-// A configured clean/smudge/process driver is a strong sign the repo expects filters, and one the agent
-// planted would run during staging.
+// A clean/smudge/process driver in the repo's own config is a strong sign the repo expects filters, and one the
+// agent planted would run during staging. The user's global and system config are outside every sandbox, so a driver
+// there (what `git lfs install` writes) was put there by the user, and only runs if the repo's attributes select it,
+// which refuseFilterAttributes already refuses.
 async function refuseFilterConfig(path: string): Promise<void> {
-  // NUL-separated so a value containing newlines can't pass for several config entries.
-  const res = await git(path, ["config", "--null", "--get-regexp", "^filter\\."]);
+  // NUL-separated so a value containing newlines can't pass for several config entries: scope NUL key LF value NUL.
+  const res = await git(path, ["config", "--null", "--show-scope", "--get-regexp", "^filter\\."]);
   // Exit 1 just means no filter is configured.
   if (res.code > 1) throw new Error(`Couldn't read git config: ${res.err.trim()}`);
-  for (const record of res.out.split("\0").filter(Boolean)) {
-    const key = record.split("\n")[0]!;
+  const fields = res.out.split("\0");
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const scope = fields[i]!;
+    if (scope === "global" || scope === "system") continue;
+    const key = fields[i + 1]!.split("\n")[0]!;
     const dot = key.lastIndexOf(".");
     const parsed = key.startsWith("filter.") && dot >= "filter.".length;
     const variable = parsed ? key.slice(dot + 1) : "";
