@@ -2,6 +2,12 @@
 
 What changed in each version of Atrium, in plain words. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Deleting a code space now removes its hidden folder in Atrium's data** (where files from its scratch runs were kept) instead of leaving it behind. Your repo is never touched.
+
 ## [0.1.0] - 2026-11-19
 
 The first version for people other than its author. Atrium is early: it works every day on one Mac, and this release is about finding out what gets in the way on yours.

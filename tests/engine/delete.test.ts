@@ -237,6 +237,25 @@ test("a repo space the user made: nothing in their repo changes", async () => {
   }
 });
 
+test("a repo space's hidden folder in Atrium's data goes with it, and the repo stays", async () => {
+  const repo = tempRepo();
+  try {
+    const space = createSpace(db, { name: "Mine", kind: "repo", goal: "g", repoPath: repo.path });
+    // A scratch run's kept files land here (runner.ts keepScratchFiles).
+    const hidden = ensureSpaceFolder(db, space);
+    expect(hidden).toBe(join(config().home, "spaces", space.id));
+    mkdirSync(join(hidden, "runs", "run_a"), { recursive: true });
+    writeFileSync(join(hidden, "runs", "run_a", "out.txt"), "kept");
+    const before = readdirSync(repo.path).sort().join();
+    await deleteSpace(db, space.id, "Mine");
+    expect(existsSync(hidden)).toBe(false);
+    expect(readdirSync(join(config().home, "spaces")).filter((n) => n.startsWith(".atrium-trash-"))).toEqual([]);
+    expect(readdirSync(repo.path).sort().join()).toBe(before);
+  } finally {
+    repo.cleanup();
+  }
+});
+
 test("Atrium's own clone goes when everything is on GitHub, and stays when it isn't", async () => {
   const gh = fakeGitHub();
   try {

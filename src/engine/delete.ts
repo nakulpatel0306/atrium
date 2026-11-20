@@ -246,9 +246,9 @@ export async function deleteSpace(db: Database, id: string, typedName: string, g
       throw new DeleteRefused(409, BROKE);
     }
     queueTranscripts(db, transcripts);
-    if (space.kind !== "repo") {
-      for (const f of foldersOf(space)) queueDelete(db, "folder", f.path, f.root, f.path === space.folder ? pin : {});
-    }
+    // A repo space has no visible folder, but its hidden one (where a scratch run's files are kept) is Atrium's own.
+    const folders = space.kind === "repo" ? foldersOf(space).filter((f) => f.path !== space.folder) : foldersOf(space);
+    for (const f of folders) queueDelete(db, "folder", f.path, f.root, f.path === space.folder ? pin : {});
     if (clone) queueDelete(db, "clone", clone.path, config().projectsRoot, { cloneId: clone.id });
     return space;
   })();
