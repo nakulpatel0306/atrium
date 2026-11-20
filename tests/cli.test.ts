@@ -84,7 +84,17 @@ test("usage lists tui", async () => {
   } finally {
     console.error = err;
   }
-  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]]"]);
+  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]|--version]"]);
+});
+
+test("atrium --version and -v print the version from package.json", () => {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string };
+  expect(pkg.version).toBe("0.1.0");
+  for (const flag of ["--version", "-v"]) {
+    const r = Bun.spawnSync(["bun", join(import.meta.dir, "..", "src", "cli.ts"), flag], { env: { ...process.env, ATRIUM_HOME: "/nonexistent/atrium-home" } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.toString()).toBe("0.1.0\n");
+  }
 });
 
 test("the removed investing command is just an unknown command", async () => {
@@ -109,6 +119,7 @@ test("atrium doctor and atrium data run from the command line", () => {
   const doctor = run("doctor");
   expect(doctor.exitCode).toBe(0);
   const text = doctor.stdout.toString();
+  expect(text.split("\n")[0]).toBe("Atrium 0.1.0");
   expect(text).toContain("ok       Claude 2.1.318 (required)");
   expect(text).toContain("missing  Codex (optional)");
   expect(text).toContain("npm install -g @openai/codex");

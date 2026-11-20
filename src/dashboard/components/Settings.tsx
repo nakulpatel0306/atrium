@@ -34,6 +34,8 @@ export function Settings({ state }: { state: State }) {
       <ArchivedSpaces />
       <Storage />
       <DataSection oldData={state.oldData} />
+      {/* What a bug report asks for, next to everything else about this install. */}
+      <p className="hint version">Atrium {state.version}</p>
     </div>
   );
 }

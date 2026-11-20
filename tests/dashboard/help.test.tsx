@@ -88,6 +88,11 @@ test("Settings opens with Get started, saying what it does, rather than a bare l
   expect([...el.querySelectorAll(".set-card .mk-form ~ button")].length).toBe(0);
 });
 
+test("Settings says which version of Atrium is running", () => {
+  const el = render(<Settings state={{ ...makeState(), version: "0.1.0" }} />);
+  expect(el.querySelector(".version")!.textContent).toBe("Atrium 0.1.0");
+});
+
 test("an empty Activity says what will show up and how to start", () => {
   const empty = { ...makeState(), activity: [] };
   expect(render(<Activity state={empty} page />).querySelector(".empty-row")!.textContent).toBe(

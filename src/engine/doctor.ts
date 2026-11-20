@@ -9,6 +9,7 @@ import { tildePath } from "./folders";
 import { storedName, suggestedName } from "./profile";
 import { runGh } from "./repos/gh";
 import { listSpaces } from "./spaces";
+import { VERSION as ATRIUM_VERSION } from "./version";
 
 // What "Get started" and `atrium doctor` show. Every check asks a CLI for its own status or version; none of them
 // opens a credential file, a token or a Keychain item.
@@ -106,7 +107,7 @@ const MARK: Record<CheckState, string> = { ready: "ok     ", not_installed: "mis
 
 // The same three things as Get started, in its order: Claude, the projects folder, and what only widens the choice.
 export function formatDoctor(r: Report): string {
-  const lines = ["Required"];
+  const lines = [`Atrium ${ATRIUM_VERSION}`, "", "Required"];
   const row = (k: Check) => {
     lines.push(`  ${MARK[k.state]}  ${k.label}${k.version ? ` ${k.version}` : ""}${k.required ? " (required)" : " (optional)"}`);
     if (k.state === "not_installed") lines.push(`           install:  ${k.install}`);

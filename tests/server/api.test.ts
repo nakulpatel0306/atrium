@@ -93,9 +93,11 @@ test("GET /api/state returns spaces and briefing", async () => {
   createSpace(db, { name: "Docs", kind: "general", goal: "write" });
   const res = await fetch(`${base}/api/state`);
   expect(res.status).toBe(200);
-  const body = (await res.json()) as { spaces: unknown[]; briefing: unknown };
+  const body = (await res.json()) as { spaces: unknown[]; briefing: unknown; version: string };
   expect(body.spaces).toHaveLength(1);
   expect(body.briefing).toBeDefined();
+  // The running engine's own version, which Settings shows.
+  expect(body.version).toBe("0.1.0");
 });
 
 test("POST /api/tasks creates and kicks the runner", async () => {

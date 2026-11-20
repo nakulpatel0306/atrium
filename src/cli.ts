@@ -16,6 +16,7 @@ import { applyProjectsRootFromFile } from "./engine/profile";
 import type { State } from "./engine/state";
 import { buildApp } from "./mac/build";
 import { APP_ID, xml } from "./mac/plists";
+import { VERSION } from "./engine/version";
 
 export { APP_ID };
 
@@ -24,7 +25,7 @@ const root = resolve(import.meta.dir, "..");
 const plistPath = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const domain = `gui/${process.getuid?.() ?? 501}`;
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]]";
+const USAGE = "Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]|--version]";
 
 export const appPath = () => join(homedir(), "Applications", "Atrium.app");
 
@@ -244,6 +245,10 @@ export async function main(cmd: string | undefined): Promise<number> {
     case "start":
       await import("./main");
       return -1;
+    case "--version":
+    case "-v":
+      console.log(VERSION);
+      return 0;
     case "status":
       console.log(statusLine(await fetchState(), url()));
       return 0;
