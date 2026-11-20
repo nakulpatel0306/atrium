@@ -17,7 +17,7 @@ Thanks. It's version 0.1 ([changelog](CHANGELOG.md)): early, used daily by the p
 - **Who it's for right now:** developers on an Apple-silicon Mac (macOS 14 or later) with [bun](https://bun.sh) and the [Claude Code](https://claude.com/claude-code) CLI signed in to a Claude subscription.
 - **What to expect:** rough edges. Everything stays on your Mac, agents run in a sandbox, and nothing is pushed without your yes.
 - **Five minutes:** run the Quickstart below, then `atrium doctor` until Claude shows `ok`. Get started opens in your browser; run its sample task to watch the whole loop once, then give one of your own repos a small task.
-- **Tell us how it went:** [report a bug](https://github.com/nakulpatel0306/atrium/issues/new?template=bug.yml) or [share feedback](https://github.com/nakulpatel0306/atrium/issues/new?template=feedback.yml). Both ask for `atrium --version` and `atrium doctor`. Security problems go to a [private advisory](https://github.com/nakulpatel0306/atrium/security/advisories/new) instead.
+- **Tell us how it went:** [report a bug](https://github.com/nakulpatel0306/atrium/issues/new?template=bug.yml) or [share feedback](https://github.com/nakulpatel0306/atrium/issues/new?template=feedback.yml). The bug form asks for `atrium --version` and `atrium doctor`, so have both handy. Security problems go to a [private advisory](https://github.com/nakulpatel0306/atrium/security/advisories/new) instead.
 
 ## Quickstart
 
@@ -120,7 +120,7 @@ Don't move or delete the folder after `atrium install`: the login service points
 
 ## First run
 
-Open the app (or run `atrium open`). The dashboard is at <http://127.0.0.1:7420>. On a fresh install, **Get started** has three steps: Claude (required; Codex, Gemini and the GitHub CLI are listed as optional, with their install commands), your projects folder (prefilled), and the sample task, which you can skip. Come back to it from **Settings → Get started**.
+Open the app (or run `atrium open`). The dashboard is at <http://127.0.0.1:7420>. On a fresh install, **Get started** has three steps: Claude (required, with a Git row below it that flags a missing name and email, recommended but never blocking; Codex, Gemini and the GitHub CLI are listed as optional, with their install commands), your projects folder (prefilled), and the sample task, which you can skip. Come back to it from **Settings → Get started**.
 
 From a terminal, `atrium doctor` shows the same checks in the same order, with the install and sign-in command for anything missing.
 
