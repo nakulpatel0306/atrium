@@ -117,7 +117,8 @@ function start(opts: {
   return runner;
 }
 
-async function waitFor(cond: () => boolean, ms = 3000) {
+// The limit only bounds how long a failure takes to show; 3 s ran out on a loaded machine before slow-but-right runs did.
+async function waitFor(cond: () => boolean, ms = 15_000) {
   const until = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > until) throw new Error("timed out waiting for condition");
