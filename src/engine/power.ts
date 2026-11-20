@@ -17,9 +17,9 @@ export async function powerSource(): Promise<PowerSource> {
 export function canRun(
   task: Pick<Task, "weight" | "allowOnBattery">,
   source: PowerSource,
-): { ok: true } | { ok: false; reason: "Waiting for power. Heavy work runs when your Mac is plugged in." } {
+): { ok: true } | { ok: false; reason: "Waiting for power. Heavy work runs when your Mac is plugged in, or press Run now to start it on battery." } {
   if (source === "battery" && task.weight === "heavy" && !task.allowOnBattery) {
-    return { ok: false, reason: "Waiting for power. Heavy work runs when your Mac is plugged in." };
+    return { ok: false, reason: "Waiting for power. Heavy work runs when your Mac is plugged in, or press Run now to start it on battery." };
   }
   return { ok: true };
 }

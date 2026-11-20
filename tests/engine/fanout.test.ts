@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRunInput } from "../../src/engine/agents/types";
 import { listPending } from "../../src/engine/approvals";
-import { childrenOf, childState, discardFanout, FanoutRefused, mergeParts, pickAttempt, restartAs } from "../../src/engine/fanout";
+import { childrenOf, childState, discardFanout, FanoutRefused, fanOut, mergeParts, pickAttempt, restartAs } from "../../src/engine/fanout";
 import { asksBeforeStarting } from "../../src/engine/needs";
 import { newLoop, SIZE_BUDGETS } from "../../src/engine/loop";
 import { normalizeBrief } from "../../src/engine/brief";
@@ -34,6 +34,18 @@ function chosen(spaceId: string, title: string, raw: { kind: string } & Record<s
   const shape = chooseShape(proposeShape(raw, ctx), raw.kind as ShapeKind, ctx, title);
   return setTaskLoop(h.db, t.id, { ...newLoop(SIZE_BUDGETS.medium), shape });
 }
+
+// Run now waives the charger for the one task it was pressed on; parts and attempts wait for power on their own.
+test("split parts and attempts don't inherit the parent's battery waiver", () => {
+  const s = h.space(h.repo());
+  for (const raw of [{ kind: "split", parts: PARTS }, { kind: "best_of_n", attempts: 2 }]) {
+    const t = chosen(s.id, "Totals everywhere", raw);
+    h.db.query("UPDATE tasks SET allow_on_battery = 1 WHERE id = ?").run(t.id);
+    const kids = fanOut(h.db, getTask(h.db, t.id)! as Parameters<typeof fanOut>[1], getSpace(h.db, s.id)!);
+    expect(kids.length).toBeGreaterThan(1);
+    for (const k of kids) expect(getTask(h.db, k.id)!.allowOnBattery).toBe(false);
+  }
+});
 
 // Claude as the pre-pass (proposing `shape`), the writer of each part or attempt, and the judge.
 function claudeFor(shape: unknown, write: (input: AgentRunInput, n: number) => void = () => {}, judge = "SCORE 1 6 fine\nSCORE 2 9 cleaner") {

@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in Atrium broke or did the wrong thing.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Atrium. Please leave out anything private: repo names, file contents, paths or account names you'd rather not post. A security problem goes to a [private advisory](https://github.com/nakulpatel0306/atrium/security/advisories/new) instead.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu → About This Mac.
+      placeholder: "15.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Chip
+      options:
+        - M1
+        - M2
+        - M3
+        - M4
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Atrium version
+      description: The output of `atrium --version`.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: atrium doctor
+      description: The output of `atrium doctor`. It shows versions and what's set up, never sign-in details.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did it happen?
+      multiple: true
+      options:
+        - Mac app
+        - Browser (dashboard)
+        - Terminal app (atrium)
+        - Command line (atrium install, doctor, start…)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: What you did, in order.
+      placeholder: |
+        1. Opened Get started
+        2. Ran the sample task
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Error messages word for word help most. A screenshot is welcome.
+    validations:
+      required: true

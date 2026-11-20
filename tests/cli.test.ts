@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { openArgs, renderPlist, statusLine } from "../src/cli";
+import { formatInstallPlan, installPlan, openArgs, renderPlist, statusLine } from "../src/cli";
 import { dataLocations, formatData } from "../src/engine/data-report";
 import { openDb } from "../src/engine/db";
 import { setSetting } from "../src/engine/settings";
@@ -30,6 +30,22 @@ test("renderPlist includes absolute paths, RunAtLoad, and log path", () => {
   expect(plist).toContain("<string>/Users/me/Library/Application Support/Atrium/engine.log</string>");
   expect(plist).toContain("<string>/Users/me/.local/bin:/usr/bin</string>");
   expect(plist).not.toContain("{{");
+});
+
+test("installPlan says what atrium install would write and run, touching nothing", () => {
+  const plan = installPlan({ home: "/Users/me", uid: 501, bunPath: "/Users/me/.bun/bin/bun", claudePath: "/Users/me/.local/bin/claude", dataDir: "/Users/me/Library/Application Support/Atrium" });
+  expect(plan.plistPath).toBe("/Users/me/Library/LaunchAgents/com.atrium.engine.plist");
+  expect(plan.plist).toContain("<string>/Users/me/.local/bin:/Users/me/.bun/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>");
+  expect(plan.plist).toContain("<string>/Users/me/Library/Application Support/Atrium/engine.log</string>");
+  expect(plan.commands).toEqual([
+    ["launchctl", "bootout", "gui/501/com.atrium.engine"],
+    ["launchctl", "bootstrap", "gui/501", "/Users/me/Library/LaunchAgents/com.atrium.engine.plist"],
+  ]);
+  const text = formatInstallPlan(plan);
+  expect(text.split("\n")[0]).toBe("Dry run: nothing was written and launchd wasn't touched.");
+  expect(text).toContain("Would write /Users/me/Library/LaunchAgents/com.atrium.engine.plist:");
+  expect(text).toContain("  launchctl bootstrap gui/501 /Users/me/Library/LaunchAgents/com.atrium.engine.plist");
+  expect(text).toContain("only if Atrium is already loaded");
 });
 
 test("renderPlist escapes XML characters in paths", () => {
@@ -84,7 +100,17 @@ test("usage lists tui", async () => {
   } finally {
     console.error = err;
   }
-  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install|uninstall|app install|app uninstall|doctor|data [remove-old]]"]);
+  expect(lines).toEqual(["Usage: atrium [tui [--high-contrast]|start|status|open|install [--dry-run]|uninstall|app install|app uninstall|doctor|data [remove-old]|--version]"]);
+});
+
+test("atrium --version and -v print the version from package.json", () => {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string };
+  expect(pkg.version).toBe("0.1.0");
+  for (const flag of ["--version", "-v"]) {
+    const r = Bun.spawnSync(["bun", join(import.meta.dir, "..", "src", "cli.ts"), flag], { env: { ...process.env, ATRIUM_HOME: "/nonexistent/atrium-home" } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.toString()).toBe("0.1.0\n");
+  }
 });
 
 test("the removed investing command is just an unknown command", async () => {
@@ -109,6 +135,7 @@ test("atrium doctor and atrium data run from the command line", () => {
   const doctor = run("doctor");
   expect(doctor.exitCode).toBe(0);
   const text = doctor.stdout.toString();
+  expect(text.split("\n")[0]).toBe("Atrium 0.1.0");
   expect(text).toContain("ok       Claude 2.1.318 (required)");
   expect(text).toContain("missing  Codex (optional)");
   expect(text).toContain("npm install -g @openai/codex");

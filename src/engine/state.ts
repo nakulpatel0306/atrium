@@ -20,6 +20,7 @@ import { hasOldData, OLD_DATA_DISMISSED } from "./old-data";
 import { type Attachment, claimedAttachments } from "./attachments";
 import { learned, type Retro, type Rollup } from "./retro";
 import { type MemoryLine, openLines } from "./memory";
+import { VERSION } from "./version";
 
 export type RunSummary = {
   id: string;
@@ -84,6 +85,8 @@ export type State = {
   repoActions: RepoActionView[];
   // Whether removed features left data behind (see old-data.ts), and whether Home's notice about it was put off.
   oldData: { present: boolean; dismissed: boolean };
+  // The running engine's version, for Settings and bug reports.
+  version: string;
   // The learning features (docs/loop.md, Learning), for spaces with learning on only: each finished task's director
   // retro, this week's roll-up by space and for all of them ("all"; a key is missing until there's enough data), and
   // open CLAUDE.md proposals.
@@ -233,5 +236,6 @@ export function snapshot(db: Database, registry?: Registry): State {
     repoActions: repoActionViews(db),
     oldData: { present: hasOldData(db), dismissed: getSetting(db, OLD_DATA_DISMISSED) === "1" },
     learning: learningView(db, tasks, now),
+    version: VERSION,
   };
 }

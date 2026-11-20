@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { otherAccountHome } from "../../src/engine/agents/account-home";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -239,14 +240,11 @@ describe("claudeAdapter", () => {
       "Write(**/.venv/**)",
       "Edit(**/.claude/**)",
       "Write(**/.claude/**)",
-      // The sandbox does not cover the Read tool.
-      "Read(~/.ssh/**)",
-      "Read(~/.aws/**)",
-      "Read(~/.gnupg/**)",
-      "Read(~/.config/gh/**)",
-      "Read(~/Library/Messages/**)",
-      "Read(~/Library/Application Support/AddressBook/**)",
-      "Read(~/Library/Contacts/**)",
+      // The sandbox does not cover the Read tool. The account's own home is named too when HOME points elsewhere.
+      ...[".ssh", ".aws", ".gnupg", ".config/gh", "Library/Messages", "Library/Application Support/AddressBook", "Library/Contacts"].flatMap((p) => [
+        `Read(~/${p}/**)`,
+        ...(otherAccountHome() ? [`Read(/${otherAccountHome()}/${p}/**)`] : []),
+      ]),
       // Atrium's DB, transcripts and other spaces' folders. "//" anchors the rule at the filesystem root.
       ...atriumDenyPaths(process.cwd()).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
     ]);
@@ -319,6 +317,29 @@ describe("claudeAdapter", () => {
     expect(argv).toContain("--strict-mcp-config");
     expect(argv).toContain("--no-session-persistence");
     expect(argv.slice(argv.indexOf("--disallowedTools") + 1)).toContain("Read(~/.ssh/**)");
+  });
+
+  // Bun reads $HOME once at startup, so the settings for another HOME are built in a process started with it.
+  test("with HOME pointing elsewhere, the account's own ~/.ssh and the rest are denied too", () => {
+    if (process.platform !== "darwin") return;
+    const elsewhere = mkdtempSync(join(tmpdir(), "atrium-other-home-"));
+    const src = join(import.meta.dir, "..", "..", "src", "engine", "agents");
+    const script = `const c = await import(${JSON.stringify(join(src, "claude.ts"))});
+const { accountHome } = await import(${JSON.stringify(join(src, "account-home.ts"))});
+console.log(JSON.stringify({ settings: JSON.parse(c.sandboxSettings("/x/repo")), rules: c.denyRules("/x/repo"), account: accountHome() }));`;
+    const r = Bun.spawnSync(["bun", "-e", script], { env: { ...process.env, HOME: elsewhere }, stdout: "pipe", stderr: "pipe" });
+    rmSync(elsewhere, { recursive: true });
+    expect(r.stderr.toString()).toBe("");
+    const { settings, rules, account } = JSON.parse(r.stdout.toString()) as { settings: any; rules: string[]; account: string };
+    expect(account).not.toBe(elsewhere);
+    for (const p of [".ssh", ".aws", ".gnupg", ".config/gh", "Library/Keychains"]) {
+      expect(settings.sandbox.filesystem.denyRead).toContain(`~/${p}`);
+      expect(settings.sandbox.filesystem.denyRead).toContain(`${account}/${p}`);
+    }
+    for (const p of [".ssh", ".aws", ".gnupg", ".config/gh"]) {
+      expect(rules).toContain(`Read(~/${p}/**)`);
+      expect(rules).toContain(`Read(/${account}/${p}/**)`);
+    }
   });
 
   test("run denies gh, pushes, remotes and clones, and drops GitHub credentials from the env", async () => {

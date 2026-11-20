@@ -42,6 +42,8 @@ function Command({ text }: { text: string }) {
 const STATE_TEXT: Record<Probe["state"], string> = { ready: "Ready", not_installed: "Not installed", too_old: "Too old", signed_out: "Signed out", unknown: "Couldn't check" };
 
 function CheckRow({ check }: { check: Probe }) {
+  // Git has nothing to sign in to; what it can lack is the name and email commits carry.
+  const isGit = check.id === "git";
   const Icon = check.state === "ready" ? CircleCheck : check.required ? CircleX : CircleDashed;
   return (
     <div className={`set-card start-check ${check.state}`}>
@@ -49,7 +51,7 @@ function CheckRow({ check }: { check: Probe }) {
         <Icon className={check.state === "ready" ? "ok" : check.required ? "bad" : "faint"} />
         <b>{check.label}</b>
         <span className={`tag${check.state === "ready" ? " ok" : ""}`}>
-          {tagWord(STATE_TEXT[check.state])}
+          {tagWord(isGit && check.state === "signed_out" ? "No name set" : STATE_TEXT[check.state])}
           {check.state === "ready" && check.version ? ` · ${check.version}` : ""}
         </span>
       </div>
@@ -59,9 +61,9 @@ function CheckRow({ check }: { check: Probe }) {
           Install: <Command text={check.install} />
         </p>
       )}
-      {check.state !== "ready" && check.state !== "too_old" && (
+      {check.state !== "ready" && check.state !== "too_old" && !(isGit && check.state === "not_installed") && (
         <p className="hint">
-          Sign in: <Command text={check.signIn} />
+          {isGit ? "Set it" : "Sign in"}: <Command text={check.signIn} />
         </p>
       )}
     </div>
@@ -127,6 +129,8 @@ export function StartView(p: ViewProps) {
         <>
           <p>Atrium runs your coding tasks through your own Claude CLI, on your Mac: a brief, the work, Atrium's own checks and a fresh review, then you.</p>
           <CheckRow check={claude} />
+          {/* Never blocks: without a name and email git still commits, as your Mac's user and host name. */}
+          <CheckRow check={report.git} />
           <button className="btn" onClick={p.onRecheck} disabled={p.busy}>
             Check again
           </button>

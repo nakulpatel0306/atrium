@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { ENV_GLOBS } from "../envpath";
+import { otherAccountHome } from "./account-home";
 import { atriumDenyPaths } from "./atrium-paths";
 import { privateReadRules, privateReads } from "./private-paths";
 import { FALLBACK_WAIT_MS, parseRetryAfter } from "./limits";
@@ -14,7 +15,21 @@ const builtinTools = (allowed: string[]): string[] => [...new Set(allowed.map((t
 
 const usesBash = (tools: string[]) => tools.some((t) => t === "Bash" || t.startsWith("Bash("));
 
-const denyRules = (cwd: string, privateData = false, bash = true) => [
+// Under the home folder, kept from Claude's own Read tool. The account's home is added when $HOME points elsewhere,
+// since that's where ssh and git look.
+const READ_DENIED = [".ssh", ".aws", ".gnupg", ".config/gh", "Library/Messages", "Library/Application Support/AddressBook", "Library/Contacts"];
+const homeReadRules = (): string[] => {
+  const other = otherAccountHome();
+  return READ_DENIED.flatMap((p) => [`Read(~/${p}/**)`, ...(other ? [`Read(/${other}/${p}/**)`] : [])]);
+};
+// And from Bash and its children, through the OS sandbox.
+const SANDBOX_DENIED = [".ssh", ".aws", ".gnupg", ".config/gh", "Library/Keychains", "Library/Messages", "Library/Application Support/AddressBook", "Library/Contacts"];
+const homeSandboxDenies = (): string[] => {
+  const other = otherAccountHome();
+  return SANDBOX_DENIED.flatMap((p) => [`~/${p}`, ...(other ? [`${other}/${p}`] : [])]);
+};
+
+export const denyRules = (cwd: string, privateData = false, bash = true) => [
   // .env names in any case, names ending in .env, and everything inside a folder with such a name.
   ...["Read", "Edit", "Write"].flatMap((tool) => ENV_GLOBS.flatMap((g) => [`${tool}(**/${g})`, `${tool}(**/${g}/**)`])),
   "Bash(cat *.env*)",
@@ -44,13 +59,7 @@ const denyRules = (cwd: string, privateData = false, bash = true) => [
   "Edit(**/.claude/**)",
   "Write(**/.claude/**)",
   // The OS sandbox covers Bash and its children, not Claude's own Read tool.
-  "Read(~/.ssh/**)",
-  "Read(~/.aws/**)",
-  "Read(~/.gnupg/**)",
-  "Read(~/.config/gh/**)",
-  "Read(~/Library/Messages/**)",
-  "Read(~/Library/Application Support/AddressBook/**)",
-  "Read(~/Library/Contacts/**)",
+  ...homeReadRules(),
   // Atrium's DB, transcripts and other spaces' folders; a general-space run keeps its own. "//" anchors at the root.
   ...atriumDenyPaths(cwd).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
   // A private space's run: the three folders bank exports land in, and no Bash at all unless it's a
@@ -82,10 +91,9 @@ export function sandboxSettings(cwd: string, opts: { privateData?: boolean; bash
       autoAllowBashIfSandboxed: false,
       filesystem: {
         denyRead: [
-          "~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/Library/Keychains",
-          "~/Library/Messages", "~/Library/Application Support/AddressBook", "~/Library/Contacts",
+          ...homeSandboxDenies(),
           // A wildcard entry that matches a folder blocks its contents too.
-          ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`]),
+          ...ENV_GLOBS.flatMap((g) => [`~/**/${g}`, `${cwd}/**/${g}`, ...(otherAccountHome() ? [`${otherAccountHome()}/**/${g}`] : [])]),
           ...atriumDenyPaths(cwd),
           ...(reads?.denyRead ?? []),
         ],

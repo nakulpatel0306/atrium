@@ -1,8 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { config } from "../config";
-import { DEPENDENCY_DIRS, SANDBOX_EXEC, codexStateDir, seatbeltProfile, subpath } from "../agents/seatbelt";
+import { DEPENDENCY_DIRS, SANDBOX_EXEC, agentStateDenies, seatbeltProfile, subpath } from "../agents/seatbelt";
 
 // Ports an Atrium engine listens on: the configured one, the default 7420, and the block just above it that dev
 // and test engines use (the README's dev engine is 7421).
@@ -12,7 +11,7 @@ const ENGINE_PORTS = Array.from({ length: 20 }, (_, i) => 7420 + i);
 const ADMIN_PORTS = [22, 631, 2375, 2376, 5900, 6443, 9222, 9229];
 
 const agentProfile = (cwd: string, writable: string[]) =>
-  seatbeltProfile({ cwd, writable, extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")], denyKeychain: true });
+  seatbeltProfile({ cwd, writable, extraDenyRead: agentStateDenies(), denyKeychain: true });
 
 // The project's checks: the agent profile word for word (so no secrets, no writes outside the worktree and its temp
 // folder, none into the dependency folders), then loopback opened so a test can start and call its own server, with

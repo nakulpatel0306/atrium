@@ -188,6 +188,37 @@ test("adapter setup problems pass the adapter's plain message through", async ()
   expect(listSpaces(db, { includeArchived: true })).toHaveLength(0);
 });
 
+test("a repo folder that can't be used says which folder and what to do", async () => {
+  const projects = mkdtempSync(join(tmpdir(), "atrium-projects-"));
+  const plain = join(projects, "plain-folder");
+  mkdirSync(plain);
+  try {
+    const cases: [string, RegExp][] = [
+      [join(projects, "no-such-repo"), /doesn't exist\. Check the path/],
+      [plain, /isn't a git repo\. Run git init/],
+      [repo.path, /outside your projects folder.*Settings/],
+    ];
+    for (const [path, says] of cases) {
+      const err = await setupSpace(db, fake(ok(planWith(path))), "my repo", home.home, projects).catch((e) => e);
+      expect(err).toBeInstanceOf(SetupFailed);
+      expect(err.message).toMatch(says);
+      expect(err.message).toContain(basename(path));
+    }
+    expect(listSpaces(db, { includeArchived: true })).toHaveLength(0);
+  } finally {
+    rmSync(projects, { recursive: true, force: true });
+  }
+});
+
+test("a projects folder that doesn't exist is named as the problem, not the repo", async () => {
+  const projects = join(tmpdir(), `atrium-no-projects-${Date.now()}`);
+  const err = await setupSpace(db, fake(ok(planWith(repo.path))), "my repo", home.home, projects).catch((e) => e);
+  expect(err).toBeInstanceOf(SetupFailed);
+  expect(err.message).toMatch(/projects folder .* doesn't exist/);
+  expect(err.message).toContain("Settings");
+  expect(err.message).not.toContain(`${basename(repo.path)} doesn't exist`);
+});
+
 test("a plain agent failure keeps the try-again message", async () => {
   const bad: AgentRunResult = { status: "error", kind: "failed", message: "boom" };
   const err = await setupSpace(db, fake(bad), "x", home.home).catch((e) => e);

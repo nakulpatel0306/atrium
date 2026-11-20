@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StartView } from "../../src/dashboard/components/GetStarted";
@@ -15,7 +15,7 @@ import { tempHome } from "../helpers";
 const FIX = join(import.meta.dir, "..", "fixtures");
 let home: ReturnType<typeof tempHome>;
 let db: Database;
-const ENV = ["ATRIUM_CLAUDE_BIN", "ATRIUM_CODEX_BIN", "ATRIUM_GEMINI_BIN", "ATRIUM_GH_BIN", "FAKE_CLAUDE_AUTH", "FAKE_CODEX_SCENARIO", "FAKE_AGY_SCENARIO", "FAKE_GH_MODE"];
+const ENV = ["GIT_CONFIG_GLOBAL", "ATRIUM_CLAUDE_BIN", "ATRIUM_CODEX_BIN", "ATRIUM_GEMINI_BIN", "ATRIUM_GH_BIN", "FAKE_CLAUDE_AUTH", "FAKE_CODEX_SCENARIO", "FAKE_AGY_SCENARIO", "FAKE_GH_MODE"];
 beforeEach(() => {
   home = tempHome();
   db = openDb();
@@ -23,6 +23,9 @@ beforeEach(() => {
   process.env.ATRIUM_CODEX_BIN = join(FIX, "fake-codex.ts");
   process.env.ATRIUM_GEMINI_BIN = join(FIX, "fake-agy.ts");
   process.env.ATRIUM_GH_BIN = join(FIX, "fake-gh.ts");
+  // Git's global settings come from a file of the test's own, never the developer's.
+  process.env.GIT_CONFIG_GLOBAL = join(home.home, "gitconfig");
+  writeFileSync(process.env.GIT_CONFIG_GLOBAL, "[user]\n\tname = Sam Example\n\temail = sam@example.com\n");
 });
 afterEach(() => {
   db.close();
@@ -69,6 +72,42 @@ test("doctor output names the install and sign-in commands, and never prints sig
   expect(text).toContain("install:  npm install -g @openai/codex");
   expect(text).toContain("sign in:  claude auth login");
   expect(text).not.toContain("someone@example.com");
+});
+
+test("each Claude problem says what to do next, and doctor ends on the next step", async () => {
+  let r = await doctor(null);
+  expect(formatDoctor(r).trimEnd().split("\n").at(-1)).toBe("Ready. Run atrium start to use Atrium in this terminal, or atrium install to start it at every login, then atrium open.");
+  process.env.FAKE_CLAUDE_AUTH = "signed-out";
+  r = await doctor(null);
+  expect(r.agents[0]!.message).toBe("Claude is installed but not signed in. Sign in, then check again.");
+  expect(formatDoctor(r).trimEnd().split("\n").at(-1)).toBe("Atrium can't run tasks until Claude is ready. Run the commands above, then atrium doctor again.");
+  process.env.ATRIUM_CLAUDE_BIN = join(FIX, "does-not-exist");
+  r = await doctor(null);
+  // Installed after the engine started, it isn't on the engine's PATH until the engine starts again.
+  expect(r.agents[0]!.message).toBe("Claude isn't installed, or Atrium can't find it. Install it, then check again. Installed it after Atrium started? Start Atrium again from a new terminal (atrium install or atrium start) so it finds it.");
+});
+
+test("git without a name and email says commits won't be yours, and how to set them; it never blocks", async () => {
+  expect((await doctor(db)).git).toMatchObject({ state: "ready", required: false });
+  // A name and email kept in an included file count, as they do for git itself.
+  writeFileSync(join(home.home, "identity"), "[user]\n\tname = Sam Example\n\temail = sam@example.com\n");
+  writeFileSync(process.env.GIT_CONFIG_GLOBAL!, `[include]\n\tpath = ${join(home.home, "identity")}\n`);
+  expect((await doctor(db)).git.state).toBe("ready");
+  writeFileSync(process.env.GIT_CONFIG_GLOBAL!, "");
+  const r = await doctor(db);
+  expect(r.git.state).toBe("signed_out");
+  expect(r.git.message).toContain("name and email");
+  expect(r.git.signIn).toBe('git config --global user.name "Your Name" && git config --global user.email you@example.com');
+  expect(claudeBlocks(r)).toBeNull();
+  const text = formatDoctor(r);
+  expect(text).toContain("set up   Git 2.");
+  expect(text).toMatch(/Recommended\n  set up   Git [\d.]+ \(recommended\)/);
+  expect(text).toContain('set:      git config --global user.name "Your Name"');
+  expect(text.indexOf("Git")).toBeLessThan(text.indexOf("Projects folder"));
+  const shown = await view({ git: r.git });
+  expect(shown).toContain("Git no name set");
+  expect(shown).toContain("Set it: git config --global user.name");
+  expect(await html({ git: r.git })).toContain('<button class="btn p primary">Next</button>');
 });
 
 test("nothing in the checks opens a credential file or Keychain item", () => {

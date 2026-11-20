@@ -13,7 +13,7 @@ import { ChangesRefused, taskChanges } from "../engine/changes";
 import { bus } from "../engine/events";
 import type { setupSpace } from "../engine/setup";
 import { type OnCreate, SetupFailed } from "../engine/setup";
-import { setSetting } from "../engine/settings";
+import { getSetting, setSetting } from "../engine/settings";
 import { listMessages } from "../engine/messages";
 import { createSpace, getSpace, type Learning, LEARNING_LEVELS, REVIEW_CHOICES, REVIEWERS, type ReviewChoice, updateSpace } from "../engine/spaces";
 import { DeleteRefused, deleteSpace, deleteTask, spaceDeletePreview, taskDeletePreview } from "../engine/delete";
@@ -78,6 +78,16 @@ function tiersField(v: unknown): [Tier, string][] {
 
 // "changed" sockets (the Mac app) skip run output, which only the dashboard's live transcript needs.
 export type WsData = { topic: "engine" | "changed" };
+
+// Whether the runner's last pass held this task back for power (the waits it records for the dashboard).
+function waitingForPower(db: Database, taskId: string): boolean {
+  try {
+    const waits = JSON.parse(getSetting(db, "runner.waiting") || "[]") as unknown;
+    return Array.isArray(waits) && waits.some((w) => w?.taskId === taskId && w?.kind === "power");
+  } catch {
+    return false;
+  }
+}
 
 export function startServer(deps: Deps): Server<WsData> {
   const { db, runner } = deps;
@@ -257,7 +267,11 @@ export function startServer(deps: Deps): Server<WsData> {
     if (nowM) {
       const id = nowM[1]!;
       if (!getTask(db, id)) throw new HttpError(404, "No such task.");
-      const res = db.query("UPDATE tasks SET ignore_reserve = 1, updated_at = ? WHERE id = ? AND status = 'queued'").run(Date.now(), id);
+      // The user's click to start now: it skips Claude's reserve, and the wait for a charger only when that's what holds
+      // this task back, so the waiver never outlives the reason it was given.
+      const res = db
+        .query("UPDATE tasks SET ignore_reserve = 1, allow_on_battery = allow_on_battery OR ?, updated_at = ? WHERE id = ? AND status = 'queued'")
+        .run(waitingForPower(db, id) ? 1 : 0, Date.now(), id);
       if (res.changes === 0) throw new HttpError(409, "This task isn't waiting to start, so there's nothing to run now.");
       bus.emit({ type: "changed" });
       runner.kick();

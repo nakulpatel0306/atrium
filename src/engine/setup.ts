@@ -42,6 +42,9 @@ export class BadPlan extends Error {
   }
 }
 
+// A repo folder the user named that Atrium can't use: its message is for the user, so it isn't hidden behind "try again".
+export class RepoUnusable extends BadPlan {}
+
 export class SetupFailed extends Error {
   constructor(message: string, override readonly cause?: unknown) {
     super(message);
@@ -92,22 +95,30 @@ const defaultProjectsRoot = () => config().projectsRoot;
 function resolveRepoPath(repoPath: string, projectsRoot: string): string {
   const expanded = expandHome(repoPath);
   if (!isAbsolute(expanded)) throw new BadPlan(`repoPath must be an absolute path: ${repoPath}`);
-  let real: string;
+  const shown = tildePath(expanded);
+  const again = "then describe the space again.";
   let root: string;
   try {
-    real = realpathSync(expanded);
     root = realpathSync(projectsRoot);
   } catch {
-    throw new BadPlan(`repoPath does not exist: ${repoPath}`);
+    throw new RepoUnusable(`Your projects folder (${tildePath(projectsRoot)}) doesn't exist. Create it, or pick another in Settings, ${again}`);
   }
-  if (!statSync(real).isDirectory()) throw new BadPlan(`repoPath is not a folder: ${repoPath}`);
+  let real: string;
+  try {
+    real = realpathSync(expanded);
+  } catch {
+    throw new RepoUnusable(`${shown} doesn't exist. Check the path, or put the repo in your projects folder (${tildePath(projectsRoot)}), ${again}`);
+  }
+  if (!statSync(real).isDirectory()) throw new RepoUnusable(`${shown} is a file, not a folder. Name the repo's folder, ${again}`);
   const rel = relative(root, real);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
-    throw new BadPlan(`repoPath must be inside ${projectsRoot}: ${repoPath}`);
+    throw new RepoUnusable(
+      `${shown} is outside your projects folder (${tildePath(projectsRoot)}), and Atrium only works inside it. Move the repo there or change the projects folder in Settings, ${again}`,
+    );
   }
   const git = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd: real, stdout: "pipe", stderr: "pipe" });
   if (git.exitCode !== 0 || git.stdout.toString().trim() !== "true") {
-    throw new BadPlan(`repoPath is not a git repository: ${repoPath}`);
+    throw new RepoUnusable(`${shown} isn't a git repo. Run git init in it, or describe it as a general space instead.`);
   }
   return real;
 }
@@ -256,6 +267,7 @@ export async function setupSpace(
   } catch (e) {
     // A refused file has its own reason and fix; hiding it behind "try again" would send the user round the slow setup for nothing.
     if (e instanceof SetupFailed || e instanceof AttachRefused) throw e;
+    if (e instanceof RepoUnusable) throw new SetupFailed(e.message, e);
     throw new SetupFailed("Couldn't set that up. Try describing it again.", e);
   }
 }

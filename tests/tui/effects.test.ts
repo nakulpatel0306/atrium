@@ -13,7 +13,7 @@ const rows: Row[] = [
   { intent: { type: "reject", approvalId: ids.approval, note: " tighten it " }, method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "reject", note: "tighten it" }, text: "Sent back with your note." },
   { intent: { type: "reject", approvalId: ids.approval, note: "  " }, method: "POST", path: `/api/approvals/${ids.approval}`, body: { decision: "reject" }, text: "Sent back." },
   { intent: { type: "retry", taskId: ids.blocked }, method: "POST", path: `/api/tasks/${ids.blocked}/retry`, text: 'Queued "Summarize postings" again.' },
-  { intent: { type: "runNow", taskId: ids.queued }, method: "POST", path: `/api/tasks/${ids.queued}/run-now`, text: `Starting "Add tests" now, using Claude's reserved window.` },
+  { intent: { type: "runNow", taskId: ids.queued }, method: "POST", path: `/api/tasks/${ids.queued}/run-now`, text: 'Starting "Add tests" now.' },
   { intent: { type: "newTask", spaceId: ids.atrium, text: "Add a README", agent: "claude" }, method: "POST", path: "/api/command", body: { text: "Add a README", spaceId: ids.atrium, agent: "claude" }, data: { task: { title: "Add a README" } }, text: 'Queued "Add a README" in atrium for Claude.' },
   { intent: { type: "newTask", spaceId: ids.atrium, text: "Add a README", agent: "auto" }, method: "POST", path: "/api/command", body: { text: "Add a README", spaceId: ids.atrium, agent: "auto" }, data: { task: { title: "Add a README" } }, text: 'Queued "Add a README" in atrium.' },
   { intent: { type: "newSpace", text: "keep my reading list" }, method: "POST", path: "/api/command", body: { text: "keep my reading list" }, data: { space: { id: "spc_new", name: "reading" }, tasks: [] }, text: "Set up reading." },

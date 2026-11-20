@@ -418,8 +418,13 @@ function TaskRow({ task, state, open, onToggle, onTranscript, showChanges, at = 
             Retry
           </button>
         )}
-        {wait?.kind === "reserve" && (
-          <button className="btn" disabled={busy} title="Start this task now, using Claude's reserved window" onClick={() => void runNow()}>
+        {(wait?.kind === "reserve" || wait?.kind === "power") && (
+          <button
+            className="btn"
+            disabled={busy}
+            title={wait.kind === "power" ? "Start this task now, on battery" : "Start this task now, using Claude's reserved window"}
+            onClick={() => void runNow()}
+          >
             <Play />
             Run now
           </button>

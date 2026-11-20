@@ -117,7 +117,8 @@ function start(opts: {
   return runner;
 }
 
-async function waitFor(cond: () => boolean, ms = 3000) {
+// The limit only bounds how long a failure takes to show; 3 s ran out on a loaded machine before slow-but-right runs did.
+async function waitFor(cond: () => boolean, ms = 15_000) {
   const until = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > until) throw new Error("timed out waiting for condition");
@@ -212,7 +213,7 @@ test("dirty repo blocks the task without touching files", async () => {
   start({ adapter });
   await waitFor(() => status(t.id) === "blocked");
 
-  expect(getTask(db, t.id)!.blockedReason).toBe(`You have uncommitted changes in ${path}`);
+  expect(getTask(db, t.id)!.blockedReason).toBe(`You have uncommitted changes in ${path}. Commit or stash them, then retry: Atrium never works over them.`);
   expect(calls).toHaveLength(0);
   expect(existsSync(join(path, "wip.txt"))).toBe(true);
   expect(git(path, "rev-parse", "HEAD")).toBe(head);
@@ -453,7 +454,7 @@ test("heavy task waits on battery and stays queued with reason in runner.waiting
   await waitFor(() => waits().length > 0);
 
   expect(waits()).toEqual([
-    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power. Heavy work runs when your Mac is plugged in." },
+    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power. Heavy work runs when your Mac is plugged in, or press Run now to start it on battery." },
   ]);
   expect(getSetting(db, "power.source")).toBe("battery");
   expect(status(t.id)).toBe("queued");
@@ -947,16 +948,18 @@ test("stopTask stops a running task: blocked with your word, edits saved on its 
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Long job" });
   const seen: string[][] = [];
+  // Stop only once the edit is on disk: "running" is set before the agent starts, so a fixed sleep raced it under load.
+  let edited = false;
   const r = start({
     adapter: fakeAdapter(async (input) => {
       seen.push(readdirSync(input.cwd).filter((f) => f.endsWith(".txt")));
       if (seen.length > 1) return ok("Carried on.");
       writeFileSync(join(input.cwd, "half.txt"), "half done\n");
+      edited = true;
       return untilAborted(input);
     }).adapter,
   });
-  await waitFor(() => status(t.id) === "running");
-  await Bun.sleep(20);
+  await waitFor(() => edited);
   expect(await r.stopTask(t.id)).toBe("stopped");
   const task = getTask(db, t.id)!;
   expect(task.status).toBe("blocked");
@@ -1409,14 +1412,15 @@ test("stopping the engine mid-run saves the agent's edits on its branch and requ
   git(path, "checkout", "-b", "feature");
   const s = repoSpace(path);
   const t = createTask(db, { spaceId: s.id, title: "Long edit" });
+  let edited = false;
   const r = start({
     adapter: fakeAdapter(async (input) => {
       writeFileSync(join(input.cwd, "partial.txt"), "partial\n");
+      edited = true;
       return untilAborted(input);
     }).adapter,
   });
-  await waitFor(() => status(t.id) === "running");
-  await Bun.sleep(20);
+  await waitFor(() => edited);
   await r.stop();
   runner = null;
   expect(status(t.id)).toBe("queued");

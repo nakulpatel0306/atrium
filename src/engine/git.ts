@@ -39,13 +39,15 @@ function isProtected(branch: string): boolean {
   return PROTECTED.has(branch.replace(/^refs\/heads\//, ""));
 }
 
+const dirtyReason = (path: string) => `You have uncommitted changes in ${path}. Commit or stash them, then retry: Atrium never works over them.`;
+
 export async function repoReady(path: string): Promise<{ ok: true } | { ok: false; reason: string; dirty?: true }> {
   if (!existsSync(path) || !statSync(path).isDirectory()) return { ok: false, reason: `The folder ${path} doesn't exist. Check the repo folder in the space settings.` };
   const inside = await git(path, ["rev-parse", "--is-inside-work-tree"]);
   if (inside.code !== 0) return { ok: false, reason: `${path} isn't a git repo. Pick the repo's own folder in the space settings.` };
   const status = await git(path, ["status", "--porcelain"]);
   if (status.code !== 0) return { ok: false, reason: `${path} isn't a git repo. Pick the repo's own folder in the space settings.` };
-  if (status.out.trim() !== "") return { ok: false, reason: `You have uncommitted changes in ${path}`, dirty: true };
+  if (status.out.trim() !== "") return { ok: false, reason: dirtyReason(path), dirty: true };
   return { ok: true };
 }
 
@@ -65,7 +67,7 @@ export async function prepareBranch(path: string, taskId: string): Promise<strin
   // checkout carries non-conflicting uncommitted changes along, which would put the user's WIP on the agent branch.
   const status = await git(path, ["status", "--porcelain"]);
   if (status.code !== 0) throw new Error(`Couldn't read git status: ${status.err.trim()}`);
-  if (status.out.trim() !== "") throw new Error(`You have uncommitted changes in ${path}`);
+  if (status.out.trim() !== "") throw new Error(dirtyReason(path));
   // A retry after a send-back reuses the existing branch. Plain checkout (never --force)
   // fails rather than overwrite local changes.
   const exists = await git(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
