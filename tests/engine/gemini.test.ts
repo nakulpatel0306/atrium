@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { homes } from "../../src/engine/agents/account-home";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,7 +56,7 @@ describe("geminiAdapter", () => {
   test("agy argv is wrapped in sandbox-exec, with only its own state and the login keychain readable", () => {
     const state = join(homedir(), ".gemini", "antigravity-cli");
     const tmp = "/tmp/atrium-agent-x";
-    const sandbox = { extraDenyRead: [join(homedir(), ".codex")], allowRead: [join(homedir(), "Library", "Keychains", "login.keychain-db")] };
+    const sandbox = { extraDenyRead: [join(homedir(), ".codex"), ...homes().map((h) => join(h, ".codex"))], allowRead: [join(homedir(), "Library", "Keychains", "login.keychain-db")] };
     const work = geminiArgv("agy", input(), tmp);
     expect(work.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
     expect(work[2]).toBe(seatbeltProfile({ cwd: process.cwd(), writable: [process.cwd(), state, tmp], ...sandbox }));

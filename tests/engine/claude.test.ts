@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { otherAccountHome } from "../../src/engine/agents/account-home";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -239,14 +240,11 @@ describe("claudeAdapter", () => {
       "Write(**/.venv/**)",
       "Edit(**/.claude/**)",
       "Write(**/.claude/**)",
-      // The sandbox does not cover the Read tool.
-      "Read(~/.ssh/**)",
-      "Read(~/.aws/**)",
-      "Read(~/.gnupg/**)",
-      "Read(~/.config/gh/**)",
-      "Read(~/Library/Messages/**)",
-      "Read(~/Library/Application Support/AddressBook/**)",
-      "Read(~/Library/Contacts/**)",
+      // The sandbox does not cover the Read tool. The account's own home is named too when HOME points elsewhere.
+      ...[".ssh", ".aws", ".gnupg", ".config/gh", "Library/Messages", "Library/Application Support/AddressBook", "Library/Contacts"].flatMap((p) => [
+        `Read(~/${p}/**)`,
+        ...(otherAccountHome() ? [`Read(/${otherAccountHome()}/${p}/**)`] : []),
+      ]),
       // Atrium's DB, transcripts and other spaces' folders. "//" anchors the rule at the filesystem root.
       ...atriumDenyPaths(process.cwd()).flatMap((p) => [`Read(/${p})`, `Read(/${p}/**)`]),
     ]);

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { homes } from "../../src/engine/agents/account-home";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,7 +69,8 @@ describe("codexAdapter", () => {
 
   test("codex argv is wrapped in sandbox-exec", () => {
     const state = join(homedir(), ".codex");
-    const agy = [join(homedir(), ".gemini")];
+    // Under the account's own home too when HOME points elsewhere (a CI-like run).
+    const agy = homes().map((h) => join(h, ".gemini"));
     const tmp = "/tmp/atrium-agent-x";
     const work = codexArgv("codex", input(), tmp);
     expect(work.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
