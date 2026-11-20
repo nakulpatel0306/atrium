@@ -93,7 +93,7 @@ function install(): number {
   const bunPath = run(["which", "bun"]).out;
   const claudePath = run(["which", "claude"]).out;
   if (!bunPath) return fail("Can't find bun on your PATH, so Atrium can't be installed.");
-  if (!claudePath) return fail("Can't find the claude command on your PATH. Install Claude Code first, then run this again.");
+  if (!claudePath) return fail("Can't find the claude command on your PATH. Install Claude Code first, then run this again. Just installed it? Open a new terminal window first, so your PATH includes it.");
 
   // Reinstalling replaces the old job, so unload it before checking who owns the port.
   if (isLoaded()) run(["launchctl", "bootout", `${domain}/${LABEL}`]);
