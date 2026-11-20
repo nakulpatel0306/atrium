@@ -1,14 +1,21 @@
-# Atrium
+# Atrium - A Local Workbench For Coding Agents
 
 [![Tests](https://github.com/nakulpatel0306/atrium/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/nakulpatel0306/atrium/actions/workflows/test.yml)
 
-The agent workbench for the new way of coding, on your Mac.
+Atrium runs coding agents on your Mac and checks their work before it reaches you.
 
 The job has moved from writing code to directing agents and judging what they wrote. Most tools stop at running agents: a branch per task, a live diff, a PR button. Atrium is about the part that decides whether agent work is any good. Every task gets a brief an agent can finish, Atrium runs your checks itself instead of trusting "tests pass", a fresh reviewer reads the diff before you do, and everything that needs you lands in one keyboard-first queue. Along the way it helps you get better at directing agents, with feedback built only from what it measured. It runs on your Mac, on your own Claude subscription, with only the Claude CLI and a folder.
 
 Site: <https://nakulpatel0306.github.io/atrium/> · The terminal app: <https://nakulpatel0306.github.io/atrium/terminal.html> · Why it works this way: [docs/why.md](docs/why.md)
 
 ![Needs you: one queue, longest-waiting first, with a result's walkthrough, checks and review on one screen](docs/screenshots/queue.jpg)
+
+## At a Glance
+
+- **Stack:** TypeScript on bun, React dashboard, Ink terminal app, native Mac app (AppKit), SQLite
+- **Platforms:** macOS 14 or later on Apple silicon
+- **Agents:** Claude Code on your subscription, with Codex and Gemini optional
+- **State:** Early (0.1) and actively maintained
 
 ## Trying Atrium?
 
