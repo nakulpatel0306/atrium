@@ -44,6 +44,11 @@ export const codexStateDir = () => process.env.CODEX_HOME ?? join(homedir(), ".c
 // Only agy's working state; the rest of ~/.gemini (its sign-in token, per-project permission config) stays
 // read-only so a run can't widen its own permissions.
 export const geminiStateDir = () => join(homedir(), ".gemini", "antigravity-cli");
+// Both CLIs' state dirs under every home, for a sandbox no CLI runs in (the checks, the scratch copy), so nothing it
+// runs can read either one's sign-in tokens.
+export const agentStateDenies = (): string[] => [
+  ...new Set([codexStateDir(), ...homes().flatMap((h) => [join(h, ".codex"), join(h, ".gemini")])]),
+];
 
 export interface SeatbeltOptions {
   cwd: string;

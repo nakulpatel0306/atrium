@@ -12,7 +12,7 @@ let elsewhere: string;
 let cwd: string;
 let account: string;
 
-type Seen = { claudeDenyRead: string[]; claudeRules: string[]; atrium: string[]; codex: string; gemini: string; privateNoBash: string[]; privateRules: string[] };
+type Seen = { claudeDenyRead: string[]; claudeRules: string[]; atrium: string[]; codex: string; gemini: string; privateNoBash: string[]; privateRules: string[]; check: string; stateDenies: string[] };
 
 function underElsewhere(): Seen {
   const script = `
@@ -21,6 +21,8 @@ const { atriumDenyPaths } = await import(${JSON.stringify(join(SRC, "agents", "a
 const { codexArgv } = await import(${JSON.stringify(join(SRC, "agents", "codex.ts"))});
 const { geminiArgv } = await import(${JSON.stringify(join(SRC, "agents", "gemini.ts"))});
 const { privateReads, privateReadRules } = await import(${JSON.stringify(join(SRC, "agents", "private-paths.ts"))});
+const { checkProfile } = await import(${JSON.stringify(join(SRC, "checks", "sandbox.ts"))});
+const { agentStateDenies } = await import(${JSON.stringify(join(SRC, "agents", "seatbelt.ts"))});
 const cwd = ${JSON.stringify(cwd)};
 const input = { prompt: "p", systemPrompt: "s", cwd, mode: "work", allowedTools: [], onChunk: () => {} };
 console.log(JSON.stringify({
@@ -31,6 +33,8 @@ console.log(JSON.stringify({
   gemini: geminiArgv("agy", input, "/tmp/x")[2],
   privateNoBash: privateReads(cwd, { bash: false }).denyRead,
   privateRules: privateReadRules(cwd),
+  check: checkProfile(cwd, [cwd]),
+  stateDenies: agentStateDenies(),
 }));`;
   const env: Record<string, string | undefined> = { ...process.env, HOME: elsewhere };
   for (const k of ["ATRIUM_USER_HOME", "CODEX_HOME"]) delete env[k];
@@ -76,4 +80,12 @@ test("a private run's reads are fenced from the account's home as well", () => {
   if (process.platform !== "darwin") return;
   expect(seen.privateNoBash).toContain(realpathSync(account));
   expect(seen.privateRules.some((r) => r.startsWith(`Read(/${realpathSync(account)}/`) || r === `Read(/${realpathSync(account)})`)).toBe(true);
+});
+
+test("the checks' profile and the scratch copy deny the agents' sign-in folders under the account's home", () => {
+  if (process.platform !== "darwin") return;
+  for (const d of [".codex", ".gemini"]) {
+    expect(seen.check).toContain(`(subpath "${realpathSync(account)}/${d}")`);
+    expect(seen.stateDenies).toContain(join(account, d));
+  }
 });

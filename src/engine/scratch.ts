@@ -1,8 +1,7 @@
 import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, rmdirSync, rmSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "./config";
-import { SANDBOX_EXEC, codexStateDir, seatbeltFailure, wrapInSeatbelt } from "./agents/seatbelt";
+import { SANDBOX_EXEC, agentStateDenies, seatbeltFailure, wrapInSeatbelt } from "./agents/seatbelt";
 import { type Copy, hashOf } from "./attachments";
 import { readBytes } from "./outputs/files";
 
@@ -30,7 +29,7 @@ export async function keepScratch(
     const argv = wrapInSeatbelt(["/bin/cp", "-RP", `${src}/`, dest], {
       cwd: src,
       writable: [dest],
-      extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")],
+      extraDenyRead: agentStateDenies(),
       allowReadDirs: [dest],
       sandboxExec: opts.sandboxExec ?? SANDBOX_EXEC,
     });

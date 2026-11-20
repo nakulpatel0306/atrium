@@ -7,9 +7,9 @@ let cached: string | null | undefined;
 // and leave the real ~/.ssh readable to a run.
 export function accountHome(): string | null {
   if (cached !== undefined) return cached;
-  const user = Bun.spawnSync(["/usr/bin/id", "-un"], { stdout: "pipe", stderr: "ignore" }).stdout.toString().trim();
-  const out = user ? Bun.spawnSync(["/usr/bin/dscl", ".", "-read", `/Users/${user}`, "NFSHomeDirectory"], { stdout: "pipe", stderr: "ignore" }).stdout.toString() : "";
-  cached = /NFSHomeDirectory:\s*(\S.*)/.exec(out)?.[1]?.trim() ?? null;
+  // id -P asks Open Directory for this user's passwd entry, so network accounts resolve too; field 9 is the home.
+  const entry = Bun.spawnSync(["/usr/bin/id", "-P"], { stdout: "pipe", stderr: "ignore" }).stdout.toString().trim();
+  cached = entry.split(":")[8] || null;
   return cached;
 }
 
