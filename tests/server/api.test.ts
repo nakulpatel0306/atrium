@@ -368,6 +368,14 @@ test("run-now sets ignore_reserve and requires Origin", async () => {
   expect((await post(`/api/tasks/${t.id}/run-now`)).status).toBe(409);
 });
 
+test("run-now lets a heavy task waiting for power start on battery", async () => {
+  const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
+  const t = createTask(db, { spaceId: s.id, title: "T", weight: "heavy", agent: "claude" });
+  expect(getTask(db, t.id)!.allowOnBattery).toBe(false);
+  expect((await post(`/api/tasks/${t.id}/run-now`)).status).toBe(200);
+  expect(getTask(db, t.id)!.allowOnBattery).toBe(true);
+});
+
 test("task creation accepts a valid agent and rejects others", async () => {
   const s = createSpace(db, { name: "Docs", kind: "general", goal: "write" });
   const res = await post("/api/tasks", { spaceId: s.id, title: "Draft", agent: "codex" });

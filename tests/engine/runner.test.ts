@@ -453,7 +453,7 @@ test("heavy task waits on battery and stays queued with reason in runner.waiting
   await waitFor(() => waits().length > 0);
 
   expect(waits()).toEqual([
-    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power. Heavy work runs when your Mac is plugged in." },
+    { taskId: t.id, agent: "auto", kind: "power", reason: "Waiting for power. Heavy work runs when your Mac is plugged in, or press Run now to start it on battery." },
   ]);
   expect(getSetting(db, "power.source")).toBe("battery");
   expect(status(t.id)).toBe("queued");

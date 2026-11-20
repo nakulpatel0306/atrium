@@ -49,7 +49,7 @@ export async function runIntent(client: EngineClient, intent: Intent, state: Sta
     case "runNow":
       return said(
         await client.post(`/api/tasks/${enc(intent.taskId)}/run-now`),
-        () => `Starting "${taskTitle(intent.taskId)}" now, using Claude's reserved window.`,
+        () => `Starting "${taskTitle(intent.taskId)}" now.`,
       );
     case "newTask": {
       const res = await client.post<{ task: Task }>("/api/command", { text: intent.text, spaceId: intent.spaceId, agent: intent.agent });

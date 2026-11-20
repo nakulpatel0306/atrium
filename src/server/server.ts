@@ -257,7 +257,8 @@ export function startServer(deps: Deps): Server<WsData> {
     if (nowM) {
       const id = nowM[1]!;
       if (!getTask(db, id)) throw new HttpError(404, "No such task.");
-      const res = db.query("UPDATE tasks SET ignore_reserve = 1, updated_at = ? WHERE id = ? AND status = 'queued'").run(Date.now(), id);
+      // The user's click to start now: it skips Claude's reserve and, on battery, the wait for a charger.
+      const res = db.query("UPDATE tasks SET ignore_reserve = 1, allow_on_battery = 1, updated_at = ? WHERE id = ? AND status = 'queued'").run(Date.now(), id);
       if (res.changes === 0) throw new HttpError(409, "This task isn't waiting to start, so there's nothing to run now.");
       bus.emit({ type: "changed" });
       runner.kick();

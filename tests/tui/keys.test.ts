@@ -104,7 +104,11 @@ test("retry and run now only where the dashboard offers them", () => {
   expect(removed.intents).toEqual([]);
   expect(flashText(removed.all)).toEqual([REMOVED_FEATURE_RETRY]);
   expect(play(["s"], onTask(2, ids.queued)).intents).toEqual([{ type: "runNow", taskId: ids.queued }]);
-  expect(flashText(play(["s"], onTask(0, ids.running)).all)).toEqual(["Run now is for tasks waiting on Claude's reserve."]);
+  expect(flashText(play(["s"], onTask(0, ids.running)).all)).toEqual(["Run now is for tasks waiting on Claude's reserve or on power."]);
+  // On battery a heavy task waits for the charger; s starts it anyway, as the dashboard's Run now does.
+  const unplugged = makeState();
+  unplugged.waits = { [ids.queued]: { taskId: ids.queued, agent: "claude", kind: "power", reason: "Waiting for power. Heavy work runs when your Mac is plugged in, or press Run now to start it on battery." } };
+  expect(play(["s"], onTask(2, ids.queued), unplugged).intents).toEqual([{ type: "runNow", taskId: ids.queued }]);
 });
 
 test(". asks before stopping the running task, and y stops it", () => {

@@ -442,7 +442,7 @@ function spacesKey(input: string, u: Ui, view: View): Command[] {
     case "s":
       {
         const wait = task ? waitOf(task, view.state) : null;
-        if (!task || wait?.kind !== "reserve") return [info("Run now is for tasks waiting on Claude's reserve.")];
+        if (!task || (wait?.kind !== "reserve" && wait?.kind !== "power")) return [info("Run now is for tasks waiting on Claude's reserve or on power.")];
         return [intent({ type: "runNow", taskId: wait.taskId })];
       }
     case "n":
