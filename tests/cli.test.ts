@@ -33,18 +33,18 @@ test("renderPlist includes absolute paths, RunAtLoad, and log path", () => {
 });
 
 test("installPlan says what atrium install would write and run, touching nothing", () => {
-  const plan = installPlan({ home: "/Users/sam", uid: 501, bunPath: "/Users/sam/.bun/bin/bun", claudePath: "/Users/sam/.local/bin/claude", dataDir: "/Users/sam/Library/Application Support/Atrium" });
-  expect(plan.plistPath).toBe("/Users/sam/Library/LaunchAgents/com.atrium.engine.plist");
-  expect(plan.plist).toContain("<string>/Users/sam/.local/bin:/Users/sam/.bun/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>");
-  expect(plan.plist).toContain("<string>/Users/sam/Library/Application Support/Atrium/engine.log</string>");
+  const plan = installPlan({ home: "/Users/me", uid: 501, bunPath: "/Users/me/.bun/bin/bun", claudePath: "/Users/me/.local/bin/claude", dataDir: "/Users/me/Library/Application Support/Atrium" });
+  expect(plan.plistPath).toBe("/Users/me/Library/LaunchAgents/com.atrium.engine.plist");
+  expect(plan.plist).toContain("<string>/Users/me/.local/bin:/Users/me/.bun/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>");
+  expect(plan.plist).toContain("<string>/Users/me/Library/Application Support/Atrium/engine.log</string>");
   expect(plan.commands).toEqual([
     ["launchctl", "bootout", "gui/501/com.atrium.engine"],
-    ["launchctl", "bootstrap", "gui/501", "/Users/sam/Library/LaunchAgents/com.atrium.engine.plist"],
+    ["launchctl", "bootstrap", "gui/501", "/Users/me/Library/LaunchAgents/com.atrium.engine.plist"],
   ]);
   const text = formatInstallPlan(plan);
   expect(text.split("\n")[0]).toBe("Dry run: nothing was written and launchd wasn't touched.");
-  expect(text).toContain("Would write /Users/sam/Library/LaunchAgents/com.atrium.engine.plist:");
-  expect(text).toContain("  launchctl bootstrap gui/501 /Users/sam/Library/LaunchAgents/com.atrium.engine.plist");
+  expect(text).toContain("Would write /Users/me/Library/LaunchAgents/com.atrium.engine.plist:");
+  expect(text).toContain("  launchctl bootstrap gui/501 /Users/me/Library/LaunchAgents/com.atrium.engine.plist");
   expect(text).toContain("only if Atrium is already loaded");
 });
 
