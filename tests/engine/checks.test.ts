@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codexStateDir, seatbeltProfile } from "../../src/engine/agents/seatbelt";
+import { agentStateDenies, seatbeltProfile } from "../../src/engine/agents/seatbelt";
 import { branchFiles } from "../../src/engine/git";
 import { changedOutside, checkAttention, outsideSnapshot } from "../../src/engine/checks/attention";
 import { checkProfile, installProfile } from "../../src/engine/checks/sandbox";
@@ -208,7 +208,7 @@ describe("the checks' own sandbox", () => {
     expect(agent).toContain('(deny network-outbound (remote ip "localhost:*"))');
     expect(agent).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
     const check = checkProfile("/tmp/repo", ["/tmp/repo"]);
-    expect(check.startsWith(seatbeltProfile({ cwd: "/tmp/repo", writable: ["/tmp/repo"], extraDenyRead: [codexStateDir(), join(homedir(), ".gemini")], denyKeychain: true }))).toBe(true);
+    expect(check.startsWith(seatbeltProfile({ cwd: "/tmp/repo", writable: ["/tmp/repo"], extraDenyRead: agentStateDenies(), denyKeychain: true }))).toBe(true);
     expect(installProfile("/tmp/repo", "/tmp/t")).not.toContain('(allow network-outbound (remote tcp "localhost:*")');
     for (const port of [7420, 7421, 22, 9229]) expect(check).toContain(`(remote tcp "localhost:${port}")`);
   });
