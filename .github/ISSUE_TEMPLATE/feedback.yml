@@ -1,0 +1,30 @@
+name: Feedback
+description: How trying Atrium went, good and bad.
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for giving Atrium a go. Short answers are fine, and anything you leave blank is fine too.
+  - type: textarea
+    id: tried
+    attributes:
+      label: What did you try?
+      description: The tasks you gave it, roughly, and on what kind of repo.
+    validations:
+      required: true
+  - type: textarea
+    id: good
+    attributes:
+      label: What felt good?
+  - type: textarea
+    id: friction
+    attributes:
+      label: What got in the way?
+      description: Setup, wording, waiting, anything you had to work out yourself.
+  - type: input
+    id: version
+    attributes:
+      label: Atrium version
+      description: The output of `atrium --version`, if you have it handy.
+      placeholder: "0.1.0"
