@@ -28,7 +28,8 @@ beforeAll(async () => {
   server = startServer({ db, runner: { kick: () => {} }, setup: async () => { throw new Error("no setup"); }, port: 0 });
   port = server.port as number;
   ansi = await screen({ port, env: ANSI_ENV, steps: [READY, "j", { wait: 200 }, "q"] });
-});
+  // The first launch compiles the app; a slow CI runner takes longer than bun's 5 s hook default.
+}, 30_000);
 afterAll(async () => {
   await server.stop(true);
   db.close();
