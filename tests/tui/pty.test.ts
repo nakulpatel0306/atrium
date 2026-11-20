@@ -20,8 +20,12 @@ const ANSI_ENV = { COLORTERM: undefined, TERM: "xterm-256color", TERM_PROGRAM: u
 const TRUECOLOR_ENV = { ...ANSI_ENV, COLORTERM: "truecolor" };
 // The app has drawn Home: the queue's header. A fixed pause raced a slow first draw under load.
 const READY = { until: "NEEDS YOU" };
+// GitHub's macOS runners give the app a pty it never draws into (a blank screen after 15 s), so the pty tests run on
+// a Mac, not in CI. The no-terminal test below still runs everywhere.
+const ptyTest = test.skipIf(!!process.env.CI);
 
 beforeAll(async () => {
+  if (process.env.CI) return;
   home = tempHome();
   db = openDb();
   seedReview(db);
@@ -31,12 +35,13 @@ beforeAll(async () => {
   // The first launch compiles the app; a slow CI runner takes longer than bun's 5 s hook default.
 }, 30_000);
 afterAll(async () => {
+  if (process.env.CI) return;
   await server.stop(true);
   db.close();
   home.cleanup();
 });
 
-test("atrium opens, moves, and quits cleanly under a pty", async () => {
+ptyTest("atrium opens, moves, and quits cleanly under a pty", async () => {
   const shown = await screen({ port, env: ANSI_ENV, steps: [READY, "2", { until: "TASKS" }, "?", { until: "Keys" }] });
   expect(ansi.text).toContain("NEEDS YOU  1");
   expect(ansi.text).toContain("Review: Fix login redirect");
@@ -47,7 +52,7 @@ test("atrium opens, moves, and quits cleanly under a pty", async () => {
   expect(ansi.raw).toContain("\x1b[?1049l");
 }, 20_000);
 
-test("at 80×24 it lays out on purpose: what is running folds under the cards", async () => {
+ptyTest("at 80×24 it lays out on purpose: what is running folds under the cards", async () => {
   const small = await screen({ port, cols: 80, rows: 24, env: ANSI_ENV, steps: [READY] });
   expect(small.text).toContain("NEEDS YOU  1");
   expect(small.text).toContain("RUNNING");
@@ -55,12 +60,12 @@ test("at 80×24 it lays out on purpose: what is running folds under the cards", 
   expect(small.exitCode).toBe(0);
 }, 20_000);
 
-test("in a 16-color terminal only the terminal's own colors are used", () => {
+ptyTest("in a 16-color terminal only the terminal's own colors are used", () => {
   for (const seq of ["\x1b[38;2;", "\x1b[48;2;", "\x1b[38;5;", "\x1b[48;5;"]) expect(ansi.raw).not.toContain(seq);
   expect(ansi.raw).toMatch(/\x1b\[3[0-7]m|\x1b\[9[0-7]m/);
 });
 
-test("in a truecolor terminal it uses Atrium's palette and paints no background behind the screen", async () => {
+ptyTest("in a truecolor terminal it uses Atrium's palette and paints no background behind the screen", async () => {
   const tc = await screen({ port, env: TRUECOLOR_ENV, steps: [READY] });
   // The accent, #9b84ff.
   expect(tc.raw).toContain("38;2;155;132;255");
@@ -73,13 +78,13 @@ test("in a truecolor terminal it uses Atrium's palette and paints no background 
   expect(hc.raw).toContain("38;2;155;132;255");
 }, 30_000);
 
-test("NO_COLOR drops color but keeps the selected tab readable", async () => {
+ptyTest("NO_COLOR drops color but keeps the selected tab readable", async () => {
   const plain = await screen({ port, env: { ...TRUECOLOR_ENV, NO_COLOR: "1" }, steps: [READY] });
   expect(plain.raw).not.toMatch(/\x1b\[(3[0-79]|9[0-7]|38;)/);
   expect(plain.raw).toContain("\x1b[7m");
 }, 20_000);
 
-test("mouse reporting is on while it runs and off when it quits; a click switches tabs", async () => {
+ptyTest("mouse reporting is on while it runs and off when it quits; a click switches tabs", async () => {
   // " ◆ atrium  " is 12 columns at 120 wide; "2 Spaces" starts after " 1 Home " and a space.
   const clicked = await screen({ port, env: ANSI_ENV, steps: [READY, click(24, 0), { until: "TASKS · atrium" }] });
   expect(clicked.text).toContain("SPACES");
